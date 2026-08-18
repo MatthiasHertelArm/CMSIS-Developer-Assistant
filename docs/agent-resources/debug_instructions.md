@@ -1,4 +1,4 @@
-# CMSIS-DebugMCP - Debugging Instructions Guide
+# CMSIS Developer Assistant - Debugging Instructions Guide
 
 ⚠️  **CRITICAL INSTRUCTIONS - FOLLOW THESE STEPS:**
 0. **FIRST OF ALL:** Establish target awareness — read the project's CMSIS YAMLs and `launch.json` (see "PHASE 0" below). Without this you will guess at addresses, peripheral names and the wrong launch configuration.
@@ -234,7 +234,7 @@ Software breakpoints (which Flash patches without a comparator) are *not* an opt
 
 ### Secret redaction
 
-Values whose name or content looks like a credential are withheld before leaving the extension (`<redacted: possible secret>`), controlled by `cmsis-debugmcp.redactSecrets` (default on).
+Values whose name or content looks like a credential are withheld before leaving the extension (`<redacted: possible secret>`), controlled by `cmsis-developer-assistant.redactSecrets` (default on).
 
 This is tuned for firmware and should rarely get in your way:
 
