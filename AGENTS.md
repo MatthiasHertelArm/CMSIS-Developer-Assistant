@@ -6,7 +6,7 @@ CMSIS Developer Assistant is a VS Code extension (fork of microsoft/DebugMCP) th
 
 ### Architecture
 
-```
+```txt
 AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHandler → DebuggingExecutor → VS Code Debug API
                                                                                                        │
                                                                                             ┌──────────┴──────────┐
@@ -24,7 +24,7 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 ### Key Components
 
 | Component | Responsibility | Docs |
-|-----------|----------------|------|
+| --------- | -------------- | ---- |
 | `DebugMCPServer` | MCP server, tool/resource registration | [docs/architecture/debugMCPServer.md](docs/architecture/debugMCPServer.md) |
 | `DebuggingHandler` | Operation orchestration, state change detection | [docs/architecture/debuggingHandler.md](docs/architecture/debuggingHandler.md) |
 | `DebuggingExecutor` | VS Code debug API calls, DAP requests | [docs/architecture/debuggingExecutor.md](docs/architecture/debuggingExecutor.md) |
@@ -35,6 +35,7 @@ AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHan
 ## Documentation Maintenance
 
 **IMPORTANT**: Keep `docs/*.md` files up to date when modifying components. These docs should remain high-level:
+
 - Purpose and motivation
 - Responsibility scope
 - Key concepts and patterns
@@ -45,6 +46,7 @@ Do NOT duplicate detailed implementation in docs - that information should be in
 ## File Header
 
 Include in each source file:
+
 ```typescript
 // Copyright (c) Microsoft Corporation.
 ```
@@ -52,7 +54,7 @@ Include in each source file:
 ## Build/Lint/Test Commands
 
 | Command | Description |
-|---------|-------------|
+| ------- | ----------- |
 | `npm run compile` | Compile TypeScript to `out/` |
 | `npm run lint` | Run ESLint on `src/` |
 | `npm test` | Run all tests (`src/test/*.test.ts`) |

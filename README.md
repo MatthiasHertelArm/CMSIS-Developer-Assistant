@@ -15,6 +15,7 @@ Works with **GitHub Copilot**, **Claude Code**, **Claude Desktop**, **Cline**, *
 </p>
 
 ## Table of Contents
+
 - [Overview](#overview)
 - [Features](#features)
 - [Installation](#installation)
@@ -205,7 +206,9 @@ The extension runs an MCP server automatically. It will pop up a message to auto
 ### Manual MCP Server Registration (Optional)
 
 #### Cline
+
 Add to your Cline settings or `cline_mcp_settings.json`:
+
 ```json
 {
   "mcpServers": {
@@ -219,7 +222,9 @@ Add to your Cline settings or `cline_mcp_settings.json`:
 ```
 
 #### GitHub Copilot
+
 Add to your VS Code settings (`settings.json`):
+
 ```json
 {
   "mcp": {
@@ -235,7 +240,9 @@ Add to your VS Code settings (`settings.json`):
 ```
 
 #### Cursor
+
 Add to Cursor's MCP settings:
+
 ```json
 {
   "mcpServers": {
@@ -249,11 +256,15 @@ Add to Cursor's MCP settings:
 ```
 
 #### Claude Code
+
 Either use the agent selection popup, or register from a terminal:
+
 ```bash
 claude mcp add --transport http --scope user cmsis-developer-assistant http://localhost:3001/mcp
 ```
+
 This writes a user-scoped entry to the top-level `mcpServers` of `~/.claude.json`:
+
 ```json
 {
   "mcpServers": {
@@ -266,7 +277,9 @@ This writes a user-scoped entry to the top-level `mcpServers` of `~/.claude.json
 ```
 
 #### Claude Desktop
+
 Claude Desktop only supports stdio MCP servers, so the extension registers an `mcp-remote` bridge (requires Node.js/`npx` on PATH) in `claude_desktop_config.json`:
+
 ```json
 {
   "mcpServers": {
@@ -277,6 +290,7 @@ Claude Desktop only supports stdio MCP servers, so the extension registers an `m
   }
 }
 ```
+
 Config file location: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%\Claude\claude_desktop_config.json` (Windows), `~/.config/Claude/claude_desktop_config.json` (Linux).
 
 ### Extension Settings
@@ -309,7 +323,6 @@ The router picks the target from a file path when the tool has one (`add_breakpo
 When **two windows are debugging at once** it refuses to guess and names both. Reading the wrong board's memory looks exactly like a firmware bug, so an error is cheaper. Use `list_debug_windows` and `select_debug_window` to pin one for the session.
 
 > Before v2.0.0 each window ran its own server on a fallback port and the last window to start overwrote the shared agent config — which is precisely how an agent ended up driving a window that did not hold the board.
-
 
 ## FAQ
 
@@ -371,6 +384,7 @@ Make sure CMSIS Developer Assistant is registered in your AI assistant's MCP set
   - Verify extension is installed and activated
 
 #### CMSIS `gdbtarget` Session Fails to Launch
+
 - **Symptom**: `start_debugging` returns an error when `configurationName` is a `gdbtarget` config
 - **Solution**:
   - Verify the named configuration exists in `.vscode/launch.json`
@@ -382,7 +396,7 @@ Make sure CMSIS Developer Assistant is registered in your AI assistant's MCP set
 
 ### Architecture
 
-```
+```text
 AI Agent ──MCP/HTTP──► :3001  VS Code window A  (router)
                                 │
                                 ├── runs the tool here, or forwards it ──┐
@@ -415,12 +429,12 @@ publishes itself — workspace folders, whether it is debugging, its CMSIS
 solution — to a shared registry under the OS temp directory.
 
 ### Launch Configuration Integration
+
 The extension handles debug configurations intelligently:
 
 - **Named configuration passthrough**: When `start_debugging` is called with `configurationName`, CMSIS Developer Assistant resolves the entry from `.vscode/launch.json` and passes it directly to `vscode.debug.startDebugging()` — no language detection, no config rewriting. This is how `gdbtarget`/CMSIS configs are launched.
 - **Existing launch.json**: If a `.vscode/launch.json` exists and no `configurationName` is given, a matching configuration is chosen based on the source file's language.
 - **Default configuration**: If no launch.json exists and no `configurationName` is given, an appropriate default configuration is synthesized per language based on file-extension detection.
-
 
 ## Requirements
 
