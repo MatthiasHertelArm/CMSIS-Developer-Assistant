@@ -571,8 +571,9 @@
             }
           },
           "annotations": {
-            "readOnlyHint": true,
-            "destructiveHint": false
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -2165,8 +2166,9 @@
             }
           },
           "annotations": {
-            "readOnlyHint": true,
-            "destructiveHint": false
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -3199,8 +3201,9 @@
             }
           },
           "annotations": {
-            "readOnlyHint": true,
-            "destructiveHint": false
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -5302,8 +5305,9 @@
             }
           },
           "annotations": {
-            "readOnlyHint": true,
-            "destructiveHint": false
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -7050,8 +7054,9 @@
             }
           },
           "annotations": {
-            "readOnlyHint": true,
-            "destructiveHint": false
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": true
           },
           "execution": {
             "taskSupport": "forbidden"

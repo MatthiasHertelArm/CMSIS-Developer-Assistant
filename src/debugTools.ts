@@ -339,6 +339,12 @@ const TIMEOUT_ONLY = { timeoutMs: CALL_TIMEOUT };
 const LOOK_ONLY: ToolAnnotations = { readOnlyHint: true, destructiveHint: false };
 /** Changes the target irreversibly: a reset, a reprogrammed flash. */
 const ALTERS_TARGET: ToolAnnotations = { readOnlyHint: false, destructiveHint: true };
+/**
+ * Writes a setting on the target that nothing depends on being off, and a
+ * repeat changes nothing more: read_cycle_counter enables DWT and CYCCNT
+ * (DEMCR.TRCENA, DWT_CTRL.CYCCNTENA).
+ */
+const SETS_UP_TARGET: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: true };
 
 /**
  * The MCP result of a handler's outcome: one text item, plus `structuredContent`
@@ -594,8 +600,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     }, (args) => debug.handleReadMemory(args).then(reply));
     mcp.registerTool('read_core_registers', { description: ABOUT.read_core_registers, inputSchema: TIMEOUT_ONLY, annotations: LOOK_ONLY },
         (args) => debug.handleReadCoreRegisters(args).then(reply));
-    // Marked read-only although the first call enables DWT/CYCCNT (it writes DEMCR and DWT_CTRL).
-    mcp.registerTool('read_cycle_counter', { description: ABOUT.read_cycle_counter, inputSchema: TIMEOUT_ONLY, annotations: LOOK_ONLY },
+    mcp.registerTool('read_cycle_counter', { description: ABOUT.read_cycle_counter, inputSchema: TIMEOUT_ONLY, annotations: SETS_UP_TARGET },
         (args) => debug.handleReadCycleCounter(args).then(reply));
     mcp.registerTool('read_peripheral_register', {
         description: ABOUT.read_peripheral_register,
