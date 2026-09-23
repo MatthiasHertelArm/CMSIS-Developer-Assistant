@@ -311,7 +311,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -486,8 +486,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -495,7 +545,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -516,7 +566,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -691,8 +741,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -700,7 +800,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "appdata/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
@@ -721,7 +821,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -896,8 +996,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -905,7 +1055,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -926,7 +1076,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -1101,8 +1251,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -1110,7 +1310,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -1131,7 +1331,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -1306,8 +1506,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -1315,7 +1565,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -1336,7 +1586,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -1511,8 +1761,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -1520,7 +1820,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "appdata/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
@@ -1542,7 +1842,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -1717,8 +2017,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "<w>/claude-config/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "<w>/codex-home/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "<w>/copilot-home/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "<w>/claude-config/CLAUDE.md",
+            "<w>/codex-home/AGENTS.md",
+            "<w>/copilot-home/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -1726,7 +2076,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "codex-home/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
@@ -1748,7 +2098,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -1923,8 +2273,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -1932,7 +2332,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -1953,7 +2353,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -2128,8 +2528,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -2137,7 +2587,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"numStartups\": 3,\n  \"projects\": {\n    \"/p\": {\n      \"allowedTools\": [],\n      \"history\": [\n        \"x\"\n      ]\n    }\n  },\n  \"mcpServers\": {\n    \"other\": {\n      \"type\": \"stdio\",\n      \"command\": \"x\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"userID\": \"abc\"\n}",
@@ -2159,7 +2609,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -2334,8 +2784,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -2343,7 +2843,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"numStartups\": 1,\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -2364,7 +2864,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -2539,8 +3039,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -2548,7 +3098,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -2570,7 +3120,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -2700,8 +3250,58 @@
           "message": "Cannot configure Claude Desktop: <w>/home/Library/Application Support/Claude/claude_desktop_config.json exists but is not valid JSON. Please fix or remove the file and try again."
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -2709,7 +3309,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -2731,7 +3331,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -2888,8 +3488,58 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -2897,7 +3547,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -2919,7 +3569,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -3001,13 +3651,42 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "<unchanged seed>",
@@ -3023,7 +3702,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -3142,13 +3821,42 @@
           ]
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.codex/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
@@ -3165,7 +3873,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -3340,13 +4048,63 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
@@ -3367,7 +4125,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -3444,13 +4202,42 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.codex/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n\n[other]\nk = 1\n"
@@ -3464,7 +4251,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -3541,13 +4328,42 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.codex/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.codex/config.toml": "[mcp_servers.\"cmsis-developer-assistant\"]\nurl = \"http://localhost:9999/mcp\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n"
@@ -3561,7 +4377,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -3638,13 +4454,42 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.codex/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.codex/config.toml": "model = \"x\"\n  [mcp_servers.cmsis-developer-assistant]  # ours\nurl = \"http://localhost:3001/mcp\"\nurls = \"x\"\n# url = \"y\"\n\n[mcp_servers.cmsis-developer-assistant.env]\nurl = \"keep\"\n"
@@ -3658,7 +4503,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -3735,13 +4580,42 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.codex/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.codex/config.toml": "model = \"x\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n"
@@ -4318,7 +5192,7 @@
       "events": [],
       "result": false,
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {},
       "emptyDirs": [
@@ -4330,7 +5204,7 @@
       "events": [
         {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": false
         },
         {
@@ -4344,7 +5218,7 @@
         "after": true
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": false
+        "cmsis-developer-assistant.popupShown.v4": false
       },
       "files": {},
       "emptyDirs": [
@@ -4360,7 +5234,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -4462,7 +5336,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for this user",
+          "title": "CMSIS Developer Assistant Setup (2/3) - Choose Agent Skills to Install for this user",
           "placeholder": "Select the AI Skills Pack skills to install into your personal skills directories (always installed: fx-bundled-a, fx-bundled-b, fx-help; Esc keeps the current selection)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -4590,8 +5464,37 @@
           "message": "CMSIS Developer Assistant: 5 skill(s) (+3 required, hidden) installed for this user into ~/.agents/skills, ~/.claude/skills; 0 removed."
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (3/3) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.codex/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -4599,7 +5502,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
@@ -4646,7 +5549,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -4711,7 +5614,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for this user",
+          "title": "CMSIS Developer Assistant Setup (2/3) - Choose Agent Skills to Install for this user",
           "placeholder": "Select the AI Skills Pack skills to install into your personal skills directories (always installed: fx-bundled-a, fx-bundled-b, fx-help; Esc keeps the current selection)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -4773,7 +5676,7 @@
         },
         {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -4781,7 +5684,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {},
       "emptyDirs": [
@@ -4797,7 +5700,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -4863,7 +5766,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for this user",
+          "title": "CMSIS Developer Assistant Setup (2/3) - Choose Agent Skills to Install for this user",
           "placeholder": "Select the AI Skills Pack skills to install into your personal skills directories (always installed: fx-bundled-a, fx-bundled-b, fx-help; Esc keeps the current selection)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -4966,12 +5869,12 @@
         },
         {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
@@ -4990,7 +5893,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -5068,12 +5971,12 @@
         },
         {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -5091,7 +5994,7 @@
         },
         {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
@@ -5099,7 +6002,7 @@
         "shouldShowPopupAfter": false
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {},
       "emptyDirs": [
@@ -5115,7 +6018,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -5178,7 +6081,7 @@
         {
           "ev": "showQuickPick",
           "options": {
-            "title": "CMSIS Developer Assistant Setup (2/2) - Where to Install Agent Skills",
+            "title": "CMSIS Developer Assistant Setup (2/3) - Where to Install Agent Skills",
             "placeHolder": "Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace",
             "ignoreFocusOut": true
           },
@@ -5206,7 +6109,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for the \"wsB\" workspace folder",
+          "title": "CMSIS Developer Assistant Setup (2/3) - Choose Agent Skills to Install for the \"wsB\" workspace folder",
           "placeholder": "Select the AI Skills Pack skills to install into wsB/.agents/skills (the extension's own skills stay in your personal directories; Esc keeps the current selection)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -5377,13 +6280,50 @@
           "message": "CMSIS Developer Assistant: 1 skill(s) (+2 required, hidden) installed for the \"wsB\" workspace folder into <w>/wsB/.agents/skills; 0 removed."
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (3/3) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            },
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsB"
+            },
+            {
+              "label": "wsB/AGENTS.md",
+              "description": "VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
@@ -5415,7 +6355,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -5478,7 +6418,7 @@
         {
           "ev": "showQuickPick",
           "options": {
-            "title": "CMSIS Developer Assistant Setup (2/2) - Where to Install Agent Skills",
+            "title": "CMSIS Developer Assistant Setup (2/3) - Where to Install Agent Skills",
             "placeHolder": "Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace",
             "ignoreFocusOut": true
           },
@@ -5501,7 +6441,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for the \"wsA\" workspace folder",
+          "title": "CMSIS Developer Assistant Setup (2/3) - Choose Agent Skills to Install for the \"wsA\" workspace folder",
           "placeholder": "Select the AI Skills Pack skills to install into wsA/.agents/skills (the extension's own skills stay in your personal directories; Esc keeps the current selection)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -5653,13 +6593,40 @@
           "message": "CMSIS Developer Assistant: 2 skill(s) (+3 required, hidden) installed for the \"wsA\" workspace folder into <w>/wsA/.agents/skills, <w>/wsA/.claude/skills; 0 removed."
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (3/3) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
@@ -5690,6 +6657,1891 @@
         "wsA/.claude/skills/fx-gamma/SKILL.md": "<fixture SKILL.md>",
         "wsA/.claude/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "wsA/.claude/skills/fx-router/SKILL.md": "<fixture SKILL.md>"
+      }
+    },
+    {
+      "id": "agents/rules-user-files-written",
+      "about": "Claude Code and Codex set up: their user files are preselected, each shown as a diff and written on Write",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Codex",
+            "$(add) Set up Claude Code"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.codex/config.toml",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.claude.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "The rules go at the end; the rest of the file stays as it is.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md"
+          ],
+          "action": "accept",
+          "chosen": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri cmsis-developer-assistant-rules:/1/empty/CLAUDE.md>",
+            "<uri cmsis-developer-assistant-rules:/1/CLAUDE.md>",
+            "CLAUDE.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "",
+            "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Create ~/.claude/CLAUDE.md with the CMSIS Developer Assistant tool rules?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Claude Code. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.claude/CLAUDE.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.claude/CLAUDE.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "claude-code"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/home/.claude"
+              ]
+            }
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/home/.codex/AGENTS.md>",
+            "<uri cmsis-developer-assistant-rules:/2/AGENTS.md>",
+            "AGENTS.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "# My Codex notes\n\nUse tabs.\n",
+            "# My Codex notes\n\nUse tabs.\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Add the CMSIS Developer Assistant tool rules to ~/.codex/AGENTS.md?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Codex. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.codex/AGENTS.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.claude/CLAUDE.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "claude-code"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/home/.claude"
+              ]
+            },
+            {
+              "file": "<w>/home/.codex/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: the tool rules were written to 2 file(s)."
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v4",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/home/.claude/CLAUDE.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "claude-code"
+            ],
+            "created": true,
+            "createdDirs": [
+              "<w>/home/.claude"
+            ]
+          },
+          {
+            "file": "<w>/home/.codex/AGENTS.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          }
+        ],
+        "cmsis-developer-assistant.popupShown.v4": true
+      },
+      "files": {
+        "home/.claude/CLAUDE.md": "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+        "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.codex/AGENTS.md": "# My Codex notes\n\nUse tabs.\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+        "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n"
+      }
+    },
+    {
+      "id": "agents/rules-preview-declined",
+      "about": "the diff is shown and the dialog dismissed: no rule file is written",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Claude Code"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.claude.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md"
+          ],
+          "action": "accept",
+          "chosen": [
+            "~/.claude/CLAUDE.md"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri cmsis-developer-assistant-rules:/1/empty/CLAUDE.md>",
+            "<uri cmsis-developer-assistant-rules:/1/CLAUDE.md>",
+            "CLAUDE.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "",
+            "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Create ~/.claude/CLAUDE.md with the CMSIS Developer Assistant tool rules?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Claude Code. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v4",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v4": true
+      },
+      "files": {
+        "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/rules-shared-agents-md",
+      "about": "the workspace AGENTS.md of Codex, Copilot CLI, Antigravity and Copilot Chat is one item, written once; the user files unchecked",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Antigravity",
+            "$(add) Set up GitHub Copilot CLI",
+            "$(add) Set up Codex"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/antigravity/mcp_config.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.copilot/mcp-config.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with GitHub Copilot CLI.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.codex/config.toml",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.copilot/copilot-instructions.md",
+              "description": "GitHub Copilot CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.gemini/AGENTS.md",
+              "description": "Antigravity",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "Codex, GitHub Copilot CLI, Antigravity, VS Code Copilot Chat",
+              "detail": "The rules go at the end; the rest of the file stays as it is.",
+              "picked": false
+            }
+          ],
+          "selected": [
+            "~/.codex/AGENTS.md",
+            "~/.copilot/copilot-instructions.md",
+            "~/.gemini/AGENTS.md"
+          ],
+          "action": "accept",
+          "chosen": [
+            "wsA/AGENTS.md"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/wsA/AGENTS.md>",
+            "<uri cmsis-developer-assistant-rules:/1/AGENTS.md>",
+            "AGENTS.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "# Team rules\n",
+            "# Team rules\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Add the CMSIS Developer Assistant tool rules to wsA/AGENTS.md?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Codex, GitHub Copilot CLI, Antigravity, VS Code Copilot Chat. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/wsA/AGENTS.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/wsA/AGENTS.md",
+              "scope": "workspace",
+              "form": "block",
+              "agents": [
+                "codex",
+                "copilot-cli",
+                "antigravity",
+                "copilot-chat"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: the tool rules were written to 1 file(s)."
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v4",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/wsA/AGENTS.md",
+            "scope": "workspace",
+            "form": "block",
+            "agents": [
+              "codex",
+              "copilot-cli",
+              "antigravity",
+              "copilot-chat"
+            ],
+            "created": false,
+            "createdDirs": []
+          }
+        ],
+        "cmsis-developer-assistant.popupShown.v4": true
+      },
+      "files": {
+        "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "wsA/AGENTS.md": "# Team rules\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+      }
+    },
+    {
+      "id": "agents/rules-workspace-own-files",
+      "about": "Cursor, Cline and Roo Code get files of their own, Claude Code the project CLAUDE.md it reads; skills step on (3 steps)",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Roo Code",
+            "$(add) Set up Cline",
+            "$(add) Set up Cursor",
+            "$(add) Set up Claude Code"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Roo Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Cline.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.cursor/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Cursor.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.claude.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "showQuickPick",
+          "options": {
+            "title": "CMSIS Developer Assistant Setup (2/3) - Where to Install Agent Skills",
+            "placeHolder": "Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace",
+            "ignoreFocusOut": true
+          },
+          "items": [
+            {
+              "label": "$(root-folder) This workspace only",
+              "description": "wsA/.agents/skills",
+              "detail": "Recommended: the agent loads them only in this project, so other projects' context stays lean — no selection yet"
+            },
+            {
+              "label": "$(account) This user",
+              "description": "~/.agents/skills",
+              "detail": "Every workspace on this machine — every agent session carries them — 0 pack skills selected"
+            }
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (3/3) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "The rules go at the end; the rest of the file stays as it is.",
+              "picked": false
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            },
+            {
+              "label": "wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+              "description": "Cursor",
+              "detail": "New file of its own, holding the rules only.",
+              "picked": false
+            },
+            {
+              "label": "wsA/.clinerules/cmsis-developer-assistant.md",
+              "description": "Cline",
+              "detail": "New file of its own, holding the rules only.",
+              "picked": false
+            },
+            {
+              "label": "wsA/.roo/rules/cmsis-developer-assistant.md",
+              "description": "Roo Code",
+              "detail": "New file of its own, holding the rules only.",
+              "picked": false
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md"
+          ],
+          "action": "accept",
+          "chosen": [
+            "wsA/CLAUDE.md",
+            "wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+            "wsA/.clinerules/cmsis-developer-assistant.md",
+            "wsA/.roo/rules/cmsis-developer-assistant.md"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/wsA/CLAUDE.md>",
+            "<uri cmsis-developer-assistant-rules:/1/CLAUDE.md>",
+            "CLAUDE.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "# Project notes\n",
+            "# Project notes\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Add the CMSIS Developer Assistant tool rules to wsA/CLAUDE.md?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Claude Code. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/wsA/CLAUDE.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/wsA/CLAUDE.md",
+              "scope": "workspace",
+              "form": "block",
+              "agents": [
+                "claude-code"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri cmsis-developer-assistant-rules:/2/empty/cmsis-developer-assistant.mdc>",
+            "<uri cmsis-developer-assistant-rules:/2/cmsis-developer-assistant.mdc>",
+            "cmsis-developer-assistant.mdc: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "",
+            "---\ndescription: CMSIS Developer Assistant tool rules\nalwaysApply: true\n---\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Create wsA/.cursor/rules/cmsis-developer-assistant.mdc with the CMSIS Developer Assistant tool rules?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Cursor. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/wsA/CLAUDE.md",
+              "scope": "workspace",
+              "form": "block",
+              "agents": [
+                "claude-code"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "cursor"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/wsA/.cursor",
+                "<w>/wsA/.cursor/rules"
+              ]
+            }
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri cmsis-developer-assistant-rules:/3/empty/cmsis-developer-assistant.md>",
+            "<uri cmsis-developer-assistant-rules:/3/cmsis-developer-assistant.md>",
+            "cmsis-developer-assistant.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "",
+            "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Create wsA/.clinerules/cmsis-developer-assistant.md with the CMSIS Developer Assistant tool rules?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Cline. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/wsA/.clinerules/cmsis-developer-assistant.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/wsA/CLAUDE.md",
+              "scope": "workspace",
+              "form": "block",
+              "agents": [
+                "claude-code"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "cursor"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/wsA/.cursor",
+                "<w>/wsA/.cursor/rules"
+              ]
+            },
+            {
+              "file": "<w>/wsA/.clinerules/cmsis-developer-assistant.md",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "cline"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/wsA/.clinerules"
+              ]
+            }
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri cmsis-developer-assistant-rules:/4/empty/cmsis-developer-assistant.md>",
+            "<uri cmsis-developer-assistant-rules:/4/cmsis-developer-assistant.md>",
+            "cmsis-developer-assistant.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "",
+            "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Create wsA/.roo/rules/cmsis-developer-assistant.md with the CMSIS Developer Assistant tool rules?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Roo Code. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/wsA/.roo/rules/cmsis-developer-assistant.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/wsA/CLAUDE.md",
+              "scope": "workspace",
+              "form": "block",
+              "agents": [
+                "claude-code"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "cursor"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/wsA/.cursor",
+                "<w>/wsA/.cursor/rules"
+              ]
+            },
+            {
+              "file": "<w>/wsA/.clinerules/cmsis-developer-assistant.md",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "cline"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/wsA/.clinerules"
+              ]
+            },
+            {
+              "file": "<w>/wsA/.roo/rules/cmsis-developer-assistant.md",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "roo"
+              ],
+              "created": true,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: the tool rules were written to 4 file(s)."
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v4",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/wsA/CLAUDE.md",
+            "scope": "workspace",
+            "form": "block",
+            "agents": [
+              "claude-code"
+            ],
+            "created": false,
+            "createdDirs": []
+          },
+          {
+            "file": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+            "scope": "workspace",
+            "form": "own",
+            "agents": [
+              "cursor"
+            ],
+            "created": true,
+            "createdDirs": [
+              "<w>/wsA/.cursor",
+              "<w>/wsA/.cursor/rules"
+            ]
+          },
+          {
+            "file": "<w>/wsA/.clinerules/cmsis-developer-assistant.md",
+            "scope": "workspace",
+            "form": "own",
+            "agents": [
+              "cline"
+            ],
+            "created": true,
+            "createdDirs": [
+              "<w>/wsA/.clinerules"
+            ]
+          },
+          {
+            "file": "<w>/wsA/.roo/rules/cmsis-developer-assistant.md",
+            "scope": "workspace",
+            "form": "own",
+            "agents": [
+              "roo"
+            ],
+            "created": true,
+            "createdDirs": []
+          }
+        ],
+        "cmsis-developer-assistant.popupShown.v4": true
+      },
+      "files": {
+        "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "wsA/.clinerules/cmsis-developer-assistant.md": "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+        "wsA/.cursor/rules/cmsis-developer-assistant.mdc": "---\ndescription: CMSIS Developer Assistant tool rules\nalwaysApply: true\n---\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+        "wsA/.roo/rules/cmsis-developer-assistant.md": "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+        "wsA/.roo/rules/style.md": "<unchanged seed>",
+        "wsA/CLAUDE.md": "# Project notes\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+      }
+    },
+    {
+      "id": "agents/rules-remove",
+      "about": "files that have the rules open checked; unchecking takes them out on Remove, deleting what was made for them",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "Has the current tool rules. Uncheck to take them out.",
+              "picked": true
+            },
+            {
+              "label": "~/.codex/AGENTS.md",
+              "description": "Codex",
+              "detail": "Has the current tool rules. Uncheck to take them out.",
+              "picked": true
+            },
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            },
+            {
+              "label": "wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+              "description": "Cursor",
+              "detail": "Has the current tool rules. Uncheck to take them out.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md",
+            "~/.codex/AGENTS.md",
+            "wsA/.cursor/rules/cmsis-developer-assistant.mdc"
+          ],
+          "action": "accept",
+          "chosen": [],
+          "disposed": true
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/home/.claude/CLAUDE.md>",
+            "<uri cmsis-developer-assistant-rules:/1/CLAUDE.md>",
+            "CLAUDE.md: now ↔ without the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+            ""
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Take the CMSIS Developer Assistant tool rules out of ~/.claude/CLAUDE.md and delete the file?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Claude Code. The diff editor shows the change; nothing is written unless you choose Remove. The file holds nothing else and is deleted."
+          },
+          "items": [
+            "Remove"
+          ],
+          "answer": "Remove"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/.claude/CLAUDE.md"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/.claude"
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.codex/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "cursor"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/wsA/.cursor",
+                "<w>/wsA/.cursor/rules"
+              ]
+            }
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/home/.codex/AGENTS.md>",
+            "<uri cmsis-developer-assistant-rules:/2/AGENTS.md>",
+            "AGENTS.md: now ↔ without the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "# Mine\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+            "# Mine\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Take the CMSIS Developer Assistant tool rules out of ~/.codex/AGENTS.md?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Codex. The diff editor shows the change; nothing is written unless you choose Remove."
+          },
+          "items": [
+            "Remove"
+          ],
+          "answer": "Remove"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.codex/AGENTS.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc",
+              "scope": "workspace",
+              "form": "own",
+              "agents": [
+                "cursor"
+              ],
+              "created": true,
+              "createdDirs": [
+                "<w>/wsA/.cursor",
+                "<w>/wsA/.cursor/rules"
+              ]
+            }
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc>",
+            "<uri cmsis-developer-assistant-rules:/3/cmsis-developer-assistant.mdc>",
+            "cmsis-developer-assistant.mdc: now ↔ without the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "---\ndescription: CMSIS Developer Assistant tool rules\nalwaysApply: true\n---\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+            ""
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Take the CMSIS Developer Assistant tool rules out of wsA/.cursor/rules/cmsis-developer-assistant.mdc and delete the file?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Cursor. The diff editor shows the change; nothing is written unless you choose Remove. The file holds nothing else and is deleted."
+          },
+          "items": [
+            "Remove"
+          ],
+          "answer": "Remove"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/wsA/.cursor/rules/cmsis-developer-assistant.mdc"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/wsA/.cursor/rules"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/wsA/.cursor"
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": []
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: the tool rules were taken out of 3 file(s)."
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v4",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.agentRules.files": [],
+        "cmsis-developer-assistant.popupShown.v4": true
+      },
+      "files": {
+        "home/.codex/AGENTS.md": "# Mine\n"
+      },
+      "emptyDirs": [
+        "wsA"
+      ],
+      "removedSeeds": [
+        "home/.claude/CLAUDE.md",
+        "wsA/.cursor/rules/cmsis-developer-assistant.mdc"
+      ]
+    },
+    {
+      "id": "agents/rules-never",
+      "about": "agentRules.install \"never\": the setup has no rules step",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Claude Code"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.claude.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v4",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v4": true
+      },
+      "files": {
+        "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/rules-no-contract",
+      "about": "the tool contract cannot be read: the step is skipped, the setup still counts as answered",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Claude Code"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.claude.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v4",
+          "value": true
+        }
+      ],
+      "result": {
+        "shouldShowPopupAfter": false
+      },
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v4": true
+      },
+      "files": {
+        "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/rules-refresh",
+      "about": "activation: a recorded stale block is updated in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left",
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/.codex/AGENTS.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.codex/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/home/.claude/CLAUDE.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/home/.codex/AGENTS.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          },
+          {
+            "file": "<w>/home/.claude/CLAUDE.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          }
+        ]
+      },
+      "files": {
+        "home/.claude/CLAUDE.md": "<unchanged seed>",
+        "home/.codex/AGENTS.md": "# Before\r\n\r\n<!-- cmsis-developer-assistant:rules:begin -->\r\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agents and Skills\", or delete the block with its markers. -->\r\n## CMSIS Developer Assistant tool rules\r\n\r\n- Fixture rule one.\r\n- Fixture rule two.\r\n<!-- cmsis-developer-assistant:rules:end -->\r\n\r\n# After\r\n",
+        "home/.gemini/AGENTS.md": "<unchanged seed>",
+        "wsA/AGENTS.md": "<unchanged seed>"
+      }
+    },
+    {
+      "id": "agents/rules-refresh-never",
+      "about": "agentRules.install \"never\": activation leaves a recorded stale block alone",
+      "events": [],
+      "globalState": {
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/home/.codex/AGENTS.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          }
+        ]
+      },
+      "files": {
+        "home/.codex/AGENTS.md": "<unchanged seed>"
       }
     },
     {
@@ -5818,7 +8670,7 @@
         "maybePromptForSkills": "<undefined>"
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "<unchanged seed>",
@@ -6749,7 +9601,7 @@
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1700000000000
       },
       "files": {
@@ -6783,7 +9635,7 @@
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1700000000000
       },
       "files": {
@@ -6811,7 +9663,7 @@
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1700000000000
       },
       "files": {
@@ -6839,7 +9691,7 @@
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1700000000000
       },
       "files": {
@@ -6860,7 +9712,7 @@
       "id": "agents/nudge-snoozed",
       "events": [],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1699913600000
       },
       "files": {
@@ -6888,7 +9740,7 @@
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1700000000000
       },
       "files": {
@@ -6900,7 +9752,7 @@
       "id": "agents/nudge-no-agent",
       "events": [],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
@@ -6910,7 +9762,7 @@
       "id": "agents/nudge-already-selected",
       "events": [],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "<unchanged seed>",
@@ -6940,7 +9792,7 @@
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1700000000000
       },
       "files": {
@@ -6952,7 +9804,7 @@
       "id": "agents/nudge-disabled",
       "events": [],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "<unchanged seed>",
@@ -6963,7 +9815,7 @@
       "id": "agents/nudge-pack-disabled",
       "events": [],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "<unchanged seed>",
@@ -6974,7 +9826,7 @@
       "id": "agents/nudge-host-managed",
       "events": [],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.claude.json": "<unchanged seed>",
@@ -7002,7 +9854,7 @@
         }
       ],
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": 1700000000000
       },
       "files": {
@@ -8464,6 +11316,12 @@
             "scope": "application"
           },
           {
+            "key": "cmsis-developer-assistant.agentRules.install",
+            "type": "string",
+            "default": "ask",
+            "scope": "application"
+          },
+          {
             "key": "cmsis-developer-assistant.redactSecrets",
             "type": "boolean",
             "default": true
@@ -8794,6 +11652,16 @@
         {
           "ev": "settled",
           "fn": "manager.migrateExistingConfigurations",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.refreshAgentRules",
+          "args": []
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
           "value": "<undefined>"
         },
         {
@@ -9164,7 +12032,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -9243,7 +12111,7 @@
         {
           "ev": "showQuickPick",
           "options": {
-            "title": "CMSIS Developer Assistant Setup (2/2) - Where to Install Agent Skills",
+            "title": "CMSIS Developer Assistant Setup (2/3) - Where to Install Agent Skills",
             "placeHolder": "Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace",
             "ignoreFocusOut": true
           },
@@ -9266,7 +12134,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for this user",
+          "title": "CMSIS Developer Assistant Setup (2/3) - Choose Agent Skills to Install for this user",
           "placeholder": "Select the AI Skills Pack skills to install into your personal skills directories (always installed: fx-bundled-a, fx-bundled-b, fx-help; Esc keeps the current selection)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -9390,8 +12258,53 @@
           "message": "CMSIS Developer Assistant: 3 skill(s) installed for this user into ~/.agents/skills; 0 removed."
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (3/3) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "Claude Code, VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            },
+            {
+              "label": "wsA/.clinerules/cmsis-developer-assistant.md",
+              "description": "Cline",
+              "detail": "New file of its own, holding the rules only.",
+              "picked": false
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         },
         {
@@ -9410,7 +12323,7 @@
         },
         {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": false
         },
         {
@@ -9441,7 +12354,7 @@
         },
         {
           "ev": "quickPick",
-          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "title": "CMSIS Developer Assistant Setup (1/3) - Connect AI Agents to the MCP Server",
           "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
           "canSelectMany": true,
           "ignoreFocusOut": true,
@@ -9504,7 +12417,7 @@
         {
           "ev": "showQuickPick",
           "options": {
-            "title": "CMSIS Developer Assistant Setup (2/2) - Where to Install Agent Skills",
+            "title": "CMSIS Developer Assistant Setup (2/3) - Where to Install Agent Skills",
             "placeHolder": "Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace",
             "ignoreFocusOut": true
           },
@@ -9523,8 +12436,53 @@
           "answer": "<dismissed>"
         },
         {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (3/3) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "description": "Claude Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "Claude Code, VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            },
+            {
+              "label": "wsA/.clinerules/cmsis-developer-assistant.md",
+              "description": "Cline",
+              "detail": "New file of its own, holding the rules only.",
+              "picked": false
+            }
+          ],
+          "selected": [
+            "~/.claude/CLAUDE.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
           "ev": "globalState",
-          "key": "cmsis-developer-assistant.popupShown.v3",
+          "key": "cmsis-developer-assistant.popupShown.v4",
           "value": true
         },
         {
@@ -9737,7 +12695,7 @@
         }
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
@@ -10010,6 +12968,16 @@
           "value": "<undefined>"
         },
         {
+          "ev": "call",
+          "fn": "manager.refreshAgentRules",
+          "args": []
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
+        },
+        {
           "ev": "subscribe",
           "event": "workspace.onDidChangeConfiguration"
         },
@@ -10243,7 +13211,7 @@
         }
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true,
+        "cmsis-developer-assistant.popupShown.v4": true,
         "cmsis-developer-assistant.skillsPrompt.lastShownAt": "<Date.now()>"
       },
       "files": {
@@ -10468,6 +13436,16 @@
         {
           "ev": "settled",
           "fn": "manager.migrateExistingConfigurations",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.refreshAgentRules",
+          "args": []
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
           "value": "<undefined>"
         },
         {
@@ -11132,6 +14110,16 @@
           "value": "<undefined>"
         },
         {
+          "ev": "call",
+          "fn": "manager.refreshAgentRules",
+          "args": []
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
+        },
+        {
           "ev": "subscribe",
           "event": "workspace.onDidChangeConfiguration"
         },
@@ -11349,7 +14337,7 @@
         }
       },
       "globalState": {
-        "cmsis-developer-assistant.popupShown.v3": true
+        "cmsis-developer-assistant.popupShown.v4": true
       },
       "files": {
         "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",

@@ -148,6 +148,20 @@
           "scope": "application",
           "markdownDescription": "Prompt to install the CMSIS AI Skills for selected agents — the agents that have the CMSIS Developer Assistant MCP server registered — at most once a month, until you add a skill from the pack. *Don't ask again* in the prompt turns this off."
         },
+        "cmsis-developer-assistant.agentRules.install": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "never"
+          ],
+          "enumDescriptions": [
+            "The setup offers to add the tool rules to your agents' rule files, and blocks written earlier are kept up to date.",
+            "The setup never offers it, and no rule file is touched."
+          ],
+          "default": "ask",
+          "scope": "application",
+          "markdownDescription": "Whether **CMSIS Developer Assistant: Configure Agents and Skills** — also the first-run setup — offers to add the tool rules, which keep agents on the MCP tools instead of `pyocd`, `gdb` or `cbuild` in a shell, to your agents' rule files: `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and `~/.copilot/copilot-instructions.md` (preselected), or a workspace's `AGENTS.md`, `CLAUDE.md` and the rule folders of Cursor, Cline and Roo Code. Every change is shown as a diff and written only when you confirm it; the rules sit between `cmsis-developer-assistant:rules` marker comments and nothing else in the file changes. On activation, a block written earlier is brought up to date with the current rules, never created. `never`: the setup skips the step and no rule file is touched."
+        },
         "cmsis-developer-assistant.redactSecrets": {
           "type": "boolean",
           "default": true,

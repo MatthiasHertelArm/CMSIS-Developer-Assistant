@@ -237,6 +237,7 @@ function newState() {
         context: undefined,
         packDocs: undefined,
         failStart: false,
+        contentProviders: new Map(),
     };
 }
 
@@ -466,6 +467,13 @@ function decideQuickPick(state) {
         if (s === 'keep') { return { keep: true }; }
         return { accept: (it) => s.includes(skillNameOf(it)) };
     }
+    if (/Rule Files/i.test(title)) {
+        // 'keep' accepts the checks as the picker opens; a list keeps the items whose label contains one of its strings.
+        const r = val(S.ui.rules);
+        if (r === null || r === undefined) { return null; }
+        if (r === 'keep') { return { keep: true }; }
+        return { accept: (it) => r.some((needle) => it.label.includes(needle)) };
+    }
     return null;
 }
 
@@ -556,6 +564,16 @@ function createQuickPick() {
     return qp;
 }
 
+/** The text a diff side shows: a virtual document through its content provider, a file from the disk. */
+function documentText(uri) {
+    const provider = uri && S.contentProviders.get(uri.scheme);
+    if (provider) { return provider.provideTextDocumentContent(uri); }
+    if (uri && uri.scheme === 'file') {
+        try { return fs.readFileSync(uri.fsPath, 'utf8'); } catch { return '<no file>'; }
+    }
+    return '<unknown document>';
+}
+
 // --- the API object ------------------------------------------------------------
 
 const api = {
@@ -603,6 +621,11 @@ const api = {
         },
         onDidChangeConfiguration: event('workspace.onDidChangeConfiguration'),
         onDidChangeWorkspaceFolders: event('workspace.onDidChangeWorkspaceFolders'),
+        registerTextDocumentContentProvider(scheme, provider) {
+            emit({ ev: 'registerTextDocumentContentProvider', scheme });
+            S.contentProviders.set(scheme, provider);
+            return disposable(`textDocumentContentProvider:${scheme}`);
+        },
         async openTextDocument(target) {
             const p = typeof target === 'string' ? target : target.fsPath;
             let text;
@@ -626,7 +649,9 @@ const api = {
             return disposable(`command:${id}`);
         },
         async executeCommand(id, ...args) {
-            emit({ ev: 'executeCommand', id, args: args.map(explicit) });
+            const ev = { ev: 'executeCommand', id, args: args.map(explicit) };
+            if (id === 'vscode.diff') { ev.shows = args.slice(0, 2).map(documentText); }
+            emit(ev);
             return val(S.ui.command, id, args);
         },
         getCommands: async () => [...S.commands.keys()],
@@ -947,7 +972,26 @@ function writeFixtureExtension() {
     const catalog = { schemaVersion: 1, source: { repository: 'https://example.invalid/cmsis-skills.git', sha: 'f1x7u4e0000000000000000000000000000000000', sourcePath: 'skills' }, skills };
     fs.mkdirSync(path.join(EXT, 'skills'), { recursive: true });
     fs.writeFileSync(path.join(EXT, 'skills', 'catalog.json'), JSON.stringify(catalog, null, 2) + '\n');
+    fs.mkdirSync(path.join(EXT, 'docs', 'agent-resources'), { recursive: true });
+    fs.writeFileSync(path.join(EXT, 'docs', 'agent-resources', 'tool-contract.md'), FIXTURE_CONTRACT);
 }
+
+/** The fixture's tool contract: short rules, so that the rule files in the record stay readable. */
+const FIXTURE_RULES = '## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.';
+const FIXTURE_CONTRACT = [
+    '# Fixture tool contract',
+    '',
+    '<!-- cmsis-developer-assistant:rules:begin -->',
+    FIXTURE_RULES,
+    '<!-- cmsis-developer-assistant:rules:end -->',
+    '',
+    '<!-- cmsis-developer-assistant:shell-to-tool:begin -->',
+    '| Instead of | Use |',
+    '|---|---|',
+    '| `pyocd load` | `flash` |',
+    '<!-- cmsis-developer-assistant:shell-to-tool:end -->',
+    '',
+].join('\n');
 
 /** A skill directory this extension installed earlier (it carries the marker). */
 function installedSkill(root, name, hidden = false) {
@@ -1066,7 +1110,7 @@ function instrumentManager(mod) {
             super(context, timeoutInSeconds, serverPort);
         }
     }
-    for (const name of ['syncSkills', 'migrateExistingConfigurations', 'updatePort', 'shouldShowPopup', 'runSetupFlow',
+    for (const name of ['syncSkills', 'migrateExistingConfigurations', 'refreshAgentRules', 'updatePort', 'shouldShowPopup', 'runSetupFlow',
         'maybePromptForSkills', 'resetPopupState', 'showSkillSelectionDialog']) {
         const orig = Base.prototype[name];
         if (typeof orig !== 'function') { continue; }   // not a prototype method: calls go unrecorded, the diff shows it
@@ -1205,7 +1249,7 @@ async function runScenario(def) {
             }
         }
     }
-    for (const [k, v] of Object.entries(def.state ?? {})) { S.globalState.set(k, v); }
+    for (const [k, v] of Object.entries((typeof def.state === 'function' ? def.state(w) : def.state) ?? {})) { S.globalState.set(k, v); }
     S.folders = (def.folders ?? []).map((spec, i) => makeFolder(w, spec, i));
     if (def.workspaceFile) { S.workspaceFile = fileUri(path.join(w.root, def.workspaceFile)); }
     S.ui = def.ui ?? {};
@@ -1260,13 +1304,21 @@ async function attempt(label, fn) {
 const KEY = 'cmsis-developer-assistant';
 const LEGACY = 'cmsis-debugmcp';
 const SETTING = (k) => `cmsis-developer-assistant.${k}`;
-const POPUP_KEY = 'cmsis-developer-assistant.popupShown.v3';
+const POPUP_KEY = 'cmsis-developer-assistant.popupShown.v4';
 const PROMPT_KEY = 'cmsis-developer-assistant.skillsPrompt.lastShownAt';
 const URL_3001 = 'http://localhost:3001/mcp';
 const SKILLS_OFF = { global: { [SETTING('aiSkills.enabled')]: false } };
 
 const json = (v, indent = 2) => JSON.stringify(v, null, indent);
 const answerWhen = (re, index = 0) => (ev) => (re.test(ev.message) ? index : undefined);
+
+const RULES_KEY = 'cmsis-developer-assistant.agentRules.files';
+const OLDER_RULES = '## CMSIS Developer Assistant tool rules\n\n- An older rule.';
+
+/** A rules block as the step writes it: the fixture rules, or older ones for a stale block. */
+function rulesBlock(rules = FIXTURE_RULES, eol = '\n') {
+    return load('utils/markerBlock.js').renderBlock('rules', load('core/agentRules.js').rulesBlockBody(rules), eol);
+}
 
 /** An onRead hook: the agent's file reads differently every time, as if another process kept rewriting it. */
 function changingFile(agentId) {
@@ -1624,6 +1676,95 @@ function agentScenarios() {
             settings: { wsA: { [SETTING('installedSkills')]: ['fx-router'] }, global: { [SETTING('installedSkills')]: ['fx-beta'] } },
             ui: { agents: null, scope: 'wsA', skills: ['fx-router', 'fx-gamma'] },
             run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+
+        // --- the tool rules step ------------------------------------------------------------------------
+        {
+            id: 'agents/rules-user-files-written', about: 'Claude Code and Codex set up: their user files are preselected, each shown as a diff and written on Write',
+            seed: { 'home/.codex/AGENTS.md': '# My Codex notes\n\nUse tabs.\n' },
+            settings: SKILLS_OFF,
+            ui: { agents: ['Claude Code', 'Codex'], rules: 'keep', message: answerWhen(/tool rules/) },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
+            id: 'agents/rules-preview-declined', about: 'the diff is shown and the dialog dismissed: no rule file is written',
+            settings: SKILLS_OFF,
+            ui: { agents: ['Claude Code'], rules: 'keep' },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
+            id: 'agents/rules-shared-agents-md', about: 'the workspace AGENTS.md of Codex, Copilot CLI, Antigravity and Copilot Chat is one item, written once; the user files unchecked',
+            folders: [{ name: 'wsA' }],
+            seed: { 'wsA/AGENTS.md': '# Team rules\n' },
+            settings: SKILLS_OFF,
+            ui: { agents: ['Codex', 'GitHub Copilot CLI', 'Antigravity'], rules: ['wsA/AGENTS.md'], message: answerWhen(/tool rules/) },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
+            id: 'agents/rules-workspace-own-files', about: 'Cursor, Cline and Roo Code get files of their own, Claude Code the project CLAUDE.md it reads; skills step on (3 steps)',
+            folders: [{ name: 'wsA' }],
+            seed: { 'wsA/CLAUDE.md': '# Project notes\n', 'wsA/.roo/rules/style.md': 'Be brief.\n' },
+            ui: {
+                agents: ['Cursor', 'Cline', 'Roo Code', 'Claude Code'], scope: null,
+                rules: ['wsA/CLAUDE.md', 'wsA/.cursor', 'wsA/.clinerules', 'wsA/.roo'], message: answerWhen(/tool rules/),
+            },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
+            id: 'agents/rules-remove', about: 'files that have the rules open checked; unchecking takes them out on Remove, deleting what was made for them',
+            folders: [{ name: 'wsA' }],
+            seed: () => ({
+                'home/.claude/CLAUDE.md': `${rulesBlock()}\n`,
+                'home/.codex/AGENTS.md': `# Mine\n\n${rulesBlock()}\n`,
+                'wsA/.cursor/rules/cmsis-developer-assistant.mdc': `---\ndescription: CMSIS Developer Assistant tool rules\nalwaysApply: true\n---\n\n${rulesBlock()}\n`,
+            }),
+            state: (w) => ({
+                [RULES_KEY]: [
+                    { file: path.join(w.root, 'home/.claude/CLAUDE.md'), scope: 'user', form: 'block', agents: ['claude-code'], created: true, createdDirs: [path.join(w.root, 'home/.claude')] },
+                    { file: path.join(w.root, 'home/.codex/AGENTS.md'), scope: 'user', form: 'block', agents: ['codex'], created: false, createdDirs: [] },
+                    {
+                        file: path.join(w.root, 'wsA/.cursor/rules/cmsis-developer-assistant.mdc'), scope: 'workspace', form: 'own', agents: ['cursor'],
+                        created: true, createdDirs: [path.join(w.root, 'wsA/.cursor'), path.join(w.root, 'wsA/.cursor/rules')],
+                    },
+                ],
+            }),
+            settings: SKILLS_OFF,
+            ui: { agents: null, rules: [], message: answerWhen(/tool rules/) },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
+            id: 'agents/rules-never', about: 'agentRules.install "never": the setup has no rules step',
+            settings: { global: { [SETTING('aiSkills.enabled')]: false, [SETTING('agentRules.install')]: 'never' } },
+            ui: { agents: ['Claude Code'] },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
+            id: 'agents/rules-no-contract', about: 'the tool contract cannot be read: the step is skipped, the setup still counts as answered',
+            extensionPath: '<w>/extension-without-contract', settings: SKILLS_OFF, ui: { agents: ['Claude Code'] },
+            run: async (h) => { const m = h.manager(); await m.runSetupFlow(); return { shouldShowPopupAfter: await m.shouldShowPopup() }; },
+        },
+        {
+            id: 'agents/rules-refresh', about: 'activation: a recorded stale block is updated in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left',
+            folders: [{ name: 'wsA' }],
+            seed: () => ({
+                'home/.codex/AGENTS.md': `# Before\r\n\r\n${rulesBlock(OLDER_RULES, '\r\n')}\r\n\r\n# After\r\n`,
+                'home/.claude/CLAUDE.md': `${rulesBlock()}\n`,
+                'wsA/AGENTS.md': '# The user took the block out\n',
+                'home/.gemini/AGENTS.md': `${rulesBlock(OLDER_RULES)}\n`,
+            }),
+            state: (w) => ({
+                [RULES_KEY]: ['home/.codex/AGENTS.md', 'home/.claude/CLAUDE.md', 'wsA/AGENTS.md', 'home/.copilot/copilot-instructions.md'].map((rel) => ({
+                    file: path.join(w.root, rel), scope: rel.startsWith('home/') ? 'user' : 'workspace', form: 'block', agents: ['codex'], created: false, createdDirs: [],
+                })),
+            }),
+            run: async (h) => { await h.manager().refreshAgentRules(); },
+        },
+        {
+            id: 'agents/rules-refresh-never', about: 'agentRules.install "never": activation leaves a recorded stale block alone',
+            seed: () => ({ 'home/.codex/AGENTS.md': `${rulesBlock(OLDER_RULES)}\n` }),
+            state: (w) => ({ [RULES_KEY]: [{ file: path.join(w.root, 'home/.codex/AGENTS.md'), scope: 'user', form: 'block', agents: ['codex'], created: false, createdDirs: [] }] }),
+            settings: { global: { [SETTING('agentRules.install')]: 'never' } },
+            run: async (h) => { await h.manager().refreshAgentRules(); },
         },
 
         // --- the skill picker on its own ----------------------------------------------------------------

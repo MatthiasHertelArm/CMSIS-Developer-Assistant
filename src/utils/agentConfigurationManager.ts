@@ -20,18 +20,22 @@
  * - Registers this extension's MCP server in the home-directory configuration
  *   files of eight agents (seven JSON files and Codex's TOML file), and
  *   migrates the entries earlier releases wrote there.
- * - Runs the two-step setup: which agents to register, then which AI Skills
- *   Pack skills to install, for this user or for one workspace folder.
+ * - Runs the three-step setup: which agents to register, which AI Skills Pack
+ *   skills to install (for this user or one workspace folder), and which of
+ *   the agents' rule files get the tool rules, each change shown as a diff
+ *   and written only when confirmed.
  * - Applies the `installedSkills` and `aiSkills.enabled` settings to the skills
  *   directories, scope by scope, and shows the monthly "install the skills?"
  *   prompt.
+ * - Keeps the tool rules it wrote into rule files current at activation.
  *
  * The files written here belong to other programs, so their locations, entry
  * shapes and layout are a contract. Every write is atomic (`atomicFile.ts`);
  * a JSON file that exists is re-read right before the write and everything
  * else in it is kept (`jsonFileRewrite.ts`). What to install and where comes
  * from the pure skill modules (`skillCatalog.ts`, `skillInstaller.ts`,
- * `skillPrompt.ts`).
+ * `skillPrompt.ts`); which rule file each agent reads and what changes in it,
+ * from `core/agentRules.ts` and `agentRuleFiles.ts`.
  *
  * Loading this module calls no `vscode` API: the transport tests load it
  * under a minimal stub.
@@ -41,6 +45,31 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import {
+    AGENT_RULES_SETTING,
+    RULE_AGENT_NAMES,
+    RULE_FILES_STATE_KEY,
+    RuleAgentId,
+    RuleFileTarget,
+    isRuleAgent,
+    parseRuleRecords,
+    ruleFileTargets,
+    withRecordedTargets,
+} from '../core/agentRules';
+import { TOOL_CONTRACT_DOC, parseToolContract } from '../core/toolContract';
+import {
+    NODE_RULE_FILES,
+    NODE_RULE_PROBE,
+    RuleChange,
+    RuleChoice,
+    RuleLog,
+    RuleRecordStore,
+    RuleStepDeps,
+    RuleStepReport,
+    RuleStepUi,
+    refreshRecordedRules,
+    runRuleStep,
+} from './agentRuleFiles';
 import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
@@ -106,8 +135,12 @@ export interface MCPServerConfig {
 
 const SETTINGS_SECTION = 'cmsis-developer-assistant';
 
-/** globalState: the first-run setup has been answered (accepted or dismissed). */
-const SETUP_ANSWERED_KEY = 'cmsis-developer-assistant.popupShown.v3';
+/**
+ * globalState: the first-run setup has been answered (accepted or dismissed).
+ * The suffix goes up when the flow gains a step, so everyone sees it once more
+ * (v4: the tool rules step).
+ */
+const SETUP_ANSWERED_KEY = 'cmsis-developer-assistant.popupShown.v4';
 
 const PRODUCT = 'CMSIS Developer Assistant';
 const SETUP_TITLE = `${PRODUCT} Setup`;
@@ -115,6 +148,18 @@ const AGENT_ITEM_NOTE = 'Write the MCP server entry into this agent\'s configura
 const OPEN_FILE_BUTTON = 'View File';
 const ENABLE_BUTTON = 'Enable and Select';
 const PACK_DISABLED_NOTICE = `${PRODUCT}: the AI Skills Pack is disabled (setting cmsis-developer-assistant.aiSkills.enabled); only the extension's own skills are installed.`;
+
+/** The step mark of the skill picker when it runs on its own (Select Agent Skills). */
+const SKILLS_ALONE_MARK = ' (2/2)';
+/** The URI scheme of the texts the rules preview shows in the diff editor. */
+const RULES_PREVIEW_SCHEME = 'cmsis-developer-assistant-rules';
+const WRITE_BUTTON = 'Write';
+const REMOVE_BUTTON = 'Remove';
+/** Every rule-file message goes to the output channel. */
+const RULE_LOG: RuleLog = {
+    info: (message) => logger.info(message),
+    warn: (message, detail) => logger.warn(message, detail),
+};
 
 /** Longest skill detail line in the picker. */
 const DETAIL_MAX = 140;
@@ -602,6 +647,11 @@ export class AgentConfigurationManager {
     private catalogCache: SkillCatalog | null | undefined;
     /** End of the `syncSkills` queue. It never rejects, so one failed run does not block the next. */
     private syncQueue: Promise<unknown> = Promise.resolve();
+    /** The rules section of the tool contract: `undefined` until first needed; `null` once reading failed. */
+    private rulesCache: string | null | undefined;
+    /** Texts the diff editor shows for the rules preview, by URI path; the provider is registered on first use. */
+    private previewTexts: Map<string, string> | undefined;
+    private previewCount = 0;
 
     constructor(
         private readonly ctx: vscode.ExtensionContext,
@@ -626,11 +676,37 @@ export class AgentConfigurationManager {
 
     /**
      * The first-run setup: the agent picker, then the skill picker when the AI
-     * Skills Pack is enabled (after step 1 was accepted or dismissed alike).
-     * Counts as answered afterwards, whatever happened.
+     * Skills Pack is enabled, then the tool rules for the agents' rule files
+     * unless `agentRules.install` is `never` (each step follows whether the
+     * one before was accepted or dismissed). Counts as answered afterwards,
+     * whatever happened.
      */
     runSetupFlow(): Promise<void> {
         return this.walkThroughSetup();
+    }
+
+    /**
+     * At activation: update, in place, every recorded rules block whose text
+     * is not the current tool contract's, and log it. Never creates a block
+     * or a file; does nothing while `agentRules.install` is `never`.
+     */
+    async refreshAgentRules(): Promise<void> {
+        const recorded = this.ruleRecords().read().length;
+        if (recorded === 0) {
+            return;
+        }
+        if (!this.rulesEnabled()) {
+            logger.info(`Tool rules: agentRules.install is "never"; the ${recorded} rule file(s) written earlier are left as they are`);
+            return;
+        }
+        const rules = this.toolRules();
+        if (rules === undefined) {
+            return;
+        }
+        const report = await refreshRecordedRules(rules, this.ruleDeps());
+        if (report.updated.length > 0 || report.forgotten.length > 0) {
+            logger.info(`Tool rules at activation: ${report.updated.length} file(s) updated, ${report.forgotten.length} forgotten`);
+        }
     }
 
     /** Make the first-run setup due again and forget when the skills prompt was last shown. */
@@ -664,9 +740,10 @@ export class AgentConfigurationManager {
     /**
      * The skill picker: where to install (when a local folder is open), then
      * which pack skills. Accepting stores the selection in that scope's setting
-     * and syncs. Resolves `false` when the user backs out.
+     * and syncs. Resolves `false` when the user backs out. `stepMark` is the
+     * " (n/m)" the titles carry inside the setup.
      */
-    async showSkillSelectionDialog(): Promise<boolean> {
+    async showSkillSelectionDialog(stepMark: string = SKILLS_ALONE_MARK): Promise<boolean> {
         const catalog = this.catalog();
         if (!catalog) {
             void vscode.window.showErrorMessage(`${PRODUCT}: the bundled skill catalog could not be loaded.`);
@@ -679,11 +756,11 @@ export class AgentConfigurationManager {
             }
             await vscode.workspace.getConfiguration(SETTINGS_SECTION).update(AI_SKILLS_ENABLED_SETTING, true, vscode.ConfigurationTarget.Global);
         }
-        const scope = await this.chooseScope(catalog);
+        const scope = await this.chooseScope(catalog, stepMark);
         if (!scope) {
             return false;
         }
-        const names = await this.chooseSkills(catalog, scope);
+        const names = await this.chooseSkills(catalog, scope, stepMark);
         if (!names) {
             return false;
         }
@@ -748,15 +825,33 @@ export class AgentConfigurationManager {
         return vscode.workspace.getConfiguration(SETTINGS_SECTION).get<boolean>(AI_SKILLS_ENABLED_SETTING, true);
     }
 
+    /** `agentRules.install` is not `never`: the setup offers the rule files and activation keeps them current. */
+    private rulesEnabled(): boolean {
+        return vscode.workspace.getConfiguration(SETTINGS_SECTION).get<string>(AGENT_RULES_SETTING, 'ask') !== 'never';
+    }
+
     private async walkThroughSetup(): Promise<void> {
         try {
             const roster = supportedAgents();
-            const skillsStepFollows = this.packEnabled();
-            await this.pickAndConfigureAgents(roster, skillsStepFollows ? ' (1/2)' : '');
-            if (skillsStepFollows) {
-                await this.showSkillSelectionDialog();
+            const steps: Array<'agents' | 'skills' | 'rules'> = ['agents'];
+            if (this.packEnabled()) {
+                steps.push('skills');
             } else {
                 logger.info('AI Skills Pack disabled: the setup skips the skills step');
+            }
+            if (this.rulesEnabled()) {
+                steps.push('rules');
+            } else {
+                logger.info('agentRules.install is "never": the setup skips the tool rules step');
+            }
+            const mark = (step: 'agents' | 'skills' | 'rules'): string =>
+                (steps.length > 1 ? ` (${steps.indexOf(step) + 1}/${steps.length})` : '');
+            const chosen = await this.pickAndConfigureAgents(roster, mark('agents'));
+            if (steps.includes('skills')) {
+                await this.showSkillSelectionDialog(mark('skills'));
+            }
+            if (steps.includes('rules')) {
+                await this.offerAgentRules(chosen, mark('rules'));
             }
         } catch (failure) {
             logger.error('The setup flow failed', failure);
@@ -768,11 +863,11 @@ export class AgentConfigurationManager {
 
     /**
      * Step 1: the agent picker. Accepting configures the chosen agents one
-     * after the other and resolves `true` once all are done; closing it
-     * resolves `false`.
+     * after the other and resolves them once all are done; closing it
+     * resolves no agent.
      */
-    private pickAndConfigureAgents(roster: AgentInfo[], stepMark: string): Promise<boolean> {
-        return new Promise<boolean>((settle, fail) => {
+    private pickAndConfigureAgents(roster: AgentInfo[], stepMark: string): Promise<AgentInfo[]> {
+        return new Promise<AgentInfo[]>((settle, fail) => {
             const agentList = vscode.window.createQuickPick<vscode.QuickPickItem>();
             agentList.title = `${SETUP_TITLE}${stepMark} - Connect AI Agents to the MCP Server`;
             agentList.placeholder = `Select the AI agents to register the ${PRODUCT} MCP server with (Esc to skip)`;
@@ -787,12 +882,12 @@ export class AgentConfigurationManager {
                 const chosenNames = agentList.selectedItems.map((item) => item.detail);
                 const chosen = chosenNames.flatMap((name) => roster.filter((agent) => agent.displayName === name));
                 agentList.hide();
-                this.configureAgents(chosen).then(() => settle(true), fail);
+                this.configureAgents(chosen).then(() => settle(chosen), fail);
             });
             agentList.onDidHide(() => {
                 agentList.dispose();
                 if (!accepted) {
-                    settle(false);
+                    settle([]);
                 }
             });
             agentList.show();
@@ -938,7 +1033,7 @@ export class AgentConfigurationManager {
     }
 
     /** Where to install: asked only when a local workspace folder is open, the folders first. */
-    private async chooseScope(catalog: SkillCatalog): Promise<SkillScope | undefined> {
+    private async chooseScope(catalog: SkillCatalog, stepMark: string): Promise<SkillScope | undefined> {
         const folders = localFolders();
         const several = folders.length > 1;
         const scopeItems: ScopePickItem[] = folders.map((folder) => {
@@ -962,7 +1057,7 @@ export class AgentConfigurationManager {
             scope: USER_SCOPE,
         });
         const where = await vscode.window.showQuickPick(scopeItems, {
-            title: `${SETUP_TITLE} (2/2) - Where to Install Agent Skills`,
+            title: `${SETUP_TITLE}${stepMark} - Where to Install Agent Skills`,
             placeHolder: 'Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace',
             ignoreFocusOut: true,
         });
@@ -970,12 +1065,12 @@ export class AgentConfigurationManager {
     }
 
     /** Which pack skills: the scope's current picks are preselected. Resolves the chosen names, or `undefined` when closed. */
-    private chooseSkills(catalog: SkillCatalog, scope: SkillScope): Promise<string[] | undefined> {
+    private chooseSkills(catalog: SkillCatalog, scope: SkillScope, stepMark: string): Promise<string[] | undefined> {
         const preselected = new Set(resolveDesiredSkills(catalog, readSelection(scope) ?? [], { includeBundled: false }).explicit);
         const items = skillPickItems(catalog, preselected);
         return new Promise<string[] | undefined>((settle) => {
             const skillList = vscode.window.createQuickPick<SkillPickItem>();
-            skillList.title = `${SETUP_TITLE} (2/2) - Choose Agent Skills to Install for ${scopeName(scope)}`;
+            skillList.title = `${SETUP_TITLE}${stepMark} - Choose Agent Skills to Install for ${scopeName(scope)}`;
             skillList.placeholder = scope.kind === 'user'
                 ? `Select the AI Skills Pack skills to install into your personal skills directories (always installed: ${bundledSkillNames(catalog).join(', ')}; Esc keeps the current selection)`
                 : `Select the AI Skills Pack skills to install into ${scope.folder.name}/.agents/skills (the extension's own skills stay in your personal directories; Esc keeps the current selection)`;
@@ -1036,5 +1131,273 @@ export class AgentConfigurationManager {
             text += ` ${failed} failed — see the output log.`;
         }
         return text;
+    }
+
+    // --- tool rules ----------------------------------------------------------
+
+    /** The rules section of the shipped tool contract, read once; undefined, logged, when it cannot be read. */
+    private toolRules(): string | undefined {
+        if (this.rulesCache === undefined) {
+            const file = path.join(this.ctx.extensionPath, 'docs', ...TOOL_CONTRACT_DOC.split('/'));
+            try {
+                this.rulesCache = parseToolContract(fs.readFileSync(file, 'utf8')).rules;
+            } catch (failure) {
+                logger.warn(`The tool rules are unavailable: ${file} cannot be read`, failure);
+                this.rulesCache = null;
+            }
+        }
+        return this.rulesCache ?? undefined;
+    }
+
+    /** The rule files written so far, kept in globalState. */
+    private ruleRecords(): RuleRecordStore {
+        return {
+            read: () => parseRuleRecords(this.ctx.globalState.get<unknown>(RULE_FILES_STATE_KEY)),
+            write: async (records) => {
+                await this.ctx.globalState.update(RULE_FILES_STATE_KEY, records);
+            },
+        };
+    }
+
+    private ruleDeps(): RuleStepDeps {
+        return { fs: NODE_RULE_FILES, store: this.ruleRecords(), log: RULE_LOG };
+    }
+
+    /**
+     * The agents whose rule files step 3 offers: the ones picked in step 1,
+     * the ones whose configuration registers the server already, and VS Code
+     * Copilot Chat, which reaches the server through the definition provider.
+     */
+    private async ruleAgents(chosen: readonly AgentInfo[]): Promise<RuleAgentId[]> {
+        const ids = new Set<RuleAgentId>(['copilot-chat']);
+        for (const agent of chosen) {
+            if (isRuleAgent(agent.id)) {
+                ids.add(agent.id);
+            }
+        }
+        for (const agent of agentsWithFiles()) {
+            if (!isRuleAgent(agent.id) || ids.has(agent.id)) {
+                continue;
+            }
+            try {
+                if (agentConfigHasServer(agent, await fs.promises.readFile(agent.configPath, 'utf8'))) {
+                    ids.add(agent.id);
+                }
+            } catch (failure) {
+                logger.warn(`Could not read ${agent.configPath} to look for the MCP server`, failure);
+            }
+        }
+        return [...ids];
+    }
+
+    /**
+     * Step 3: offer the agents' rule files for the tool rules, then add,
+     * update or take out the rules file by file, each change shown as a diff
+     * and made only when the user confirms it.
+     */
+    private async offerAgentRules(chosen: readonly AgentInfo[], stepMark: string): Promise<void> {
+        const rules = this.toolRules();
+        if (rules === undefined) {
+            logger.warn('The setup skips the tool rules step: the tool contract cannot be read');
+            return;
+        }
+        const folders = localFolders().map((folder) => ({ name: folder.name, path: folder.uri.fsPath }));
+        const offered = ruleFileTargets(await this.ruleAgents(chosen), {
+            home: os.homedir(),
+            env: process.env,
+            folders,
+            probe: NODE_RULE_PROBE,
+            copilotChatReadsAgentsMd: vscode.workspace.getConfiguration('chat').get<boolean>('useAgentsMdFile', true) !== false,
+        });
+        const targets = withRecordedTargets(offered, this.ruleRecords().read(), folders);
+        const ui: RuleStepUi = {
+            choose: (choices) => this.chooseRuleFiles(choices, stepMark),
+            confirm: (change) => this.previewRuleChange(change),
+        };
+        this.reportRuleStep(await runRuleStep(targets, rules, ui, this.ruleDeps()));
+    }
+
+    /** The rule-file picker: the files that are to carry the rules; undefined when closed. */
+    private chooseRuleFiles(choices: readonly RuleChoice[], stepMark: string): Promise<ReadonlySet<string> | undefined> {
+        const items = ruleFileItems(choices);
+        return new Promise<ReadonlySet<string> | undefined>((settle) => {
+            const fileList = vscode.window.createQuickPick<RuleFileItem>();
+            fileList.title = `${SETUP_TITLE}${stepMark} - Add the Tool Rules to Your Agents' Rule Files`;
+            fileList.placeholder = 'Check the files that get the CMSIS Developer Assistant tool rules; '
+                + 'each change is shown as a diff and written only when you confirm it (Esc to skip)';
+            fileList.canSelectMany = true;
+            fileList.ignoreFocusOut = true;
+            fileList.items = items;
+            fileList.selectedItems = items.filter((item) => item.picked);
+            let accepted = false;
+            fileList.onDidAccept(() => {
+                accepted = true;
+                const files = new Set(fileList.selectedItems.flatMap((item) => (item.choice ? [item.choice.target.file] : [])));
+                fileList.hide();
+                settle(files);
+            });
+            fileList.onDidHide(() => {
+                fileList.dispose();
+                if (!accepted) {
+                    settle(undefined);
+                }
+            });
+            fileList.show();
+        });
+    }
+
+    /** Where the preview texts come from; the provider is registered on first use. */
+    private previewDocuments(): Map<string, string> {
+        if (!this.previewTexts) {
+            const texts = new Map<string, string>();
+            this.ctx.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(RULES_PREVIEW_SCHEME, {
+                provideTextDocumentContent: (uri: vscode.Uri): string => texts.get(uri.path) ?? '',
+            }));
+            this.previewTexts = texts;
+        }
+        return this.previewTexts;
+    }
+
+    /**
+     * Show one change as a diff — the file as it is (or an empty document for
+     * a new file) against the text proposed — and ask for it in a modal
+     * dialog. True only when the user chose Write or Remove; a preview that
+     * cannot be shown counts as declined.
+     */
+    private async previewRuleChange(change: RuleChange): Promise<boolean> {
+        const texts = this.previewDocuments();
+        const name = path.basename(change.target.file);
+        const serial = ++this.previewCount;
+        const proposedPath = `/${serial}/${name}`;
+        const emptyPath = `/${serial}/empty/${name}`;
+        texts.set(proposedPath, change.after ?? '');
+        texts.set(emptyPath, '');
+        const current = change.before === undefined
+            ? vscode.Uri.parse(`${RULES_PREVIEW_SCHEME}:${emptyPath}`)
+            : vscode.Uri.file(change.target.file);
+        const proposed = vscode.Uri.parse(`${RULES_PREVIEW_SCHEME}:${proposedPath}`);
+        const removing = change.kind === 'remove';
+        try {
+            try {
+                await vscode.commands.executeCommand('vscode.diff', current, proposed,
+                    `${name}: now ↔ ${removing ? 'without' : 'with'} the tool rules`, { preview: true });
+            } catch (failure) {
+                logger.warn(`The preview of ${change.target.file} could not be shown; the file is not changed`, failure);
+                return false;
+            }
+            const button = removing ? REMOVE_BUTTON : WRITE_BUTTON;
+            const agents = change.target.agents.map((id) => RULE_AGENT_NAMES[id]).join(', ');
+            const deletes = removing && change.after === undefined ? ' The file holds nothing else and is deleted.' : '';
+            const detail = `Read by ${agents}. The diff editor shows the change; nothing is written unless you choose ${button}.${deletes}`;
+            const answer = await vscode.window.showInformationMessage(ruleChangeQuestion(change), { modal: true, detail }, button);
+            return answer === button;
+        } finally {
+            await this.closeRulePreviews();
+            texts.delete(proposedPath);
+            texts.delete(emptyPath);
+        }
+    }
+
+    /** Close the diff editors the preview opened. The window API may be missing (the test stubs have none). */
+    private async closeRulePreviews(): Promise<void> {
+        const groups = vscode.window.tabGroups as vscode.TabGroups | undefined;
+        if (!groups || typeof vscode.TabInputTextDiff !== 'function') {
+            return;
+        }
+        const ours = groups.all.flatMap((group) => group.tabs)
+            .filter((tab) => tab.input instanceof vscode.TabInputTextDiff && tab.input.modified.scheme === RULES_PREVIEW_SCHEME);
+        if (ours.length > 0) {
+            await Promise.resolve(groups.close(ours)).catch((failure: unknown) => logger.debug('Could not close the rules preview', failure));
+        }
+    }
+
+    /** One toast for what the step changed, and one per file that failed. */
+    private reportRuleStep(report: RuleStepReport): void {
+        const written = report.applied.filter((change) => change.kind !== 'remove').length;
+        const takenOut = report.applied.length - written;
+        const parts = [
+            ...(written > 0 ? [`written to ${written} file(s)`] : []),
+            ...(takenOut > 0 ? [`taken out of ${takenOut} file(s)`] : []),
+        ];
+        if (parts.length > 0) {
+            void vscode.window.showInformationMessage(`${PRODUCT}: the tool rules were ${parts.join(' and ')}.`);
+        }
+        for (const failed of report.failed) {
+            void vscode.window.showErrorMessage(`${PRODUCT}: could not change the tool rules in ${failed.file}: ${failed.error}`);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The rule-file picker
+// ---------------------------------------------------------------------------
+
+interface RuleFileItem extends vscode.QuickPickItem {
+    /** Absent on the separators. */
+    choice?: RuleChoice;
+}
+
+/** A rule file for display: `~/…` for a user file, `<folder>/…` for a workspace one. */
+function ruleFileLabel(target: RuleFileTarget): string {
+    if (target.scope === 'workspace' && target.folder) {
+        return `${target.folder.name}/${path.relative(target.folder.path, target.file).split(path.sep).join('/')}`;
+    }
+    return shortenHome(target.file);
+}
+
+/** What checking the item means for the file as it is now. */
+function ruleFileState(choice: RuleChoice): string {
+    if (choice.state === 'current') {
+        return 'Has the current tool rules. Uncheck to take them out.';
+    }
+    if (choice.state === 'outdated') {
+        return 'Has an older version of the tool rules, which is updated. Uncheck to take them out.';
+    }
+    if (choice.text === undefined) {
+        return choice.target.form === 'own' ? 'New file of its own, holding the rules only.' : 'New file.';
+    }
+    return 'The rules go at the end; the rest of the file stays as it is.';
+}
+
+/** The picker items: the user files, then each workspace folder's files, under a heading each. */
+function ruleFileItems(choices: readonly RuleChoice[]): RuleFileItem[] {
+    const items: RuleFileItem[] = [];
+    const group = (heading: string, members: readonly RuleChoice[]): void => {
+        if (members.length === 0) {
+            return;
+        }
+        items.push({ label: heading, kind: vscode.QuickPickItemKind.Separator });
+        for (const choice of members) {
+            items.push({
+                label: ruleFileLabel(choice.target),
+                description: choice.target.agents.map((id) => RULE_AGENT_NAMES[id]).join(', '),
+                detail: ruleFileState(choice),
+                picked: choice.checked,
+                choice,
+            });
+        }
+    };
+    group('This user: read in every project', choices.filter((choice) => choice.target.scope === 'user'));
+    const folders = [...new Map(choices.flatMap((choice) => (choice.target.folder ? [[choice.target.folder.path, choice.target.folder]] as const : []))).values()];
+    for (const folder of folders) {
+        group(`Workspace folder ${folder.name}`, choices.filter((choice) => choice.target.folder?.path === folder.path));
+    }
+    return items;
+}
+
+/** The question of the confirmation dialog. */
+function ruleChangeQuestion(change: RuleChange): string {
+    const where = ruleFileLabel(change.target);
+    switch (change.kind) {
+        case 'create':
+            return `Create ${where} with the ${PRODUCT} tool rules?`;
+        case 'add':
+            return `Add the ${PRODUCT} tool rules to ${where}?`;
+        case 'update':
+            return `Update the ${PRODUCT} tool rules in ${where}?`;
+        default:
+            return change.after === undefined
+                ? `Take the ${PRODUCT} tool rules out of ${where} and delete the file?`
+                : `Take the ${PRODUCT} tool rules out of ${where}?`;
     }
 }

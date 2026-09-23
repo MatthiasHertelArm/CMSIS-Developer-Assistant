@@ -15,7 +15,8 @@ registers, peripheral registers described by the device SVD, decoded
 Cortex-M fault status, the build, flash and debug actions of the CMSIS
 Solution extension, and serial consoles. Other debug types, such as Python,
 Node.js or C/C++ on the host, are still served by the generic tools. The
-extension also installs Agent Skills for CMSIS work and, behind settings,
+extension also installs Agent Skills for CMSIS work, writes its tool rules
+into the agents' rule files when the user confirms it, and, behind settings,
 offers tools over the target's documentation and build artefacts.
 
 The project started as a fork of microsoft/DebugMCP. The code that still
@@ -55,7 +56,7 @@ simply forwards to itself.
 | `DebugState` | `src/debugState.ts` | Value object for location, stack and breakpoints, rendered in a full and a compact form | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
 | `DebugConfigurationManager` | `src/utils/debugConfigurationManager.ts` | The `launch.json` picker and configurations synthesized from the file type for `start_debugging` | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
 | Window routing | `src/windowCoordinator.ts`, `src/routingDebuggingHandler.ts`, `src/controlServer.ts`, `src/utils/workspaceRegistry.ts`, `src/core/opTable.ts` | Router and worker windows, the window registry, forwarding of every op | [docs/architecture/windowRouting.md](docs/architecture/windowRouting.md) |
-| `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts` | Registers the server in AI agents' configuration files and installs Agent Skills | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
+| `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts`, `src/core/agentRules.ts`, `src/utils/agentRuleFiles.ts` | Registers the server in AI agents' configuration files, installs Agent Skills, and writes the tool rules into the agents' rule files the user confirms | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
 | `PackDocsHandler` / `BuildInfoHandler` | `src/packDocsHandler.ts`, `src/buildInfoHandler.ts`, `src/core/packDocs/`, `src/core/buildInfo/` | Documentation tools (pack PDFs, Arm documents, user and workspace documents, core SVDs) and build-artefact tools (ELF, map file, build log); off by default, routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
 | `skills/` | `skills/` | Bundled Agent Skills `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and the generated `cmsis-help`; the vendored Open-CMSIS-Pack/cmsis-skills skills; one router skill per category; `catalog.json` | [skills/README.md](skills/README.md) |
 
@@ -121,12 +122,13 @@ checks a built package.
 | `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills from `skills/catalog.json` to install. Where the value is set decides where they go: the User value into the personal skills directories, a Workspace or Folder value into that folder's `.agents/skills` (plus `.claude/skills` when Claude Code is installed or the folder has a `.claude` directory), pack skills only. `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed for the user. Scope `resource` |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills step of the setup and the prompt. Scope `application` |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | At most once a month, offer the pack when an agent has the server registered but no pack skill is selected. Scope `application` |
+| `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 3 of the setup offers to add the tool rules to the agents' rule files, each change shown as a diff and written only when confirmed, and activation updates the blocks it wrote; `never`: no rule file is touched. Scope `application` |
 | `cmsis-developer-assistant.packDocs.enabled` | `false` | Register the five documentation tools. PDF text comes from the bundled pdf.js, or from `pdftotext` when `packDocs.extractor` says so; `packDocs.*` also set the size limit, unlisted pack PDFs and the workspace and user document folders |
 | `cmsis-developer-assistant.buildInfo.enabled` | `false` | Register the five build-artefact tools; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
 
-`installedSkills` and `aiSkills.enabled` take effect at once,
-`redactSecrets` is read on every call and `build.diagnosticRerun` for every
-failed build. The port, the timeouts, the tool-group switches and the
+`installedSkills`, `aiSkills.enabled` and `agentRules.install` take effect at
+once, `redactSecrets` is read on every call and `build.diagnosticRerun` for
+every failed build. The port, the timeouts, the tool-group switches and the
 telemetry file are read at activation; after a change the window has to be
 reloaded, and the extension offers to do it when the port,
 `packDocs.enabled` or `buildInfo.enabled` changes.

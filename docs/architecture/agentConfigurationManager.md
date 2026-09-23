@@ -3,20 +3,24 @@
 ## Purpose
 
 Onboards AI coding agents onto the CMSIS Developer Assistant: registers the
-MCP server in each agent's own configuration file, and installs the Agent
-Skills the user selected into the personal skills directories those agents
-read — or, per workspace folder, into the project's own. Registration and the
-AI Skills Pack are opt-in through one two-step setup flow; the extension's own
-skills are always installed.
+MCP server in each agent's own configuration file, installs the Agent Skills
+the user selected into the personal skills directories those agents read —
+or, per workspace folder, into the project's own — and writes the tool rules
+into the agents' rule files the user confirms. Registration, the AI Skills
+Pack and the rule files are opt-in through one three-step setup flow; the
+extension's own skills are always installed.
 
 ## Motivation
 
-For an agent to use the extension it needs two things it cannot discover on
-its own: the MCP endpoint (in its config file) and the workflow knowledge
-(Agent Skills). Rather than sending users to edit JSON/TOML and copy
-directories by hand, the manager does both — but only for the agents and
-skills the user picked, because these files live in the user's home
-directory next to things the extension does not own.
+For an agent to use the extension it needs things it cannot discover on its
+own: the MCP endpoint (in its config file), the workflow knowledge (Agent
+Skills), and the rule to use the tools rather than `pyocd`, `gdb` or `cbuild`
+in a shell (#45, #50). The server instructions and the skills carry that rule,
+but an agent may lose both when it compacts its context, while its rule file
+is loaded in every session. Rather than sending users to edit JSON/TOML,
+copy directories and write rule files by hand, the manager does all three —
+but only for the agents, skills and files the user picked, because these
+files live next to things the extension does not own.
 
 ## Responsibility
 
@@ -35,6 +39,11 @@ directory next to things the extension does not own.
   directories, each workspace folder's value to that project — using the
   pure helpers in `skillCatalog.ts` (what to install) and
   `skillInstaller.ts` (how to write it safely).
+- Offer the agents' rule files for the tool rules in step 3 of the setup,
+  preview and write each change the user confirms, and keep the blocks it
+  wrote current at activation (`refreshAgentRules()`), using
+  `core/agentRules.ts` (which file, what text) and `agentRuleFiles.ts` (the
+  step and the refresh, over an injected file system).
 
 ## Key Concepts
 
@@ -166,13 +175,62 @@ pre-marker `cmsis-debug-live` whose frontmatter name matches) are ever
 replaced or removed. Anything else in those roots belongs to the user or
 the project.
 
+### Tool rules in agents' rule files
+
+The rules section of the tool contract (`docs/agent-resources/tool-contract.md`,
+read from the extension's `docs/` folder) goes between the
+`<!-- cmsis-developer-assistant:rules:begin/end -->` markers of
+`markerBlock.ts`, led by one comment line that says the extension manages
+the block and how to take it out. Everything outside the block stays as it
+was, byte for byte.
+
+*Which file.* `ruleFileTargets()` maps each agent to the file it reads, from
+the vendors' documentation (the sources sit next to the map in
+`core/agentRules.ts`). Claude Code, Codex, Copilot CLI and Antigravity have a
+user-level file, which is preselected: the MCP registration is per user too,
+and a workspace file ends up in the repository for colleagues who may not have
+the extension. VS Code Copilot Chat, Cursor, Cline and Roo Code get their
+workspace file only. Most agents read the workspace `AGENTS.md`; a file several
+agents read is offered and written once. Cursor, Cline and Roo Code get a file
+of their own (`own` form) in their rule folder, which a removal deletes. The
+map never picks a file whose creation would hide one the project uses: Claude
+Code writes into the project's `CLAUDE.md` only when there is one (a new
+`CLAUDE.md` would stop it reading `AGENTS.md`), Roo Code into `.roorules`
+while that is the file it reads, Codex into a non-empty `AGENTS.override.md`.
+
+*Which agents.* Step 3 covers the agents picked in step 1, the agents whose
+configuration registers the server already, and Copilot Chat; files recorded
+earlier are listed too, so that they can be unchecked.
+
+*Consent.* A file that has the rules opens checked. Accepting the picker
+plans one change per file (`planRuleChanges()`): create, add, update, or
+remove. Each change opens `vscode.diff` between the file as it is — or an
+empty document — and the proposed text, served by a content provider for the
+`cmsis-developer-assistant-rules` scheme, then a modal dialog; only *Write* or
+*Remove* changes the file. The file is read again right before the write,
+which is atomic.
+
+*Records.* `globalState` key `cmsis-developer-assistant.agentRules.files`
+lists each file written, whether it was created for the rules and which
+directories were made for it. A removal restores the file to its earlier
+bytes, or deletes a file (and its empty directories) that was made for the
+rules or is the extension's own. At activation `refreshAgentRules()`
+updates every recorded block whose text differs from the current contract,
+in place, and logs it; a recorded file that is gone, or whose block the user
+deleted, is forgotten, never recreated. Activation under the extension test
+runner skips it, like the skill sync and the migration.
+
+*Setting.* `agentRules.install`: `ask` (default) or `never`, which skips
+step 3 and the refresh.
+
 ### Popup state
 
 Two `globalState` keys, both cleared by *Reset Popup State*:
 
-- `cmsis-developer-assistant.popupShown.v3` — the first-run setup. Accepting
-  or dismissing either step marks it shown. The version suffix is bumped when
-  the flow gains a step so existing users see it once more.
+- `cmsis-developer-assistant.popupShown.v4` — the first-run setup. Accepting
+  or dismissing any step marks it shown. The version suffix is bumped when
+  the flow gains a step so existing users see it once more (v4: the tool
+  rules step).
 - `cmsis-developer-assistant.skillsPrompt.lastShownAt` — epoch ms of the last
   install nudge. Written *before* the toast, so a dismissal (or a second
   window racing) counts; the next one is due 30 days later.
@@ -192,25 +250,30 @@ again* (turns the setting off).
 
 - Class: `src/utils/agentConfigurationManager.ts`
   - agents: `supportedAgents()`, `entryFor()`, `registerServer()`, `migrateExistingConfigurations()` (`migrateServers()`, `migrateCodexAgent()`), `agentConfigHasServer()`, Codex TOML text: `upsertCodexDebugMCPConfig()`, `stripLegacyCodexSection()`
-  - setup flow: `shouldShowPopup()`, `runSetupFlow()`, `pickAndConfigureAgents()`, `showSkillSelectionDialog()`, `resetPopupState()`
+  - setup flow: `shouldShowPopup()`, `runSetupFlow()`, `pickAndConfigureAgents()`, `showSkillSelectionDialog()`, `offerAgentRules()`, `resetPopupState()`
+  - rule files: `offerAgentRules()` (picker, `previewRuleChange()`), `refreshAgentRules()`
   - skills: `syncSkills()` / `syncAllScopes()`, `chooseScope()`, `chooseSkills()`, `readSelection()` / `writeSelection()`, `maybePromptForSkills()`
 - Atomic and concurrent-safe writes: `src/utils/atomicFile.ts`, `src/utils/jsonFileRewrite.ts`
 - Catalog model and selection logic: `src/utils/skillCatalog.ts`
 - Install-prompt decision: `src/utils/skillPrompt.ts`
 - Help skill renderer (generator + tests only): `src/utils/skillHelp.ts`
 - Copying, hiding, marker-guarded removal: `src/utils/skillInstaller.ts`
+- Rule files: `src/core/agentRules.ts` (the agent-to-file map with its vendor sources, the block text, `withRules()` / `withoutRules()`, the records), `src/utils/agentRuleFiles.ts` (`runRuleStep()`, `planRuleChanges()`, `applyRuleChange()`, `refreshRecordedRules()`, the node file system)
 - Generator: `scripts/sync-skills.ts` (`--offline` without a fetch), hand-authored input `scripts/skills.config.json` and `docs/agent-resources/tool-contract.md`; marker blocks: `src/utils/markerBlock.ts`
-- Tests: `src/test/skillCatalog.test.ts` (catalog ↔ disk ↔ lock ↔ help skill), `src/test/skillInstaller.test.ts` (temp-dir behaviour), `src/test/skillPrompt.test.ts` (prompt decision, server detection), `test/transport/config-scenarios.js` (the files written for each agent per platform, migration, popup state, the pickers, `syncSkills()` and the nudge, against `config-scenarios.snapshot.json`)
+- Tests: `src/test/skillCatalog.test.ts` (catalog ↔ disk ↔ lock ↔ help skill), `src/test/skillInstaller.test.ts` (temp-dir behaviour), `src/test/skillPrompt.test.ts` (prompt decision, server detection), `src/test/agentRules.test.ts` (the rule-file map and the step against an in-memory file system), `test/transport/config-scenarios.js` (the files written for each agent per platform, migration, popup state, the pickers, the rule-file step with its previews, `syncSkills()` and the nudge, against `config-scenarios.snapshot.json`)
 
 ## User Flow
 
 1. Extension activates; `syncSkills('activation')` applies the setting —
-   the user value and every workspace folder's own.
+   the user value and every workspace folder's own. After the migration,
+   `refreshAgentRules()` brings recorded rule blocks up to date.
 2. If the setup was never shown (for this version of the flow) and the host
    does not manage MCP itself, after 2 s: step 1 multi-select of agents →
    config files written; step 2 (skipped while `aiSkills.enabled` is off)
    "this user or this workspace?", then multi-select of skills → that
-   scope's setting written, skills synced.
+   scope's setting written, skills synced; step 3 (skipped while
+   `agentRules.install` is `never`) multi-select of rule files → per file a
+   diff and a dialog → the confirmed files written.
 3. Any later change to `installedSkills` or `aiSkills.enabled` (picker,
    settings.json in either scope, Settings Sync, a checked-out
    `.vscode/settings.json`) triggers a sync through
@@ -222,6 +285,6 @@ again* (turns the setting off).
 
 ## Commands
 
-- `cmsis-developer-assistant.configure` — *Configure Agents and Skills*: the two-step flow
+- `cmsis-developer-assistant.configure` — *Configure Agents and Skills*: the three-step flow
 - `cmsis-developer-assistant.selectSkills` — *Select Agent Skills*: step 2 only
 - `cmsis-developer-assistant.resetPopupState` — hidden from the palette; re-arms the first-run flow for testing
