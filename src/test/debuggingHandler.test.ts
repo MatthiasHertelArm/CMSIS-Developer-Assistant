@@ -829,7 +829,7 @@ suite('DebuggingHandler', () => {
             const idle = new ScriptedExecutor();
             idle.session = false;
             const refused = await refusalOf(handlerFor(idle).handleReset({ halt: false }), 'NO_SESSION');
-            assert.strictEqual(errorDetail(refused), 'No active debug session.\nStart debugging first — reset drives the target through the live probe.');
+            assert.strictEqual(errorDetail(refused), 'No active debug session.\nreset drives the target through the live probe. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.');
         });
     });
 
@@ -861,7 +861,7 @@ suite('DebuggingHandler', () => {
             const idle = new ScriptedExecutor();
             idle.session = false;
             const refused = await refusalOf(handlerFor(idle).handleWaitForStop(), 'NO_SESSION');
-            assert.strictEqual(errorDetail(refused), 'No active debug session.\nStart debugging first — wait_for_stop waits on a live session.');
+            assert.strictEqual(errorDetail(refused), 'No active debug session.\nwait_for_stop waits on a live session. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.');
         });
 
         test('pause answers by session state', async () => {
@@ -887,7 +887,7 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
                 'Pause requested but the debug session ended. The target may have crashed.');
             x.session = false;
-            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')), 'No active debug session.\nStart debugging first.');
+            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')), 'No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.');
         });
     });
 
@@ -1551,7 +1551,7 @@ suite('DebuggingHandler', () => {
             }
             x.session = false;
             assert.strictEqual(errorDetail(await refusalOf(handlerFor(x).handleGetDeviceInfo(), 'NO_SESSION')),
-                'No active debug session.\nStart debugging first.', 'a refusal, not wrapped');
+                'No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.', 'a refusal, not wrapped');
         });
     });
 

@@ -179,7 +179,8 @@ const BINDING_WAIT_MS = 2_000;
 const TRIAGE_REGISTERS = ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim'];
 
 const NO_ACTIVE_SESSION = 'No active debug session.';
-const START_FIRST = 'Start debugging first.';
+/** How to get a session: CMSIS projects start theirs through the CMSIS Solution extension (#20). */
+const START_FIRST = 'Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.';
 const NOTHING_TO_STOP = 'Nothing to stop — no debug session is active.';
 const SESSION_STOPPED = 'The debug session has been stopped.';
 const NOTHING_TO_RESTART = 'Nothing to restart — no debug session is active';
@@ -683,7 +684,7 @@ export class DebuggingHandler
     handleReset(args: ResetRequest): Answer {
         return this.fence('reset', args.timeoutMs, 'reply', async () => {
             if (!this.dbg.hasDebugSession()) {
-                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, 'Start debugging first — reset drives the target through the live probe.');
+                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, `reset drives the target through the live probe. ${START_FIRST}`);
             }
             const outcome = await this.dbg.resetTarget({ method: args.method ?? 'auto', halt: args.halt, timeoutMs: args.timeoutMs });
             return renderResetOutcome(outcome, args.halt);
@@ -786,7 +787,7 @@ export class DebuggingHandler
     handleWaitForStop(args?: TimeoutArg): Answer {
         return this.fence('wait_for_stop', args?.timeoutMs, 'reply', async () => {
             if (!this.dbg.hasDebugSession()) {
-                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, 'Start debugging first — wait_for_stop waits on a live session.');
+                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, `wait_for_stop waits on a live session. ${START_FIRST}`);
             }
             const budgetMs = args?.timeoutMs
                 ? Math.max(args.timeoutMs - WAIT_FOR_STOP_MARGIN_MS, 100)

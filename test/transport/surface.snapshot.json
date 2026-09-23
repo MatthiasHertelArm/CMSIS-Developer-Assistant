@@ -1333,9 +1333,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first."
+            "hint": "Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "continue_execution": {
           "isError": true,
@@ -1353,9 +1353,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first — wait_for_stop waits on a live session."
+            "hint": "wait_for_stop waits on a live session. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first — wait_for_stop waits on a live session."
+          "text": "[NO_SESSION] No active debug session.\nwait_for_stop waits on a live session. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "restart_debugging": {
           "isError": true,
@@ -1372,9 +1372,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first — reset drives the target through the live probe."
+            "hint": "reset drives the target through the live probe. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first — reset drives the target through the live probe."
+          "text": "[NO_SESSION] No active debug session.\nreset drives the target through the live probe. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "add_breakpoint": {
           "isError": true,
@@ -1501,9 +1501,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first."
+            "hint": "Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "check_target_connection": {
           "text": "No active debug session."
@@ -4442,9 +4442,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first."
+            "hint": "Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "continue_execution": {
           "isError": true,
@@ -4462,9 +4462,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first — wait_for_stop waits on a live session."
+            "hint": "wait_for_stop waits on a live session. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first — wait_for_stop waits on a live session."
+          "text": "[NO_SESSION] No active debug session.\nwait_for_stop waits on a live session. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "restart_debugging": {
           "isError": true,
@@ -4481,9 +4481,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first — reset drives the target through the live probe."
+            "hint": "reset drives the target through the live probe. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first — reset drives the target through the live probe."
+          "text": "[NO_SESSION] No active debug session.\nreset drives the target through the live probe. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "add_breakpoint": {
           "isError": true,
@@ -4610,9 +4610,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first."
+            "hint": "Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "check_target_connection": {
           "text": "No active debug session."
@@ -7855,9 +7855,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first."
+            "hint": "Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "continue_execution": {
           "isError": true,
@@ -7875,9 +7875,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first — wait_for_stop waits on a live session."
+            "hint": "wait_for_stop waits on a live session. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first — wait_for_stop waits on a live session."
+          "text": "[NO_SESSION] No active debug session.\nwait_for_stop waits on a live session. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "restart_debugging": {
           "isError": true,
@@ -7894,9 +7894,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first — reset drives the target through the live probe."
+            "hint": "reset drives the target through the live probe. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first — reset drives the target through the live probe."
+          "text": "[NO_SESSION] No active debug session.\nreset drives the target through the live probe. Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "add_breakpoint": {
           "isError": true,
@@ -8031,9 +8031,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "No active debug session.",
-            "hint": "Start debugging first."
+            "hint": "Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
           },
-          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise."
         },
         "check_target_connection": {
           "text": "No active debug session."
