@@ -65,6 +65,7 @@ const stub = {
                  onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
                  openTextDocument: async () => { throw new Error('not stubbed'); } },
     extensions: { getExtension: () => undefined },
+    ExtensionMode: { Production: 1, Development: 2, Test: 3 },
     // Tests install per-command answers in `commandHandlers`; unknown
     // commands resolve to undefined, as an absent extension would.
     commandHandlers: {},

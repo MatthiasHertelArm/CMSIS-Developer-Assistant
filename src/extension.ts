@@ -26,6 +26,11 @@
  * setup or skills prompt two seconds later. `deactivate` shuts the coordinator
  * down so the window leaves the shared registry before the host exits.
  *
+ * Under the extension test runner (`npm test`) the suites exercise the modules
+ * themselves, and activation leaves the developer's machine alone: no skills
+ * written into their home directory, no agent configuration rewritten, no
+ * prompt, and no router or worker beside their own VS Code windows.
+ *
  * Only imports and the two references below exist at load time; no `vscode`
  * API is called before `activate` (test/transport/packaged-vsix.js loads the
  * bundle under a minimal stub).
@@ -182,14 +187,20 @@ async function startCoordinator(
     }
 }
 
-/** A settings change: skills follow at once, the rest needs a window reload. */
+/** True while the extension test runner hosts this extension: see the module comment. */
+function hostedByTestRunner(extensionContext: vscode.ExtensionContext): boolean {
+    return extensionContext.extensionMode === vscode.ExtensionMode.Test;
+}
+
+/** A settings change: skills follow at once (not under the test runner), the rest needs a window reload. */
 async function onSettingsChanged(
     change: vscode.ConfigurationChangeEvent,
     manager: AgentConfigurationManager,
     packDocs: PackDocsHandlers,
+    syncsSkills: boolean,
 ): Promise<void> {
     const touches = (key: string): boolean => change.affectsConfiguration(`${SECTION}.${key}`);
-    if (touches('installedSkills') || touches('aiSkills.enabled')) {
+    if (syncsSkills && (touches('installedSkills') || touches('aiSkills.enabled'))) {
         await manager.syncSkills('setting changed');
     }
     if (touches('packDocs')) {
@@ -251,12 +262,15 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     // A new session may use another device, so the parsed SVD files are dropped when one ends.
     extensionContext.subscriptions.push(vscode.debug.onDidTerminateDebugSession(() => clearSvdCache()));
 
+    const hostsTests = hostedByTestRunner(extensionContext);
     const manager = new AgentConfigurationManager(extensionContext, active.timeoutInSeconds, active.serverPort);
     agentManager = manager;
-    try {
-        await manager.syncSkills('activation');
-    } catch (failure) {
-        logger.error('Installing the agent skills at activation failed', failure);
+    if (!hostsTests) {
+        try {
+            await manager.syncSkills('activation');
+        } catch (failure) {
+            logger.error('Installing the agent skills at activation failed', failure);
+        }
     }
 
     // Every window gets the documentation handlers and commands, router or worker.
@@ -264,23 +278,30 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     registerPackDocsCommands(extensionContext, packDocs);
     warnIfStandalonePackDocsInstalled();
 
-    await startCoordinator(extensionContext, active, packDocs, manager);
-
-    try {
-        await manager.migrateExistingConfigurations();
-    } catch (failure) {
-        logger.error('Migrating the agent configurations failed', failure);
+    if (hostsTests) {
+        logger.info('Running under the extension test runner: no skill installation, agent configuration, prompt or MCP server');
+    } else {
+        await startCoordinator(extensionContext, active, packDocs, manager);
+        try {
+            await manager.migrateExistingConfigurations();
+        } catch (failure) {
+            logger.error('Migrating the agent configurations failed', failure);
+        }
     }
 
     extensionContext.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration((change) => onSettingsChanged(change, manager, packDocs)),
+        vscode.workspace.onDidChangeConfiguration((change) => onSettingsChanged(change, manager, packDocs, !hostsTests)),
         vscode.workspace.onDidChangeWorkspaceFolders(async () => {
-            await manager.syncSkills('workspace folders changed');
+            if (!hostsTests) {
+                await manager.syncSkills('workspace folders changed');
+            }
         }),
     );
     registerAgentCommands(extensionContext);
 
-    setTimeout(() => setupOrSkillsPrompt(manager), SETUP_DELAY_MS);
+    if (!hostsTests) {
+        setTimeout(() => setupOrSkillsPrompt(manager), SETUP_DELAY_MS);
+    }
     logger.info(`${PRODUCT} activated`);
 }
 
