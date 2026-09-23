@@ -286,6 +286,8 @@
     "lint": "eslint src",
     "test": "vscode-test --coverage --coverage-output coverage --coverage-reporter lcov --coverage-reporter text",
     "test:transport": "npm run compile && node test/transport/session-lifecycle.js && node test/transport/two-window-routing.js",
+    "test:surface": "npm run compile && node test/transport/surface-snapshot.js",
+    "provenance:check": "tsx scripts/provenance-check.ts",
     "test:skill-trigger-agent": "tsx scripts/test-skill-trigger.ts",
     "eval:scenario": "tsx scripts/eval-scenario.ts",
     "bench:search": "tsx scripts/search-benchmark.ts",

@@ -47,11 +47,18 @@ Do NOT duplicate detailed implementation in docs - that information should be in
 
 ## File Header
 
-Include in each source file:
+New source files carry the Arm Apache-2.0 header, as in `src/core/toolRun.ts`:
 
 ```typescript
-// Copyright (c) Microsoft Corporation.
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * ...
+ */
 ```
+
+A few files still derive from microsoft/DebugMCP and keep its copyright line until they are rewritten (issue #53). They are listed in `src/test/provenance.test.ts`, and that test fails if any other file gains the line. Never copy that line into a new file. When a file is rewritten, remove the line and its list entry in the same change, and run `npm run provenance:check -- --gate`.
 
 ## Build/Lint/Test Commands
 
@@ -61,6 +68,8 @@ Include in each source file:
 | `npm run lint` | Run ESLint on `src/` |
 | `npm test` | Run all tests (`src/test/*.test.ts`) |
 | `npm run watch` | Compile in watch mode |
+| `npm run test:surface` | Compare the agent-visible surface with `test/transport/surface.snapshot.json`: the initialize result, `tools/list`, resources and every tool's reply without a session. Add `-- --update` only for a deliberate change. The snapshot is host-specific, so this is a local check, not CI |
+| `npm run provenance:check` | Lines shared with microsoft/DebugMCP per file (needs network once); add `-- --gate` to fail on rewritten files that still share lines |
 | `npm run skills:sync` | Re-vendor the cmsis-skills skills at the pinned commit and regenerate `skills/catalog.json`, the routers and `skills/cmsis-help` (`-- --update` moves the pin to upstream `main`) |
 
 ## Code Style & Conventions
