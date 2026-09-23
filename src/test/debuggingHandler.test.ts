@@ -177,7 +177,8 @@ class ScriptedExecutor {
     };
     addBreakpoint: IDebuggingExecutor['addBreakpoint'] = async (uri, line, options) => {
         this.moves.push('addBreakpoint');
-        this.note('addBreakpoint', uri.fsPath, line, options);
+        // uri.path, not fsPath: forward slashes on every OS, so the expectations hold on Windows too.
+        this.note('addBreakpoint', uri.path, line, options);
         this.failIfScripted('addBreakpoint');
         const added = new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(line - 1, 0)), true,
             options?.condition, undefined, options?.logMessage);
@@ -186,7 +187,7 @@ class ScriptedExecutor {
     };
     removeBreakpoint: IDebuggingExecutor['removeBreakpoint'] = async (uri, line, options) => {
         this.moves.push('removeBreakpoint');
-        this.note('removeBreakpoint', uri.fsPath, line, options);
+        this.note('removeBreakpoint', uri.path, line, options);
         const matching = this.breakpoints.filter((bp) => bp instanceof vscode.SourceBreakpoint
             && bp.location.uri.toString() === uri.toString() && bp.location.range.start.line === line - 1
             && (!options?.logpointsOnly || Boolean(bp.logMessage)));
@@ -1438,7 +1439,8 @@ suite('DebuggingHandler', () => {
                 'Register \'CRX\' is not in RCC. Did you mean: CR?\nCall lookup_peripheral { name: \'RCC\' } for its register map.');
             assert.ok((await textAnswer(h.handleLookupRegister({ svdFile: FIXTURE_SVD, peripheral: 'rcc', register: 'cr' }))).startsWith('=== RCC.CR @ 0x40023800'));
             const missing = await textAnswer(h.handleLookupRegister({ svdFile: '/nonexistent/device.svd', peripheral: 'RCC', register: 'CR' }));
-            assert.ok(missing.startsWith('No SVD file found for a lookup.\nTried:\n  - svdFile /nonexistent/device.svd (not found)'), missing);
+            // The lookup normalises the path, so Windows reports it with backslashes.
+            assert.ok(missing.startsWith(`No SVD file found for a lookup.\nTried:\n  - svdFile ${path.normalize('/nonexistent/device.svd')} (not found)`), missing);
             assert.ok(missing.endsWith('Pass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), '
                 + 'or build the solution so out/<context>.cbuild-run.yml names it, or add "svdFile" to the launch configuration. '
                 + 'For a multi-core device pass pname to pick the core.'), missing);
