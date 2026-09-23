@@ -26,6 +26,7 @@
 
 import type { StackFrame } from '../debugState';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
+import { wedgeHint } from '../core/probeWedge';
 import { shortenPath, truncateList } from '../core/textBudget';
 import { ErrorCode, Refusal } from '../core/toolResult';
 import { getRecentDiagnostics } from '../utils/sessionStateTracker';
@@ -54,7 +55,7 @@ const REFUSAL_CODES: Record<SessionState, ErrorCode> = {
     'no-session': 'NO_SESSION',
     initializing: 'NO_SESSION',
     running: 'TARGET_RUNNING',
-    unresponsive: 'TIMEOUT',
+    unresponsive: 'PROBE_WEDGED',
     stopped: 'INTERNAL',
 };
 
@@ -84,11 +85,14 @@ function statusHint(state: SessionState, liveSessions: number): string {
 /**
  * Why `operation` needs a stopped target and the session is not in that
  * state: the state's code, and the next action for that state as the hint.
- * A `Refusal`, so a tool that wraps its failures passes it on as it is.
+ * A `Refusal`, so a tool that wraps its failures passes it on as it is. An
+ * unresponsive probe is `PROBE_WEDGED`, and its hint adds the way to
+ * reconnect for a session started with `request` (#3).
  */
-export function stoppedTargetRefusal(operation: string, state: SessionState): Refusal {
+export function stoppedTargetRefusal(operation: string, state: SessionState, request?: string): Refusal {
+    const reconnect = state === 'unresponsive' ? ` ${wedgeHint(request)}` : '';
     return new Refusal(REFUSAL_CODES[state], `Cannot ${operation}: session state is '${state}'.`,
-        `${REFUSAL_HINTS[state]} Use get_session_status for a definitive, never-failing classification.`);
+        `${REFUSAL_HINTS[state]}${reconnect} Use get_session_status for a definitive, never-failing classification.`);
 }
 
 /** The last adapter lines of the most recent session, as a suffix; empty when there are none. */

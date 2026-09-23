@@ -287,6 +287,8 @@ This is tuned for firmware and should rarely get in your way:
 | HFSR `VECTTBL` | Vector table fetch failed — VTOR points at the wrong image |
 
 **Stack overflow without a fault flag:** `read_core_registers`, compare MSP / PSP with the stack region; a canary at the bottom of the stack tells you whether it was crossed. On Armv8-M, `MSPLIM` / `PSPLIM` turn this into a `STKOF` fault instead.
+
+**When the reads themselves fail.** Every failed memory read says why each way of reading failed. `[PROBE_WEDGED]` means the debug port no longer answers: DHCSR, which a debugger can read on every Cortex-M while the port works, could not be read either. More reads will fail the same way, so follow the hint, and never start a GDB server yourself. A session that `attach` started reconnects with `cmsis_action detach`, then `cmsis_action attach`, without a reset. A `load_and_debug` session owns its GDB server, and `restart_debugging` and `load_and_debug` re-flash and reset the target. To keep the fault state, ask the user to restart the server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`. `[INVALID_ARGUMENT] Cannot read 0x… — the debug port answers` means only that address is unreadable in this state: a clock that is off, an MPU or TrustZone region, or nothing mapped there. A note that the core is in lockup means it met a fault it could not handle, inside a fault handler or while entering one; the fault status still names what went wrong.
 <!-- /topic -->
 
 <!-- topic: troubleshooting | Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist -->
@@ -331,7 +333,7 @@ Each case shows the explanation that stops too early, then the chain that reache
 
 ### When it did not reach your breakpoint
 
-`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`. If the breakpoint never bound, `list_breakpoints` shows it NOT verified with the adapter's reason: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
+`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`; if that answers `PROBE_WEDGED`, the probe stopped answering, not the firmware — topic `faults` says how to reconnect without losing the fault state. If the breakpoint never bound, `list_breakpoints` shows it NOT verified with the adapter's reason: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
 
 ### Not there yet
 

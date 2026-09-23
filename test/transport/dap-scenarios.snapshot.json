@@ -435,13 +435,14 @@
             "length": 8
           },
           "isError": true,
-          "text": "[INTERNAL] Failed to read memory at 0x60000000 — all GDB strategies exhausted",
+          "text": "[INVALID_ARGUMENT] Cannot read 0x60000000 — the debug port answers, the address is not readable in this state: DAP readMemory: Unable to read memory. (@ 0x60000000); watch expression: empty result; MI read: Unable to read memory.\nCheck the address against the device's memory map — lookup_peripheral { address } names what is there. A peripheral whose clock is off, memory behind the MPU or TrustZone, or an address with nothing behind it cannot be read.",
           "traffic": [
             "dap: threads {}",
             "dap: readMemory {\"memoryReference\":\"0x60000000\",\"count\":8} -> error: \"Unable to read memory. (@ 0x60000000)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0x60000000\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x60000000 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\""
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x60000000 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
           ]
         }
       ]
@@ -691,7 +692,8 @@
           "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes"
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
           ]
         },
         {
@@ -701,6 +703,7 @@
           "traffic": [
             "dap: threads {}",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
             "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
@@ -765,6 +768,7 @@
           "traffic": [
             "dap: threads {}",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
             "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"0xfffffff9\"",
@@ -777,6 +781,146 @@
             "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
             "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":4}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fault-lockup",
+      "description": "The same fault, with the core in lockup (DHCSR.S_LOCKUP): get_fault_info and diagnose_fault say so (#3).",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_fault_info",
+          "args": {},
+          "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n\nThe core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nLockup: The core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: LR unavailable — read_core_registers, then read_memory at PSP/MSP\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "probe-wedged",
+      "description": "Halted in HardFault, then the probe wedges (#3): GDB answers threads, stack and registers from its caches, but every memory read fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy's cause and the hint of a launch session.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_fault_info",
+          "args": {},
+          "isError": true,
+          "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xE000ED28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000edf0)\""
+          ]
+        },
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "isError": true,
+          "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xE000ED28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000edf0)\""
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20017fa8",
+            "length": 32
+          },
+          "isError": true,
+          "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0x20017fa8 — DAP readMemory: Unable to read memory. (@ 0x20017fa8); watch expression: empty result; MI read: Unable to read memory.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> error: \"Unable to read memory. (@ 0x20017fa8)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0x20017fa8\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x20017fa8 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000edf0)\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "probe-wedged-attach",
+      "description": "The same wedge in a pyOCD attach session: the hint reconnects with cmsis_action detach and attach (#3).",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_fault_info",
+          "args": {},
+          "isError": true,
+          "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach — reconnects without a reset; then get_fault_info.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xE000ED28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000edf0)\""
           ]
         }
       ]
@@ -2065,6 +2209,28 @@
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
             "event: terminated {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unresponsive-gate",
+      "description": "Session halted, then every DAP request hangs; a fault read with a long enough limit meets the state gate, which answers PROBE_WEDGED with the hint of a launch session (#3).",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_fault_info",
+          "args": {
+            "timeoutMs": 15000
+          },
+          "isError": true,
+          "text": "[PROBE_WEDGED] Cannot read fault info: session state is 'unresponsive'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm, then restart_debugging or stop_debugging. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {} -> no answer",
+            "dap: threads {} -> no answer"
           ]
         }
       ]

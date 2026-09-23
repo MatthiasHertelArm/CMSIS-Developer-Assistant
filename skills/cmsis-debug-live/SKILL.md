@@ -319,6 +319,16 @@ The pieces stay available when you need one of them alone: `get_fault_info`
 `read_memory` at PSP/MSP for the frame, `get_call_stack` to walk up,
 `lookup_peripheral { address }` for an address.
 
+If a fault read answers `PROBE_WEDGED`, the debug port no longer answers
+(DHCSR could not be read either): stop reading and follow the hint. An
+attach session reconnects with `cmsis_action detach`, then `attach`,
+without a reset. A `load_and_debug` session owns its GDB server;
+`restart_debugging` and `load_and_debug` re-flash and reset, so to keep
+the fault state the user restarts the server without a reset and you
+`cmsis_action attach`. Never start a GDB server yourself.
+`INVALID_ARGUMENT` "the debug port answers" means only that address is
+unreadable. A lockup note means the core faulted inside a fault handler.
+
 `references/cmsis-embedded-guide.md` has the SCS memory map and the decode
 recipes. `references/troubleshooting/embedded.md` covers probe-not-detected,
 target-not-halted, a reset that did not take, SVD-missing and

@@ -63,7 +63,7 @@ single-window server against a scripted `gdbtarget` session and compares with
 `dap-scenarios.snapshot.json`; `--update` rewrites the snapshot and
 `--only=<name>` prints one scenario. About 40 s, no window, network or probe.
 
-Each of the 33 scenarios gets a fresh server and fake session (pyOCD or J-Link
+Each of the 37 scenarios gets a fresh server and fake session (pyOCD or J-Link
 launch/attach configuration, cbuild-run file, SVD under a fake pack root) and
 records, per tool call, the reply and its traffic: DAP requests with the
 scripted answer, VS Code commands, breakpoint and start/stop API calls, the
@@ -78,8 +78,9 @@ text as `stdout` output events; a `>` MI command answers its MI result as
 JSON. The scripted GDB behind it keeps a breakpoint table (`dprintf`,
 `-dprintf-insert`, `condition`, `delete`, `-break-list`, `info breakpoints`),
 resets the core on `monitor reset …` without telling GDB until the register
-cache is flushed, and prints `$lr` as an int, so EXC_RETURN reads "-7". The
-header of the harness lists the other fidelity choices.
+cache is flushed, and prints `$lr` as an int, so EXC_RETURN reads "-7". A
+wedged probe fails every memory read, DHCSR included, while GDB still answers
+from its caches. The header of the harness lists the other fidelity choices.
 
 ## `config-scenarios.js`: configuration behaviour oracle
 

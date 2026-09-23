@@ -27,6 +27,7 @@
 
 import * as vscode from 'vscode';
 import { FaultRegisters } from '../core/faultDecoder';
+import type { DebugPortProbe } from '../core/probeWedge';
 import { ResetMethod, ResetOutcomeView } from '../core/resetAssist';
 import { DebugState, StackFrame } from '../debugState';
 import type { GdbLogpoint, StopWaitResult } from '../utils/sessionStateTracker';
@@ -34,6 +35,7 @@ import type { GdbReply } from './gdbCommand';
 
 export type { GdbLogpoint } from '../utils/sessionStateTracker';
 export type { GdbReply } from './gdbCommand';
+export type { DebugPortProbe } from '../core/probeWedge';
 
 /** Deadlines from the settings `dapRequestTimeoutMs` and `memoryReadTimeoutMs`. */
 export interface HardwareTimeouts {
@@ -221,7 +223,13 @@ export interface ProgramInspection {
     evaluateExpression(expression: string, frameId: number, overrideMs?: number): Promise<any>;
 }
 
-/** Cortex-M target access: memory, core registers, DWT, fault status, peripherals and reset. */
+/**
+ * Cortex-M target access: memory, core registers, DWT, fault status,
+ * peripherals and reset. On the CMSIS Debugger a memory read that fails
+ * rejects with `PROBE_WEDGED` when DHCSR cannot be read either, and with
+ * `INVALID_ARGUMENT` when it can (#3); the message keeps each strategy's
+ * cause.
+ */
 export interface TargetAccess {
     readMemory(address: string, length: number, overrideMs?: number): Promise<Buffer>;
     readMemoryWord(address: string, overrideMs?: number): Promise<number>;
@@ -233,6 +241,8 @@ export interface TargetAccess {
     readPeripheralRegister(peripheral: string, register?: string, overrideMs?: number): Promise<string>;
     readFaultRegisters(overrideMs?: number): Promise<FaultRegisters>;
     getFaultInfo(overrideMs?: number): Promise<string>;
+    /** One read of DHCSR (4 bytes, DAP `readMemory`, at most 1 s): does the debug port answer, and with what (#3). Never rejects. */
+    probeDebugPort(overrideMs?: number): Promise<DebugPortProbe>;
     resetTarget(request: { method?: 'auto' | ResetMethod; halt?: boolean; timeoutMs?: number }): Promise<ResetOutcome>;
 }
 

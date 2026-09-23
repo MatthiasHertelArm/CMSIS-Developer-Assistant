@@ -62,6 +62,7 @@ import { HardwareTimeoutError } from './utils/timeout';
 import { decodeFault } from './core/faultDecoder';
 import { classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
+import { isLockedUp, LOCKUP_NOTE } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
 import { findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup, SvdDevice } from './core/svdParser';
@@ -390,7 +391,19 @@ export class DebuggingHandler
             return;
         }
         const status = await this.dbg.getSessionStatus();
-        throw stoppedTargetRefusal(operation, status.state);
+        throw stoppedTargetRefusal(operation, status.state, this.sessionRequest());
+    }
+
+    /** `configuration.request` of the session this window acts on, `launch` or `attach`: who owns the GDB server (#3). */
+    private sessionRequest(): string | undefined {
+        const request: unknown = this.dbg.getActiveSession()?.configuration?.request;
+        return typeof request === 'string' ? request : undefined;
+    }
+
+    /** DHCSR.S_LOCKUP from one DHCSR read (#3); false when DHCSR cannot be read. */
+    private async lockedUp(timeoutMs: number | undefined): Promise<boolean> {
+        const port = await this.dbg.probeDebugPort(timeoutMs);
+        return port.readable && isLockedUp(port.dhcsr);
     }
 
     /** The full state, remembering which breakpoint list it showed. */
@@ -1315,20 +1328,27 @@ export class DebuggingHandler
         });
     }
 
+    /** The decoded fault registers, and a lockup note when DHCSR says so; a wedged probe is the error itself (#3). */
     handleGetFaultInfo(args?: TimeoutArg): Answer {
         return this.fence('get_fault_info', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read fault info');
-            return this.dbg.getFaultInfo(args?.timeoutMs);
+            const report = await this.dbg.getFaultInfo(args?.timeoutMs);
+            return (await this.lockedUp(args?.timeoutMs)) ? `${report}\n${LOCKUP_NOTE}\n` : report;
         });
     }
 
-    /** One-call fault triage. Every read after the fault registers degrades to a note instead of failing. */
+    /**
+     * One-call fault triage. Every read after the fault registers degrades to
+     * a note instead of failing — except a wedged probe (#3), which is the
+     * answer rather than a diagnosis built on registers that were not read.
+     */
     handleDiagnoseFault(args?: DiagnoseRequest): Answer {
         return this.fence('diagnose_fault', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('diagnose the fault');
             const timeoutMs = args?.timeoutMs;
             const depth = args?.levels ?? 3;
             const decoded = decodeFault(await this.dbg.readFaultRegisters(timeoutMs));
+            const lockup = await this.lockedUp(timeoutMs);
             const skipped: string[] = [];
 
             let raw: Record<string, string> = {};
@@ -1363,7 +1383,10 @@ export class DebuggingHandler
                     if (!frame) {
                         frameNote = `short read at ${selection.source}`;
                     }
-                } catch {
+                } catch (caught) {
+                    if (caught instanceof ToolError && caught.code === 'PROBE_WEDGED') {
+                        throw caught;
+                    }
                     skipped.push('exception frame');
                 }
             }
@@ -1396,7 +1419,7 @@ export class DebuggingHandler
             const shortened = frames.map((f) => (f.source ? { ...f, source: shortenPath(f.source, roots) } : f));
             return renderDiagnosis({
                 decoded, frame, selection, regs, faultAddress, pcInfo, stopReason,
-                frames: shortened, frameNote, skipped, svdNote, maxFrames: depth,
+                frames: shortened, frameNote, skipped, svdNote, maxFrames: depth, lockup,
             });
         });
     }

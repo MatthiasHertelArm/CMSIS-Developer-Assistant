@@ -128,6 +128,21 @@ can fake only the part a case drives.
   read memory at the SVD address (`src/core/peripheralReader.ts`). The fault
   status registers are read as one block when possible, else word by word, and
   decoded by `src/core/faultDecoder.ts`.
+- **A failed read.** A memory read that fails in every way keeps why each
+  way failed (`MemoryReadFailure`, each cause cut to 200 characters). On the
+  CMSIS Debugger each public read then reads DHCSR (0xE000EDF0) once — 4
+  bytes, DAP `readMemory`, at most 1 s — and `explainReadFailure()` decides
+  (#3): a debugger can read DHCSR whenever the debug port works, so DHCSR
+  unreadable or timed out too is `PROBE_WEDGED`, and DHCSR readable means
+  only the address cannot be read in this state, `INVALID_ARGUMENT`. A read
+  that timed out on a port that answers keeps its timeout. The hint of
+  `PROBE_WEDGED` depends on the session's `request`: an attached session
+  reconnects with `cmsis_action detach` and `attach`, a launched one owns
+  its GDB server (`src/core/probeWedge.ts`). The fault registers are judged
+  once, after the block and the word-by-word read both failed.
+  `probeDebugPort()` offers the same DHCSR read to the handler, which checks
+  `S_LOCKUP` with it. Nothing is retried or reconnected: a reconnect replaces
+  the session and must not happen as a side effect of a read.
 - **Reset.** `resetTarget()` hands over to `performReset()` in
   `src/executor/targetReset.ts`. A running target is halted first; each
   method is sent as GDB monitor commands in the dialect of the GDB server
@@ -170,7 +185,8 @@ memory write and the reset still judge GDB's reply by its text alone.
 | `src/executor/snapshot.ts` | `captureDebugState()` |
 | `src/executor/gdbCommand.ts` | `runGdbCommand()`: the adapter's prefix, output capture and settle |
 | `src/core/gdbDialect.ts` | GDB prefix per adapter, the agent's passthrough spellings, MI memory results, GDB's refusal of a run-control request |
-| `src/executor/gdbMemory.ts` | address helpers, `readWordThroughGdb()` |
+| `src/executor/gdbMemory.ts` | address helpers, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
+| `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
 | `src/executor/sessionReports.ts` | `probeSession()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
 | `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, recent adapter output, GDB command output, answers to `setBreakpoints`, GDB logpoints per session |
@@ -181,9 +197,12 @@ memory write and the reset still judge GDB's reply by its text alone.
 - `test/transport/executor-cases.js`: the executor alone against scripted
   debug sessions — DAP requests and their arguments, workbench fallbacks and
   GDB refusals, restart, timeouts, reset verification, GDB command prefixes
-  and output capture, breakpoint bindings, the GDB word-read ladder
+  and output capture, breakpoint bindings, the GDB word-read ladder and the
+  DHCSR read after a failed read
+- `src/test/gdbMemory.test.ts`: the ladder's causes, `PROBE_WEDGED` and
+  `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints
 - `test/transport/dap-scenarios.js`: the executor behind the handler and the
-  server, 33 scripted `gdbtarget` sessions
+  server, 37 scripted `gdbtarget` sessions, a wedged probe among them
 - `src/test/sessionStateTracker.test.ts`, `src/test/gdbDialect.test.ts`: the
   output capture, the `setBreakpoints` wait, the logpoint registry, the
   prefixes

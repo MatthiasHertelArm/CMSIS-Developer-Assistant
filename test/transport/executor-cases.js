@@ -633,8 +633,11 @@ async function main() {
             'evaluate {"expression":"-exec x/1xw 0x20000000","context":"repl","frameId":3}',
             'evaluate {"expression":"-exec print/x *(unsigned int*)0x20000000","context":"repl","frameId":3}']), calls.map((c) => c.command + ' ' + c.json));
         script = (c) => { if (c === 'stackTrace') { return { stackFrames: [] }; } throw new Error('nope'); };
+        calls.length = 0;
         const e = await rejects(ex.readMemoryWord('0x20000000'));
-        check('M3 all fail → S11', e && e.message === 'Failed to read memory at 0x20000000 — all GDB strategies exhausted', e && e.message);
+        check('M3 all fail → every strategy\'s cause; no DHCSR read on other adapters (#3)',
+            e && e.message === 'Failed to read memory at 0x20000000: DAP readMemory: nope; watch expression: nope; x/1xw: nope; print/x: nope'
+            && !calls.some((c) => c.args.memoryReference === '0xE000EDF0'), e && e.message);
         script = (c) => { if (c === 'stackTrace') { return { stackFrames: [] }; } if (c === 'readMemory') { throw new Error('x'); } return never(); };
         calls.length = 0;
         const e2 = await rejects(ex.readMemoryWord('0x20000000'));
@@ -671,9 +674,13 @@ async function main() {
             'evaluate {"expression":"*(unsigned int*)0x20000000","context":"watch","frameId":3}',
             'evaluate {"expression":">-data-read-memory-bytes 0x20000000 4","context":"repl","frameId":3}']), calls.map((c) => c.command + ' ' + c.json));
         script = (c) => { if (c === 'stackTrace') { return { stackFrames: [] }; } if (c === 'readMemory') { throw new Error('x'); } return { result: '\r' }; };
+        calls.length = 0;
         const e = await rejects(ex.readMemoryWord('0x20000000'));
-        check('M3g no -exec forms on gdbtarget; all fail → S11', e && e.message === 'Failed to read memory at 0x20000000 — all GDB strategies exhausted'
-            && !calls.some((c) => String(c.args && c.args.expression).startsWith('-exec')), e && e.message);
+        check('M3g no -exec forms on gdbtarget; all fail and DHCSR fails too → PROBE_WEDGED with every cause (#3)', e && e.code === 'PROBE_WEDGED'
+            && e.message === 'Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: x). '
+                + 'Reading 0x20000000 — DAP readMemory: x; watch expression: empty result; MI read: empty result'
+            && !calls.some((c) => String(c.args && c.args.expression).startsWith('-exec'))
+            && calls[calls.length - 1].json === '{"memoryReference":"0xE000EDF0","count":4}', e && e.message);
     }
     reset();
     {
@@ -683,7 +690,10 @@ async function main() {
         const t0 = Date.now();
         const e = await rejects(ex.readMemory('0x20000000', 16));
         const dt = Date.now() - t0;
-        check('M4 fence readMemory ~100ms', e instanceof HardwareTimeoutError && e.operation === 'readMemory' && dt < 400, `${e} ${dt}`);
+        check('M4 fence readMemory ~100ms, then DHCSR within 1 s times out too → PROBE_WEDGED (#3)', e && e.code === 'PROBE_WEDGED'
+            && e.message === 'Memory reads time out and the debug port does not answer (DHCSR at 0xE000EDF0 timed out). '
+                + 'Reading 0x20000000 — readMemory: timed out after 100 ms'
+            && dt >= 1000 && dt < 1600, `${e} ${dt}`);
         const e2 = await rejects(new DebuggingExecutor().readMemory('0x20000000', 16));
         reset();
         const e3 = await rejects(new DebuggingExecutor().readMemory('0x20000000', 16));
@@ -796,7 +806,62 @@ async function main() {
         const { session } = makeSession((c) => { if (c === 'readMemory') { return never(); } throw new Error('?'); });
         focusOn(session);
         const e = await rejects(new DebuggingExecutor({ dapRequestMs: 60 }).readFaultRegisters());
-        check('F timeout in block read rethrown', e instanceof HardwareTimeoutError, String(e));
+        check('F timeout in the block read, DHCSR times out too → PROBE_WEDGED (#3)', e && e.code === 'PROBE_WEDGED'
+            && e.message.startsWith('Memory reads time out and the debug port does not answer (DHCSR at 0xE000EDF0 timed out). Reading 0xE000ED28'), String(e));
+    }
+
+    // ── A wedged probe told apart from an unreadable address (#3) ──
+    reset();
+    {
+        let dhcsr = 'readable';
+        const { session, calls } = makeSession((c, a) => {
+            if (c === 'readMemory') {
+                if (a.memoryReference === '0xE000EDF0') {
+                    if (dhcsr.startsWith('readable')) { return { data: le(0x000b0003).toString('base64') }; }
+                    if (dhcsr === 'hang') { return never(); }
+                    throw new Error('Unable to read memory.');
+                }
+                if (a.memoryReference === '0x20000000' && dhcsr === 'readable-slow') { return never(); }
+                throw new Error(`Unable to read memory. (@ ${a.memoryReference})`);
+            }
+            if (c === 'stackTrace') { return { stackFrames: [] }; }
+            if (String(a.expression).startsWith('>')) { throw new Error('Unable to read memory.'); }
+            return { result: 'Error: could not evaluate expression' };
+        }, { type: 'gdbtarget', name: 'Cfg', request: 'attach' });
+        focusOn(session);
+        const ex = new DebuggingExecutor({ dapRequestMs: 100 });
+        const unreadable = await rejects(ex.readMemory('0x60000000', 8));
+        check('W1 DHCSR readable after a failed read → INVALID_ARGUMENT naming the address', unreadable && unreadable.code === 'INVALID_ARGUMENT'
+            && unreadable.message === 'Cannot read 0x60000000 — the debug port answers, the address is not readable in this state: '
+                + 'DAP readMemory: Unable to read memory. (@ 0x60000000); watch expression: no value in \'Error: could not evaluate expression\'; '
+                + 'MI read: Unable to read memory.', unreadable && unreadable.message);
+        check('W1 requests: the read, the ladder of the first word, then DHCSR once', eq(calls.map((c) => c.command + ' ' + (c.args.memoryReference ?? c.args.expression ?? '')), [
+            'readMemory 0x60000000', 'evaluate *(unsigned int*)0x60000000', 'evaluate >-data-read-memory-bytes 0x60000000 4', 'readMemory 0xE000EDF0']),
+        calls.map((c) => c.command + ' ' + c.json));
+        check('W1 the port answered with S_LOCKUP set', (await ex.probeDebugPort()).dhcsr === 0x000b0003);
+
+        dhcsr = 'fails';
+        calls.length = 0;
+        const wedged = await rejects(ex.readFaultRegisters());
+        check('W2 fault registers on a wedged probe: PROBE_WEDGED after both ways failed, DHCSR read once, the attach hint', wedged && wedged.code === 'PROBE_WEDGED'
+            && wedged.message.startsWith('Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory.). Reading 0xE000ED28 — ')
+            && wedged.message.includes('DAP readMemory: Unable to read memory. (@ 0xE000ED28)')
+            && calls.filter((c) => c.args.memoryReference === '0xE000EDF0').length === 1
+            && wedged.hint.startsWith('This session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach'),
+        wedged && `${wedged.code} ${wedged.message} / ${wedged.hint}`);
+
+        dhcsr = 'hang';
+        const hung = await rejects(ex.readMemoryWord('0x20000004'));
+        check('W3 a DHCSR read that times out after a failed read → PROBE_WEDGED', hung && hung.code === 'PROBE_WEDGED'
+            && hung.message.startsWith('Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 timed out).'), hung && hung.message);
+
+        dhcsr = 'readable-slow';
+        const slow = await rejects(ex.readMemoryWord('0x20000000'));
+        check('W4 a read that times out on a port that answers keeps its timeout', slow instanceof HardwareTimeoutError && slow.operation === 'DAP readMemory', String(slow));
+
+        reset();
+        const none = await new DebuggingExecutor().probeDebugPort();
+        check('W5 no session: the port does not answer, and nothing throws', none.readable === false && none.cause === 'No debug session is running in this window', none);
     }
 
     // ── Reset ──

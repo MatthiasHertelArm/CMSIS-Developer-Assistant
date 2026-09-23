@@ -15,6 +15,7 @@
  */
 
 import { DecodedFault } from './faultDecoder';
+import { LOCKUP_NOTE } from './probeWedge';
 import { SvdDevice } from './svdParser';
 import { lookupAddress } from './svdLookup';
 import { regionOf } from './memoryMap';
@@ -235,6 +236,8 @@ export interface DiagnosisInput extends TriageInput {
     svdNote?: string;
     /** Frames shown before the rest is counted. */
     maxFrames?: number;
+    /** DHCSR.S_LOCKUP was set (#3): the lockup note follows the stop line. */
+    lockup?: boolean;
 }
 
 const IPSR_NAMES: Record<number, string> = { 2: 'NMI', 3: 'HardFault', 4: 'MemManage', 5: 'BusFault', 6: 'UsageFault', 7: 'SecureFault', 11: 'SVCall', 12: 'DebugMonitor', 14: 'PendSV', 15: 'SysTick' };
@@ -250,6 +253,7 @@ export function renderDiagnosis(input: DiagnosisInput): string {
     if (decoded.faultClass === 'None') {
         lines.push('=== No fault flags set ===');
         lines.push(`Stop: ${input.stopReason ?? 'unknown reason'}${ipsrText ? `, ${ipsrText}` : ''}${regs.pc !== undefined ? `, PC ${hex8(regs.pc)}` : ''}`);
+        if (input.lockup) { lines.push(`Lockup: ${LOCKUP_NOTE}`); }
         if (frames.length) {
             lines.push('Call stack:');
             for (const [i, f] of frames.slice(0, input.maxFrames ?? 3).entries()) {
@@ -264,6 +268,7 @@ export function renderDiagnosis(input: DiagnosisInput): string {
     lines.push('=== Fault diagnosis ===');
     lines.push(`Class: ${decoded.faultClass}${decoded.escalated ? ' escalated to HardFault (FORCED)' : ''} — ${flagNames.join(', ') || 'no status bits'}`);
     lines.push(`Stop: ${input.stopReason ?? 'unknown reason'}${ipsrText ? `, halted in ${ipsrText}` : ''}`);
+    if (input.lockup) { lines.push(`Lockup: ${LOCKUP_NOTE}`); }
     if (input.faultAddress) {
         lines.push(`Fault address (${decoded.faultAddress?.source}): ${formatAddressInfo(input.faultAddress)}`);
     }
