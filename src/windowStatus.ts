@@ -41,6 +41,7 @@ import {
     toolNameOf,
 } from './core/windowStatus';
 import { logger } from './utils/logger';
+import { notifyWarning } from './utils/notify';
 import type { WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
 
 /** The command behind the item's click; contributed in package.json. */
@@ -159,7 +160,7 @@ export class WindowStatus {
         } catch (failure) {
             logger.error('Could not save the default target window', failure);
             const reason = failure instanceof Error ? failure.message : String(failure);
-            void vscode.window.showWarningMessage(`${PRODUCT}: the target window could not be saved: ${reason}`);
+            void notifyWarning(`${PRODUCT}: the target window could not be saved: ${reason}`);
             return;
         }
         this.reloadDefault();

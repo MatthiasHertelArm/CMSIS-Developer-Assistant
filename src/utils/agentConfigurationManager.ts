@@ -1324,7 +1324,7 @@ export class AgentConfigurationManager {
             void vscode.window.showInformationMessage(`${PRODUCT}: the tool rules were ${parts.join(' and ')}.`);
         }
         for (const failed of report.failed) {
-            void vscode.window.showErrorMessage(`${PRODUCT}: could not change the tool rules in ${failed.file}: ${failed.error}`);
+            void notifyError(`${PRODUCT}: could not change the tool rules in ${failed.file}: ${failed.error}`);
         }
     }
 }
