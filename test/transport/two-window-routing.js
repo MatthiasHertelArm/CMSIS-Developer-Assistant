@@ -48,7 +48,8 @@ function check(name, ok, detail) {
 }
 
 const REGISTRY_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-twowindow-'));
-const PORT = 39117;
+// The router's well-known port; CDA_ROUTER_TEST_PORT lets concurrent runs (several checkouts) use their own.
+const PORT = Number(process.env.CDA_ROUTER_TEST_PORT) || 39117;
 
 // Point the registry at the temp dir and give each coordinator its own identity
 // and its own view of `vscode`, since a real window has both.
