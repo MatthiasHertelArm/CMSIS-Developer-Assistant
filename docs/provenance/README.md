@@ -48,3 +48,5 @@ Known bugs are preserved on purpose, so that each rewrite is reviewable as behav
 | `.vscode-test.mjs` | 2 | 0 | [build-config.md](specs/build-config.md) |
 | `scripts/test-skill-trigger.ts` | 16 | 1 | [test-skill-trigger.md](specs/test-skill-trigger.md) |
 | `scripts/lib/copilotCli.ts` (Arm header only, but derived) | 12 | 2 | [copilotCli.md](specs/copilotCli.md) |
+| `src/debuggingExecutor.ts` | 136 | 3 | [debuggingExecutor.md](specs/debuggingExecutor.md) |
+| `src/executor/*.ts` (six new modules) | – | 0–4 | [debuggingExecutor.md](specs/debuggingExecutor.md) |

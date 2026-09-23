@@ -27,7 +27,6 @@ const DERIVED_FILES = [
     'LICENSE-MIT',
     'NOTICE',
     'src/debugMCPServer.ts',
-    'src/debuggingExecutor.ts',
     'src/debuggingHandler.ts',
     'src/test/debugSkillGuidance.test.ts',
     'src/test/debuggingHandler.test.ts',
