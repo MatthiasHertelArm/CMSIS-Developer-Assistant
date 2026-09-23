@@ -1,95 +1,87 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
-
-const esbuild = require('esbuild');
-
-const production = process.argv.includes('--production');
-const watch = process.argv.includes('--watch');
-
 /**
- * `serialport` must not be bundled.
+ * Copyright 2026 Arm Limited
  *
- * It loads a native `.node` binary through `node-gyp-build`, which resolves the
- * prebuild directory relative to `__dirname` at runtime. Inlining that code
- * moves `__dirname` to `dist/`, the lookup fails, and every serial tool dies at
- * the first call — with an error that reads like a missing driver rather than a
- * packaging mistake. Keeping it external means its tree ships from
- * node_modules; `.vscodeignore` carries the matching allow-list.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * `vscode` is external because the host provides it.
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
-const external = ['vscode', 'serialport'];
 
-/**
- * `jsonc-parser`'s default entry is a UMD bundle that hands `require` to its
- * factory as a *parameter*:
- *
- *     (function (factory) { ... factory(require, exports) ... })
- *     (function (require, exports) { ... require("./impl/format") ... })
- *
- * esbuild cannot trace a `require` it does not own, so it leaves that call in
- * place. At runtime it then resolves relative to `dist/`, where `impl/` does
- * not exist, and activation dies with "Cannot find module './impl/format'".
- *
- * The package also ships an ESM build using ordinary static imports, which
- * bundles correctly. Alias to it rather than marking the package external —
- * jsonc-parser has no dependencies of its own, so this costs nothing and keeps
- * the bundle self-contained.
- */
-const alias = { 'jsonc-parser': 'jsonc-parser/lib/esm/main.js' };
+// Bundles the extension (package.json `main`) and the pdf.js worker thread
+// into dist/:
+//
+//   node esbuild.js               development build, with linked source maps
+//   node esbuild.js --production  minified, no source maps (npm run build)
+//   node esbuild.js --watch       rebuild on every change
+//
+// dist/ is not cleaned first. esbuild's own log output is off; the plugin
+// below prints one line when a build starts, the errors, and one line when
+// it ends. See docs/packaging-esbuild.md for the packaging side.
 
-/** @type {import('esbuild').Plugin} */
-const esbuildProblemMatcherPlugin = {
-    name: 'esbuild-problem-matcher',
+const { context: createBuildContext } = require('esbuild');
+
+const flags = new Set(process.argv);
+const isRelease = flags.has('--production');
+const keepWatching = flags.has('--watch');
+
+/** Start and end lines on stdout; every error as a message line and, when known, its location on stderr. */
+const progressReport = {
+    name: 'cmsis-progress-report',
     setup(build) {
         build.onStart(() => {
-            console.log('[esbuild] build started');
+            console.log('[esbuild] bundling…');
         });
-        build.onEnd((result) => {
-            result.errors.forEach(({ text, location }) => {
-                console.error(`✘ [ERROR] ${text}`);
-                if (location) {
-                    console.error(`    ${location.file}:${location.line}:${location.column}`);
+        build.onEnd((outcome) => {
+            for (const problem of outcome.errors) {
+                console.error(`✖ error: ${problem.text}`);
+                const where = problem.location;
+                if (where) {
+                    console.error(`    ${where.file}:${where.line}:${where.column}`);
                 }
-            });
-            console.log('[esbuild] build finished');
+            }
+            console.log('[esbuild] bundling done');
         });
     },
 };
 
-/**
- * Two bundles: the extension, and the pdf.js worker thread it starts
- * (`src/core/packDocs/pdfWorker.ts`), which carries the 1 MB library and is
- * found by `PdfjsExtractor` as `pdfWorker.js` beside `extension.js` —
- * `entryNames` flattens both into `dist/`.
- */
-const entryPoints = ['src/extension.ts', 'src/core/packDocs/pdfWorker.ts'];
+const bundleOptions = {
+    // Both land flat in dist/: pdfExtract.ts starts the worker from beside the running bundle.
+    entryPoints: ['src/extension.ts', 'src/core/packDocs/pdfWorker.ts'],
+    outdir: 'dist',
+    entryNames: '[name]',
+    bundle: true,
+    format: 'cjs',
+    platform: 'node',
+    minify: isRelease,
+    sourcemap: !isRelease, sourcesContent: false,
+    // vscode is provided by the host. serialport stays a runtime require: node-gyp-build
+    // finds its native prebuild relative to __dirname, which bundling would move.
+    external: ['vscode', 'serialport'],
+    // The package's UMD entry hands `require` around as a parameter, which esbuild cannot
+    // follow (2.0.2 failed at activation with "Cannot find module './impl/format'").
+    alias: { 'jsonc-parser': 'jsonc-parser/lib/esm/main.js' },
+    logLevel: 'silent',
+    plugins: [progressReport],
+};
 
-async function main() {
-    const ctx = await esbuild.context({
-        entryPoints,
-        entryNames: '[name]',
-        bundle: true,
-        format: 'cjs',
-        minify: production,
-        sourcemap: !production,
-        sourcesContent: false,
-        platform: 'node',
-        outdir: 'dist',
-        external,
-        alias,
-        logLevel: 'silent',
-        plugins: [esbuildProblemMatcherPlugin],
-    });
-    if (watch) {
-        await ctx.watch();
-    } else {
-        await ctx.rebuild();
-        await ctx.dispose();
+async function bundle() {
+    const builder = await createBuildContext(bundleOptions);
+    if (keepWatching) {
+        await builder.watch();
+        return;
     }
+    await builder.rebuild();
+    await builder.dispose();
 }
 
-main().catch((e) => {
-    console.error(e);
+bundle().catch((reason) => {
+    console.error(reason);
     process.exit(1);
 });

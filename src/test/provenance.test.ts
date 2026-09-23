@@ -24,20 +24,13 @@ import * as path from 'path';
  * and its entry in the same change, and no other file may pick the line up.
  */
 const DERIVED_FILES = [
-    '.vscode-test.mjs',
     'LICENSE-MIT',
     'NOTICE',
-    'esbuild.js',
-    'eslint.config.mjs',
-    'scripts/test-skill-trigger.ts',
     'src/debugMCPServer.ts',
     'src/debuggingExecutor.ts',
     'src/debuggingHandler.ts',
-    'src/extension.ts',
     'src/test/debugSkillGuidance.test.ts',
     'src/test/debuggingHandler.test.ts',
-    'src/utils/agentConfigurationManager.ts',
-    'src/utils/debugConfigurationManager.ts',
 ];
 
 const MARKER = ['Copyright (c)', 'Microsoft', 'Corporation'].join(' ');

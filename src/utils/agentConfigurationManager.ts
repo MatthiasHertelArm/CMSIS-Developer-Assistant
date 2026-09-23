@@ -1,13 +1,49 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * Onboarding of AI agents onto the CMSIS Developer Assistant.
+ *
+ * - Registers this extension's MCP server in the home-directory configuration
+ *   files of eight agents (seven JSON files and Codex's TOML file), and
+ *   migrates the entries earlier releases wrote there.
+ * - Runs the two-step setup: which agents to register, then which AI Skills
+ *   Pack skills to install, for this user or for one workspace folder.
+ * - Applies the `installedSkills` and `aiSkills.enabled` settings to the skills
+ *   directories, scope by scope, and shows the monthly "install the skills?"
+ *   prompt.
+ *
+ * The files written here belong to other programs, so their locations, entry
+ * shapes and layout are a contract. Every write is atomic (`atomicFile.ts`);
+ * a JSON file that exists is re-read right before the write and everything
+ * else in it is kept (`jsonFileRewrite.ts`). What to install and where comes
+ * from the pure skill modules (`skillCatalog.ts`, `skillInstaller.ts`,
+ * `skillPrompt.ts`).
+ *
+ * Loading this module calls no `vscode` API: the transport tests load it
+ * under a minimal stub.
+ */
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as path from 'path';
 import * as os from 'os';
-import { logger } from './logger';
+import * as path from 'path';
 import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
+import { logger } from './logger';
 import {
     AI_SKILLS_ENABLED_SETTING,
     AI_SKILLS_PROMPT_SETTING,
@@ -23,32 +59,39 @@ import {
     loadSkillCatalog,
     resolveDesiredSkills,
 } from './skillCatalog';
-import { SkillInstallRoots, SkillInstaller, SkillSyncReport, getProjectSkillInstallRoots, getSkillInstallRoots, summarizeSkillSync } from './skillInstaller';
+import {
+    SkillInstallRoots,
+    SkillInstaller,
+    SkillSyncReport,
+    getProjectSkillInstallRoots,
+    getSkillInstallRoots,
+    summarizeSkillSync,
+} from './skillInstaller';
 import { SKILLS_PROMPT_SHOWN_KEY, SKILL_PROMPT_BUTTONS, decideSkillPrompt, skillPromptMessage } from './skillPrompt';
 
-export interface BaseAgentInfo {
-    id: string;
-    name: string;
-    displayName: string;
-    configPath: string;
-    configFormat: 'json' | 'toml';
-}
+/** Name of this server's entry in every agent configuration. */
+export const SERVER_KEY = 'cmsis-developer-assistant';
 
-export interface JsonAgentInfo extends BaseAgentInfo {
-    configFormat: 'json';
-    mcpServerFieldName: string;
-}
+/** The name used before the 2.1.0 rename; entries under it are moved to `SERVER_KEY` on activation. */
+export const LEGACY_SERVER_KEY = 'cmsis-debugmcp';
 
-export interface TomlAgentInfo extends BaseAgentInfo {
-    configFormat: 'toml';
-}
+/** Fields every supported agent has. `name` is the same as `id`. */
+export interface BaseAgentInfo { id: string; name: string; displayName: string; configPath: string; configFormat: 'json' | 'toml' }
 
-export type AgentInfo = JsonAgentInfo | TomlAgentInfo;
+/** An agent whose servers are an object under `mcpServerFieldName` of a JSON file. */
+export interface JsonAgentInfo extends BaseAgentInfo { configFormat: 'json'; mcpServerFieldName: string }
 
+/** Codex: one `[mcp_servers.<key>]` table per server in a TOML file. */
+export interface TomlAgentInfo extends BaseAgentInfo { configFormat: 'toml' }
+
+export type AgentInfo =
+    | JsonAgentInfo
+    | TomlAgentInfo;
+
+/** Every field any of the JSON entry shapes uses; each agent gets a subset (see `ENTRY_SHAPES`). */
 export interface MCPServerConfig {
     type?: string;
     url?: string;
-    // stdio-bridge shape (Claude Desktop has no native HTTP transport)
     command?: string;
     args?: string[];
     autoApprove?: string[];
@@ -57,1062 +100,860 @@ export interface MCPServerConfig {
     tools?: string[];
 }
 
+// ---------------------------------------------------------------------------
+// Settings, state and visible text
+// ---------------------------------------------------------------------------
+
+const SETTINGS_SECTION = 'cmsis-developer-assistant';
+
+/** globalState: the first-run setup has been answered (accepted or dismissed). */
+const SETUP_ANSWERED_KEY = 'cmsis-developer-assistant.popupShown.v3';
+
+const PRODUCT = 'CMSIS Developer Assistant';
+const SETUP_TITLE = `${PRODUCT} Setup`;
+const AGENT_ITEM_NOTE = 'Write the MCP server entry into this agent\'s configuration';
+const OPEN_FILE_BUTTON = 'View File';
+const ENABLE_BUTTON = 'Enable and Select';
+const PACK_DISABLED_NOTICE = `${PRODUCT}: the AI Skills Pack is disabled (setting cmsis-developer-assistant.aiSkills.enabled); only the extension's own skills are installed.`;
+
+/** Longest skill detail line in the picker. */
+const DETAIL_MAX = 140;
+
+// ---------------------------------------------------------------------------
+// The supported agents
+// ---------------------------------------------------------------------------
+
+/** `rel`, written with forward slashes, below `root`. */
+function below(root: string, rel: string): string {
+    return path.join(root, ...rel.split('/'));
+}
+
 /**
- * MCP server key written into external agent config files — the JSON map key
- * under `mcpServers`, and the Codex TOML `[mcp_servers.<key>]` section name.
- * Renamed from `cmsis-debugmcp` when the product became "CMSIS Developer
- * Assistant".
+ * Where per-user application data lives on this platform: `%APPDATA%`,
+ * `~/Library/Application Support` or `$XDG_CONFIG_HOME`. An empty variable
+ * counts as unset; an unknown platform is treated like Windows.
  */
-export const SERVER_KEY = 'cmsis-developer-assistant';
+function applicationDataDir(homeRoot: string): string {
+    const system = os.platform();
+    const known = system === 'darwin' || system === 'linux' || system === 'win32';
+    if (!known) {
+        logger.warn(`Unrecognised platform "${system}": agent configuration paths follow the Windows layout`);
+    }
+    const dataDir = system === 'darwin' ? below(homeRoot, 'Library/Application Support')
+        : system === 'linux' ? process.env.XDG_CONFIG_HOME || below(homeRoot, '.config')
+            : process.env.APPDATA || below(homeRoot, 'AppData/Roaming');
+    logger.info(`Agent configuration base directory on ${system}: ${dataDir}`);
+    return dataDir;
+}
+
+/** The agents in picker order, with their configuration files as the environment says right now. */
+function supportedAgents(): AgentInfo[] {
+    const homeRoot = os.homedir();
+    const appData = applicationDataDir(homeRoot);
+    const vsCodeStorage = below(appData, 'Code/User/globalStorage');
+    const viaJson = (id: string, displayName: string, configPath: string): JsonAgentInfo =>
+        ({ id, name: id, displayName, configPath, configFormat: 'json', mcpServerFieldName: 'mcpServers' });
+    const codex: TomlAgentInfo = {
+        id: 'codex', name: 'codex', displayName: 'Codex', configFormat: 'toml',
+        configPath: path.join(process.env.CODEX_HOME || below(homeRoot, '.codex'), 'config.toml'),
+    };
+    return [
+        viaJson('roo', 'Roo Code', below(vsCodeStorage, 'rooveterinaryinc.roo-cline/settings/mcp_settings.json')),
+        viaJson('antigravity', 'Antigravity', below(homeRoot, '.gemini/antigravity/mcp_config.json')),
+        viaJson('cline', 'Cline', below(vsCodeStorage, 'saoudrizwan.claude-dev/settings/cline_mcp_settings.json')),
+        viaJson('copilot-cli', 'GitHub Copilot CLI', path.join(process.env.COPILOT_HOME || below(homeRoot, '.copilot'), 'mcp-config.json')),
+        viaJson('cursor', 'Cursor', below(appData, 'Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json')),
+        codex,
+        viaJson('claude-code', 'Claude Code', path.join(homeRoot, '.claude.json')),
+        viaJson('claude-desktop', 'Claude Desktop', below(appData, 'Claude/claude_desktop_config.json')),
+    ];
+}
+
+/** The agents whose configuration file exists, in roster order. */
+function agentsWithFiles(): AgentInfo[] {
+    return supportedAgents().filter((candidate) => fs.existsSync(candidate.configPath));
+}
 
 /**
- * The pre-rename key. Existing user configs written by earlier versions are
- * migrated from this to SERVER_KEY on activation; afterwards it is only used
- * for detection of a stale entry.
+ * Entry shapes of the JSON agents that do not take the default one. The key
+ * order is part of the bytes written.
  */
-export const LEGACY_SERVER_KEY = 'cmsis-debugmcp';
+const ENTRY_SHAPES: Readonly<Record<string, (url: string) => MCPServerConfig>> = {
+    'copilot-cli': (url) => ({ type: 'http', url, tools: ['*'] }),
+    'claude-code': (url) => ({ type: 'http', url }),
+    // Claude Desktop starts stdio servers only; mcp-remote bridges to the HTTP endpoint.
+    'claude-desktop': (url) => ({ command: 'npx', args: ['-y', 'mcp-remote', url] }),
+};
+
+/** The entry a JSON agent gets under `mcpServers.<SERVER_KEY>`: Roo Code, Antigravity, Cline and Cursor share the default. */
+function entryFor(agentId: string, url: string, timeout: number): MCPServerConfig {
+    const shape = ENTRY_SHAPES[agentId];
+    return shape ? shape(url) : { autoApprove: [], disabled: false, timeout, type: 'streamableHttp', url };
+}
 
 /**
- * Insert or update the `[mcp_servers.<SERVER_KEY>]` block in a Codex
- * `config.toml`, preserving the rest of the file. Codex configs are TOML,
- * not JSON, so they cannot go through the generic JSON path.
+ * Put `entry` under `<field>.<SERVER_KEY>`, replacing whatever was there; a
+ * missing or null field becomes `{}` first. Any other non-object value is
+ * not guarded: a string makes the assignment throw, an array loses the entry
+ * when it is written back.
  */
-export function upsertCodexDebugMCPConfig(configContent: string, mcpServerUrl: string): string {
-    const normalizedConfigContent = configContent.replace(/\r\n/g, '\n');
-    const lines = normalizedConfigContent.split('\n');
-    const escapedUrl = escapeTomlString(mcpServerUrl);
-    const debugMCPSectionIndex = lines.findIndex(line => isCodexServerSectionHeader(line, SERVER_KEY));
-
-    if (debugMCPSectionIndex === -1) {
-        const separator = normalizedConfigContent.length === 0
-            ? ''
-            : normalizedConfigContent.endsWith('\n') ? '\n' : '\n\n';
-        return `${normalizedConfigContent}${separator}[mcp_servers.${SERVER_KEY}]\nurl = "${escapedUrl}"\n`;
+function placeEntry(tree: Record<string, unknown>, field: string, entry: MCPServerConfig): boolean {
+    if (tree[field] === null || tree[field] === undefined) {
+        tree[field] = {};
     }
+    (tree[field] as Record<string, unknown>)[SERVER_KEY] = entry;
+    return true;
+}
 
-    const nextSectionIndex = findNextTomlSectionIndex(lines, debugMCPSectionIndex + 1);
-    const debugMCPSectionEndIndex = nextSectionIndex === -1 ? lines.length : nextSectionIndex;
+/** Antigravity and Gemini manage the MCP servers themselves; the setup and the prompt stay out of their way. */
+function isHostManaged(): boolean {
+    return process.env.ANTIGRAVITY_ENV === 'true' || Boolean(process.env.GEMINI_HOME);
+}
 
-    for (let index = debugMCPSectionIndex + 1; index < debugMCPSectionEndIndex; index++) {
-        const urlMatch = lines[index].match(/^(\s*)url\s*=.*$/);
-        if (urlMatch) {
-            lines[index] = `${urlMatch[1]}url = "${escapedUrl}"`;
-            return lines.join('\n');
-        }
+/** Create the directory a file goes into, and its parents, when it is missing. */
+async function ensureParentDir(file: string): Promise<void> {
+    const parent = path.dirname(file);
+    if (!fs.existsSync(parent)) {
+        await fs.promises.mkdir(parent, { recursive: true });
     }
+}
 
-    lines.splice(debugMCPSectionIndex + 1, 0, `url = "${escapedUrl}"`);
-    return lines.join('\n');
+// ---------------------------------------------------------------------------
+// Codex TOML (pure text operations; no TOML parser)
+// ---------------------------------------------------------------------------
+
+const LINE_BREAK = /\r?\n/;
+const LF = '\n';
+/** Any table or array-of-tables header, optionally indented and followed by a comment. */
+const TABLE_HEADER = /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/;
+/** Our table exactly: no spaces inside the brackets, no quoted key. */
+const SERVER_TABLE = /^\s*\[mcp_servers\.cmsis-developer-assistant\]\s*(?:#.*)?$/;
+const LEGACY_TABLE = /^\s*\[mcp_servers\.cmsis-debugmcp\]\s*(?:#.*)?$/;
+/** A `url` assignment; `urls =` and a commented-out line do not count. */
+const URL_ASSIGNMENT = /^(\s*)url\s*=/;
+/** A `url` assignment ending in `/sse`, optionally quoted and commented (a comment ending in `/sse` counts too). */
+const SSE_URL_ASSIGNMENT = /^\s*url\s*=.*\/sse["']?\s*(?:#.*)?$/;
+
+/** Index of the line that ends the table starting at `header`: the next header of any kind, or the end. */
+function tableEnd(lines: readonly string[], header: number): number {
+    const next = lines.findIndex((line, at) => at > header && TABLE_HEADER.test(line));
+    return next < 0 ? lines.length : next;
+}
+
+/** A TOML basic string: only `\` and `"` are escaped. */
+function tomlQuoted(value: string): string {
+    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 /**
- * Remove a legacy `[mcp_servers.cmsis-debugmcp]` section from a Codex
- * config.toml if present, bounded by the next TOML section so adjacent
- * `[mcp_servers.*]` blocks survive. Returns the stripped content and whether
- * anything was removed.
+ * Point our Codex table at `serverUrl`, adding the table when it is missing.
+ * The result has LF line breaks. Only the `url` line of our table is written;
+ * every other line is kept as it was.
  */
-export function stripLegacyCodexSection(configContent: string): { content: string; removed: boolean } {
-    const normalized = configContent.replace(/\r\n/g, '\n');
-    const lines = normalized.split('\n');
-    const idx = lines.findIndex(line => isCodexServerSectionHeader(line, LEGACY_SERVER_KEY));
-    if (idx === -1) {
-        return { content: configContent, removed: false };
+export function upsertCodexDebugMCPConfig(toml: string, serverUrl: string): string {
+    const urlLine = `url = ${tomlQuoted(serverUrl)}`;
+    const lines = toml.split(LINE_BREAK);
+    const header = lines.findIndex((line) => SERVER_TABLE.test(line));
+    if (header < 0) {
+        const text = lines.join(LF);
+        const gap = text.length === 0 ? '' : text.endsWith(LF) ? LF : LF + LF;
+        return `${text}${gap}[mcp_servers.${SERVER_KEY}]${LF}${urlLine}${LF}`;
     }
-    const nextIdx = findNextTomlSectionIndex(lines, idx + 1);
-    const end = nextIdx === -1 ? lines.length : nextIdx;
-    lines.splice(idx, end - idx);
-    return { content: lines.join('\n'), removed: true };
-}
-
-function escapeTomlString(value: string): string {
-    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-function findNextTomlSectionIndex(lines: string[], startIndex: number): number {
-    for (let index = startIndex; index < lines.length; index++) {
-        if (isTomlSectionHeader(lines[index])) {
-            return index;
-        }
+    const end = tableEnd(lines, header);
+    const urlAt = lines.findIndex((line, at) => at > header && at < end && URL_ASSIGNMENT.test(line));
+    if (urlAt < 0) {
+        lines.splice(header + 1, 0, urlLine);
+    } else {
+        // The indentation stays; a trailing comment on the old line does not.
+        const indent = URL_ASSIGNMENT.exec(lines[urlAt])?.[1] ?? '';
+        lines[urlAt] = indent + urlLine;
     }
-    return -1;
-}
-
-function isTomlSectionHeader(line: string): boolean {
-    return /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/.test(line);
-}
-
-function isCodexServerSectionHeader(line: string, key: string): boolean {
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`^\\s*\\[mcp_servers\\.${escaped}\\]\\s*(?:#.*)?$`).test(line);
+    return lines.join(LF);
 }
 
 /**
- * Whether an agent's config file text registers this extension's MCP server:
- * a `<mcpServerFieldName>.cmsis-developer-assistant` entry in the JSON
- * formats, a `[mcp_servers.cmsis-developer-assistant]` section in Codex's
- * TOML. The legacy `cmsis-debugmcp` key alone does not count — migration
- * renames it on activation, before this is asked. Unparseable content reads
- * as "not registered". Pure, so the install prompt's detection is testable.
+ * Remove the first pre-rename table and its body. Without one the input
+ * comes back untouched (line breaks included); with one the result has LF
+ * line breaks. A legacy sub-table starts a table of its own and stays.
+ */
+export function stripLegacyCodexSection(toml: string): { content: string; removed: boolean } {
+    const lines = toml.split(LINE_BREAK);
+    const header = lines.findIndex((line) => LEGACY_TABLE.test(line));
+    if (header < 0) {
+        return { content: toml, removed: false };
+    }
+    lines.splice(header, tableEnd(lines, header) - header);
+    return { content: lines.join(LF), removed: true };
+}
+
+/** Our table's `url` still points at the retired SSE endpoint. */
+function codexUrlIsSse(toml: string): boolean {
+    const lines = toml.split(LINE_BREAK);
+    const header = lines.findIndex((line) => SERVER_TABLE.test(line));
+    return header >= 0 && lines.slice(header + 1, tableEnd(lines, header)).some((line) => SSE_URL_ASSIGNMENT.test(line));
+}
+
+/**
+ * Whether an agent's configuration text registers this server under the
+ * current key; the legacy key alone does not count. JSON is parsed
+ * strictly, so comments or an empty file read as "no". Never throws.
  */
 export function agentConfigHasServer(agent: AgentInfo, content: string): boolean {
-    if (agent.configFormat === 'toml') {
-        return content.split(/\r?\n/).some(line => isCodexServerSectionHeader(line, SERVER_KEY));
+    if (agent.configFormat !== 'json') {
+        return content.split(LINE_BREAK).some((line) => SERVER_TABLE.test(line));
     }
+    let tree: unknown;
     try {
-        const config = JSON.parse(content) as unknown;
-        if (typeof config !== 'object' || config === null || Array.isArray(config)) {
-            return false;
-        }
-        const servers = (config as Record<string, unknown>)[agent.mcpServerFieldName];
-        return typeof servers === 'object' && servers !== null && SERVER_KEY in (servers as Record<string, unknown>);
+        tree = JSON.parse(content);
     } catch {
         return false;
     }
-}
-
-/** Longest `detail` line the skill picker shows per entry. */
-const PICKER_DETAIL_LENGTH = 140;
-
-/**
- * Where a skill selection lives and, with it, where its skills go: the
- * user's settings → the personal skills directories, for every workspace;
- * a workspace folder's settings → that project's own `.agents/skills`
- * (and `.claude/skills`). The two are independent selections.
- */
-type SkillScope =
-    | { kind: 'user' }
-    | { kind: 'folder'; folder: vscode.WorkspaceFolder };
-
-export class AgentConfigurationManager {
-    private context: vscode.ExtensionContext;
-    // Versioned so the first-run setup re-appears once when it gains a step
-    // (v2: Claude Code + Claude Desktop agents; v3: the agent-skills step).
-    private readonly POPUP_SHOWN_KEY = 'cmsis-developer-assistant.popupShown.v3';
-    private readonly timeoutInSeconds: number;
-    private serverPort: number;
-    private catalog: SkillCatalog | null | undefined;
-    private readonly skillInstaller: SkillInstaller;
-    // Overlapping syncs (activation, a setting change, the picker) are
-    // serialised so two of them never stage into the same directory at once.
-    private skillSyncChain: Promise<unknown> = Promise.resolve();
-
-    constructor(context: vscode.ExtensionContext, timeoutInSeconds: number, serverPort: number) {
-        this.context = context;
-        this.timeoutInSeconds = timeoutInSeconds;
-        this.serverPort = serverPort;
-        const version = (context.extension?.packageJSON as { version?: string } | undefined)?.version ?? 'unknown';
-        this.skillInstaller = new SkillInstaller(context.extensionPath, version);
-    }
-
-    /**
-     * Set the port written into agent configurations.
-     *
-     * Always the well-known router port, in every window. It used to be
-     * whichever port this window's own server managed to bind, so the last
-     * window to start overwrote the shared agent config and pointed the agent
-     * at an arbitrary window. Now one window serves that port and forwards
-     * each call to the window that owns the target, so every window writing
-     * the same value is correct and idempotent.
-     */
-    public updatePort(port: number): void {
-        this.serverPort = port;
-    }
-
-    /**
-     * Check if we should show the post-install popup
-     */
-    public async shouldShowPopup(): Promise<boolean> {
-        if (this.isHostManagedEnvironment()) {
-            return false;
-        }
-        // Check if popup has already been shown
-        const popupShown = this.context.globalState.get<boolean>(this.POPUP_SHOWN_KEY, false);
-        return !popupShown;
-    }
-
-    /**
-     * Antigravity / Gemini configure MCP servers themselves, so the setup
-     * prompts are noise there — they offer a choice the host has already made.
-     */
-    private isHostManagedEnvironment(): boolean {
-        return process.env.ANTIGRAVITY_ENV === 'true' || Boolean(process.env.GEMINI_HOME);
-    }
-
-    private getSettings(): vscode.WorkspaceConfiguration {
-        return vscode.workspace.getConfiguration('cmsis-developer-assistant');
-    }
-
-    /** `aiSkills.enabled`: whether the cmsis-skills pack and its routers are installed at all. */
-    private isSkillsPackEnabled(): boolean {
-        return this.getSettings().get<boolean>(AI_SKILLS_ENABLED_SETTING, true);
-    }
-
-    /** `aiSkills.promptOnDetect`: whether registered agents' users get the monthly install nudge. */
-    private isSkillPromptEnabled(): boolean {
-        return this.getSettings().get<boolean>(AI_SKILLS_PROMPT_SETTING, true);
-    }
-
-    /**
-     * The setup flow: step 1 picks the agents to register the MCP server
-     * with, step 2 picks the agent skills to install. Shown once on first
-     * run and on demand from the *Configure Agents and Skills* command.
-     *
-     * Dismissing either step counts as an answer — without that the
-     * first-run prompt came back on every activation until the user picked
-     * something. Both steps stay reachable from the command palette.
-     */
-    public async runSetupFlow(): Promise<void> {
-        try {
-            const agents = await this.getSupportedAgents();
-            const withSkillsStep = this.isSkillsPackEnabled();
-            await this.showAgentSelectionDialog(agents, withSkillsStep ? ' (1/2)' : '');
-            if (withSkillsStep) {
-                await this.showSkillSelectionDialog();
-            } else {
-                logger.info(`AI Skills Pack disabled (${AI_SKILLS_ENABLED_SETTING}); skipping the skills step of the setup`);
-            }
-        } catch (error) {
-            console.error('Error running the setup flow:', error);
-            vscode.window.showErrorMessage(`Failed to show the CMSIS Developer Assistant setup: ${error}`);
-        } finally {
-            await this.context.globalState.update(this.POPUP_SHOWN_KEY, true);
-        }
-    }
-
-    /**
-     * Reset popup state (for testing/debugging)
-     */
-    public async resetPopupState(): Promise<void> {
-        await this.context.globalState.update(this.POPUP_SHOWN_KEY, false);
-        await this.context.globalState.update(SKILLS_PROMPT_SHOWN_KEY, undefined);
-    }
-
-    /**
-     * Get cross-platform configuration base path
-     */
-    private getConfigBasePath(): string {
-        const platform = os.platform();
-        const userHome = os.homedir();
-        
-        switch (platform) {
-            case 'win32': // Windows
-                return process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
-            case 'darwin': // MacOS
-                return path.join(userHome, 'Library', 'Application Support');
-            case 'linux': // Linux
-                return process.env.XDG_CONFIG_HOME || path.join(userHome, '.config');
-            default:
-                // Fallback to Windows-style for unknown platforms
-                console.warn(`Unknown platform: ${platform}, using Windows config path`);
-                return process.env.APPDATA || path.join(userHome, 'AppData', 'Roaming');
-        }
-    }
-
-    private getCodexConfigPath(): string {
-        const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-        return path.join(codexHome, 'config.toml');
-    }
-
-    private getCopilotCliConfigPath(): string {
-        const copilotHome = process.env.COPILOT_HOME || path.join(os.homedir(), '.copilot');
-        return path.join(copilotHome, 'mcp-config.json');
-    }
-
-    /**
-     * Claude Code stores user-scoped MCP servers in a top-level `mcpServers`
-     * key of ~/.claude.json. The file also holds session history and other
-     * state, so it must only ever be merged into, never recreated.
-     */
-    private getClaudeCodeConfigPath(): string {
-        return path.join(os.homedir(), '.claude.json');
-    }
-
-    private getClaudeDesktopConfigPath(): string {
-        return path.join(this.getConfigBasePath(), 'Claude', 'claude_desktop_config.json');
-    }
-
-    /**
-     * Get list of supported agents
-     */
-    private async getSupportedAgents(): Promise<AgentInfo[]> {
-        const configBasePath = this.getConfigBasePath();
-        const platform = os.platform();
-
-        console.log(`Detected platform: ${platform}, using config base path: ${configBasePath}`);
-
-        const agents: AgentInfo[] = [
-            {
-                id: 'roo',
-                name: 'roo',
-                displayName: 'Roo Code',
-                configPath: path.join(configBasePath, 'Code', 'User', 'globalStorage', 'rooveterinaryinc.roo-cline', 'settings', 'mcp_settings.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'antigravity',
-                name: 'antigravity',
-                displayName: 'Antigravity',
-                configPath: path.join(os.homedir(), '.gemini', 'antigravity', 'mcp_config.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'cline',
-                name: 'cline',
-                displayName: 'Cline',
-                configPath: path.join(configBasePath, 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev', 'settings', 'cline_mcp_settings.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            // The GitHub Copilot *extension* in VS Code no longer needs a static
-            // mcp.json entry — the extension registers an McpServerDefinitionProvider
-            // at activation, which handles dynamic port assignment. The Copilot
-            // *CLI* is separate and does still need a static config file.
-            {
-                id: 'copilot-cli',
-                name: 'copilot-cli',
-                displayName: 'GitHub Copilot CLI',
-                configPath: this.getCopilotCliConfigPath(),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'cursor',
-                name: 'cursor',
-                displayName: 'Cursor',
-                configPath: path.join(configBasePath, 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'settings', 'mcp_settings.json'),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'codex',
-                name: 'codex',
-                displayName: 'Codex',
-                configPath: this.getCodexConfigPath(),
-                configFormat: 'toml'
-            },
-            {
-                id: 'claude-code',
-                name: 'claude-code',
-                displayName: 'Claude Code',
-                configPath: this.getClaudeCodeConfigPath(),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            },
-            {
-                id: 'claude-desktop',
-                name: 'claude-desktop',
-                displayName: 'Claude Desktop',
-                configPath: this.getClaudeDesktopConfigPath(),
-                configFormat: 'json',
-                mcpServerFieldName: 'mcpServers'
-            }
-        ];
-
-        return agents;
-    }
-
-    private getMCPServerUrl(): string {
-        return `http://localhost:${this.serverPort}/mcp`;
-    }
-
-    /**
-     * Get CMSIS Developer Assistant server configuration with current port and timeout settings.
-     * The Copilot CLI expects a `type: 'http'` entry with a `tools` allowlist.
-     * Claude Code takes a plain `type: 'http'` entry; Claude Desktop only
-     * supports stdio servers, so it gets an `mcp-remote` bridge.
-     */
-    private getDebugMCPConfig(agent?: AgentInfo): MCPServerConfig {
-        if (agent?.id === 'copilot-cli') {
-            return {
-                type: 'http',
-                url: this.getMCPServerUrl(),
-                tools: ['*'],
-            };
-        }
-
-        if (agent?.id === 'claude-code') {
-            return {
-                type: 'http',
-                url: this.getMCPServerUrl(),
-            };
-        }
-
-        if (agent?.id === 'claude-desktop') {
-            return {
-                command: 'npx',
-                args: ['-y', 'mcp-remote', this.getMCPServerUrl()],
-            };
-        }
-
-        return {
-            autoApprove: [],
-            disabled: false,
-            timeout: this.timeoutInSeconds,
-            type: 'streamableHttp',
-            url: this.getMCPServerUrl(),
-        };
-    }
-
-    /**
-     * Migrate existing SSE configurations to streamableHttp
-     * This should be called on extension activation to ensure backward compatibility
-     */
-    public async migrateExistingConfigurations(): Promise<void> {
-        const agents = await this.getSupportedAgents();
-        let migrationCount = 0;
-
-        for (const agent of agents) {
-            try {
-                if (!fs.existsSync(agent.configPath)) {
-                    continue;
-                }
-
-                const configContent = await fs.promises.readFile(agent.configPath, 'utf8');
-
-                if (agent.configFormat === 'toml') {
-                    // Rename a legacy [mcp_servers.cmsis-debugmcp] section to the
-                    // new key, then refresh a stale /sse endpoint on the new key.
-                    const legacy = stripLegacyCodexSection(configContent);
-                    let tomlContent = legacy.content;
-                    let tomlChanged = legacy.removed;
-                    if (legacy.removed || this.shouldMigrateCodexConfig(tomlContent)) {
-                        tomlContent = upsertCodexDebugMCPConfig(tomlContent, this.getMCPServerUrl());
-                        tomlChanged = true;
-                    }
-                    if (tomlChanged) {
-                        await writeFileAtomic(agent.configPath, tomlContent);
-                        migrationCount++;
-                        console.log(`Successfully migrated ${agent.displayName} configuration`);
-                    }
-                    continue;
-                }
-
-                // JSON agents: read-modify-write through rewriteJsonFile, which
-                // re-reads immediately before writing and retries when the
-                // file changed underneath (Claude Code rewrites ~/.claude.json
-                // all the time). The closure may run more than once, so it
-                // only computes; the counting happens on the outcome.
-                const fieldName = agent.mcpServerFieldName;
-                const desiredConfig = this.getDebugMCPConfig(agent);
-                let renamed = false;
-                let countsAsMigration = false;
-                const outcome = await rewriteJsonFile(agent.configPath, (config) => {
-                    renamed = false;
-                    countsAsMigration = false;
-                    const servers = config[fieldName] as Record<string, any> | undefined;
-
-                    // Rename a legacy `cmsis-debugmcp` entry to the new key,
-                    // carrying its settings, then operate on the new key. This is
-                    // what stops the rename from orphaning a dead duplicate server
-                    // in the user's home-directory agent config.
-                    if (servers && servers[LEGACY_SERVER_KEY]) {
-                        if (!servers[SERVER_KEY]) {
-                            servers[SERVER_KEY] = servers[LEGACY_SERVER_KEY];
-                        }
-                        delete servers[LEGACY_SERVER_KEY];
-                        renamed = true;
-                    }
-
-                    const debugmcpConfig = servers?.[SERVER_KEY];
-                    if (!debugmcpConfig) {
-                        countsAsMigration = renamed;
-                        return renamed; // server not configured for this agent
-                    }
-
-                    // Migrate only when the existing entry doesn't match the
-                    // transport this agent should use: legacy /sse endpoints, or
-                    // a transport type that differs from the desired one. For
-                    // agents whose correct type IS 'http' (Copilot CLI, Claude
-                    // Code) an 'http' entry is current, not legacy.
-                    const isLegacySse =
-                        debugmcpConfig.type === 'sse' ||
-                        (typeof debugmcpConfig.url === 'string' && debugmcpConfig.url.endsWith('/sse'));
-                    const isWrongTransport =
-                        desiredConfig.type !== undefined &&
-                        debugmcpConfig.type !== undefined &&
-                        debugmcpConfig.type !== desiredConfig.type;
-                    // A stale endpoint (e.g. the server fell back to an
-                    // OS-assigned port) is refreshed silently — the entry would
-                    // otherwise point at a dead port.
-                    const isStaleEndpoint =
-                        (typeof debugmcpConfig.url === 'string' &&
-                            desiredConfig.url !== undefined &&
-                            debugmcpConfig.url !== desiredConfig.url) ||
-                        (Array.isArray(debugmcpConfig.args) &&
-                            desiredConfig.args !== undefined &&
-                            JSON.stringify(debugmcpConfig.args) !== JSON.stringify(desiredConfig.args));
-                    const needsMigration = isLegacySse || isWrongTransport || isStaleEndpoint;
-
-                    if (needsMigration) {
-                        // Update to new configuration
-                        (config[fieldName] as Record<string, any>)[SERVER_KEY] = { ...desiredConfig };
-                        // Preserve any custom autoApprove settings
-                        if (debugmcpConfig.autoApprove && Array.isArray(debugmcpConfig.autoApprove)) {
-                            (config[fieldName] as Record<string, any>)[SERVER_KEY].autoApprove = debugmcpConfig.autoApprove;
-                        }
-                    }
-                    // Count legacy-transport migrations and key renames toward
-                    // the user-facing toast; silent endpoint refreshes don't.
-                    countsAsMigration = isLegacySse || isWrongTransport || renamed;
-                    return needsMigration || renamed;
-                });
-                if (outcome === 'written') {
-                    if (countsAsMigration) {
-                        migrationCount++;
-                    }
-                    console.log(`Successfully migrated ${agent.displayName} configuration`);
-                }
-            } catch (error) {
-                console.error(`Error migrating config for ${agent.name}:`, error);
-                // Continue with other agents even if one fails
-            }
-        }
-
-        if (migrationCount > 0) {
-            vscode.window.showInformationMessage(
-                `CMSIS Developer Assistant: Migrated ${migrationCount} agent configuration(s).`
-            );
-        }
-    }
-
-    /**
-     * Whether a Codex config.toml has a stale `cmsis-debugmcp` section still
-     * pointing at the deprecated `/sse` endpoint and needs rewriting.
-     */
-    private shouldMigrateCodexConfig(configContent: string): boolean {
-        const normalizedConfigContent = configContent.replace(/\r\n/g, '\n');
-        const lines = normalizedConfigContent.split('\n');
-        const debugMCPSectionIndex = lines.findIndex(line => isCodexServerSectionHeader(line, SERVER_KEY));
-
-        if (debugMCPSectionIndex === -1) {
-            return false;
-        }
-
-        const nextSectionIndex = findNextTomlSectionIndex(lines, debugMCPSectionIndex + 1);
-        const debugMCPSectionEndIndex = nextSectionIndex === -1 ? lines.length : nextSectionIndex;
-
-        for (let index = debugMCPSectionIndex + 1; index < debugMCPSectionEndIndex; index++) {
-            if (/^\s*url\s*=.*\/sse["']?\s*(?:#.*)?$/.test(lines[index])) {
-                return true;
-            }
-        }
-
+    if (!tree || typeof tree !== 'object' || Array.isArray(tree)) {
         return false;
     }
+    const servers = (tree as Record<string, unknown>)[agent.mcpServerFieldName];
+    return servers !== null && typeof servers === 'object' && SERVER_KEY in servers;
+}
 
-    /**
-     * Add CMSIS Developer Assistant server configuration to the specified agent's config
-     */
-    private async addDebugMCPToAgent(agent: AgentInfo): Promise<boolean> {
-        try {
-            // Ensure the config directory exists
-            const configDir = path.dirname(agent.configPath);
-            if (!fs.existsSync(configDir)) {
-                await fs.promises.mkdir(configDir, { recursive: true });
-            }
+// ---------------------------------------------------------------------------
+// Migration of earlier entries
+// ---------------------------------------------------------------------------
 
-            // Codex configs are TOML — handled by a dedicated upsert that
-            // preserves the rest of the file.
-            if (agent.configFormat === 'toml') {
-                const existing = fs.existsSync(agent.configPath)
-                    ? await fs.promises.readFile(agent.configPath, 'utf8')
-                    : '';
-                await writeFileAtomic(agent.configPath, upsertCodexDebugMCPConfig(existing, this.getMCPServerUrl()));
-                console.log(`Successfully added CMSIS Developer Assistant configuration to ${agent.name}`);
-                return true;
-            }
+interface EntryMigration {
+    /** Something in the object was changed. */
+    changed: boolean;
+    /** The change is one the user is told about; a pure endpoint refresh is not. */
+    reported: boolean;
+}
 
-            const fieldName = agent.mcpServerFieldName;
-            const desired = this.getDebugMCPConfig(agent);
-            if (fs.existsSync(agent.configPath)) {
-                // Re-read before write, retried if the file changes underneath
-                // — never recreate an unparseable config: files like
-                // ~/.claude.json hold far more than MCP entries, and replacing
-                // them with a fresh object would destroy the user's state.
-                const outcome = await rewriteJsonFile(agent.configPath, (config) => {
-                    const servers = (config[fieldName] ??= {}) as Record<string, unknown>;
-                    servers[SERVER_KEY] = desired;
-                    return true;
-                });
-                if (outcome === 'unparseable') {
-                    console.error(`Existing config for ${agent.name} is not valid JSON — refusing to overwrite it`);
-                    vscode.window.showErrorMessage(
-                        `Cannot configure ${agent.displayName}: ${agent.configPath} exists but is not valid JSON. ` +
-                        'Please fix or remove the file and try again.'
-                    );
-                    return false;
-                }
-            } else {
-                await writeFileAtomic(agent.configPath, JSON.stringify({ [fieldName]: { [SERVER_KEY]: desired } }, null, 2));
-            }
-
-            console.log(`Successfully added CMSIS Developer Assistant configuration to ${agent.name}`);
-            return true;
-        } catch (error) {
-            console.error(`Error adding CMSIS Developer Assistant to ${agent.name}:`, error);
-            vscode.window.showErrorMessage(`Failed to configure CMSIS Developer Assistant for ${agent.displayName}: ${error}`);
-            return false;
+/**
+ * Bring one servers object up to date, in place. The pre-rename key moves to
+ * ours (an entry already under ours wins). An entry on the SSE transport, on
+ * another transport than `wanted`, or at another endpoint is replaced by a
+ * copy of `wanted` that keeps only its `autoApprove` list. Recomputed from the
+ * parsed file on every attempt, so it has no effect outside `servers`.
+ */
+function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigration {
+    const table = servers as Record<string, unknown> | null | undefined;
+    let renamed = false;
+    if (table && table[LEGACY_SERVER_KEY]) {
+        if (!table[SERVER_KEY]) {
+            table[SERVER_KEY] = table[LEGACY_SERVER_KEY];
         }
+        delete table[LEGACY_SERVER_KEY];
+        renamed = true;
     }
-
-    /**
-     * Step 1: the agent selection dialog. Resolves once the picker is gone,
-     * with `true` when the user accepted a selection (even an empty one).
-     */
-    private showAgentSelectionDialog(agents: AgentInfo[], stepLabel = ' (1/2)'): Promise<boolean> {
-        const items: vscode.QuickPickItem[] = agents.map(agent => ({
-            label: `$(add) Configure ${agent.displayName}`,
-            description: 'Add CMSIS Developer Assistant server to this agent',
-            detail: agent.displayName,
-            picked: false,
-        }));
-
-        return new Promise<boolean>(resolve => {
-            const quickPick = vscode.window.createQuickPick();
-            quickPick.title = `CMSIS Developer Assistant Setup${stepLabel} - Choose AI Agents to Configure`;
-            quickPick.placeholder = 'Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)';
-            quickPick.items = items;
-            quickPick.canSelectMany = true;
-            quickPick.ignoreFocusOut = true;
-
-            let accepted = false;
-
-            quickPick.onDidAccept(async () => {
-                accepted = true;
-                const selectedItems = quickPick.selectedItems;
-                quickPick.hide();
-
-                for (const selectedItem of selectedItems) {
-                    const agent = agents.find(a => a.displayName === selectedItem.detail);
-                    if (agent) {
-                        await this.configureAgent(agent);
-                    }
-                }
-                resolve(true);
-            });
-
-            quickPick.onDidHide(() => {
-                quickPick.dispose();
-                if (!accepted) {
-                    resolve(false);
-                }
-            });
-            quickPick.show();
-        });
+    const present = (table ? table[SERVER_KEY] : undefined) as MCPServerConfig | undefined;
+    if (!table || !present) {
+        return { changed: renamed, reported: renamed };
     }
-
-    // ------------------------------------------------------------------
-    // Agent skills
-    // ------------------------------------------------------------------
-
-    /** The catalog shipped in the VSIX; `null` when it cannot be read. */
-    private getCatalog(): SkillCatalog | null {
-        if (this.catalog === undefined) {
-            try {
-                this.catalog = loadSkillCatalog(this.context.extensionPath);
-            } catch (error) {
-                logger.error('Could not load the bundled skill catalog', error);
-                this.catalog = null;
-            }
+    const onSse = present.type === 'sse' || (typeof present.url === 'string' && present.url.endsWith('/sse'));
+    const otherTransport = wanted.type !== undefined && present.type !== undefined && wanted.type !== present.type;
+    const movedUrl = typeof present.url === 'string' && wanted.url !== undefined && present.url !== wanted.url;
+    const movedArgs = Array.isArray(present.args) && wanted.args !== undefined
+        && JSON.stringify(present.args) !== JSON.stringify(wanted.args);
+    const replace = onSse || otherTransport || movedUrl || movedArgs;
+    if (replace) {
+        const fresh: MCPServerConfig = { ...wanted };
+        if (Array.isArray(present.autoApprove)) {
+            fresh.autoApprove = present.autoApprove;
         }
-        return this.catalog;
+        table[SERVER_KEY] = fresh;
     }
+    return { changed: replace || renamed, reported: onSse || otherTransport || renamed };
+}
 
-    /** The workspace folders a project selection can apply to — those on disk. */
-    private getProjectFolders(): vscode.WorkspaceFolder[] {
-        return (vscode.workspace.workspaceFolders ?? []).filter(folder => folder.uri.scheme === 'file');
+/** Migrate one JSON agent file. True when it was written with a change worth reporting. */
+async function migrateJsonAgent(agent: JsonAgentInfo, wanted: MCPServerConfig): Promise<boolean> {
+    let reported = false;
+    const outcome = await rewriteJsonFile(agent.configPath, (tree) => {
+        const step = migrateServers(tree[agent.mcpServerFieldName], wanted);
+        reported = step.reported;
+        return step.changed;
+    });
+    return outcome === 'written' && reported;
+}
+
+/**
+ * Migrate Codex's file: drop the pre-rename table and point ours at the
+ * current endpoint when that table existed or ours still uses SSE. A
+ * stale port on a non-SSE URL is left as it is. True when the file changed.
+ */
+async function migrateCodexAgent(agent: TomlAgentInfo, url: string): Promise<boolean> {
+    const original = await fs.promises.readFile(agent.configPath, 'utf8');
+    const stripped = stripLegacyCodexSection(original);
+    const updated = stripped.removed || codexUrlIsSse(stripped.content)
+        ? upsertCodexDebugMCPConfig(stripped.content, url)
+        : stripped.content;
+    if (updated === original) {
+        return false;
     }
+    await writeFileAtomic(agent.configPath, updated);
+    return true;
+}
 
-    /**
-     * The picks stored for one scope, or `undefined` when the scope has no
-     * value of its own. The user scope defaults to the empty selection (the
-     * bundled skills are installed regardless); a folder without a value is
-     * a project that has not opted in — its directories are swept, never
-     * created. In a multi-root workspace the `.code-workspace` value counts
-     * for every folder that does not override it.
-     */
-    private getConfiguredSkills(scope: SkillScope): string[] | undefined {
-        const inspected = scope.kind === 'user'
-            ? this.getSettings().inspect<string[]>(INSTALLED_SKILLS_SETTING)
-            : vscode.workspace.getConfiguration('cmsis-developer-assistant', scope.folder.uri).inspect<string[]>(INSTALLED_SKILLS_SETTING);
-        const value = scope.kind === 'user'
-            ? inspected?.globalValue ?? [...DEFAULT_INSTALLED_SKILLS]
-            : inspected?.workspaceFolderValue ?? inspected?.workspaceValue;
-        if (value === undefined) {
-            return undefined;
-        }
-        return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+// ---------------------------------------------------------------------------
+// Skill scopes
+// ---------------------------------------------------------------------------
+
+/** Where a skill selection is stored and where its skills go: this user, or one local workspace folder. */
+type SkillScope = { kind: 'user' } | { kind: 'folder'; folder: vscode.WorkspaceFolder };
+
+const USER_SCOPE: SkillScope = { kind: 'user' };
+
+/** The open workspace folders on the local file system; remote ones get no skills. */
+function localFolders(): vscode.WorkspaceFolder[] {
+    return (vscode.workspace.workspaceFolders ?? []).filter((folder) => folder.uri.scheme === 'file');
+}
+
+function scopesInOrder(): SkillScope[] {
+    return [USER_SCOPE, ...localFolders().map((folder): SkillScope => ({ kind: 'folder', folder }))];
+}
+
+function scopeName(scope: SkillScope): string {
+    return scope.kind === 'user' ? 'this user' : `the "${scope.folder.name}" workspace folder`;
+}
+
+function installRootsOf(scope: SkillScope): SkillInstallRoots {
+    return scope.kind === 'user' ? getSkillInstallRoots() : getProjectSkillInstallRoots(scope.folder.uri.fsPath);
+}
+
+function skillNames(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
+}
+
+/**
+ * The scope's `installedSkills` picks. The user scope always has a value
+ * (`[]` when unset); a folder has none unless the folder or the workspace
+ * sets one.
+ */
+function readSelection(scope: SkillScope): string[] | undefined {
+    if (scope.kind === 'user') {
+        const seen = vscode.workspace.getConfiguration(SETTINGS_SECTION).inspect<unknown>(INSTALLED_SKILLS_SETTING);
+        return skillNames(seen?.globalValue ?? [...DEFAULT_INSTALLED_SKILLS]);
     }
+    const seen = vscode.workspace.getConfiguration(SETTINGS_SECTION, scope.folder.uri).inspect<unknown>(INSTALLED_SKILLS_SETTING);
+    const stored = seen?.workspaceFolderValue ?? seen?.workspaceValue;
+    return stored === undefined ? undefined : skillNames(stored);
+}
 
-    /** The picks of every scope together — for "is a pack skill selected anywhere?". */
-    private getAllConfiguredSkills(): string[] {
-        const all = new Set(this.getConfiguredSkills({ kind: 'user' }) ?? []);
-        for (const folder of this.getProjectFolders()) {
-            for (const name of this.getConfiguredSkills({ kind: 'folder', folder }) ?? []) {
-                all.add(name);
-            }
-        }
-        return [...all];
+/** Store the picks where the scope reads them: user settings, or the folder's (a `.code-workspace` file makes that the folder level). */
+async function writeSelection(scope: SkillScope, names: string[]): Promise<void> {
+    if (scope.kind === 'user') {
+        await vscode.workspace.getConfiguration(SETTINGS_SECTION).update(INSTALLED_SKILLS_SETTING, names, vscode.ConfigurationTarget.Global);
+        return;
     }
+    const level = vscode.workspace.workspaceFile !== undefined
+        ? vscode.ConfigurationTarget.WorkspaceFolder
+        : vscode.ConfigurationTarget.Workspace;
+    await vscode.workspace.getConfiguration(SETTINGS_SECTION, scope.folder.uri).update(INSTALLED_SKILLS_SETTING, names, level);
+}
 
-    private async updateConfiguredSkills(scope: SkillScope, explicit: string[]): Promise<void> {
-        if (scope.kind === 'user') {
-            await this.getSettings().update(INSTALLED_SKILLS_SETTING, explicit, vscode.ConfigurationTarget.Global);
-            return;
-        }
-        // A single-folder workspace has no folder settings of its own: its
-        // `.vscode/settings.json` *is* the workspace settings file.
-        const target = vscode.workspace.workspaceFile !== undefined
-            ? vscode.ConfigurationTarget.WorkspaceFolder
-            : vscode.ConfigurationTarget.Workspace;
-        await vscode.workspace.getConfiguration('cmsis-developer-assistant', scope.folder.uri)
-            .update(INSTALLED_SKILLS_SETTING, explicit, target);
+/** A directory for display, with the home directory as `~` (a plain prefix test). */
+function shortenHome(dir: string): string {
+    const homePrefix = os.homedir();
+    return dir.startsWith(homePrefix) ? `~${dir.slice(homePrefix.length)}` : dir;
+}
+
+/** One picker detail line: whitespace runs collapsed, cut at 140 characters with a `…`. */
+function detailLine(text: string): string {
+    const flat = text.replace(/\s+/g, ' ').trim();
+    return flat.length > DETAIL_MAX ? `${flat.slice(0, DETAIL_MAX - 1).trimEnd()}…` : flat;
+}
+
+/** How many pack skills a scope has picked, for the scope picker. */
+function selectionState(catalog: SkillCatalog, picks: string[] | undefined): string {
+    if (picks === undefined) {
+        return 'no selection yet';
     }
+    const count = resolveDesiredSkills(catalog, picks, { includeBundled: false }).explicit.length;
+    return count === 1 ? '1 pack skill selected' : `${count} pack skills selected`;
+}
 
-    private rootsFor(scope: SkillScope): SkillInstallRoots {
-        return scope.kind === 'user' ? getSkillInstallRoots() : getProjectSkillInstallRoots(scope.folder.uri.fsPath);
-    }
+interface ScopePickItem extends vscode.QuickPickItem {
+    scope: SkillScope;
+}
 
-    private describeScope(scope: SkillScope): string {
-        return scope.kind === 'user' ? 'this user' : `the "${scope.folder.name}" workspace folder`;
-    }
+interface SkillPickItem extends vscode.QuickPickItem {
+    /** Absent on the category separators. */
+    entry?: SkillCatalogEntry;
+}
 
-    /**
-     * Bring the skills directories in line with the `installedSkills`
-     * setting, scope by scope: the personal directories from the user
-     * value, each workspace folder's project directories from its own
-     * value. Install the picks (visible) and their dependency closure
-     * (hidden from the slash menu), remove what this extension installed
-     * earlier and is no longer wanted. Best-effort — a failure is logged,
-     * never thrown. The report covers every scope.
-     */
-    public syncSkills(reason: string): Promise<SkillSyncReport | null> {
-        const run = async (): Promise<SkillSyncReport | null> => {
-            const catalog = this.getCatalog();
-            if (!catalog) {
-                return null;
-            }
-            const packEnabled = this.isSkillsPackEnabled();
-            const total: SkillSyncReport = { installed: [], removed: [], skippedForeign: [], failed: [] };
-            const scopes: SkillScope[] = [
-                { kind: 'user' },
-                ...this.getProjectFolders().map((folder): SkillScope => ({ kind: 'folder', folder })),
-            ];
-            for (const scope of scopes) {
-                const report = await this.syncScope(scope, catalog, packEnabled, reason);
-                total.installed.push(...report.installed);
-                total.removed.push(...report.removed);
-                total.skippedForeign.push(...report.skippedForeign);
-                total.failed.push(...report.failed);
-            }
-            return total;
+function skillPickItem(entry: SkillCatalogEntry, known: ReadonlySet<string>, picked: boolean): SkillPickItem {
+    const members = entry.dependsOn.filter((name) => known.has(name));
+    const title = entry.displayName || entry.name;
+    const summary = detailLine(entry.shortDescription || entry.description);
+    if (entry.kind === 'router') {
+        return {
+            label: `$(list-tree) ${title}`,
+            description: `/${entry.name} — one command for the whole category, ${members.length} member skills installed hidden`,
+            detail: summary,
+            picked,
+            entry,
         };
-        const next = this.skillSyncChain.then(run, run);
-        this.skillSyncChain = next.catch(() => undefined);
-        return next;
+    }
+    return {
+        label: title,
+        description: `/${entry.name}`,
+        detail: members.length > 0 ? `${summary}  ·  also installs (hidden): ${members.join(', ')}` : summary,
+        picked,
+        entry,
+    };
+}
+
+/** The pack skills offered to a scope, grouped under their category headings; the extension's own skills are not offered. */
+function skillPickItems(catalog: SkillCatalog, preselected: ReadonlySet<string>): SkillPickItem[] {
+    const known = new Set(catalog.skills.map((entry) => entry.name));
+    const items: SkillPickItem[] = [];
+    for (const [category, entries] of groupByCategory(catalog)) {
+        const offered = entries.filter((entry) => !isBundledSkill(entry));
+        if (offered.length === 0) {
+            continue;
+        }
+        items.push({ label: SKILL_CATEGORY_LABELS[category], kind: vscode.QuickPickItemKind.Separator });
+        for (const entry of offered) {
+            items.push(skillPickItem(entry, known, preselected.has(entry.name)));
+        }
+    }
+    return items;
+}
+
+function emptyReport(): SkillSyncReport {
+    return { installed: [], removed: [], skippedForeign: [], failed: [] };
+}
+
+// ---------------------------------------------------------------------------
+// The manager
+// ---------------------------------------------------------------------------
+
+export class AgentConfigurationManager {
+    private mcpPort: number;
+    private readonly installer: SkillInstaller;
+    /** `undefined` until first needed; `null` once loading failed, which is not retried. */
+    private catalogCache: SkillCatalog | null | undefined;
+    /** End of the `syncSkills` queue. It never rejects, so one failed run does not block the next. */
+    private syncQueue: Promise<unknown> = Promise.resolve();
+
+    constructor(
+        private readonly ctx: vscode.ExtensionContext,
+        private readonly entryTimeoutSeconds: number,
+        serverPort: number,
+    ) {
+        this.mcpPort = serverPort;
+        const manifest = ctx.extension?.packageJSON as { version?: string } | undefined;
+        this.installer = new SkillInstaller(ctx.extensionPath, manifest?.version ?? 'unknown');
     }
 
-    private async syncScope(scope: SkillScope, catalog: SkillCatalog, packEnabled: boolean, reason: string): Promise<SkillSyncReport> {
-        const configured = this.getConfiguredSkills(scope);
-        const where = this.describeScope(scope);
-        // A project carries the pack skills it picked and nothing else: the
-        // extension's own skills are in the personal directories already.
-        const desired = resolveDesiredSkills(catalog, configured ?? [], { packEnabled, includeBundled: scope.kind === 'user' });
-        if (desired.unknown.length > 0) {
-            logger.warn(`Ignoring unknown skills in the ${INSTALLED_SKILLS_SETTING} setting of ${where}: ${desired.unknown.join(', ')}`);
-        }
-        if (desired.suppressed.length > 0) {
-            logger.info(`AI Skills Pack disabled (${AI_SKILLS_ENABLED_SETTING}); not installing the selected [${desired.suppressed.join(', ')}] for ${where}`);
-        }
-        const report = await this.skillInstaller.sync(this.rootsFor(scope), catalog, desired.explicit, desired.implied);
-        if (configured === undefined && report.removed.length === 0 && report.failed.length === 0) {
-            return report; // a project without a selection, and nothing of ours in it: nothing to say
-        }
-        logger.info(`Agent skills synced for ${where} (${reason}, pack ${packEnabled ? 'enabled' : 'disabled'}): ${summarizeSkillSync(report)}; ` +
-            `visible [${desired.explicit.join(', ')}], hidden [${desired.implied.join(', ')}]`);
-        for (const failure of report.failed) {
-            logger.warn(`Skill ${failure.name ?? '(root)'} at ${failure.root}: ${failure.error}`);
-        }
-        for (const foreign of report.skippedForeign) {
-            logger.warn(`Skill ${foreign.name} at ${foreign.root} was not installed by this extension; left untouched`);
-        }
-        return report;
+    /** Use another server port for every later write. Nothing is rewritten now. */
+    updatePort(nextPort: number): void {
+        this.mcpPort = nextPort;
     }
 
-    /**
-     * Where the picks go — asked only when a workspace folder is open on
-     * disk, otherwise the user scope is the only one. One item for the user
-     * and one per folder, each saying what it currently selects.
-     */
-    private async pickSkillScope(catalog: SkillCatalog): Promise<SkillScope | undefined> {
-        const folders = this.getProjectFolders();
-        if (folders.length === 0) {
-            return { kind: 'user' };
-        }
-        const selected = (scope: SkillScope): string => {
-            const configured = this.getConfiguredSkills(scope);
-            if (configured === undefined) {
-                return 'no selection yet';
-            }
-            const picks = resolveDesiredSkills(catalog, configured, { includeBundled: false }).explicit.length;
-            return picks === 1 ? '1 pack skill selected' : `${picks} pack skills selected`;
-        };
-        // The workspace comes first and is the default: every skill in the
-        // personal directories is offered to the agent in every project, and
-        // its description costs context there whether the project is CMSIS
-        // or not. Installed into the project, it is loaded only where it
-        // applies.
-        type ScopeItem = vscode.QuickPickItem & { scope: SkillScope };
-        const items: ScopeItem[] = [
-            ...folders.map((folder): ScopeItem => ({
-                label: folders.length > 1 ? `$(root-folder) This workspace only — ${folder.name}` : '$(root-folder) This workspace only',
-                description: getProjectSkillInstallRoots(folder.uri.fsPath).install
-                    .map(root => `${folder.name}/${path.relative(folder.uri.fsPath, root).split(path.sep).join('/')}`)
-                    .join(', '),
-                detail: 'Recommended: the agent loads them only in this project, so other projects\' context stays lean — ' +
-                    selected({ kind: 'folder', folder }),
-                scope: { kind: 'folder', folder },
-            })),
-            {
-                label: '$(account) This user',
-                description: getSkillInstallRoots().install.map(shortenHome).join(', '),
-                detail: `Every workspace on this machine — every agent session carries them — ${selected({ kind: 'user' })}`,
-                scope: { kind: 'user' },
-            },
-        ];
-        const choice = await vscode.window.showQuickPick(items, {
-            title: 'CMSIS Developer Assistant Setup (2/2) - Where to Install Agent Skills',
-            placeHolder: 'Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace',
-            ignoreFocusOut: true,
-        });
-        return choice?.scope;
+    /** The first-run setup is due: not answered yet, and not in an environment that manages MCP servers itself. */
+    shouldShowPopup(): Promise<boolean> {
+        const due = !isHostManaged() && this.ctx.globalState.get<boolean>(SETUP_ANSWERED_KEY) !== true;
+        return Promise.resolve(due);
     }
 
     /**
-     * Step 2: the skill picker. Entries are grouped by category with the
-     * category's router skill first — picking the router gives the agent one
-     * slash command for the whole category and installs the members hidden.
-     * The bundled skills are always installed and are not offered as choices.
-     * Asks first where the picks go — this user or a workspace folder — and
-     * reads and writes that scope's own selection. Resolves with `true`
-     * when the user accepted.
+     * The first-run setup: the agent picker, then the skill picker when the AI
+     * Skills Pack is enabled (after step 1 was accepted or dismissed alike).
+     * Counts as answered afterwards, whatever happened.
      */
-    public async showSkillSelectionDialog(): Promise<boolean> {
-        const catalog = this.getCatalog();
+    runSetupFlow(): Promise<void> {
+        return this.walkThroughSetup();
+    }
+
+    /** Make the first-run setup due again and forget when the skills prompt was last shown. */
+    async resetPopupState(): Promise<void> {
+        await this.ctx.globalState.update(SETUP_ANSWERED_KEY, false);
+        await this.ctx.globalState.update(SKILLS_PROMPT_SHOWN_KEY, undefined);
+    }
+
+    /**
+     * Update the entries of agents whose configuration file exists (none is
+     * created): rename the pre-rename key, move SSE and wrong-transport
+     * entries to the current shape, refresh a stale endpoint. One agent
+     * failing does not stop the others.
+     */
+    migrateExistingConfigurations(): Promise<void> {
+        return this.migrateAgentFiles();
+    }
+
+    /**
+     * Install and remove skills so that every scope matches its selection:
+     * this user first, then each local workspace folder. Runs one at a time,
+     * in call order; resolves `null` when the catalog cannot be loaded.
+     */
+    syncSkills(reason: string): Promise<SkillSyncReport | null> {
+        const run = this.syncQueue.then(() => this.syncAllScopes(reason));
+        this.syncQueue = run.catch(() => undefined);
+        return run;
+    }
+
+    /**
+     * The skill picker: where to install (when a local folder is open), then
+     * which pack skills. Accepting stores the selection in that scope's setting
+     * and syncs. Resolves `false` when the user backs out.
+     */
+    async showSkillSelectionDialog(): Promise<boolean> {
+        const catalog = this.catalog();
         if (!catalog) {
-            vscode.window.showErrorMessage('CMSIS Developer Assistant: the bundled skill catalog could not be loaded.');
+            void vscode.window.showErrorMessage(`${PRODUCT}: the bundled skill catalog could not be loaded.`);
             return false;
         }
-        if (!this.isSkillsPackEnabled()) {
-            const enable = 'Enable and Select';
-            const choice = await vscode.window.showInformationMessage(
-                `CMSIS Developer Assistant: the AI Skills Pack is disabled (setting cmsis-developer-assistant.${AI_SKILLS_ENABLED_SETTING}); ` +
-                'only the extension\'s own skills are installed.',
-                enable);
-            if (choice !== enable) {
+        if (!this.packEnabled()) {
+            const answer = await vscode.window.showInformationMessage(PACK_DISABLED_NOTICE, ENABLE_BUTTON);
+            if (answer !== ENABLE_BUTTON) {
                 return false;
             }
-            await this.getSettings().update(AI_SKILLS_ENABLED_SETTING, true, vscode.ConfigurationTarget.Global);
+            await vscode.workspace.getConfiguration(SETTINGS_SECTION).update(AI_SKILLS_ENABLED_SETTING, true, vscode.ConfigurationTarget.Global);
         }
-
-        const scope = await this.pickSkillScope(catalog);
+        const scope = await this.chooseScope(catalog);
         if (!scope) {
             return false;
         }
-
-        type SkillItem = vscode.QuickPickItem & { entry?: SkillCatalogEntry };
-        const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
-        const current = new Set(resolveDesiredSkills(catalog, this.getConfiguredSkills(scope) ?? [], { includeBundled: false }).explicit);
-        const items: SkillItem[] = [];
-
-        for (const [category, entries] of groupByCategory(catalog)) {
-            const offered = entries.filter(entry => !isBundledSkill(entry));
-            if (offered.length === 0) {
-                continue;
-            }
-            items.push({ label: SKILL_CATEGORY_LABELS[category], kind: vscode.QuickPickItemKind.Separator });
-            for (const entry of offered) {
-                const dependencies = entry.dependsOn.filter(name => byName.has(name));
-                const isRouter = entry.kind === 'router';
-                const summary = truncate(entry.shortDescription ?? entry.description, PICKER_DETAIL_LENGTH);
-                items.push({
-                    label: `${isRouter ? '$(list-tree) ' : ''}${entry.displayName ?? entry.name}`,
-                    description: isRouter
-                        ? `/${entry.name} — one command for the whole category, ${dependencies.length} member skills installed hidden`
-                        : `/${entry.name}`,
-                    detail: dependencies.length > 0 && !isRouter
-                        ? `${summary}  ·  also installs (hidden): ${dependencies.join(', ')}`
-                        : summary,
-                    picked: current.has(entry.name),
-                    entry,
-                });
-            }
+        const names = await this.chooseSkills(catalog, scope);
+        if (!names) {
+            return false;
         }
-
-        return new Promise<boolean>(resolve => {
-            const quickPick = vscode.window.createQuickPick<SkillItem>();
-            quickPick.title = `CMSIS Developer Assistant Setup (2/2) - Choose Agent Skills to Install for ${this.describeScope(scope)}`;
-            quickPick.placeholder = scope.kind === 'user'
-                ? 'Select the AI Skills Pack skills to install into your personal skills directories ' +
-                    `(always installed: ${bundledSkillNames(catalog).join(', ')}; Esc keeps the current selection)`
-                : `Select the AI Skills Pack skills to install into ${scope.folder.name}/.agents/skills ` +
-                    '(the extension\'s own skills stay in your personal directories; Esc keeps the current selection)';
-            quickPick.items = items;
-            quickPick.selectedItems = items.filter(item => item.picked);
-            quickPick.canSelectMany = true;
-            quickPick.ignoreFocusOut = true;
-            quickPick.matchOnDescription = true;
-            quickPick.matchOnDetail = true;
-
-            let accepted = false;
-
-            quickPick.onDidAccept(async () => {
-                accepted = true;
-                const explicit = quickPick.selectedItems
-                    .map(item => item.entry?.name)
-                    .filter((name): name is string => typeof name === 'string');
-                quickPick.hide();
-
-                try {
-                    await this.updateConfiguredSkills(scope, explicit);
-                    // The configuration-change listener syncs too; running it
-                    // here as well makes the toast below reflect the result.
-                    const report = await this.syncSkills('selection');
-                    const desired = resolveDesiredSkills(catalog, explicit, { includeBundled: scope.kind === 'user' });
-                    if (report) {
-                        // The sync covers every scope; the toast is about the one just chosen.
-                        const scopeRoots = new Set(this.rootsFor(scope).install);
-                        const inScope = <T extends { root: string }>(records: T[]): T[] => records.filter(record => scopeRoots.has(record.root));
-                        const roots = [...new Set(inScope(report.installed).map(record => record.root))];
-                        const where = roots.length > 0 ? ` into ${roots.map(shortenHome).join(', ')}` : '';
-                        const failed = inScope(report.failed).length;
-                        vscode.window.showInformationMessage(
-                            `CMSIS Developer Assistant: ${desired.explicit.length} skill(s)` +
-                            (desired.implied.length > 0 ? ` (+${desired.implied.length} required, hidden)` : '') +
-                            ` installed for ${this.describeScope(scope)}${where}; ${inScope(report.removed).length} removed.` +
-                            (failed > 0 ? ` ${failed} failed — see the output log.` : ''));
-                    }
-                } catch (error) {
-                    logger.error('Error saving the skill selection', error);
-                    vscode.window.showErrorMessage(`Failed to save the skill selection: ${error}`);
-                }
-                resolve(true);
-            });
-
-            quickPick.onDidHide(() => {
-                quickPick.dispose();
-                if (!accepted) {
-                    resolve(false);
-                }
-            });
-            quickPick.show();
-        });
+        await this.applySelection(catalog, scope, names);
+        return true;
     }
 
     /**
-     * The monthly nudge: when an agent has the MCP server registered but no
-     * pack skill was ever picked, offer the skill picker — at most once per
-     * 30 days, never while the first-run flow is still pending (it asks the
-     * same question), never with the pack disabled. The decision itself is
-     * pure and tested (`decideSkillPrompt`); this gathers its inputs and
-     * shows the toast.
+     * The monthly "install the skills?" prompt, shown only when an agent has
+     * this server registered and no pack skill is selected anywhere
+     * (`decideSkillPrompt` has the full rule). The time is stored before the
+     * prompt appears, so a dismissed prompt counts as shown.
      */
-    public async maybePromptForSkills(now: number = Date.now()): Promise<void> {
-        const catalog = this.getCatalog();
+    async maybePromptForSkills(now: number = Date.now()): Promise<void> {
+        const catalog = this.catalog();
         if (!catalog) {
             return;
         }
-        const agents = await this.getAgentsWithServer();
-        const agentNames = agents.map(agent => agent.displayName);
+        const registeredWith: string[] = [];
+        for (const agent of agentsWithFiles()) {
+            try {
+                if (agentConfigHasServer(agent, await fs.promises.readFile(agent.configPath, 'utf8'))) {
+                    registeredWith.push(agent.displayName);
+                }
+            } catch (failure) {
+                logger.warn(`Could not read ${agent.configPath} to look for the MCP server`, failure);
+            }
+        }
+        const settings = vscode.workspace.getConfiguration(SETTINGS_SECTION);
+        const allPicks = scopesInOrder().flatMap((scope) => readSelection(scope) ?? []);
         const decision = decideSkillPrompt({
-            promptEnabled: this.isSkillPromptEnabled(),
-            packEnabled: this.isSkillsPackEnabled(),
-            firstRunPending: !this.context.globalState.get<boolean>(this.POPUP_SHOWN_KEY, false),
-            hostManaged: this.isHostManagedEnvironment(),
-            agentsWithServer: agentNames,
-            packSkillSelected: hasPackSkillSelected(catalog, this.getAllConfiguredSkills()),
-            lastShownAt: this.context.globalState.get<number>(SKILLS_PROMPT_SHOWN_KEY),
+            promptEnabled: settings.get<boolean>(AI_SKILLS_PROMPT_SETTING, true),
+            packEnabled: settings.get<boolean>(AI_SKILLS_ENABLED_SETTING, true),
+            firstRunPending: this.ctx.globalState.get<boolean>(SETUP_ANSWERED_KEY) !== true,
+            hostManaged: isHostManaged(),
+            agentsWithServer: registeredWith,
+            packSkillSelected: hasPackSkillSelected(catalog, allPicks),
+            lastShownAt: this.ctx.globalState.get<number>(SKILLS_PROMPT_SHOWN_KEY),
             now,
         });
         if (!decision.show) {
-            logger.info(`Skill install prompt not shown: ${decision.reason}`);
+            logger.info(`Skills prompt not shown: ${decision.reason}`);
             return;
         }
-
-        // Recorded before the toast, so a dismissal — or a second window
-        // racing this one — counts as shown.
-        await this.context.globalState.update(SKILLS_PROMPT_SHOWN_KEY, now);
-        const choice = await vscode.window.showInformationMessage(
-            skillPromptMessage(agentNames),
-            SKILL_PROMPT_BUTTONS.select,
-            SKILL_PROMPT_BUTTONS.later,
-            SKILL_PROMPT_BUTTONS.never,
-        );
-        if (choice === SKILL_PROMPT_BUTTONS.select) {
+        await this.ctx.globalState.update(SKILLS_PROMPT_SHOWN_KEY, now);
+        const { select, later, never } = SKILL_PROMPT_BUTTONS;
+        const reply = await vscode.window.showInformationMessage(skillPromptMessage(registeredWith), select, later, never);
+        if (reply === select) {
             await this.showSkillSelectionDialog();
-        } else if (choice === SKILL_PROMPT_BUTTONS.never) {
-            await this.getSettings().update(AI_SKILLS_PROMPT_SETTING, false, vscode.ConfigurationTarget.Global);
+        } else if (reply === never) {
+            await settings.update(AI_SKILLS_PROMPT_SETTING, false, vscode.ConfigurationTarget.Global);
+        }
+    }
+
+    // --- setup and agents --------------------------------------------------
+
+    private endpointUrl(): string {
+        return `http://localhost:${this.mcpPort}/mcp`;
+    }
+
+    private packEnabled(): boolean {
+        return vscode.workspace.getConfiguration(SETTINGS_SECTION).get<boolean>(AI_SKILLS_ENABLED_SETTING, true);
+    }
+
+    private async walkThroughSetup(): Promise<void> {
+        try {
+            const roster = supportedAgents();
+            const skillsStepFollows = this.packEnabled();
+            await this.pickAndConfigureAgents(roster, skillsStepFollows ? ' (1/2)' : '');
+            if (skillsStepFollows) {
+                await this.showSkillSelectionDialog();
+            } else {
+                logger.info('AI Skills Pack disabled: the setup skips the skills step');
+            }
+        } catch (failure) {
+            logger.error('The setup flow failed', failure);
+            void vscode.window.showErrorMessage(`Failed to show the ${PRODUCT} setup: ${String(failure)}`);
+        } finally {
+            await this.ctx.globalState.update(SETUP_ANSWERED_KEY, true);
         }
     }
 
     /**
-     * The supported agents whose config file currently registers this
-     * server. Read-only; a missing or unreadable file just means "no".
+     * Step 1: the agent picker. Accepting configures the chosen agents one
+     * after the other and resolves `true` once all are done; closing it
+     * resolves `false`.
      */
-    private async getAgentsWithServer(): Promise<AgentInfo[]> {
-        const found: AgentInfo[] = [];
-        for (const agent of await this.getSupportedAgents()) {
+    private pickAndConfigureAgents(roster: AgentInfo[], stepMark: string): Promise<boolean> {
+        return new Promise<boolean>((settle, fail) => {
+            const agentList = vscode.window.createQuickPick<vscode.QuickPickItem>();
+            agentList.title = `${SETUP_TITLE}${stepMark} - Connect AI Agents to the MCP Server`;
+            agentList.placeholder = `Select the AI agents to register the ${PRODUCT} MCP server with (Esc to skip)`;
+            agentList.canSelectMany = true;
+            agentList.ignoreFocusOut = true;
+            // The detail is the display name; it maps a chosen item back to its agent.
+            agentList.items = roster.map(({ displayName }) =>
+                ({ label: `$(add) Set up ${displayName}`, description: AGENT_ITEM_NOTE, detail: displayName, picked: false }));
+            let accepted = false;
+            agentList.onDidAccept(() => {
+                accepted = true;
+                const chosenNames = agentList.selectedItems.map((item) => item.detail);
+                const chosen = chosenNames.flatMap((name) => roster.filter((agent) => agent.displayName === name));
+                agentList.hide();
+                this.configureAgents(chosen).then(() => settle(true), fail);
+            });
+            agentList.onDidHide(() => {
+                agentList.dispose();
+                if (!accepted) {
+                    settle(false);
+                }
+            });
+            agentList.show();
+        });
+    }
+
+    /** Configure agents in turn; each success toast is answered before the next agent starts. */
+    private async configureAgents(queue: AgentInfo[]): Promise<void> {
+        for (const agent of queue) {
             try {
-                if (!fs.existsSync(agent.configPath)) {
+                if (!(await this.registerServer(agent))) {
                     continue;
                 }
-                const content = await fs.promises.readFile(agent.configPath, 'utf8');
-                if (agentConfigHasServer(agent, content)) {
-                    found.push(agent);
+                const configured = `✅ Registered the ${PRODUCT} MCP server with ${agent.displayName}.`;
+                if (await vscode.window.showInformationMessage(configured, OPEN_FILE_BUTTON) === OPEN_FILE_BUTTON) {
+                    const written = vscode.Uri.file(agent.configPath);
+                    await vscode.commands.executeCommand('vscode.open', written);
                 }
-            } catch (error) {
-                logger.warn(`Could not read the ${agent.displayName} configuration at ${agent.configPath}: ${String(error)}`);
+            } catch (failure) {
+                logger.error(`Setting up ${agent.displayName} failed`, failure);
+                void vscode.window.showErrorMessage(`Could not set up ${agent.displayName}: ${String(failure)}`);
             }
         }
-        return found;
     }
 
     /**
-     * Configure a specific agent with CMSIS Developer Assistant
+     * Write this server's entry into one agent's file, creating the file and
+     * its directory when needed. An existing entry is replaced whole. False
+     * when it did not work out; the user has been told why.
      */
-    private async configureAgent(agent: AgentInfo): Promise<void> {
+    private async registerServer(agent: AgentInfo): Promise<boolean> {
+        const file = agent.configPath;
+        const url = this.endpointUrl();
         try {
-            const success = await this.addDebugMCPToAgent(agent);
-
-            if (success) {
-                const openConfigButton = 'Open Config';
-                const result = await vscode.window.showInformationMessage(
-                    `✅ CMSIS Developer Assistant successfully configured for ${agent.displayName}`,
-                    openConfigButton
-                );
-
-                if (result === openConfigButton) {
-                    // Open the config file in VSCode
-                    const configUri = vscode.Uri.file(agent.configPath);
-                    await vscode.commands.executeCommand('vscode.open', configUri);
+            await ensureParentDir(file);
+            const fileExists = fs.existsSync(file);
+            if (agent.configFormat !== 'json') {
+                const toml = fileExists ? await fs.promises.readFile(file, 'utf8') : '';
+                await writeFileAtomic(file, upsertCodexDebugMCPConfig(toml, url));
+            } else {
+                const field = agent.mcpServerFieldName;
+                const entry = entryFor(agent.id, url, this.entryTimeoutSeconds);
+                if (!fileExists) {
+                    // Nothing to keep: 2-space JSON without a final newline, like the rewrite below.
+                    await writeFileAtomic(file, JSON.stringify({ [field]: { [SERVER_KEY]: entry } }, null, 2));
+                } else if (await rewriteJsonFile(file, (tree) => placeEntry(tree, field, entry)) === 'unparseable') {
+                    logger.warn(`Left ${file} alone: it is not a JSON object`);
+                    void vscode.window.showErrorMessage(
+                        `Cannot configure ${agent.displayName}: ${file} exists but is not valid JSON. Please fix or remove the file and try again.`);
+                    return false;
                 }
             }
-        } catch (error) {
-            console.error(`Error configuring ${agent.name}:`, error);
-            vscode.window.showErrorMessage(`Failed to configure ${agent.displayName}: ${error}`);
+            logger.info(`Registered the MCP server with ${agent.displayName} in ${file}`);
+            return true;
+        } catch (failure) {
+            logger.error(`Could not register the MCP server with ${agent.displayName}`, failure);
+            void vscode.window.showErrorMessage(`The ${PRODUCT} MCP server could not be added to ${agent.displayName}: ${String(failure)}`);
+            return false;
         }
     }
 
-}
+    private async migrateAgentFiles(): Promise<void> {
+        const url = this.endpointUrl();
+        let reported = 0;
+        for (const agent of agentsWithFiles()) {
+            try {
+                const counted = agent.configFormat === 'json'
+                    ? await migrateJsonAgent(agent, entryFor(agent.id, url, this.entryTimeoutSeconds))
+                    : await migrateCodexAgent(agent, url);
+                if (counted) {
+                    reported++;
+                    logger.info(`Migrated the ${agent.displayName} configuration at ${agent.configPath}`);
+                }
+            } catch (failure) {
+                logger.warn(`Could not migrate the ${agent.displayName} configuration at ${agent.configPath}`, failure);
+            }
+        }
+        if (reported > 0) {
+            void vscode.window.showInformationMessage(`${PRODUCT}: brought the MCP server entry up to date in ${reported} agent configuration(s).`);
+        }
+    }
 
-function truncate(text: string, length: number): string {
-    const oneLine = text.replace(/\s+/g, ' ').trim();
-    return oneLine.length <= length ? oneLine : `${oneLine.slice(0, length - 1).trimEnd()}…`;
-}
+    // --- skills ------------------------------------------------------------
 
-function shortenHome(directory: string): string {
-    const home = os.homedir();
-    return directory.startsWith(home) ? `~${directory.slice(home.length)}` : directory;
+    /** The shipped skill catalog, loaded on first use. */
+    private catalog(): SkillCatalog | null {
+        if (this.catalogCache === undefined) {
+            try {
+                this.catalogCache = loadSkillCatalog(this.ctx.extensionPath);
+            } catch (failure) {
+                logger.error('Could not load the bundled skill catalog', failure);
+                this.catalogCache = null;
+            }
+        }
+        return this.catalogCache;
+    }
+
+    /** One `syncSkills` run over every scope; the reports are concatenated in scope order. */
+    private async syncAllScopes(reason: string): Promise<SkillSyncReport | null> {
+        const catalog = this.catalog();
+        if (!catalog) {
+            return null;
+        }
+        const packEnabled = this.packEnabled();
+        const total = emptyReport();
+        for (const scope of scopesInOrder()) {
+            const picks = readSelection(scope);
+            const wanted = resolveDesiredSkills(catalog, picks ?? [], { packEnabled, includeBundled: scope.kind === 'user' });
+            if (wanted.unknown.length > 0) {
+                logger.warn(`Skills unknown to this version, ignored for ${scopeName(scope)}: ${wanted.unknown.join(', ')}`);
+            }
+            if (wanted.suppressed.length > 0) {
+                logger.info(`AI Skills Pack disabled; kept in the setting but not installed for ${scopeName(scope)}: ${wanted.suppressed.join(', ')}`);
+            }
+            const report = await this.installer.sync(installRootsOf(scope), catalog, wanted.explicit, wanted.implied);
+            if (picks !== undefined || report.removed.length > 0 || report.failed.length > 0) {
+                logger.info(`Skill sync (${reason}) for ${scopeName(scope)}, pack ${packEnabled ? 'enabled' : 'disabled'}: `
+                    + `${summarizeSkillSync(report)}; visible [${wanted.explicit.join(', ')}], hidden [${wanted.implied.join(', ')}]`);
+                for (const failed of report.failed) {
+                    logger.warn(`Skill ${failed.name ?? '(root)'} in ${failed.root} failed: ${failed.error}`);
+                }
+                for (const foreign of report.skippedForeign) {
+                    logger.warn(`Left ${foreign.name} in ${foreign.root} untouched: it was not installed by this extension`);
+                }
+            }
+            total.installed.push(...report.installed);
+            total.removed.push(...report.removed);
+            total.skippedForeign.push(...report.skippedForeign);
+            total.failed.push(...report.failed);
+        }
+        return total;
+    }
+
+    /** Where to install: asked only when a local workspace folder is open, the folders first. */
+    private async chooseScope(catalog: SkillCatalog): Promise<SkillScope | undefined> {
+        const folders = localFolders();
+        const several = folders.length > 1;
+        const scopeItems: ScopePickItem[] = folders.map((folder) => {
+            const scope: SkillScope = { kind: 'folder', folder };
+            const roots = getProjectSkillInstallRoots(folder.uri.fsPath).install
+                .map((root) => `${folder.name}/${path.relative(folder.uri.fsPath, root).split(path.sep).join('/')}`);
+            return {
+                label: several ? `$(root-folder) This workspace only — ${folder.name}` : '$(root-folder) This workspace only',
+                description: roots.join(', '),
+                detail: `Recommended: the agent loads them only in this project, so other projects' context stays lean — ${selectionState(catalog, readSelection(scope))}`,
+                scope,
+            };
+        });
+        if (scopeItems.length === 0) {
+            return USER_SCOPE;
+        }
+        scopeItems.push({
+            label: '$(account) This user',
+            description: getSkillInstallRoots().install.map((root) => shortenHome(root)).join(', '),
+            detail: `Every workspace on this machine — every agent session carries them — ${selectionState(catalog, readSelection(USER_SCOPE))}`,
+            scope: USER_SCOPE,
+        });
+        const where = await vscode.window.showQuickPick(scopeItems, {
+            title: `${SETUP_TITLE} (2/2) - Where to Install Agent Skills`,
+            placeHolder: 'Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace',
+            ignoreFocusOut: true,
+        });
+        return where?.scope;
+    }
+
+    /** Which pack skills: the scope's current picks are preselected. Resolves the chosen names, or `undefined` when closed. */
+    private chooseSkills(catalog: SkillCatalog, scope: SkillScope): Promise<string[] | undefined> {
+        const preselected = new Set(resolveDesiredSkills(catalog, readSelection(scope) ?? [], { includeBundled: false }).explicit);
+        const items = skillPickItems(catalog, preselected);
+        return new Promise<string[] | undefined>((settle) => {
+            const skillList = vscode.window.createQuickPick<SkillPickItem>();
+            skillList.title = `${SETUP_TITLE} (2/2) - Choose Agent Skills to Install for ${scopeName(scope)}`;
+            skillList.placeholder = scope.kind === 'user'
+                ? `Select the AI Skills Pack skills to install into your personal skills directories (always installed: ${bundledSkillNames(catalog).join(', ')}; Esc keeps the current selection)`
+                : `Select the AI Skills Pack skills to install into ${scope.folder.name}/.agents/skills (the extension's own skills stay in your personal directories; Esc keeps the current selection)`;
+            skillList.canSelectMany = true;
+            skillList.ignoreFocusOut = true;
+            skillList.matchOnDescription = true;
+            skillList.matchOnDetail = true;
+            skillList.items = items;
+            skillList.selectedItems = items.filter((item) => item.picked);
+            let accepted = false;
+            skillList.onDidAccept(() => {
+                accepted = true;
+                const names = skillList.selectedItems.flatMap((item) => (item.entry ? [item.entry.name] : []));
+                skillList.hide();
+                settle(names);
+            });
+            skillList.onDidHide(() => {
+                skillList.dispose();
+                if (!accepted) {
+                    settle(undefined);
+                }
+            });
+            skillList.show();
+        });
+    }
+
+    /** Store the picks, sync, and report what happened in the chosen scope. */
+    private async applySelection(catalog: SkillCatalog, scope: SkillScope, names: string[]): Promise<void> {
+        try {
+            await writeSelection(scope, names);
+            const report = await this.syncSkills('selection');
+            const wanted = resolveDesiredSkills(catalog, names, { includeBundled: scope.kind === 'user' });
+            if (report) {
+                void vscode.window.showInformationMessage(this.selectionSummary(scope, wanted.explicit.length, wanted.implied.length, report));
+            }
+        } catch (failure) {
+            logger.error('Could not save the skill selection', failure);
+            void vscode.window.showErrorMessage(`Failed to save the skill selection: ${String(failure)}`);
+        }
+    }
+
+    /** The result toast; only records under the scope's own install directories count. */
+    private selectionSummary(scope: SkillScope, visible: number, hidden: number, report: SkillSyncReport): string {
+        const ownRoots = new Set(installRootsOf(scope).install);
+        const mine = <T extends { root: string }>(records: T[]): T[] => records.filter((record) => ownRoots.has(record.root));
+        const into = [...new Set(mine(report.installed).map((record) => shortenHome(record.root)))];
+        const failed = mine(report.failed).length;
+        let text = `${PRODUCT}: ${visible} skill(s)`;
+        if (hidden > 0) {
+            text += ` (+${hidden} required, hidden)`;
+        }
+        text += ` installed for ${scopeName(scope)}`;
+        if (into.length > 0) {
+            text += ` into ${into.join(', ')}`;
+        }
+        text += `; ${mine(report.removed).length} removed.`;
+        if (failed > 0) {
+            text += ` ${failed} failed — see the output log.`;
+        }
+        return text;
+    }
 }

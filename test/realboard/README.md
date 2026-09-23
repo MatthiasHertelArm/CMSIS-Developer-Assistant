@@ -26,7 +26,7 @@ cp test/realboard/realboard.config.example.json test/realboard/realboard.config.
 ```
 
 Make sure the VS Code window with `cmsis-developer-assistant` installed is running and
-note the port (the activation log prints `CMSIS Developer Assistant server running on
+note the port (the activation message reads `CMSIS Developer Assistant: MCP server listening at
 http://localhost:<port>`). Put that in `endpoint`.
 
 ## Run

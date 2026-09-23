@@ -15,67 +15,87 @@
  */
 
 /**
- * Shared by scripts/test-skill-trigger.ts and scripts/eval-scenario.ts: run a
- * command, find the Copilot CLI, parse its `--output-format json` stream.
+ * Driving a real GitHub Copilot CLI session from a script: run a process and
+ * keep its output, find how to start `copilot` on this platform, the fixed
+ * arguments of a scripted one-prompt run, and the JSON-lines event stream
+ * that run prints. Used by scripts/test-skill-trigger.ts and
+ * scripts/eval-scenario.ts; nothing under `npm test` imports it.
  */
 
 import * as childProcess from 'node:child_process';
 
+/** Output kept from one process; beyond it the spawn fails with ENOBUFS. */
+const OUTPUT_CAP_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Flags of a non-interactive run, after `-C <dir> -p <prompt>`: JSON lines
+ * out, every tool allowed without asking, no AGENTS.md or other custom
+ * instructions, nothing remote, no log output.
+ */
+const ONE_SHOT_FLAGS: readonly string[] = [
+    '--output-format', 'json', '--allow-all-tools', '--no-custom-instructions',
+    '--no-remote', '--no-remote-export', '--log-level', 'none',
+];
+
+/** PowerShell switches for a lookup without a profile and without prompts. */
+const QUIET_POWERSHELL = ['-NoProfile', '-NonInteractive'];
+const WHERE_IS_COPILOT = '(Get-Command copilot -ErrorAction Stop).Source';
+
+/**
+ * Run `command` with `args` (no shell, so the arguments arrive verbatim) and
+ * return what it wrote to stdout. UTF-8 and a 64 MiB output cap unless the
+ * caller's options say otherwise. A process that could not be started throws
+ * the spawn error itself; a non-zero exit throws an Error whose first line
+ * names the command line and the status, followed by stderr (or stdout when
+ * stderr is empty).
+ */
 export function run(command: string, args: string[], options: childProcess.SpawnSyncOptions = {}): string {
-    const result = childProcess.spawnSync(command, args, {
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-        ...options,
-    });
-    if (result.error) {
-        throw result.error;
+    const finished = childProcess.spawnSync(command, args, { encoding: 'utf8', maxBuffer: OUTPUT_CAP_BYTES, ...options });
+    if (finished.error) {
+        throw finished.error;
     }
-    if (result.status !== 0) {
-        throw new Error(
-            `${command} ${args.join(' ')} failed with exit code ${result.status}\n` +
-            `${result.stderr || result.stdout}`
-        );
+    if (finished.status !== 0) {
+        const commandLine = [command, ...args].join(' ');
+        const said = finished.stderr || finished.stdout;
+        throw new Error(`${commandLine} returned exit status ${finished.status}\n${said}`);
     }
-    return String(result.stdout);
+    return finished.stdout as string;
 }
 
-/** The CLI as an invocation; on Windows through PowerShell, which owns the shim. */
+/**
+ * How to start `copilot`. Elsewhere `PATH` finds it; on Windows npm installs
+ * a PowerShell script, which cannot be spawned directly, so PowerShell is
+ * asked where it is (on every call) and runs it. Throws when it is not there.
+ */
 export function getCopilotInvocation(): { command: string; args: string[] } {
     if (process.platform !== 'win32') {
         return { command: 'copilot', args: [] };
     }
-    const copilotPath = run(
-        'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command', '(Get-Command copilot -ErrorAction Stop).Source']
-    ).trim();
-    return { command: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-File', copilotPath] };
+    const script = run('powershell.exe', [...QUIET_POWERSHELL, '-Command', WHERE_IS_COPILOT]).trim();
+    return { command: 'powershell.exe', args: [...QUIET_POWERSHELL, '-File', script] };
 }
 
-/** One JSON object per line; anything else (banners, blank lines) is dropped. */
+/**
+ * The events of `--output-format json` output: every line that parses as
+ * JSON, in order. Banners, blank and partial lines are skipped; nothing
+ * checks that a value is an object.
+ */
 export function parseEvents<T = unknown>(output: string): T[] {
-    return output
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .flatMap(line => {
-            try {
-                return [JSON.parse(line) as T];
-            } catch {
-                return [];
-            }
-        });
+    const events: T[] = [];
+    for (const line of output.split(/\r?\n/)) {
+        if (line.length === 0) {
+            continue;
+        }
+        try {
+            events.push(JSON.parse(line) as T);
+        } catch {
+            // not an event
+        }
+    }
+    return events;
 }
 
-/** The arguments every scripted, non-interactive Copilot run uses. */
+/** The arguments of a scripted run of one prompt in `workDir`; `extra` goes last. */
 export function copilotBatchArgs(workDir: string, prompt: string, extra: string[] = []): string[] {
-    return [
-        '-C', workDir,
-        '-p', prompt,
-        '--output-format', 'json',
-        '--allow-all-tools',
-        '--no-custom-instructions',
-        '--no-remote',
-        '--no-remote-export',
-        '--log-level', 'none',
-        ...extra,
-    ];
+    return ['-C', workDir, '-p', prompt, ...ONE_SHOT_FLAGS, ...extra];
 }
