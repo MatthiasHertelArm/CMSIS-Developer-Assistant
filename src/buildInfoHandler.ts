@@ -29,6 +29,7 @@ import {
     isInsideAny, looksLikeBuildLog, outputSectionAt, parseMapFile, prefixedLog, readBuildLog, readElf, regionsFor, renderArtifacts, renderDiagnostics,
     renderLayout, renderLookup, renderNoBuild, renderNoLog, renderUsage, resolveBuildContext, sectionAt, symbolAt, topSymbols, uncoveredRanges, usageRegions,
 } from './core/buildInfo';
+import type { ToolText } from './core/toolResult';
 import { runTool } from './core/toolRun';
 
 export interface BuildInfoHandlerOptions {
@@ -82,7 +83,7 @@ export class BuildInfoHandler {
 
     // ------------------------------------------------------------------ tools
 
-    public handleListBuildArtifacts(args: BuildTargetArgs): Promise<string> {
+    public handleListBuildArtifacts(args: BuildTargetArgs): Promise<ToolText> {
         return this.run('list_build_artifacts', args, async (log) => {
             const ctx = await this.resolve(args, log);
             if ('error' in ctx) { return ctx.error; }
@@ -109,7 +110,7 @@ export class BuildInfoHandler {
         });
     }
 
-    public handleGetMemoryUsage(args: UsageArgs): Promise<string> {
+    public handleGetMemoryUsage(args: UsageArgs): Promise<ToolText> {
         return this.run('get_memory_usage', args, async (log) => {
             const picked = await this.pickImage(args, log);
             if ('error' in picked) { return picked.error; }
@@ -128,7 +129,7 @@ export class BuildInfoHandler {
         });
     }
 
-    public handleLookupSymbol(args: LookupArgs): Promise<string> {
+    public handleLookupSymbol(args: LookupArgs): Promise<ToolText> {
         return this.run('lookup_symbol', args, async (log) => {
             if (!args.name?.trim() && !args.address?.trim()) { return 'Pass name (a symbol, e.g. HAL_Init or a substring) or address (hex, e.g. 0x08001234).'; }
             const picked = await this.pickImage(args, log);
@@ -176,7 +177,7 @@ export class BuildInfoHandler {
         });
     }
 
-    public handleGetSectionLayout(args: LayoutArgs): Promise<string> {
+    public handleGetSectionLayout(args: LayoutArgs): Promise<ToolText> {
         return this.run('get_section_layout', args, async (log) => {
             const picked = await this.pickImage(args, log);
             if ('error' in picked) { return picked.error; }
@@ -188,7 +189,7 @@ export class BuildInfoHandler {
         });
     }
 
-    public handleGetBuildDiagnostics(args: DiagnosticsArgs): Promise<string> {
+    public handleGetBuildDiagnostics(args: DiagnosticsArgs): Promise<ToolText> {
         return this.run('get_build_diagnostics', args, async (log) => {
             let ctxLine: string | undefined;
             let candidates: string[] = [];
@@ -311,7 +312,7 @@ export class BuildInfoHandler {
     }
 
     /** Timeout fence and trace for one tool call — see `runTool`. */
-    private run(tool: string, args: object, body: (log: BuildInfoHost['log'], deadline: number) => Promise<string>): Promise<string> {
+    private run(tool: string, args: object, body: (log: BuildInfoHost['log'], deadline: number) => Promise<string>): Promise<ToolText> {
         return runTool(tool, ++this.callCounter, args, this.host.log, { defaultTimeoutMs: this.options.timeoutMs, timeoutNote: TIMEOUT_NOTE }, body);
     }
 }

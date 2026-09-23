@@ -16,6 +16,7 @@
 
 import * as assert from 'assert';
 import { PackDocsLog } from '../core/packDocs/host';
+import { ToolError } from '../core/toolResult';
 import { runTool, toolTimeoutMs } from '../core/toolRun';
 
 suite('toolRun', () => {
@@ -31,18 +32,20 @@ suite('toolRun', () => {
     setup(() => { lines = []; unhandled = []; process.on('unhandledRejection', onUnhandled); });
     teardown(() => { process.off('unhandledRejection', onUnhandled); });
 
-    test('a body that rejects after the timeout is logged, not left unhandled', async () => {
+    test('the timer answers with a timeout reply; a body that rejects after it is logged, not left unhandled', async () => {
         const result = await runTool('x', 1, {}, log, options, () => new Promise((_r, reject) => setTimeout(() => reject(new Error('late')), 40)));
-        assert.match(result, /^x timed out after 20 ms\. NOTE$/);
+        assert.deepStrictEqual(result, { text: 'x timed out after 20 ms. NOTE', status: 'timeout' });
         await sleep(80);
         assert.deepStrictEqual(unhandled, []);
         assert.ok(lines.some(l => /^D \[x #1\] finished after the timeout: late$/.test(l)), lines.join('\n'));
     });
 
-    test('a rejection before the timer is the failure text', async () => {
-        const result = await runTool('x', 2, {}, log, options, async () => { throw new Error('boom'); });
-        assert.strictEqual(result, 'x failed: boom');
+    test('a rejection before the timer rejects with a ToolError, classified when the body threw a plain Error', async () => {
+        await assert.rejects(runTool('x', 2, {}, log, options, async () => { throw new Error('boom'); }),
+            (failure: unknown) => failure instanceof ToolError && failure.code === 'INTERNAL' && failure.message === 'boom');
         assert.ok(lines.some(l => /^E \[x #2\] failed after \d+ ms boom$/.test(l)), lines.join('\n'));
+        const typed = new ToolError('INVALID_ARGUMENT', 'no such page', 'Pass a page the document has.');
+        await assert.rejects(runTool('x', 4, {}, log, options, async () => { throw typed; }), (failure: unknown) => failure === typed);
     });
 
     test('a result is traced with its size, and the deadline is passed to the body', async () => {

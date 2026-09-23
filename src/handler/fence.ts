@@ -16,18 +16,25 @@
 
 /**
  * The handler-level fence around the inspection and CMSIS tools. A call that
- * outlives its limit answers with a text saying so instead of hanging the
- * agent, and a call that fails answers `Error in '<tool>': …`. Both are
- * ordinary tool results, not MCP errors (#11); `src/core/toolMetrics.ts`
- * recognises them by the `did not complete within` and `Error in '` markers.
+ * fails is answered with its `ToolError` (a plain error gets a classified
+ * code), and a call that outlives its limit is answered by the cap: a
+ * `timeout` reply for the tools that wait for something, a `TIMEOUT` error
+ * for the reads, which have no result to show (#11).
  */
 
+import { ToolError, ToolText, toToolError } from '../core/toolResult';
 import type { HandlerHost } from './host';
 
 /** The limit when the caller passes no positive `timeoutMs`. */
 const UNSPECIFIED_LIMIT_MS = 30_000;
 /** The most any single call may ask for (#12). */
 const LIMIT_CAP_MS = 60_000;
+
+/**
+ * What the cap answers: `reply` for tools that wait (the wait ran out, which
+ * is not a failure), `error` for reads (no data came back).
+ */
+export type CapOutcome = 'reply' | 'error';
 
 /** What a caught value says: an Error's message, anything else as a string. */
 export function failureText(caught: unknown): string {
@@ -42,14 +49,17 @@ export function fenceLimitMs(timeoutMs: number | undefined): number {
     return UNSPECIFIED_LIMIT_MS;
 }
 
-function overrunNotice(label: string, limitMs: number): string {
-    return `'${label}' did not complete within ${limitMs} ms (handler-level cap). `
-        + 'The DAP probe or target may be unresponsive — call get_session_status / check_target_connection to confirm. '
-        + 'Note: the underlying request may still be running on the server; consider restart_debugging if subsequent calls also stall.';
+function overrunStatement(label: string, limitMs: number): string {
+    return `'${label}' did not complete within ${limitMs} ms (handler-level cap).`;
 }
 
+const OVERRUN_ADVICE = 'The DAP probe or target may be unresponsive — call get_session_status / check_target_connection to confirm. '
+    + 'Note: the underlying request may still be running on the server; consider restart_debugging if subsequent calls also stall.';
+
 /**
- * Race `body` against the limit for `timeoutMs`. Never rejects.
+ * Race `body` against the limit for `timeoutMs`. A failing body rejects with
+ * its `ToolError`; the cap resolves with a `timeout` reply or rejects with a
+ * `TIMEOUT` error, as `onCap` says.
  *
  * The timer is armed before the body starts, so a body whose own wait is as
  * long as the fence loses the tie. A body that loses keeps running — a DAP
@@ -60,17 +70,25 @@ export async function fenced(
     label: string,
     timeoutMs: number | undefined,
     timers: Pick<HandlerHost, 'startTimer'>,
-    body: () => Promise<string>,
-): Promise<string> {
+    body: () => Promise<ToolText>,
+    onCap: CapOutcome,
+): Promise<ToolText> {
     const limitMs = fenceLimitMs(timeoutMs);
     let disarm: () => void = () => undefined;
-    const expiry = new Promise<string>((settle) => {
-        disarm = timers.startTimer(limitMs, () => settle(overrunNotice(label, limitMs)));
+    const expiry = new Promise<ToolText>((settle, fail) => {
+        disarm = timers.startTimer(limitMs, () => {
+            if (onCap === 'reply') {
+                settle({ text: `${overrunStatement(label, limitMs)} ${OVERRUN_ADVICE}`, status: 'timeout' });
+            } else {
+                fail(new ToolError('TIMEOUT', overrunStatement(label, limitMs), OVERRUN_ADVICE));
+            }
+        });
     });
-    const answer = body().then(
-        (text) => text,
-        (caught: unknown) => `Error in '${label}': ${failureText(caught)}`,
-    );
+    const answer = body().then((text) => text, (caught: unknown) => {
+        throw toToolError(caught);
+    });
+    // A second observer: once the cap has won, the race no longer waits for the body.
+    answer.catch(() => undefined);
     try {
         return await Promise.race([answer, expiry]);
     } finally {

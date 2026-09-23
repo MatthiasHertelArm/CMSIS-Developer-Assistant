@@ -21,7 +21,10 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { toCallToolResult } from './core/measuredMcpServer';
+import type { ToolText } from './core/toolResult';
 import type { PackDocsDispatch } from './packDocsDispatch';
 
 const TIMEOUT_DESC = 'Per-call timeout in ms (default from settings).';
@@ -34,8 +37,9 @@ const targetShape = {
     timeoutMs: z.number().int().min(100).max(600_000).optional().describe(TIMEOUT_DESC),
 };
 
-function text(result: string) {
-    return { content: [{ type: 'text' as const, text: result }] };
+/** The MCP result of a dispatched op's outcome, built by the one mapping in `MeasuredMcpServer`. */
+function reply(result: ToolText): CallToolResult {
+    return toCallToolResult(result);
 }
 
 export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDispatch): void {
@@ -49,7 +53,7 @@ export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDi
             ...targetShape,
             includeUnlisted: z.boolean().optional().describe('Also list PDFs in the pack that no <book> references (default from settings)'),
         },
-    }, async (args) => text(await dispatch('handleListTargetDocs', args)));
+    }, async (args) => reply(await dispatch('handleListTargetDocs', args)));
 
     mcpServer.registerTool('search_target_docs', {
         description: 'Search the target\'s pack, fetched, user and workspace documents page by page (register names, bit fields, ' +
@@ -62,7 +66,7 @@ export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDi
             includeUnlisted: z.boolean().optional().describe('Also search pack PDFs not attributed to this device/board (default false)'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleSearchTargetDocs', args)));
+    }, async (args) => reply(await dispatch('handleSearchTargetDocs', args)));
 
     mcpServer.registerTool('fetch_doc', {
         description: 'Download a web-linked document (an arm.com book or Arm document id such as ddi0553, or a direct PDF URL ' +
@@ -75,7 +79,7 @@ export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDi
             refresh: z.boolean().optional().describe('Download again even if cached'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleFetchDoc', args)));
+    }, async (args) => reply(await dispatch('handleFetchDoc', args)));
 
     mcpServer.registerTool('get_peripheral_docs', {
         description: 'Documentation dossier for one peripheral instance of the target (USART1, TIM2, GPIOA) from the SVD and the ' +
@@ -92,7 +96,7 @@ export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDi
             maxChars: z.number().int().min(500).max(60_000).optional().describe('Output budget (default 8000)'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleGetPeripheralDocs', args)));
+    }, async (args) => reply(await dispatch('handleGetPeripheralDocs', args)));
 
     mcpServer.registerTool('read_doc_pages', {
         description: 'Read pages of a target document by id: "519", "519-521" or "519,523". Cite as <id> <edition> p.<n>.',
@@ -103,5 +107,5 @@ export function registerPackDocsTools(mcpServer: McpServer, dispatch: PackDocsDi
             maxChars: z.number().int().min(500).max(60_000).optional().describe('Total text budget (default 12000)'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleReadDocPages', args)));
+    }, async (args) => reply(await dispatch('handleReadDocPages', args)));
 }

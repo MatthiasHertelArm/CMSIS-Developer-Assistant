@@ -18,20 +18,23 @@
  * The debugging tools behind the MCP server: one `handle*` method per tool.
  * Each checks what state the session is in, asks the executor (and, for
  * `cmsis_action` and `flash`, the CMSIS Solution extension or pyOCD) and
- * answers with one plain text for the agent.
+ * answers with one text for the agent.
  *
  * `DebugMCPServer` calls a handler directly in the window that serves MCP;
  * a worker window's `ControlServer` calls it by op name with `args ?? {}`.
  * `src/core/opTable.ts` checks at compile time that the interface's method
  * names are exactly its `DEBUG_OPS`.
  *
- * How a call ends:
- *   - inspection, reset, CMSIS and flash tools run inside a fence and always
- *     answer with text: a failure as `Error in '<tool>': …`, an overrun as a
- *     notice (#11);
- *   - session, execution and breakpoint tools throw, wrapping the cause as
- *     `<what failed>: <String(error)>`;
- *   - refusals such as "a session is already active" are answered as text.
+ * How a call ends (#11, vocabulary in `src/core/toolResult.ts`):
+ *   - with a text, or a `ToolReply` whose status is `timeout` (a wait ran out:
+ *     `wait_for_stop`, a step or continue, pause, the fence cap of `reset`,
+ *     `cmsis_action` and `flash`) or `running` (a CMSIS action goes on);
+ *   - with a rejected `ToolError`: refusals such as "a session is already
+ *     active" (`PROBE_BUSY`), the state gate (`NO_SESSION`, `TARGET_RUNNING`,
+ *     …), failed tasks (`TASK_FAILED`), and the fence cap of the reads
+ *     (`TIMEOUT`);
+ *   - session, execution and breakpoint tools wrap a cause with `wrapError`
+ *     as `<what failed>: <String(error)>`, keeping its code and hint.
  *
  * Steps, continue and pause wait only for the DAP `stopped` event the
  * executor arms before the request goes out; VS Code's stack-item events,
@@ -54,6 +57,7 @@ import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
 import { findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup, SvdDevice } from './core/svdParser';
 import { shortenPath } from './core/textBudget';
+import { ToolError, ToolText, wrapError } from './core/toolResult';
 import {
     DapScope,
     DEFAULT_LISTING_LIMITS,
@@ -64,7 +68,7 @@ import {
     selectVariables,
 } from './core/variableView';
 import { actionTimeoutMs, activeTargetName, CmsisAction, runCmsisAction } from './handler/cmsisAction';
-import { failureText, fenced } from './handler/fence';
+import { CapOutcome, failureText, fenced } from './handler/fence';
 import { flashTimeoutMs, runFlash } from './handler/flashTool';
 import { classifyGdbReply, DprintfCall, echoedBreakpointNumber, GdbReplyKind, removalEchoed, translateLogMessage } from './handler/gdbText';
 import { HandlerHost, VSCODE_HOST } from './handler/host';
@@ -76,8 +80,8 @@ export { probeSchedule } from './handler/cmsisAction';
 
 // ── Contract ───────────────────────────────────────────────────────────────
 
-/** Every tool answers with one text. */
-type ToolReply = Promise<string>;
+/** Every tool answers with a text or a reply with a status; a failure rejects with a `ToolError`. */
+type Answer = Promise<ToolText>;
 type VariableScope = 'local' | 'global' | 'all';
 
 interface TimeoutArg { timeoutMs?: number }
@@ -104,40 +108,40 @@ interface FlashRequest { cbuildRunFile?: string; timeoutMs?: number }
  * router see them. The member names must stay equal to `DEBUG_OPS`.
  */
 export interface IDebuggingHandler {
-    handleStartDebugging(args: StartRequest): ToolReply;
-    handleStopDebugging(): ToolReply;
-    handleStepOver(args?: TimeoutArg): ToolReply;
-    handleStepInto(args?: TimeoutArg): ToolReply;
-    handleStepOut(args?: TimeoutArg): ToolReply;
-    handleContinue(args?: TimeoutArg): ToolReply;
-    handlePause(args?: TimeoutArg): ToolReply;
-    handleWaitForStop(args?: TimeoutArg): ToolReply;
-    handleRestart(args?: TimeoutArg): ToolReply;
-    handleReset(args: ResetRequest): ToolReply;
-    handleAddBreakpoint(args: BreakpointRequest): ToolReply;
-    handleAddLogpoint(args: LogpointRequest): ToolReply;
-    handleRemoveBreakpoint(args: SourceLine): ToolReply;
-    handleClearAllBreakpoints(): ToolReply;
-    handleListBreakpoints(): ToolReply;
-    handleListVariableNames(args: ScopeRequest): ToolReply;
-    handleGetVariables(args: ValuesRequest): ToolReply;
-    handleEvaluateExpression(args: ExpressionRequest): ToolReply;
-    handleReadMemory(args: MemoryRequest): ToolReply;
-    handleReadCoreRegisters(args?: TimeoutArg): ToolReply;
-    handleReadCycleCounter(args?: TimeoutArg): ToolReply;
-    handleReadPeripheralRegister(args: PeripheralReadRequest): ToolReply;
-    handleGetFaultInfo(args?: TimeoutArg): ToolReply;
-    handleDiagnoseFault(args?: DiagnoseRequest): ToolReply;
-    handleLookupPeripheral(args?: PeripheralLookup): ToolReply;
-    handleLookupRegister(args: RegisterLookup): ToolReply;
-    handleGetDeviceInfo(): ToolReply;
-    handleCheckTargetConnection(): ToolReply;
-    handleGetSessionStatus(): ToolReply;
-    handleGetCallStack(args: StackRequest): ToolReply;
-    handleGetThreads(args?: TimeoutArg): ToolReply;
-    handleGetFrameVariables(args: FrameValuesRequest): ToolReply;
-    handleCmsisCommand(args: CmsisRequest): ToolReply;
-    handleFlash(args: FlashRequest): ToolReply;
+    handleStartDebugging(args: StartRequest): Answer;
+    handleStopDebugging(): Answer;
+    handleStepOver(args?: TimeoutArg): Answer;
+    handleStepInto(args?: TimeoutArg): Answer;
+    handleStepOut(args?: TimeoutArg): Answer;
+    handleContinue(args?: TimeoutArg): Answer;
+    handlePause(args?: TimeoutArg): Answer;
+    handleWaitForStop(args?: TimeoutArg): Answer;
+    handleRestart(args?: TimeoutArg): Answer;
+    handleReset(args: ResetRequest): Answer;
+    handleAddBreakpoint(args: BreakpointRequest): Answer;
+    handleAddLogpoint(args: LogpointRequest): Answer;
+    handleRemoveBreakpoint(args: SourceLine): Answer;
+    handleClearAllBreakpoints(): Answer;
+    handleListBreakpoints(): Answer;
+    handleListVariableNames(args: ScopeRequest): Answer;
+    handleGetVariables(args: ValuesRequest): Answer;
+    handleEvaluateExpression(args: ExpressionRequest): Answer;
+    handleReadMemory(args: MemoryRequest): Answer;
+    handleReadCoreRegisters(args?: TimeoutArg): Answer;
+    handleReadCycleCounter(args?: TimeoutArg): Answer;
+    handleReadPeripheralRegister(args: PeripheralReadRequest): Answer;
+    handleGetFaultInfo(args?: TimeoutArg): Answer;
+    handleDiagnoseFault(args?: DiagnoseRequest): Answer;
+    handleLookupPeripheral(args?: PeripheralLookup): Answer;
+    handleLookupRegister(args: RegisterLookup): Answer;
+    handleGetDeviceInfo(): Answer;
+    handleCheckTargetConnection(): Answer;
+    handleGetSessionStatus(): Answer;
+    handleGetCallStack(args: StackRequest): Answer;
+    handleGetThreads(args?: TimeoutArg): Answer;
+    handleGetFrameVariables(args: FrameValuesRequest): Answer;
+    handleCmsisCommand(args: CmsisRequest): Answer;
+    handleFlash(args: FlashRequest): Answer;
 }
 
 // ── Fixed texts ────────────────────────────────────────────────────────────
@@ -157,7 +161,8 @@ const STOP_SETTLE_MS = 300;
 /** Registers `diagnose_fault` reads (`control` is read but not used). */
 const TRIAGE_REGISTERS = ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim'];
 
-const NO_SESSION_START_FIRST = 'No active debug session. Start debugging first.';
+const NO_ACTIVE_SESSION = 'No active debug session.';
+const START_FIRST = 'Start debugging first.';
 const NOTHING_TO_STOP = 'Nothing to stop — no debug session is active.';
 const SESSION_STOPPED = 'The debug session has been stopped.';
 const NOTHING_TO_RESTART = 'Nothing to restart — no debug session is active';
@@ -285,17 +290,18 @@ export class DebuggingHandler
 
     // ── shared machinery ──
 
-    private fence(label: string, timeoutMs: number | undefined, body: () => Promise<string>): ToolReply {
-        return fenced(label, timeoutMs, this.host(), body);
+    /** `onCap` is `reply` for tools that wait for something, `error` for reads (#11, decision 3). */
+    private fence(label: string, timeoutMs: number | undefined, onCap: CapOutcome, body: () => Promise<ToolText>): Answer {
+        return fenced(label, timeoutMs, this.host(), body, onCap);
     }
 
-    /** Throws the state-specific refusal unless the target is stopped. */
+    /** Throws the state-specific refusal, a `ToolError` with the state's code and hint, unless the target is stopped. */
     private async requireStoppedTarget(operation: string): Promise<void> {
         if (await this.dbg.hasActiveSession()) {
             return;
         }
         const status = await this.dbg.getSessionStatus();
-        throw new Error(stoppedTargetRefusal(operation, status.state));
+        throw stoppedTargetRefusal(operation, status.state);
     }
 
     /** The full state, remembering which breakpoint list it showed. */
@@ -361,8 +367,11 @@ export class DebuggingHandler
         };
     }
 
-    /** A step or continue: gate, request, wait, and the recovery pause when nothing stopped. */
-    private async move(spec: MotionSpec, args: TimeoutArg | undefined): ToolReply {
+    /**
+     * A step or continue: gate, request, wait, and the recovery pause when
+     * nothing stopped, which answers with status `timeout`.
+     */
+    private async move(spec: MotionSpec, args: TimeoutArg | undefined): Answer {
         try {
             await this.requireStoppedTarget(spec.gate);
             const outcome = await this.sendAndAwaitStop(() => spec.send(this.dbg, args?.timeoutMs), args?.timeoutMs);
@@ -377,11 +386,11 @@ export class DebuggingHandler
                 const overrun = `\n\n⚠️ '${spec.tool}' did not complete within ${this.configuredSeconds}s. `
                     + 'The target is still running or the probe is unresponsive. '
                     + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
-                return body + overrun + await this.locateRunawayTarget(spec.tool);
+                return { text: body + overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
             }
             return body;
         } catch (caught) {
-            throw new Error(`${spec.failure}: ${String(caught)}`);
+            throw wrapError(spec.failure, caught);
         }
     }
 
@@ -458,12 +467,14 @@ export class DebuggingHandler
 
     // ── session ──
 
-    async handleStartDebugging(args: StartRequest): ToolReply {
+    async handleStartDebugging(args: StartRequest): Answer {
         if (this.dbg.hasDebugSession()) {
             const status = await this.dbg.getSessionStatus();
-            return `A debug session is already active (name='${status.sessionName ?? '?'}', state=${status.state}). `
-                + 'Refusing to start a second session. Use stop_debugging first, or call restart_debugging to reuse the current session, '
-                + 'or proceed directly with inspection tools (get_variables_values, read_memory, …).';
+            throw new ToolError('PROBE_BUSY',
+                `A debug session is already active (name='${status.sessionName ?? '?'}', state=${status.state}). `
+                    + 'Refusing to start a second session.',
+                'Use stop_debugging first, or call restart_debugging to reuse the current session, '
+                    + 'or proceed directly with inspection tools (get_variables_values, read_memory, …).');
         }
         try {
             const chosen = args.configurationName ?? await this.launchConfigs.promptForConfiguration(args.workingDirectory);
@@ -478,7 +489,7 @@ export class DebuggingHandler
                     + `Current state: ${this.fullState(started)}`;
             }
             if (!args.fileFullPath) {
-                throw new Error('fileFullPath is required when no named configuration is provided.');
+                throw new ToolError('INVALID_ARGUMENT', 'fileFullPath is required when no named configuration is provided.');
             }
             const launch = await this.launchConfigs.getDebugConfig(args.workingDirectory, args.fileFullPath, chosen, args.testName);
             if (!(await this.dbg.startDebugging(args.workingDirectory, launch))) {
@@ -491,7 +502,8 @@ export class DebuggingHandler
             return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. `
                 + `Current state: ${this.fullState(started)}`;
         } catch (caught) {
-            throw new Error(`Error starting debug session: ${String(caught)}${recentAdapterTraffic()}`);
+            const failed = wrapError('Error starting debug session', caught);
+            throw new ToolError(failed.code, `${failed.message}${recentAdapterTraffic()}`, failed.hint, failed.data);
         }
     }
 
@@ -501,7 +513,7 @@ export class DebuggingHandler
         }
     }
 
-    async handleStopDebugging(): ToolReply {
+    async handleStopDebugging(): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
                 return NOTHING_TO_STOP;
@@ -509,15 +521,15 @@ export class DebuggingHandler
             await this.dbg.stopDebugging();
             return `${SESSION_STOPPED}\n\n${ROOT_CAUSE_CHECK}`;
         } catch (caught) {
-            throw new Error(`Could not stop the debug session: ${String(caught)}`);
+            throw wrapError('Could not stop the debug session', caught);
         }
     }
 
     /** `timeoutMs` is accepted and ignored: the wait uses the configured timeout (KB9). */
-    async handleRestart(_args?: TimeoutArg): ToolReply {
+    async handleRestart(_args?: TimeoutArg): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
-                throw new Error(NOTHING_TO_RESTART);
+                throw new ToolError('NO_SESSION', NOTHING_TO_RESTART);
             }
             await this.dbg.restart();
             if (!(await this.awaitLiveSession())) {
@@ -526,113 +538,121 @@ export class DebuggingHandler
             }
             return SESSION_RESTARTED;
         } catch (caught) {
-            throw new Error(`Could not restart the debug session: ${String(caught)}`);
+            throw wrapError('Could not restart the debug session', caught);
         }
     }
 
-    handleReset(args: ResetRequest): ToolReply {
-        return this.fence('reset', args.timeoutMs, async () => {
+    handleReset(args: ResetRequest): Answer {
+        return this.fence('reset', args.timeoutMs, 'reply', async () => {
             if (!this.dbg.hasDebugSession()) {
-                throw new Error('No active debug session. Start debugging first — reset drives the target through the live probe.');
+                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, 'Start debugging first — reset drives the target through the live probe.');
             }
             const outcome = await this.dbg.resetTarget({ method: args.method ?? 'auto', halt: args.halt, timeoutMs: args.timeoutMs });
             return renderResetOutcome(outcome, args.halt);
         });
     }
 
-    async handleGetSessionStatus(): ToolReply {
+    async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
         return renderSessionStatus(status, this.dbg.getDiagnostics());
     }
 
-    async handleCheckTargetConnection(): ToolReply {
+    async handleCheckTargetConnection(): Answer {
         try {
             return await this.dbg.checkTargetConnection();
         } catch (caught) {
             if (caught instanceof HardwareTimeoutError) {
                 return `check_target_connection: ${caught.message}`;
             }
-            throw new Error(`Error checking target connection: ${String(caught)}`);
+            throw wrapError('Error checking target connection', caught);
         }
     }
 
-    async handleGetDeviceInfo(): ToolReply {
+    async handleGetDeviceInfo(): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
-                throw new Error(NO_SESSION_START_FIRST);
+                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, START_FIRST);
             }
             const info = await this.dbg.getDeviceInfo();
             const cmsisTarget = await activeTargetName();
             return cmsisTarget ? `${info.trimEnd()}\n  CMSIS target: ${cmsisTarget}` : info;
         } catch (caught) {
-            throw new Error(`Error getting device info: ${String(caught)}`);
+            throw wrapError('Error getting device info', caught);
         }
     }
 
     // ── execution ──
 
-    handleStepOver(args?: TimeoutArg): ToolReply {
+    handleStepOver(args?: TimeoutArg): Answer {
         return this.move(STEP_OVER, args);
     }
 
-    handleStepInto(args?: TimeoutArg): ToolReply {
+    handleStepInto(args?: TimeoutArg): Answer {
         return this.move(STEP_INTO, args);
     }
 
-    handleStepOut(args?: TimeoutArg): ToolReply {
+    handleStepOut(args?: TimeoutArg): Answer {
         return this.move(STEP_OUT, args);
     }
 
-    handleContinue(args?: TimeoutArg): ToolReply {
+    handleContinue(args?: TimeoutArg): Answer {
         return this.move(CONTINUE, args);
     }
 
-    /** Not fenced and not wrapped: refusals and errors keep their own text. */
-    async handlePause(args?: TimeoutArg): ToolReply {
+    /** Not fenced and not wrapped: refusals and errors keep their own text and code. */
+    async handlePause(args?: TimeoutArg): Answer {
         if (!this.dbg.hasDebugSession()) {
-            throw new Error(NO_SESSION_START_FIRST);
+            throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, START_FIRST);
         }
         const status = await this.dbg.getSessionStatus();
         switch (status.state) {
             case 'stopped':
                 return `Target is already stopped (reason: ${status.detail ?? 'n/a'}). No pause needed — proceed with inspection tools.`;
             case 'unresponsive':
-                return 'Cannot pause: probe/GDB server is unresponsive. Call check_target_connection or restart_debugging.';
+                throw new ToolError('TIMEOUT', 'Cannot pause: probe/GDB server is unresponsive.', 'Call check_target_connection or restart_debugging.');
             case 'no-session':
-                throw new Error('No active debug session.');
+                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION);
             case 'initializing':
-                return 'Cannot pause yet: session is still initializing. Wait briefly and retry.';
+                throw new ToolError('NO_SESSION', 'Cannot pause yet: session is still initializing.', 'Wait briefly and retry.');
             case 'running':
                 break;
         }
         const outcome = await this.sendAndAwaitStop(() => this.dbg.pause(args?.timeoutMs), args?.timeoutMs);
         if (outcome.timedOut) {
-            return 'Pause requested but target did not stop within the timeout. '
-                + 'Probe may be unresponsive — call get_session_status / check_target_connection.';
+            return {
+                text: 'Pause requested but target did not stop within the timeout. '
+                    + 'Probe may be unresponsive — call get_session_status / check_target_connection.',
+                status: 'timeout',
+            };
         }
         if (outcome.ended) {
-            return 'Pause requested but the debug session ended. The target may have crashed.';
+            throw new ToolError('NO_SESSION', 'Pause requested but the debug session ended. The target may have crashed.');
         }
         return `Target paused. ${this.compactState(outcome.state)}`;
     }
 
-    handleWaitForStop(args?: TimeoutArg): ToolReply {
-        return this.fence('wait_for_stop', args?.timeoutMs, async () => {
+    handleWaitForStop(args?: TimeoutArg): Answer {
+        return this.fence('wait_for_stop', args?.timeoutMs, 'reply', async () => {
             if (!this.dbg.hasDebugSession()) {
-                throw new Error('No active debug session. Start debugging first — wait_for_stop waits on a live session.');
+                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, 'Start debugging first — wait_for_stop waits on a live session.');
             }
             const budgetMs = args?.timeoutMs
                 ? Math.max(args.timeoutMs - WAIT_FOR_STOP_MARGIN_MS, 100)
                 : WAIT_FOR_STOP_DEFAULT_MS;
             const outcome = await this.dbg.waitForStop(budgetMs);
             if (outcome.kind === 'timeout') {
-                return 'Target did not stop within the timeout — it is still running (or the probe is unresponsive). '
-                    + 'Options: call wait_for_stop again with a larger timeoutMs, pause_execution to see where it is, '
-                    + 'or check_target_connection if other calls are also stalling.';
+                return {
+                    text: 'Target did not stop within the timeout — it is still running (or the probe is unresponsive). '
+                        + 'Options: call wait_for_stop again with a larger timeoutMs, pause_execution to see where it is, '
+                        + 'or check_target_connection if other calls are also stalling.',
+                    status: 'timeout',
+                };
             }
             if (outcome.kind === 'ended') {
-                return 'The debug session ended while waiting for a stop — the target may have crashed, the probe disconnected, '
-                    + 'or the session was stopped in the UI. Call get_session_status to confirm.';
+                throw new ToolError('NO_SESSION',
+                    'The debug session ended while waiting for a stop — the target may have crashed, the probe disconnected, '
+                        + 'or the session was stopped in the UI.',
+                    'Call get_session_status to confirm.');
             }
             await this.host().sleep(STOP_SETTLE_MS);
             const state = await this.dbg.getCurrentDebugState(3);
@@ -648,23 +668,24 @@ export class DebuggingHandler
     // ── breakpoints ──
 
     /** Not gated on the run state (KB3). */
-    async handleAddBreakpoint(args: BreakpointRequest): ToolReply {
+    async handleAddBreakpoint(args: BreakpointRequest): Answer {
         try {
             let lines: number[];
             let matchedByContent = false;
             if (typeof args.line === 'number') {
                 if (!Number.isInteger(args.line) || args.line < 1) {
-                    throw new Error(`Invalid line number ${args.line}: must be a 1-based integer.`);
+                    throw new ToolError('INVALID_ARGUMENT', `Invalid line number ${args.line}: must be a 1-based integer.`);
                 }
                 lines = [args.line];
             } else if (!args.lineContent) {
-                throw new Error('No location given: pass `line` (1-based line number). The legacy `lineContent` form is still accepted but deprecated.');
+                throw new ToolError('INVALID_ARGUMENT',
+                    'No location given: pass `line` (1-based line number). The legacy `lineContent` form is still accepted but deprecated.');
             } else {
                 const needle = args.lineContent;
                 const source = (await vscode.workspace.openTextDocument(vscode.Uri.file(args.fileFullPath))).getText();
                 lines = source.split(/\r?\n/).flatMap((text, index) => text.includes(needle) ? [index + 1] : []);
                 if (lines.length === 0) {
-                    throw new Error(`Could not find any lines containing: ${needle}`);
+                    throw new ToolError('INVALID_ARGUMENT', `Could not find any lines containing: ${needle}`);
                 }
                 matchedByContent = true;
             }
@@ -712,15 +733,15 @@ export class DebuggingHandler
                 + 'and does NOT mean it failed. The breakpoint is set; verify by running continue_execution '
                 + `(the target should stop) or list_breakpoints.\n  ${listed}`;
         } catch (caught) {
-            throw new Error(`Error adding breakpoint: ${String(caught)}`);
+            throw wrapError('Error adding breakpoint', caught);
         }
     }
 
     /** Creates both a VS Code logpoint and a GDB `dprintf` (KB6); not gated (KB3). */
-    async handleAddLogpoint(args: LogpointRequest): ToolReply {
+    async handleAddLogpoint(args: LogpointRequest): Answer {
         try {
             if (!Number.isInteger(args.line) || args.line < 1) {
-                throw new Error(`Invalid line number ${args.line}: must be a 1-based integer.`);
+                throw new ToolError('INVALID_ARGUMENT', `Invalid line number ${args.line}: must be a 1-based integer.`);
             }
             const call = translateLogMessage(args.logMessage);
             await this.dbg.addBreakpoint(vscode.Uri.file(args.fileFullPath), args.line,
@@ -755,12 +776,12 @@ export class DebuggingHandler
                 + 'For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.');
             return report.join('\n');
         } catch (caught) {
-            throw new Error(`Could not add the logpoint: ${String(caught)}`);
+            throw wrapError('Could not add the logpoint', caught);
         }
     }
 
     /** Without a model entry nothing is sent to GDB (KB12). */
-    async handleRemoveBreakpoint(args: SourceLine): ToolReply {
+    async handleRemoveBreakpoint(args: SourceLine): Answer {
         try {
             const place = vscode.Uri.file(args.fileFullPath);
             const wanted = place.toString();
@@ -779,11 +800,11 @@ export class DebuggingHandler
             }
             return `Breakpoint removed from ${args.fileFullPath}:${args.line}${note}`;
         } catch (caught) {
-            throw new Error(`Could not remove the breakpoint: ${String(caught)}`);
+            throw wrapError('Could not remove the breakpoint', caught);
         }
     }
 
-    async handleClearAllBreakpoints(): ToolReply {
+    async handleClearAllBreakpoints(): Answer {
         try {
             const count = this.dbg.getBreakpoints().length;
             this.dbg.clearAllBreakpoints();
@@ -799,12 +820,12 @@ export class DebuggingHandler
             }
             return `Cleared ${count} breakpoint(s) from the model.${note}`;
         } catch (caught) {
-            throw new Error(`Could not clear the breakpoints: ${String(caught)}`);
+            throw wrapError('Could not clear the breakpoints', caught);
         }
     }
 
     /** Kinds other than source and function breakpoints print nothing but keep their number (KB15). */
-    async handleListBreakpoints(): ToolReply {
+    async handleListBreakpoints(): Answer {
         try {
             const all = this.dbg.getBreakpoints();
             if (all.length === 0) {
@@ -821,14 +842,14 @@ export class DebuggingHandler
             });
             return listing;
         } catch (caught) {
-            throw new Error(`Could not list the breakpoints: ${String(caught)}`);
+            throw wrapError('Could not list the breakpoints', caught);
         }
     }
 
     // ── variables and expressions ──
 
-    handleListVariableNames(args: ScopeRequest): ToolReply {
-        return this.fence('list_variable_names', args.timeoutMs, async () => {
+    handleListVariableNames(args: ScopeRequest): Answer {
+        return this.fence('list_variable_names', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('list variable names');
             const { scopes } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
@@ -838,8 +859,8 @@ export class DebuggingHandler
         });
     }
 
-    handleGetVariables(args: ValuesRequest): ToolReply {
-        return this.fence('get_variables_values', args.timeoutMs, async () => {
+    handleGetVariables(args: ValuesRequest): Answer {
+        return this.fence('get_variables_values', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read variables');
             const { scopes, widened } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
@@ -865,8 +886,8 @@ export class DebuggingHandler
     }
 
     /** Any frame by id: no focused-frame check and no widening of `global`. */
-    handleGetFrameVariables(args: FrameValuesRequest): ToolReply {
-        return this.fence('get_frame_variables', args.timeoutMs, async () => {
+    handleGetFrameVariables(args: FrameValuesRequest): Answer {
+        return this.fence('get_frame_variables', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('get frame variables');
             const reply: VariablesReply = await this.dbg.getVariablesForFrame(args.frameId, args.scope ?? 'all', args.timeoutMs);
             const scopes = reply?.scopes;
@@ -888,8 +909,8 @@ export class DebuggingHandler
     }
 
     /** GDB passthrough (`-exec …`) is never redacted (KB6). */
-    handleEvaluateExpression(args: ExpressionRequest): ToolReply {
-        return this.fence('evaluate_expression', args.timeoutMs, async () => {
+    handleEvaluateExpression(args: ExpressionRequest): Answer {
+        return this.fence('evaluate_expression', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('evaluate expression');
             const frameId = this.focusedFrame();
             const reply: EvaluateReply = await this.dbg.evaluateExpression(args.expression, frameId, args.timeoutMs);
@@ -913,8 +934,8 @@ export class DebuggingHandler
 
     // ── raw target reads (never redacted) ──
 
-    handleReadMemory(args: MemoryRequest): ToolReply {
-        return this.fence('read_memory', args.timeoutMs, async () => {
+    handleReadMemory(args: MemoryRequest): Answer {
+        return this.fence('read_memory', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read memory');
             const format = args.format ?? 'hex';
             const bytes = await this.dbg.readMemory(args.address, args.length, args.timeoutMs);
@@ -922,37 +943,37 @@ export class DebuggingHandler
         });
     }
 
-    handleReadCoreRegisters(args?: TimeoutArg): ToolReply {
-        return this.fence('read_core_registers', args?.timeoutMs, async () => {
+    handleReadCoreRegisters(args?: TimeoutArg): Answer {
+        return this.fence('read_core_registers', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read core registers');
             return renderCoreRegisters(await this.dbg.readCoreRegisters(args?.timeoutMs));
         });
     }
 
-    handleReadCycleCounter(args?: TimeoutArg): ToolReply {
-        return this.fence('read_cycle_counter', args?.timeoutMs, async () => {
+    handleReadCycleCounter(args?: TimeoutArg): Answer {
+        return this.fence('read_cycle_counter', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read cycle counter');
             return renderCycleCounter(await this.dbg.readCycleCounter(args?.timeoutMs));
         });
     }
 
-    handleReadPeripheralRegister(args: PeripheralReadRequest): ToolReply {
-        return this.fence('read_peripheral_register', args.timeoutMs, async () => {
+    handleReadPeripheralRegister(args: PeripheralReadRequest): Answer {
+        return this.fence('read_peripheral_register', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read peripheral register');
             return this.dbg.readPeripheralRegister(args.peripheral, args.register, args.timeoutMs);
         });
     }
 
-    handleGetFaultInfo(args?: TimeoutArg): ToolReply {
-        return this.fence('get_fault_info', args?.timeoutMs, async () => {
+    handleGetFaultInfo(args?: TimeoutArg): Answer {
+        return this.fence('get_fault_info', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read fault info');
             return this.dbg.getFaultInfo(args?.timeoutMs);
         });
     }
 
     /** One-call fault triage. Every read after the fault registers degrades to a note instead of failing. */
-    handleDiagnoseFault(args?: DiagnoseRequest): ToolReply {
-        return this.fence('diagnose_fault', args?.timeoutMs, async () => {
+    handleDiagnoseFault(args?: DiagnoseRequest): Answer {
+        return this.fence('diagnose_fault', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('diagnose the fault');
             const timeoutMs = args?.timeoutMs;
             const depth = args?.levels ?? 3;
@@ -1031,8 +1052,8 @@ export class DebuggingHandler
 
     // ── SVD lookups (no session needed) ──
 
-    handleLookupPeripheral(args?: PeripheralLookup): ToolReply {
-        return this.fence('lookup_peripheral', args?.timeoutMs, async () => {
+    handleLookupPeripheral(args?: PeripheralLookup): Answer {
+        return this.fence('lookup_peripheral', args?.timeoutMs, 'error', async () => {
             const loaded = await loadSvdForLookup({ svdFile: args?.svdFile, pname: args?.pname });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
@@ -1058,8 +1079,8 @@ export class DebuggingHandler
         });
     }
 
-    handleLookupRegister(args: RegisterLookup): ToolReply {
-        return this.fence('lookup_register', args.timeoutMs, async () => {
+    handleLookupRegister(args: RegisterLookup): Answer {
+        return this.fence('lookup_register', args.timeoutMs, 'error', async () => {
             const loaded = await loadSvdForLookup({ svdFile: args.svdFile, pname: args.pname });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
@@ -1083,16 +1104,16 @@ export class DebuggingHandler
 
     // ── stack and threads ──
 
-    handleGetCallStack(args: StackRequest): ToolReply {
-        return this.fence('get_call_stack', args.timeoutMs, async () => {
+    handleGetCallStack(args: StackRequest): Answer {
+        return this.fence('get_call_stack', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('get call stack');
             const frames = await this.dbg.getCallStack(args.threadId, args.levels ?? 50, args.timeoutMs);
             return renderCallStack(frames, args.levels !== undefined, this.workspaceRoots());
         });
     }
 
-    handleGetThreads(args?: TimeoutArg): ToolReply {
-        return this.fence('get_threads', args?.timeoutMs, async () => {
+    handleGetThreads(args?: TimeoutArg): Answer {
+        return this.fence('get_threads', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('get threads');
             return renderThreads(await this.dbg.getThreads(args?.timeoutMs), this.workspaceRoots());
         });
@@ -1100,9 +1121,9 @@ export class DebuggingHandler
 
     // ── CMSIS Solution and pyOCD ──
 
-    handleCmsisCommand(args: CmsisRequest): ToolReply {
+    handleCmsisCommand(args: CmsisRequest): Answer {
         const effectiveMs = actionTimeoutMs(args.action, args.timeoutMs);
-        return this.fence('cmsis_action', effectiveMs, () => runCmsisAction({
+        return this.fence('cmsis_action', effectiveMs, 'reply', () => runCmsisAction({
             executor: this.dbg,
             host: this.host(),
             awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
@@ -1110,8 +1131,8 @@ export class DebuggingHandler
         }, args.action, args.target, effectiveMs));
     }
 
-    handleFlash(args: FlashRequest): ToolReply {
-        return this.fence('flash', flashTimeoutMs(args.timeoutMs), () => runFlash(this.dbg, this.host(), args));
+    handleFlash(args: FlashRequest): Answer {
+        return this.fence('flash', flashTimeoutMs(args.timeoutMs), 'reply', () => runFlash(this.dbg, this.host(), args));
     }
 }
 

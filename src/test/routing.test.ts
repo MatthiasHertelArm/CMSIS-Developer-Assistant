@@ -24,7 +24,8 @@ import { ControlServer } from '../controlServer';
 import type { IDebuggingHandler } from '../debuggingHandler';
 import type { PackDocsHandlers } from '../packDocsDispatch';
 import { RoutingDebuggingHandler } from '../routingDebuggingHandler';
-import { DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
+import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
+import { ErrorCode, ToolError, ToolText, errorDetail, textOf, toToolError } from '../core/toolResult';
 import { closeHttpServer } from '../utils/closeHttpServer';
 import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
 
@@ -56,28 +57,48 @@ function echoingPackDocs(label: string): PackDocsHandlers {
 
 const pause = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
 
-/** Assert that the call was refused, with a message passing every check. */
+/** Assert that the call was refused, with a message and hint that pass every check; the text an agent reads, without the code. */
 async function refusedWith(call: Promise<unknown>, ...patterns: RegExp[]): Promise<string> {
-    let message = '';
-    await assert.rejects(call, (failure: Error) => {
-        message = failure.message;
-        return true;
+    return (await refusal(call, ...patterns)).detail;
+}
+
+/** The refusal as a `ToolError`, and its message with the hint, checked against `patterns`. */
+async function refusal(call: Promise<unknown>, ...patterns: RegExp[]): Promise<{ error: ToolError; detail: string }> {
+    let error: ToolError | undefined;
+    await assert.rejects(call, (failure: unknown) => {
+        error = toToolError(failure);
+        return failure instanceof ToolError;
     });
+    const typed = error as ToolError;
+    const detail = errorDetail(typed);
     for (const pattern of patterns) {
-        assert.match(message, pattern);
+        assert.match(detail, pattern);
     }
-    return message;
+    return { error: typed, detail };
+}
+
+/** Assert the refusal's code. */
+async function refusedAs(code: ErrorCode, call: Promise<unknown>, ...patterns: RegExp[]): Promise<ToolError> {
+    const { error, detail } = await refusal(call, ...patterns);
+    assert.strictEqual(error.code, code, detail);
+    return error;
 }
 
 interface RawReply {
     status: number;
     body: string;
+    headers: http.IncomingHttpHeaders;
 }
 
 /** A POST /op made by hand, with the token and no Content-Length, so its body goes chunked. */
-function openControlRequest(port: number, token: string, onReply?: (reply: http.IncomingMessage) => void): http.ClientRequest {
+function openControlRequest(
+    port: number,
+    token: string,
+    onReply?: (reply: http.IncomingMessage) => void,
+    extraHeaders: http.OutgoingHttpHeaders = {},
+): http.ClientRequest {
     const options: http.RequestOptions = { method: 'POST', hostname: '127.0.0.1', port, path: '/op', agent: false };
-    options.headers = { [TOKEN_HEADER]: token };
+    options.headers = { [TOKEN_HEADER]: token, ...extraHeaders };
     return http.request(options, onReply);
 }
 
@@ -92,14 +113,14 @@ async function writeInPieces(client: http.ClientRequest, pieces: Array<string | 
 }
 
 /** Send `pieces` as one control request, optionally with a gap between them, and collect the answer. */
-function rawPost(port: number, token: string, pieces: Array<string | Buffer>, gapMs = 0): Promise<RawReply> {
+function rawPost(port: number, token: string, pieces: Array<string | Buffer>, gapMs = 0, extraHeaders: http.OutgoingHttpHeaders = {}): Promise<RawReply> {
     return new Promise<RawReply>((resolve, reject) => {
         const client = openControlRequest(port, token, (reply) => {
             const got: Buffer[] = [];
             reply.on('data', (piece: Buffer) => got.push(piece));
             reply.on('error', reject);
-            reply.on('end', () => resolve({ status: reply.statusCode ?? 0, body: Buffer.concat(got).toString('utf8') }));
-        });
+            reply.on('end', () => resolve({ status: reply.statusCode ?? 0, body: Buffer.concat(got).toString('utf8'), headers: reply.headers }));
+        }, extraHeaders);
         client.on('error', reject);
         void writeInPieces(client, pieces, gapMs);
     });
@@ -111,7 +132,12 @@ interface FakeWindow {
     port: number;
     token: string;
     entry: WindowRegistration;
+    /** Stops the window's control server; its registration stays. */
+    close(): Promise<void>;
 }
+
+/** Ops a fake window answers differently from the echo. */
+type OpOverrides = Record<string, (args?: unknown) => Promise<ToolText>>;
 
 suite('Multi-window routing', () => {
     let dir: string;
@@ -142,7 +168,7 @@ suite('Multi-window routing', () => {
     }
 
     /** Put a listening port into the registry under a new live fake pid. */
-    function enrol(label: string, port: number, token: string, overrides: Partial<WindowRegistration>): FakeWindow {
+    function enrol(label: string, port: number, token: string, overrides: Partial<WindowRegistration>, close: () => Promise<void>): FakeWindow {
         const stamp = Date.now();
         const entry: WindowRegistration = {
             pid: nextPid++,
@@ -155,7 +181,7 @@ suite('Multi-window routing', () => {
         };
         livePids.add(entry.pid);
         saveRegistration(label, entry);
-        return { label, pid: entry.pid, port, token, entry };
+        return { label, pid: entry.pid, port, token, entry, close };
     }
 
     /** A window: a real control server over echoing handlers, registered by hand. */
@@ -163,35 +189,43 @@ suite('Multi-window routing', () => {
         label: string,
         overrides: Partial<WindowRegistration> = {},
         withPackDocs = true,
+        ops: OpOverrides = {},
     ): Promise<FakeWindow> {
         const token = `token-${label}`;
         const control = new ControlServer(
-            echoing<IDebuggingHandler>(label, 'debug', DEBUG_OPS),
+            { ...echoing<IDebuggingHandler>(label, 'debug', DEBUG_OPS), ...ops } as IDebuggingHandler,
             token,
             withPackDocs ? echoingPackDocs(label) : undefined);
         const port = await control.start();
         running.push(() => control.stop());
-        return enrol(label, port, token, overrides);
+        return enrol(label, port, token, overrides, () => control.stop());
     }
 
-    /** A bare HTTP server posing as a window; `respond` writes the whole answer. */
-    async function openStandIn(respond: (res: http.ServerResponse) => void): Promise<FakeWindow> {
+    /** A bare HTTP server posing as a window; `respond` writes the whole answer, or none. */
+    async function openStandIn(
+        respond: (res: http.ServerResponse) => void,
+        label = 'stand-in',
+        overrides: Partial<WindowRegistration> = {},
+    ): Promise<FakeWindow> {
         const fake = http.createServer((incoming, reply) => {
             incoming.resume();
             respond(reply);
         });
         await new Promise<void>((ready) => fake.listen(0, '127.0.0.1', ready));
         running.push(() => closeHttpServer(fake));
-        return enrol('stand-in', (fake.address() as AddressInfo).port, 'token-stand-in', {});
+        return enrol(label, (fake.address() as AddressInfo).port, `token-${label}`, overrides, () => closeHttpServer(fake));
     }
 
     /** A router for a new session, seeing only the fake windows as alive. */
-    function newRouter(): RoutingDebuggingHandler {
-        return new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir, (pid) => livePids.has(pid)), TOOL_MS);
+    function newRouter(answerWithinMs?: number): RoutingDebuggingHandler {
+        const registry = new WorkspaceRegistry(process.pid, dir, (pid) => livePids.has(pid));
+        return answerWithinMs === undefined
+            ? new RoutingDebuggingHandler(registry, TOOL_MS)
+            : new RoutingDebuggingHandler(registry, TOOL_MS, () => answerWithinMs);
     }
 
-    function assertAnsweredBy(result: string, label: string): void {
-        assert.ok(result.startsWith(`${label}|debug|`), `expected ${label} to answer, got: ${result}`);
+    function assertAnsweredBy(result: ToolText, label: string): void {
+        assert.ok(textOf(result).startsWith(`${label}|debug|`), `expected ${label} to answer, got: ${textOf(result)}`);
     }
 
     suite('resolution', () => {
@@ -223,23 +257,36 @@ suite('Multi-window routing', () => {
         });
 
         test('two debug sessions are refused with a listing, not guessed', async () => {
-            await openWindow('boardA', { workspaceFolders: [folder('a')], hasActiveSession: true });
-            await openWindow('boardB', { workspaceFolders: [folder('b')], hasActiveSession: true });
-            const message = await refusedWith(newRouter().handleReadMemory({ address: '0x0', length: 4 }),
+            const a = await openWindow('boardA', { workspaceFolders: [folder('a')], hasActiveSession: true });
+            const b = await openWindow('boardB', { workspaceFolders: [folder('b')], hasActiveSession: true });
+            const tie = await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleReadMemory({ address: '0x0', length: 4 }),
                 /2 VS Code windows have an active debug session/, /select_debug_window/);
-            assert.ok(message.includes(folder('a')) && message.includes(folder('b')), message);
+            const detail = errorDetail(tie);
+            assert.ok(detail.includes(folder('a')) && detail.includes(folder('b')), detail);
+            assert.deepStrictEqual(tie.data, {
+                candidates: [a, b].map((w) => ({ pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: true })),
+            });
         });
 
         test('a path in no workspace is refused even when the session has a target', async () => {
             await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
             const router = newRouter();
             assertAnsweredBy(await router.handleGetSessionStatus(), 'alpha');
-            await refusedWith(router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
+            await refusedAs('INVALID_ARGUMENT', router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
                 /No open VS Code window has/);
         });
 
         test('an empty registry is reported as such', async () => {
-            await refusedWith(newRouter().handleGetSessionStatus(), /No CMSIS Developer Assistant-enabled VS Code window/);
+            await refusedAs('WINDOW_UNREACHABLE', newRouter().handleGetSessionStatus(), /No CMSIS Developer Assistant-enabled VS Code window/);
+        });
+
+        test('a pinned window that is gone is reported as unreachable', async () => {
+            const gone = await openWindow('gone');
+            await openWindow('other');
+            const router = newRouter();
+            router.selectDebugWindow({ pid: gone.pid });
+            livePids.delete(gone.pid);
+            await refusedAs('WINDOW_UNREACHABLE', router.handleGetSessionStatus(), /pinned with select_debug_window .* is gone/);
         });
     });
 
@@ -255,13 +302,14 @@ suite('Multi-window routing', () => {
 
         test('a selection that matches nothing lists what is registered', async () => {
             await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
-            const text = newRouter().selectDebugWindow({ workspaceFolder: '/nowhere' });
-            assert.match(text, /No registered window matches/);
-            assert.match(text, /alpha|Currently registered/);
+            assert.throws(() => newRouter().selectDebugWindow({ workspaceFolder: '/nowhere' }), (failure: unknown) =>
+                failure instanceof ToolError && failure.code === 'INVALID_ARGUMENT'
+                && /No registered window matches/.test(failure.message) && /Currently registered:\n.*alpha/.test(failure.hint ?? ''));
         });
 
         test('a selection without pid or folder asks for one', () => {
-            assert.match(newRouter().selectDebugWindow({}), /Pass either pid or workspaceFolder/);
+            assert.throws(() => newRouter().selectDebugWindow({}), (failure: unknown) =>
+                failure instanceof ToolError && failure.code === 'INVALID_ARGUMENT' && /Pass either pid or workspaceFolder/.test(failure.message));
         });
 
         test('the listing marks the window the session is using', async () => {
@@ -281,7 +329,7 @@ suite('Multi-window routing', () => {
         test('a wrong token is turned away', async () => {
             const alpha = await openWindow('alpha');
             saveRegistration('alpha', { ...alpha.entry, controlToken: 'not-the-token' });
-            await refusedWith(newRouter().handleGetSessionStatus(), /403|Could not reach/);
+            await refusedAs('WINDOW_UNREACHABLE', newRouter().handleGetSessionStatus(), /Could not reach .*control server returned 403/);
         });
 
         test('an op outside the table is refused, not dispatched', async () => {
@@ -308,7 +356,7 @@ suite('Multi-window routing', () => {
 
         test('arguments arrive as they were sent', async () => {
             await openWindow('solo');
-            const result = await newRouter().handleReadMemory({ address: '0x20000000', length: 64, format: 'hex' });
+            const result = textOf(await newRouter().handleReadMemory({ address: '0x20000000', length: 64, format: 'hex' }));
             for (const part of ['"address":"0x20000000"', '"length":64', '"format":"hex"']) {
                 assert.ok(result.includes(part), `${part} missing from ${result}`);
             }
@@ -375,13 +423,161 @@ suite('Multi-window routing', () => {
                 reply.writeHead(200, JSON_TYPE);
                 reply.end('{"result":"' + 'A'.repeat(16_777_217));
             });
-            await refusedWith(newRouter().handleGetSessionStatus(), /control response above \d+ bytes/);
+            await refusedAs('INTERNAL', newRouter().handleGetSessionStatus(), /control response above \d+ bytes/);
         });
 
         test('a window that stopped listening is reported as unreachable', async () => {
             const gone = await openWindow('gone');
             saveRegistration('gone', { ...gone.entry, controlPort: 1 });
             await refusedWith(newRouter().handleGetSessionStatus(), /Could not reach the VS Code window/, /list_debug_windows/);
+        });
+    });
+
+    suite('typed outcomes (#11)', () => {
+        const refuseRunning = (): Promise<ToolText> =>
+            Promise.reject(new ToolError('TARGET_RUNNING', 'Cannot read memory: session state is \'running\'.', 'Add a breakpoint first.'));
+        const waiting = (): Promise<ToolText> => Promise.resolve({ text: 'still waiting', status: 'timeout', data: { waitedMs: 5 } });
+
+        test('a worker ToolError arrives with its code, and the session keeps its target', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] }, true, { handleReadMemory: refuseRunning });
+            const router = newRouter();
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 3 }), 'beta');
+            const refused = await refusedAs('TARGET_RUNNING', router.handleReadMemory({ address: '0x0', length: 4 }), /session state is 'running'/);
+            assert.strictEqual(refused.hint, 'Add a breakpoint first.');
+            // Two idle windows: only the cached target can take a path-less call.
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'beta');
+        });
+
+        test('a worker reply with a status arrives whole', async () => {
+            await openWindow('solo', {}, true, { handleWaitForStop: waiting });
+            assert.deepStrictEqual(await newRouter().handleWaitForStop({}), { text: 'still waiting', status: 'timeout', data: { waitedMs: 5 } });
+        });
+
+        test('a dead port gives WINDOW_UNREACHABLE and clears the cached target', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const beta = await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 3 }), 'beta');
+            await beta.close();
+            await refusedAs('WINDOW_UNREACHABLE', router.handleReadMemory({ address: '0x0', length: 4 }),
+                new RegExp(`Could not reach the VS Code window handling this session \\(pid=${beta.pid}\\)`), /list_debug_windows/);
+            // The target is forgotten: two idle windows are a tie.
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory({ address: '0x0', length: 4 }));
+        });
+
+        test('a worker that never answers gives WORKER_TIMEOUT and keeps the target', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openStandIn(() => { /* never answers */ }, 'silent', { workspaceFolders: [folder('silent')] });
+            const router = newRouter(200);
+            await refusedAs('WORKER_TIMEOUT', router.handleAddBreakpoint({ fileFullPath: path.join(folder('silent'), 'main.c'), line: 3 }),
+                /sent no response within/);
+            // Still the target: a path-less call goes there again instead of being refused as a tie.
+            await refusedAs('WORKER_TIMEOUT', router.handleReadMemory({ address: '0x0', length: 4 }));
+        });
+
+        test('replies of a 2.3.10 worker are classified', async () => {
+            const legacy = (status: number, body: object) => (reply: http.ServerResponse): void => {
+                reply.writeHead(status, JSON_TYPE).end(JSON.stringify(body));
+            };
+            await openStandIn(legacy(500, { error: 'Step over failed: Error: Cannot step over: session state is \'running\'. Add a breakpoint.' }), 'old-error');
+            await refusedAs('TARGET_RUNNING', newRouter().handleStepOver({}), /^Step over failed/);
+            fs.rmSync(path.join(dir, 'window-old-error.json'));
+
+            await openStandIn(legacy(200, { result: 'Error in \'read_memory\': Cannot read memory: session state is \'no-session\'. No active debug session.' }), 'old-fence');
+            const fenced = await refusedAs('NO_SESSION', newRouter().handleReadMemory({ address: '0x0', length: 4 }));
+            assert.strictEqual(fenced.message, 'Cannot read memory: session state is \'no-session\'. No active debug session.');
+            fs.rmSync(path.join(dir, 'window-old-fence.json'));
+
+            const capText = '\'get_threads\' did not complete within 100 ms (handler-level cap). The DAP probe or target may be unresponsive.';
+            await openStandIn(legacy(200, { result: capText }), 'old-cap');
+            assert.deepStrictEqual(await newRouter().handleGetThreads({}), { text: capText, status: 'timeout' });
+        });
+
+        test('a typed reply is taken as it is, and fields this version does not know are ignored', async () => {
+            const typed = (status: number, body: object) => (reply: http.ServerResponse): void => {
+                reply.writeHead(status, { ...JSON_TYPE, [CONTROL_ENVELOPE_HEADER]: '2' }).end(JSON.stringify(body));
+            };
+            /** One call to a stand-in that is the only registered window while the call runs. */
+            const callAlone = async <T>(label: string, answer: (reply: http.ServerResponse) => void,
+                call: (router: RoutingDebuggingHandler) => Promise<T>): Promise<T> => {
+                await openStandIn(answer, label);
+                try {
+                    return await call(newRouter());
+                } finally {
+                    fs.rmSync(path.join(dir, `window-${label}.json`));
+                }
+            };
+
+            assert.deepStrictEqual(await callAlone('newer', typed(200, {
+                result: { text: 'done', status: 'ok', data: { count: 2 } }, journalSeq: 7, journalErrors: 0,
+            }), (router) => router.handleGetThreads({})), { text: 'done', status: 'ok', data: { count: 2 } });
+
+            // Only a reply without the header is read as a 2.3.10 text.
+            assert.strictEqual(await callAlone('newer-text', typed(200, { result: 'Error in \'x\': the text of a success', journalSeq: 8 }),
+                (router) => router.handleGetThreads({})), 'Error in \'x\': the text of a success');
+
+            const busy = await callAlone('newer-error', typed(500, {
+                error: { message: 'busy', code: 'PROBE_BUSY', hint: 'Call stop_debugging first.', data: { owner: 'other' }, problems: [] },
+                journalSeq: 9,
+            }), (router) => refusedAs('PROBE_BUSY', router.handleGetThreads({})));
+            assert.deepStrictEqual([busy.message, busy.hint, busy.data], ['busy', 'Call stop_debugging first.', { owner: 'other' }]);
+
+            // A code of a later version is not guessed at; its message and hint still arrive.
+            const unknown = await callAlone('newer-code', typed(500, { error: { message: 'port gone', code: 'PORT_CLOSED', hint: 'Open it again.' } }),
+                (router) => refusedAs('INTERNAL', router.handleGetThreads({})));
+            assert.strictEqual(errorDetail(unknown), 'port gone\nOpen it again.');
+        });
+
+        test('a failed channel is WINDOW_UNREACHABLE and drops the target; a 413 is INVALID_ARGUMENT and keeps it', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const cases: Array<[string, (reply: http.ServerResponse) => void, ErrorCode, RegExp]> = [
+                ['stale-token', (reply) => { reply.writeHead(403).end(); }, 'WINDOW_UNREACHABLE', /control server returned 403/],
+                ['other-server', (reply) => { reply.writeHead(404).end(); }, 'WINDOW_UNREACHABLE', /control server returned 404/],
+                ['garbled', (reply) => { reply.writeHead(200, JSON_TYPE).end('<html>'); }, 'WINDOW_UNREACHABLE', /malformed control response: <html>/],
+                ['hung-up', (reply) => { reply.socket?.destroy(); }, 'WINDOW_UNREACHABLE', /socket hang up|ECONNRESET/],
+                ['too-large', (reply) => { reply.writeHead(413, JSON_TYPE).end(JSON.stringify({ error: 'control request above 1048576 bytes' })); },
+                    'INVALID_ARGUMENT', /^control request above 1048576 bytes$/],
+            ];
+            for (const [label, answer, code, pattern] of cases) {
+                await openStandIn(answer, label, { workspaceFolders: [folder(label)] });
+                const router = newRouter();
+                await refusedAs(code, router.handleAddBreakpoint({ fileFullPath: path.join(folder(label), 'main.c'), line: 3 }), pattern);
+                // A forgotten target leaves two idle windows, a tie; a kept one takes the path-less call again.
+                await refusedAs(code === 'WINDOW_UNREACHABLE' ? 'AMBIGUOUS_WINDOW' : code, router.handleReadMemory({ address: '0x0', length: 4 }));
+                fs.rmSync(path.join(dir, `window-${label}.json`));
+            }
+        });
+
+        test('the control server answers a router without the envelope header in the 2.3.10 shapes', async () => {
+            const solo = await openWindow('solo', {}, true, { handleReadMemory: refuseRunning, handleWaitForStop: waiting });
+            const call = (op: string, typed: boolean): Promise<RawReply> =>
+                rawPost(solo.port, solo.token, [JSON.stringify({ op, args: {}, callId: 'reserved', sessionId: 'reserved', budgetMs: 5 })], 0,
+                    typed ? { [CONTROL_ENVELOPE_HEADER]: '2' } : {});
+
+            const oldFailure = await call('handleReadMemory', false);
+            assert.strictEqual(oldFailure.status, 500);
+            assert.deepStrictEqual(JSON.parse(oldFailure.body), { error: 'Cannot read memory: session state is \'running\'.\nAdd a breakpoint first.' });
+            assert.strictEqual(oldFailure.headers[CONTROL_ENVELOPE_HEADER], undefined);
+            const oldReply = await call('handleWaitForStop', false);
+            assert.deepStrictEqual(JSON.parse(oldReply.body), { result: 'still waiting' });
+
+            const typedFailure = await call('handleReadMemory', true);
+            assert.strictEqual(typedFailure.status, 500);
+            assert.strictEqual(typedFailure.headers[CONTROL_ENVELOPE_HEADER], '2');
+            assert.deepStrictEqual(JSON.parse(typedFailure.body), {
+                error: { message: 'Cannot read memory: session state is \'running\'.', code: 'TARGET_RUNNING', hint: 'Add a breakpoint first.' },
+            });
+            const typedReply = await call('handleWaitForStop', true);
+            assert.deepStrictEqual(JSON.parse(typedReply.body), { result: { text: 'still waiting', status: 'timeout', data: { waitedMs: 5 } } });
+            const typedText = await call('handleGetThreads', true);
+            assert.deepStrictEqual(JSON.parse(typedText.body), { result: echo('solo', 'debug', 'handleGetThreads', {}) });
+        });
+
+        test('an unknown op and a missing handler group are TOOL_DISABLED', async () => {
+            await openWindow('bare', {}, false);
+            await refusedAs('TOOL_DISABLED', newRouter().serialOp('handleNotAnOp'), /not a known operation/);
+            await refusedAs('TOOL_DISABLED', newRouter().packDocsOp('handleListTargetDocs', {}), /not available in this window/);
         });
     });
 });

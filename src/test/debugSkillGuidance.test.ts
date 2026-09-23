@@ -146,6 +146,23 @@ suite('Debugger-first guidance for agents', () => {
         }
     });
 
+    test('the instructions, the skill and the session topic of the guide say how to read a result (#11)', () => {
+        assert.ok(served.instructions.includes('A failed call is marked isError and its text starts with an [ERROR_CODE]'), served.instructions);
+        assert.ok(served.instructions.includes('"timeout" or "running" is not a failure'), served.instructions);
+        const { body } = splitSkill(fs.readFileSync(SKILL_MD, 'utf8'));
+        const session = sliceTopic(fs.readFileSync(GUIDE_MD, 'utf8'), 'session');
+        for (const [label, text] of [['skill', body], ['guide', session]]) {
+            const lines = text.split('\n');
+            const start = lines.findIndex((line) => /^#+ Reading results$/.test(line));
+            assert.ok(start >= 0, `${label}: no "Reading results" section`);
+            const end = lines.findIndex((line, index) => index > start && /^#+ /.test(line));
+            const reading = lines.slice(start, end < 0 ? undefined : end).join('\n');
+            for (const term of ['`isError`', '`structuredContent.error_code`', 'hint', '`timeout`', '`running`']) {
+                assert.ok(reading.includes(term), `${label}: "Reading results" does not name ${term}`);
+            }
+        }
+    });
+
     test('the guide speaks Cortex-M rather than host applications', () => {
         const guide = fs.readFileSync(GUIDE_MD, 'utf8');
         const present = FOREIGN_EXAMPLES.filter((example) => guide.includes(example));

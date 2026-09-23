@@ -14,9 +14,15 @@
  * limitations under the License.
  */
 
+/**
+ * The MCP boundary of every tool: the measurement of each call and the one
+ * place where a handler's outcome becomes an MCP result (`toCallToolResult`).
+ */
+
 import { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ToolMetrics, classifyOutcome } from './toolMetrics';
+import { JsonObject, ToolError, ToolText, errorText, toToolError } from './toolResult';
 
 type ServerInfo = ConstructorParameters<typeof McpServer>[0];
 type ServerOptions = ConstructorParameters<typeof McpServer>[1];
@@ -35,8 +41,56 @@ type RegisterToolConfig = {
 };
 type AnyToolCallback = (...callArgs: unknown[]) => CallToolResult | Promise<CallToolResult>;
 
+/** `base`, then the keys of `data` that do not collide with it: a detail never overwrites the status. */
+function withDetail(base: JsonObject, data: JsonObject | undefined): JsonObject {
+    const merged: JsonObject = { ...base };
+    for (const [key, value] of Object.entries(data ?? {})) {
+        if (!(key in merged)) {
+            merged[key] = value;
+        }
+    }
+    return merged;
+}
+
 /**
- * An McpServer that measures every registered tool.
+ * The MCP result of a handler's outcome, the only place where one is built:
+ *
+ * - a string: that text alone; the absence of `isError` says it succeeded;
+ * - a `ToolReply` with status `ok`: its text, plus `structuredContent`
+ *   `{status: 'ok', ...data}` only when it has data;
+ * - a `ToolReply` that is `running` or `timeout`: its text, and
+ *   `structuredContent` `{status, message, ...data}`; neither is a failure;
+ * - a `ToolError`: `[CODE] message` and the hint on the next line, `isError`,
+ *   and `structuredContent` `{status: 'error', error_code, message, hint, ...data}`.
+ *
+ * No tool declares an `outputSchema`, so `tools/list` does not grow; the SDK
+ * passes `structuredContent` through without one.
+ */
+export function toCallToolResult(outcome: ToolText | ToolError): CallToolResult {
+    if (outcome instanceof ToolError) {
+        const described: JsonObject = { status: 'error', error_code: outcome.code, message: outcome.message };
+        if (outcome.hint) {
+            described.hint = outcome.hint;
+        }
+        return {
+            content: [{ type: 'text', text: errorText(outcome) }],
+            isError: true,
+            structuredContent: withDetail(described, outcome.data),
+        };
+    }
+    if (typeof outcome === 'string') {
+        return { content: [{ type: 'text', text: outcome }] };
+    }
+    const content: CallToolResult['content'] = [{ type: 'text', text: outcome.text }];
+    if (outcome.status === 'ok') {
+        return outcome.data === undefined ? { content } : { content, structuredContent: withDetail({ status: 'ok' }, outcome.data) };
+    }
+    return { content, structuredContent: withDetail({ status: outcome.status, message: outcome.text }, outcome.data) };
+}
+
+/**
+ * An McpServer that measures every registered tool and answers every failure
+ * with a typed result.
  *
  * The wrapper sits at the MCP boundary, so what it sees is exactly what the
  * client sees: the arguments after schema parsing, the result after every
@@ -44,6 +98,10 @@ type AnyToolCallback = (...callArgs: unknown[]) => CallToolResult | Promise<Call
  * forward to another window. Registration is untouched — callers keep using
  * `registerTool(name, config, cb)` with literal names, which the skill test
  * greps for.
+ *
+ * A callback that throws is answered here, through `toCallToolResult`, rather
+ * than by the SDK, whose error result would carry the message alone. Schema
+ * errors are raised by the SDK before the callback runs and stay its own.
  *
  * Nothing here depends on vscode; logging and sinks hang off the metrics'
  * onSample callback.
@@ -65,34 +123,25 @@ export class MeasuredMcpServer extends McpServer {
             const args = hasArgs ? callArgs[0] : undefined;
             const extra = (hasArgs ? callArgs[1] : callArgs[0]) as { sessionId?: string } | undefined;
             const argBytes = args === undefined ? 0 : Buffer.byteLength(JSON.stringify(args));
+            let result: CallToolResult;
             try {
-                const result = await original(...callArgs);
-                const text = (result.content ?? [])
-                    .map((item) => (item.type === 'text' ? item.text : ''))
-                    .join('');
-                metrics.record({
-                    tool: name,
-                    argBytes,
-                    resultBytes: Buffer.byteLength(JSON.stringify(result)),
-                    ms: Date.now() - started,
-                    outcome: classifyOutcome(text, result.isError === true),
-                    at: Date.now(),
-                    sessionId: extra?.sessionId,
-                });
-                return result;
+                result = await original(...callArgs);
             } catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
-                metrics.record({
-                    tool: name,
-                    argBytes,
-                    resultBytes: Buffer.byteLength(message),
-                    ms: Date.now() - started,
-                    outcome: 'error',
-                    at: Date.now(),
-                    sessionId: extra?.sessionId,
-                });
-                throw err;
+                result = toCallToolResult(toToolError(err));
             }
+            const text = (result.content ?? [])
+                .map((item) => (item.type === 'text' ? item.text : ''))
+                .join('');
+            metrics.record({
+                tool: name,
+                argBytes,
+                resultBytes: Buffer.byteLength(JSON.stringify(result)),
+                ms: Date.now() - started,
+                outcome: classifyOutcome(text, result.isError === true, result.structuredContent),
+                at: Date.now(),
+                sessionId: extra?.sessionId,
+            });
+            return result;
         };
 
         // The base signature is generic over the zod shapes; the wrapper is

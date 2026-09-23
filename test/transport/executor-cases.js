@@ -712,7 +712,8 @@ async function main() {
         check('V3 empty scopes', eq(await ex.getVariables(3), { scopes: [] }));
         scopes = 'hang';
         const e = await rejects(ex.getVariables(3));
-        check('V3 scopes timeout → plain Error with HardwareTimeoutError:', e && !(e instanceof HardwareTimeoutError) && e.message.includes('HardwareTimeoutError:'), e && e.message);
+        // KB14 flattens the class; since #11 the wrap keeps the error code, TIMEOUT.
+        check('V3 scopes timeout → Error with HardwareTimeoutError: and the code TIMEOUT', e && !(e instanceof HardwareTimeoutError) && e.message.includes('HardwareTimeoutError:') && e.code === 'TIMEOUT', e && `${e.code} ${e.message}`);
         console.log(`       S9 text: ${e && e.message.slice(0, 60)}`);
         reset();
         const e2 = await rejects(ex.getVariables(3));

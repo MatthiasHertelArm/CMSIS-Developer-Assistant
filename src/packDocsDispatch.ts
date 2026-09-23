@@ -26,6 +26,7 @@
  */
 
 import { PackDocsOpName, isPackDocsDocOp } from './core/opTable';
+import type { ToolText } from './core/toolResult';
 import type { PackDocsHandler } from './packDocsHandler';
 import type { BuildInfoHandler } from './buildInfoHandler';
 
@@ -35,7 +36,8 @@ export interface PackDocsHandlers {
     build: BuildInfoHandler;
 }
 
-export type PackDocsDispatch = (op: PackDocsOpName, args?: unknown) => Promise<string>;
+/** Runs one documentation or build-artefact op: a text, or a reply with a status; a failure rejects. */
+export type PackDocsDispatch = (op: PackDocsOpName, args?: unknown) => Promise<ToolText>;
 
 /** Single-window dispatch: straight to this window's handlers. */
 export function localPackDocsDispatch(handlers: PackDocsHandlers): PackDocsDispatch {
@@ -46,6 +48,6 @@ export function localPackDocsDispatch(handlers: PackDocsHandlers): PackDocsDispa
         if (typeof method !== 'function') {
             return Promise.reject(new Error(`Pack docs op ${op} is not implemented`));
         }
-        return Promise.resolve((method as (a?: unknown) => Promise<string>).call(owner, args));
+        return Promise.resolve((method as (a?: unknown) => Promise<ToolText>).call(owner, args));
     };
 }

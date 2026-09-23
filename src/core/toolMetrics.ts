@@ -59,9 +59,10 @@ export interface ToolTotals {
 }
 
 /**
- * Handlers fence their work and return the timeout as *text* rather than
- * throwing (see withHandlerTimeout and the motion tools' "did not complete"
- * trailer), so a timeout has to be recognised from the result.
+ * A result without a status is a plain text. Before results were typed (#11)
+ * the fences answered timeouts and failures as text, and a text can still
+ * report a timeout (`check_target_connection`), so these markers remain the
+ * fallback.
  */
 const TIMEOUT_MARKERS: readonly RegExp[] = [
     /did not complete within/i,
@@ -69,11 +70,29 @@ const TIMEOUT_MARKERS: readonly RegExp[] = [
     /timed out after/i,
 ];
 
-/** withHandlerTimeout converts a thrown error into this prefix. */
+/** The 2.3.10 fence's prefix for a failed body. */
 const ERROR_MARKERS: readonly RegExp[] = [/^Error in '/m];
 
-export function classifyOutcome(text: string, isError = false): ToolOutcome {
-    if (isError) { return 'error'; }
+/** Error codes that say the call ran out of time; they count as timeouts, not errors. */
+const TIMEOUT_CODES: ReadonlySet<unknown> = new Set(['TIMEOUT', 'WORKER_TIMEOUT']);
+
+/** The part of a result's `structuredContent` the outcome is read from. */
+export interface StructuredOutcome {
+    status?: unknown;
+    error_code?: unknown;
+}
+
+/**
+ * The outcome of a call: from its status and `isError` when the result has
+ * them, else from the markers in its text.
+ */
+export function classifyOutcome(text: string, isError = false, structured?: StructuredOutcome): ToolOutcome {
+    const status = structured?.status;
+    if (isError || status === 'error') {
+        return TIMEOUT_CODES.has(structured?.error_code) ? 'timeout' : 'error';
+    }
+    if (status === 'timeout') { return 'timeout'; }
+    if (status === 'ok' || status === 'running') { return 'ok'; }
     if (TIMEOUT_MARKERS.some((re) => re.test(text))) { return 'timeout'; }
     if (ERROR_MARKERS.some((re) => re.test(text))) { return 'error'; }
     return 'ok';

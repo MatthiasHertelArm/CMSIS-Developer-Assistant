@@ -24,7 +24,8 @@
  * Every method keeps to the same rules:
  * - DAP traffic goes only through `customRequestWithTimeout` and `withTimeout`
  *   (src/utils/timeout.ts). A `HardwareTimeoutError` keeps its class unless the
- *   method wraps its errors in a message of its own.
+ *   method wraps its errors in a message of its own; that wrap (`wrapError`)
+ *   keeps the error code the cause carries or implies (#11).
  * - Deadlines come from `Budgets` (src/executor/common.ts): one per DAP request
  *   and, for reads that take several requests, a fence around the whole read.
  * - Thread and frame ids are those of VS Code's focused stack item (KB7). A
@@ -45,6 +46,7 @@ import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import { getLiveSessionCount, getLiveSessionNames, getStoppedReason, isSessionStopped, resolveActiveSession, StopWaitResult, waitForStopEvent } from './utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
+import { ToolError, wrapError } from './core/toolResult';
 import { Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, ReadMemoryBody, ScopesBody, sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody } from './executor/common';
 import { AlreadyStopped, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome, SessionStatus } from './executor/contract';
 import { nthWordAddress, readWordThroughGdb, withHexPrefix } from './executor/gdbMemory';
@@ -115,7 +117,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(folderPath));
             return await vscode.debug.startDebugging(folder, launch);
         } catch (err) {
-            throw new Error(`Starting the debug session failed: ${err}`);
+            throw wrapError('Starting the debug session failed', err);
         }
     }
 
@@ -123,12 +125,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         try {
             const folder = launchFolderFor(folderPath);
             if (!folder) {
-                throw new Error(noLaunchFolderText(folderPath));
+                throw new ToolError('INVALID_ARGUMENT', noLaunchFolderText(folderPath));
             }
             // The name, not a configuration: VS Code looks it up in the folder's launch.json.
             return await vscode.debug.startDebugging(folder, launchName);
         } catch (err) {
-            throw new Error(`Failed to start debugging with configuration '${launchName}': ${err}`);
+            throw wrapError(`Failed to start debugging with configuration '${launchName}'`, err);
         }
     }
 
@@ -139,7 +141,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 await vscode.debug.stopDebugging(ending);
             }
         } catch (err) {
-            throw new Error(`Stopping the debug session failed: ${err}`);
+            throw wrapError('Stopping the debug session failed', err);
         }
     }
 
@@ -147,7 +149,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         try {
             await vscode.commands.executeCommand(WORKBENCH_RESTART);
         } catch (err) {
-            throw new Error(`Restarting the debug session failed: ${err}`);
+            throw wrapError('Restarting the debug session failed', err);
         }
     }
 
@@ -260,7 +262,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             const added = new vscode.SourceBreakpoint(anchor, true, extras?.condition, undefined, extras?.logMessage);
             vscode.debug.addBreakpoints([added]);
         } catch (err) {
-            throw new Error(`Adding the breakpoint failed: ${err}`);
+            throw wrapError('Adding the breakpoint failed', err);
         }
     }
 
@@ -274,7 +276,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 vscode.debug.removeBreakpoints(matching);
             }
         } catch (err) {
-            throw new Error(`Removing the breakpoint failed: ${err}`);
+            throw wrapError('Removing the breakpoint failed', err);
         }
     }
 
@@ -404,8 +406,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             }
             return { scopes: kept };
         } catch (err) {
-            // Also flattens a `scopes` timeout into a plain Error (KB14).
-            throw new Error(`Reading the variables failed: ${err}`);
+            // Also flattens a `scopes` timeout (KB14): no longer a HardwareTimeoutError, though its code stays TIMEOUT.
+            throw wrapError('Reading the variables failed', err);
         }
     }
 
@@ -419,7 +421,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             // Verbatim, an agent's own `-exec …` included.
             return await customRequestWithTimeout(session, 'evaluate', { expression, frameId, context: 'repl' }, this.budgets.request(overrideMs));
         } catch (err) {
-            throw new Error(`Evaluating the expression failed: ${err}`);
+            throw wrapError('Evaluating the expression failed', err);
         }
     }
 

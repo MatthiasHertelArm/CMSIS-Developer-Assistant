@@ -28,6 +28,13 @@ Always call `get_session_status` *before* any session-changing tool. The five po
 
 `start_debugging` and `cmsis_action load_and_debug` refuse with a structured error if a session is already active, naming the existing session and pointing you at `restart_debugging` / `stop_debugging`. Save the round-trip by checking up front.
 
+### Reading results
+
+- A failed call is marked `isError`, and its text starts with the error code in brackets — `[NO_SESSION]`, `[TARGET_RUNNING]`, `[TIMEOUT]`, `[PROBE_BUSY]`, … — which `structuredContent.error_code` repeats.
+- The line after the message is the hint: the next call to make. Follow it rather than repeating the failed call.
+- `structuredContent.status` `timeout` means a wait ran out (the target still runs, the build is still going) and `running` means the work goes on in the background; neither is a failure.
+- A result without `isError` and without a status is a plain success.
+
 Every tool call is measured; `get_session_status` ends with the session's tool-call totals (calls, bytes returned, time in tools, timeouts, errors) so you can see what an investigation is costing.
 
 ## 🪟 Several VS Code windows open

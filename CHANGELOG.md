@@ -28,6 +28,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - A 39-line `.gitignore` in place of the inherited Visual Studio template, whose `[Bb]uild[Ll]og.*` pattern once swallowed `buildLog.ts`. What git tracks and ignores is unchanged, except that a root `.vscode/` folder is now ignored as a whole.
 - **The Python and C/C++ troubleshooting guides are written anew, and the C/C++ guide is now served.** It is available as `cmsis-developer-assistant://docs/troubleshooting/cpp`; before, it shipped but was never registered. It covers host programs and C/C++ firmware, and leaves target topics to the embedded guides. The resource descriptions now name the language, for example "Advice for debugging C/C++ programs".
 
+### Fixed
+- **Failed tool calls are reported as failures (#11).**
+  - Previously, 28 tools could never set MCP `isError`: the debugging tools behind the handler fence, plus the documentation and build-artefact tools. Refusals such as "no active solution" or "Refusing to flash" came back as success text.
+  - A failed call is now `isError`, and its text starts with an error code and puts the next step on its own line, for example `[NO_SESSION] Cannot read memory: …⏎No active debug session. …`.
+  - `structuredContent` carries `status`, `error_code`, `message`, `hint` and, for several matching windows, the candidate list. A wait that ran out, or a build still running, is not a failure: it carries status `timeout` or `running`.
+  - The codes are `NO_SESSION`, `TARGET_RUNNING`, `TIMEOUT`, `AMBIGUOUS_WINDOW`, `WINDOW_UNREACHABLE`, `WORKER_TIMEOUT`, `CMSIS_NO_SOLUTION`, `TASK_FAILED`, `PROBE_BUSY`, `PROBE_WEDGED`, `PORT_HELD`, `TOOL_DISABLED`, `INVALID_ARGUMENT` and `INTERNAL`.
+  - The server instructions, the skill and the agent guide explain how to read them. `tools/list` is unchanged.
+- **A tool error in another VS Code window is no longer reported as "Could not reach the VS Code window … It may have been closed".**
+  - The router now tells a failed call from a lost connection, and keeps its target window after a handler error or a worker timeout.
+  - The control channel between windows carries typed results. It uses envelope version 2, negotiated by a request header, and windows on 2.3.10 still interoperate.
+
 ### Added
 - Provenance tooling for #53:
   - `src/test/provenance.test.ts` keeps any file from gaining the Microsoft copyright line.

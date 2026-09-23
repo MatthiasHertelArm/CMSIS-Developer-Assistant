@@ -39,12 +39,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { CachedDoc, PackDocsLog, TargetArgs, buildChapterIndex, docState } from './core/packDocs';
+import { ToolText, errorText, textOf, toToolError } from './core/toolResult';
 import { PackDocsHandler } from './packDocsHandler';
 
 interface ToolSpec {
     name: string;
     template: object;
-    run: (args: never) => Promise<string>;
+    run: (args: never) => Promise<ToolText>;
 }
 
 function tools(docs: PackDocsHandler, build: BuildInfoHandler | undefined): ToolSpec[] {
@@ -266,7 +267,8 @@ export class PackDocsPanel {
                     }
                     const t0 = Date.now();
                     this.log.info(`[debug panel] ${spec.name} ${JSON.stringify(args)}`);
-                    const text = await spec.run(args as never);
+                    // As the agent reads it: the text, or the error with its code.
+                    const text = await spec.run(args as never).then(textOf, (failure: unknown) => errorText(toToolError(failure)));
                     this.post({ type: 'tool.result', tool: spec.name, args: JSON.stringify(args), text, ms: Date.now() - t0 });
                     return;
                 }

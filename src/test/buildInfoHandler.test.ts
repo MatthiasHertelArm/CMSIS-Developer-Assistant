@@ -30,6 +30,7 @@ import { BuildInfoHandler, parseAddress } from '../buildInfoHandler';
 import { parseCbuildRunOutputs, parseCbuildYml, resolveBuildContext } from '../core/buildInfo/artifacts';
 import { walkGlob } from '../core/buildInfo/glob';
 import { BuildInfoHost, BuildInfoLog, defaultBuildInfoSettings } from '../core/buildInfo/host';
+import { ToolError, textOf } from '../core/toolResult';
 import { BUILDINFO_FIXTURES } from './buildInfoElf.test';
 import { SAMPLE_CBUILD_RUN } from './cbuildRun.test';
 
@@ -176,9 +177,9 @@ suite('BuildInfoHandler (end to end)', () => {
     });
 
     test('list_build_artifacts', async () => {
-        const ambiguous = await handler.handleListBuildArtifacts({});
+        const ambiguous = textOf(await handler.handleListBuildArtifacts({}));
         assert.match(ambiguous, /2 cbuild-run contexts — pass target/);
-        const text = await handler.handleListBuildArtifacts({ target: 'NUCLEO' });
+        const text = textOf(await handler.handleListBuildArtifacts({ target: 'NUCLEO' }));
         assert.match(text, /^Build: target NUCLEO-F756ZG, device STMicroelectronics::STM32F756ZGTx, compiler AC6, board NUCLEO-F756ZG — from out\/Blinky\+NUCLEO-F756ZG\.cbuild-run\.yml$/m);
         assert.match(text, /^Image Blinky — context Blinky\.Debug\+NUCLEO-F756ZG$/m);
         assert.match(text, /^  axf: out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf · 13 kB · 20\d\d-\d\d-\d\d \d\d:\d\d$/m);
@@ -192,7 +193,7 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(text, /^  IROM1 +0x08000000 +1\.0 MB rx default$/m);
         assert.match(text, /^  IRAM2 +0x20050000 +64 kB rw$/m);
         assert.match(text, /^Next: get_memory_usage/m);
-        const gcc = await handler.handleListBuildArtifacts({ target: 'FVP' });
+        const gcc = textOf(await handler.handleListBuildArtifacts({ target: 'FVP' }));
         assert.match(gcc, /compiler GCC — from out\/Blinky\+FVP\.cbuild-run\.yml/);
         assert.match(gcc, /\[Blinky\.elf\] EXEC ARM 7E-M, entry 0x08000077, text 364 \+ data 128 \+ bss 1288 = 1780 B/);
         assert.match(gcc, /^Memory regions: none in Blinky\+FVP\.cbuild-run\.yml/m);
@@ -201,7 +202,7 @@ suite('BuildInfoHandler (end to end)', () => {
     });
 
     test('get_memory_usage: device regions from cbuild-run (AC6) and map regions (GCC)', async () => {
-        const ac6 = await handler.handleGetMemoryUsage({ target: 'NUCLEO', top: 5 });
+        const ac6 = textOf(await handler.handleGetMemoryUsage({ target: 'NUCLEO', top: 5 }));
         assert.match(ac6, /^Image Blinky: out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf, map out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf\.map \(armlink\)$/m);
         assert.match(ac6, /^\[Blinky\.axf\] size: text 672 \+ data 128 \+ bss 2308 = 3108 B \(ROM ≈ 800 B, RAM ≈ 2436 B\)$/m);
         assert.match(ac6, /^\[Blinky\.axf\.map\] totals: code 400, ro-data 288, rw-data 128, zi-data 2308 → RO 672, RW 2436, ROM 800 B$/m);
@@ -218,7 +219,7 @@ suite('BuildInfoHandler (end to end)', () => {
         fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf'));
         fs.writeFileSync(path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf.map'), 'Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]\n');
         const romOnlyWs = path.join(world.root, 'romonly');
-        const romOnly = await new BuildInfoHandler({ ...world.host, workspaceFolders: () => [romOnlyWs], findFiles: async (g) => walkGlob(romOnlyWs, g) }, { timeoutMs: 5000, workspaceRoot: () => romOnlyWs }).handleGetMemoryUsage({});
+        const romOnly = textOf(await new BuildInfoHandler({ ...world.host, workspaceFolders: () => [romOnlyWs], findFiles: async (g) => walkGlob(romOnlyWs, g) }, { timeoutMs: 5000, workspaceRoot: () => romOnlyWs }).handleGetMemoryUsage({}));
         assert.match(romOnly, /^  IROM1 +0x08000000 +800 \/ +1048576 B +0\.1%  ER_ROM0 ER_ROM0$/m);
         assert.match(romOnly, /^  outside the listed regions: 0x20000000 \+324 B  RW_RAM0 RW_RAM0$/m);
         assert.match(romOnly, /^  outside the listed regions: 0x20040000 \+1024 B  ARM_LIB_HEAP$/m);
@@ -240,7 +241,7 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(ac6, /^\[Blinky\.axf\.map\] discarded 9 unused input sections \(44 B\)\.$/m);
         assert.match(ac6, /^Next: lookup_symbol/m);
 
-        const gcc = await handler.handleGetMemoryUsage({ target: 'FVP', top: 3 });
+        const gcc = textOf(await handler.handleGetMemoryUsage({ target: 'FVP', top: 3 }));
         assert.match(gcc, /map out\/Blinky\/FVP\/Debug\/Blinky\.elf\.map \(gnu\)/);
         assert.match(gcc, /^Regions \(regions and usage from Blinky\.elf\.map\):$/m);
         assert.match(gcc, /^  FLASH +0x08000000 +492 \/ +1048576 B +0\.0%  \.isr_vector \.text$/m);
@@ -249,54 +250,54 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(gcc, /^ +300 B  libutil\.a\(crc\.o\)  44 \/ 256 \/ 0 \/ 0$/m);
         assert.match(gcc, /^\[Blinky\.elf\.map\] discarded 9 unused input sections \(0 B\)\.$/m);
         // A budget clips the text.
-        const clipped = await handler.handleGetMemoryUsage({ target: 'NUCLEO', top: 50, maxChars: 800 });
+        const clipped = textOf(await handler.handleGetMemoryUsage({ target: 'NUCLEO', top: 50, maxChars: 800 }));
         assert.ok(clipped.length < 900 && /more chars\)$/.test(clipped));
     });
 
     test('lookup_symbol by name and address', async () => {
-        const exact = await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'compute_crc' });
+        const exact = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'compute_crc' }));
         assert.match(exact, /^Symbol 'compute_crc' — exact match:$/m);
         assert.match(exact, /^  \[Blinky\.axf\] compute_crc: 0x08000108, 48 B, func global, section ER_ROM0 @IROM1 \[Blinky\.axf\.map\] defined in libutil_ac6\.l\(crc_ac6\.o\) \(\.text\.compute_crc\)$/m);
-        const ci = await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'Compute_CRC' });
+        const ci = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'Compute_CRC' }));
         assert.match(ci, /case-insensitive match:/);
-        const sub = await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'crc' });
+        const sub = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'crc' }));
         assert.match(sub, /substring matches \(2\):/);
         assert.match(sub, /crc_table: 0x08000180, 256 B, object global/);
-        const miss = await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'HAL_Init' });
+        const miss = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', name: 'HAL_Init' }));
         assert.match(miss, /No symbol matches 'HAL_Init' in Blinky\.axf \(\d+ symbols\)\./);
-        const addr = await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x0800010a' });
+        const addr = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x0800010a' }));
         assert.match(addr, /^Address 0x0800010a:$/m);
         assert.match(addr, /^  \[Blinky\.axf\] in compute_crc \+ 2 \(0x08000108, 48 B, func\) \[Blinky\.axf\.map\] defined in libutil_ac6\.l\(crc_ac6\.o\)$/m);
         assert.match(addr, /^  \[Blinky\.axf\] section ER_ROM0$/m);
         assert.match(addr, /^  \[Blinky\.axf\.map\] output section ER_ROM0 0x08000000 \+736 B$/m);
         assert.match(addr, /^  \[Blinky\+NUCLEO-F756ZG\.cbuild-run\.yml\] region IROM1 0x08000000 \+1048576 B rx$/m);
         // Inside the heap: no symbol, but the section and the device region are known.
-        const ram = await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x20040010' });
+        const ram = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x20040010' }));
         assert.match(ram, /^  \[Blinky\.axf\] no symbol covers this address$/m);
         assert.match(ram, /^  \[Blinky\.axf\] section ARM_LIB_HEAP$/m);
         assert.match(ram, /^  \[Blinky\.axf\.map\] output section ARM_LIB_HEAP 0x20040000 \+1024 B$/m);
         assert.match(ram, /region IRAM1 0x20000000 \+327680 B rw$/m);
         // Just past a sized function: reported as "after", with the gap.
-        const after = await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x08000166' });
+        const after = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x08000166' }));
         assert.match(after, /\[Blinky\.axf\] in _fp_init \+ 0 \(0x08000166, 26 B, func\)/);
-        const gap = await handler.handleLookupSymbol({ target: 'FVP', address: '0x0800007e' });
+        const gap = textOf(await handler.handleLookupSymbol({ target: 'FVP', address: '0x0800007e' }));
         assert.match(gap, /^  \[Blinky\.elf\] after Reset_Handler \+ 8 \(0x08000076, 8 B, func\) \[Blinky\.elf\.map\] defined in startup\.o$/m);
-        const outside = await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x60000000' });
+        const outside = textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', address: '0x60000000' }));
         assert.match(outside, /no symbol covers this address/);
         assert.match(outside, /not inside any known memory region/);
-        const gcc = await handler.handleLookupSymbol({ target: 'FVP', name: 'main' });
+        const gcc = textOf(await handler.handleLookupSymbol({ target: 'FVP', name: 'main' }));
         assert.match(gcc, /\[Blinky\.elf\] main: 0x08000050, 36 B, func global, section \.text @FLASH \[Blinky\.elf\.map\] defined in main\.o \(\.text\.startup\.main\)/);
         // Without device regions in the cbuild-run, the region line is attributed to the map.
-        const gccAddr = await handler.handleLookupSymbol({ target: 'FVP', address: '0x20000001' });
+        const gccAddr = textOf(await handler.handleLookupSymbol({ target: 'FVP', address: '0x20000001' }));
         assert.match(gccAddr, /^  \[Blinky\.elf\] in config_table \+ 1 \(0x20000000, 64 B, object\) \[Blinky\.elf\.map\] defined in main\.o$/m);
         assert.match(gccAddr, /^  \[Blinky\.elf\.map\] region RAM 0x20000000 \+327680 B xrw$/m);
-        assert.match(await handler.handleLookupSymbol({ target: 'NUCLEO' }), /^Pass name .* or address/);
-        assert.match(await handler.handleLookupSymbol({ target: 'NUCLEO', address: 'xyz' }), /is not a hex/);
+        assert.match(textOf(await handler.handleLookupSymbol({ target: 'NUCLEO' })), /^Pass name .* or address/);
+        assert.match(textOf(await handler.handleLookupSymbol({ target: 'NUCLEO', address: 'xyz' })), /is not a hex/);
         assert.deepStrictEqual([parseAddress('0x0800_1234'), parseAddress('08001234h'), parseAddress('4096'), parseAddress('08001234'), parseAddress('g')], [0x08001234, 0x08001234, 4096, 0x08001234, undefined]);
     });
 
     test('get_section_layout', async () => {
-        const text = await handler.handleGetSectionLayout({ target: 'NUCLEO', top: 2 });
+        const text = textOf(await handler.handleGetSectionLayout({ target: 'NUCLEO', top: 2 }));
         assert.match(text, /^Segments \[Blinky\.axf\]:$/m);
         assert.match(text, /^  LOAD 0x08000000 memsz +3108 filesz +800 RWX @IROM1$/m);
         assert.match(text, /^Sections \[Blinky\.axf\] \(allocated, 6\):$/m);
@@ -308,7 +309,7 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(text, /^ +304 B  libutil_ac6\.l\(crc_ac6\.o\)$/m);
         assert.match(text, /^      … \d+ more objects$/m);
         assert.match(text, /^  RW_RAM0 0x20000000 324 B @LR_ROM0 — 3 input sections, 1 objects$/m);
-        const gcc = await handler.handleGetSectionLayout({ target: 'FVP' });
+        const gcc = textOf(await handler.handleGetSectionLayout({ target: 'FVP' }));
         assert.match(gcc, /^  LOAD 0x20000000 memsz +324 filesz +64 RW- load from 0x080001ac @RAM$/m);
         assert.match(gcc, /^  \.data +0x20000000 +64 B  data   @RAM$/m);
         assert.match(gcc, /^Contributors \[Blinky\.elf\.map\] \(per output section, top 5 objects each\):$/m);
@@ -317,7 +318,7 @@ suite('BuildInfoHandler (end to end)', () => {
     });
 
     test('get_build_diagnostics: newest log under out/, explicit file, none', async () => {
-        const text = await handler.handleGetBuildDiagnostics({ target: 'NUCLEO', limit: 4 });
+        const text = textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO', limit: 4 }));
         assert.match(text, /^Build: target NUCLEO-F756ZG, compiler AC6 — from out\/Blinky\+NUCLEO-F756ZG\.cbuild-run\.yml$/m);
         assert.match(text, /^Build log: out\/build\.log · 4 kB · .* · \d+ lines$/m);
         assert.match(text, /^  contexts: Blinky\.Debug\+NUCLEO-F756ZG, Blinky\.Debug\+FVP$/m);
@@ -328,30 +329,30 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(text, /^  \[build\.log\]:25 error #20 …\/dev\/Blinky\/legacy\.c:25:9: identifier "undefined_thing" is undefined$/m);
         assert.match(text, /^  … 13 more — pass limit: 17$/m);
         assert.match(text, /^Other logs \(newest first\): logs\/build-old\.log — pass file to read one\.$/m);
-        const all = await handler.handleGetBuildDiagnostics({ target: 'NUCLEO' });
+        const all = textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO' }));
         assert.match(all, /\[build\.log\]:10 warning -Wunused-variable …\/dev\/Blinky\/main\.c:30:5: unused variable 'tmp' \(×2\)/);
         assert.match(all, /\[build\.log\]:47 error L6218E linker: Undefined symbol osKernelStart/);
-        const explicit = await handler.handleGetBuildDiagnostics({ file: 'logs/build-old.log' });
+        const explicit = textOf(await handler.handleGetBuildDiagnostics({ file: 'logs/build-old.log' }));
         assert.match(explicit, /^Build log: logs\/build-old\.log/m);
         assert.match(explicit, /^Status: ok — Build summary: 1 succeeded, 0 failed/m);
         assert.doesNotMatch(explicit, /^Build: target/m);
-        assert.match(await handler.handleGetBuildDiagnostics({ file: 'nope.log' }), /^Log file not found/);
+        assert.match(textOf(await handler.handleGetBuildDiagnostics({ file: 'nope.log' })), /^Log file not found/);
         // `file` is confined to the open workspace, and must look like a build log.
         const outside = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'buildinfo-outside-')), 'outside.log');
         fs.writeFileSync(outside, 'error: secret\n');
-        assert.match(await handler.handleGetBuildDiagnostics({ file: outside }), /is outside the workspace \(.*\); get_build_diagnostics reads build logs inside the open workspace only\./);
-        assert.match(await handler.handleGetBuildDiagnostics({ file: path.join('..', '..', '..', 'etc', 'passwd') }), /is outside the workspace/);
+        assert.match(textOf(await handler.handleGetBuildDiagnostics({ file: outside })), /is outside the workspace \(.*\); get_build_diagnostics reads build logs inside the open workspace only\./);
+        assert.match(textOf(await handler.handleGetBuildDiagnostics({ file: path.join('..', '..', '..', 'etc', 'passwd') })), /is outside the workspace/);
         fs.writeFileSync(path.join(world.workspace, 'notes.txt'), 'hello\n');
-        assert.match(await handler.handleGetBuildDiagnostics({ file: 'notes.txt' }), /^notes\.txt does not look like a build log/);
+        assert.match(textOf(await handler.handleGetBuildDiagnostics({ file: 'notes.txt' })), /^notes\.txt does not look like a build log/);
         const noRoots = new BuildInfoHandler({ ...world.host, workspaceFolders: () => [] }, { timeoutMs: 5000 });
-        assert.match(await noRoots.handleGetBuildDiagnostics({ file: outside }), /^No workspace folder is open/);
+        assert.match(textOf(await noRoots.handleGetBuildDiagnostics({ file: outside })), /^No workspace folder is open/);
         // A second workspace folder is inside too.
         const other = fs.mkdtempSync(path.join(os.tmpdir(), 'buildinfo-other-'));
         fs.copyFileSync(path.join(world.workspace, 'logs', 'build-old.log'), path.join(other, 'build.log'));
         const twoRoots = new BuildInfoHandler({ ...world.host, workspaceFolders: () => [world.workspace, other] }, { timeoutMs: 5000, workspaceRoot: () => world.workspace });
-        assert.match(await twoRoots.handleGetBuildDiagnostics({ file: path.join(other, 'build.log') }), /^Status: ok — Build summary: 1 succeeded, 0 failed/m);
+        assert.match(textOf(await twoRoots.handleGetBuildDiagnostics({ file: path.join(other, 'build.log') })), /^Status: ok — Build summary: 1 succeeded, 0 failed/m);
         const noLogs = new BuildInfoHandler({ ...world.host, settings: () => ({ ...defaultBuildInfoSettings, logGlobs: ['**/nothing/*.log'] }) }, { timeoutMs: 5000 });
-        const none = await noLogs.handleGetBuildDiagnostics({ target: 'NUCLEO' });
+        const none = textOf(await noLogs.handleGetBuildDiagnostics({ target: 'NUCLEO' }));
         assert.match(none, /^No build log found \(searched \*\*\/nothing\/\*\.log\)\. The CMSIS Solution extension runs cbuild in a terminal and keeps no log file\. Capture one with `cbuild <solution>\.csolution\.yml --packs --update-rte --log out\/build\.log`/m);
     });
 
@@ -361,12 +362,15 @@ suite('BuildInfoHandler (end to end)', () => {
         fs.writeFileSync(path.join(ws, 'out', 'Blinky+NUCLEO-F756ZG.cbuild-run.yml'), NUCLEO_RUN);
         const host: BuildInfoHost = { ...world.host, workspaceFolders: () => [ws], findFiles: async (g) => walkGlob(ws, g) };
         const h = new BuildInfoHandler(host, { timeoutMs: 5000, workspaceRoot: () => ws });
-        const listed = await h.handleListBuildArtifacts({});
+        const listed = textOf(await h.handleListBuildArtifacts({}));
         assert.match(listed, /^Build: target NUCLEO-F756ZG, device STMicroelectronics::STM32F756ZGTx, compiler AC6, board NUCLEO-F756ZG — from out\/Blinky\+NUCLEO-F756ZG\.cbuild-run\.yml\nNo build output yet: out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf missing\. Build the solution/);
-        assert.match(await h.handleGetMemoryUsage({}), /^Build: .*\nNo build output yet/);
+        assert.match(textOf(await h.handleGetMemoryUsage({})), /^Build: .*\nNo build output yet/);
         const slow = new BuildInfoHandler({ ...host, findFiles: () => new Promise(resolve => setTimeout(() => resolve([]), 500)) }, { timeoutMs: 5000 });
-        assert.match(await slow.handleListBuildArtifacts({ timeoutMs: 100 }), /^list_build_artifacts timed out after 100 ms\./);
+        const late = await slow.handleListBuildArtifacts({ timeoutMs: 100 });
+        assert.strictEqual(typeof late === 'object' && late.status, 'timeout');
+        assert.match(textOf(late), /^list_build_artifacts timed out after 100 ms\./);
         const broken = new BuildInfoHandler({ ...host, findFiles: async () => { throw new Error('disk on fire'); } }, { timeoutMs: 5000 });
-        assert.strictEqual(await broken.handleListBuildArtifacts({}), 'list_build_artifacts failed: disk on fire');
+        await assert.rejects(broken.handleListBuildArtifacts({}), (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'INTERNAL' && failure.message === 'disk on fire');
     });
 });

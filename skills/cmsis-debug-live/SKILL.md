@@ -135,6 +135,17 @@ never throws.
 `start_debugging` and `cmsis_action load_and_debug` refuse when a session is
 already live, so checking first saves a round trip.
 
+## Reading results
+
+- A failed call is marked `isError`; its text starts with the code in brackets
+  (`[NO_SESSION]`, `[TARGET_RUNNING]`, `[TIMEOUT]`, `[PROBE_BUSY]`, …), which
+  `structuredContent.error_code` repeats.
+- The line after the message is the hint — the next call to make. Follow it
+  rather than repeating the failed call.
+- `structuredContent.status` `timeout` (a wait ran out, the target still runs)
+  and `running` (a build or attach goes on) are not failures.
+- A result without `isError` and without a status is a plain success.
+
 ## Debugger first — do not start by adding prints
 
 Do not begin a runtime investigation by editing the firmware to add `printf`
