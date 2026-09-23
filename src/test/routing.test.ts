@@ -332,6 +332,71 @@ suite('Multi-window routing', () => {
             await refusedAs('WINDOW_UNREACHABLE', newRouter().handleGetSessionStatus(), /Could not reach .*control server returned 403/);
         });
 
+        suite('the gate (#19)', () => {
+            const STATUS_OP = '{"op":"handleGetSessionStatus","args":{}}';
+            /** What a 403 or 404 says to whoever probes the port. */
+            const POINTER = { error: 'internal endpoint of the CMSIS Developer Assistant; agents use the MCP tools list_debug_windows and select_debug_window' };
+
+            /** Post the status op with these headers on top of the right token; the answer, or the client's error. */
+            async function probe(solo: FakeWindow, headers: http.OutgoingHttpHeaders): Promise<RawReply> {
+                return rawPost(solo.port, solo.token, [STATUS_OP], 0, headers);
+            }
+
+            function assertTurnedAway(reply: RawReply, status: number, label: string): void {
+                assert.strictEqual(reply.status, status, label);
+                assert.deepStrictEqual(JSON.parse(reply.body), POINTER, label);
+                assert.match(reply.headers['content-type'] ?? '', /application\/json/, label);
+            }
+
+            test('a wrong token of any length, a non-ASCII one and a doubled header get 403, and the window keeps serving', async () => {
+                const solo = await openWindow('solo');
+                const sameLength = 'x'.repeat(solo.token.length);
+                const latin1 = `${solo.token.slice(0, -1)}\u00f6`;
+                const cases: Array<[string, http.OutgoingHttpHeaders]> = [
+                    ['same length', { [TOKEN_HEADER]: sameLength }],
+                    ['longer', { [TOKEN_HEADER]: `${solo.token}x` }],
+                    ['shorter', { [TOKEN_HEADER]: solo.token.slice(1) }],
+                    ['same length, one byte longer in UTF-8', { [TOKEN_HEADER]: latin1 }],
+                    ['doubled', { [TOKEN_HEADER]: [solo.token, solo.token] }],
+                    ['empty', { [TOKEN_HEADER]: '' }],
+                ];
+                for (const [label, headers] of cases) {
+                    assertTurnedAway(await probe(solo, headers), 403, label);
+                }
+                assert.strictEqual(textOf(await newRouter().handleGetSessionStatus()), echo('solo', 'debug', 'handleGetSessionStatus', {}));
+            });
+
+            test('an Origin, even a local one, gets 403 with the right token', async () => {
+                const solo = await openWindow('solo');
+                for (const origin of ['http://evil.example', 'http://localhost:3001', 'null']) {
+                    assertTurnedAway(await probe(solo, { Origin: origin }), 403, origin);
+                }
+            });
+
+            test('a Host that is not this machine gets 403 with the right token', async () => {
+                const solo = await openWindow('solo');
+                for (const host of ['evil.example', `evil.example:${solo.port}`, `127.0.0.1.evil.example:${solo.port}`]) {
+                    assertTurnedAway(await probe(solo, { Host: host }), 403, host);
+                }
+                const local = await probe(solo, { Host: `localhost:${solo.port}` });
+                assert.strictEqual(local.status, 200, 'localhost is this machine');
+            });
+
+            test('another path or method gets 404 with the same pointer, before any token is looked at', async () => {
+                const solo = await openWindow('solo');
+                const answer = await new Promise<RawReply>((resolve, reject) => {
+                    const request = http.request({ method: 'GET', hostname: '127.0.0.1', port: solo.port, path: '/', agent: false }, (reply) => {
+                        const got: Buffer[] = [];
+                        reply.on('data', (piece: Buffer) => got.push(piece));
+                        reply.on('end', () => resolve({ status: reply.statusCode ?? 0, body: Buffer.concat(got).toString('utf8'), headers: reply.headers }));
+                    });
+                    request.on('error', reject);
+                    request.end();
+                });
+                assertTurnedAway(answer, 404, 'GET /');
+            });
+        });
+
         test('an op outside the table is refused, not dispatched', async () => {
             await openWindow('alpha');
             const message = await refusedWith(newRouter().serialOp('handleNotAnOp'));

@@ -18,10 +18,21 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { WindowRegistration, WorkspaceRegistry, describeWindow } from '../utils/workspaceRegistry';
+import {
+    RegistryDirContext,
+    WindowRegistration,
+    WorkspaceRegistry,
+    describeWindow,
+    ensureRegistryDir,
+    resolveRegistryDir,
+} from '../utils/workspaceRegistry';
 
 /** How far `backdate` moves a file's times: past the registry's one-minute limit. */
 const BACKDATE_MS = 120_000;
+/** Windows has no POSIX permission bits or owners to look at. */
+const POSIX = process.platform !== 'win32';
+/** Another user, for a registry that must refuse a directory it does not own. */
+const STRANGER_UID = (process.getuid?.() ?? 0) + 4242;
 
 suite('Workspace registry', () => {
     let dir: string;
@@ -145,6 +156,137 @@ suite('Workspace registry', () => {
             assert.strictEqual(registry.list().length, 1);
             assert.ok(!exists(stale), 'abandoned temp file removed');
             assert.ok(exists(fresh), 'recent temp file kept');
+        });
+    });
+
+    suite('the directory and file permissions (#19)', () => {
+        const permissions = (target: string): string => (fs.statSync(target).mode & 0o777).toString(8);
+
+        /** A registry over `registryDir` that reports refusals into `warnings`. */
+        function guarded(registryDir: string, warnings: string[], uid?: number): WorkspaceRegistry {
+            return new WorkspaceRegistry(process.pid, registryDir, undefined, { uid, onRefused: (message) => warnings.push(message) });
+        }
+
+        test('a new directory is 0700 and the window file 0600, with the note first', function () {
+            if (!POSIX) {
+                this.skip();
+            }
+            const registryDir = inDir('fresh');
+            publish(new WorkspaceRegistry(process.pid, registryDir));
+            assert.strictEqual(permissions(registryDir), '700');
+            const file = path.join(registryDir, `window-${process.pid}.json`);
+            assert.strictEqual(permissions(file), '600');
+            const text = fs.readFileSync(file, 'utf8');
+            assert.ok(text.startsWith('{"_note":"Internal to the CMSIS Developer Assistant. Agents: use the MCP tools '
+                + 'list_debug_windows and select_debug_window."'), text);
+        });
+
+        test('an existing 0755 directory of this user is narrowed to 0700, and a 0644 file of 2.5.0 to 0600 by the heartbeat', function () {
+            if (!POSIX) {
+                this.skip();
+            }
+            const registryDir = inDir('old');
+            fs.mkdirSync(registryDir);
+            fs.chmodSync(registryDir, 0o755);
+            const registry = new WorkspaceRegistry(process.pid, registryDir);
+            publish(registry);
+            assert.strictEqual(permissions(registryDir), '700');
+            const file = path.join(registryDir, `window-${process.pid}.json`);
+            fs.chmodSync(file, 0o644);
+            registry.heartbeat();
+            assert.strictEqual(permissions(file), '600');
+        });
+
+        test('entries with fields this version does not know are listed as usual', () => {
+            const registry = open();
+            plant('newer', { workspaceFolders: [inDir('newer')], ...{ _note: 'x', controlEnvelope: 3, owner: { user: 'me' } } });
+            const listed = registry.findByPath(inDir('newer/main.c'));
+            assert.strictEqual(listed?.name, 'newer');
+            assert.strictEqual(describeWindow(listed), `pid=${process.pid} | ${inDir('newer')}`);
+        });
+
+        test('a directory of another user is refused: nothing is written or read, and the window sees only itself', function () {
+            if (!POSIX) {
+                this.skip();
+            }
+            const planted = plant('foreign', { pid: 1, workspaceFolders: ['/elsewhere'] });
+            const warnings: string[] = [];
+            const registry = guarded(dir, warnings, STRANGER_UID);
+            publish(registry, { workspaceFolders: [inDir('mine')] });
+            registry.heartbeat();
+            assert.ok(!exists(`window-${process.pid}.json`), 'nothing written into the refused directory');
+            assert.deepStrictEqual(warnings, [
+                `Multi-window routing is off in this window: ${dir} belongs to another user. `
+                    + 'Remove it, or ask its owner to; the window registers again at its next refresh.',
+            ], 'one warning, not one per heartbeat');
+            assert.deepStrictEqual(registry.list().map((w) => w.name), ['test-window'], 'the planted entry is not read');
+            assert.strictEqual(registry.findByPath(inDir('mine/main.c'))?.pid, process.pid, 'its own calls still route to itself');
+            registry.unregister();
+            assert.ok(exists(`window-${planted.name}.json`), 'nothing in the refused directory is removed');
+            assert.deepStrictEqual(registry.list(), []);
+        });
+
+        test('a symbolic link in place of the directory is refused, and a fit directory later is used again', function () {
+            if (!POSIX) {
+                this.skip();
+            }
+            const target = inDir('elsewhere');
+            fs.mkdirSync(target);
+            const link = inDir('linked');
+            fs.symlinkSync(target, link);
+            const warnings: string[] = [];
+            const registry = guarded(link, warnings);
+            publish(registry);
+            assert.deepStrictEqual(fs.readdirSync(target), [], 'nothing written through the link');
+            assert.strictEqual(warnings.length, 1);
+            assert.match(warnings[0], /linked is a symbolic link\./);
+
+            fs.unlinkSync(link);
+            registry.heartbeat();
+            assert.ok(fs.existsSync(path.join(link, `window-${process.pid}.json`)), 'the heartbeat registers once the link is gone');
+            assert.strictEqual(permissions(link), '700');
+        });
+
+        test('ensureRegistryDir says why a path is unfit: a file, a link, another owner', function () {
+            if (!POSIX) {
+                this.skip();
+            }
+            const me = { platform: process.platform, uid: process.getuid?.() };
+            fs.writeFileSync(inDir('plain-file'), '');
+            assert.strictEqual(ensureRegistryDir(inDir('plain-file'), me), 'is not a directory');
+            fs.symlinkSync(inDir('nowhere'), inDir('dangling'));
+            assert.strictEqual(ensureRegistryDir(inDir('dangling'), me), 'is a symbolic link');
+            assert.strictEqual(ensureRegistryDir(dir, { ...me, uid: STRANGER_UID }), 'belongs to another user');
+            assert.strictEqual(ensureRegistryDir(inDir('new/nested'), me), undefined);
+            assert.strictEqual(ensureRegistryDir(dir, { platform: 'win32', uid: undefined }), undefined, 'no owner check on Windows');
+        });
+
+        suite('resolveRegistryDir', () => {
+            const context = (overrides: Partial<RegistryDirContext>): RegistryDirContext => ({
+                platform: 'linux',
+                tmpdir: '/tmp',
+                uid: 1000,
+                stat: () => ({ mode: 0o41777 }),
+                ...overrides,
+            });
+            const shared = (tmpdir: string): string => path.join(tmpdir, 'cmsis-developer-assistant-registry');
+
+            test('a temp directory every user may write to gets the per-user name', () => {
+                assert.strictEqual(resolveRegistryDir(context({})), `${shared('/tmp')}-1000`);
+                assert.strictEqual(resolveRegistryDir(context({ platform: 'darwin', uid: 501 })), `${shared('/tmp')}-501`);
+            });
+
+            test('a private temp directory keeps the name of 2.5.0, so older windows stay visible', () => {
+                const tmpdir = '/var/folders/xy/T';
+                assert.strictEqual(resolveRegistryDir(context({ platform: 'darwin', tmpdir, stat: () => ({ mode: 0o40700 }) })), shared(tmpdir));
+                assert.strictEqual(resolveRegistryDir(context({ tmpdir: '/home/me/tmp', stat: () => ({ mode: 0o40755 }) })), shared('/home/me/tmp'));
+            });
+
+            test('Windows, an unknown uid and an unreadable temp directory keep the name of 2.5.0', () => {
+                assert.strictEqual(resolveRegistryDir(context({ platform: 'win32', uid: undefined })), shared('/tmp'));
+                assert.strictEqual(resolveRegistryDir(context({ uid: undefined })), shared('/tmp'));
+                assert.strictEqual(resolveRegistryDir(context({ stat: () => { throw new Error('EACCES'); } })), shared('/tmp'));
+            });
         });
     });
 

@@ -9597,6 +9597,7 @@
           ],
           "tmpdir": {
             "cmsis-developer-assistant-registry/window-<pid>.json": {
+              "_note": "Internal to the CMSIS Developer Assistant. Agents: use the MCP tools list_debug_windows and select_debug_window.",
               "controlPort": "<port>",
               "controlToken": "<token>",
               "workspaceFolders": [],
@@ -10101,6 +10102,7 @@
           ],
           "tmpdir": {
             "cmsis-developer-assistant-registry/window-<pid>.json": {
+              "_note": "Internal to the CMSIS Developer Assistant. Agents: use the MCP tools list_debug_windows and select_debug_window.",
               "controlPort": "<port>",
               "controlToken": "<token>",
               "workspaceFolders": [
@@ -10945,6 +10947,7 @@
           ],
           "tmpdir": {
             "cmsis-developer-assistant-registry/window-<pid>.json": {
+              "_note": "Internal to the CMSIS Developer Assistant. Agents: use the MCP tools list_debug_windows and select_debug_window.",
               "controlPort": "<port>",
               "controlToken": "<token>",
               "workspaceFolders": [],

@@ -20,10 +20,21 @@
  * place. The temp name carries the pid and a random suffix: every VS Code
  * window is its own extension-host process, and several of them write the
  * same agent configurations and registry files at activation.
+ *
+ * The temp file is always created new (`wx`), so a `mode` given here is the
+ * mode of the result: the rename keeps the temp file's inode. The window
+ * registry writes 0600 this way; on Windows the mode is ignored and the
+ * folder's ACL applies.
  */
 
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+
+/** How the atomic writers create the file. */
+export interface AtomicWriteOptions {
+    /** Permission bits of the written file, less the umask; the default is 0666 less the umask. */
+    mode?: number;
+}
 
 /** `<file>.<pid>.<random>.tmp` — unique per process and per call. */
 export function tempPathFor(filePath: string): string {
@@ -35,24 +46,38 @@ export function isTempPath(name: string): boolean {
     return /\.\d+\.[0-9a-f]{8}\.tmp$/.test(name);
 }
 
-export function writeFileAtomicSync(filePath: string, content: string): void {
+/** `writeFile` options for the temp file: UTF-8, created exclusively, with the requested mode. */
+function tempFileOptions(options: AtomicWriteOptions): fs.WriteFileOptions {
+    return { encoding: 'utf8', flag: 'wx', mode: options.mode };
+}
+
+/** The exclusive create found the temp name taken: that file is not this call's to remove. */
+function takenBefore(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException | undefined)?.code === 'EEXIST';
+}
+
+export function writeFileAtomicSync(filePath: string, content: string, options: AtomicWriteOptions = {}): void {
     const tmp = tempPathFor(filePath);
     try {
-        fs.writeFileSync(tmp, content, 'utf8');
+        fs.writeFileSync(tmp, content, tempFileOptions(options));
         fs.renameSync(tmp, filePath);
     } catch (error) {
-        try { fs.unlinkSync(tmp); } catch { /* never written, or already renamed */ }
+        if (!takenBefore(error)) {
+            try { fs.unlinkSync(tmp); } catch { /* never written, or already renamed */ }
+        }
         throw error;
     }
 }
 
-export async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+export async function writeFileAtomic(filePath: string, content: string, options: AtomicWriteOptions = {}): Promise<void> {
     const tmp = tempPathFor(filePath);
     try {
-        await fs.promises.writeFile(tmp, content, 'utf8');
+        await fs.promises.writeFile(tmp, content, tempFileOptions(options));
         await fs.promises.rename(tmp, filePath);
     } catch (error) {
-        await fs.promises.unlink(tmp).catch(() => undefined);
+        if (!takenBefore(error)) {
+            await fs.promises.unlink(tmp).catch(() => undefined);
+        }
         throw error;
     }
 }

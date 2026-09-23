@@ -4,6 +4,18 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+- **The window registry and the control servers are closed to other local users (#19).**
+  - Every VS Code window publishes its control port and token in the registry, and the token is enough to flash or erase that window's board. The directory was created 0755 and the files 0644, so on Linux, where it sits in the shared `/tmp`, any local user could read every token.
+  - The directory is now 0700 and each window file 0600. An existing 0755 directory of the user is narrowed on first start, and each window rewrites its file 0600 within 20 s.
+  - Where every user may write to the temp directory (Linux `/tmp`, macOS with `TMPDIR` unset), the directory name carries the uid: `cmsis-developer-assistant-registry-<uid>`. The per-user temp directories of macOS and Windows keep the old name.
+  - A registry directory that is a symbolic link or belongs to another user is neither written nor read. The window logs an error, shows one warning, and keeps serving its own tool calls; only the other windows are out of reach.
+  - The control server refuses a request whose `Host` is not loopback or that carries an `Origin` at all, before it looks at the token, and compares the token in constant time. Its 403 and 404 answers, and a new `_note` field first in each registry file, tell an agent that found them to use `list_debug_windows` and `select_debug_window`.
+  - The registry format and the protocol between windows stay compatible with 2.5.0 and 2.3.10.
+  - **Linux: reload every VS Code window after updating.** A window that was not reloaded keeps using the old registry directory and is invisible to updated windows until it is reloaded. On macOS and Windows the directory name does not change.
+
 ## [2.5.0] - 2026-09-23
 
 ### Changed
