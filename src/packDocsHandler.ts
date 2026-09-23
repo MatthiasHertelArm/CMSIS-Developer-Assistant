@@ -35,6 +35,7 @@ import {
     SvdRef, coreFromSvdCpu,
     ArmDocKind, Dossier, DossierMiss,
 } from './core/packDocs';
+import type { ToolText } from './core/toolResult';
 import { runTool } from './core/toolRun';
 
 /** The SVD a target is served with. */
@@ -165,7 +166,7 @@ export class PackDocsHandler {
 
     // ------------------------------------------------------------------ tools
 
-    public handleListTargetDocs(args: ListArgs): Promise<string> {
+    public handleListTargetDocs(args: ListArgs): Promise<ToolText> {
         return this.run('list_target_docs', args, async (log) => {
             const target = await this.resolve(args, log);
             if ('error' in target) { return target.error; }
@@ -174,7 +175,7 @@ export class PackDocsHandler {
         });
     }
 
-    public handleSearchTargetDocs(args: SearchArgs): Promise<string> {
+    public handleSearchTargetDocs(args: SearchArgs): Promise<ToolText> {
         return this.run('search_target_docs', args, async (log, deadline) => {
             if (!args.query?.trim()) { return 'query is required.'; }
             const target = await this.resolve(args, log);
@@ -231,7 +232,7 @@ export class PackDocsHandler {
         });
     }
 
-    public handleReadDocPages(args: ReadArgs): Promise<string> {
+    public handleReadDocPages(args: ReadArgs): Promise<ToolText> {
         return this.run('read_doc_pages', args, async (log, deadline) => {
             if (!args.doc) { return 'doc is required (an id from list_target_docs or search_target_docs).'; }
             if (!args.pages) { return "pages is required, e.g. '519' or '519-521'."; }
@@ -272,7 +273,7 @@ export class PackDocsHandler {
         });
     }
 
-    public handleFetchDoc(args: FetchArgs): Promise<string> {
+    public handleFetchDoc(args: FetchArgs): Promise<ToolText> {
         return this.run('fetch_doc', args, async (log, deadline) => {
             if (!args.doc && !args.url) {
                 return 'Pass doc (an id from list_target_docs, or an Arm document id such as ddi0553) or url (developer.arm.com/documentation/… or a direct PDF link).';
@@ -338,7 +339,7 @@ export class PackDocsHandler {
         });
     }
 
-    public handleGetPeripheralDocs(args: PeripheralArgs): Promise<string> {
+    public handleGetPeripheralDocs(args: PeripheralArgs): Promise<ToolText> {
         return this.run('get_peripheral_docs', args, async (log, deadline) => {
             if (!args.peripheral?.trim()) { return 'peripheral is required: an instance name from the SVD, e.g. USART1, TIM2, GPIOA, or a core peripheral such as SCB, SysTick, DWT.'; }
             const target = await this.resolve(args, log);
@@ -768,7 +769,7 @@ export class PackDocsHandler {
     }
 
     /** Timeout fence and trace for one tool call — see `runTool`. */
-    private run(tool: string, args: object, body: (log: PackDocsHost['log'], deadline: number) => Promise<string>): Promise<string> {
+    private run(tool: string, args: object, body: (log: PackDocsHost['log'], deadline: number) => Promise<string>): Promise<ToolText> {
         return runTool(tool, ++this.callCounter, args, this.host.log, { defaultTimeoutMs: this.options.timeoutMs, timeoutNote: TIMEOUT_NOTE }, body);
     }
 }

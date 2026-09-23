@@ -28,6 +28,7 @@ import * as path from 'path';
 import { PackDocsHost, PackDocsLog, defaultSettings } from '../core/packDocs/host';
 import { PdfExtractor, PdftotextExtractor } from '../core/packDocs/pdfExtract';
 import { collectTargetDocs, resolveSvd, resolveTarget } from '../core/packDocs/targetDocs';
+import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
 import { SAMPLE_CBUILD_RUN } from './cbuildRun.test';
 import { ARM_ROUTES, fakeFetch, json, pdf } from './webFetch.test';
@@ -167,7 +168,7 @@ suite('PackDocsHandler (end to end)', () => {
         assert.ok(svd?.exists && svd.path.startsWith(world.packRoot), JSON.stringify(svd));
 
         const h = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace });
-        const listing = await h.handleListTargetDocs({});
+        const listing = textOf(await h.handleListTargetDocs({}));
         assert.ok(listing.includes('Test Reference Manual') && !listing.includes('/nowhere'), listing);
         const inspection = await h.inspectTarget({});
         assert.ok(inspection.svd?.exists, JSON.stringify(inspection.svd));
@@ -222,7 +223,7 @@ suite('PackDocsHandler (end to end)', () => {
     });
 
     test('list_target_docs lists device, family, board, unlisted and workspace documents with states', async () => {
-        const text = await handler.handleListTargetDocs({});
+        const text = textOf(await handler.handleListTargetDocs({}));
         assert.match(text, /^Target: device STMicroelectronics::STM32F756ZGTx, device-pack Keil::STM32F7xx_DFP@3\.0\.0, board NUCLEO-F756ZG:Rev\.B, board-pack Keil::NUCLEO-F756ZG_BSP@2\.0\.0 — from out\/Blinky/);
         assert.match(text, /stm32f7xx-dfp\/test-rm · subFamily \[manual\] · Test Reference Manual · 1 kB, not indexed yet/);
         assert.match(text, /stm32f7xx-dfp\/stm32f756bg · subFamily · STM32F756 Data Sheet · web — not fetched \(fetch_doc \{ doc: 'stm32f7xx-dfp\/stm32f756bg' \}\)/);
@@ -242,7 +243,7 @@ suite('PackDocsHandler (end to end)', () => {
 
     test('search_target_docs indexes on first use and cites page and section', async function () {
         if (!havePdftotext) { this.skip(); return; }
-        const text = await handler.handleSearchTargetDocs({ query: 'GPIOAEN clock enable' });
+        const text = textOf(await handler.handleSearchTargetDocs({ query: 'GPIOAEN clock enable' }));
         assert.match(text, /Indexed now: stm32f7xx-dfp\/test-rm \(2 p, [\d.]+ s\), workspace\/board-um \(2 p, [\d.]+ s\), workspace\/vendor-rm \(2 p, [\d.]+ s\)\n/,
             'the attributed book and the workspace documents are indexed, the unlisted PDF is not');
         assert.match(text, /Searched 3 documents \(6 pages\)/);
@@ -252,28 +253,28 @@ suite('PackDocsHandler (end to end)', () => {
         assert.match(text, /Not searched: 1 unlisted PDF in the pack/);
         assert.ok(world.lines.some(l => /extracting test-rm\.pdf/.test(l)), 'extraction trace');
 
-        const withUnlisted = await handler.handleSearchTargetDocs({ query: 'GPIOAEN clock enable', includeUnlisted: true });
+        const withUnlisted = textOf(await handler.handleSearchTargetDocs({ query: 'GPIOAEN clock enable', includeUnlisted: true }));
         assert.match(withUnlisted, /Indexed now: stm32f7xx-dfp\/unlisted-errata/);
         assert.match(withUnlisted, /Searched 4 documents \(8 pages\)/);
         assert.doesNotMatch(withUnlisted, /unlisted PDF in the pack/);
 
-        const again = await handler.handleSearchTargetDocs({ query: '0x40023800', doc: 'test-rm' });
+        const again = textOf(await handler.handleSearchTargetDocs({ query: '0x40023800', doc: 'test-rm' }));
         assert.doesNotMatch(again, /Indexed now/);
         assert.match(again, /Searched 1 document \(2 pages\)/);
         assert.match(again, /#1 stm32f7xx-dfp\/test-rm p\.2/);
 
-        const ws = await handler.handleSearchTargetDocs({ query: '0x40023800', doc: 'workspace/board-um' });
+        const ws = textOf(await handler.handleSearchTargetDocs({ query: '0x40023800', doc: 'workspace/board-um' }));
         assert.match(ws, /Searched 1 document \(2 pages\)/);
         assert.match(ws, /#1 workspace\/board-um p\.2/);
 
         // An identifier is expanded from the device SVD; the manual is found through the expansion.
-        const expanded = await handler.handleSearchTargetDocs({ query: 'GPIOAEN', doc: 'test-rm' });
+        const expanded = textOf(await handler.handleSearchTargetDocs({ query: 'GPIOAEN', doc: 'test-rm' }));
         assert.match(expanded, /Expanded from the SVD \(lower weight\): GPIOAEN \(field of RCC_AHB1ENR\): .*port/);
         assert.match(expanded, /#1 stm32f7xx-dfp\/test-rm p\.1/);
-        const quoted = await handler.handleSearchTargetDocs({ query: '"IO port A clock"', doc: 'test-rm' });
+        const quoted = textOf(await handler.handleSearchTargetDocs({ query: '"IO port A clock"', doc: 'test-rm' }));
         assert.doesNotMatch(quoted, /Expanded from the SVD/);
 
-        const listed = await handler.handleListTargetDocs({});
+        const listed = textOf(await handler.handleListTargetDocs({}));
         assert.match(listed, /Test Reference Manual · indexed, 2 p/);
         assert.match(listed, /workspace\/board-um · workspace · board-um · indexed, 2 p/);
         assert.match(listed, /4 searchable \(2 in packs, 2 in the workspace; 4 indexed\)/);
@@ -281,16 +282,16 @@ suite('PackDocsHandler (end to end)', () => {
 
     test('read_doc_pages returns the page text under the budget', async function () {
         if (!havePdftotext) { this.skip(); return; }
-        const text = await handler.handleReadDocPages({ doc: 'stm32f7xx-dfp/test-rm', pages: '2' });
+        const text = textOf(await handler.handleReadDocPages({ doc: 'stm32f7xx-dfp/test-rm', pages: '2' }));
         assert.match(text, /^— stm32f7xx-dfp\/test-rm p\.2 §6\.3\.11 RCC AHB2 peripheral clock enable register \(RCC_AHB2ENR\) \(of 2\) —/);
         assert.match(text, /OTGFSEN/);
-        const short = await handler.handleReadDocPages({ doc: 'test-rm', pages: '1-2', maxChars: 500 });
+        const short = textOf(await handler.handleReadDocPages({ doc: 'test-rm', pages: '1-2', maxChars: 500 }));
         assert.match(short, /p\.1 .*—\n/);
-        const bad = await handler.handleReadDocPages({ doc: 'test-rm', pages: '9' });
+        const bad = textOf(await handler.handleReadDocPages({ doc: 'test-rm', pages: '9' }));
         assert.match(bad, /beyond the last page \(2\)/);
-        const ws = await handler.handleReadDocPages({ doc: 'workspace/vendor-rm', pages: '1' });
+        const ws = textOf(await handler.handleReadDocPages({ doc: 'workspace/vendor-rm', pages: '1' }));
         assert.match(ws, /^— workspace\/vendor-rm p\.1 §6\.3\.10 RCC AHB1/);
-        const web = await handler.handleReadDocPages({ doc: 'stm32f7xx-dfp/stm32f756bg', pages: '1' });
+        const web = textOf(await handler.handleReadDocPages({ doc: 'stm32f7xx-dfp/stm32f756bg', pages: '1' }));
         assert.match(web, /is not fetched yet — call fetch_doc \{ doc: 'stm32f7xx-dfp\/stm32f756bg' \}/);
     });
 
@@ -299,73 +300,74 @@ suite('PackDocsHandler (end to end)', () => {
             timeoutMs: 30_000, workspaceRoot: () => world.workspace,
             extractor: new FakeExtractor(['1 Debug\nDHCSR C_DEBUGEN halting', '2 Reset\nSYSRESETREQ VECTRESET']),
         });
-        assert.match(await h.handleFetchDoc({}), /Pass doc .* or url/);
-        assert.match(await h.handleFetchDoc({ doc: 'no-such-doc' }), /No document with id 'no-such-doc'/);
-        assert.match(await h.handleFetchDoc({ doc: 'stm32f7xx-dfp/test-rm' }), /is a local document/);
-        assert.match(await h.handleFetchDoc({ url: 'ftp://x/y.pdf' }), /is not an http\(s\) URL/);
+        assert.match(textOf(await h.handleFetchDoc({})), /Pass doc .* or url/);
+        assert.match(textOf(await h.handleFetchDoc({ doc: 'no-such-doc' })), /No document with id 'no-such-doc'/);
+        assert.match(textOf(await h.handleFetchDoc({ doc: 'stm32f7xx-dfp/test-rm' })), /is a local document/);
+        assert.match(textOf(await h.handleFetchDoc({ url: 'ftp://x/y.pdf' })), /is not an http\(s\) URL/);
 
         // The pdsc-linked Cortex-M7 GUG, by its id.
-        const fetched = await h.handleFetchDoc({ doc: 'arm/dui0646-latest' });
+        const fetched = textOf(await h.handleFetchDoc({ doc: 'arm/dui0646-latest' }));
         assert.match(fetched, /^Fetched arm\/dui0646-latest — Cortex-M7 Devices Generic User Guide, version a \(r1p2\), DUI0646C_cortex_m7_dgug\.pdf, 1 kB → indexed 2 p in [\d.]+ s\.\nFrom https:\/\/developer\.arm\.com\/documentation\/dui0646\/latest \(arm\.com\); cached in the extension storage/);
         assert.match(fetched, /Cite as arm\/dui0646-latest r1p2 p\.<n>\./);
-        assert.match(await h.handleFetchDoc({ doc: 'dui0646' }), /^Already fetched arm\/dui0646-latest — Cortex-M7 Devices Generic User Guide, version a \(r1p2\), 1 kB; indexed 2 p/);
+        assert.match(textOf(await h.handleFetchDoc({ doc: 'dui0646' })), /^Already fetched arm\/dui0646-latest — Cortex-M7 Devices Generic User Guide, version a \(r1p2\), 1 kB; indexed 2 p/);
 
-        const search = await h.handleSearchTargetDocs({ query: 'C_DEBUGEN', doc: 'dui0646' });
+        const search = textOf(await h.handleSearchTargetDocs({ query: 'C_DEBUGEN', doc: 'dui0646' }));
         assert.match(search, /Searched 1 document \(2 pages\)/);
         assert.match(search, /#1 arm\/dui0646-latest \[r1p2\] p\.1 §1 Debug/);
-        const all = await h.handleSearchTargetDocs({ query: 'VECTRESET' });
+        const all = textOf(await h.handleSearchTargetDocs({ query: 'VECTRESET' }));
         // Presence, not rank: VECTRESET is identifier-shaped, so the SVD expansion adds its
         // description words and the "1 Debug" heading page can outrank p.2 depending on what
         // else the store has indexed (IDF) — the ranking itself is covered by the search tests.
         assert.match(all, /arm\/dui0646-latest \[r1p2\] p\.2/, 'fetched documents are searched by default');
         assert.match(all, /Not searched: \d+ web documents not fetched yet \(stm32f7xx-dfp\/[^)]*\) — fetch_doc \{ doc \} makes one searchable\./);
-        const page = await h.handleReadDocPages({ doc: 'arm/dui0646-latest', pages: '2' });
+        const page = textOf(await h.handleReadDocPages({ doc: 'arm/dui0646-latest', pages: '2' }));
         assert.match(page, /^— arm\/dui0646-latest \[r1p2\] p\.2 §2 Reset \(of 2\) —\n/);
-        const listed = await h.handleListTargetDocs({});
+        const listed = textOf(await h.handleListTargetDocs({}));
         assert.match(listed, /arm\/dui0646-latest · family · Cortex-M7 Devices Generic User Guide · indexed r1p2, 2 p/);
 
         // An Arm document outside the target's catalogue (Armv8-M for a Cortex-M7), by its bare id and by URL; an HTML-only one; a dead URL.
-        const arm = await h.handleFetchDoc({ doc: 'ddi0553' });
+        const arm = textOf(await h.handleFetchDoc({ doc: 'ddi0553' }));
         assert.match(arm, /^Fetched arm\/ddi0553-latest — Armv8-M Architecture Reference Manual, version bz \(B\.z\), DDI0553B_z_armv8m_arm\.pdf/);
-        assert.match(await h.handleFetchDoc({ url: 'https://developer.arm.com/documentation/ddi0553/latest' }), /^Already fetched arm\/ddi0553-latest/);
-        assert.match(await h.handleReadDocPages({ doc: 'arm/ddi0553-latest', pages: '1' }), /^— arm\/ddi0553-latest \[B\.z\] p\.1/);
+        assert.match(textOf(await h.handleFetchDoc({ url: 'https://developer.arm.com/documentation/ddi0553/latest' })), /^Already fetched arm\/ddi0553-latest/);
+        assert.match(textOf(await h.handleReadDocPages({ doc: 'arm/ddi0553-latest', pages: '1' })), /^— arm\/ddi0553-latest \[B\.z\] p\.1/);
         // Fetched documents join the target's set from the store, so a new handler (a new session) searches and lists them.
         const h2 = new PackDocsHandler(world.host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
-        const later = await h2.handleSearchTargetDocs({ query: 'C_DEBUGEN', doc: 'ddi0553' });
+        const later = textOf(await h2.handleSearchTargetDocs({ query: 'C_DEBUGEN', doc: 'ddi0553' }));
         assert.match(later, /#1 arm\/ddi0553-latest \[B\.z\] p\.1 §1 Debug/);
-        const relisted = await h2.handleListTargetDocs({});
+        const relisted = textOf(await h2.handleListTargetDocs({}));
         assert.match(relisted, /\n  arm\/ddi0553-latest · arch · Armv8-M Architecture Reference Manual · indexed B\.z, 2 p\n/);
         assert.match(relisted, /searchable \(2 in packs, 2 in the workspace, 2 fetched; \d indexed\)/);
         // A bare id takes the catalogue's pinned version; 'latest' can still be asked for explicitly.
-        assert.match(await h.handleFetchDoc({ doc: 'ddi0439' }), /^Fetched arm\/ddi0439-b — /);
-        const errata = await h.handleFetchDoc({ doc: 'ddi0439-latest' });
+        assert.match(textOf(await h.handleFetchDoc({ doc: 'ddi0439' })), /^Fetched arm\/ddi0439-b — /);
+        const errata = textOf(await h.handleFetchDoc({ doc: 'ddi0439-latest' }));
         assert.match(errata, /^Fetched arm\/ddi0439-latest — Cortex-M4 Technical Reference Manual - ARM DDI 0439B Errata 01/);
         assert.match(errata, /Note: this edition is an errata document; other editions: b \(r0p0\) — fetch_doc \{ doc: 'arm\/ddi0439-b' \}/);
-        const html = await h.handleFetchDoc({ doc: 'ddi0000' });
+        const html = textOf(await h.handleFetchDoc({ doc: 'ddi0000' }));
         assert.match(html, /^Could not fetch arm\/ddi0000-latest: arm\/ddi0000-latest is published as HTML on arm\.com \(HTMLPDF\); this version fetches PDFs only\.\nDocument: Example HTML-only Document, edition r1p2, version f\.\nURL: https:\/\/developer\.arm\.com\/documentation\/ddi0000\/latest\nAlternative: download the PDF yourself into \.agent-artifacts\/docs/);
-        const dead = await h.handleFetchDoc({ url: 'https://developer.arm.com/documentation/??' });
+        const dead = textOf(await h.handleFetchDoc({ url: 'https://developer.arm.com/documentation/??' }));
         assert.match(dead, /^Could not fetch web\/developer-arm-com\/[0-9a-f]{12}: .*HTTP 404/);
         assert.ok(world.fetchCalls.length >= 6, 'requests were made');
         assert.ok(world.fetchCalls.every(c => (c.init?.headers as Record<string, string>)['User-Agent'] === 'cmsis-pack-docs/test'), 'every request identifies the extension');
     });
 
-    test('a per-call timeout turns into a message instead of a hang', async () => {
+    test('a per-call timeout turns into a timeout reply instead of a hang', async () => {
         const slowHost: PackDocsHost = { ...world.host, findCbuildRunFiles: () => new Promise(resolve => setTimeout(() => resolve([]), 400)) };
         const h = new PackDocsHandler(slowHost, { timeoutMs: 100 });
-        const text = await h.handleListTargetDocs({});
-        assert.match(text, /list_target_docs timed out after 100 ms/);
+        const late = await h.handleListTargetDocs({});
+        assert.strictEqual(typeof late === 'object' && late.status, 'timeout');
+        assert.match(textOf(late), /list_target_docs timed out after 100 ms/);
     });
 
     // Last: these extract a document the listing tests above expect unindexed.
     test('read_doc_pages and fetch_doc report an ambiguous short id instead of picking one', async () => {
         await handler.handleListTargetDocs({});
-        const read = await handler.handleReadDocPages({ doc: 'rm', pages: '1' });
+        const read = textOf(await handler.handleReadDocPages({ doc: 'rm', pages: '1' }));
         assert.match(read, /^Document id 'rm' is ambiguous — it matches .*stm32f7xx-dfp\/test-rm.*workspace\/vendor-rm.*\. Pass one of these ids\.$/);
-        assert.match(await handler.handleFetchDoc({ doc: 'rm' }), /^Document id 'rm' is ambiguous/);
+        assert.match(textOf(await handler.handleFetchDoc({ doc: 'rm' })), /^Document id 'rm' is ambiguous/);
         // A unique trailing segment and a case difference still resolve.
-        const byBoth = await handler.handleReadDocPages({ doc: 'TEST-RM', pages: '1' });
+        const byBoth = textOf(await handler.handleReadDocPages({ doc: 'TEST-RM', pages: '1' }));
         assert.doesNotMatch(byBoth, /ambiguous|No document with id/);
-        assert.match(await handler.handleReadDocPages({ doc: 'nothing-like-this', pages: '1' }), /^No document with id 'nothing-like-this'/);
+        assert.match(textOf(await handler.handleReadDocPages({ doc: 'nothing-like-this', pages: '1' })), /^No document with id 'nothing-like-this'/);
     });
 
     test('read_doc_pages honours maxPdfMb before extracting, like search and the index command', async () => {
@@ -374,7 +376,7 @@ suite('PackDocsHandler (end to end)', () => {
             storageDir: path.join(world.root, 'store-tiny'),
             settings: () => ({ ...world.host.settings(), maxPdfMb: 0.0001 }),
         }, { timeoutMs: 30_000, workspaceRoot: () => world.workspace });
-        const text = await tiny.handleReadDocPages({ doc: 'stm32f7xx-dfp/test-rm', pages: '1' });
+        const text = textOf(await tiny.handleReadDocPages({ doc: 'stm32f7xx-dfp/test-rm', pages: '1' }));
         assert.match(text, /^stm32f7xx-dfp\/test-rm is not indexed and will not be extracted: \d+ MB exceeds maxPdfMb 0\.0001 \(cmsis-developer-assistant\.packDocs\.maxPdfMb\)\.$/);
         assert.ok(!fs.existsSync(path.join(world.root, 'store-tiny')) || !fs.readdirSync(path.join(world.root, 'store-tiny'), { recursive: true }).some(f => String(f).endsWith('.pages.jsonl')), 'nothing was extracted');
         const doc = { id: 'x', title: 'x', scope: 'unlisted', source: 'pack', path: path.join(world.packRoot, 'Keil', 'STM32F7xx_DFP', '3.0.0', 'Documentation', 'test-rm.pdf'), sizeBytes: 5_000_000, cached: false, indexed: false } as const;

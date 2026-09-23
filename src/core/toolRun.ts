@@ -17,13 +17,15 @@
 /**
  * The timeout fence and trace shared by the documentation and build-artefact
  * handlers: one tool call logs its arguments, its duration and the size of
- * its result, and a timeout becomes a message instead of a hung call. The
- * call keeps running after the timer wins — the next call picks its result
- * up from the cache — and stays observed, so a late failure is logged rather
- * than surfacing as an unhandled rejection in the extension host.
+ * its result. A timeout becomes a `timeout` reply instead of a hung call, and
+ * a failure the call's `ToolError` (#11). The call keeps running after the
+ * timer wins — the next call picks its result up from the cache — and stays
+ * observed, so a late failure is logged rather than surfacing as an
+ * unhandled rejection in the extension host.
  */
 
 import { PackDocsLog, prefixedLog } from './packDocs/host';
+import { ToolText, textOf, toToolError } from './toolResult';
 
 export interface ToolRunOptions {
     /** Applies when the call names no `timeoutMs`. */
@@ -44,15 +46,15 @@ export async function runTool(
     args: object,
     log: PackDocsLog,
     options: ToolRunOptions,
-    body: (log: PackDocsLog, deadline: number) => Promise<string>,
-): Promise<string> {
+    body: (log: PackDocsLog, deadline: number) => Promise<ToolText>,
+): Promise<ToolText> {
     const scoped = prefixedLog(log, `[${tool} #${call}]`);
     const timeoutMs = toolTimeoutMs(args, options.defaultTimeoutMs);
     const started = Date.now();
     scoped.info(`→ ${JSON.stringify(args)}`);
     let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<string>(resolve => {
-        timer = setTimeout(() => resolve(`${tool} timed out after ${timeoutMs} ms. ${options.timeoutNote}`), timeoutMs);
+    const timeout = new Promise<ToolText>(resolve => {
+        timer = setTimeout(() => resolve({ text: `${tool} timed out after ${timeoutMs} ms. ${options.timeoutNote}`, status: 'timeout' }), timeoutMs);
     });
     const work = body(scoped, started + timeoutMs);
     // A second observer: when the timer wins the race below no longer
@@ -60,13 +62,14 @@ export async function runTool(
     work.catch(e => scoped.debug(`finished after the timeout: ${e instanceof Error ? e.message : String(e)}`));
     try {
         const result = await Promise.race([work, timeout]);
+        const text = textOf(result);
         const ms = Date.now() - started;
-        scoped.info(`← ${ms} ms, ${Buffer.byteLength(result)} bytes`);
-        scoped.debug(`result:\n${result.split('\n').slice(0, 30).map(l => '    ' + l).join('\n')}${result.split('\n').length > 30 ? '\n    …' : ''}`);
+        scoped.info(`← ${ms} ms, ${Buffer.byteLength(text)} bytes`);
+        scoped.debug(`result:\n${text.split('\n').slice(0, 30).map(l => '    ' + l).join('\n')}${text.split('\n').length > 30 ? '\n    …' : ''}`);
         return result;
     } catch (e) {
         scoped.error(`failed after ${Date.now() - started} ms`, e);
-        return `${tool} failed: ${e instanceof Error ? e.message : String(e)}`;
+        throw toToolError(e);
     } finally {
         if (timer) { clearTimeout(timer); }
     }

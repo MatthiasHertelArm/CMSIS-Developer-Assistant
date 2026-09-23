@@ -45,6 +45,16 @@ import type { BuildInfoHandler } from '../buildInfoHandler';
 export const CONTROL_REQUEST_MAX_BYTES = 1024 * 1024;
 export const CONTROL_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 
+/**
+ * The control envelope (#11). A router that sends this header with a version
+ * of 2 or more gets typed replies — `{result: ToolText}`, or `{error: {message,
+ * code, hint?, data?}}` with 500 — and the worker marks them with the same
+ * header. Without it the worker answers as 2.3.10 did: `{result: string}` or
+ * `{error: string}`. Unknown fields in either direction are ignored.
+ */
+export const CONTROL_ENVELOPE_HEADER = 'x-cmsis-developer-assistant-envelope';
+export const CONTROL_ENVELOPE_VERSION = 2;
+
 /** Ops served by the debugging handler. */
 export const DEBUG_OPS = [
     'handleStartDebugging',

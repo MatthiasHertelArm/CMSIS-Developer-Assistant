@@ -40,6 +40,7 @@ import { ConfigurationManager, DebuggingExecutor, DebuggingHandler, type IDebugg
 import type { MeasuredMcpServer } from './core/measuredMcpServer';
 import type { SerialOpName } from './core/opTable';
 import { ToolMetrics, formatBytes, type ToolSample } from './core/toolMetrics';
+import type { ToolText } from './core/toolResult';
 import type { HardwareTimeouts } from './debuggingExecutor';
 import { ShippedDocs, buildSessionServer } from './debugTools';
 import type { PackDocsDispatch } from './packDocsDispatch';
@@ -48,7 +49,7 @@ import { closeHttpServer } from './utils/closeHttpServer';
 import { logger } from './utils/logger';
 
 /** Runs one serial op for a session: on this window's handler, or forwarded by the router. */
-export type SerialDispatch = (op: SerialOpName, args?: unknown) => Promise<string>;
+export type SerialDispatch = (op: SerialOpName, args?: unknown) => Promise<ToolText>;
 
 /** What one MCP session talks to, fixed for the session's lifetime. */
 export interface SessionHandlers {
@@ -80,7 +81,7 @@ export const localSerialDispatch: SerialDispatch = (op, args) => {
     if (typeof method !== 'function') {
         return Promise.reject(new Error(`Serial op ${op} is not implemented`));
     }
-    return (method as (input?: unknown) => Promise<string>).call(serialHandler, args);
+    return (method as (input?: unknown) => Promise<ToolText>).call(serialHandler, args);
 };
 
 /** The configured port is bound already, normally by the window that serves MCP; the caller becomes a worker. */

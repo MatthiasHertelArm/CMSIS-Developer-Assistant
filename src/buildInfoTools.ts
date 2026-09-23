@@ -21,7 +21,10 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { toCallToolResult } from './core/measuredMcpServer';
+import type { ToolText } from './core/toolResult';
 import type { PackDocsDispatch } from './packDocsDispatch';
 
 const targetShape = {
@@ -31,8 +34,9 @@ const targetShape = {
 
 const readOnly = { readOnlyHint: true, destructiveHint: false };
 
-function text(result: string) {
-    return { content: [{ type: 'text' as const, text: result }] };
+/** The MCP result of a dispatched op's outcome, built by the one mapping in `MeasuredMcpServer`. */
+function reply(result: ToolText): CallToolResult {
+    return toCallToolResult(result);
 }
 
 export function registerBuildInfoTools(mcpServer: McpServer, dispatch: PackDocsDispatch): void {
@@ -41,7 +45,7 @@ export function registerBuildInfoTools(mcpServer: McpServer, dispatch: PackDocsD
             'newest build log, sizes and times, and the device memory regions. Says how to build when nothing exists.',
         annotations: readOnly,
         inputSchema: { ...targetShape },
-    }, async (args) => text(await dispatch('handleListBuildArtifacts', args)));
+    }, async (args) => reply(await dispatch('handleListBuildArtifacts', args)));
 
     mcpServer.registerTool('get_memory_usage', {
         description: 'Flash/RAM usage per memory region from the ELF and linker map, then the largest symbols and the heaviest objects/libraries.',
@@ -51,7 +55,7 @@ export function registerBuildInfoTools(mcpServer: McpServer, dispatch: PackDocsD
             maxChars: z.number().int().min(500).max(60_000).optional().describe('Text budget (default 12000)'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleGetMemoryUsage', args)));
+    }, async (args) => reply(await dispatch('handleGetMemoryUsage', args)));
 
     mcpServer.registerTool('lookup_symbol', {
         description: 'Find a symbol by name (exact, then case-insensitive, then substring) — address, size, type, section, defining object — ' +
@@ -62,7 +66,7 @@ export function registerBuildInfoTools(mcpServer: McpServer, dispatch: PackDocsD
             address: z.string().optional().describe('Hex address, e.g. 0x08001234'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleLookupSymbol', args)));
+    }, async (args) => reply(await dispatch('handleLookupSymbol', args)));
 
     mcpServer.registerTool('get_section_layout', {
         description: 'LOAD segments and allocated sections of the image with address, size and region, and per section the largest contributing objects from the map.',
@@ -72,7 +76,7 @@ export function registerBuildInfoTools(mcpServer: McpServer, dispatch: PackDocsD
             maxChars: z.number().int().min(500).max(60_000).optional().describe('Text budget (default 12000)'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleGetSectionLayout', args)));
+    }, async (args) => reply(await dispatch('handleGetSectionLayout', args)));
 
     mcpServer.registerTool('get_build_diagnostics', {
         description: 'Errors and warnings of the newest build log (GCC/Clang/armclang/armlink/CMake/ninja/cbuild) with file:line, and the final build status. ' +
@@ -84,5 +88,5 @@ export function registerBuildInfoTools(mcpServer: McpServer, dispatch: PackDocsD
             maxChars: z.number().int().min(500).max(60_000).optional().describe('Text budget (default 12000)'),
             ...targetShape,
         },
-    }, async (args) => text(await dispatch('handleGetBuildDiagnostics', args)));
+    }, async (args) => reply(await dispatch('handleGetBuildDiagnostics', args)));
 }

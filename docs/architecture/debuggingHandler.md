@@ -5,7 +5,8 @@
 `handle*` method. The method checks the state of the debug session, asks the
 executor — and, for `cmsis_action` and `flash`, the CMSIS Solution extension
 or pyOCD — and answers with one text: what happened, the state that
-resulted, and the next useful call when something stands in the way.
+resulted, and the next useful call when something stands in the way. A
+failure is not an answer but a rejection with an error code (#11).
 
 ## Why a layer of its own
 
@@ -20,7 +21,11 @@ resulted, and the next useful call when something stands in the way.
 ## The contract
 
 `IDebuggingHandler` has one method per debugging tool. Each takes the tool's
-parsed arguments and resolves to a string. The method names are also the op
+parsed arguments and resolves to a `ToolText` — a string, or a `ToolReply`
+whose status says a wait ran out (`timeout`) or the work goes on
+(`running`) — or rejects with a `ToolError` that carries an `ErrorCode`, the
+message and, where there is one, the next step as `hint`
+(`src/core/toolResult.ts`). The method names are also the op
 names that cross window boundaries: the router forwards a call by name, and
 the `ControlServer` of the target window invokes the method of that name with
 `args ?? {}`. `src/core/opTable.ts` checks at compile time that its
@@ -31,31 +36,36 @@ cannot be left out of the routing (see [windowRouting.md](windowRouting.md)).
 
 | Tools | Failure | Too slow |
 | ----- | ------- | -------- |
-| Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads, `reset`, `wait_for_stop`, `cmsis_action`, `flash` | answered as `Error in '<tool>': <message>` | answered with a notice that the call did not complete within its limit |
-| Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | thrown as `<what failed>: <cause>`, which the client sees as an error result | bounded by the executor's request deadlines and by the stop and session waits below |
+| Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads | rejected with the body's `ToolError`; a plain error gets a code from `classifyError()` | rejected with `TIMEOUT`: a read that returned nothing has failed |
+| `reset`, `wait_for_stop`, `cmsis_action`, `flash` | as above | answered with status `timeout` and the notice that the call did not complete within its limit |
+| Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint | bounded by the executor's request deadlines and by the stop and session waits below |
 
-The first group runs inside `fenced()` (`src/handler/fence.ts`). The limit is
-the call's `timeoutMs`, at most 60 s, or 30 s when none is given. The timer
-starts before the work; when it fires, the work keeps running, since a DAP
-request cannot be withdrawn, and whatever it produces later is dropped. Both
-fence texts are ordinary tool results, and `src/core/toolMetrics.ts` counts
-them as timeouts and errors by their wording.
+The first two groups run inside `fenced()` (`src/handler/fence.ts`); its
+`onCap` argument says which answer the cap gives. The limit is the call's
+`timeoutMs`, at most 60 s, or 30 s when none is given. The timer starts
+before the work; when it fires, the work keeps running, since a DAP request
+cannot be withdrawn, and whatever it produces later, a rejection included, is
+dropped.
 
-Refusals are ordinary answers too: a second `start_debugging` while a session
-exists, `pause_execution` on a halted target, `flash` under a live session.
-`pause_execution` is neither fenced nor wrapped, so its refusals and errors
-keep their own text. `check_target_connection` answers a hardware timeout as
-text rather than throwing it.
+Refusals reject too: a second `start_debugging` while a session exists, or
+`flash` under a live session, is `PROBE_BUSY` with `stop_debugging` in the
+hint. `pause_execution` on a halted target is an answer, since there is
+nothing to do; it is neither fenced nor wrapped, so its refusals keep their
+own text and code (`TIMEOUT` for an unresponsive probe, `NO_SESSION` while
+the session starts or after it ended). `get_session_status` and
+`check_target_connection` never reject for the state they report:
+`check_target_connection` answers a hardware timeout as text.
 
 ## State gates
 
 Most reads need a halted target. `requireStoppedTarget()` asks the executor
 whether a session exists, answers its `threads` probe and is stopped
-(`hasActiveSession()`). If not, it throws the refusal that
-`stoppedTargetRefusal()` (`src/handler/sessionText.ts`) writes for the
-current state — `no-session`, `initializing`, `running` or `unresponsive` —
-with the next action for that state. Breakpoint tools and the SVD lookups are
-not gated. `get_session_status` never fails: it reports the state, the
+(`hasActiveSession()`). If not, it throws the `ToolError` that
+`stoppedTargetRefusal()` (`src/handler/sessionText.ts`) builds for the
+current state: `NO_SESSION` for `no-session` and `initializing`,
+`TARGET_RUNNING` for `running`, `TIMEOUT` for `unresponsive`, each with the
+next action for that state as its hint. Breakpoint tools and the SVD lookups
+are not gated. `get_session_status` never fails: it reports the state, the
 session's identity, the probe round trip and a hint for each state
 (`renderSessionStatus()`).
 
@@ -72,9 +82,11 @@ the item is cleared on resume.
 When a step or continue has not stopped in time, `locateRunawayTarget()`
 pauses the target and reports where it is — PC, LR, function and source line
 — so the agent learns whether the firmware sits in a loop, an ISR or a fault
-handler before it sets more breakpoints. `wait_for_stop` sends nothing: it
-waits for the next stop, or returns at once when the target is already
-halted.
+handler before it sets more breakpoints; that answer has status `timeout`,
+as has a pause that sees no stop in time.
+`wait_for_stop` sends nothing: it waits for the next stop, or returns at
+once when the target is already halted. A wait that runs out answers with
+status `timeout`, a session that ends meanwhile rejects with `NO_SESSION`.
 
 After a stop the handler takes a `DebugState` from the executor and returns
 its compact form. `compactState()` includes the breakpoint list only when it
@@ -141,12 +153,18 @@ command of the CMSIS Solution extension (`cmsis-csolution.build`,
 their work is done, so the outcome is observed separately:
 
 - `build`, `load`, `erase` and `load_and_run` wait for the cbuild or flash
-  task to end (`vscode.tasks` process events) and report its exit code in a
-  ✅ or ❌ line.
+  task to end (`vscode.tasks` process events) and report its exit code: a
+  ✅ line, or a ❌ line rejected as `TASK_FAILED`. A task that has not ended
+  when the wait runs out is answered with status `running`.
 - `load_and_debug` and `attach` wait for a live session, then probe its
   threads twice (`probeSchedule()`), so a session with no target behind it is
-  reported as such.
+  reported as such (`TASK_FAILED`); a session that is not up yet within the
+  wait is answered with status `running`.
 - `detach` and `stop_run` return at once.
+
+A session that is already live is refused with `PROBE_BUSY`, a window
+without an active solution with `CMSIS_NO_SOLUTION`, an unknown target or
+action with `INVALID_ARGUMENT`.
 
 When `target` names a target-type or target-set that is not active, the
 selection is written into the solution folder's `.vscode/cmsis.json`, the
@@ -157,7 +175,10 @@ switch is refused under a live debug session.
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else `cmsis.cbuildRunFile` from `launch.json`, else the only
 match under `out/` — refuses under a live debug session, and runs
-`pyocd load --cbuild-run` through `src/core/flashController.ts`.
+`pyocd load --cbuild-run` through `src/core/flashController.ts`. A refusal
+is `PROBE_BUSY`, a file that cannot be chosen `INVALID_ARGUMENT`, a missing
+or failing pyOCD `TASK_FAILED`, and a run killed at its budget is answered
+with status `timeout`.
 
 ## The host seam
 
@@ -173,17 +194,19 @@ A few behaviours are known to be wrong and were kept on purpose, so that the
 rewrite could be reviewed as behaviour-neutral. Comments in the code mark
 each with its number (`KB3`, `KB6`, …); the list is in the *Known bugs to
 preserve* section of `docs/provenance/specs/debuggingHandler.md`. Each is
-fixed in a change of its own.
+fixed in a change of its own; KB1, failures answered as ordinary text, is
+fixed by the typed results of #11.
 
 ## Where to look
 
 | File | Contents |
 | ---- | -------- |
 | `src/debuggingHandler.ts` | `IDebuggingHandler`, `DebuggingHandler`: gates, stop waits, state rendering, session start and stop, breakpoints, variables, target reads, fault triage, SVD lookups |
-| `src/handler/fence.ts` | `fenced()`, `fenceLimitMs()`, `failureText()` |
+| `src/handler/fence.ts` | `fenced()` and its `onCap` choice, `fenceLimitMs()`, `failureText()` |
+| `src/core/toolResult.ts` | `ToolText`, `ToolReply`, `ToolError`, `ErrorCode`, `classifyError()`, `wrapError()` |
 | `src/handler/host.ts` | `HandlerHost`, `VSCODE_HOST` |
 | `src/handler/gdbText.ts` | GDB reply classification, logpoint message to `dprintf` |
-| `src/handler/sessionText.ts` | state refusals, the `get_session_status` text, call-stack and thread listings, recent adapter lines |
+| `src/handler/sessionText.ts` | state refusals with their codes, the `get_session_status` text, call-stack and thread listings, recent adapter lines |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, target switch, task and session waits |
 | `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, pyOCD |

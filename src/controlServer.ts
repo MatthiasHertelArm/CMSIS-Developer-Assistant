@@ -24,7 +24,10 @@
  *
  * Windows of different extension versions talk to each other through this
  * endpoint; its request and response shapes are a contract (POST /op, the
- * token header, `{op, args}` in, `{result}` or `{error}` out).
+ * token header, `{op, args}` in, `{result}` or `{error}` out). A router that
+ * sends the envelope header (see `CONTROL_ENVELOPE_HEADER`) gets the outcome
+ * typed: the `ToolText` as it is, a failure as `{message, code, hint, data}`.
+ * Any other router gets the 2.3.10 shapes, strings only.
  *
  * The only gate is the per-window token the window publishes in the
  * registry, and the ops include flashing and erasing the target.
@@ -36,12 +39,15 @@ import type { IDebuggingHandler } from './debuggingHandler';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { serialHandler } from './serialHandler';
 import {
+    CONTROL_ENVELOPE_HEADER,
+    CONTROL_ENVELOPE_VERSION,
     CONTROL_REQUEST_MAX_BYTES,
     isKnownOp,
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
 } from './core/opTable';
+import { JsonObject, ToolError, ToolText, errorDetail, isToolReply, textOf, toToolError } from './core/toolResult';
 import { closeHttpServer } from './utils/closeHttpServer';
 import { logger } from './utils/logger';
 
@@ -63,9 +69,41 @@ function describeFailure(thrown: unknown): string {
     return thrown instanceof Error ? thrown.message : String(thrown);
 }
 
-/** UTF-8 size of a handler result for the trace line; nothing counts as 0. */
+/** A handler result as the text it carries, or undefined when it is none. */
+function carriedText(value: unknown): string | undefined {
+    return typeof value === 'string' || isToolReply(value) ? textOf(value) : undefined;
+}
+
+/** UTF-8 size of the text of a handler result for the trace line; anything else counts as 0. */
 function resultBytes(value: unknown): number {
-    return value === undefined || value === null ? 0 : Buffer.byteLength(String(value), 'utf8');
+    const text = carriedText(value);
+    return text === undefined ? 0 : Buffer.byteLength(text, 'utf8');
+}
+
+/** True when the request carries the envelope header with a version this window speaks. */
+function wantsTypedReply(incoming: http.IncomingMessage): boolean {
+    const asked = Number.parseInt(String(incoming.headers[CONTROL_ENVELOPE_HEADER] ?? ''), 10);
+    return Number.isInteger(asked) && asked >= CONTROL_ENVELOPE_VERSION;
+}
+
+/** The success body: the outcome as it is for a typed router, its text for a 2.3.10 one. */
+function resultBody(result: unknown, typed: boolean): object {
+    return { result: typed ? result : carriedText(result) ?? result };
+}
+
+/** The failure body: code, message, hint and data for a typed router, one string for a 2.3.10 one. */
+function errorBody(failure: ToolError, typed: boolean): object {
+    if (!typed) {
+        return { error: errorDetail(failure) };
+    }
+    const error: JsonObject = { message: failure.message, code: failure.code };
+    if (failure.hint !== undefined) {
+        error.hint = failure.hint;
+    }
+    if (failure.data !== undefined) {
+        error.data = failure.data;
+    }
+    return { error };
 }
 
 /** Milliseconds since the returned function was made. */
@@ -92,8 +130,9 @@ function replyBare(reply: http.ServerResponse, status: number): void {
     reply.writeHead(status).end();
 }
 
-function replyJson(reply: http.ServerResponse, status: number, payload: object): void {
-    reply.writeHead(status, JSON_REPLY).end(JSON.stringify(payload), 'utf8');
+function replyJson(reply: http.ServerResponse, status: number, payload: object, typed = false): void {
+    const headers = typed ? { ...JSON_REPLY, [CONTROL_ENVELOPE_HEADER]: String(CONTROL_ENVELOPE_VERSION) } : JSON_REPLY;
+    reply.writeHead(status, headers).end(JSON.stringify(payload), 'utf8');
 }
 
 export class ControlServer {
@@ -174,41 +213,45 @@ export class ControlServer {
             logger.warn(`Control request aborted: ${fault.message}`);
             if (!reply.headersSent) { replyBare(reply, 400); }
         });
-        incoming.on('end', () => this.finish(reply, oversize ? undefined : Buffer.concat(received)));
+        const typed = wantsTypedReply(incoming);
+        incoming.on('end', () => this.finish(reply, oversize ? undefined : Buffer.concat(received), typed));
     }
 
     /** Answer a completely received request; `body` is undefined when it was over the cap. */
-    private finish(reply: http.ServerResponse, body: Buffer | undefined): void {
+    private finish(reply: http.ServerResponse, body: Buffer | undefined, typed: boolean): void {
         if (body === undefined) {
             replyJson(reply, 413, { error: `control request above ${CONTROL_REQUEST_MAX_BYTES} bytes` });
             return;
         }
         this.execute(body.toString('utf8')).then(
-            (result) => replyJson(reply, 200, { result }),
-            (failure: unknown) => replyJson(reply, 500, { error: describeFailure(failure) }),
+            (result) => replyJson(reply, 200, resultBody(result, typed), typed),
+            (failure: unknown) => replyJson(reply, 500, errorBody(toToolError(failure), typed), typed),
         );
     }
 
-    /** Parse the body and run its op; every failure, parsing included, is a rejection. */
-    private async execute(text: string): Promise<unknown> {
+    /**
+     * Parse the body and run its op; every failure, parsing included, is a
+     * rejection. Fields beyond `op` and `args` are ignored.
+     */
+    private async execute(text: string): Promise<ToolText> {
         const request = parseOpRequest(text);
         return this.dispatch(request.op, request.args);
     }
 
     /** Run one op against the handler that owns it, and trace the outcome. */
-    private async dispatch(op: string, opArgs: unknown): Promise<unknown> {
+    private async dispatch(op: string, opArgs: unknown): Promise<ToolText> {
         // Before any property lookup: `constructor` or `__proto__` stop here.
         if (!isKnownOp(op)) {
-            throw new Error(`Control op ${op} refused: not a known operation`);
+            throw new ToolError('TOOL_DISABLED', `Control op ${op} refused: not a known operation`);
         }
         const owner = this.ownerOf(op);
         const entryPoint: unknown = Reflect.get(owner, op);
         if (!(entryPoint instanceof Function)) {
-            throw new Error(`Control op ${op} is not implemented in this window`);
+            throw new ToolError('TOOL_DISABLED', `Control op ${op} is not implemented in this window`);
         }
         const elapsed = stopwatch();
         try {
-            const outcome: unknown = await entryPoint.call(owner, opArgs);
+            const outcome = await (entryPoint as (args: unknown) => Promise<ToolText>).call(owner, opArgs);
             logger.info(`control op=${op} ms=${elapsed()} out=${resultBytes(outcome)} B`);
             return outcome;
         } catch (failure) {
@@ -225,7 +268,8 @@ export class ControlServer {
             return this.handler;
         }
         if (this.packDocs === undefined) {
-            throw new Error(`Control op ${op}: the documentation and build-artefact handlers are not available in this window`);
+            throw new ToolError('TOOL_DISABLED',
+                `Control op ${op}: the documentation and build-artefact handlers are not available in this window`);
         }
         return isPackDocsDocOp(op) ? this.packDocs.docs : this.packDocs.build;
     }

@@ -28,7 +28,9 @@
 //   5. A later path-less call sticks to that same window.
 //   6. A path-less call with no hint routes to the sole window that has an
 //      active debug session.
-//   7. Closing the router frees the port and a worker is promoted.
+//   7. With both windows debugging, a path-less call is refused as
+//      AMBIGUOUS_WINDOW and both windows come back as candidates (#11).
+//   8. Closing the router frees the port and a worker is promoted.
 
 const stub = require('./vscode-stub.js');
 
@@ -117,12 +119,16 @@ async function openSession(port) {
     return sid;
 }
 
-async function callTool(port, sid, name, args, id) {
+async function callToolResult(port, sid, name, args, id) {
     const res = await post(port, { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args },
     });
     const parsed = parseSse(res.body);
-    return parsed?.result?.content?.[0]?.text ?? JSON.stringify(parsed);
+    return parsed?.result ?? { content: [{ type: 'text', text: JSON.stringify(parsed) }] };
+}
+
+async function callTool(port, sid, name, args, id) {
+    return (await callToolResult(port, sid, name, args, id)).content?.[0]?.text ?? '';
 }
 
 async function main() {
@@ -197,6 +203,20 @@ async function main() {
     const listing2 = await callTool(PORT, sid2, 'list_debug_windows', {}, 5);
     check('a window with an active session is shown as debugging',
         /debugging: AppKit-E8 Debug/.test(listing2), listing2.replace(/\n/g, ' | '));
+
+    // Both windows debugging: the router must not guess, and says which windows qualify.
+    await withWindowContext(alpha, { configuration: { name: 'Corstone Debug' } }, async () => {
+        c1.publish();
+    });
+    const tieSid = await openSession(PORT);
+    const tie = await callToolResult(PORT, tieSid, 'read_memory', { address: '0x20000000', length: 4 }, 7);
+    const tied = tie.structuredContent ?? {};
+    const candidatePids = (tied.candidates ?? []).map((c) => c.pid).sort();
+    check('two debugging windows are refused as AMBIGUOUS_WINDOW with both as candidates',
+        tie.isError === true && tied.error_code === 'AMBIGUOUS_WINDOW'
+            && JSON.stringify(candidatePids) === JSON.stringify([alpha.pid, beta.pid].sort())
+            && (tied.candidates ?? []).every((c) => c.hasActiveSession === true),
+        JSON.stringify(tied));
 
     // Router failover: close the router, the survivor must take the port.
     const router = c1.isRouter() ? c1 : c2;

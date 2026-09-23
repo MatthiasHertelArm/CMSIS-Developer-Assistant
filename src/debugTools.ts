@@ -25,8 +25,9 @@
  * list a client caches stays true for the whole session.
  *
  * Every tool hands its parsed arguments to one handler method and replies
- * with that method's text. Nothing is caught here: `MeasuredMcpServer` counts
- * a failure as an error and the SDK turns it into an `isError` result.
+ * with that method's outcome through `reply()`. Nothing is caught here: a
+ * failure reaches `MeasuredMcpServer`, which answers it as a typed error
+ * result with `isError`, and counts it.
  */
 
 import * as fs from 'fs';
@@ -36,8 +37,9 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/
 import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { TOPICS, sliceTopic } from './core/instructionTopics';
-import { MeasuredMcpServer } from './core/measuredMcpServer';
+import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import type { ToolMetrics } from './core/toolMetrics';
+import { ToolText, textOf } from './core/toolResult';
 import { SERVER_VERSION } from './debuggingExecutor';
 import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
@@ -68,6 +70,11 @@ const WITHOUT_SKILLS =
 const TIMEOUT_OVERRIDE =
     'Tools that accept timeoutMs use it as a one-call override of the default, capped at 60 s; set it when you can estimate the work.';
 
+/** How to read an outcome (#11); it rides in the initialize result, so tools/list does not grow. */
+const READING_RESULTS =
+    'A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on '
+    + 'the line after; a result with structuredContent status "timeout" or "running" is not a failure — the wait ran out or the work goes on.';
+
 const DOCUMENTATION_ON =
     'The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer ' +
     'from the manuals the target\'s packs ship or link, page-cited; they accept timeoutMs up to 600 s because indexing a ' +
@@ -93,7 +100,7 @@ const BUILD_ARTEFACTS_ON =
  * the build-artefact tools go unmentioned while they are off.
  */
 export function composeInstructions(options: Readonly<DebugMCPServerOptions>): string {
-    const parts = [PURPOSE, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE];
+    const parts = [PURPOSE, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
     if (options.buildInfoEnabled === true) {
         parts.push(BUILD_ARTEFACTS_ON);
@@ -332,8 +339,11 @@ const LOOK_ONLY: ToolAnnotations = { readOnlyHint: true, destructiveHint: false 
 /** Changes the target irreversibly: a reset, a reprogrammed flash. */
 const ALTERS_TARGET: ToolAnnotations = { readOnlyHint: false, destructiveHint: true };
 
-/** A result of exactly one text item and nothing else; telemetry measures this frame. */
-const answer = (body: string): CallToolResult => ({ content: [{ type: 'text', text: body }] });
+/**
+ * The MCP result of a handler's outcome: one text item, plus `structuredContent`
+ * for a reply with a status. `toCallToolResult` is the one place that builds it.
+ */
+const reply = (result: ToolText): CallToolResult => toCallToolResult(result);
 
 // ── Shipped documents ───────────────────────────────────────────────────────
 
@@ -478,7 +488,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~2 KB) with the topic list.'),
         },
         annotations: LOOK_ONLY,
-    }, async (args) => answer(guideSection(await docs.read(GUIDE_FILE), args.topic)));
+    }, async (args) => reply(guideSection(await docs.read(GUIDE_FILE), args.topic)));
 
     mcp.registerTool('start_debugging', {
         description: ABOUT.start_debugging,
@@ -490,21 +500,21 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
                 .describe('launch.json configuration name, e.g. "CMSIS Debugger: pyOCD"; empty prompts the user.'),
             timeoutMs: CALL_TIMEOUT,
         },
-    }, (args) => debug.handleStartDebugging(args).then(answer));
-    mcp.registerTool('stop_debugging', { description: ABOUT.stop_debugging }, () => debug.handleStopDebugging().then(answer));
+    }, (args) => debug.handleStartDebugging(args).then(reply));
+    mcp.registerTool('stop_debugging', { description: ABOUT.stop_debugging }, () => debug.handleStopDebugging().then(reply));
 
     // Run control.
-    mcp.registerTool('step_over', { description: ABOUT.step_over, inputSchema: TIMEOUT_ONLY }, (args) => debug.handleStepOver(args).then(answer));
-    mcp.registerTool('step_into', { description: ABOUT.step_into, inputSchema: TIMEOUT_ONLY }, (args) => debug.handleStepInto(args).then(answer));
-    mcp.registerTool('step_out', { description: ABOUT.step_out, inputSchema: TIMEOUT_ONLY }, (args) => debug.handleStepOut(args).then(answer));
+    mcp.registerTool('step_over', { description: ABOUT.step_over, inputSchema: TIMEOUT_ONLY }, (args) => debug.handleStepOver(args).then(reply));
+    mcp.registerTool('step_into', { description: ABOUT.step_into, inputSchema: TIMEOUT_ONLY }, (args) => debug.handleStepInto(args).then(reply));
+    mcp.registerTool('step_out', { description: ABOUT.step_out, inputSchema: TIMEOUT_ONLY }, (args) => debug.handleStepOut(args).then(reply));
     mcp.registerTool('pause_execution', { description: ABOUT.pause_execution, inputSchema: TIMEOUT_ONLY },
-        (args) => debug.handlePause(args).then(answer));
+        (args) => debug.handlePause(args).then(reply));
     mcp.registerTool('continue_execution', { description: ABOUT.continue_execution, inputSchema: TIMEOUT_ONLY },
-        (args) => debug.handleContinue(args).then(answer));
+        (args) => debug.handleContinue(args).then(reply));
     mcp.registerTool('wait_for_stop', { description: ABOUT.wait_for_stop, inputSchema: TIMEOUT_ONLY, annotations: LOOK_ONLY },
-        (args) => debug.handleWaitForStop(args).then(answer));
+        (args) => debug.handleWaitForStop(args).then(reply));
     mcp.registerTool('restart_debugging', { description: ABOUT.restart_debugging, inputSchema: TIMEOUT_ONLY },
-        (args) => debug.handleRestart(args).then(answer));
+        (args) => debug.handleRestart(args).then(reply));
     mcp.registerTool('reset', {
         description: ABOUT.reset,
         inputSchema: {
@@ -515,7 +525,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: ALTERS_TARGET,
-    }, (args) => debug.handleReset(args).then(answer));
+    }, (args) => debug.handleReset(args).then(reply));
 
     // Breakpoints and logpoints.
     mcp.registerTool('add_breakpoint', {
@@ -527,7 +537,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             lineContent: z.string().optional()
                 .describe('DEPRECATED: substring match that breaks on EVERY line containing the text; pass line instead.'),
         },
-    }, (args) => debug.handleAddBreakpoint(args).then(answer));
+    }, (args) => debug.handleAddBreakpoint(args).then(reply));
     mcp.registerTool('add_logpoint', {
         description: ABOUT.add_logpoint,
         inputSchema: {
@@ -536,22 +546,22 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             logMessage: z.string().describe('Message; {expr} interpolates runtime values.'),
             condition: z.string().optional().describe('Optional condition; logs only when true.'),
         },
-    }, (args) => debug.handleAddLogpoint(args).then(answer));
+    }, (args) => debug.handleAddLogpoint(args).then(reply));
     mcp.registerTool('remove_breakpoint', {
         description: ABOUT.remove_breakpoint,
         // `line` takes any number here, unlike the two tools above.
         inputSchema: { fileFullPath: z.string().describe(SOURCE_PATH_DESC), line: z.number().describe(SOURCE_LINE_DESC) },
-    }, (args) => debug.handleRemoveBreakpoint(args).then(answer));
+    }, (args) => debug.handleRemoveBreakpoint(args).then(reply));
     mcp.registerTool('clear_all_breakpoints', { description: ABOUT.clear_all_breakpoints },
-        () => debug.handleClearAllBreakpoints().then(answer));
-    mcp.registerTool('list_breakpoints', { description: ABOUT.list_breakpoints }, () => debug.handleListBreakpoints().then(answer));
+        () => debug.handleClearAllBreakpoints().then(reply));
+    mcp.registerTool('list_breakpoints', { description: ABOUT.list_breakpoints }, () => debug.handleListBreakpoints().then(reply));
 
     // Variables and expressions.
     mcp.registerTool('list_variable_names', {
         description: ABOUT.list_variable_names,
         inputSchema: { scope: VARIABLE_SCOPE, timeoutMs: CALL_TIMEOUT },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleListVariableNames(args).then(answer));
+    }, (args) => debug.handleListVariableNames(args).then(reply));
     mcp.registerTool('get_variables_values', {
         description: ABOUT.get_variables_values,
         inputSchema: {
@@ -560,14 +570,14 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
                 'e.g. ["adc_raw", "state"]. Names that match nothing are reported back. Omit to return everything in scope.'),
             timeoutMs: CALL_TIMEOUT,
         },
-    }, (args) => debug.handleGetVariables(args).then(answer));
+    }, (args) => debug.handleGetVariables(args).then(reply));
     mcp.registerTool('evaluate_expression', {
         description: ABOUT.evaluate_expression,
         inputSchema: {
             expression: z.string().describe('What to evaluate, written in the language of the program being debugged'),
             timeoutMs: CALL_TIMEOUT,
         },
-    }, (args) => debug.handleEvaluateExpression(args).then(answer));
+    }, (args) => debug.handleEvaluateExpression(args).then(reply));
 
     // Cortex-M state: memory, registers, cycle counter, peripherals, faults.
     mcp.registerTool('read_memory', {
@@ -579,12 +589,12 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleReadMemory(args).then(answer));
+    }, (args) => debug.handleReadMemory(args).then(reply));
     mcp.registerTool('read_core_registers', { description: ABOUT.read_core_registers, inputSchema: TIMEOUT_ONLY, annotations: LOOK_ONLY },
-        (args) => debug.handleReadCoreRegisters(args).then(answer));
+        (args) => debug.handleReadCoreRegisters(args).then(reply));
     // Marked read-only although the first call enables DWT/CYCCNT (it writes DEMCR and DWT_CTRL).
     mcp.registerTool('read_cycle_counter', { description: ABOUT.read_cycle_counter, inputSchema: TIMEOUT_ONLY, annotations: LOOK_ONLY },
-        (args) => debug.handleReadCycleCounter(args).then(answer));
+        (args) => debug.handleReadCycleCounter(args).then(reply));
     mcp.registerTool('read_peripheral_register', {
         description: ABOUT.read_peripheral_register,
         inputSchema: {
@@ -593,9 +603,9 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleReadPeripheralRegister(args).then(answer));
+    }, (args) => debug.handleReadPeripheralRegister(args).then(reply));
     mcp.registerTool('get_fault_info', { description: ABOUT.get_fault_info, inputSchema: TIMEOUT_ONLY, annotations: LOOK_ONLY },
-        (args) => debug.handleGetFaultInfo(args).then(answer));
+        (args) => debug.handleGetFaultInfo(args).then(reply));
     mcp.registerTool('diagnose_fault', {
         description: ABOUT.diagnose_fault,
         inputSchema: {
@@ -603,7 +613,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleDiagnoseFault(args).then(answer));
+    }, (args) => debug.handleDiagnoseFault(args).then(reply));
     mcp.registerTool('lookup_peripheral', {
         description: ABOUT.lookup_peripheral,
         inputSchema: {
@@ -615,7 +625,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleLookupPeripheral(args).then(answer));
+    }, (args) => debug.handleLookupPeripheral(args).then(reply));
     mcp.registerTool('lookup_register', {
         description: ABOUT.lookup_register,
         inputSchema: {
@@ -626,11 +636,11 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleLookupRegister(args).then(answer));
+    }, (args) => debug.handleLookupRegister(args).then(reply));
     mcp.registerTool('get_device_info', { description: ABOUT.get_device_info, annotations: LOOK_ONLY },
-        () => debug.handleGetDeviceInfo().then(answer));
+        () => debug.handleGetDeviceInfo().then(reply));
     mcp.registerTool('check_target_connection', { description: ABOUT.check_target_connection, annotations: LOOK_ONLY },
-        () => debug.handleCheckTargetConnection().then(answer));
+        () => debug.handleCheckTargetConnection().then(reply));
 
     // Stack, threads, frames.
     mcp.registerTool('get_call_stack', {
@@ -641,9 +651,9 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleGetCallStack(args).then(answer));
+    }, (args) => debug.handleGetCallStack(args).then(reply));
     mcp.registerTool('get_threads', { description: ABOUT.get_threads, inputSchema: TIMEOUT_ONLY, annotations: LOOK_ONLY },
-        (args) => debug.handleGetThreads(args).then(answer));
+        (args) => debug.handleGetThreads(args).then(reply));
     mcp.registerTool('get_frame_variables', {
         description: ABOUT.get_frame_variables,
         inputSchema: {
@@ -654,12 +664,12 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: CALL_TIMEOUT,
         },
         annotations: LOOK_ONLY,
-    }, (args) => debug.handleGetFrameVariables(args).then(answer));
+    }, (args) => debug.handleGetFrameVariables(args).then(reply));
 
     // Serial console, on unless switched off. serial_read counts as read-only although it drains by default.
     if (options.serialEnabled !== false) {
         mcp.registerTool('serial_list_ports', { description: ABOUT.serial_list_ports, annotations: LOOK_ONLY },
-            () => serial('handleListPorts').then(answer));
+            () => serial('handleListPorts').then(reply));
         mcp.registerTool('serial_open', {
             description: ABOUT.serial_open,
             inputSchema: {
@@ -670,10 +680,10 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
                 stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
                 rtscts: z.boolean().optional().describe('RTS/CTS hardware flow control (default false)'),
             },
-        }, (args) => serial('handleOpen', args).then(answer));
-        mcp.registerTool('serial_close', { description: ABOUT.serial_close }, () => serial('handleClose').then(answer));
+        }, (args) => serial('handleOpen', args).then(reply));
+        mcp.registerTool('serial_close', { description: ABOUT.serial_close }, () => serial('handleClose').then(reply));
         mcp.registerTool('serial_status', { description: ABOUT.serial_status, annotations: LOOK_ONLY },
-            () => serial('handleStatus').then(answer));
+            () => serial('handleStatus').then(reply));
         mcp.registerTool('serial_write', {
             description: ABOUT.serial_write,
             inputSchema: {
@@ -681,7 +691,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
                 encoding: z.enum(['utf8', 'hex']).optional(),
                 appendNewline: z.boolean().optional().describe('Append \'\\n\' to utf8 payloads (default false)'),
             },
-        }, (args) => serial('handleWrite', args).then(answer));
+        }, (args) => serial('handleWrite', args).then(reply));
         mcp.registerTool('serial_read', {
             description: ABOUT.serial_read,
             inputSchema: {
@@ -692,17 +702,17 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
                 from: z.enum(['owned', 'monitor']).optional().describe('Backend to read from (default \'owned\')'),
             },
             annotations: LOOK_ONLY,
-        }, (args) => serial('handleRead', args).then(answer));
+        }, (args) => serial('handleRead', args).then(reply));
         mcp.registerTool('serial_clear_buffer', {
             description: ABOUT.serial_clear_buffer,
             inputSchema: { from: z.enum(['owned', 'monitor']).optional() },
-        }, (args) => serial('handleClearBuffer', args).then(answer));
+        }, (args) => serial('handleClearBuffer', args).then(reply));
         mcp.registerTool('serial_subscribe_monitor', { description: ABOUT.serial_subscribe_monitor },
-            () => serial('handleSubscribeMonitor').then(answer));
+            () => serial('handleSubscribeMonitor').then(reply));
         mcp.registerTool('serial_unsubscribe_monitor', { description: ABOUT.serial_unsubscribe_monitor },
-            () => serial('handleUnsubscribeMonitor').then(answer));
+            () => serial('handleUnsubscribeMonitor').then(reply));
         mcp.registerTool('serial_open_monitor', { description: ABOUT.serial_open_monitor },
-            () => serial('handleOpenInUi').then(answer));
+            () => serial('handleOpenInUi').then(reply));
     }
 
     // Documentation and build artefacts: both need the session's dispatch and their own switch.
@@ -724,7 +734,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: z.number().int().min(100).max(60_000).optional()
                 .describe(`${TIMEOUT_DESC} For load_and_debug / attach: the session-readiness wait.`),
         },
-    }, (args) => debug.handleCmsisCommand(args).then(answer));
+    }, (args) => debug.handleCmsisCommand(args).then(reply));
     mcp.registerTool('flash', {
         description: ABOUT.flash,
         inputSchema: {
@@ -733,26 +743,26 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: z.number().int().min(1_000).max(60_000).optional().describe(`${TIMEOUT_DESC} Flash defaults to 60 s.`),
         },
         annotations: ALTERS_TARGET,
-    }, (args) => debug.handleFlash(args).then(answer));
+    }, (args) => debug.handleFlash(args).then(reply));
 
     mcp.registerTool('get_session_status', { description: ABOUT.get_session_status, annotations: LOOK_ONLY }, async () => {
         const state = await debug.handleGetSessionStatus();
         // Read after the handler: the totals cover this session's earlier calls, not this one.
-        return answer(`${state}\n\n${ring.formatTotals()}`);
+        return reply(`${textOf(state)}\n\n${ring.formatTotals()}`);
     });
 
     // Only a router has windows to list and pin.
     const router = windowRoutingOf(debug);
     if (router !== undefined) {
         mcp.registerTool('list_debug_windows', { description: ABOUT.list_debug_windows, annotations: LOOK_ONLY },
-            async () => answer(router.listDebugWindows()));
+            async () => reply(router.listDebugWindows()));
         mcp.registerTool('select_debug_window', {
             description: ABOUT.select_debug_window,
             inputSchema: {
                 pid: z.number().int().optional().describe('Process id of the window, as reported by list_debug_windows.'),
                 workspaceFolder: z.string().optional().describe('Any path inside the target window\'s workspace folder.'),
             },
-        }, async (args) => answer(router.selectDebugWindow(args)));
+        }, async (args) => reply(router.selectDebugWindow(args)));
     }
 }
 

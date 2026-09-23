@@ -27,6 +27,9 @@
 //      get_session_status trailer and the server aggregate all count them.
 //   7. Server options are accepted and readable back; serialEnabled:false
 //      drops the serial tools. The tool list has a byte budget.
+//   8. Results are typed (#11): a failure without a session is isError with
+//      structuredContent.error_code, get_session_status is not, and no tool
+//      declares an outputSchema, so tools/list does not grow.
 
 const stub = require('./vscode-stub.js');
 
@@ -154,6 +157,9 @@ async function main() {
     check(`no tool description exceeds ${DESCRIPTION_CAP_CHARS} chars`, longest.len <= DESCRIPTION_CAP_CHARS, `${longest.name} ${longest.len}`);
     const serialCount = names.filter((n) => n.startsWith('serial_')).length;
     check('the serial tools are registered by default', serialCount === 10, `${serialCount} serial tools`);
+    // structuredContent rides without an outputSchema; declaring one would cost tools/list bytes on every turn.
+    const withSchema = tools.filter((t) => t.outputSchema !== undefined).map((t) => t.name);
+    check('no tool declares an outputSchema', withSchema.length === 0, withSchema.join(', '));
 
     // 4a. The MCP body limit is explicit (1 MiB, matching the control channel's request cap).
     const oversize = await request(port, 'POST', { 'mcp-session-id': sid }, {
@@ -287,6 +293,25 @@ async function main() {
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);
+    const statusResult = parseSse(status.body)?.result ?? {};
+    check('get_session_status is not an error result', statusResult.isError !== true && statusResult.structuredContent === undefined,
+        JSON.stringify({ isError: statusResult.isError, structuredContent: statusResult.structuredContent }));
+
+    // 6a. Typed failures (#11): without a session a read and a step are error
+    //     results with the NO_SESSION code, the code in front of the text and
+    //     the next step after it.
+    for (const [id, name, args] of [[22, 'read_memory', { address: '0x20000000', length: 4 }], [23, 'step_over', {}]]) {
+        const failed = await request(port, 'POST', { 'mcp-session-id': sid }, {
+            jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args },
+        });
+        const result = parseSse(failed.body)?.result ?? {};
+        const text = result.content?.[0]?.text ?? '';
+        const structured = result.structuredContent ?? {};
+        check(`${name} without a session is an error result with error_code NO_SESSION`,
+            result.isError === true && structured.status === 'error' && structured.error_code === 'NO_SESSION'
+                && text.startsWith('[NO_SESSION] ') && typeof structured.hint === 'string' && text.endsWith(`\n${structured.hint}`),
+            `${JSON.stringify(structured)} | ${text.split('\n')[0]}`);
+    }
 
     // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });

@@ -67,7 +67,12 @@ that applies decides:
 
 Otherwise the call is refused with the list of windows and the tools to pick
 one — when two windows are debugging, reading memory from the wrong board
-would look exactly like a firmware bug, so the router never guesses.
+would look exactly like a firmware bug, so the router never guesses. The
+refusal is `AMBIGUOUS_WINDOW`, and its `data.candidates` lists every
+registered window (`pid`, `name`, `workspaceFolders`, `hasActiveSession`).
+An empty registry and a pinned window that is gone are `WINDOW_UNREACHABLE`;
+a path inside no workspace, and a `select_debug_window` without a selector
+or without a match, are `INVALID_ARGUMENT`.
 `list_debug_windows` shows every registered window and marks the current
 target and the pin.
 
@@ -83,13 +88,38 @@ router's forwarding methods are generated from it, so a new tool is routable
 without further code.
 
 - The router waits for socket activity for the tool's timeout plus 15 s, so
-  the worker's own, more specific timeout text arrives first. `cmsis_action`,
+  the worker's own, more specific timeout answer arrives first. `cmsis_action`,
   `flash` and the documentation ops, which can take minutes, get at least ten
-  minutes (`forwardTimeoutMs()`).
+  minutes (`forwardTimeoutMs()`). A window that stays silent longer ends the
+  call with `WORKER_TIMEOUT`; it is busy, not gone, so the session keeps it
+  as its target.
 - Requests above 1 MiB and responses above 16 MiB are cut off; they only
-  guard against runaways.
-- When a window cannot be reached, the session forgets it as its cached
-  target and the error suggests `list_debug_windows`.
+  guard against runaways. The first reaches the router as a 413 and becomes
+  `INVALID_ARGUMENT`, the second is `INTERNAL`; either way the window
+  answered and stays the target.
+- The worker's own failure comes back with its code and hint, and the
+  session keeps its target (#11). Only a failed channel — nothing listening,
+  a dropped connection, a 403 for a stale token, a 404, an answer that is not
+  a control reply — makes the session forget the window, with
+  `WINDOW_UNREACHABLE` and a pointer to `list_debug_windows`. Before #11
+  every handler error crossed the channel as a 500 that the router reported
+  as an unreachable window, dropping the target on the way.
+
+### The envelope
+
+The request carries the header `x-cmsis-developer-assistant-envelope: 2`
+(`CONTROL_ENVELOPE_HEADER` in `src/core/opTable.ts`). A worker that knows it
+answers typed and sets the same header on its reply: 200 `{result}` with the
+`ToolText` as it is, or 500 `{error: {message, code, hint, data}}`. Without
+the header — a router of 2.3.10 in a window not yet reloaded — the worker
+answers in the old shapes, `{result: string}` and `{error: string}` with the
+hint on the error's second line. The other way round, the router reads a
+string without the header as a 2.3.10 result (`upgradeLegacyText()`): the
+old fence failure `Error in '<tool>': …` becomes a classified `ToolError`,
+the old fence cap a `timeout` reply; an `{error: string}` is classified the
+same way. Both ends ignore fields they do not know, in the request body and
+in the reply, so later additions (a call id, a session id, a budget, journal
+counters) need no new version.
 
 ## The control server
 
@@ -98,10 +128,12 @@ without further code.
 name against the op table before looking up any method, then dispatches it
 to the debugging handler, the serial handler, or the documentation or
 build-artefact handler, and answers `{result}` with 200 or `{error}` with
-500. The request and response shapes are shared by every installed version
-of the extension. The token is the only gate, and the ops include flashing
-and erasing the target, so agents never see it: `describeWindow()` leaves
-port and token out of every listing.
+500, in the envelope the request asked for (see above). An unknown op, a
+method the window lacks and absent documentation handlers are
+`TOOL_DISABLED`. The trace line of each op logs the size of the result's
+text. The token is the only gate, and the ops include flashing and erasing
+the target, so agents never see it: `describeWindow()` leaves port and
+token out of every listing.
 
 ## Shutdown
 
@@ -113,11 +145,13 @@ giving that step at most two seconds.
 ## Tests
 
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
-  round trip
+  round trip; typed outcomes — a worker error with its code and the target
+  kept, a dead port, a silent window, 2.3.10 replies, both envelopes
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
   matching
 - `src/test/windowCoordinator.test.ts`: the serial teardown on dispose
 - `src/test/opTable.test.ts`: the op table
 - `test/transport/two-window-routing.js`: two coordinators against one
   registry — one router, one worker, the same advertised endpoint, pinning,
-  republishing on session start, promotion when the router closes
+  republishing on session start, `AMBIGUOUS_WINDOW` with two candidates when
+  both debug, promotion when the router closes

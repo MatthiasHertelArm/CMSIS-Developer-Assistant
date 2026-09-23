@@ -17,7 +17,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -1259,8 +1259,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33066,
-          "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
+          "bytes": 33672,
+          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -1285,44 +1285,103 @@
         },
         "start_debugging": {
           "isError": true,
-          "text": "Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
+          },
+          "text": "[INTERNAL] Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
         },
         "stop_debugging": {
           "text": "Nothing to stop — no debug session is active."
         },
         "step_over": {
           "isError": true,
-          "text": "Step over failed: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step over failed: Error: Cannot step over: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step over failed: Error: Cannot step over: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
-          "text": "Step into failed: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step into failed: Error: Cannot step into: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step into failed: Error: Cannot step into: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
-          "text": "Step out failed: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step out failed: Error: Cannot step out: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step out failed: Error: Cannot step out: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
-          "text": "No active debug session. Start debugging first."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
         },
         "continue_execution": {
           "isError": true,
-          "text": "Continue failed: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Continue failed: Error: Cannot continue execution: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Continue failed: Error: Cannot continue execution: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
-          "text": "Error in 'wait_for_stop': No active debug session. Start debugging first — wait_for_stop waits on a live session."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first — wait_for_stop waits on a live session."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first — wait_for_stop waits on a live session."
         },
         "restart_debugging": {
           "isError": true,
-          "text": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          },
+          "text": "[NO_SESSION] Could not restart the debug session: Error: Nothing to restart — no debug session is active"
         },
         "reset": {
-          "text": "Error in 'reset': No active debug session. Start debugging first — reset drives the target through the live probe."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first — reset drives the target through the live probe."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first — reset drives the target through the live probe."
         },
         "add_breakpoint": {
           "isError": true,
-          "text": "Error adding breakpoint: Error: not stubbed"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error adding breakpoint: Error: not stubbed"
+          },
+          "text": "[INTERNAL] Error adding breakpoint: Error: not stubbed"
         },
         "add_logpoint": {
           "isError": true,
@@ -1338,31 +1397,94 @@
           "text": "The breakpoint list is empty."
         },
         "list_variable_names": {
-          "text": "Error in 'list_variable_names': Cannot list variable names: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot list variable names: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_variables_values": {
-          "text": "Error in 'get_variables_values': Cannot read variables: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read variables: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "evaluate_expression": {
-          "text": "Error in 'evaluate_expression': Cannot evaluate expression: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot evaluate expression: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_memory": {
-          "text": "Error in 'read_memory': Cannot read memory: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read memory: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_core_registers": {
-          "text": "Error in 'read_core_registers': Cannot read core registers: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read core registers: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_cycle_counter": {
-          "text": "Error in 'read_cycle_counter': Cannot read cycle counter: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read cycle counter: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_peripheral_register": {
-          "text": "Error in 'read_peripheral_register': Cannot read peripheral register: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read peripheral register: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_fault_info": {
-          "text": "Error in 'get_fault_info': Cannot read fault info: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read fault info: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "diagnose_fault": {
-          "text": "Error in 'diagnose_fault': Cannot diagnose the fault: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot diagnose the fault: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "lookup_peripheral": {
           "text": "No SVD file found for a lookup.\nTried:\n  - workspace *.svd (none)\nPass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so out/<context>.cbuild-run.yml names it, or add \"svdFile\" to the launch configuration. For a multi-core device pass pname to pick the core."
@@ -1373,16 +1495,36 @@
         },
         "get_device_info": {
           "isError": true,
-          "text": "Error getting device info: Error: No active debug session. Start debugging first."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Error getting device info: Error: No active debug session.",
+            "hint": "Start debugging first."
+          },
+          "text": "[NO_SESSION] Error getting device info: Error: No active debug session.\nStart debugging first."
         },
         "check_target_connection": {
           "text": "No active debug session."
         },
         "get_call_stack": {
-          "text": "Error in 'get_call_stack': Cannot get call stack: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot get call stack: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_threads": {
-          "text": "Error in 'get_threads': Cannot get threads: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot get threads: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_frame_variables": {
           "isError": true,
@@ -1390,7 +1532,12 @@
         },
         "serial_open": {
           "isError": true,
-          "text": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          },
+          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
         },
         "serial_close": {
           "text": "No owned serial port was open."
@@ -1400,7 +1547,12 @@
         },
         "serial_write": {
           "isError": true,
-          "text": "No serial port open. Call serial_open first."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "No serial port open. Call serial_open first."
+          },
+          "text": "[INTERNAL] No serial port open. Call serial_open first."
         },
         "serial_read": {
           "text": "Serial RX (owned): <no data>"
@@ -1418,13 +1570,27 @@
           "text": "Focused the Serial Monitor panel via 'workbench.view.extension.vscode-serial-monitor-tools'."
         },
         "cmsis_action": {
-          "text": "CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none). cmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "CMSIS_NO_SOLUTION",
+            "message": "CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none).",
+            "hint": "cmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
+          },
+          "text": "[CMSIS_NO_SOLUTION] CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none).\ncmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
         },
         "flash": {
-          "text": "cbuild-run file not found: /nonexistent/x.cbuild-run.yml. Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "cbuild-run file not found: /nonexistent/x.cbuild-run.yml.",
+            "hint": "Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
+          },
+          "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 24 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · lookup_peripheral <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · continue_execution <size> over 1 call"
         }
       }
     },
@@ -1444,7 +1610,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -2439,8 +2605,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33066,
-          "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
+          "bytes": 33672,
+          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -2477,7 +2643,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer from the manuals the target's packs ship or link, page-cited; they accept timeoutMs up to <n>s because indexing a manual on first use can take minutes. Use them before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for a web-linked one) and instead of reading a PDF into your context: a document the user provides belongs in the workspace docs/ folder or the \"Import Document for Current Target\" command, then search it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same way: for any part number call list_target_docs first, then search_target_docs; if the datasheet is not listed, find its PDF URL on the web and fetch_doc { url } — never read the PDF yourself. The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) read the ELF, linker map and build log of the current target."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer from the manuals the target's packs ship or link, page-cited; they accept timeoutMs up to <n>s because indexing a manual on first use can take minutes. Use them before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for a web-linked one) and instead of reading a PDF into your context: a document the user provides belongs in the workspace docs/ folder or the \"Import Document for Current Target\" command, then search it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same way: for any part number call list_target_docs first, then search_target_docs; if the datasheet is not listed, find its PDF URL on the web and fetch_doc { url } — never read the PDF yourself. The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) read the ELF, linker map and build log of the current target."
       },
       "tools": [
         {
@@ -4198,8 +4364,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33066,
-          "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
+          "bytes": 33672,
+          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -4224,44 +4390,103 @@
         },
         "start_debugging": {
           "isError": true,
-          "text": "Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
+          },
+          "text": "[INTERNAL] Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
         },
         "stop_debugging": {
           "text": "Nothing to stop — no debug session is active."
         },
         "step_over": {
           "isError": true,
-          "text": "Step over failed: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step over failed: Error: Cannot step over: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step over failed: Error: Cannot step over: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
-          "text": "Step into failed: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step into failed: Error: Cannot step into: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step into failed: Error: Cannot step into: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
-          "text": "Step out failed: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step out failed: Error: Cannot step out: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step out failed: Error: Cannot step out: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
-          "text": "No active debug session. Start debugging first."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
         },
         "continue_execution": {
           "isError": true,
-          "text": "Continue failed: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Continue failed: Error: Cannot continue execution: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Continue failed: Error: Cannot continue execution: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
-          "text": "Error in 'wait_for_stop': No active debug session. Start debugging first — wait_for_stop waits on a live session."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first — wait_for_stop waits on a live session."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first — wait_for_stop waits on a live session."
         },
         "restart_debugging": {
           "isError": true,
-          "text": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          },
+          "text": "[NO_SESSION] Could not restart the debug session: Error: Nothing to restart — no debug session is active"
         },
         "reset": {
-          "text": "Error in 'reset': No active debug session. Start debugging first — reset drives the target through the live probe."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first — reset drives the target through the live probe."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first — reset drives the target through the live probe."
         },
         "add_breakpoint": {
           "isError": true,
-          "text": "Error adding breakpoint: Error: not stubbed"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error adding breakpoint: Error: not stubbed"
+          },
+          "text": "[INTERNAL] Error adding breakpoint: Error: not stubbed"
         },
         "add_logpoint": {
           "isError": true,
@@ -4277,31 +4502,94 @@
           "text": "The breakpoint list is empty."
         },
         "list_variable_names": {
-          "text": "Error in 'list_variable_names': Cannot list variable names: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot list variable names: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_variables_values": {
-          "text": "Error in 'get_variables_values': Cannot read variables: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read variables: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "evaluate_expression": {
-          "text": "Error in 'evaluate_expression': Cannot evaluate expression: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot evaluate expression: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_memory": {
-          "text": "Error in 'read_memory': Cannot read memory: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read memory: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_core_registers": {
-          "text": "Error in 'read_core_registers': Cannot read core registers: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read core registers: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_cycle_counter": {
-          "text": "Error in 'read_cycle_counter': Cannot read cycle counter: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read cycle counter: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_peripheral_register": {
-          "text": "Error in 'read_peripheral_register': Cannot read peripheral register: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read peripheral register: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_fault_info": {
-          "text": "Error in 'get_fault_info': Cannot read fault info: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read fault info: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "diagnose_fault": {
-          "text": "Error in 'diagnose_fault': Cannot diagnose the fault: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot diagnose the fault: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "lookup_peripheral": {
           "text": "No SVD file found for a lookup.\nTried:\n  - workspace *.svd (none)\nPass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so out/<context>.cbuild-run.yml names it, or add \"svdFile\" to the launch configuration. For a multi-core device pass pname to pick the core."
@@ -4312,16 +4600,36 @@
         },
         "get_device_info": {
           "isError": true,
-          "text": "Error getting device info: Error: No active debug session. Start debugging first."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Error getting device info: Error: No active debug session.",
+            "hint": "Start debugging first."
+          },
+          "text": "[NO_SESSION] Error getting device info: Error: No active debug session.\nStart debugging first."
         },
         "check_target_connection": {
           "text": "No active debug session."
         },
         "get_call_stack": {
-          "text": "Error in 'get_call_stack': Cannot get call stack: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot get call stack: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_threads": {
-          "text": "Error in 'get_threads': Cannot get threads: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot get threads: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_frame_variables": {
           "isError": true,
@@ -4329,7 +4637,12 @@
         },
         "serial_open": {
           "isError": true,
-          "text": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          },
+          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
         },
         "serial_close": {
           "text": "No owned serial port was open."
@@ -4339,7 +4652,12 @@
         },
         "serial_write": {
           "isError": true,
-          "text": "No serial port open. Call serial_open first."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "No serial port open. Call serial_open first."
+          },
+          "text": "[INTERNAL] No serial port open. Call serial_open first."
         },
         "serial_read": {
           "text": "Serial RX (owned): <no data>"
@@ -4387,13 +4705,27 @@
           "text": "No build log found (searched **/out/**/*.log, **/build*.log). The CMSIS Solution extension runs cbuild in a terminal and keeps no log file. Capture one with `cbuild <solution>.csolution.yml --packs --update-rte --log out/build.log` (or `… 2>&1 | tee out/build.log`), then call again, or pass file: <path> for a log saved elsewhere."
         },
         "cmsis_action": {
-          "text": "CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none). cmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "CMSIS_NO_SOLUTION",
+            "message": "CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none).",
+            "hint": "cmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
+          },
+          "text": "[CMSIS_NO_SOLUTION] CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none).\ncmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
         },
         "flash": {
-          "text": "cbuild-run file not found: /nonexistent/x.cbuild-run.yml. Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "cbuild-run file not found: /nonexistent/x.cbuild-run.yml.",
+            "hint": "Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
+          },
+          "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 46 calls · <size> returned · <n>s in tools · 0 timeouts · 24 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · get_build_diagnostics <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 46 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · continue_execution <size> over 1 call"
         }
       }
     },
@@ -4413,7 +4745,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -5693,8 +6025,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33066,
-          "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
+          "bytes": 33672,
+          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -5719,47 +6051,113 @@
         },
         "start_debugging": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "stop_debugging": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "step_over": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "step_into": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "step_out": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "pause_execution": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "continue_execution": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "wait_for_stop": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "restart_debugging": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "reset": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "add_breakpoint": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "add_logpoint": {
           "isError": true,
@@ -5767,55 +6165,133 @@
         },
         "remove_breakpoint": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "clear_all_breakpoints": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "list_breakpoints": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "list_variable_names": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "get_variables_values": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "evaluate_expression": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "read_memory": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "read_core_registers": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "read_cycle_counter": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "read_peripheral_register": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "get_fault_info": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "diagnose_fault": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "lookup_peripheral": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "lookup_register": {
           "isError": true,
@@ -5823,19 +6299,43 @@
         },
         "get_device_info": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "check_target_connection": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "get_call_stack": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "get_threads": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "get_frame_variables": {
           "isError": true,
@@ -5843,57 +6343,136 @@
         },
         "serial_open": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_close": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_status": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_write": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_read": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_clear_buffer": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_subscribe_monitor": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_unsubscribe_monitor": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_open_monitor": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "cmsis_action": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "flash": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "get_session_status": {
           "isError": true,
-          "text": "No CMSIS Developer Assistant-enabled VS Code window is currently registered. Open your project in VS Code and wait for the extension to activate."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "list_debug_windows": {
           "text": "No CMSIS Developer Assistant-enabled VS Code windows are currently registered."
         },
         "select_debug_window": {
-          "text": "No registered window matches pid=<n>.\nNo windows are registered."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "No registered window matches pid=<n>.",
+            "hint": "No windows are registered."
+          },
+          "text": "[INVALID_ARGUMENT] No registered window matches pid=<n>.\nNo windows are registered."
         }
       }
     },
@@ -5913,7 +6492,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -7193,8 +7772,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33066,
-          "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
+          "bytes": 33672,
+          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -7219,44 +7798,105 @@
         },
         "start_debugging": {
           "isError": true,
-          "text": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.",
+            "hint": "Open the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
+          },
+          "text": "[INVALID_ARGUMENT] No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
         },
         "stop_debugging": {
           "text": "Nothing to stop — no debug session is active."
         },
         "step_over": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Step over failed: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step over failed: Error: Cannot step over: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step over failed: Error: Cannot step over: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Step into failed: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step into failed: Error: Cannot step into: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step into failed: Error: Cannot step into: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Step out failed: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Step out failed: Error: Cannot step out: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Step out failed: Error: Cannot step out: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): No active debug session. Start debugging first.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
         },
         "continue_execution": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Continue failed: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Continue failed: Error: Cannot continue execution: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Continue failed: Error: Cannot continue execution: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
-          "text": "Error in 'wait_for_stop': No active debug session. Start debugging first — wait_for_stop waits on a live session."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first — wait_for_stop waits on a live session."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first — wait_for_stop waits on a live session."
         },
         "restart_debugging": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Could not restart the debug session: Error: Nothing to restart — no debug session is active\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          },
+          "text": "[NO_SESSION] Could not restart the debug session: Error: Nothing to restart — no debug session is active"
         },
         "reset": {
-          "text": "Error in 'reset': No active debug session. Start debugging first — reset drives the target through the live probe."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "No active debug session.",
+            "hint": "Start debugging first — reset drives the target through the live probe."
+          },
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first — reset drives the target through the live probe."
         },
         "add_breakpoint": {
           "isError": true,
-          "text": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.",
+            "hint": "Open the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
+          },
+          "text": "[INVALID_ARGUMENT] No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
         },
         "add_logpoint": {
           "isError": true,
@@ -7264,7 +7904,13 @@
         },
         "remove_breakpoint": {
           "isError": true,
-          "text": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.",
+            "hint": "Open the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
+          },
+          "text": "[INVALID_ARGUMENT] No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
         },
         "clear_all_breakpoints": {
           "text": "Nothing to clear — no breakpoints are set."
@@ -7273,31 +7919,94 @@
           "text": "The breakpoint list is empty."
         },
         "list_variable_names": {
-          "text": "Error in 'list_variable_names': Cannot list variable names: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot list variable names: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_variables_values": {
-          "text": "Error in 'get_variables_values': Cannot read variables: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read variables: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "evaluate_expression": {
-          "text": "Error in 'evaluate_expression': Cannot evaluate expression: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot evaluate expression: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_memory": {
-          "text": "Error in 'read_memory': Cannot read memory: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read memory: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_core_registers": {
-          "text": "Error in 'read_core_registers': Cannot read core registers: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read core registers: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_cycle_counter": {
-          "text": "Error in 'read_cycle_counter': Cannot read cycle counter: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read cycle counter: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "read_peripheral_register": {
-          "text": "Error in 'read_peripheral_register': Cannot read peripheral register: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read peripheral register: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_fault_info": {
-          "text": "Error in 'get_fault_info': Cannot read fault info: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot read fault info: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "diagnose_fault": {
-          "text": "Error in 'diagnose_fault': Cannot diagnose the fault: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot diagnose the fault: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "lookup_peripheral": {
           "text": "No SVD file found for a lookup.\nTried:\n  - workspace *.svd (none)\nPass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so out/<context>.cbuild-run.yml names it, or add \"svdFile\" to the launch configuration. For a multi-core device pass pname to pick the core."
@@ -7308,16 +8017,36 @@
         },
         "get_device_info": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Error getting device info: Error: No active debug session. Start debugging first.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Error getting device info: Error: No active debug session.",
+            "hint": "Start debugging first."
+          },
+          "text": "[NO_SESSION] Error getting device info: Error: No active debug session.\nStart debugging first."
         },
         "check_target_connection": {
           "text": "No active debug session."
         },
         "get_call_stack": {
-          "text": "Error in 'get_call_stack': Cannot get call stack: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot get call stack: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_threads": {
-          "text": "Error in 'get_threads': Cannot get threads: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "NO_SESSION",
+            "message": "Cannot get threads: session state is 'no-session'.",
+            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          },
+          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "get_frame_variables": {
           "isError": true,
@@ -7325,7 +8054,12 @@
         },
         "serial_open": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Error: No such file or directory, cannot open /nonexistent/tty.none\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          },
+          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
         },
         "serial_close": {
           "text": "No owned serial port was open."
@@ -7335,7 +8069,12 @@
         },
         "serial_write": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): No serial port open. Call serial_open first.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "No serial port open. Call serial_open first."
+          },
+          "text": "[INTERNAL] No serial port open. Call serial_open first."
         },
         "serial_read": {
           "text": "Serial RX (owned): <no data>"
@@ -7353,19 +8092,40 @@
           "text": "Focused the Serial Monitor panel via 'workbench.view.extension.vscode-serial-monitor-tools'."
         },
         "cmsis_action": {
-          "text": "CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none). cmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "CMSIS_NO_SOLUTION",
+            "message": "CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none).",
+            "hint": "cmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
+          },
+          "text": "[CMSIS_NO_SOLUTION] CMSIS 'stop_run' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window (cmsis-csolution.getSolutionFile → none).\ncmsis_action operates on whatever solution that extension has active — it cannot select one. Fixes: (1) open the folder containing the project's *.csolution.yml in the VS Code window running this MCP server (serverVersion=2.3.10); (2) in the CMSIS Solution panel, confirm a solution + active context is selected; (3) if the solution is open in a different window, drive cmsis_action from that window's MCP server."
         },
         "flash": {
-          "text": "cbuild-run file not found: /nonexistent/x.cbuild-run.yml. Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "cbuild-run file not found: /nonexistent/x.cbuild-run.yml.",
+            "hint": "Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
+          },
+          "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 25 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · continue_execution <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · start_debugging <size> over 1 call"
         },
         "list_debug_windows": {
           "text": "Registered VS Code windows:\n• pid=<n> | <tmp>  ← current target\n\nPin one for this session with select_debug_window({ pid }) when the automatic choice is wrong."
         },
         "select_debug_window": {
-          "text": "No registered window matches pid=<n>.\nCurrently registered:\n  • pid=<n> | <tmp>"
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INVALID_ARGUMENT",
+            "message": "No registered window matches pid=<n>.",
+            "hint": "Currently registered:\n  • pid=<n> | <tmp>"
+          },
+          "text": "[INVALID_ARGUMENT] No registered window matches pid=<n>.\nCurrently registered:\n  • pid=<n> | <tmp>"
         }
       }
     }

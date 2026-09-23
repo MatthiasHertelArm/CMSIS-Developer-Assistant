@@ -27,6 +27,10 @@
  * extension's `.vscode/cmsis.json` and re-activating the solution, and the
  * switch is verified before anything runs.
  *
+ * Refusals and failed tasks reject with a `ToolError` (`PROBE_BUSY`,
+ * `CMSIS_NO_SOLUTION`, `INVALID_ARGUMENT`, `TASK_FAILED`); an action that is
+ * still going when the call returns answers with status `running` (#11).
+ *
  * Known gaps kept on purpose (fixed separately): the fence can fire before
  * the task waiter (KB2), the task match is case-sensitive and not tied to
  * the command's own task (KB5), late command failures are dropped (KB11),
@@ -48,6 +52,7 @@ import {
     TargetRef,
     targetMatches,
 } from '../core/cmsisTarget';
+import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import { withTimeout } from '../utils/timeout';
 import { failureText } from './fence';
 import type { HandlerHost, TaskFeed } from './host';
@@ -177,7 +182,8 @@ export async function activeTargetName(): Promise<string | undefined> {
     }
 }
 
-type SwitchResult = { switched: true; active: string } | { switched: false; reason: string };
+/** A failed switch says why, with the code the refusal carries and, when there is one, what to do instead. */
+type SwitchResult = { switched: true; active: string } | { switched: false; code: ErrorCode; reason: string; hint?: string };
 
 /** The folder whose `.vscode/cmsis.json` the extension reads for this solution. */
 function selectionFolder(solutionPath: string, host: HandlerHost): string {
@@ -204,21 +210,28 @@ async function switchActiveTarget(
     if (!solutionPath || !fs.existsSync(solutionPath)) {
         return {
             switched: false,
+            code: 'INTERNAL',
             reason: `the active target is '${was}' and the csolution path could not be resolved from the CMSIS Solution extension, `
-                + `so the target cannot be switched. ${SWITCH_BY_HAND}`,
+                + 'so the target cannot be switched.',
+            hint: SWITCH_BY_HAND,
         };
     }
     let solutionText: string;
     try {
         solutionText = fs.readFileSync(solutionPath, 'utf8');
     } catch (caught) {
-        return { switched: false, reason: `the active target is '${was}' and ${solutionPath} could not be read (${failureText(caught)}). ${SWITCH_BY_HAND}` };
+        return {
+            switched: false,
+            code: 'INTERNAL',
+            reason: `the active target is '${was}' and ${solutionPath} could not be read (${failureText(caught)}).`,
+            hint: SWITCH_BY_HAND,
+        };
     }
     const declared = listTargetTypes(solutionText);
     const resolution = resolveTargetSelection(declared, wanted);
     if (!resolution.ok) {
         const choices = formatTargetChoices(declared) || '(none found)';
-        return { switched: false, reason: `${resolution.reason}. Active target: '${was}'. Declared targets: ${choices}.` };
+        return { switched: false, code: 'INVALID_ARGUMENT', reason: `${resolution.reason}. Active target: '${was}'. Declared targets: ${choices}.` };
     }
 
     const folder = selectionFolder(solutionPath, host);
@@ -229,7 +242,12 @@ async function switchActiveTarget(
         const updated = applyTargetSelection(previous, solutionDisplayName(folder, solutionPath), resolution.type, resolution.setIndex);
         fs.writeFileSync(selectionFile, updated, 'utf8');
     } catch (caught) {
-        return { switched: false, reason: `could not write ${selectionFile} to select '${resolution.name}' (${failureText(caught)}). ${SWITCH_BY_HAND}` };
+        return {
+            switched: false,
+            code: 'INTERNAL',
+            reason: `could not write ${selectionFile} to select '${resolution.name}' (${failureText(caught)}).`,
+            hint: SWITCH_BY_HAND,
+        };
     }
 
     try {
@@ -240,8 +258,10 @@ async function switchActiveTarget(
     } catch (caught) {
         return {
             switched: false,
+            code: 'INTERNAL',
             reason: `wrote '${resolution.name}' to ${selectionFile} but re-activating the solution so the extension picks it up failed `
-                + `(${failureText(caught)}). ${SWITCH_BY_HAND}`,
+                + `(${failureText(caught)}).`,
+            hint: SWITCH_BY_HAND,
         };
     }
 
@@ -259,8 +279,10 @@ async function switchActiveTarget(
     }
     return {
         switched: false,
+        code: 'INTERNAL',
         reason: `wrote '${resolution.name}' to ${selectionFile} and re-activated the solution, but the CMSIS Solution extension `
-            + `still reports '${reported ?? '(none)'}' as the active target after 15 s. ${SWITCH_BY_HAND}`,
+            + `still reports '${reported ?? '(none)'}' as the active target after 15 s.`,
+        hint: SWITCH_BY_HAND,
     };
 }
 
@@ -362,32 +384,39 @@ async function checkSurvival(executor: IDebuggingExecutor, host: HandlerHost): P
 }
 
 /** How a rejected CMSIS command reads once it reaches the fence. */
-function commandFailure(command: string, action: string, caught: unknown, serverVersion: string): Error {
+function commandFailure(command: string, action: string, caught: unknown, serverVersion: string): ToolError {
     if (/no active solution/i.test(failureText(caught))) {
-        return new Error(
-            `CMSIS '${action}' failed: no active CMSIS solution. The CMSIS Solution extension has no solution context in THIS VS Code window. Fixes:\n`
+        return new ToolError('CMSIS_NO_SOLUTION',
+            `CMSIS '${action}' failed: no active CMSIS solution. The CMSIS Solution extension has no solution context in THIS VS Code window.`,
+            'Fixes:\n'
             + `  1. Make sure the VS Code window running this MCP server (serverVersion=${serverVersion}) has the project's *.csolution.yml folder open — each window is independent.\n`
             + '  2. In that window, open the CMSIS Solution panel and confirm a solution + active context is selected (Manage Solution).\n'
             + '  3. If the solution is open in a different window, drive cmsis_action from that window\'s MCP server instead.\n'
             + 'cmsis_action operates on whatever solution the CMSIS Solution extension has active — it cannot select one for you.');
     }
-    return new Error(`CMSIS command '${command}' failed: ${String(caught)}. `
-        + `Ensure the CMSIS Solution extension is installed and a solution context is active.${recentAdapterTraffic()}`);
+    return new ToolError('TASK_FAILED', `CMSIS command '${command}' failed: ${String(caught)}.`,
+        `Ensure the CMSIS Solution extension is installed and a solution context is active.${recentAdapterTraffic()}`);
 }
 
-/** The result of a task action once its waiter settled. */
-function taskResult(action: string, tag: string, command: string, effectiveMs: number, result: TaskOutcome): string {
+/**
+ * The result of a task action once its waiter settled: success as text, a
+ * task still going as status `running`, a failed or cancelled task as
+ * `TASK_FAILED`.
+ */
+function taskResult(action: string, tag: string, command: string, effectiveMs: number, result: TaskOutcome): ToolText {
     if (result.ended && result.exitCode === 0) {
         return `✅ CMSIS '${action}' succeeded${tag} (task '${result.taskName}' exited 0).${TASK_ACTIONS.get(action) ?? ''}`;
     }
     if (result.ended && typeof result.exitCode === 'number') {
-        return `❌ CMSIS '${action}' FAILED${tag} — task '${result.taskName}' exited with code ${result.exitCode}. `
-            + 'Open the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, '
-            + `then re-run cmsis_action ${action}. This is a terminal result — do not wait for an output file.`;
+        throw new ToolError('TASK_FAILED',
+            `❌ CMSIS '${action}' FAILED${tag} — task '${result.taskName}' exited with code ${result.exitCode}.`,
+            'Open the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, '
+                + `then re-run cmsis_action ${action}. This is a terminal result — do not wait for an output file.`);
     }
     if (result.ended) {
-        return `CMSIS '${action}'${tag} — task '${result.taskName}' ended without an exit code (it may have been cancelled). `
-            + `Re-run cmsis_action ${action} to get a definite result.`;
+        throw new ToolError('TASK_FAILED',
+            `CMSIS '${action}'${tag} — task '${result.taskName}' ended without an exit code (it may have been cancelled).`,
+            `Re-run cmsis_action ${action} to get a definite result.`);
     }
     if (!result.started) {
         return `CMSIS '${action}'${tag} issued via '${command}', but no cbuild/flash task ran within the wait window. `
@@ -396,9 +425,12 @@ function taskResult(action: string, tag: string, command: string, effectiveMs: n
             + 'This is a terminal result — do not wait for an output file. Re-run the action or check the CMSIS panel.';
     }
     const waitedSeconds = Math.round(taskBudgetMs(effectiveMs) / 1000);
-    return `CMSIS '${action}'${tag} is still running after ${waitedSeconds}s (task '${result.taskName ?? command}' has not finished). `
-        + 'Large clean builds can take longer than this. The tool returned so you are not blocked — '
-        + `re-run cmsis_action ${action} to get the final exit status, or watch the CMSIS terminal. Do NOT poll for an output file.`;
+    return {
+        text: `CMSIS '${action}'${tag} is still running after ${waitedSeconds}s (task '${result.taskName ?? command}' has not finished). `
+            + 'Large clean builds can take longer than this. The tool returned so you are not blocked — '
+            + `re-run cmsis_action ${action} to get the final exit status, or watch the CMSIS terminal. Do NOT poll for an output file.`,
+        status: 'running',
+    };
 }
 
 /**
@@ -411,23 +443,25 @@ export async function runCmsisAction(
     action: string,
     target: string | undefined,
     effectiveMs: number,
-): Promise<string> {
+): Promise<ToolText> {
     const { executor, host } = context;
     if (SESSION_ACTIONS.has(action) && executor.hasDebugSession()) {
         const status = await executor.getSessionStatus();
-        return `A debug session is already active (name='${status.sessionName ?? '?'}', state=${status.state}). `
-            + `Refusing to ${action}. Use stop_debugging or restart_debugging first, or proceed with inspection.`;
+        throw new ToolError('PROBE_BUSY',
+            `A debug session is already active (name='${status.sessionName ?? '?'}', state=${status.state}). Refusing to ${action}.`,
+            'Use stop_debugging or restart_debugging first, or proceed with inspection.');
     }
 
     const solution = await activeSolution();
     if (!solution.active) {
-        return `CMSIS '${action}' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window `
-            + `(cmsis-csolution.getSolutionFile → ${solution.description}). `
-            + 'cmsis_action operates on whatever solution that extension has active — it cannot select one. '
-            + 'Fixes: (1) open the folder containing the project\'s *.csolution.yml in the VS Code window running this MCP server '
-            + `(serverVersion=${executor.getDiagnostics().serverVersion}); `
-            + '(2) in the CMSIS Solution panel, confirm a solution + active context is selected; '
-            + '(3) if the solution is open in a different window, drive cmsis_action from that window\'s MCP server.';
+        throw new ToolError('CMSIS_NO_SOLUTION',
+            `CMSIS '${action}' not attempted: the CMSIS Solution extension reports no active solution in this VS Code window `
+                + `(cmsis-csolution.getSolutionFile → ${solution.description}).`,
+            'cmsis_action operates on whatever solution that extension has active — it cannot select one. '
+                + 'Fixes: (1) open the folder containing the project\'s *.csolution.yml in the VS Code window running this MCP server '
+                + `(serverVersion=${executor.getDiagnostics().serverVersion}); `
+                + '(2) in the CMSIS Solution panel, confirm a solution + active context is selected; '
+                + '(3) if the solution is open in a different window, drive cmsis_action from that window\'s MCP server.');
     }
 
     let active = await activeTargetName();
@@ -435,18 +469,19 @@ export async function runCmsisAction(
     if (target !== undefined && target !== null) {
         const wanted = parseTargetRef(target);
         if (!wanted) {
-            return `CMSIS '${action}' not attempted: target '${target}' is not a valid reference — `
-                + 'pass a target-type name or type@set as declared in the csolution, e.g. \'MPS3\' or \'HP@debug\'.';
+            throw new ToolError('INVALID_ARGUMENT', `CMSIS '${action}' not attempted: target '${target}' is not a valid reference — `
+                + 'pass a target-type name or type@set as declared in the csolution, e.g. \'MPS3\' or \'HP@debug\'.');
         }
         if (!targetMatches(active, wanted)) {
             if (executor.hasDebugSession()) {
-                return `CMSIS '${action}' not attempted: the active target is '${active ?? '(none)'}' and switching to '${target}' `
-                    + 're-activates the solution, which is not done under a live debug session. '
-                    + 'Call stop_debugging first, then repeat this call.';
+                throw new ToolError('PROBE_BUSY',
+                    `CMSIS '${action}' not attempted: the active target is '${active ?? '(none)'}' and switching to '${target}' `
+                        + 're-activates the solution, which is not done under a live debug session.',
+                    'Call stop_debugging first, then repeat this call.');
             }
             const outcome = await switchActiveTarget(solution.solutionPath, wanted, active, host);
             if (!outcome.switched) {
-                return `CMSIS '${action}' not attempted: ${outcome.reason}`;
+                throw new ToolError(outcome.code, `CMSIS '${action}' not attempted: ${outcome.reason}`, outcome.hint);
             }
             switchedFrom = active ?? '(none)';
             active = outcome.active;
@@ -456,12 +491,12 @@ export async function runCmsisAction(
 
     const command = ACTION_COMMANDS.get(action);
     if (command === undefined) {
-        throw new Error(`Unknown CMSIS action: ${action}`);
+        throw new ToolError('INVALID_ARGUMENT', `Unknown CMSIS action: ${action}`);
     }
 
     const waiter = isTaskAction(action) ? watchCmsisTask(host.taskFeed(), taskBudgetMs(effectiveMs), host) : undefined;
 
-    let failure: Error | undefined;
+    let failure: ToolError | undefined;
     let pending: Thenable<unknown>;
     try {
         pending = vscode.commands.executeCommand(command);
@@ -488,12 +523,15 @@ export async function runCmsisAction(
 
     if (SESSION_ACTIONS.has(action)) {
         if (!(await context.awaitLiveSession(SESSION_WAIT_MS))) {
-            return `CMSIS '${action}'${tag} issued via '${command}'. The flash/connect pipeline is running in the CMSIS extension `
-                + '(a multi-core flash + attach typically takes 20-40 s). This tool does not block for the whole pipeline — '
-                + 'poll get_session_status until it reports \'running\' or \'stopped\'. '
-                + 'If get_session_status keeps reporting \'no-session\' with liveSessionsInThisWindow=0, '
-                + 'the CMSIS panel is most likely showing a picker the user must resolve. '
-                + 'Less often, this call and the poll landed in different windows — check with list_debug_windows and pin one with select_debug_window.';
+            return {
+                text: `CMSIS '${action}'${tag} issued via '${command}'. The flash/connect pipeline is running in the CMSIS extension `
+                    + '(a multi-core flash + attach typically takes 20-40 s). This tool does not block for the whole pipeline — '
+                    + 'poll get_session_status until it reports \'running\' or \'stopped\'. '
+                    + 'If get_session_status keeps reporting \'no-session\' with liveSessionsInThisWindow=0, '
+                    + 'the CMSIS panel is most likely showing a picker the user must resolve. '
+                    + 'Less often, this call and the poll landed in different windows — check with list_debug_windows and pin one with select_debug_window.',
+                status: 'running',
+            };
         }
         const survival = await checkSurvival(executor, host);
         if (survival.stable) {
@@ -501,10 +539,11 @@ export async function runCmsisAction(
             return `CMSIS '${action}' completed${tag} — debug session survived the connect (${survival.detail}). `
                 + `State: ${context.renderFullState(state)}`;
         }
-        return `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${survival.detail}. `
-            + 'For \'attach\' this almost always means no GDB server is listening on the configured port: '
-            + 'start the GDB server first, or use \'load_and_debug\' (which launches one). '
-            + `Confirm with get_session_status / check_target_connection.${recentAdapterTraffic()}`;
+        throw new ToolError('TASK_FAILED',
+            `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${survival.detail}.`,
+            'For \'attach\' this almost always means no GDB server is listening on the configured port: '
+                + 'start the GDB server first, or use \'load_and_debug\' (which launches one). '
+                + `Confirm with get_session_status / check_target_connection.${recentAdapterTraffic()}`);
     }
 
     if (waiter) {

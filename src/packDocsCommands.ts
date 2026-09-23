@@ -26,6 +26,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { BookCategory, DocRef, UserScope, importUserDoc, resolveUserDocsDir } from './core/packDocs';
+import { errorText, textOf, toToolError } from './core/toolResult';
 import { PackDocsHandlers } from './packDocsDispatch';
 import { readPackDocsSettings } from './packDocsHost';
 import { PackDocsPanel } from './packDocsPanel';
@@ -45,7 +46,8 @@ export function registerPackDocsCommands(context: vscode.ExtensionContext, handl
     context.subscriptions.push(
         vscode.commands.registerCommand(`${CONFIG}.listTargetDocs`, async () => {
             logger.show();
-            logBlock('list_target_docs (command)', await docs.handleListTargetDocs({}), 200);
+            const listing = await docs.handleListTargetDocs({}).then(textOf, (failure: unknown) => errorText(toToolError(failure)));
+            logBlock('list_target_docs (command)', listing, 200);
         }),
 
         vscode.commands.registerCommand(`${CONFIG}.indexTargetDocs`, async () => {

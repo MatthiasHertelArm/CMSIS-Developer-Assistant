@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { collectUserDocs, globToRegex, importUserDoc, readManifest, resolveUserDocsDir, userDocId, userScopeDir } from '../core/packDocs/userDocs';
+import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
 import { FakeExtractor, buildWorld } from './packDocsHandler.test';
 
@@ -140,12 +141,12 @@ suite('userDocs', () => {
         fs.writeFileSync(path.join(root, 'Keil', 'STM32F7xx_DFP', 'docs.json'), JSON.stringify({ 'nda-manual.pdf': { title: 'NDA manual', category: 'manual', revision: 'Rev 1' } }));
         const host = { ...world.host, settings: () => ({ ...world.host.settings(), userDocsDir: root }) };
         const h = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['1 Secret\nUSART_CR1 UE bit', '2 More']) });
-        const list = await h.handleListTargetDocs({});
+        const list = textOf(await h.handleListTargetDocs({}));
         const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the temp dir has backslashes on Windows
         assert.match(list, new RegExp(`User documents \\(${escapedRoot}: Keil\\/STM32F7xx_DFP\\):\\n  user\\/keil\\/stm32f7xx-dfp\\/nda-manual · user \\[manual\\] · NDA manual · 1 kB, not indexed yet\\n`));
-        const search = await h.handleSearchTargetDocs({ query: 'USART_CR1', doc: 'nda-manual' });
+        const search = textOf(await h.handleSearchTargetDocs({ query: 'USART_CR1', doc: 'nda-manual' }));
         assert.match(search, /#1 user\/keil\/stm32f7xx-dfp\/nda-manual \[Rev 1\] p\.1 §1 Secret/);
-        const listed = await h.handleListTargetDocs({});
+        const listed = textOf(await h.handleListTargetDocs({}));
         assert.match(listed, /user\/keil\/stm32f7xx-dfp\/nda-manual · user \[manual\] · NDA manual · indexed Rev 1, 2 p/);
         assert.match(listed, /searchable \(2 in packs, 1 user, 2 in the workspace; /);
         const inspect = await h.inspectTarget({});

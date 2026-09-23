@@ -16,8 +16,9 @@
 
 /**
  * Texts about the debug session itself: why an inspection is refused in the
- * current state, what `get_session_status` reports, the recent adapter lines
- * appended to start failures, and the call-stack and thread listings.
+ * current state (with the code that refusal carries), what
+ * `get_session_status` reports, the recent adapter lines appended to start
+ * failures, and the call-stack and thread listings.
  *
  * `test/realboard/run.ts` reads `State: …` from the status and `frameId=N`
  * from the call stack; both stay in this form.
@@ -26,6 +27,7 @@
 import type { StackFrame } from '../debugState';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
 import { shortenPath, truncateList } from '../core/textBudget';
+import { ErrorCode, ToolError } from '../core/toolResult';
 import { getRecentDiagnostics } from '../utils/sessionStateTracker';
 
 export type SessionStatus = Awaited<ReturnType<IDebuggingExecutor['getSessionStatus']>>;
@@ -46,6 +48,15 @@ const REFUSAL_HINTS: Record<SessionState, string> = {
         + 'before issuing another inspection or step command.',
     unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm, then restart_debugging or stop_debugging.',
     stopped: 'Session reports stopped — please retry the operation.',
+};
+
+/** The code of the refusal in each state; `stopped` means the state changed while the gate looked. */
+const REFUSAL_CODES: Record<SessionState, ErrorCode> = {
+    'no-session': 'NO_SESSION',
+    initializing: 'NO_SESSION',
+    running: 'TARGET_RUNNING',
+    unresponsive: 'TIMEOUT',
+    stopped: 'INTERNAL',
 };
 
 /** The closing hint of `get_session_status`, by state. */
@@ -71,10 +82,13 @@ function statusHint(state: SessionState, liveSessions: number): string {
     }
 }
 
-/** Why `operation` needs a stopped target and the session is not in that state. */
-export function stoppedTargetRefusal(operation: string, state: SessionState): string {
-    return `Cannot ${operation}: session state is '${state}'. ${REFUSAL_HINTS[state]} `
-        + 'Use get_session_status for a definitive, never-failing classification.';
+/**
+ * Why `operation` needs a stopped target and the session is not in that
+ * state: the state's code, and the next action for that state as the hint.
+ */
+export function stoppedTargetRefusal(operation: string, state: SessionState): ToolError {
+    return new ToolError(REFUSAL_CODES[state], `Cannot ${operation}: session state is '${state}'.`,
+        `${REFUSAL_HINTS[state]} Use get_session_status for a definitive, never-failing classification.`);
 }
 
 /** The last adapter lines of the most recent session, as a suffix; empty when there are none. */

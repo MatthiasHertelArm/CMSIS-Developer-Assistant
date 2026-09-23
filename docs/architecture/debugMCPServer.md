@@ -94,11 +94,13 @@ factory, as in the transport tests, one `DebuggingHandler` with
 Every tool is registered through `MeasuredMcpServer`
 (`src/core/measuredMcpServer.ts`). It wraps each tool callback and records a
 `ToolSample` at the MCP boundary: tool name, argument and result bytes,
-duration, outcome and session id. The outcome is `ok`, `timeout` or `error`;
-`classifyOutcome()` in `src/core/toolMetrics.ts` also recognises the timeout
-and error texts that fenced tools return as normal results. Because the
-sample is taken at the boundary, it measures what the client experienced,
-forwarding to another window included.
+duration, outcome and session id. The outcome is `ok`, `timeout` or `error`.
+`classifyOutcome()` in `src/core/toolMetrics.ts` reads it from the result's
+status and `isError` first — an error with the code `TIMEOUT` or
+`WORKER_TIMEOUT` counts as a timeout, a `running` reply as ok — and only a
+result without either is judged by its wording, the way 2.3.10 texts were.
+Because the sample is taken at the boundary, it measures what the client
+experienced, forwarding to another window included.
 
 The sample goes into the session's ring of 200 samples. The ring's callback,
 `observe()`, adds it to the totals of the server instance (500 samples),
@@ -121,11 +123,14 @@ The server reports the name `cmsis-developer-assistant` and the version
 assembles the `instructions` of the initialize result from fixed sentences:
 what the tools are for, to invoke the `cmsis-debug-live` Agent Skill first and
 what it brings, `get_debug_instructions` for harnesses that load no skills,
-the 60 s cap on `timeoutMs`, and one sentence each for the documentation and
-build-artefact groups. While the documentation group is off, its sentence
-points to the setting instead; the build-artefact sentence appears only while
-that group is on. `src/test/debugSkillGuidance.test.ts` pins the phrases
-agents rely on.
+the 60 s cap on `timeoutMs`, how to read a result (`isError` and the
+`[CODE]` prefix; `timeout` and `running` are not failures), and one sentence
+each for the documentation and build-artefact groups. The sentence on
+results lives here rather than in the tool descriptions, so `tools/list`,
+which the client sends along every turn, does not grow. While the
+documentation group is off, its sentence points to the setting instead; the
+build-artefact sentence appears only while that group is on.
+`src/test/debugSkillGuidance.test.ts` pins the phrases agents rely on.
 
 ### Tools
 
@@ -133,9 +138,10 @@ agents rely on.
 (`mcp.registerTool('read_memory', …)`), its description from the `ABOUT`
 table, a zod input schema, and the annotations `LOOK_ONLY` or `ALTERS_TARGET`
 where they apply. Every callback passes the parsed arguments to one handler
-method and replies with that method's text as a single text item
-(`answer()`). Nothing is caught here: a thrown error becomes an `isError`
-result through the SDK, and the measurement counts it as an error.
+method and hands its outcome to `reply()`. Nothing is caught here: a
+rejection reaches `MeasuredMcpServer`, which answers it as an error result
+itself (see [Results](#results)). `src/packDocsTools.ts` and
+`src/buildInfoTools.ts` reply the same way.
 
 | Group | Registered when | Answered by |
 | ----- | --------------- | ----------- |
@@ -150,6 +156,30 @@ A router is recognised by its two extra methods (`windowRoutingOf()`), so this
 module does not import the routing code. Tool names stay literal because
 `src/test/skill.test.ts` collects them from the `registerTool('…'` calls and
 compares them with the `allowed-tools` list of the `cmsis-debug-live` skill.
+
+### Results
+
+A handler resolves with a `ToolText` — a plain string, or a `ToolReply`
+with a status — or rejects, normally with a `ToolError` that carries an
+error code, a message and a hint (`src/core/toolResult.ts`, #11).
+`toCallToolResult()` in `src/core/measuredMcpServer.ts` is the only place
+that turns this into an MCP result:
+
+| Outcome | Text | `isError` | `structuredContent` |
+| ------- | ---- | --------- | ------------------- |
+| string | the string | — | none |
+| reply `ok` | its text | — | `{status: 'ok', ...data}`, only with data |
+| reply `running` or `timeout` | its text | — | `{status, message, ...data}` |
+| `ToolError` | `[CODE] message`, the hint on the next line | `true` | `{status: 'error', error_code, message, hint, ...data}` |
+
+A plain `Error` gets a code from `classifyError()`, so the SDK's own error
+result, which would carry the message alone, is never used for a handler's
+failure; schema errors are raised by the SDK before the callback runs and
+stay its own. No tool declares an `outputSchema`: the SDK passes
+`structuredContent` through without one, and the tool list stays as it is.
+A plain success carries no `structuredContent`, for clients that might read
+it instead of the text. `get_session_status` appends its statistics to the
+text of the handler's outcome.
 
 ### Resources and shipped documents
 
@@ -182,7 +212,10 @@ whole guide is served and a warning is logged.
   `localSerialDispatch`
 - `src/debugTools.ts`: `buildSessionServer`, `composeInstructions`, `ABOUT`,
   `registerTools`, `registerResources`, `ShippedDocs`, `SHIPPED_RESOURCES`
-- `src/core/measuredMcpServer.ts` and `src/core/toolMetrics.ts`: measurement
+- `src/core/measuredMcpServer.ts` (`toCallToolResult`) and
+  `src/core/toolMetrics.ts`: the MCP result and measurement
+- `src/core/toolResult.ts`: `ToolText`, `ToolReply`, `ToolError`, the error
+  codes and their classification
 - `src/core/instructionTopics.ts`: topic markers of the guide
 - `src/windowCoordinator.ts`: builds the server in the window that wins the
   port
@@ -190,13 +223,17 @@ whole guide is served and a warning is logged.
 ## Tests
 
 - `src/test/debugMCPServer.test.ts`: the `Host` and `Origin` guards
+- `src/test/measuredMcpServer.test.ts`: every outcome as a client receives
+  it, and the metrics outcome
+- `src/test/toolResult.test.ts`: classification, wrapping, the reading of
+  2.3.10 texts
 - `src/test/debugSkillGuidance.test.ts`: instructions, tool descriptions and
   the guide send agents to the live debugger first
 - `src/test/instructionTopics.test.ts`: marker grammar and the shipped
   guide's topics
 - `test/transport/session-lifecycle.js`: sessions over real HTTP — session
   ids, the 400 answers, three consecutive `get_threads`, the 413 limit,
-  topics, statistics
+  topics, statistics, typed errors without a session, no `outputSchema`
 - `test/transport/surface-snapshot.js` (`npm run test:surface`): initialize
   result, tool list, resources and every tool's reply without a session,
   compared with `test/transport/surface.snapshot.json`

@@ -35,6 +35,16 @@ suite('Tool metrics', () => {
         assert.strictEqual(classifyOutcome('HardwareTimeoutError: readMemory exceeded 10000 ms'), 'timeout');
     });
 
+    test('reads the status and the error code first, the wording only without them', () => {
+        const cap = "'read_memory' did not complete within 100 ms (handler-level cap).";
+        assert.strictEqual(classifyOutcome('Target did not stop.', false, { status: 'timeout' }), 'timeout');
+        assert.strictEqual(classifyOutcome('still building', false, { status: 'running' }), 'ok');
+        assert.strictEqual(classifyOutcome(cap, false, { status: 'ok' }), 'ok', 'a status beats the wording');
+        assert.strictEqual(classifyOutcome(`[TIMEOUT] ${cap}`, true, { status: 'error', error_code: 'TIMEOUT' }), 'timeout');
+        assert.strictEqual(classifyOutcome('[WINDOW_UNREACHABLE] …', true, { status: 'error', error_code: 'WORKER_TIMEOUT' }), 'timeout');
+        assert.strictEqual(classifyOutcome('[TARGET_RUNNING] …', true, { status: 'error', error_code: 'TARGET_RUNNING' }), 'error');
+    });
+
     test('recognises fenced errors and the MCP isError flag; everything else is ok', () => {
         assert.strictEqual(classifyOutcome("Error in 'read_memory': No active debug session"), 'error');
         assert.strictEqual(classifyOutcome('all good', true), 'error');
