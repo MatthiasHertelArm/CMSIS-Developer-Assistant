@@ -18,7 +18,7 @@ Each file goes through two separate roles:
 Every rewrite commit is then checked:
 
 - **Behaviour-neutral.** `npm test`, `npm run test:transport` and `npm run test:surface` pass, and `node test/transport/dap-scenarios.js` replays 28 scripted debug sessions (every tool reply plus the adapter traffic). Either snapshot may change only where a `[REWORD]` string was rephrased, and those changes are listed in the commit message.
-- **Independent.** `npm run provenance:check -- --gate` reports at most three shared non-trivial lines for the rewritten file against DebugMCP `148cbb9a`, the last upstream state this project synced with.
+- **Independent.** `npm run provenance:check -- --gate` passes: every rewritten file, and every file created since the rewrite began, contains at most five distinct non-trivial lines found anywhere in DebugMCP's history (every text file of every commit up to `148cbb9a`, the last upstream state this project synced with). Independently written files of this repository measure 0–5 on the same filter.
 - **Header.** The file carries the Arm Apache-2.0 header only and leaves the list in [src/test/provenance.test.ts](../../src/test/provenance.test.ts).
 
 Known bugs are preserved on purpose, so that each rewrite is reviewable as behaviour-neutral. They are fixed afterwards in their own commits (#11, #12, #13, #46, #47 and the GDB `-exec` passthrough).
