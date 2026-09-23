@@ -40,3 +40,11 @@ Known bugs are preserved on purpose, so that each rewrite is reviewable as behav
 | `src/routingDebuggingHandler.ts` | 20 | 3 | [routingDebuggingHandler.md](specs/routingDebuggingHandler.md) |
 | `src/test/routing.test.ts` | 10 | 3 | [routingDebuggingHandler.md](specs/routingDebuggingHandler.md) |
 | `src/test/workspaceRegistry.test.ts` | 6 | 2 | [workspaceRegistry.md](specs/workspaceRegistry.md) |
+| `src/utils/debugConfigurationManager.ts` | 125 | 2 | [debugConfigurationManager.md](specs/debugConfigurationManager.md) |
+| `src/utils/agentConfigurationManager.ts` | 128 | 4 | [agentConfigurationManager.md](specs/agentConfigurationManager.md) |
+| `src/extension.ts` | 26 | 1 | [extension.md](specs/extension.md) |
+| `esbuild.js` | 18 | 1 | [build-config.md](specs/build-config.md) |
+| `eslint.config.mjs` | 6 | 0 | [build-config.md](specs/build-config.md) |
+| `.vscode-test.mjs` | 2 | 0 | [build-config.md](specs/build-config.md) |
+| `scripts/test-skill-trigger.ts` | 16 | 1 | [test-skill-trigger.md](specs/test-skill-trigger.md) |
+| `scripts/lib/copilotCli.ts` (Arm header only, but derived) | 12 | 2 | [copilotCli.md](specs/copilotCli.md) |

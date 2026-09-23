@@ -1,453 +1,330 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
-
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
-import * as jsonc from 'jsonc-parser';
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 /**
- * Interface for configuration management operations
+ * The debug configuration `start_debugging` runs.
+ *
+ * A CMSIS (`gdbtarget`) session is normally started by the name of an entry
+ * in the folder's `.vscode/launch.json`, without this module. The handler
+ * comes here when the agent names no configuration (the user then chooses
+ * one in a quick-pick) or names the sentinel `Default Configuration`. For the
+ * sentinel, and whenever a named entry cannot be used, a launch configuration
+ * is synthesized from the source file's extension: a heuristic for general,
+ * non-embedded debugging.
+ *
+ * `launch.json` is read through the VS Code document model, so edits that are
+ * not saved yet count, and parsed as JSONC: generated files carry comments
+ * and trailing commas. No YAML is read here; the `*.cbuild-run.yml` files
+ * belong to `core/cmsisTarget.ts` and `core/buildInfo/`.
+ *
+ * Nothing runs at load time and the constructor touches no `vscode` API: the
+ * transport tests construct this class under a minimal stub.
  */
-export interface IDebugConfigurationManager {
-    getDebugConfig(
-        workingDirectory: string, 
-        fileFullPath: string, 
-        configurationName?: string,
-        testName?: string
-    ): Promise<vscode.DebugConfiguration>;
-    promptForConfiguration(workingDirectory: string): Promise<string | undefined>;
-    detectLanguageFromFilePath(fileFullPath: string): string;
+
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { parse as parseJsonc } from 'jsonc-parser';
+import { logger } from './logger';
+
+/** The name that asks for a synthesized configuration. `DebuggingHandler` compares against the same text. */
+const AUTO_CONFIG_NAME = 'Default Configuration';
+
+/** Every configuration name built here starts with it; it is what VS Code shows as the session name. */
+const NAME_PREFIX = 'CMSIS Developer Assistant';
+
+const IN_TERMINAL = 'integratedTerminal';
+
+// The configuration quick-pick.
+const PICKER_TITLE = 'Choose Debug Configuration';
+const PICKER_PROMPT = 'Which launch configuration should the debug session use?';
+/** Label, and returned name, of an entry that has no `name`. */
+const NO_NAME = '(no name)';
+const AUTO_ITEM_NOTE = 'Beta: derive the settings from the file type automatically';
+const AUTO_ITEM_DETAIL = `${NAME_PREFIX} guesses the debugger and its settings from the source file's extension. The guess can be wrong for some projects.`;
+/** The rejection when the picker is closed without a choice; the handler passes it on to the agent. */
+const PICK_ABANDONED = 'The user closed the configuration picker without choosing a debug configuration';
+
+/** Lower-cased source extension → the VS Code debug type used for it. */
+const DEBUG_TYPES: ReadonlyMap<string, string> = new Map([
+    ['.py', 'python'],
+    ['.js', 'node'], ['.ts', 'node'], ['.jsx', 'node'], ['.tsx', 'node'],
+    ['.java', 'java'],
+    ['.cs', 'coreclr'],
+    ['.cpp', 'cppdbg'], ['.cc', 'cppdbg'], ['.c', 'cppdbg'],
+    ['.go', 'go'],
+    ['.rs', 'lldb'],
+    ['.php', 'php'],
+    ['.rb', 'ruby'],
+]);
+
+/** The type of every extension the table does not list, and of a file without one. */
+const FALLBACK_TYPE = 'python';
+
+/** One element of `configurations`, as far as this module looks into it. */
+interface LaunchEntry {
+    name?: string;
+    type?: string;
+    request?: string;
+    [field: string]: unknown;
+}
+
+type Fields = Record<string, unknown>;
+
+/**
+ * `<folder>/.vscode/launch.json`. Throws where the API has no `Uri.joinPath`
+ * (the transport tests' stub): the prompt lets that escape, the other
+ * readers treat it as "no file".
+ */
+function launchFileIn(folder: vscode.Uri): vscode.Uri {
+    return vscode.Uri.joinPath(folder, '.vscode', 'launch.json');
 }
 
 /**
- * Responsible for managing debug configurations and workspace detection
+ * The `configurations` array of a launch.json as the editor sees it, or `[]`
+ * when there is none (empty or broken text parses to no array). Rejects when
+ * the document cannot be opened.
  */
+async function launchEntries(file: vscode.Uri): Promise<LaunchEntry[]> {
+    const doc = await vscode.workspace.openTextDocument(file);
+    const tree = parseJsonc(doc.getText()) as { configurations?: unknown } | null | undefined;
+    const list = tree?.configurations;
+    return Array.isArray(list) ? list as LaunchEntry[] : [];
+}
+
+/** A launch request named `<prefix> <title>`; `type`, `request` and `name` come first. */
+function launchRequest(debugType: string, title: string, fields: Fields): vscode.DebugConfiguration {
+    return { type: debugType, request: 'launch', name: `${NAME_PREFIX} ${title}`, ...fields };
+}
+
+/** The base name without its extension: the Java main class. */
+function stem(source: string): string {
+    return path.basename(source, path.extname(source));
+}
+
+/** The program cppdbg launches: a lower-case `.c`, `.cc` or `.cpp` becomes `.exe`, on every OS. */
+function executableFor(source: string): string {
+    return source.replace(/\.(?:cpp|cc|c)$/, '.exe');
+}
+
+/** A tool installed in the workspace's `node_modules`; VS Code substitutes the variable. */
+function workspaceBin(tool: string): string {
+    return `\${workspaceFolder}/node_modules/.bin/${tool}`;
+}
+
+/** Run a file of the given debug type, no test filter. */
+function plainLaunch(debugType: string, source: string): vscode.DebugConfiguration {
+    const folder = path.dirname(source);
+    const asScript: Fields = { program: source, console: IN_TERMINAL, cwd: folder, env: {}, stopOnEntry: false };
+    switch (debugType) {
+        case 'node':
+            return launchRequest('pwa-node', 'Node.js Launch', asScript);
+        case 'java':
+            return launchRequest('java', 'Java Launch', { mainClass: stem(source), console: IN_TERMINAL, cwd: folder });
+        case 'coreclr':
+            return launchRequest('coreclr', '.NET Launch', { program: source, console: IN_TERMINAL, cwd: folder, stopAtEntry: false });
+        case 'cppdbg':
+            return launchRequest('cppdbg', 'C++ Launch', { program: executableFor(source), cwd: folder, console: IN_TERMINAL });
+        case 'go':
+            return launchRequest('go', 'Go Launch', { mode: 'debug', program: source, cwd: folder });
+        default:
+            // Python, and the types without a recipe of their own (lldb, php, ruby).
+            return launchRequest('python', 'Python Launch', asScript);
+    }
+}
+
+/**
+ * The unittest target of one Python test: `module.Test` when the name is
+ * already qualified, else `module.Class.Test` with the first capitalised
+ * `class` word anywhere in the file (comments included), else `module.Test`.
+ */
+async function unittestTarget(source: string, test: string): Promise<string> {
+    const fileName = path.basename(source);
+    const moduleName = fileName.endsWith('.py') ? fileName.slice(0, -3) : fileName;
+    if (test.includes('.')) {
+        return `${moduleName}.${test}`;
+    }
+    try {
+        const text = await fs.promises.readFile(source, 'utf8');
+        const found = /class\s+([A-Z][A-Za-z0-9_]*)/.exec(text);
+        if (found) {
+            return `${moduleName}.${found[1]}.${test}`;
+        }
+    } catch (failure) {
+        logger.warn(`Could not look for a test class in ${source}`, failure);
+    }
+    return `${moduleName}.${test}`;
+}
+
+/** Run one named test of a file. .NET never gets here: its test filter is not supported and is ignored. */
+async function singleTestLaunch(debugType: string, source: string, test: string): Promise<vscode.DebugConfiguration> {
+    const folder = path.dirname(source);
+    switch (debugType) {
+        case 'python': {
+            const target = await unittestTarget(source, test);
+            return launchRequest('python', `Python Test: ${test}`, {
+                module: 'unittest', args: [target, '-v'], console: IN_TERMINAL, cwd: folder, env: {},
+                stopOnEntry: false, justMyCode: false, purpose: ['debug-test'],
+            });
+        }
+        case 'node': {
+            const fileName = path.basename(source);
+            const jest = fileName.includes('.test.') || fileName.includes('.spec.');
+            const title = jest ? `Jest Test: ${test}` : `Mocha Test: ${test}`;
+            const runnerArgs = jest ? ['--testNamePattern', test, '--runInBand', source] : ['--grep', test, source];
+            return launchRequest('pwa-node', title, {
+                program: workspaceBin(jest ? 'jest' : 'mocha'), args: runnerArgs,
+                console: IN_TERMINAL, cwd: folder, env: {}, stopOnEntry: false,
+            });
+        }
+        case 'java': {
+            const mainClass = stem(source);
+            return launchRequest('java', `JUnit Test: ${test}`, {
+                mainClass, args: ['--tests', `${mainClass}.${test}`], console: IN_TERMINAL, cwd: folder,
+            });
+        }
+        default:
+            return launchRequest(debugType, `Launch (test filtering not supported for ${debugType})`, {
+                program: source, console: IN_TERMINAL, cwd: folder, stopOnEntry: false,
+            });
+    }
+}
+
+export interface IDebugConfigurationManager {
+    getDebugConfig(workDir: string, sourceFile: string, launchName?: string, testName?: string): Promise<vscode.DebugConfiguration>;
+    promptForConfiguration(workDir: string): Promise<string | undefined>;
+    detectLanguageFromFilePath(sourceFile: string): string;
+}
+
 export class DebugConfigurationManager implements IDebugConfigurationManager {
-    private static readonly AUTO_LAUNCH_CONFIG = 'Default Configuration';
 
-    /**
-     * Get or create a debug configuration for the given parameters
-     */
-    public async getDebugConfig(
-        workingDirectory: string,
-        fileFullPath: string,
-        configurationName?: string,
-        testName?: string
-    ): Promise<vscode.DebugConfiguration> {
-        if (configurationName === DebugConfigurationManager.AUTO_LAUNCH_CONFIG) {
-            return this.createDefaultDebugConfig(fileFullPath, workingDirectory, testName);
-        }
-
-        try {
-            // Look for launch.json in .vscode folder
-            const launchJsonPath = vscode.Uri.joinPath(vscode.Uri.file(workingDirectory), '.vscode', 'launch.json');
-            const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
-            const launchJsonContent = launchJsonDoc.getText();
-            
-            // Parse JSONC (JSON with comments and trailing commas) — CMSIS
-            // Solution generates launch.json with comments, and a // inside a
-            // string value (e.g. an https:// URL) breaks naive regex stripping.
-            const launchConfig = jsonc.parse(launchJsonContent);
-            
-            if (launchConfig.configurations && Array.isArray(launchConfig.configurations) && launchConfig.configurations.length > 0) {
-                // If a specific configuration name is provided, find it
-                if (configurationName) {
-                    const namedConfig = launchConfig.configurations.find((config: any) => 
-                        config.name === configurationName
-                    );
-                    if (namedConfig) {
-                        return {
-                            ...namedConfig,
-                            name: `CMSIS Developer Assistant Launch (${configurationName})`
-                        };
-                    }
-                    console.log(`No configuration named '${configurationName}' found in launch.json`);
-                }
-            }
-        } catch (launchJsonError) {
-            console.log('Could not read or parse launch.json:', launchJsonError);
-        }
-
-        // Fallback: always return a default configuration if nothing else matched
-        return this.createDefaultDebugConfig(fileFullPath, workingDirectory, testName);
+    /** The sentinel configuration name. */
+    static getAutoLaunchConfigName(): string {
+        return AUTO_CONFIG_NAME;
     }
 
     /**
-     * Prompt user to select a debug configuration
+     * The configuration to start for `sourceFile`: the `launch.json` entry
+     * called `launchName` (renamed for the session), or a synthesized one
+     * for the sentinel, an unknown name, a missing or broken file. The
+     * synthesized configuration runs in the file's own directory, whatever
+     * `workDir` is.
      */
-    public async promptForConfiguration(workingDirectory: string): Promise<string | undefined> {
+    async getDebugConfig(workDir: string, sourceFile: string, launchName?: string, testName?: string): Promise<vscode.DebugConfiguration> {
+        if (launchName !== AUTO_CONFIG_NAME) {
+            const named = await this.namedEntry(workDir, launchName);
+            if (named) {
+                return named;
+            }
+        }
+        const debugType = this.detectLanguageFromFilePath(sourceFile);
+        if (testName && debugType !== 'coreclr') {
+            return singleTestLaunch(debugType, sourceFile, testName);
+        }
+        return plainLaunch(debugType, sourceFile);
+    }
+
+    /**
+     * Let the user choose among the folder's `launch.json` entries and the
+     * sentinel, which is always offered last. Resolves the chosen label;
+     * rejects when the picker is closed without a choice.
+     */
+    async promptForConfiguration(workDir: string): Promise<string | undefined> {
         try {
-            // Look for launch.json in .vscode folder
-            const launchJsonPath = vscode.Uri.joinPath(vscode.Uri.file(workingDirectory), '.vscode', 'launch.json');
-            
-            let configurations: any[] = [];
-            
-            try {
-                const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
-                const launchJsonContent = launchJsonDoc.getText();
-                
-                // Parse JSONC (JSON with comments and trailing commas).
-                const launchConfig = jsonc.parse(launchJsonContent);
-                
-                if (launchConfig.configurations && Array.isArray(launchConfig.configurations)) {
-                    configurations = launchConfig.configurations;
-                }
-            } catch (launchJsonError) {
-                console.log('Could not read or parse launch.json:', launchJsonError);
-            }
-            
-            // Always show popup now - even when no configurations exist
-            const configOptions: vscode.QuickPickItem[] = [];
-            
-            // Add existing configurations if any
-            if (configurations.length > 0) {
-                configOptions.push(...configurations.map(config => ({
-                    label: config.name || 'Unnamed Configuration',
-                    description: config.type ? `Type: ${config.type}` : '',
-                    detail: config.request ? `Request: ${config.request}` : ''
-                })));
-            }
-            
-            // Add AUTO_LAUNCH_CONFIG at the end
-            configOptions.push({
-                label: DebugConfigurationManager.AUTO_LAUNCH_CONFIG,
-                description: 'Use auto-detected default configuration (beta)',
-                detail: 'CMSIS Developer Assistant will create a default configuration based on file extension. This is a heuristic and may not always work as expected.'
+            // Built before the read's own error handling on purpose: a failure here reaches the caller.
+            const file = launchFileIn(vscode.Uri.file(workDir));
+            const entries = await launchEntries(file).catch((failure: unknown): LaunchEntry[] => {
+                logger.warn(`No configurations to offer from ${file.fsPath}`, failure);
+                return [];
             });
-            
-            // Show quick pick to user
-            const selected = await vscode.window.showQuickPick(configOptions, {
-                placeHolder: 'Select a debug configuration to use',
-                title: 'Choose Debug Configuration'
-            });
-            
-            if (!selected) {
-                // User cancelled the selection
-                throw new Error('Debug configuration selection cancelled by user');
+            const items: vscode.QuickPickItem[] = entries.map((entry) => ({
+                label: entry.name || NO_NAME,
+                description: entry.type ? `Debugger type: ${entry.type}` : '',
+                detail: entry.request ? `Request kind: ${entry.request}` : '',
+            }));
+            items.push({ label: AUTO_CONFIG_NAME, description: AUTO_ITEM_NOTE, detail: AUTO_ITEM_DETAIL });
+            const picked = await vscode.window.showQuickPick(items, { placeHolder: PICKER_PROMPT, title: PICKER_TITLE });
+            if (!picked) {
+                throw new Error(PICK_ABANDONED);
             }
-                        
-            return selected.label;
-        } catch (error) {
-            console.log('Error prompting for configuration:', error);
-            throw error;
+            return picked.label;
+        } catch (failure) {
+            logger.error('Choosing a debug configuration failed', failure);
+            throw failure;
         }
     }
 
-    /**
-     * Detect programming language from file extension
-     */
-    public detectLanguageFromFilePath(fileFullPath: string): string {
-        const extension = path.extname(fileFullPath).toLowerCase();
-        
-        const languageMap: { [key: string]: string } = {
-            '.py': 'python',
-            '.js': 'node',
-            '.ts': 'node',
-            '.jsx': 'node',
-            '.tsx': 'node',
-            '.java': 'java',
-            '.cs': 'coreclr',
-            '.cpp': 'cppdbg',
-            '.cc': 'cppdbg',
-            '.c': 'cppdbg',
-            '.go': 'go',
-            '.rs': 'lldb',
-            '.php': 'php',
-            '.rb': 'ruby'
-        };
-
-        return languageMap[extension] || 'python'; // Default to python if unknown
+    /** The debug type for a source file, from its extension; unknown or none means Python. */
+    detectLanguageFromFilePath(sourceFile: string): string {
+        return DEBUG_TYPES.get(path.extname(sourceFile).toLowerCase()) ?? FALLBACK_TYPE;
     }
 
     /**
-     * Create a default debug configuration based on file type
+     * True when the folder has a file-system path. A missing folder or URI is
+     * returned as it is (`undefined`, `null`) rather than as `false`.
      */
-    private async createDefaultDebugConfig(
-        fileFullPath: string, 
-        workingDirectory: string,
-        testName?: string
-    ): Promise<vscode.DebugConfiguration> {
-        const detectedLanguage = this.detectLanguageFromFilePath(fileFullPath);
-        const cwd = path.dirname(fileFullPath);
-        
-        // Build test-specific configurations based on language
-        if (testName && detectedLanguage !== 'coreclr') {
-            return await this.createTestDebugConfig(detectedLanguage, fileFullPath, cwd, testName);
-        }
-
-        const configs: { [key: string]: vscode.DebugConfiguration } = {
-            python: {
-                type: 'python',
-                request: 'launch',
-                name: 'CMSIS Developer Assistant Python Launch',
-                program: fileFullPath,
-                console: 'integratedTerminal',
-                cwd: cwd,
-                env: {},
-                stopOnEntry: false
-            },
-            node: {
-                type: 'pwa-node',
-                request: 'launch',
-                name: 'CMSIS Developer Assistant Node.js Launch',
-                program: fileFullPath,
-                console: 'integratedTerminal',
-                cwd: cwd,
-                env: {},
-                stopOnEntry: false
-            },
-            java: {
-                type: 'java',
-                request: 'launch',
-                name: 'CMSIS Developer Assistant Java Launch',
-                mainClass: path.basename(fileFullPath, path.extname(fileFullPath)),
-                console: 'integratedTerminal',
-                cwd: cwd
-            },
-            coreclr: {
-                type: 'coreclr',
-                request: 'launch',
-                name: 'CMSIS Developer Assistant .NET Launch',
-                program: fileFullPath,
-                console: 'integratedTerminal',
-                cwd: cwd,
-                stopAtEntry: false
-            },
-            cppdbg: {
-                type: 'cppdbg',
-                request: 'launch',
-                name: 'CMSIS Developer Assistant C++ Launch',
-                program: fileFullPath.replace(/\.(cpp|cc|c)$/, '.exe'),
-                cwd: cwd,
-                console: 'integratedTerminal'
-            },
-            go: {
-                type: 'go',
-                request: 'launch',
-                name: 'CMSIS Developer Assistant Go Launch',
-                mode: 'debug',
-                program: fileFullPath,
-                cwd: cwd
-            }
-        };
-
-        return configs[detectedLanguage] || configs.python; // Fallback to Python if unknown
-    }
-
-    /**
-     * Validate if a workspace has the necessary setup for debugging
-     */
-    public validateWorkspace(workspaceFolder: vscode.WorkspaceFolder): boolean {
+    validateWorkspace(folder: vscode.WorkspaceFolder): boolean {
         try {
-            // Basic validation - workspace folder exists
-            return workspaceFolder && workspaceFolder.uri && workspaceFolder.uri.fsPath.length > 0;
-        } catch (error) {
-            console.log('Workspace validation error:', error);
+            return (folder && folder.uri && typeof folder.uri.fsPath === 'string' && folder.uri.fsPath.length > 0) as boolean;
+        } catch (failure) {
+            logger.warn('Could not validate the workspace folder', failure);
             return false;
         }
     }
 
-    /**
-     * Get available configurations from launch.json
-     */
-    public async getAvailableConfigurations(workspaceFolder: vscode.WorkspaceFolder): Promise<string[]> {
+    /** The entry names of the folder's `launch.json`, in file order; `[]` when there are none or it cannot be read. */
+    async getAvailableConfigurations(folder: vscode.WorkspaceFolder): Promise<string[]> {
         try {
-            const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
-            const launchJsonDoc = await vscode.workspace.openTextDocument(launchJsonPath);
-            const launchJsonContent = launchJsonDoc.getText();
-            
-            // Parse JSONC (JSON with comments and trailing commas) — CMSIS
-            // Solution generates launch.json with comments, and a // inside a
-            // string value (e.g. an https:// URL) breaks naive regex stripping.
-            const launchConfig = jsonc.parse(launchJsonContent);
-            
-            if (launchConfig.configurations && Array.isArray(launchConfig.configurations)) {
-                return launchConfig.configurations.map((config: any) => config.name || 'Unnamed Configuration');
-            }
-            
-            return [];
-        } catch (error) {
-            console.log('Could not read available configurations:', error);
+            const entries = await launchEntries(launchFileIn(folder.uri));
+            return entries.map((entry) => entry.name || NO_NAME);
+        } catch (failure) {
+            logger.warn('Could not list the launch configurations', failure);
             return [];
         }
     }
 
-    /**
-     * Check if launch.json exists in the workspace
-     */
-    public async hasLaunchJson(workspaceFolder: vscode.WorkspaceFolder): Promise<boolean> {
+    async hasLaunchJson(folder: vscode.WorkspaceFolder): Promise<boolean> {
         try {
-            const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
-            await vscode.workspace.openTextDocument(launchJsonPath);
+            await vscode.workspace.openTextDocument(launchFileIn(folder.uri));
             return true;
-        } catch (error) {
+        } catch {
             return false;
         }
     }
 
-    /**
-     * Extract the class name from a Python test file
-     * Assumes only one test class per file
-     */
-    private async extractPythonClassName(fileFullPath: string): Promise<string | null> {
+    /** The named entry of `<workDir>/.vscode/launch.json`, renamed; `undefined` when there is none to use. */
+    private async namedEntry(workDir: string, launchName: string | undefined): Promise<vscode.DebugConfiguration | undefined> {
         try {
-            const content = await fs.promises.readFile(fileFullPath, 'utf8');
-            // Match Python class definition: class ClassName or class ClassName(BaseClass)
-            // Looks for classes starting with capital letter (test classes typically follow this pattern)
-            const classMatch = content.match(/class\s+([A-Z][a-zA-Z0-9_]*)/);
-            return classMatch ? classMatch[1] : null;
-        } catch (error) {
-            console.log('Error extracting class name from Python file:', error);
-            return null;
+            const entries = await launchEntries(launchFileIn(vscode.Uri.file(workDir)));
+            if (entries.length === 0) {
+                logger.info(`${workDir}/.vscode/launch.json lists no configurations; synthesizing one`);
+                return undefined;
+            }
+            if (!launchName) {
+                return undefined;
+            }
+            const entry = entries.find((candidate) => candidate.name === launchName);
+            if (!entry) {
+                logger.warn(`${workDir} has no launch configuration named "${launchName}"; synthesizing one`);
+                return undefined;
+            }
+            return { ...entry, name: `${NAME_PREFIX} Launch (${launchName})` } as vscode.DebugConfiguration;
+        } catch (failure) {
+            logger.warn(`Could not read the launch configurations of ${workDir}; synthesizing one`, failure);
+            return undefined;
         }
-    }
-
-    /**
-     * Format Python test name by auto-detecting class name if needed
-     * Supports both class-based tests and standalone test functions
-     */
-    private async formatPythonTestName(fileFullPath: string, testName: string): Promise<string> {
-        const moduleName = path.basename(fileFullPath, '.py');
-        
-        // If testName already contains a dot, assume it's in ClassName.method format
-        if (testName.includes('.')) {
-            return `${moduleName}.${testName}`;
-        }
-        
-        // Otherwise, try to extract the class name from the file
-        const className = await this.extractPythonClassName(fileFullPath);
-        if (className) {
-            // Found a class, format as module.ClassName.testMethod
-            return `${moduleName}.${className}.${testName}`;
-        }
-        
-        // No class found, assume it's a standalone test function
-        return `${moduleName}.${testName}`;
-    }
-
-    /**
-     * Create a debug configuration specifically for running tests
-     */
-    private async createTestDebugConfig(
-        language: string,
-        fileFullPath: string,
-        cwd: string,
-        testName: string
-    ): Promise<vscode.DebugConfiguration> {
-        const fileName = path.basename(fileFullPath);
-
-        switch (language) {
-            case 'python':
-                // Auto-detect class name and format test name appropriately
-                const formattedTestName = await this.formatPythonTestName(fileFullPath, testName);
-                
-                return {
-                    type: 'python',
-                    request: 'launch',
-                    name: `CMSIS Developer Assistant Python Test: ${testName}`,
-                    module: 'unittest',
-                    args: [
-                        formattedTestName,
-                        '-v'
-                    ],
-                    console: 'integratedTerminal',
-                    cwd: cwd,
-                    env: {},
-                    stopOnEntry: false,
-                    justMyCode: false,
-                    purpose: ['debug-test']
-                };
-
-            case 'node':
-                // Support for Jest, Mocha, and other Node.js test frameworks
-                // Try to detect which test framework based on common patterns
-                const isJest = fileName.includes('.test.') || fileName.includes('.spec.');
-                
-                if (isJest) {
-                    // Jest configuration
-                    return {
-                        type: 'pwa-node',
-                        request: 'launch',
-                        name: `CMSIS Developer Assistant Jest Test: ${testName}`,
-                        program: '${workspaceFolder}/node_modules/.bin/jest',
-                        args: [
-                            '--testNamePattern', testName,
-                            '--runInBand',
-                            fileFullPath
-                        ],
-                        console: 'integratedTerminal',
-                        cwd: cwd,
-                        env: {},
-                        stopOnEntry: false
-                    };
-                } else {
-                    // Mocha configuration
-                    return {
-                        type: 'pwa-node',
-                        request: 'launch',
-                        name: `CMSIS Developer Assistant Mocha Test: ${testName}`,
-                        program: '${workspaceFolder}/node_modules/.bin/mocha',
-                        args: [
-                            '--grep', testName,
-                            fileFullPath
-                        ],
-                        console: 'integratedTerminal',
-                        cwd: cwd,
-                        env: {},
-                        stopOnEntry: false
-                    };
-                }
-
-            case 'java':
-                // JUnit test configuration
-                const className = path.basename(fileFullPath, path.extname(fileFullPath));
-                return {
-                    type: 'java',
-                    request: 'launch',
-                    name: `CMSIS Developer Assistant JUnit Test: ${testName}`,
-                    mainClass: className,
-                    args: ['--tests', `${className}.${testName}`],
-                    console: 'integratedTerminal',
-                    cwd: cwd
-                };
-
-            case 'coreclr':
-                // .NET test configuration (supports xUnit, NUnit, MSTest)
-                return {
-                    type: 'coreclr',
-                    request: 'launch',
-                    name: `CMSIS Developer Assistant .NET Test: ${testName}`,
-                    program: 'dotnet',
-                    args: [
-                        'test',
-                        '--filter', `FullyQualifiedName~${testName}`,
-                        '--no-build'
-                    ],
-                    console: 'integratedTerminal',
-                    cwd: cwd,
-                    stopAtEntry: false
-                };
-
-            default:
-                // For unsupported languages, fall back to running the entire file
-                // but include a warning in the name
-                return {
-                    type: language,
-                    request: 'launch',
-                    name: `CMSIS Developer Assistant Launch (test filtering not supported for ${language})`,
-                    program: fileFullPath,
-                    console: 'integratedTerminal',
-                    cwd: cwd,
-                    stopOnEntry: false
-                };
-        }
-    }
-
-    /**
-     * Get the auto launch configuration name
-     */
-    public static getAutoLaunchConfigName(): string {
-        return DebugConfigurationManager.AUTO_LAUNCH_CONFIG;
     }
 }
