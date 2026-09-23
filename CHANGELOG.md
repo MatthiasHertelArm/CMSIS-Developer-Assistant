@@ -4,7 +4,7 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.5.0] - 2026-09-23
 
 ### Changed
 - **The code that still derived from microsoft/DebugMCP is replaced by independently written code (#53).** The files are the MCP server, the debugging handler and executor, the debug state, secret redaction, the logger, the multi-window control server, registry and router, both configuration managers, extension activation, the esbuild/ESLint/test-runner configs and the skill-trigger scripts. Each was rewritten from a behaviour specification by an implementer who did not see the previous version. [docs/provenance/](docs/provenance/README.md) records the method, the specifications and the per-file result: at most five lines of any rewritten file occur anywhere in DebugMCP's history, and those are declarations the exported names dictate. No source file carries the Microsoft copyright line any more.
