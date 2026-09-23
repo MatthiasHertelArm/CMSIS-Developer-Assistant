@@ -50,3 +50,24 @@ same code path the extension uses — and drives the router over MCP:
 Note: requests use `agent: false`. `server.close()` stops new connections but
 leaves keep-alive sockets open, so a pooled socket to the disposed router would
 otherwise be reused after failover and reset.
+
+## What `dap-scenarios.js` covers
+
+A behaviour oracle for the rewrite (issue #53). It drives the real
+single-window server against a scripted `gdbtarget` session and compares with
+`dap-scenarios.snapshot.json`; `--update` rewrites the snapshot and
+`--only=<name>` prints one scenario. About 40 s, no window, network or probe.
+
+Each of the 28 scenarios gets a fresh server and fake session (pyOCD or J-Link
+launch/attach configuration, cbuild-run file, SVD under a fake pack root) and
+records, per tool call, the reply and its traffic: DAP requests with the
+scripted answer, VS Code commands, breakpoint and start/stop API calls, and
+the adapter events. The stub extensions live in the harness; `vscode-stub.js`
+is unchanged.
+
+The scripted adapter answers as cdt-gdb-adapter does today, bugs included:
+an evaluate of `-exec <cmd>` is an expression to it, so every `-exec break`,
+`dprintf`, `clear`, `delete` and `monitor reset` comes back as the result
+"Error: could not evaluate expression" and does nothing; GDB prints `$lr` as
+an int, so EXC_RETURN reads "-7". The header of the harness lists the other
+fidelity choices.

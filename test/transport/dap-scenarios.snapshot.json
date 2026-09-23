@@ -1,0 +1,1719 @@
+{
+  "format": 1,
+  "scenarios": [
+    {
+      "name": "status-halted",
+      "description": "pyOCD launch halted at a breakpoint in main: status, connection probe, device info.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "check_target_connection",
+          "args": {},
+          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: OK (<n>ms)\nTarget state: stopped — full inspection is available.",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_device_info",
+          "args": {},
+          "text": "=== Debug Session Info ===\n  Session name: CMSIS Debugger: pyOCD\n  Debug type: gdbtarget\n  Program: <tmp>/project/out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf\n  GDB: arm-none-eabi-gdb\n  Server: pyocd\n  Port: 3333\n  cbuild-run: <tmp>/project/out/Blinky+NUCLEO-F401RE.cbuild-run.yml\n  CMSIS target: NUCLEO-F401RE",
+          "traffic": [
+            "command: cmsis-csolution.getActiveTargetSet"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "call-stack-and-threads",
+      "description": "RTX5 target with three threads, halted in led_toggle: call stacks (default, levels, other thread, deep thread) and thread list.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_call_stack",
+          "args": {},
+          "text": "Call stack (2 frames):\n  # 0  led_toggle  @ led.c:18 [frameId=1000]\n  # 1  main  @ main.c:31 [frameId=1001]\n\nTip: use get_frame_variables with a frameId to inspect variables of a specific frame.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_call_stack",
+          "args": {
+            "levels": 1
+          },
+          "text": "Call stack (1 frame):\n  # 0  led_toggle  @ led.c:18 [frameId=1000]\n\nTip: use get_frame_variables with a frameId to inspect variables of a specific frame.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":1}"
+          ]
+        },
+        {
+          "tool": "get_call_stack",
+          "args": {
+            "threadId": 2
+          },
+          "text": "Call stack (1 frame):\n  # 0  osRtxIdleThread  @ <tmp>/packs/ARM/CMSIS-RTX/5.9.0/Source/rtx_lib.c:546 [frameId=1100]\n\nTip: use get_frame_variables with a frameId to inspect variables of a specific frame.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":2,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_call_stack",
+          "args": {
+            "threadId": 3
+          },
+          "text": "Call stack (25 frames):\n  # 0  parse_node  @ sensor.c:41 [frameId=1200]\n  # 1  parse_node  @ sensor.c:44 [frameId=1201]\n  # 2  parse_node  @ sensor.c:41 [frameId=1202]\n  # 3  parse_node  @ sensor.c:44 [frameId=1203]\n  # 4  parse_node  @ sensor.c:41 [frameId=1204]\n  # 5  parse_node  @ sensor.c:44 [frameId=1205]\n  # 6  parse_node  @ sensor.c:41 [frameId=1206]\n  # 7  parse_node  @ sensor.c:44 [frameId=1207]\n  # 8  parse_node  @ sensor.c:41 [frameId=1208]\n  # 9  parse_node  @ sensor.c:44 [frameId=1209]\n  #10  parse_node  @ sensor.c:41 [frameId=1210]\n  #11  parse_node  @ sensor.c:44 [frameId=1211]\n  #12  parse_node  @ sensor.c:41 [frameId=1212]\n  #13  parse_node  @ sensor.c:44 [frameId=1213]\n  #14  parse_node  @ sensor.c:41 [frameId=1214]\n  #15  parse_node  @ sensor.c:44 [frameId=1215]\n  #16  parse_node  @ sensor.c:41 [frameId=1216]\n  #17  parse_node  @ sensor.c:44 [frameId=1217]\n  #18  parse_node  @ sensor.c:41 [frameId=1218]\n  #19  parse_node  @ sensor.c:44 [frameId=1219]\n  … 5 more frames — pass levels to see all\n\nTip: use get_frame_variables with a frameId to inspect variables of a specific frame.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":3,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_call_stack",
+          "args": {
+            "threadId": 9
+          },
+          "text": "Error in 'get_call_stack': Invalid thread id: 9",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":9,\"startFrame\":0,\"levels\":50} -> error: \"Invalid thread id: 9\""
+          ]
+        },
+        {
+          "tool": "get_threads",
+          "args": {},
+          "text": "Threads / RTOS tasks (3):\n  [1] app_main (Running; Priority 24)  → led_toggle @ led.c:18\n  [2] osRtxIdleThread (Ready; Priority 1)  → osRtxIdleThread @ <tmp>/packs/ARM/CMSIS-RTX/5.9.0/Source/rtx_lib.c:546\n  [3] sensor_task (Waiting; Priority 24)  → parse_node @ sensor.c:41\n\nTip: pass a threadId to get_call_stack to inspect a specific task.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":1}",
+            "dap: stackTrace {\"threadId\":2,\"startFrame\":0,\"levels\":1}",
+            "dap: stackTrace {\"threadId\":3,\"startFrame\":0,\"levels\":1}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "variables",
+      "description": "Halted in led_toggle (caller main has a struct, arrays and secret-named locals): the adapter has Local and Registers scopes only.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "list_variable_names",
+          "args": {},
+          "text": "Variables in scope (names and types only — use get_variables_values to read values):\n\nLocal:\n  mask: uint32_t\n\nRegisters:\n  r0\n  r1\n  r2\n  r3\n  r4\n  r5\n  r6\n  r7\n  r8\n  r9\n  r10\n  r11\n  r12\n  sp\n  lr\n  pc\n  xpsr\n  msp\n  psp\n  primask\n  basepri\n  faultmask\n  control\n\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1000}",
+            "dap: variables {\"variablesReference\":2000}",
+            "dap: variables {\"variablesReference\":2001}"
+          ]
+        },
+        {
+          "tool": "list_variable_names",
+          "args": {
+            "scope": "local"
+          },
+          "text": "Variables in scope (names and types only — use get_variables_values to read values):\n\nLocal:\n  mask: uint32_t\n\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1000}",
+            "dap: variables {\"variablesReference\":2000}"
+          ]
+        },
+        {
+          "tool": "get_variables_values",
+          "args": {},
+          "text": "Variables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000276\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1000}",
+            "dap: variables {\"variablesReference\":2000}",
+            "dap: variables {\"variablesReference\":2001}"
+          ]
+        },
+        {
+          "tool": "get_variables_values",
+          "args": {
+            "variableNames": [
+              "mask",
+              "counter"
+            ]
+          },
+          "text": "Variables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\n\n⚠️ Not found in the requested scope(s): counter. Call list_variable_names to see what is actually in scope, or use evaluate_expression for globals and struct members that are not top-level locals.\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1000}",
+            "dap: variables {\"variablesReference\":2000}",
+            "dap: variables {\"variablesReference\":2001}"
+          ]
+        },
+        {
+          "tool": "get_variables_values",
+          "args": {
+            "variableNames": [
+              "counter"
+            ]
+          },
+          "text": "None of the requested variables are in scope: counter.\nCall list_variable_names to see what is available here.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1000}",
+            "dap: variables {\"variablesReference\":2000}",
+            "dap: variables {\"variablesReference\":2001}"
+          ]
+        },
+        {
+          "tool": "get_variables_values",
+          "args": {
+            "scope": "global"
+          },
+          "text": "Note: No dedicated \"Global\" scope is available from this debug adapter. Showing all available scopes instead. Use evaluate_expression to inspect specific global variables by name.\n\nVariables:\n==========\n\nLocal:\n  mask: 32 (uint32_t)\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000276\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1000}",
+            "dap: scopes {\"frameId\":1000}",
+            "dap: variables {\"variablesReference\":2000}",
+            "dap: variables {\"variablesReference\":2001}"
+          ]
+        },
+        {
+          "tool": "get_frame_variables",
+          "args": {
+            "frameId": 1001
+          },
+          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  ledState: true (_Bool)\n  buffer: \"Hello, Cortex-M!\" (char [16])\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000302\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\nNOTE: values matching '<redacted: possible secret>' were withheld because their name or content looks like a credential (key, token, password, connection string, ...). Use debug-specific checks (type, length, is-null) instead of reading the raw value. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1001}",
+            "dap: variables {\"variablesReference\":2002}",
+            "dap: variables {\"variablesReference\":2003}"
+          ]
+        },
+        {
+          "tool": "get_frame_variables",
+          "args": {
+            "frameId": 1001,
+            "variableNames": [
+              "config",
+              "password",
+              "api_key"
+            ]
+          },
+          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were withheld because their name or content looks like a credential (key, token, password, connection string, ...). Use debug-specific checks (type, length, is-null) instead of reading the raw value. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1001}",
+            "dap: variables {\"variablesReference\":2002}",
+            "dap: variables {\"variablesReference\":2003}"
+          ]
+        },
+        {
+          "tool": "get_frame_variables",
+          "args": {
+            "frameId": 1001,
+            "scope": "local",
+            "variableNames": [
+              "nosuch"
+            ]
+          },
+          "text": "None of the requested variables are in scope at frameId=1001: nosuch.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1001}",
+            "dap: variables {\"variablesReference\":2002}"
+          ]
+        },
+        {
+          "tool": "get_frame_variables",
+          "args": {
+            "frameId": 1077
+          },
+          "text": "Variables for frameId=1077:\n==========\n\nLocal:\n  No variables in this scope\n\nRegisters:\n  No variables in this scope\n\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: scopes {\"frameId\":1077}",
+            "dap: variables {\"variablesReference\":2154}",
+            "dap: variables {\"variablesReference\":2155}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "evaluate",
+      "description": "Halted in main: symbols, arithmetic, format suffix, struct, secret-named pointer and array, unknown symbol, and GDB passthrough both ways (-exec is evaluated as an expression, > is a CLI command whose output goes to the console only).",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "SystemCoreClock"
+          },
+          "text": "Expression: SystemCoreClock\nResult: 84000000 (uint32_t)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"SystemCoreClock\",\"frameId\":1000,\"context\":\"repl\"} -> \"84000000\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "counter * 2"
+          },
+          "text": "Expression: counter * 2\nResult: 84 (unsigned long)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"counter * 2\",\"frameId\":1000,\"context\":\"repl\"} -> \"84\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "counter,x"
+          },
+          "text": "Expression: counter,x\nResult: 0x2a (volatile uint32_t)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"counter,x\",\"frameId\":1000,\"context\":\"repl\"} -> \"0x2a\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "config"
+          },
+          "text": "Expression: config\nResult: {...} (led_config_t)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"config\",\"frameId\":1000,\"context\":\"repl\"} -> \"{...}\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "password"
+          },
+          "text": "Expression: password\nResult: 0x8000f10 \"hunter2\" (const char *)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"password\",\"frameId\":1000,\"context\":\"repl\"} -> \"0x8000f10 \\\"hunter2\\\"\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "api_key"
+          },
+          "text": "Expression: api_key\nResult: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were withheld because their name or content looks like a credential (key, token, password, connection string, ...). Use debug-specific checks (type, length, is-null) instead of reading the raw value. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"api_key\",\"frameId\":1000,\"context\":\"repl\"} -> \"\\\"AK-7f3a9c21e0b4\\\"\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "nosuch_symbol"
+          },
+          "text": "Expression: nosuch_symbol\nResult: Error: could not evaluate expression",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"nosuch_symbol\",\"frameId\":1000,\"context\":\"repl\"} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec info registers"
+          },
+          "text": "Expression: -exec info registers\nResult: Error: could not evaluate expression",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"-exec info registers\",\"frameId\":1000,\"context\":\"repl\"} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": ">info registers"
+          },
+          "text": "Expression: >info registers\nResult: \r",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">info registers\",\"frameId\":1000,\"context\":\"repl\"} -> \"\\r\"",
+            "event: output [stdout] \"(gdb) info registers\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "$pc"
+          },
+          "text": "Expression: $pc\nResult: 0x80002fe <main+22> (void (*)())",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"$pc\",\"frameId\":1000,\"context\":\"repl\"} -> \"0x80002fe <main+22>\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "read-memory",
+      "description": "Halted: DAP readMemory in hex / ascii / both, an address without 0x, and an unmapped address where readMemory fails and every GDB fallback fails too.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000000",
+            "length": 16
+          },
+          "text": "Memory at 0x20000000 (16 bytes):\n\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20000000\",\"count\":16} -> 16 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "20000000",
+            "length": 20,
+            "format": "ascii"
+          },
+          "text": "Memory at 0x20000000 (20 bytes):\n\nASCII:\n  Hello, Cortex-M!*...\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20000000\",\"count\":20} -> 20 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000000",
+            "length": 70,
+            "format": "both"
+          },
+          "text": "Memory at 0x20000000 (70 bytes):\n\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 2a 00 00 00 55 41 52 54 32 20 72 65 61 64 79 0d\n  0x20000020: 0a 00 00 00 ef be ad de 54 68 65 20 71 75 69 63\n  0x20000030: 6b 20 62 72 6f 77 6e 20 66 6f 78 20 6a 75 6d 70\n  0x20000040: 73 20 6f 76 65 72\n\nASCII:\n  Hello, Cortex-M!*...UART2 ready.........The quick brown fox jump\n  s over\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20000000\",\"count\":70} -> 70 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x60000000",
+            "length": 8
+          },
+          "text": "Error in 'read_memory': Failed to read memory at 0x60000000 — all GDB strategies exhausted",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x60000000\",\"count\":8} -> error: \"Unable to read memory. (@ 0x60000000)\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0x60000000\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
+            "dap: evaluate {\"expression\":\"-exec x/1xw 0x60000000\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: evaluate {\"expression\":\"-exec print/x *(unsigned int*)0x60000000\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "read-memory-gdb-fallback",
+      "description": "An adapter without readMemory (\"unrecognized request\"): the executor falls back to one watch-context evaluate per word and trims to the length.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000010",
+            "length": 6,
+            "format": "both"
+          },
+          "text": "Memory at 0x20000010 (6 bytes):\n\nHex:\n  0x20000010: 2a 00 00 00 55 41\n\nASCII:\n  *...UA\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20000010\",\"count\":6} -> error: \"unrecognized request\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0x20000010\",\"context\":\"watch\",\"frameId\":1000} -> \"42\"",
+            "dap: evaluate {\"expression\":\"*(unsigned int*)0x20000014\",\"context\":\"watch\",\"frameId\":1000} -> \"1414676821\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "core-registers",
+      "description": "Halted in main: every core register through a watch-context $reg evaluate.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_core_registers",
+          "args": {},
+          "text": "Core Registers:\n  r0  = 0x0000002a    r1  = 0x40020000    r2  = 0x00000020    r3  = 0x20000010    \n  r4  = 0x000001f4    r5  = 0x00000000    r6  = 0x00000000    r7  = 0x20017fd0    \n  r8  = 0x00000000    r9  = 0x00000000    r10 = 0x00000000    r11 = 0x00000000    \n  r12 = 0x08000f10    sp  = 0x20017fd0    lr  = 0x080001b1    pc  = 0x80002fe     \n  xpsr = 1627389952\n  msp  = 0x20017fd0\n  psp  = 0x0\n  control   = 0\n  faultmask = 0x00000000\n  basepri   = 0x00000000\n  primask   = 0x00000000\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$r0\",\"context\":\"watch\",\"frameId\":1000} -> \"42\"",
+            "dap: evaluate {\"expression\":\"$r1\",\"context\":\"watch\",\"frameId\":1000} -> \"1073872896\"",
+            "dap: evaluate {\"expression\":\"$r2\",\"context\":\"watch\",\"frameId\":1000} -> \"32\"",
+            "dap: evaluate {\"expression\":\"$r3\",\"context\":\"watch\",\"frameId\":1000} -> \"536870928\"",
+            "dap: evaluate {\"expression\":\"$r4\",\"context\":\"watch\",\"frameId\":1000} -> \"500\"",
+            "dap: evaluate {\"expression\":\"$r5\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r6\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r7\",\"context\":\"watch\",\"frameId\":1000} -> \"536969168\"",
+            "dap: evaluate {\"expression\":\"$r8\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r9\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r10\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r11\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r12\",\"context\":\"watch\",\"frameId\":1000} -> \"134221584\"",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fd0\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"134218161\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80002fe <main+22>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389952\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fd0\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$faultmask\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$basepri\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$primask\",\"context\":\"watch\",\"frameId\":1000} -> \"0\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "peripheral-registers",
+      "description": "Halted; the SVD comes from the session's cbuild-run file (${CMSIS_PACK_ROOT} expanded): one register with fields, a whole (derived) peripheral, unknown names, and the target-free lookups through the same SVD.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_peripheral_register",
+          "args": {
+            "peripheral": "RCC",
+            "register": "CR"
+          },
+          "text": "RCC.CR @ 0x40023800 = 0x03000083\n  clock control register\n  Fields:\n    HSION                    [0]      = 0x1 (1)  — Internal high-speed clock enable\n    HSIRDY                   [1]      = 0x1 (1)  — Internal high-speed clock ready flag\n    HSEON                    [16]     = 0x0 (0)  — HSE clock enable\n    PLLON                    [24]     = 0x1 (1)  — Main PLL (PLL) enable\n    PLLRDY                   [25]     = 0x1 (1)  — Main PLL (PLL) clock ready flag\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: readMemory {\"memoryReference\":\"0x40023800\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_peripheral_register",
+          "args": {
+            "peripheral": "usart2",
+            "register": "sr"
+          },
+          "text": "USART2.SR @ 0x40004400 = 0x000000c0\n  Status register\n  Fields:\n    RXNE                     [5]      = 0x0 (0)  — Read data register not empty\n    TC                       [6]      = 0x1 (1)  — Transmission complete\n    TXE                      [7]      = 0x1 (1)  — Transmit data register empty\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: readMemory {\"memoryReference\":\"0x40004400\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_peripheral_register",
+          "args": {
+            "peripheral": "GPIOB"
+          },
+          "text": "=== GPIOB @ 0x40020400 ===\n  General-purpose I/Os\n  (3 registers)\n\n  MODER                        @ 0x40020400 = 0x00000280\n  IDR                          @ 0x40020410 = 0x00000000\n  ODR                          @ 0x40020414 = 0x00000000\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: readMemory {\"memoryReference\":\"0x40020400\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x40020410\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x40020414\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_peripheral_register",
+          "args": {
+            "peripheral": "RCC",
+            "register": "CRX"
+          },
+          "text": "Register 'CRX' not found in RCC. Did you mean: CR?\nlookup_peripheral { name: 'RCC' } shows the register map without reading the target.\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "read_peripheral_register",
+          "args": {
+            "peripheral": "UART2"
+          },
+          "text": "Peripheral 'UART2' not found in SVD. Did you mean: USART2?\nBrowse the device with lookup_peripheral (no arguments lists every peripheral).\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "lookup_register",
+          "args": {
+            "peripheral": "USART2",
+            "register": "CR1"
+          },
+          "text": "=== USART2.CR1 @ 0x4000440c (offset 0x00c, 32 bits, read-write) ===\n  Control register 1\n  reset value: 0x00000000\n  3 fields:\n  [2]      RE                Receiver enable\n  [3]      TE                Transmitter enable\n  [13]     UE                USART enable\n\nNext: read_peripheral_register { peripheral: 'USART2', register: 'CR1' } to read and decode the live value.",
+          "traffic": []
+        },
+        {
+          "tool": "lookup_peripheral",
+          "args": {
+            "address": "0x40004404"
+          },
+          "text": "0x40004404 = USART2.DR — offset 0x004 in USART2 @ 0x40004400: Data register\nNext: lookup_register { peripheral: 'USART2', register: 'DR' } for the bit fields.",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "cycle-counter",
+      "description": "Halted, trace disabled: the first read enables DEMCR.TRCENA and CYCCNTENA (write + read-back), the second finds them on.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_cycle_counter",
+          "args": {},
+          "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nDWT was enabled during this call — deltas are valid from now.\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
+            "dap: writeMemory {\"memoryReference\":\"0xE000EDFC\",\"data\":\"AAAAAQ==\"}",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
+            "dap: writeMemory {\"memoryReference\":\"0xE0001000\",\"data\":\"AQAAQA==\"}",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001004\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_cycle_counter",
+          "args": {},
+          "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001004\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cycle-counter-absent",
+      "description": "A core whose DWT_CTRL reports NOCYCCNT.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_cycle_counter",
+          "args": {},
+          "text": "This core reports no DWT cycle counter (DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. Use an RTOS tick or a timer peripheral for timing instead.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fault-hardfault",
+      "description": "Precise bus fault escalated to HardFault (CFSR=0x00008200, BFAR=0x60000000), halted by vector catch (SIGSEGV). LR reads \"-7\" as GDB prints an int register.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_call_stack",
+          "args": {},
+          "text": "Call stack (4 frames):\n  # 0  HardFault_Handler  @ <no source>:? [frameId=1000]\n  # 1  <signal handler called>  @ <no source>:? [frameId=1001]\n  # 2  led_toggle  @ led.c:18 [frameId=1002]\n  # 3  main  @ main.c:31 [frameId=1003]\n\nTip: use get_frame_variables with a frameId to inspect variables of a specific frame.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_fault_info",
+          "args": {},
+          "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes"
+          ]
+        },
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: LR unavailable — read_core_registers, then read_memory at PSP/MSP\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        },
+        {
+          "tool": "read_core_registers",
+          "args": {},
+          "text": "Core Registers:\n  r0  = 0x5fffffec    r1  = 0x00000020    r2  = 0x00000000    r3  = 0x20000010    \n  r4  = 0x000001f4    r5  = 0x00000000    r6  = 0x00000000    r7  = 0x20017fc8    \n  r8  = 0x00000000    r9  = 0x00000000    r10 = 0x00000000    r11 = 0x00000000    \n  r12 = 0x00000000    sp  = 0x20017fa8    lr  = -7            pc  = 0x80001a4     \n  xpsr = 1627389955\n  msp  = 0x20017fa8\n  psp  = 0x0\n  control   = 0\n  faultmask = 0x00000000\n  basepri   = 0x00000000\n  primask   = 0x00000000\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$r0\",\"context\":\"watch\",\"frameId\":1000} -> \"1610612716\"",
+            "dap: evaluate {\"expression\":\"$r1\",\"context\":\"watch\",\"frameId\":1000} -> \"32\"",
+            "dap: evaluate {\"expression\":\"$r2\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r3\",\"context\":\"watch\",\"frameId\":1000} -> \"536870928\"",
+            "dap: evaluate {\"expression\":\"$r4\",\"context\":\"watch\",\"frameId\":1000} -> \"500\"",
+            "dap: evaluate {\"expression\":\"$r5\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r6\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r7\",\"context\":\"watch\",\"frameId\":1000} -> \"536969160\"",
+            "dap: evaluate {\"expression\":\"$r8\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r9\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r10\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r11\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$r12\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$faultmask\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$basepri\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$primask\",\"context\":\"watch\",\"frameId\":1000} -> \"0\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fault-diagnose-lr-hex",
+      "description": "Same fault, but the adapter reports LR as a hex code pointer, so diagnose_fault reads the stacked exception frame at MSP.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "diagnose_fault",
+          "args": {
+            "levels": 4
+          },
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (4):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\n  #3 main @ main.c:31 [frameId=1003]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"0xfffffff9\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":4}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "execution-steps",
+      "description": "Step into led_toggle, over, out, over, continue to the breakpoint; then wait_for_stop and pause_execution on the stopped target.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "step_into",
+          "args": {},
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"led_toggle\",\n  \"fileFullPath\": \"<tmp>/project/led.c\",\n  \"currentLine\": 17,\n  \"currentLineContent\": \"uint32_t mask = 1u << led_pin;\",\n  \"nextLines\": [\n    \"led_port->ODR ^= mask;\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"led_toggle:17\",\n    \"main:31\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stepIn {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "step_over",
+          "args": {},
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"led_toggle\",\n  \"fileFullPath\": \"<tmp>/project/led.c\",\n  \"currentLine\": 18,\n  \"currentLineContent\": \"led_port->ODR ^= mask;\",\n  \"nextLines\": [\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"led_toggle:18\",\n    \"main:31\"\n  ],\n  \"breakpointsUnchanged\": 0\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: next {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "step_out",
+          "args": {},
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 32,\n  \"currentLineContent\": \"delay_ms(config.period_ms);\",\n  \"nextLines\": [\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:32\"\n  ],\n  \"breakpointsUnchanged\": 0\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stepOut {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "step_over",
+          "args": {},
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 29,\n  \"currentLineContent\": \"counter++;\",\n  \"nextLines\": [\n    \"ledState = !ledState;\",\n    \"led_toggle();\",\n    \"delay_ms(config.period_ms);\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:29\"\n  ],\n  \"breakpointsUnchanged\": 0\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: next {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "continue_execution",
+          "args": {},
+          "text": "Target stopped (reason: breakpoint).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 31,\n  \"currentLineContent\": \"led_toggle();\",\n  \"nextLines\": [\n    \"delay_ms(config.period_ms);\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:31\"\n  ],\n  \"breakpointsUnchanged\": 0\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "wait_for_stop",
+          "args": {},
+          "text": "Target was already stopped (reason: breakpoint).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 31,\n  \"currentLineContent\": \"led_toggle();\",\n  \"nextLines\": [\n    \"delay_ms(config.period_ms);\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:31\"\n  ],\n  \"breakpointsUnchanged\": 0\n}",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {},
+          "text": "Target is already stopped (reason: Stopped reason: breakpoint). No pause needed — proceed with inspection tools.",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "step-ui-fallback",
+      "description": "The tracker says stopped but the adapter rejects `next` with GDB's running-target error: the executor falls back to the UI command, which (sent by VS Code) steps.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "step_over",
+          "args": {},
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 32,\n  \"currentLineContent\": \"delay_ms(config.period_ms);\",\n  \"nextLines\": [\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:32\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: next {\"threadId\":1} -> error: \"Cannot execute this command while the target is running.\\nUse the \\\"interrupt\\\" command to stop the target\\nand then try again.\"",
+            "event: output [console] \"Error occurred during the nextRequest: Cannot execute this command while the target is running.\"",
+            "command: workbench.action.debug.stepOver",
+            "adapter: next (sent by the VS Code UI, succeeds)",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: step\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "continue-timeout-recovery",
+      "description": "continue_execution with timeoutMs 600 and no breakpoint on the path: timeout, then the recovery pause stops in delay_ms and reports PC/LR.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "continue_execution",
+          "args": {
+            "timeoutMs": 600
+          },
+          "text": "{\n  \"sessionActive\": true,\n  \"frameName\": null,\n  \"fileFullPath\": null,\n  \"currentLine\": null,\n  \"currentLineContent\": null,\n  \"nextLines\": [],\n  \"frameId\": null,\n  \"threadId\": null,\n  \"stackTrace\": [],\n  \"breakpoints\": []\n}\n\n⚠️ 'continue_execution' did not complete within <n>s. The target is still running or the probe is unresponsive. Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.\nPaused successfully. PC = 0x8000256, LR = 0x08000307 in delay_ms at main.c:17.\n  Current line: for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\nThe breakpoint you expected was not hit — the firmware did not reach it. Verify the breakpoint location, check the call stack with get_call_stack, or step from here with step_over / continue_execution.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"134218503\""
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "running-target",
+      "description": "Target running (continued event seen): inspection is refused (as text or as an error), then pause_execution halts it in delay_ms and inspection works.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "check_target_connection",
+          "args": {},
+          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: OK (<n>ms)\nTarget state: running — DAP reads (memory/registers/variables) will be rejected until the target stops.",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000000",
+            "length": 16
+          },
+          "text": "Error in 'read_memory': Cannot read memory: session state is 'running'. The target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_variables_values",
+          "args": {},
+          "text": "Error in 'get_variables_values': Cannot read variables: session state is 'running'. The target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "counter"
+          },
+          "text": "Error in 'evaluate_expression': Cannot evaluate expression: session state is 'running'. The target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_call_stack",
+          "args": {},
+          "text": "Error in 'get_call_stack': Cannot get call stack: session state is 'running'. The target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "step_over",
+          "args": {},
+          "isError": true,
+          "text": "Error executing step over: Error: Cannot step over: session state is 'running'. The target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "wait_for_stop",
+          "args": {
+            "timeoutMs": 100
+          },
+          "text": "'wait_for_stop' did not complete within <n>ms (handler-level cap). The DAP probe or target may be unresponsive — call get_session_status / check_target_connection to confirm. Note: the underlying request may still be running on the server; consider restart_debugging if subsequent calls also stall.",
+          "traffic": []
+        },
+        {
+          "tool": "pause_execution",
+          "args": {},
+          "text": "Target paused. {\n  \"sessionActive\": true,\n  \"frameName\": \"delay_ms\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 17,\n  \"currentLineContent\": \"for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\",\n  \"nextLines\": [\n    \"__asm volatile (\\\"nop\\\");\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"delay_ms:17\",\n    \"main:32\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000010",
+            "length": 4
+          },
+          "text": "Memory at 0x20000010 (4 bytes):\n\nHex:\n  0x20000010: 2a 00 00 00\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20000010\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wait-for-stop",
+      "description": "Running target that hits a breakpoint 500 ms into wait_for_stop; a second wait_for_stop finds it already stopped.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "wait_for_stop",
+          "args": {
+            "timeoutMs": 5000
+          },
+          "text": "Target stopped (reason: breakpoint, threadId=1).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 31,\n  \"currentLineContent\": \"led_toggle();\",\n  \"nextLines\": [\n    \"delay_ms(config.period_ms);\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:31\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "wait_for_stop",
+          "args": {},
+          "text": "Target was already stopped (reason: breakpoint).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 31,\n  \"currentLineContent\": \"led_toggle();\",\n  \"nextLines\": [\n    \"delay_ms(config.period_ms);\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:31\"\n  ],\n  \"breakpointsUnchanged\": 0\n}",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wait-for-stop-timeout",
+      "description": "Running target that never stops: wait_for_stop with timeoutMs 2000 (budget 500 ms) times out.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "wait_for_stop",
+          "args": {
+            "timeoutMs": 2000
+          },
+          "text": "Target did not stop within the timeout — it is still running (or the probe is unresponsive). Options: call wait_for_stop again with a larger timeoutMs, pause_execution to see where it is, or check_target_connection if other calls are also stalling.",
+          "traffic": []
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "breakpoints",
+      "description": "Halted in main: breakpoints and logpoints go to the VS Code model and to GDB as -exec break/dprintf/clear/delete (answered as a failed expression), then steps show the breakpoint list diff.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "No breakpoints currently set",
+          "traffic": []
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 29
+          },
+          "text": "Breakpoint added at <tmp>/project/main.c:29\nSent to GDB (`break`). The adapter did not echo a confirmation — this is normal for gdbtarget and does NOT mean it failed. The breakpoint is set; verify by running continue_execution (the target should stop) or list_breakpoints.\n  line 29: <no echo from adapter — normal> [unconfirmed]",
+          "traffic": [
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:29",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:29\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 30,
+            "condition": "counter > 10"
+          },
+          "text": "Breakpoint added at <tmp>/project/main.c:30 [when: counter > 10]\nSent to GDB (`break`). The adapter did not echo a confirmation — this is normal for gdbtarget and does NOT mean it failed. The breakpoint is set; verify by running continue_execution (the target should stop) or list_breakpoints.\n  line 30: <no echo from adapter — normal> [unconfirmed]",
+          "traffic": [
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:30 [when: counter > 10]",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:30 if counter > 10\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "lineContent": "counter"
+          },
+          "text": "Breakpoints added at 2 locations in <tmp>/project/main.c: lines 8, 29\n⚠️ Located via the deprecated `lineContent` match (2 line(s) matched). Pass `line` instead — content matching hits every line containing the text.\nSent to GDB (`break`). The adapter did not echo a confirmation — this is normal for gdbtarget and does NOT mean it failed. The breakpoint is set; verify by running continue_execution (the target should stop) or list_breakpoints.\n  line 8: <no echo from adapter — normal> [unconfirmed]\n  line 29: <no echo from adapter — normal> [unconfirmed]",
+          "traffic": [
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:8",
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:29",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:8\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:29\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "lineContent": "no such text"
+          },
+          "isError": true,
+          "text": "Error adding breakpoint: Error: Could not find any lines containing: no such text",
+          "traffic": []
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c"
+          },
+          "isError": true,
+          "text": "Error adding breakpoint: Error: No location given: pass `line` (1-based line number). The legacy `lineContent` form is still accepted but deprecated.",
+          "traffic": []
+        },
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 32,
+            "logMessage": "counter={counter} led={ledState:%u} 100%"
+          },
+          "text": "Logpoint added at <tmp>/project/main.c:32\n  GDB: dprintf <tmp>/project/main.c:32,\"counter=%d led=%u 100%%\\n\",counter,ledState\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "traffic": [
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:32 [log: counter={counter} led={ledState:%u} 100%]",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec dprintf <tmp>/project/main.c:32,\\\"counter=%d led=%u 100%%\\\\n\\\",counter,ledState\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 33,
+            "logMessage": "tick",
+            "condition": "counter % 100 == 0"
+          },
+          "text": "Logpoint added at <tmp>/project/main.c:33\n  GDB: dprintf <tmp>/project/main.c:33,\"tick\\n\"\n⚠️ Condition \"counter % 100 == 0\" was set on the VS Code breakpoint but NOT on the GDB dprintf: the adapter did not echo a breakpoint number to attach it to. The logpoint will fire unconditionally. Apply it manually with evaluate_expression(\"-exec condition <n> counter % 100 == 0\") after finding <n> via evaluate_expression(\"-exec info breakpoints\").\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "traffic": [
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:33 [when: counter % 100 == 0, log: tick]",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec dprintf <tmp>/project/main.c:33,\\\"tick\\\\n\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 34,
+            "logMessage": "broken {counter"
+          },
+          "isError": true,
+          "text": "Error adding logpoint: Error: Unbalanced '{' in logMessage at position 7. Use {{ for a literal brace.",
+          "traffic": []
+        },
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "Active Breakpoints:\n1. main.c:29\n2. main.c:30 [when: counter > 10]\n3. main.c:8\n4. main.c:29\n5. main.c:32 [log: counter={counter} led={ledState:%u} 100%]\n6. main.c:33 [when: counter % 100 == 0, log: tick]\n",
+          "traffic": []
+        },
+        {
+          "tool": "step_over",
+          "args": {},
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 32,\n  \"currentLineContent\": \"delay_ms(config.period_ms);\",\n  \"nextLines\": [\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:32\"\n  ],\n  \"breakpoints\": [\n    \"main.c:29\",\n    \"main.c:30 [when: counter > 10]\",\n    \"main.c:8\",\n    \"main.c:29\",\n    \"main.c:32 [log: counter={counter} led={ledState:%u} 100%]\",\n    \"main.c:33 [when: counter % 100 == 0, log: tick]\"\n  ]\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: next {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "step_over",
+          "args": {},
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 29,\n  \"currentLineContent\": \"counter++;\",\n  \"nextLines\": [\n    \"ledState = !ledState;\",\n    \"led_toggle();\",\n    \"delay_ms(config.period_ms);\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:29\"\n  ],\n  \"breakpointsUnchanged\": 6\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: next {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "remove_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 29
+          },
+          "text": "Breakpoint removed from <tmp>/project/main.c:29\nGDB `clear <tmp>/project/main.c:29` issued.",
+          "traffic": [
+            "vscode: debug.removeBreakpoints <tmp>/project/main.c:29, <tmp>/project/main.c:29",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec clear <tmp>/project/main.c:29\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "remove_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 99
+          },
+          "text": "No breakpoint found at <tmp>/project/main.c:99",
+          "traffic": []
+        },
+        {
+          "tool": "clear_all_breakpoints",
+          "args": {},
+          "text": "Cleared 4 breakpoint(s) from the model.\nGDB `delete` issued — all GDB-native breakpoints removed.",
+          "traffic": [
+            "vscode: debug.removeBreakpoints <tmp>/project/main.c:30 [when: counter > 10], <tmp>/project/main.c:8, <tmp>/project/main.c:32 [log: counter={counter} led={ledState:%u} 100%], <tmp>/project/main.c:33 [when: counter % 100 == 0, log: tick]",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec delete\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+          ]
+        },
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "No breakpoints currently set",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "reset-verified",
+      "description": "pyOCD, halted at Reset_Handler: `monitor reset halt system` never reaches GDB (no stopped event), but PC already equals the reset vector, so the reset reads as verified.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "reset",
+          "args": {
+            "method": "system"
+          },
+          "text": "Target reset verified. PC=0x08000198 matches the reset vector (0x08000198, vector table at 0x08000000). Method(s) tried: system. Commands: 'monitor reset halt system' (server: pyocd). Target is halted at the reset vector — use continue_execution to run.",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec monitor reset halt system\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000198 <Reset_Handler>\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reset-not-verified-jlink",
+      "description": "J-Link, target running, reset with halt=false and the default auto method: pause first, then system/core/hardware, none verified.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "reset",
+          "args": {
+            "halt": false
+          },
+          "text": "⚠️ Reset was issued but the target does NOT appear to have reset. PC=0x08000256 does NOT match the reset vector 0x08000198 (vector table at 0x08000000). Method(s) tried: system, core, hardware. Commands: 'monitor halt', 'monitor reset 0', 'monitor halt', 'monitor reset 1', 'monitor halt', 'monitor reset 0' (server: jlink). The target is halted (it was running before the reset); halt=false was not applied because the reset could not be verified — use continue_execution to run. 'hardware' requires nSRST wired from probe to target — if it is not connected, no software reset can recover this; power-cycle the board or reconnect the probe. Adapter replies: Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression",
+          "traffic": [
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec monitor reset 0\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec monitor reset 1\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"-exec monitor reset 0\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\""
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: J-LINK\nType: gdbtarget\nConfiguration: CMSIS Debugger: J-LINK\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: J-LINK], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "restart-and-stop",
+      "description": "restart_debugging relaunches the adapter in the same session (the stop at main lands 500 ms after the command), then stop_debugging ends it.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "restart_debugging",
+          "args": {},
+          "text": "Debug session restarted successfully",
+          "traffic": [
+            "command: workbench.action.debug.restart",
+            "adapter: restart — adapter relaunched in the same session; it stops at main 500 ms later",
+            "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+            "dap: threads {}"
+          ],
+          "lateTraffic": [
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "Debug session stopped successfully\n\n⚠️ **ROOT CAUSE ANALYSIS CHECKPOINT**\n\nBefore concluding your debugging session:\n\n❓ **CRITICAL QUESTION:** Have you found the ROOT CAUSE or just a SYMPTOM?\n\n🔍 **If you only identified WHERE it went wrong:**\n- Variable is null/undefined\n- Function returned unexpected value  \n- Error occurred at specific line\n- Condition evaluated incorrectly\n\n➡️ **You likely found a SYMPTOM - Continue debugging!**\n\nROOT CAUSE means understanding WHY the issue occurred in the first place, for example due to:\n- Incorrect variable initialization\n- Logic error in function implementation\n- Missing error handling\n- Faulty assumptions in conditions\n\nREQUIRED NEXT STEPS:\n1. Use 'add_breakpoint' to set breakpoints at investigation points\n2. Use 'start_debugging' to trace from the beginning\n3. Investigate WHY the issue occurred, not just WHAT happened\n4. Repeat the process as necessary until the ROOT CAUSE is identified",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
+            "event: terminated {}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "traffic": []
+        },
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "No active debug session to stop",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "start-debugging",
+      "description": "No session: start_debugging by configuration name launches one that halts at main; a second start is refused.",
+      "calls": [
+        {
+          "tool": "start_debugging",
+          "args": {
+            "workingDirectory": "<tmp>/project",
+            "configurationName": "CMSIS Debugger: pyOCD"
+          },
+          "text": "Debug session started successfully for: CMSIS Debugger: pyOCD using configuration 'CMSIS Debugger: pyOCD'. Current state: {\n  \"sessionActive\": true,\n  \"configurationName\": \"CMSIS Debugger: pyOCD\",\n  \"stackTrace\": [\n    \"main:31\"\n  ],\n  \"breakpoints\": [],\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"fileName\": \"main.c\",\n  \"currentLine\": 31,\n  \"currentLineContent\": \"led_toggle();\",\n  \"nextLines\": [\n    \"delay_ms(config.period_ms);\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"frameName\": \"main\"\n}",
+          "traffic": [
+            "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
+            "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "start_debugging",
+          "args": {
+            "workingDirectory": "<tmp>/project",
+            "configurationName": "CMSIS Debugger: pyOCD"
+          },
+          "text": "A debug session is already active (name='CMSIS Debugger: pyOCD', state=stopped). Refusing to start a second session. Use stop_debugging first, or call restart_debugging to reuse the current session, or proceed directly with inspection tools (get_variables_values, read_memory, …).",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "start-debugging-fails",
+      "description": "No probe: the launch fails in the adapter and startDebugging resolves false; the reply carries the recent adapter traffic.",
+      "calls": [
+        {
+          "tool": "start_debugging",
+          "args": {
+            "workingDirectory": "<tmp>/project",
+            "configurationName": "CMSIS Debugger: pyOCD"
+          },
+          "isError": true,
+          "text": "Error starting debug session: Error: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "traffic": [
+            "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
+            "event: output [stderr] \"0000410 C No connected debug probes [__main__]\"",
+            "adapter: response launch -> error: \"Failed to launch the GDB server: pyocd exited with code 1\"",
+            "event: terminated {}"
+          ]
+        },
+        {
+          "tool": "start_debugging",
+          "args": {
+            "workingDirectory": "/elsewhere",
+            "configurationName": "Nope"
+          },
+          "isError": true,
+          "text": "Error starting debug session: Error: Failed to start debug session with configuration 'Nope'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "traffic": [
+            "vscode: debug.startDebugging folder=<tmp>/project configuration=\"Nope\""
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "unresponsive-adapter",
+      "description": "Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is refused, stop works.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: unresponsive\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: false\nDetail: DAP threads probe timed out after <n>ms — probe/target may be hung.\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: probe/GDB server is hung. Try restart_debugging, stop_debugging, or check the physical connection.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {} -> no answer"
+          ]
+        },
+        {
+          "tool": "check_target_connection",
+          "args": {},
+          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: TIMEOUT — probe/target unresponsive\nDAP threads probe timed out after <n>ms — probe/target may be hung.",
+          "traffic": [
+            "dap: threads {} -> no answer"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000000",
+            "length": 16,
+            "timeoutMs": 1000
+          },
+          "text": "'read_memory' did not complete within <n>ms (handler-level cap). The DAP probe or target may be unresponsive — call get_session_status / check_target_connection to confirm. Note: the underlying request may still be running on the server; consider restart_debugging if subsequent calls also stall.",
+          "traffic": [
+            "dap: threads {} -> no answer"
+          ],
+          "lateTraffic": [
+            "dap: threads {} -> no answer"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {},
+          "text": "Cannot pause: probe/GDB server is unresponsive. Call check_target_connection or restart_debugging.",
+          "traffic": [
+            "dap: threads {} -> no answer"
+          ]
+        },
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "Debug session stopped successfully\n\n⚠️ **ROOT CAUSE ANALYSIS CHECKPOINT**\n\nBefore concluding your debugging session:\n\n❓ **CRITICAL QUESTION:** Have you found the ROOT CAUSE or just a SYMPTOM?\n\n🔍 **If you only identified WHERE it went wrong:**\n- Variable is null/undefined\n- Function returned unexpected value  \n- Error occurred at specific line\n- Condition evaluated incorrectly\n\n➡️ **You likely found a SYMPTOM - Continue debugging!**\n\nROOT CAUSE means understanding WHY the issue occurred in the first place, for example due to:\n- Incorrect variable initialization\n- Logic error in function implementation\n- Missing error handling\n- Faulty assumptions in conditions\n\nREQUIRED NEXT STEPS:\n1. Use 'add_breakpoint' to set breakpoints at investigation points\n2. Use 'start_debugging' to trace from the beginning\n3. Investigate WHY the issue occurred, not just WHAT happened\n4. Repeat the process as necessary until the ROOT CAUSE is identified",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
+            "event: terminated {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "focus-elsewhere",
+      "description": "The session is tracked but not VS Code's active session (focus on another session): tools resolve it through the tracker, the SVD lookup and the active stack frame do not.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=undefined\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_device_info",
+          "args": {},
+          "text": "=== Debug Session Info ===\n  Session name: CMSIS Debugger: pyOCD\n  Debug type: gdbtarget\n  Program: <tmp>/project/out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf\n  GDB: arm-none-eabi-gdb\n  Server: pyocd\n  Port: 3333\n  cbuild-run: <tmp>/project/out/Blinky+NUCLEO-F401RE.cbuild-run.yml\n  CMSIS target: NUCLEO-F401RE",
+          "traffic": [
+            "command: cmsis-csolution.getActiveTargetSet"
+          ]
+        },
+        {
+          "tool": "read_peripheral_register",
+          "args": {
+            "peripheral": "RCC",
+            "register": "CR"
+          },
+          "text": "No SVD file found for the current debug session.\nTo read peripheral registers by name, the extension needs an SVD file.\n\nYou can:\n  1. Add \"svdFile\": \"/path/to/device.svd\" to your launch.json configuration\n  2. Use read_memory with the register address, e.g.: address=\"0x40020000\" length=4\n  3. Use evaluate_expression: \"*(unsigned int*)0x40020000\"\n\nTip: Peripheral base addresses can be found in the device datasheet.\n",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "counter"
+          },
+          "text": "Error in 'evaluate_expression': No active stack frame. Make sure execution is paused at a breakpoint.",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000000",
+            "length": 4
+          },
+          "text": "Memory at 0x20000000 (4 bytes):\n\nHex:\n  0x20000000: 48 65 6c 6c\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20000000\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cmsis-build",
+      "description": "No session: cmsis_action build waits for the cbuild task and reports its exit code (0, then 2).",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "build"
+          },
+          "text": "✅ CMSIS 'build' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml' exited 0). The firmware is built — use cmsis_action load or load_and_debug to flash it.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.build",
+            "task: start \"cbuild Blinky.csolution.yml\"",
+            "task: end \"cbuild Blinky.csolution.yml\" exitCode=0"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "build"
+          },
+          "text": "❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2. Open the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, then re-run cmsis_action build. This is a terminal result — do not wait for an output file.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.build",
+            "task: start \"cbuild Blinky.csolution.yml\"",
+            "task: end \"cbuild Blinky.csolution.yml\" exitCode=2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cmsis-attach",
+      "description": "No session: cmsis_action attach starts a running pyOCD attach session that survives both probes; with it active, load_and_debug and flash are refused.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "attach"
+          },
+          "text": "CMSIS 'attach' completed on NUCLEO-F401RE — debug session survived the connect (t+<n>s: 1 thread(s), t+<n>s: 1 thread(s) — target threads present). State: {\n  \"sessionActive\": true,\n  \"configurationName\": \"CMSIS Debugger: pyOCD (attach)\",\n  \"stackTrace\": [],\n  \"breakpoints\": [],\n  \"fileFullPath\": null,\n  \"fileName\": null,\n  \"currentLine\": null,\n  \"currentLineContent\": null,\n  \"nextLines\": [],\n  \"frameId\": null,\n  \"threadId\": null,\n  \"frameName\": null\n}",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.cmsisAttachDebugger",
+            "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
+            "dap: threads {}",
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":1} -> error: \"Cannot execute this command while the target is running.\\nUse the \\\"interrupt\\\" command to stop the target\\nand then try again.\"",
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":1} -> error: \"Cannot execute this command while the target is running.\\nUse the \\\"interrupt\\\" command to stop the target\\nand then try again.\""
+          ]
+        },
+        {
+          "tool": "get_device_info",
+          "args": {},
+          "text": "=== Debug Session Info ===\n  Session name: CMSIS Debugger: pyOCD (attach)\n  Debug type: gdbtarget\n  Program: <tmp>/project/out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf\n  GDB: arm-none-eabi-gdb\n  Server: pyocd\n  Port: 3333\n  cbuild-run: <tmp>/project/out/Blinky+NUCLEO-F401RE.cbuild-run.yml\n  CMSIS target: NUCLEO-F401RE",
+          "traffic": [
+            "command: cmsis-csolution.getActiveTargetSet"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "load_and_debug"
+          },
+          "text": "A debug session is already active (name='CMSIS Debugger: pyOCD (attach)', state=running). Refusing to load_and_debug. Use stop_debugging or restart_debugging first, or proceed with inspection.",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "flash",
+          "args": {},
+          "text": "Refusing to flash while a debug session is active — programming under a live session wedges most probes. Call stop_debugging first, then flash, then cmsis_action attach or load_and_debug.",
+          "traffic": []
+        },
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "Debug session stopped successfully\n\n⚠️ **ROOT CAUSE ANALYSIS CHECKPOINT**\n\nBefore concluding your debugging session:\n\n❓ **CRITICAL QUESTION:** Have you found the ROOT CAUSE or just a SYMPTOM?\n\n🔍 **If you only identified WHERE it went wrong:**\n- Variable is null/undefined\n- Function returned unexpected value  \n- Error occurred at specific line\n- Condition evaluated incorrectly\n\n➡️ **You likely found a SYMPTOM - Continue debugging!**\n\nROOT CAUSE means understanding WHY the issue occurred in the first place, for example due to:\n- Incorrect variable initialization\n- Logic error in function implementation\n- Missing error handling\n- Faulty assumptions in conditions\n\nREQUIRED NEXT STEPS:\n1. Use 'add_breakpoint' to set breakpoints at investigation points\n2. Use 'start_debugging' to trace from the beginning\n3. Investigate WHY the issue occurred, not just WHAT happened\n4. Repeat the process as necessary until the ROOT CAUSE is identified",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD (attach)\"",
+            "event: terminated {}"
+          ]
+        }
+      ]
+    }
+  ]
+}
