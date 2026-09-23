@@ -12,7 +12,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -671,7 +671,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGSEGV\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -889,7 +889,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -925,7 +925,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -944,7 +944,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1046,7 +1046,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1103,7 +1103,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1375,7 +1375,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: J-LINK\nType: gdbtarget\nConfiguration: CMSIS Debugger: J-LINK\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: J-LINK], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: J-LINK\nType: gdbtarget\nConfiguration: CMSIS Debugger: J-LINK\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: J-LINK], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1409,7 +1409,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1426,7 +1426,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
           "traffic": []
         },
         {
@@ -1485,7 +1485,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1545,7 +1545,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1593,7 +1593,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1963,7 +1963,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -2004,7 +2004,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
           "traffic": []
         }
       ]
@@ -2020,7 +2020,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: unresponsive\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: false\nDetail: DAP threads probe timed out after <n>ms — probe/target may be hung.\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: probe/GDB server is hung. Try restart_debugging, stop_debugging, or check the physical connection.\n\nTool stats (this session): <trailer>",
+          "text": "State: unresponsive\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: false\nDetail: DAP threads probe timed out after <n>ms — probe/target may be hung.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: probe/GDB server is hung. Try restart_debugging, stop_debugging, or check the physical connection.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {} -> no answer"
           ]
@@ -2080,7 +2080,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=undefined\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=undefined\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
