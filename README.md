@@ -21,7 +21,7 @@ The Arm® CMSIS Developer Assistant extension connects AI coding agents to the d
 - Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Roo Code, Antigravity, and any other MCP-compatible assistant.
 - Runs entirely on the local machine: the MCP server binds to `localhost` only, needs no credentials, and sends nothing to an external service.
 - Also debugs applications in other languages (Python, JavaScript/TypeScript, Java, C#, C/C++, Go, Rust, PHP, Ruby) through the respective VS Code debug extensions.
-- Seven palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents and choosing skills, and — with the experimental documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel. See [Commands](#commands).
+- Eight palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents and choosing skills, choosing the target window when several VS Code windows are open, and — with the experimental documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel. See [Commands](#commands).
 
 For Arm Cortex-M targets, use it together with these extensions (all included in the [Arm Keil® Studio pack](https://marketplace.visualstudio.com/items?itemName=Arm.keil-studio-pack)):
 
@@ -71,6 +71,7 @@ Everything the agent does goes through the MCP tools below; the commands are for
 |---------|--------------|
 | **Configure Agents and Skills** | The first-run setup, on demand: pick the AI agents to register the MCP server with (their configuration files are written for you), pick the AI Skills Pack skills to install, then pick the rule files that get the [tool rules](#tool-rules-in-your-agents-rule-files). Run it again after installing a new agent, or to take the rules out of a file. |
 | **Select Agent Skills** | Just the skills step: choose category entry points (`cmsis-project`, `cmsis-bring-up`, `cmsis-pack`) or individual skills from the [AI Skills Pack](#agent-skills); the four bundled skills are always installed. |
+| **Select Target Window** | With several VS Code windows open: choose the window that agent calls go to when nothing else names one, or **Automatic** to clear the choice. A click on the **CDA** item in the status bar opens it too; see [Networking and multiple windows](#networking-and-multiple-windows). |
 | **List Target Documentation** | Writes the current csolution target's document list — pack manuals and datasheets, Arm documents for the core, your imported and workspace PDFs, each with its index state — to the _CMSIS Developer Assistant_ output channel. The same list the agent gets from `list_target_docs`. |
 | **Index Target Documentation** | Extracts and indexes every PDF of the current target now, with a progress notification, so the agent's first search is instant instead of paying for extraction. |
 | **Import Document for Current Target** | Adds PDFs the packs do not ship — a sensor or ADC datasheet, an NDA reference manual — to the user documents folder: pick the files, attribute them to the current pack, device family, board, core or all targets, give a title, category and edition, and they are indexed at once. |
@@ -175,7 +176,7 @@ Deterministic reads of the current target's build output — no debug session ne
 | `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state. Never throws. |
 | `check_target_connection` | Low-cost liveness check of the debug adapter and probe. |
 | `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot): a short overview with the topic list by default, or one section with `topic` (`session`, `build`, `breakpoints`, `inspection`, `faults`, `troubleshooting`). |
-| `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach, with the router marked, and pins one for this session. Relevant when more than one window is open; then `cmsis_action`, `flash`, `reset` and `serial_open` also take `window`, a pid or a path inside the window's workspace. |
+| `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach, with the router and the default target marked, and pins one for this session. Relevant when more than one window is open; then `cmsis_action`, `flash`, `reset` and `serial_open` also take `window`, a pid or a path inside the window's workspace. |
 
 ### MCP resources
 
@@ -282,9 +283,12 @@ The target window of a call is chosen in this order:
 2. The file path the tool has (`add_breakpoint`, `start_debugging`).
 3. The window the agent pinned with `select_debug_window`.
 4. The window the agent's session used last.
-5. The one window with an active debug session, then the one window.
+5. The **default target** you chose in **Select Target Window**. Choosing it moves every agent session that is not pinned.
+6. The one window with an active debug session, then the one window.
 
-When none of these decides, for example with two windows debugging or two idle ones, the call fails and names every window, and the agent pins one or names it in the call.
+When none of these decides, for example with two windows debugging or two idle ones, the call fails and names every window, and the agent asks you or pins one itself.
+
+Every window shows an item in the status bar: **CDA router** or **CDA worker**, with **· default** on the default target and a spinner while an agent call runs in it. Its tooltip names the MCP endpoint, the default target and the last agent call; in the router window it also lists the agent sessions with the window each one drives and why. A click on the item opens **Select Target Window**, which saves your choice for every window. It survives a reload of the chosen window, since the window is found again by its folder. Hide the item from the status bar's context menu (**CMSIS Developer Assistant**) if you do not need it.
 
 ### Manual agent registration
 
@@ -389,7 +393,7 @@ If the port is held by an unrelated process, set `cmsis-developer-assistant.serv
 
 ### Two windows are debugging at the same time
 
-Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the serial tools) cannot tell which window is meant and return an error naming both. The same holds for several windows of which none is debugging. Ask the agent to call `select_debug_window`, or close the other debug session.
+Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the serial tools) cannot tell which window is meant and return an error naming both. The same holds for several windows of which none is debugging. Click **CDA** in the status bar and choose the target window, ask the agent to call `select_debug_window`, or close the other debug session.
 
 ### A `gdbtarget` session fails to launch
 

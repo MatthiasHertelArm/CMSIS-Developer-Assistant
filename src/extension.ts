@@ -23,9 +23,10 @@
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
  * for in-editor Copilot, agent-configuration migration, the update of the tool
  * rules recorded in agents' rule files, the settings and workspace-folder
- * listeners, the agent/skill commands, and the first-run setup or skills
- * prompt two seconds later. `deactivate` shuts the coordinator down so the
- * window leaves the shared registry before the host exits.
+ * listeners, the agent/skill commands, Select Target Window, and the
+ * first-run setup or skills prompt two seconds later. `deactivate` shuts the
+ * coordinator down so the window leaves the shared registry before the host
+ * exits.
  *
  * Under the extension test runner (`npm test`) the suites exercise the modules
  * themselves, and activation leaves the developer's machine alone: no skills
@@ -51,6 +52,7 @@ import { logger } from './utils/logger';
 import { registerSessionStateTracker } from './utils/sessionStateTracker';
 import { registerToolchainPackRootInvalidation } from './utils/toolchainPackRoot';
 import { WindowCoordinator } from './windowCoordinator';
+import { SELECT_TARGET_WINDOW_COMMAND } from './windowStatus';
 
 const SECTION = 'cmsis-developer-assistant';
 const PRODUCT = 'CMSIS Developer Assistant';
@@ -238,6 +240,23 @@ function registerAgentCommands(extensionContext: vscode.ExtensionContext): void 
     );
 }
 
+/**
+ * Select Target Window (#16), also the click of the window's status-bar item.
+ * Registered in every window; without a coordinator — under the test runner,
+ * or when it could not be created — it says there is nothing to choose.
+ */
+function registerWindowCommand(extensionContext: vscode.ExtensionContext): void {
+    extensionContext.subscriptions.push(
+        vscode.commands.registerCommand(SELECT_TARGET_WINDOW_COMMAND, async () => {
+            if (!windowCoordinator) {
+                void vscode.window.showInformationMessage(`${PRODUCT}: no MCP server runs in this window, so there is no target window to choose.`);
+                return;
+            }
+            await windowCoordinator.selectTargetWindow();
+        }),
+    );
+}
+
 /** Two seconds after activation: the first-run setup when it is due, else the monthly skills prompt. */
 async function setupOrSkillsPrompt(manager: AgentConfigurationManager): Promise<void> {
     try {
@@ -305,6 +324,7 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
         }),
     );
     registerAgentCommands(extensionContext);
+    registerWindowCommand(extensionContext);
 
     if (!hostsTests) {
         setTimeout(() => setupOrSkillsPrompt(manager), SETUP_DELAY_MS);

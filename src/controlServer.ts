@@ -35,6 +35,9 @@
  * and a browser always does (else 403); and the per-window token the window
  * publishes in the registry, compared in constant time (else 403). The 403
  * and 404 bodies point whoever probes the port at the MCP tools instead.
+ *
+ * `onOp` hears when each op starts and settles; the window's status-bar item
+ * shows from it that an agent call runs here (#16).
  */
 
 import { timingSafeEqual } from 'crypto';
@@ -47,6 +50,7 @@ import {
     CONTROL_ENVELOPE_HEADER,
     CONTROL_ENVELOPE_VERSION,
     CONTROL_REQUEST_MAX_BYTES,
+    OpName,
     isKnownOp,
     isPackDocsDocOp,
     isPackDocsOp,
@@ -73,6 +77,9 @@ interface OpRequest {
     op: string;
     args: unknown;
 }
+
+/** Told when an op starts running in this window and when it has settled, either way (#16: the status bar). */
+export type OpListener = (op: OpName, phase: 'start' | 'end') => void;
 
 /** The text of whatever was thrown: an Error's message, else its string form. */
 function describeFailure(thrown: unknown): string {
@@ -167,6 +174,7 @@ function replyJson(reply: http.ServerResponse, status: number, payload: object, 
 export class ControlServer {
     private listener: http.Server | undefined;
     private boundPort = 0;
+    private opListener: OpListener | undefined;
 
     constructor(
         private readonly handler: IDebuggingHandler,
@@ -177,6 +185,20 @@ export class ControlServer {
     /** The listening port; 0 before `start()` resolved and from the moment `stop()` begins. */
     getPort(): number {
         return this.boundPort;
+    }
+
+    /** Tell `listener` about every op this window runs from now on; it replaces the one set before. */
+    onOp(listener: OpListener | undefined): void {
+        this.opListener = listener;
+    }
+
+    /** Hand one op event to the listener; a listener that throws is logged, never felt by the op. */
+    private tell(op: OpName, phase: 'start' | 'end'): void {
+        try {
+            this.opListener?.(op, phase);
+        } catch (failure) {
+            logger.warn(`The op listener failed on ${op} ${phase}`, failure);
+        }
     }
 
     /** Listen on an OS-chosen loopback port and resolve with it. */
@@ -278,6 +300,7 @@ export class ControlServer {
             throw new ToolError('TOOL_DISABLED', `Control op ${op} is not implemented in this window`);
         }
         const elapsed = stopwatch();
+        this.tell(op, 'start');
         try {
             const outcome = await (entryPoint as (args: unknown) => Promise<ToolText>).call(owner, opArgs);
             logger.info(`control op=${op} ms=${elapsed()} out=${resultBytes(outcome)} B`);
@@ -285,6 +308,8 @@ export class ControlServer {
         } catch (failure) {
             logger.info(`control op=${op} ms=${elapsed()} failed: ${describeFailure(failure)}`);
             throw failure;
+        } finally {
+            this.tell(op, 'end');
         }
     }
 

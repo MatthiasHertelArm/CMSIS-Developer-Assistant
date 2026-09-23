@@ -11255,6 +11255,11 @@
             "category": "CMSIS Developer Assistant"
           },
           {
+            "command": "cmsis-developer-assistant.selectTargetWindow",
+            "title": "Select Target Window",
+            "category": "CMSIS Developer Assistant"
+          },
+          {
             "command": "cmsis-developer-assistant.listTargetDocs",
             "title": "List Target Documentation",
             "category": "CMSIS Developer Assistant"
@@ -11620,6 +11625,19 @@
           "id": "Arm.cmsis-csolution"
         },
         {
+          "ev": "createStatusBarItem",
+          "id": "cmsis-developer-assistant.window",
+          "alignment": 2,
+          "priority": 100
+        },
+        {
+          "ev": "statusBarItem.show",
+          "id": "cmsis-developer-assistant.window",
+          "name": "CMSIS Developer Assistant",
+          "command": "cmsis-developer-assistant.selectTargetWindow",
+          "text": "$(plug) CDA router"
+        },
+        {
           "ev": "settled",
           "fn": "coordinator.start",
           "value": "<undefined>"
@@ -11687,6 +11705,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.resetPopupState"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectTargetWindow"
         },
         {
           "ev": "setTimeout",
@@ -12539,6 +12561,10 @@
           "args": []
         },
         {
+          "ev": "statusBarItem.dispose",
+          "id": "cmsis-developer-assistant.window"
+        },
+        {
           "ev": "settled",
           "fn": "coordinator.dispose",
           "value": "<undefined>"
@@ -12628,7 +12654,8 @@
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
-            "cmsis-developer-assistant.resetPopupState"
+            "cmsis-developer-assistant.resetPopupState",
+            "cmsis-developer-assistant.selectTargetWindow"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -12652,7 +12679,8 @@
             "event:workspace.onDidChangeWorkspaceFolders",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
-            "command:cmsis-developer-assistant.resetPopupState"
+            "command:cmsis-developer-assistant.resetPopupState",
+            "command:cmsis-developer-assistant.selectTargetWindow"
           ],
           "mcpServerDefinitionProviders": [
             {
@@ -12942,6 +12970,19 @@
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
+          "ev": "createStatusBarItem",
+          "id": "cmsis-developer-assistant.window",
+          "alignment": 2,
+          "priority": 100
+        },
+        {
+          "ev": "statusBarItem.show",
+          "id": "cmsis-developer-assistant.window",
+          "name": "CMSIS Developer Assistant",
+          "command": "cmsis-developer-assistant.selectTargetWindow",
+          "text": "$(plug) CDA worker"
+        },
+        {
           "ev": "settled",
           "fn": "coordinator.start",
           "value": "<undefined>"
@@ -13003,6 +13044,10 @@
           "id": "cmsis-developer-assistant.resetPopupState"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectTargetWindow"
+        },
+        {
           "ev": "setTimeout",
           "ms": 2000
         },
@@ -13053,6 +13098,10 @@
           "ev": "call",
           "fn": "coordinator.dispose",
           "args": []
+        },
+        {
+          "ev": "statusBarItem.dispose",
+          "id": "cmsis-developer-assistant.window"
         },
         {
           "ev": "settled",
@@ -13144,7 +13193,8 @@
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
-            "cmsis-developer-assistant.resetPopupState"
+            "cmsis-developer-assistant.resetPopupState",
+            "cmsis-developer-assistant.selectTargetWindow"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -13168,7 +13218,8 @@
             "event:workspace.onDidChangeWorkspaceFolders",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
-            "command:cmsis-developer-assistant.resetPopupState"
+            "command:cmsis-developer-assistant.resetPopupState",
+            "command:cmsis-developer-assistant.selectTargetWindow"
           ],
           "mcpServerDefinitionProviders": [
             {
@@ -13475,6 +13526,10 @@
           "id": "cmsis-developer-assistant.resetPopupState"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectTargetWindow"
+        },
+        {
           "ev": "setTimeout",
           "ms": 2000
         },
@@ -13577,7 +13632,8 @@
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
-            "cmsis-developer-assistant.resetPopupState"
+            "cmsis-developer-assistant.resetPopupState",
+            "cmsis-developer-assistant.selectTargetWindow"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -13597,7 +13653,8 @@
             "event:workspace.onDidChangeWorkspaceFolders",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
-            "command:cmsis-developer-assistant.resetPopupState"
+            "command:cmsis-developer-assistant.resetPopupState",
+            "command:cmsis-developer-assistant.selectTargetWindow"
           ],
           "mcpServerDefinitionProviders": [],
           "timers": [
@@ -13756,6 +13813,10 @@
           "id": "cmsis-developer-assistant.resetPopupState"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectTargetWindow"
+        },
+        {
           "ev": "step",
           "name": "configuration change: cmsis-developer-assistant.installedSkills"
         },
@@ -13847,7 +13908,8 @@
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
-            "cmsis-developer-assistant.resetPopupState"
+            "cmsis-developer-assistant.resetPopupState",
+            "cmsis-developer-assistant.selectTargetWindow"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -13867,7 +13929,8 @@
             "event:workspace.onDidChangeWorkspaceFolders",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
-            "command:cmsis-developer-assistant.resetPopupState"
+            "command:cmsis-developer-assistant.resetPopupState",
+            "command:cmsis-developer-assistant.selectTargetWindow"
           ],
           "mcpServerDefinitionProviders": [],
           "timers": [],
@@ -14090,6 +14153,19 @@
           "id": "Arm.cmsis-csolution"
         },
         {
+          "ev": "createStatusBarItem",
+          "id": "cmsis-developer-assistant.window",
+          "alignment": 2,
+          "priority": 100
+        },
+        {
+          "ev": "statusBarItem.show",
+          "id": "cmsis-developer-assistant.window",
+          "name": "CMSIS Developer Assistant",
+          "command": "cmsis-developer-assistant.selectTargetWindow",
+          "text": "$(plug) CDA router"
+        },
+        {
           "ev": "settled",
           "fn": "coordinator.start",
           "value": "<undefined>"
@@ -14150,6 +14226,10 @@
           "id": "cmsis-developer-assistant.resetPopupState"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectTargetWindow"
+        },
+        {
           "ev": "setTimeout",
           "ms": 2000
         },
@@ -14185,6 +14265,10 @@
           "ev": "call",
           "fn": "coordinator.dispose",
           "args": []
+        },
+        {
+          "ev": "statusBarItem.dispose",
+          "id": "cmsis-developer-assistant.window"
         },
         {
           "ev": "settled",
@@ -14276,7 +14360,8 @@
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
-            "cmsis-developer-assistant.resetPopupState"
+            "cmsis-developer-assistant.resetPopupState",
+            "cmsis-developer-assistant.selectTargetWindow"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -14300,7 +14385,8 @@
             "event:workspace.onDidChangeWorkspaceFolders",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
-            "command:cmsis-developer-assistant.resetPopupState"
+            "command:cmsis-developer-assistant.resetPopupState",
+            "command:cmsis-developer-assistant.selectTargetWindow"
           ],
           "mcpServerDefinitionProviders": [
             {

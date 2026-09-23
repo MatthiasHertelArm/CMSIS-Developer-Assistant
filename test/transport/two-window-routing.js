@@ -32,11 +32,13 @@
 //      AMBIGUOUS_WINDOW and both windows come back as candidates (#11).
 //   8. Closing the router frees the port and a worker is promoted.
 //   9. The routed tools/list, what agents see, stays within its byte budget.
-//  10. The window argument (#16): each window publishes its role; the routed
-//      tools/list offers window on exactly the listed tools; cmsis_action
-//      {window} runs in the named window, by pid or by path, and re-aims the
-//      session; one that matches nothing is INVALID_ARGUMENT; the promoted
-//      window publishes its new role.
+//  10. Window selection for people (#16): each window publishes its role and
+//      shows it in the status bar; the routed tools/list offers window on
+//      exactly the listed tools; cmsis_action {window} runs in the named
+//      window and re-aims the session; Select Target Window (the stub's
+//      quick pick) saves a default that resolves the tie of two idle windows
+//      and moves a session that had a target; the router's tooltip lists the
+//      sessions; Automatic clears it; the promoted window shows its new role.
 
 const stub = require('./vscode-stub.js');
 
@@ -181,11 +183,18 @@ async function main() {
     const registered = alpha.registry.list();
     check('both windows are in the registry', registered.length === 2, `${registered.length} entries`);
 
-    // #16: each entry says what its window does.
+    // #16: each entry says what its window does, and each window shows it in the status bar.
     const roleOf = (c) => (c.isRouter() ? 'router' : 'worker');
     const published = Object.fromEntries(registered.map((w) => [w.pid, w.role]));
     check('each window publishes its role', published[alpha.pid] === roleOf(c1) && published[beta.pid] === roleOf(c2),
         JSON.stringify(published));
+    // The stub keeps its items in creation order, and alpha's coordinator started first.
+    const [alphaItem, betaItem] = stub.statusBarItems;
+    check('each window shows its role in the status bar, and a click on it selects the target window',
+        alphaItem?.text === `$(plug) CDA ${roleOf(c1)}` && betaItem?.text === `$(plug) CDA ${roleOf(c2)}`
+            && alphaItem.visible && betaItem.visible && alphaItem.name === 'CMSIS Developer Assistant'
+            && alphaItem.command === 'cmsis-developer-assistant.selectTargetWindow',
+        `${alphaItem?.text} / ${betaItem?.text}`);
 
     const sid = await openSession(PORT);
 
@@ -215,29 +224,74 @@ async function main() {
     // #16: two idle windows are a tie for a path-less call.
     const idleTie = await callToolResult(PORT, sid, 'read_memory', { address: '0x20000000', length: 4 }, 20);
     const idleData = idleTie.structuredContent ?? {};
-    check('two idle windows are refused as AMBIGUOUS_WINDOW; the hint names the window argument, the candidates their role',
-        idleTie.isError === true && idleData.error_code === 'AMBIGUOUS_WINDOW' && /window set to its pid/.test(idleData.hint ?? '')
+    check('two idle windows are refused as AMBIGUOUS_WINDOW; the hint names the status bar, the candidates isDefault and role',
+        idleTie.isError === true && idleData.error_code === 'AMBIGUOUS_WINDOW' && /Select Target Window/.test(idleData.hint ?? '')
             && (idleData.candidates ?? []).length === 2
-            && (idleData.candidates ?? []).every((c) => c.role === published[c.pid]),
+            && (idleData.candidates ?? []).every((c) => c.isDefault === false && c.role === published[c.pid]),
         JSON.stringify(idleData.candidates));
 
-    // The window argument names the window for one call, by pid or by path, and re-aims the session:
-    // the listing then marks that window as the session's current target.
+    // The window argument names the window for one call, by pid or by path, and re-aims the session.
+    const tooltipCall = (item) => (item.tooltip ?? '').split('\n').find((line) => line.startsWith('Last agent call here:')) ?? '';
     const byPid = await callToolResult(PORT, sid, 'cmsis_action', { action: 'status', window: String(beta.pid) }, 21);
     const byPidText = byPid.content?.[0]?.text ?? '';
+    check('cmsis_action {window: pid} runs in the named window',
+        byPid.isError !== true && /^No CMSIS job in this window/.test(byPidText)
+            && tooltipCall(betaItem).startsWith('Last agent call here: cmsis_action') && !tooltipCall(alphaItem).includes('cmsis_action'),
+        `${byPidText.split('\n')[0]} | beta: ${tooltipCall(betaItem)} | alpha: ${tooltipCall(alphaItem)}`);
     const aimed = await callTool(PORT, sid, 'list_debug_windows', {}, 22);
-    check('cmsis_action {window: pid} runs in the named window and re-aims the session',
-        byPid.isError !== true && /^No CMSIS job in this window/.test(byPidText) && rowOf(aimed, betaDir).includes('current target'),
-        `${byPidText.split('\n')[0]} | ${rowOf(aimed, betaDir)}`);
+    check('the window argument re-aims the session\'s later path-less calls', rowOf(aimed, betaDir).includes('current target'),
+        rowOf(aimed, betaDir));
     const byPath = await callToolResult(PORT, sid, 'cmsis_action', { action: 'status', window: path.join(alphaDir, 'src') }, 23);
-    const aimedByPath = await callTool(PORT, sid, 'list_debug_windows', {}, 30);
     check('cmsis_action {window: path} runs in the window owning the path',
-        byPath.isError !== true && rowOf(aimedByPath, alphaDir).includes('current target'), rowOf(aimedByPath, alphaDir));
+        byPath.isError !== true && tooltipCall(alphaItem).startsWith('Last agent call here: cmsis_action'), tooltipCall(alphaItem));
     const missed = await callToolResult(PORT, sid, 'flash', { window: path.join(root, 'no-such-window') }, 24);
     check('a window that matches nothing is INVALID_ARGUMENT with the candidates',
         missed.isError === true && missed.structuredContent?.error_code === 'INVALID_ARGUMENT'
             && (missed.structuredContent?.candidates ?? []).length === 2,
         (missed.content?.[0]?.text ?? '').split('\n')[0]);
+
+    // #16: the user chooses beta in Select Target Window, here from beta's own window.
+    stub.pickAnswer = (items) => items.find((item) => item.window?.pid === beta.pid);
+    await c2.selectTargetWindow();
+    stub.pickAnswer = undefined;
+    const defaultFile = path.join(REGISTRY_DIR, 'default-target.json');
+    const saved = fs.existsSync(defaultFile) ? JSON.parse(fs.readFileSync(defaultFile, 'utf8')) : {};
+    check('Select Target Window saves the choice, 0600, in the registry directory',
+        saved.pid === beta.pid && saved.workspaceFolder === betaDir && saved.name === 'beta' && typeof saved.setAt === 'number'
+            && (process.platform === 'win32' || (fs.statSync(defaultFile).mode & 0o777) === 0o600),
+        JSON.stringify(saved));
+    check('the window that was chosen says so in its status bar at once', betaItem.text === `$(plug) CDA ${roleOf(c2)} · default`,
+        betaItem.text);
+
+    const defaultSid = await openSession(PORT);
+    const viaDefault = await callToolResult(PORT, defaultSid, 'read_memory', { address: '0x20000000', length: 4 }, 25);
+    const defaultListing = await callTool(PORT, defaultSid, 'list_debug_windows', {}, 26);
+    check('a written default resolves the tie of two idle windows',
+        viaDefault.structuredContent?.error_code !== 'AMBIGUOUS_WINDOW' && rowOf(defaultListing, betaDir).includes('current target')
+            && rowOf(defaultListing, betaDir).includes('default target (set in VS Code)'),
+        `${viaDefault.structuredContent?.error_code} | ${rowOf(defaultListing, betaDir)}`);
+    // The first session had reached alpha through its window argument; a new choice moves it.
+    await callToolResult(PORT, sid, 'read_memory', { address: '0x20000000', length: 4 }, 27);
+    const moved = await callTool(PORT, sid, 'list_debug_windows', {}, 28);
+    check('a new default moves a session that already had a target', rowOf(moved, betaDir).includes('current target'),
+        rowOf(moved, betaDir));
+
+    // The router's tooltip lists the sessions; an op in the router window brings it up to date.
+    const routerItem = c1.isRouter() ? alphaItem : betaItem;
+    const routerCoordinatorWindow = c1.isRouter() ? alpha : beta;
+    const hereSid = await openSession(PORT);
+    await callToolResult(PORT, hereSid, 'cmsis_action', { action: 'status', window: String(routerCoordinatorWindow.pid) }, 29);
+    const sessionLines = (routerItem.tooltip ?? '').split('\n').filter((line) => line.startsWith('  • two-window ('));
+    check('the router\'s status tooltip lists each agent session with its window and the reason',
+        sessionLines.length >= 3 && sessionLines.some((line) => line.endsWith(', default target'))
+            && sessionLines.some((line) => line.endsWith('→ this window, named by a call')),
+        sessionLines.join(' | '));
+
+    // Automatic clears the choice, from any window.
+    stub.pickAnswer = (items) => items.find((item) => item.window === undefined);
+    await c1.selectTargetWindow();
+    stub.pickAnswer = undefined;
+    check('Automatic removes the saved choice', !fs.existsSync(defaultFile));
 
     // A path hint must reach the window owning that folder. The handler will
     // fail for lack of a real debug session — what matters is *which* window
@@ -286,16 +340,20 @@ async function main() {
     // Router failover: close the router, the survivor must take the port.
     const router = c1.isRouter() ? c1 : c2;
     const worker = c1.isRouter() ? c2 : c1;
+    const workerItem = c1.isRouter() ? betaItem : alphaItem;
     const workerWindow = c1.isRouter() ? beta : alpha;
     await router.dispose();
     check('the router released the port', !router.isRouter());
+    check('the closed window\'s status bar item is gone', routerItem.disposed === true);
 
     // The promotion republishes the window, which reads its folders from `vscode`.
     await withWindowContext(workerWindow, undefined, () => worker.tryBecomeRouter());
     check('the surviving worker was promoted to router', worker.isRouter(),
         `isRouter=${worker.isRouter()}`);
     const promotedEntry = workerWindow.registry.list().find((w) => w.pid === workerWindow.pid);
-    check('the promoted window publishes its new role', promotedEntry?.role === 'router', promotedEntry?.role);
+    check('the promoted window publishes and shows its new role',
+        promotedEntry?.role === 'router' && workerItem.text.startsWith('$(plug) CDA router'),
+        `${promotedEntry?.role} / ${workerItem.text}`);
 
     const sid3 = await openSession(PORT);
     const listing3 = await callTool(PORT, sid3, 'list_debug_windows', {}, 6);

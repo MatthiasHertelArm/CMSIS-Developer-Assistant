@@ -32,6 +32,22 @@ const taskEvents = {
     start: emitter(), processStart: emitter(), processEnd: emitter(), end: emitter(),
 };
 
+/** Every status-bar item made through the stub, in creation order; tests read their text and tooltip. */
+const statusBarItems = [];
+
+/** A status-bar item that only keeps what is assigned to it. */
+function createStatusBarItem(id, alignment, priority) {
+    const item = {
+        id, alignment, priority, name: undefined, text: '', tooltip: undefined, command: undefined,
+        visible: false, disposed: false,
+        show() { item.visible = true; },
+        hide() { item.visible = false; },
+        dispose() { item.disposed = true; item.visible = false; },
+    };
+    statusBarItems.push(item);
+    return item;
+}
+
 const stub = {
     Uri: { file: (p) => ({ fsPath: p, toString: () => `file://${p}` }) },
     Position: class { constructor(line, ch) { this.line = line; this.character = ch; } },
@@ -49,14 +65,20 @@ const stub = {
              onDidStartDebugSession: () => ({ dispose() {} }),
              onDidTerminateDebugSession: () => ({ dispose() {} }),
              onDidChangeActiveDebugSession: () => ({ dispose() {} }) },
-    window: { activeTextEditor: undefined, showInformationMessage() {}, showErrorMessage() {},
+    window: { activeTextEditor: undefined, showInformationMessage() {}, showWarningMessage() {}, showErrorMessage() {},
               createOutputChannel: () => ({
                   appendLine() {}, append() {}, replace() {}, clear() {}, show() {}, hide() {},
                   dispose() {},
                   // LogOutputChannel surface — the logger calls these directly.
                   trace() {}, debug() {}, info() {}, warn() {},
                   error(...a) { console.error('[ext]', ...a); },
-              }) },
+              }),
+              createStatusBarItem,
+              // Tests install `pickAnswer(items, options)`; without one the pick is dismissed.
+              showQuickPick: async (items, options) => (stub.pickAnswer ? stub.pickAnswer(await items, options) : undefined) },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    statusBarItems,
+    pickAnswer: undefined,
     workspace: { getConfiguration: () => ({ get: (_k, d) => d }), workspaceFolders: [],
                  name: undefined,
                  getWorkspaceFolder(uri) {

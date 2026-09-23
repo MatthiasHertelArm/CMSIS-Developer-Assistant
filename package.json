@@ -80,6 +80,11 @@
         "category": "CMSIS Developer Assistant"
       },
       {
+        "command": "cmsis-developer-assistant.selectTargetWindow",
+        "title": "Select Target Window",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
         "command": "cmsis-developer-assistant.listTargetDocs",
         "title": "List Target Documentation",
         "category": "CMSIS Developer Assistant"

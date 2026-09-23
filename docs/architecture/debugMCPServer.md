@@ -69,11 +69,14 @@ Three constraints shape the code:
 
 The handlers a session talks to (`SessionHandlers`: `debug`, `serial` and the
 optional `packDocs` dispatch) come from the factory given to the constructor,
-which is called once while the session is built. In the extension the factory
-belongs to the `WindowCoordinator` and returns a new `RoutingDebuggingHandler`
-for every session (see [windowRouting.md](windowRouting.md)). Without a
-factory, as in the transport tests, one `DebuggingHandler` with
-`localSerialDispatch` serves all sessions (`singleWindowHandlers()`).
+which is called once while the session is built; the session keeps them. In
+the extension the factory belongs to the `WindowCoordinator` and returns a new
+`RoutingDebuggingHandler` for every session (see
+[windowRouting.md](windowRouting.md)). Without a factory, as in the transport
+tests, one `DebuggingHandler` with `localSerialDispatch` serves all sessions
+(`singleWindowHandlers()`). `describeSessions()` lists the open sessions with
+their client's name and, for a routing handler, the window its path-less
+calls go to; the router window's status bar shows them (#16).
 
 ## Start and stop
 
@@ -243,10 +246,10 @@ whole guide is served and a warning is logged.
 ## Where to look
 
 - `src/debugMCPServer.ts`: `DebugMCPServer` (`start`, `stop`, `buildApp`,
-  `acceptPost`, `acceptSessionRequest`, `openSession`, `observe`),
-  `loopbackOnly`, `listenOnLoopback`, `jsonlSink`, `singleWindowHandlers`,
-  `PortInUseError`, `SessionHandlers`, `DebugMCPServerOptions`,
-  `localSerialDispatch`
+  `acceptPost`, `acceptSessionRequest`, `openSession`, `describeSessions`,
+  `observe`), `loopbackOnly`, `listenOnLoopback`, `jsonlSink`,
+  `singleWindowHandlers`, `PortInUseError`, `SessionHandlers`,
+  `DebugMCPServerOptions`, `localSerialDispatch`
 - `src/debugTools.ts`: `buildSessionServer`, `loadToolRules`, `ABOUT`,
   `WINDOW_ARGUMENT_TOOLS`, `registerTools`, `registerResources`,
   `ShippedDocs`, `SHIPPED_RESOURCES`

@@ -354,8 +354,8 @@ rather than the kernel.
 
 The MCP server runs in one window and forwards each call to the window that owns
 the target. It resolves from a file path when a tool has one, otherwise from the
-window your session pinned or used last, then from the window that has an active
-debug session.
+window your session pinned or used last, then from the default target the user
+chose in VS Code, then from the window that has an active debug session.
 
 `cmsis_action`, `flash`, `reset` and `serial_open` also take `window`: a pid, or
 a path inside that window's workspace. It aims that call, and your later calls
@@ -363,8 +363,10 @@ without a path follow it to the same window.
 
 When no rule decides — two windows debugging at once, or several idle ones — it
 refuses to guess and asks you to choose: reading the wrong board's memory looks
-exactly like a firmware bug. `list_debug_windows` shows the candidates;
-`select_debug_window` pins one for the rest of the session.
+exactly like a firmware bug. `list_debug_windows` shows the candidates and the
+default target; `select_debug_window` pins one for the rest of the session. Or
+ask the user to pick one: a click on "CDA" in the VS Code status bar opens
+Select Target Window.
 
 ---
 
