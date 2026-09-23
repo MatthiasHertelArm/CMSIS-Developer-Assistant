@@ -15,8 +15,22 @@
  */
 
 import * as vscode from 'vscode';
-import { serialController, SerialOpenOptions } from './core/serialController';
+import { describeRelease, SerialController, serialController, SerialOpenOptions, SerialStatus } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
+
+/** Why the owned port is closed, when it closed by itself; undefined when it is open or was closed on purpose. */
+function releaseNote(status: SerialStatus): string | undefined {
+    return !status.open && status.lastRelease ? describeRelease(status.lastRelease) : undefined;
+}
+
+/** `closed`, or `closed (COM7 disconnected at 10:42:07), 12 byte(s) still buffered` after the port went by itself. */
+function closedText(status: SerialStatus): string {
+    const released = releaseNote(status);
+    if (!released) {
+        return 'closed';
+    }
+    return `closed (${released})${status.bufferedBytes > 0 ? `, ${status.bufferedBytes} byte(s) still buffered` : ''}`;
+}
 
 /**
  * Serial-tool handlers. Two backends:
@@ -31,9 +45,12 @@ import { serialMonitorBridge } from './core/serialMonitorBridge';
  *      the bridge picks it up automatically with no further changes.
  *
  * The agent picks: `serial_open` (own port) vs `serial_subscribe_monitor`
- * (tap user's UI session).
+ * (tap user's UI session). The owned port is the `serialController`
+ * singleton unless a test hands in its own controller.
  */
 export class SerialHandler {
+
+    constructor(private readonly owned: SerialController = serialController) {}
 
     // ── Backend-agnostic helpers ────────────────────────────────────
 
@@ -51,7 +68,7 @@ export class SerialHandler {
             return lines.join('\n');
         }
 
-        const fromOwn = await serialController.listPorts();
+        const fromOwn = await this.owned.listPorts();
         if (fromOwn.length === 0) { return 'No serial ports detected.'; }
         const lines = [`Available serial ports (${fromOwn.length}, via serialport):`];
         for (const p of fromOwn) {
@@ -65,24 +82,28 @@ export class SerialHandler {
     // ── Owned-port backend (serialport) ─────────────────────────────
 
     async handleOpen(args: SerialOpenOptions): Promise<string> {
-        await serialController.open(args);
-        const s = serialController.status();
+        await this.owned.open(args);
+        const s = this.owned.status();
         return `Owned serial port opened: ${s.path} @ ${s.baudRate} baud. ` +
             `Note: if MS Serial Monitor is also holding this port the OS will reject one of you. ` +
             `Use serial_read / serial_write / serial_close for this owned connection.`;
     }
 
     async handleClose(): Promise<string> {
-        const wasOpen = serialController.isOpen();
-        await serialController.close();
-        return wasOpen ? 'Owned serial port closed.' : 'No owned serial port was open.';
+        const wasOpen = this.owned.isOpen();
+        const released = releaseNote(this.owned.status());
+        await this.owned.close();
+        if (wasOpen) {
+            return 'Owned serial port closed.';
+        }
+        return released ? `No owned serial port was open (${released}).` : 'No owned serial port was open.';
     }
 
     async handleStatus(): Promise<string> {
-        const s = serialController.status();
+        const s = this.owned.status();
         const bridge = await serialMonitorBridge.status();
         const lines: string[] = [];
-        lines.push(`Owned serial: ${s.open ? `OPEN on ${s.path} @ ${s.baudRate} baud, ${s.bufferedBytes} byte(s) buffered (since ${s.openedAt})` : 'closed'}`);
+        lines.push(`Owned serial: ${s.open ? `OPEN on ${s.path} @ ${s.baudRate} baud, ${s.bufferedBytes} byte(s) buffered (since ${s.openedAt})` : closedText(s)}`);
         lines.push(`Serial Monitor bridge: extension ${bridge.extensionInstalled ? 'installed' : 'NOT INSTALLED'}` +
             `, ${bridge.activated ? 'activated' : 'inactive'}` +
             `, data-subscription ${bridge.dataSubscriptionAvailable ? 'AVAILABLE' : 'unavailable in this build'}` +
@@ -97,7 +118,7 @@ export class SerialHandler {
         let payload = args.data;
         const encoding = args.encoding ?? 'utf8';
         if (args.appendNewline && encoding === 'utf8') { payload = payload + '\n'; }
-        const n = await serialController.write(payload, encoding);
+        const n = await this.owned.write(payload, encoding);
         return `Wrote ${n} byte(s) to owned serial port.`;
     }
 
@@ -106,12 +127,18 @@ export class SerialHandler {
         const from = args.from ?? 'owned';
         const data = from === 'monitor'
             ? await serialMonitorBridge.read({ maxBytes: args.maxBytes, waitMs: args.waitMs, consume: args.consume })
-            : await serialController.read({ maxBytes: args.maxBytes, waitMs: args.waitMs, consume: args.consume });
+            : await this.owned.read({ maxBytes: args.maxBytes, waitMs: args.waitMs, consume: args.consume });
 
+        // The owned port closed by itself: the bytes received before still come, with the reason.
+        const released = from === 'owned' ? releaseNote(this.owned.status()) : undefined;
+        const closedNote = released ? `The owned port is closed: ${released}. Reopen it with serial_open.` : undefined;
         if (data.length === 0) {
-            return `Serial RX (${from}): <no data>`;
+            return closedNote ? `Serial RX (${from}): <no data>\n${closedNote}` : `Serial RX (${from}): <no data>`;
         }
         const lines: string[] = [`Serial RX (${from}): ${data.length} byte(s)${args.consume === false ? ' (peek)' : ''}`];
+        if (closedNote) {
+            lines.push(closedNote);
+        }
         if (format === 'utf8' || format === 'both') {
             lines.push('--- text ---');
             lines.push(data.toString('utf8'));
@@ -129,7 +156,7 @@ export class SerialHandler {
 
     async handleClearBuffer(args?: { from?: 'owned' | 'monitor' }): Promise<string> {
         const from = args?.from ?? 'owned';
-        const n = from === 'monitor' ? serialMonitorBridge.clearBuffer() : serialController.clearBuffer();
+        const n = from === 'monitor' ? serialMonitorBridge.clearBuffer() : this.owned.clearBuffer();
         return `Cleared ${n} byte(s) from ${from} RX buffer.`;
     }
 

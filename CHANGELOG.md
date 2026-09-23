@@ -16,6 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - The registry format and the protocol between windows stay compatible with 2.5.0 and 2.3.10.
   - **Linux: reload every VS Code window after updating.** A window that was not reloaded keeps using the old registry directory and is invisible to updated windows until it is reloaded. On macOS and Windows the directory name does not change.
 
+### Fixed
+- **A serial port that goes away by itself is reported as closed, with the reason (part of #49).**
+  - Previously the port's `close` and `error` events were only logged. After an unplug, `serial_status` still showed the old path, baud rate and open time, and `serial_write` said only "No serial port open".
+  - The owned port is now forgotten when it closes by itself, or fails after closing; a late event of a port already replaced changes nothing. The bytes received before stay readable.
+  - `serial_status` reports `closed (COM7 disconnected at 10:42:07)`, and `serial_read`, `serial_write` and `serial_close` name the same reason and point to `serial_open`.
+  - The Serial Monitor bridge no longer sends agents to `serial_read_owned`, a tool that does not exist, but to `serial_open` and `serial_read`.
+
 ## [2.5.0] - 2026-09-23
 
 ### Changed

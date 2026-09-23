@@ -14,17 +14,23 @@
  * limitations under the License.
  */
 
-
-import { SerialPort } from 'serialport';
-import { logger } from '../utils/logger';
-
 /**
  * Programmatic serial port controller — own a connection independent of the
  * Serial Monitor UI extension. Buffers RX data so an MCP client can poll/read
  * it on demand. Use this when the user is NOT running an MS Serial Monitor
  * session for the same port (the OS only allows one reader per tty in the
  * default mode).
+ *
+ * The state follows the port, not only `close()`: when the port closes by
+ * itself (the adapter was unplugged) or fails after it closed, the controller
+ * forgets it, keeps the received bytes readable, and remembers why as
+ * `lastRelease`, which the serial tools name (#49). Tests build their own
+ * controller over serialport's `SerialPortMock` and a fixed clock; the
+ * extension uses the `serialController` singleton.
  */
+
+import { SerialPort } from 'serialport';
+import { logger } from '../utils/logger';
 
 export interface SerialOpenOptions {
     path: string;
@@ -45,22 +51,89 @@ export interface SerialPortInfo {
     vendorId?: string;
 }
 
+/** Why the owned port closed without `serial_close`: unplugged, or closed or failed on its own. */
+export interface SerialRelease {
+    path: string;
+    at: Date;
+    reason: 'disconnected' | 'closed-unexpectedly';
+    /** The port's error message, when it gave one. */
+    detail?: string;
+}
+
 export interface SerialStatus {
     open: boolean;
     path: string | null;
     baudRate: number | null;
     bufferedBytes: number;
     openedAt: string | null;
+    /** Kept from the port's own close until the next successful open. */
+    lastRelease: SerialRelease | null;
+}
+
+/** What the controller hands the port factory: the `serialport` options, never opened on construction. */
+export interface PortOptions {
+    path: string;
+    baudRate: number;
+    dataBits: 5 | 6 | 7 | 8;
+    parity: 'none' | 'even' | 'odd' | 'mark' | 'space';
+    stopBits: 1 | 1.5 | 2;
+    rtscts: boolean;
+    autoOpen: false;
+}
+
+/** The part of a port the controller uses; serialport's `SerialPort` and `SerialPortMock` both fit. */
+export interface OwnedPort {
+    readonly isOpen: boolean;
+    open(callback: (err: Error | null) => void): void;
+    close(callback: (err: Error | null) => void): void;
+    write(data: Buffer, callback: (err: Error | null | undefined) => void): boolean;
+    drain(callback: (err: Error | null) => void): void;
+    on(event: 'data', listener: (chunk: Buffer) => void): unknown;
+    on(event: 'error', listener: (err: Error) => void): unknown;
+    on(event: 'close', listener: (err?: Error | null) => void): unknown;
+}
+
+/** Where ports and timestamps come from; each defaults to the real thing. */
+export interface SerialControllerDeps {
+    createPort?: (options: PortOptions) => OwnedPort;
+    clock?: () => Date;
 }
 
 const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
 
-class SerialController {
-    private port: SerialPort | null = null;
+/** serialport 13 closes an unplugged port with a `DisconnectedError`, marked `disconnected: true`. */
+function isDisconnect(err: Error | null | undefined): boolean {
+    return (err as { disconnected?: unknown } | null | undefined)?.disconnected === true;
+}
+
+/** `10:42:07`: local wall-clock time, as the user reads it next to the board. */
+function clockTime(at: Date): string {
+    return at.toTimeString().slice(0, 8);
+}
+
+/** `COM7 disconnected at 10:42:07`, or `COM7 closed unexpectedly at 10:42:07 (reason)`. */
+export function describeRelease(release: SerialRelease): string {
+    if (release.reason === 'disconnected') {
+        return `${release.path} disconnected at ${clockTime(release.at)}`;
+    }
+    const why = release.detail ? ` (${release.detail})` : '';
+    return `${release.path} closed unexpectedly at ${clockTime(release.at)}${why}`;
+}
+
+export class SerialController {
+    private port: OwnedPort | null = null;
     private buffer: Buffer = Buffer.alloc(0);
     private openedAt: Date | null = null;
     private currentPath: string | null = null;
     private currentBaud: number | null = null;
+    private lastRelease: SerialRelease | null = null;
+    private readonly createPort: (options: PortOptions) => OwnedPort;
+    private readonly clock: () => Date;
+
+    constructor(deps: SerialControllerDeps = {}) {
+        this.createPort = deps.createPort ?? ((options) => new SerialPort(options));
+        this.clock = deps.clock ?? (() => new Date());
+    }
 
     async listPorts(): Promise<SerialPortInfo[]> {
         const ports = await SerialPort.list();
@@ -86,6 +159,7 @@ class SerialController {
             baudRate: this.currentBaud,
             bufferedBytes: this.buffer.length,
             openedAt: this.openedAt ? this.openedAt.toISOString() : null,
+            lastRelease: this.lastRelease,
         };
     }
 
@@ -102,22 +176,23 @@ class SerialController {
         const rtscts = opts.rtscts ?? false;
 
         await new Promise<void>((resolve, reject) => {
-            const p = new SerialPort({
+            const p = this.createPort({
                 path: opts.path, baudRate, dataBits, parity, stopBits, rtscts,
                 autoOpen: false,
-            }, (err) => { if (err) { reject(err); } });
+            });
 
             p.on('data', (chunk: Buffer) => this.appendToBuffer(chunk));
-            p.on('error', (err) => logger.warn(`Serial port error: ${err.message}`));
-            p.on('close', () => logger.info(`Serial port '${opts.path}' closed`));
+            p.on('error', (err) => this.onPortError(p, err));
+            p.on('close', (err) => this.onPortClosed(p, opts.path, err));
 
             p.open((err) => {
                 if (err) { reject(err); return; }
                 this.port = p;
-                this.openedAt = new Date();
+                this.openedAt = this.clock();
                 this.currentPath = opts.path;
                 this.currentBaud = baudRate;
                 this.buffer = Buffer.alloc(0);
+                this.lastRelease = null;
                 resolve();
             });
         });
@@ -126,32 +201,31 @@ class SerialController {
     async close(): Promise<void> {
         if (!this.port) { return; }
         const p = this.port;
-        try {
-            await new Promise<void>((resolve, reject) => {
-                p.close((err) => err ? reject(err) : resolve());
-            });
-        } finally {
-            // Forget the port even when closing it failed (the adapter was
-            // unplugged): otherwise every later open() refuses with "already
-            // open" and the only way out is a window reload.
-            this.port = null;
-            this.openedAt = null;
-            this.currentPath = null;
-            this.currentBaud = null;
-        }
+        // Forgotten before the close, not after: the port's own 'close' event,
+        // which comes first, then finds nothing to release. Also when closing
+        // fails (the adapter was unplugged): otherwise every later open()
+        // refuses with "already open" and the only way out is a window reload.
+        this.forgetPort();
+        await new Promise<void>((resolve, reject) => {
+            p.close((err) => err ? reject(err) : resolve());
+        });
     }
 
     async write(data: string | Buffer, encoding: 'utf8' | 'hex' = 'utf8'): Promise<number> {
-        if (!this.port || !this.port.isOpen) {
-            throw new Error('No serial port open. Call serial_open first.');
+        // Held for the whole call: an unplug in between releases `this.port`, not this write's port.
+        const port = this.port;
+        if (!port || !port.isOpen) {
+            throw new Error(this.lastRelease
+                ? `No serial port open: ${describeRelease(this.lastRelease)}. Reopen it with serial_open.`
+                : 'No serial port open. Call serial_open first.');
         }
         const buf = Buffer.isBuffer(data) ? data
             : (encoding === 'hex' ? Buffer.from(data.replace(/\s+/g, ''), 'hex') : Buffer.from(data, 'utf8'));
         await new Promise<void>((resolve, reject) => {
-            this.port!.write(buf, (err) => err ? reject(err) : resolve());
+            port.write(buf, (err) => err ? reject(err) : resolve());
         });
         await new Promise<void>((resolve, reject) => {
-            this.port!.drain((err) => err ? reject(err) : resolve());
+            port.drain((err) => err ? reject(err) : resolve());
         });
         return buf.length;
     }
@@ -182,6 +256,42 @@ class SerialController {
         const n = this.buffer.length;
         this.buffer = Buffer.alloc(0);
         return n;
+    }
+
+    private forgetPort(): void {
+        this.port = null;
+        this.openedAt = null;
+        this.currentPath = null;
+        this.currentBaud = null;
+    }
+
+    /**
+     * The port closed without `close()`: unplugged (a `DisconnectedError`),
+     * or closed by the driver. A late event of a port already replaced or
+     * closed on purpose changes nothing.
+     */
+    private onPortClosed(p: OwnedPort, path: string, err: Error | null | undefined): void {
+        logger.info(`Serial port '${path}' closed${err ? `: ${err.message}` : ''}`);
+        if (this.port !== p) {
+            return;
+        }
+        this.release(path, isDisconnect(err) ? 'disconnected' : 'closed-unexpectedly', err?.message);
+    }
+
+    /** An error while the port is open is only logged; one that leaves it closed releases it like a close. */
+    private onPortError(p: OwnedPort, err: Error): void {
+        logger.warn(`Serial port error: ${err.message}`);
+        if (this.port !== p || p.isOpen) {
+            return;
+        }
+        this.release(this.currentPath ?? '?', isDisconnect(err) ? 'disconnected' : 'closed-unexpectedly', err.message);
+    }
+
+    /** Forget the port and remember why; the received bytes stay readable. */
+    private release(path: string, reason: SerialRelease['reason'], detail: string | undefined): void {
+        this.forgetPort();
+        this.lastRelease = { path, at: this.clock(), reason, ...(detail && reason !== 'disconnected' ? { detail } : {}) };
+        logger.warn(`Serial port released: ${describeRelease(this.lastRelease)}`);
     }
 
     private appendToBuffer(chunk: Buffer): void {

@@ -37,8 +37,8 @@ import { logger } from '../utils/logger';
  *     automatically — no extra build required.
  *
  * The bridge buffers received bytes the same way the standalone
- * `serialController` does, so the MCP `serial_read_*` tool can consume them
- * uniformly regardless of which backend produced them.
+ * `serialController` does, so `serial_read` (with `from: 'monitor'`) can
+ * consume them uniformly regardless of which backend produced them.
  */
 
 const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
@@ -162,7 +162,7 @@ class SerialMonitorBridge {
                 ok: false,
                 reason: `The installed Microsoft Serial Monitor build does not expose a public data-subscription event ` +
                     `(probed: onDidReceiveData / onDataReceived / onData / onSerialData / onDidReadData / subscribeData). ` +
-                    `Use the standalone serial_open / serial_read_owned path to own a port, or update the Serial Monitor ` +
+                    `Use serial_open and serial_read to own the port instead, or update the Serial Monitor ` +
                     `extension when MS adds the API.`,
             };
         }
