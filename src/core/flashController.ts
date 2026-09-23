@@ -19,12 +19,18 @@
  * machine-readable operation: bytes programmed + structured error on failure,
  * instead of "check the output channel" (which an agent cannot read).
  *
+ * Which pyOCD: the one the CMSIS tasks use (#46, #45) — the CMSIS Debugger
+ * extension's bundled `tools/pyocd/pyocd`, else the directory the solution's
+ * `.cmsis/tools-environment.yml` names, else PATH. The CMSIS Debugger adds
+ * its folder to PATH only for terminals and tasks, not for this process.
+ *
  * This module deliberately imports ONLY node builtins — no vscode — so the
  * parsing and process logic is testable outside the extension host.
  */
 
 import { spawn } from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
 
 /** Outcome of one `pyocd load` run. */
 export interface FlashResult {
@@ -74,11 +80,122 @@ export function parsePyocdLoadOutput(stdout: string, stderr: string): {
     };
 }
 
+/** Where a pyOCD executable was found, in the words the flash result uses. */
+export interface PyocdCandidate {
+    bin: string;
+    origin: 'debugger-extension' | 'tools-environment' | 'path';
+    /** `CMSIS Debugger 1.8.0`, `.cmsis/tools-environment.yml` or `PATH`. */
+    from: string;
+}
+
+/** What the pyOCD lookup reads; the file test is replaced in tests. */
+export interface PyocdLookup {
+    /** The install folder of the CMSIS Debugger extension, when it is installed. */
+    debuggerExtensionPath?: string;
+    debuggerVersion?: string;
+    /** The text of the solution's `.cmsis/tools-environment.yml`, when there is one. */
+    toolsEnvironmentYml?: string;
+    platform: NodeJS.Platform;
+    pathEnv?: string;
+    isFile?: (candidate: string) => boolean;
+}
+
 /**
- * Resolve pyocd on PATH. Returns the reported version string, or null when
- * pyocd is missing / not runnable.
+ * The `directory:` of the pyOCD entry under `tools:` in a
+ * tools-environment.yml, read line by line like the other generated YAML:
+ *
+ *   tools:
+ *     - name: pyOCD
+ *       version: 0.45.1
+ *       directory: /…/arm.vscode-cmsis-debugger-1.8.0-darwin-arm64/tools/pyocd
  */
-export async function probePyocd(timeoutMs = 5_000): Promise<string | null> {
+export function pyocdDirectoryIn(toolsEnvironmentYml: string): string | undefined {
+    let toolsIndent = -1;
+    let itemIndent = -1;
+    let isPyocd = false;
+    for (const raw of toolsEnvironmentYml.split(/\r?\n/)) {
+        const line = raw.replace(/\s+#.*$/, '');
+        if (line.trim().length === 0) {
+            continue;
+        }
+        const indent = line.length - line.trimStart().length;
+        if (toolsIndent < 0) {
+            if (/^\s*tools:\s*$/.test(line)) {
+                toolsIndent = indent;
+            }
+            continue;
+        }
+        if (indent <= toolsIndent) {
+            break;
+        }
+        const item = /^(\s*)-\s+(.*)$/.exec(line);
+        if (item) {
+            itemIndent = item[1].length;
+            isPyocd = false;
+        }
+        const entry = item ? item[2] : line.trim();
+        const key = /^([A-Za-z-]+):\s*(.*?)\s*$/.exec(entry);
+        // Keys of the item itself, not of a nested map such as `provider:`.
+        const ownKey = item !== null || indent === itemIndent + 2;
+        if (!key || !ownKey) {
+            continue;
+        }
+        const value = key[2].replace(/^(['"])(.*)\1$/, '$2');
+        if (key[1] === 'name') {
+            isPyocd = value.toLowerCase() === 'pyocd';
+        } else if (key[1] === 'directory' && isPyocd && value.length > 0) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The pyOCD executables to try, in order: the CMSIS Debugger's bundled one,
+ * the one tools-environment.yml names, the first on PATH (`pyocd.exe` on
+ * Windows). Only existing files are listed, each once.
+ */
+export function resolvePyocd(lookup: PyocdLookup): PyocdCandidate[] {
+    const paths = lookup.platform === 'win32' ? path.win32 : path.posix;
+    const executable = lookup.platform === 'win32' ? 'pyocd.exe' : 'pyocd';
+    const isFile = lookup.isFile ?? fileExists;
+    const found: PyocdCandidate[] = [];
+    const offer = (bin: string, origin: PyocdCandidate['origin'], from: string): boolean => {
+        if (!isFile(bin)) {
+            return false;
+        }
+        if (!found.some((candidate) => candidate.bin === bin)) {
+            found.push({ bin, origin, from });
+        }
+        return true;
+    };
+    if (lookup.debuggerExtensionPath) {
+        const version = lookup.debuggerVersion ? ` ${lookup.debuggerVersion}` : '';
+        offer(paths.join(lookup.debuggerExtensionPath, 'tools', 'pyocd', executable), 'debugger-extension', `CMSIS Debugger${version}`);
+    }
+    const listed = lookup.toolsEnvironmentYml ? pyocdDirectoryIn(lookup.toolsEnvironmentYml) : undefined;
+    if (listed) {
+        offer(paths.join(listed, executable), 'tools-environment', '.cmsis/tools-environment.yml');
+    }
+    for (const entry of (lookup.pathEnv ?? '').split(paths.delimiter)) {
+        const folder = entry.trim().replace(/^"(.*)"$/, '$1');
+        if (folder.length > 0 && offer(paths.join(folder, executable), 'path', 'PATH')) {
+            break;
+        }
+    }
+    return found;
+}
+
+/** A command line as it reads in a result: the executable quoted when it contains a space. */
+function commandText(bin: string, args: string[]): string {
+    return [/\s/.test(bin) ? `"${bin}"` : bin, ...args].join(' ');
+}
+
+/**
+ * Run `<bin> --version`. Returns the reported version string, or null when
+ * the executable is missing / not runnable.
+ */
+export async function probePyocd(bin = 'pyocd', timeoutMs = 5_000): Promise<string | null> {
     return new Promise((resolve) => {
         let settled = false;
         const finish = (version: string | null) => {
@@ -86,7 +203,7 @@ export async function probePyocd(timeoutMs = 5_000): Promise<string | null> {
         };
         let child;
         try {
-            child = spawn('pyocd', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+            child = spawn(bin, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
         } catch {
             finish(null);
             return;
@@ -104,7 +221,8 @@ export async function probePyocd(timeoutMs = 5_000): Promise<string | null> {
 }
 
 /**
- * Program all images listed under `output:` in a cbuild-run file via pyOCD.
+ * Program all images listed under `output:` in a cbuild-run file via pyOCD
+ * (`bin`, as `resolvePyocd` found it; `pyocd` from PATH by default).
  * spawn without a shell — no quoting or injection surface. The process is
  * SIGTERMed at the deadline (SIGKILL 2 s later) so a wedged probe cannot
  * hang the tool call.
@@ -112,17 +230,18 @@ export async function probePyocd(timeoutMs = 5_000): Promise<string | null> {
 export async function flashWithPyocd(
     cbuildRunFile: string,
     timeoutMs: number,
-    deps: { spawn?: typeof spawn; killGraceMs?: number } = {},
+    deps: { spawn?: typeof spawn; killGraceMs?: number; bin?: string } = {},
 ): Promise<FlashResult> {
+    const bin = deps.bin ?? 'pyocd';
     const args = ['load', '--cbuild-run', cbuildRunFile];
-    const commandLine = `pyocd ${args.join(' ')}`;
+    const commandLine = commandText(bin, args);
     const spawnFn = deps.spawn ?? spawn;
     const killGraceMs = deps.killGraceMs ?? 2_000;
     return new Promise((resolve) => {
         let stdout = '';
         let stderr = '';
         let timedOut = false;
-        const child = spawnFn('pyocd', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        const child = spawnFn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
         // Cap captured output so a chatty run cannot grow unbounded.
         const CAP = 256 * 1024;

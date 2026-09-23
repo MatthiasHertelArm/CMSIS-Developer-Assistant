@@ -17,7 +17,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s (cmsis_action and flash: <n>s); set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -1137,7 +1137,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for the task and end with ✅ or ❌ plus the exit code — read that line, do not poll for files. load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the session state; detach and stop_run are immediate. Long builds: get_debug_instructions topic build.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1152,7 +1152,8 @@
                   "load_and_debug",
                   "attach",
                   "detach",
-                  "stop_run"
+                  "stop_run",
+                  "status"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
@@ -1161,10 +1162,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). For load_and_debug / attach: the session-readiness wait.",
+                "description": "Wait in ms, default 60000, max 600000. For load_and_debug / attach: the session-readiness wait.",
                 "type": "integer",
                 "minimum": 100,
-                "maximum": 60000
+                "maximum": 600000
               }
             },
             "required": [
@@ -1177,7 +1178,7 @@
         },
         {
           "name": "flash",
-          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session is active: stop_debugging → flash → cmsis_action attach. The cbuild-run file is auto-resolved when omitted; needs pyocd on PATH.",
+          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session or CMSIS Run task holds the probe. The cbuild-run file is auto-resolved when omitted; uses the CMSIS Debugger's bundled pyOCD.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1187,10 +1188,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). Flash defaults to 60 s.",
+                "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
                 "minimum": 1000,
-                "maximum": 60000
+                "maximum": 600000
               }
             }
           },
@@ -1259,8 +1260,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33672,
-          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
+          "bytes": 34860,
+          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -1271,12 +1272,12 @@
           "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 5957,
-          "sha256": "783961aa9a690f101531cde3d8b2149aee442103153d7ca0c3eb5452bbb5bcf9"
+          "bytes": 6143,
+          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5010,
-          "sha256": "b4c10e78c7650e37c459823378a415b82b008aa8f3a303fc5e4182521cc901f2"
+          "bytes": 5241,
+          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
         }
       },
       "calls": {
@@ -1610,7 +1611,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s (cmsis_action and flash: <n>s); set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -2483,7 +2484,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for the task and end with ✅ or ❌ plus the exit code — read that line, do not poll for files. load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the session state; detach and stop_run are immediate. Long builds: get_debug_instructions topic build.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2498,7 +2499,8 @@
                   "load_and_debug",
                   "attach",
                   "detach",
-                  "stop_run"
+                  "stop_run",
+                  "status"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
@@ -2507,10 +2509,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). For load_and_debug / attach: the session-readiness wait.",
+                "description": "Wait in ms, default 60000, max 600000. For load_and_debug / attach: the session-readiness wait.",
                 "type": "integer",
                 "minimum": 100,
-                "maximum": 60000
+                "maximum": 600000
               }
             },
             "required": [
@@ -2523,7 +2525,7 @@
         },
         {
           "name": "flash",
-          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session is active: stop_debugging → flash → cmsis_action attach. The cbuild-run file is auto-resolved when omitted; needs pyocd on PATH.",
+          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session or CMSIS Run task holds the probe. The cbuild-run file is auto-resolved when omitted; uses the CMSIS Debugger's bundled pyOCD.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2533,10 +2535,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). Flash defaults to 60 s.",
+                "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
                 "minimum": 1000,
-                "maximum": 60000
+                "maximum": 600000
               }
             }
           },
@@ -2605,8 +2607,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33672,
-          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
+          "bytes": 34860,
+          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -2617,12 +2619,12 @@
           "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 5957,
-          "sha256": "783961aa9a690f101531cde3d8b2149aee442103153d7ca0c3eb5452bbb5bcf9"
+          "bytes": 6143,
+          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5010,
-          "sha256": "b4c10e78c7650e37c459823378a415b82b008aa8f3a303fc5e4182521cc901f2"
+          "bytes": 5241,
+          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
         }
       },
       "calls": {}
@@ -2643,7 +2645,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer from the manuals the target's packs ship or link, page-cited; they accept timeoutMs up to <n>s because indexing a manual on first use can take minutes. Use them before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for a web-linked one) and instead of reading a PDF into your context: a document the user provides belongs in the workspace docs/ folder or the \"Import Document for Current Target\" command, then search it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same way: for any part number call list_target_docs first, then search_target_docs; if the datasheet is not listed, find its PDF URL on the web and fetch_doc { url } — never read the PDF yourself. The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) read the ELF, linker map and build log of the current target."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s (cmsis_action and flash: <n>s); set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer from the manuals the target's packs ship or link, page-cited; they accept timeoutMs up to <n>s because indexing a manual on first use can take minutes. Use them before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for a web-linked one) and instead of reading a PDF into your context: a document the user provides belongs in the workspace docs/ folder or the \"Import Document for Current Target\" command, then search it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same way: for any part number call list_target_docs first, then search_target_docs; if the datasheet is not listed, find its PDF URL on the web and fetch_doc { url } — never read the PDF yourself. The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) read the ELF, linker map and build log of the current target."
       },
       "tools": [
         {
@@ -4242,7 +4244,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for the task and end with ✅ or ❌ plus the exit code — read that line, do not poll for files. load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the session state; detach and stop_run are immediate. Long builds: get_debug_instructions topic build.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4257,7 +4259,8 @@
                   "load_and_debug",
                   "attach",
                   "detach",
-                  "stop_run"
+                  "stop_run",
+                  "status"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
@@ -4266,10 +4269,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). For load_and_debug / attach: the session-readiness wait.",
+                "description": "Wait in ms, default 60000, max 600000. For load_and_debug / attach: the session-readiness wait.",
                 "type": "integer",
                 "minimum": 100,
-                "maximum": 60000
+                "maximum": 600000
               }
             },
             "required": [
@@ -4282,7 +4285,7 @@
         },
         {
           "name": "flash",
-          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session is active: stop_debugging → flash → cmsis_action attach. The cbuild-run file is auto-resolved when omitted; needs pyocd on PATH.",
+          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session or CMSIS Run task holds the probe. The cbuild-run file is auto-resolved when omitted; uses the CMSIS Debugger's bundled pyOCD.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4292,10 +4295,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). Flash defaults to 60 s.",
+                "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
                 "minimum": 1000,
-                "maximum": 60000
+                "maximum": 600000
               }
             }
           },
@@ -4364,8 +4367,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33672,
-          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
+          "bytes": 34860,
+          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -4376,12 +4379,12 @@
           "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 5957,
-          "sha256": "783961aa9a690f101531cde3d8b2149aee442103153d7ca0c3eb5452bbb5bcf9"
+          "bytes": 6143,
+          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5010,
-          "sha256": "b4c10e78c7650e37c459823378a415b82b008aa8f3a303fc5e4182521cc901f2"
+          "bytes": 5241,
+          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
         }
       },
       "calls": {
@@ -4745,7 +4748,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s (cmsis_action and flash: <n>s); set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -5865,7 +5868,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for the task and end with ✅ or ❌ plus the exit code — read that line, do not poll for files. load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the session state; detach and stop_run are immediate. Long builds: get_debug_instructions topic build.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -5880,7 +5883,8 @@
                   "load_and_debug",
                   "attach",
                   "detach",
-                  "stop_run"
+                  "stop_run",
+                  "status"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
@@ -5889,10 +5893,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). For load_and_debug / attach: the session-readiness wait.",
+                "description": "Wait in ms, default 60000, max 600000. For load_and_debug / attach: the session-readiness wait.",
                 "type": "integer",
                 "minimum": 100,
-                "maximum": 60000
+                "maximum": 600000
               }
             },
             "required": [
@@ -5905,7 +5909,7 @@
         },
         {
           "name": "flash",
-          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session is active: stop_debugging → flash → cmsis_action attach. The cbuild-run file is auto-resolved when omitted; needs pyocd on PATH.",
+          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session or CMSIS Run task holds the probe. The cbuild-run file is auto-resolved when omitted; uses the CMSIS Debugger's bundled pyOCD.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -5915,10 +5919,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). Flash defaults to 60 s.",
+                "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
                 "minimum": 1000,
-                "maximum": 60000
+                "maximum": 600000
               }
             }
           },
@@ -6025,8 +6029,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33672,
-          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
+          "bytes": 34860,
+          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -6037,12 +6041,12 @@
           "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 5957,
-          "sha256": "783961aa9a690f101531cde3d8b2149aee442103153d7ca0c3eb5452bbb5bcf9"
+          "bytes": 6143,
+          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5010,
-          "sha256": "b4c10e78c7650e37c459823378a415b82b008aa8f3a303fc5e4182521cc901f2"
+          "bytes": 5241,
+          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
         }
       },
       "calls": {
@@ -6492,7 +6496,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s (cmsis_action and flash: <n>s); set it when you can estimate the work. A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on the line after; a result with structuredContent status \"timeout\" or \"running\" is not a failure — the wait ran out or the work goes on. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -7612,7 +7616,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for the task and end with ✅ or ❌ plus the exit code — read that line, do not poll for files. load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the session state; detach and stop_run are immediate. Long builds: get_debug_instructions topic build.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -7627,7 +7631,8 @@
                   "load_and_debug",
                   "attach",
                   "detach",
-                  "stop_run"
+                  "stop_run",
+                  "status"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
@@ -7636,10 +7641,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). For load_and_debug / attach: the session-readiness wait.",
+                "description": "Wait in ms, default 60000, max 600000. For load_and_debug / attach: the session-readiness wait.",
                 "type": "integer",
                 "minimum": 100,
-                "maximum": 60000
+                "maximum": 600000
               }
             },
             "required": [
@@ -7652,7 +7657,7 @@
         },
         {
           "name": "flash",
-          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session is active: stop_debugging → flash → cmsis_action attach. The cbuild-run file is auto-resolved when omitted; needs pyocd on PATH.",
+          "description": "Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or the exit code with pyOCD's error lines. Refuses while a debug session or CMSIS Run task holds the probe. The cbuild-run file is auto-resolved when omitted; uses the CMSIS Debugger's bundled pyOCD.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -7662,10 +7667,10 @@
                 "type": "string"
               },
               "timeoutMs": {
-                "description": "Per-call timeout in ms, max 60000 (see server instructions). Flash defaults to 60 s.",
+                "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
                 "minimum": 1000,
-                "maximum": 60000
+                "maximum": 600000
               }
             }
           },
@@ -7772,8 +7777,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 33672,
-          "sha256": "ac66180f6c1c38469441f6f7f43204558994a0716a138c4a0b9920e82f434911"
+          "bytes": 34860,
+          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -7784,12 +7789,12 @@
           "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 5957,
-          "sha256": "783961aa9a690f101531cde3d8b2149aee442103153d7ca0c3eb5452bbb5bcf9"
+          "bytes": 6143,
+          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5010,
-          "sha256": "b4c10e78c7650e37c459823378a415b82b008aa8f3a303fc5e4182521cc901f2"
+          "bytes": 5241,
+          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
         }
       },
       "calls": {

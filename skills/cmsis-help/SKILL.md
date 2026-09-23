@@ -77,7 +77,7 @@ Open the command palette (Ctrl/Cmd+Shift+P) and type the title.
 The CMSIS Developer Assistant MCP server (`http://localhost:3001/mcp`, registered with
 the agents the user selected in the setup) exposes these tool groups:
 
-- **CMSIS Solution actions** — `cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons); `flash` — program via pyOCD with a synchronous result.
+- **CMSIS Solution actions** — `cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons) and status (the job in flight); `flash` — program with the CMSIS Debugger's pyOCD, with a synchronous result.
 - **Run control** — `start_debugging`, `stop_debugging`, `restart_debugging`, `continue_execution`, `pause_execution`, `step_over`, `step_into`, `step_out`, `wait_for_stop`, `reset`.
 - **Breakpoints** — `add_breakpoint` (by line, optional condition), `add_logpoint`, `remove_breakpoint`, `list_breakpoints`, `clear_all_breakpoints`.
 - **Inspection** — `get_call_stack`, `get_threads`, `get_frame_variables`, `list_variable_names`, `get_variables_values`, `evaluate_expression`.

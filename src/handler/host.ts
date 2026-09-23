@@ -16,22 +16,30 @@
 
 /**
  * What the debugging handler takes from its surroundings apart from the
- * executor: a clock, VS Code's focused stack frame, task process events and
- * the workspace folders.
+ * executor: a clock, VS Code's focused stack frame, the window's CMSIS job
+ * tracker, the workspace folders, and where `flash` looks for pyOCD.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
  * scenarios. Unit tests hand the handler their own host instead: a scaled
  * clock turns a 60 s fence or an 8 s session wait into milliseconds, and a
- * task end can be fired by hand.
+ * tracker over fake task events lets a test end a task by hand.
  */
 
 import * as vscode from 'vscode';
+import { CmsisJobTracker, windowJobTracker } from '../cmsisJobTracker';
 
-/** The two task events the CMSIS task waiter listens to (`vscode.tasks` has both). */
-export interface TaskFeed {
-    onDidStartTaskProcess: vscode.Event<vscode.TaskProcessStartEvent>;
-    onDidEndTaskProcess: vscode.Event<vscode.TaskProcessEndEvent>;
+/** An installed extension, as the pyOCD lookup of `flash` needs it. */
+export interface InstalledExtension {
+    path: string;
+    version?: string;
+}
+
+/** Where `flash` looks for pyOCD: an extension's folder, this process's PATH, the platform. */
+export interface ToolEnvironment {
+    extension(id: string): InstalledExtension | undefined;
+    pathEnv: string | undefined;
+    platform: NodeJS.Platform;
 }
 
 export interface HandlerHost {
@@ -43,12 +51,14 @@ export interface HandlerHost {
     startTimer(ms: number, fire: () => void): () => void;
     /** The frame id of the focused stack item when that item is a frame (not a thread). */
     focusedFrameId(): number | undefined;
-    /** Task process events. Only the build-class CMSIS actions ask for them. */
-    taskFeed(): TaskFeed;
+    /** The window's CMSIS job tracker: task executions, jobs, probe owners. */
+    cmsisJobs(): CmsisJobTracker;
     /** The open workspace folders, in VS Code's order. */
     workspaceFolders(): readonly vscode.WorkspaceFolder[];
     /** `vscode.workspace.findFiles`. */
     findFiles(include: string, exclude: string, maxResults: number): Thenable<vscode.Uri[]>;
+    /** What the pyOCD lookup of `flash` reads. */
+    toolEnvironment(): ToolEnvironment;
 }
 
 /** The real thing: Node timers and the VS Code API, looked up per call. */
@@ -65,7 +75,19 @@ export const VSCODE_HOST: HandlerHost = {
         const item = vscode.debug.activeStackItem;
         return item !== undefined && 'frameId' in item ? item.frameId : undefined;
     },
-    taskFeed: () => vscode.tasks,
+    cmsisJobs: () => windowJobTracker(),
     workspaceFolders: () => vscode.workspace.workspaceFolders ?? [],
     findFiles: (include, exclude, maxResults) => vscode.workspace.findFiles(include, exclude, maxResults),
+    toolEnvironment: () => ({
+        extension: (id) => {
+            const found = vscode.extensions.getExtension(id);
+            if (!found) {
+                return undefined;
+            }
+            const version: unknown = (found.packageJSON as { version?: unknown } | undefined)?.version;
+            return { path: found.extensionPath, version: typeof version === 'string' ? version : undefined };
+        },
+        pathEnv: process.env.PATH,
+        platform: process.platform,
+    }),
 };

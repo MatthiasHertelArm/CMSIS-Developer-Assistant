@@ -82,13 +82,13 @@ The five documentation commands work whether or not the documentation tools are 
 
 ## Agent Tools
 
-Every tool that touches the hardware accepts an optional `timeoutMs` parameter (capped at 60 s by the server) and always returns within that deadline, even if the probe stalls.
+Every tool that touches the hardware accepts an optional `timeoutMs` parameter (capped at 60 s by the server; 600 s for `cmsis_action` and `flash`) and always returns within that deadline, even if the probe stalls.
 
 ### CMSIS Solution actions
 
 | Tool | Description |
 |------|-------------|
-| `cmsis_action` | Runs the action buttons of the CMSIS Solution view: `build`, `load`, `erase`, `load_and_run`, `load_and_debug`, `attach`, `detach`, `stop_run`. `load_and_debug` builds (if needed), programs the device, and attaches the debugger in one step. Every result names the target-type / target-set it ran on; the optional `target` (`MPS3` or `HP@debug`) switches a differing one first and verifies it through the extension. |
+| `cmsis_action` | Runs the action buttons of the CMSIS Solution view: `build`, `load`, `erase`, `load_and_run`, `load_and_debug`, `attach`, `detach`, `stop_run`. `load_and_debug` builds (if needed), programs the device, and attaches the debugger in one step. Every result names the target-type / target-set it ran on; the optional `target` (`MPS3` or `HP@debug`) switches a differing one first and verifies it through the extension. Each run is followed as a job: the result names the task, its exit code and the job; a task still running when the wait ends answers with status `running`, `status` waits for it, and a repeated call attaches to it instead of starting it again. Probe actions are refused while a CMSIS Run task, a flash or a debug session holds the probe. |
 
 ### Run control
 
@@ -131,7 +131,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 | `lookup_peripheral` | Answers from the SVD without touching the target, with or without a session: the peripheral list, a peripheral's register map, or which peripheral and register sit at an address (resolve a BFAR). |
 | `lookup_register` | Describes one register from the SVD: address, access, reset value, bit fields with enumerated values — which bit is the clock enable, before reading anything. |
 | `read_cycle_counter` | Reads the DWT cycle counter for cycle-accurate timing between two stops. Enables the counter on first use and reports cores without one. |
-| `flash` | Programs the Flash with `pyocd load --cbuild-run` outside a debug session and returns bytes programmed or the structured pyOCD error. |
+| `flash` | Programs the Flash with `pyocd load --cbuild-run` outside a debug session and returns bytes programmed or the structured pyOCD error. Uses the pyOCD bundled with the Arm CMSIS Debugger; refused while a debug session or a CMSIS Run task holds the probe. |
 | `get_device_info` | Returns device, probe, processor, GDB server, ports, and the `*.cbuild-run.yml` of the session. |
 
 ### Serial ports
@@ -187,7 +187,7 @@ Deterministic reads of the current target's build output — no debug session ne
 
 ### Behavior the agent can rely on
 
-- **No tool call hangs.** Every hardware-touching tool returns within 60 s at most; every request to the debug adapter has its own timeout and fails with a `HardwareTimeoutError` instead of blocking.
+- **No tool call hangs.** Every hardware-touching tool returns within 60 s at most (`cmsis_action` and `flash` within the wait they are given, at most 600 s); every request to the debug adapter has its own timeout and fails with a `HardwareTimeoutError` instead of blocking.
 - **Inspection tools report the real state.** If the target is running, the call returns an error that names the recovery tool (`pause_execution`, `add_breakpoint`, `continue_execution`) instead of a misleading "no debug session".
 - **Motion tools explain overshoots.** When `continue_execution` or a step does not stop in time, the tool pauses the target and reports the program counter and active frame.
 - **`reset` never claims a reset that did not happen.** The program counter is checked against the reset vector; an unverified reset is reported as such, together with the replies of the debug adapter.
@@ -363,7 +363,7 @@ Claude Desktop only supports stdio MCP servers and is connected through `mcp-rem
 - **Visual Studio Code** 1.109.0 or newer.
 - **Arm CMSIS Debugger** extension for Cortex-M targets, together with a debug probe supported by pyOCD (CMSIS-DAP, ST-Link) or a SEGGER® J-LINK® with the J-Link software installed. The **Arm CMSIS Solution** extension generates the debug configuration.
 - **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, or Codex.
-- **pyOCD on the `PATH`** only for the `flash` tool; `cmsis_action load` programs the device through the CMSIS Solution extension instead.
+- **pyOCD** for the `flash` tool comes with the Arm CMSIS Debugger (`tools/pyocd`); `flash` otherwise takes the one the solution's `.cmsis/tools-environment.yml` or the `PATH` names. `cmsis_action load` programs the device through the CMSIS Solution extension instead.
 - **Node.js** with `npx` only for Claude Desktop (stdio bridge).
 
 ## Related projects

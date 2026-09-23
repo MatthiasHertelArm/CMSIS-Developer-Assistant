@@ -77,7 +77,7 @@ If the firmware is in a free run and you need to know where it is:
 
 ### Timeout strategy
 
-Every hardware-touching tool accepts `timeoutMs` (capped to 60 s). Estimate before you call: a `read_core_registers` is ~5–15 s, a single `read_memory` (≤4 KB) is ~1–5 s, `continue_execution` until a known breakpoint is the wild card. If you don't supply `timeoutMs` the server picks a sensible default.
+Every hardware-touching tool accepts `timeoutMs` (capped to 60 s; `cmsis_action` and `flash` wait up to 600 s, and a job still running at the end of the wait answers with status `running` — call `cmsis_action {action:'status'}`, never start it again). Estimate before you call: a `read_core_registers` is ~5–15 s, a single `read_memory` (≤4 KB) is ~1–5 s, `continue_execution` until a known breakpoint is the wild card. If you don't supply `timeoutMs` the server picks a sensible default.
 
 When `continue_execution` or `step_*` times out, the server **auto-heals**: it pauses the target, reads the PC, and tells you where the firmware actually was. Read the 🩹 Recovery section of the response — you may not have set the breakpoint you thought you did.
 

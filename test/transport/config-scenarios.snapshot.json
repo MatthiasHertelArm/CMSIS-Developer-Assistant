@@ -8469,6 +8469,14 @@
           "event": "debug.onDidTerminateDebugSession"
         },
         {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
           "ev": "call",
           "fn": "registerToolchainPackRootInvalidation",
           "args": [
@@ -9546,6 +9554,7 @@
           "subscriptions": [
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
@@ -9652,6 +9661,14 @@
         {
           "ev": "subscribe",
           "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
         },
         {
           "ev": "call",
@@ -10041,6 +10058,7 @@
           "subscriptions": [
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
@@ -10148,6 +10166,14 @@
         {
           "ev": "subscribe",
           "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
         },
         {
           "ev": "call",
@@ -10453,6 +10479,7 @@
           "subscriptions": [
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
@@ -10520,6 +10547,14 @@
         {
           "ev": "subscribe",
           "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
         },
         {
           "ev": "call",
@@ -10867,6 +10902,7 @@
           "subscriptions": [
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",

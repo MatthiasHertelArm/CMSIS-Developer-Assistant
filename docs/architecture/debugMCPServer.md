@@ -123,7 +123,7 @@ The server reports the name `cmsis-developer-assistant` and the version
 assembles the `instructions` of the initialize result from fixed sentences:
 what the tools are for, to invoke the `cmsis-debug-live` Agent Skill first and
 what it brings, `get_debug_instructions` for harnesses that load no skills,
-the 60 s cap on `timeoutMs`, how to read a result (`isError` and the
+the 60 s cap on `timeoutMs` (600 s for `cmsis_action` and `flash`), how to read a result (`isError` and the
 `[CODE]` prefix; `timeout` and `running` are not failures), and one sentence
 each for the documentation and build-artefact groups. The sentence on
 results lives here rather than in the tool descriptions, so `tools/list`,

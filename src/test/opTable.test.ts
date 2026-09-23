@@ -81,6 +81,9 @@ suite('Op table', () => {
             assert.ok(forwardTimeoutMs(slow, {}, TOOL_MS) >= TEN_MINUTES, `${slow} keeps the floor`);
         }
         assert.ok(forwardTimeoutMs('handleReadDocPages', { timeoutMs: TEN_MINUTES }, TOOL_MS) >= 615_000);
+        // cmsis_action and flash may wait 600 s for their job (#12): the router waits longer than that.
+        assert.ok(forwardTimeoutMs('handleCmsisCommand', { timeoutMs: TEN_MINUTES }, TOOL_MS) >= 615_000);
+        assert.ok(forwardTimeoutMs('handleFlash', { timeoutMs: TEN_MINUTES }, TOOL_MS) >= 615_000);
         assert.strictEqual(forwardTimeoutMs('handleLookupSymbol', {}, TOOL_MS), 45_000,
             'build-artefact ops have no floor');
     });

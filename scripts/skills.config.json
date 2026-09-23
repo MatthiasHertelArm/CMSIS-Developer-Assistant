@@ -35,7 +35,7 @@
     "toolGroups": [
       {
         "name": "CMSIS Solution actions",
-        "summary": "`cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons); `flash` — program via pyOCD with a synchronous result."
+        "summary": "`cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons) and status (the job in flight); `flash` — program with the CMSIS Debugger's pyOCD, with a synchronous result."
       },
       {
         "name": "Run control",

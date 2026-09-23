@@ -104,11 +104,19 @@ target is switched and verified before anything runs, an undeclared one is
 refused with the declared list.
 
 If those files are missing, build first (`cmsis_action` with `action='build'`).
-It waits for cbuild and ends with ✅ or ❌ plus the exit code — read that line
-rather than polling for output files. Pack resolution or a first build can
-exceed a call's 60 s cap; the reply then says the call did not complete and
-the build is still running — wait, then run `build` again for the real result.
-Every tool that takes `timeoutMs` accepts up to 60000 ms for that one call.
+It waits for cbuild and ends with ✅ or ❌ plus the exit code and a job id —
+read that line rather than polling for output files. Pack resolution or a
+first build can outlast the call's wait (60 s by default; `timeoutMs` up to
+600000 for `cmsis_action` and `flash`, 60000 for the other tools). The reply
+then has status `running` and names the job: call `cmsis_action` with
+`action='status'` for the result, and never start the build again to learn
+it — a repeated build attaches to the one in flight.
+
+`load_and_run` leaves the CMSIS Run task holding the probe (it hosts the GDB
+server): `attach` debugs that firmware, and `cmsis_action` `stop_run` frees
+the probe before `load`, `load_and_debug` or `flash`. A `PROBE_BUSY` error
+names what holds the probe and the step to take. `flash` uses the CMSIS
+Debugger's bundled pyOCD — never install one.
 If `launch.json` is stale, the user has to regenerate it: **CMSIS Solution →
 Manage Solution → Debugger → Apply**. You cannot do that step for them.
 

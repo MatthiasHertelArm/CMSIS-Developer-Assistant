@@ -41,7 +41,8 @@ The session-status output includes a hint for each state. If state is `running` 
 
 ### Tool Call Hangs or Times Out
 
-- The server caps every call to 60 s; if you hit the cap, the response includes a structured "handler-level cap" message — the underlying request was abandoned, not actually stuck
+- The server caps every call to 60 s (`cmsis_action` and `flash`: 600 s); if you hit the cap, the response includes a structured "handler-level cap" message — the underlying request was abandoned, not actually stuck
+- A `cmsis_action` whose task is still going answers with status `running` and a job id; that is no hang — call `cmsis_action {action:'status'}` for the result and do not start the action again
 - Causes: probe disconnect, target reset in mid-flight, GDB server crash
 - Run the first-line diagnostic sweep above; `restart_debugging` if probe is wedged
 

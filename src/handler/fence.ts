@@ -20,6 +20,10 @@
  * code), and a call that outlives its limit is answered by the cap: a
  * `timeout` reply for the tools that wait for something, a `TIMEOUT` error
  * for the reads, which have no result to show (#11).
+ *
+ * The limit is capped at 60 s, except for `cmsis_action` and `flash`, whose
+ * waits may run to 600 s (#12). Those two answer before their fence, which
+ * stays as a backstop with advice of their own.
  */
 
 import { ToolError, ToolText, toToolError } from '../core/toolResult';
@@ -27,8 +31,10 @@ import type { HandlerHost } from './host';
 
 /** The limit when the caller passes no positive `timeoutMs`. */
 const UNSPECIFIED_LIMIT_MS = 30_000;
-/** The most any single call may ask for (#12). */
+/** The most any single call may ask for. */
 const LIMIT_CAP_MS = 60_000;
+/** The most `cmsis_action` and `flash` may ask for (#12). */
+export const LONG_LIMIT_CAP_MS = 600_000;
 
 /**
  * What the cap answers: `reply` for tools that wait (the wait ran out, which
@@ -41,10 +47,10 @@ export function failureText(caught: unknown): string {
     return caught instanceof Error ? caught.message : String(caught);
 }
 
-/** The limit for a tool call's `timeoutMs`: clamped when positive, else the 30 s default. */
-export function fenceLimitMs(timeoutMs: number | undefined): number {
+/** The limit for a tool call's `timeoutMs`: clamped to `capMs` when positive, else the 30 s default. */
+export function fenceLimitMs(timeoutMs: number | undefined, capMs: number = LIMIT_CAP_MS): number {
     if (typeof timeoutMs === 'number' && timeoutMs > 0) {
-        return Math.min(timeoutMs, LIMIT_CAP_MS);
+        return Math.min(timeoutMs, capMs);
     }
     return UNSPECIFIED_LIMIT_MS;
 }
@@ -55,6 +61,12 @@ function overrunStatement(label: string, limitMs: number): string {
 
 const OVERRUN_ADVICE = 'The DAP probe or target may be unresponsive — call get_session_status / check_target_connection to confirm. '
     + 'Note: the underlying request may still be running on the server; consider restart_debugging if subsequent calls also stall.';
+
+/** A cap other than 60 s, and what the cap's answer advises instead of the DAP text. */
+export interface FenceOptions {
+    capMs?: number;
+    advice?: string;
+}
 
 /**
  * Race `body` against the limit for `timeoutMs`. A failing body rejects with
@@ -72,15 +84,17 @@ export async function fenced(
     timers: Pick<HandlerHost, 'startTimer'>,
     body: () => Promise<ToolText>,
     onCap: CapOutcome,
+    options: FenceOptions = {},
 ): Promise<ToolText> {
-    const limitMs = fenceLimitMs(timeoutMs);
+    const limitMs = fenceLimitMs(timeoutMs, options.capMs);
+    const advice = options.advice ?? OVERRUN_ADVICE;
     let disarm: () => void = () => undefined;
     const expiry = new Promise<ToolText>((settle, fail) => {
         disarm = timers.startTimer(limitMs, () => {
             if (onCap === 'reply') {
-                settle({ text: `${overrunStatement(label, limitMs)} ${OVERRUN_ADVICE}`, status: 'timeout' });
+                settle({ text: `${overrunStatement(label, limitMs)} ${advice}`, status: 'timeout' });
             } else {
-                fail(new ToolError('TIMEOUT', overrunStatement(label, limitMs), OVERRUN_ADVICE));
+                fail(new ToolError('TIMEOUT', overrunStatement(label, limitMs), advice));
             }
         });
     });

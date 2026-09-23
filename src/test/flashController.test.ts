@@ -17,8 +17,11 @@
 import * as assert from 'assert';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { PassThrough } from 'stream';
-import { flashWithPyocd, parsePyocdLoadOutput } from '../core/flashController';
+import { flashWithPyocd, parsePyocdLoadOutput, pyocdDirectoryIn, resolvePyocd } from '../core/flashController';
 
 /**
  * Test suite for pyOCD flash-output parsing. Strings mirror
@@ -130,5 +133,120 @@ suite('flashWithPyocd kill escalation', () => {
         assert.strictEqual(result.timedOut, true);
         assert.strictEqual(result.exitCode, null, 'died by signal, not by exit');
         assert.ok(elapsed >= 2_250 && elapsed < 10_000, `elapsed ${elapsed} ms`);
+    });
+});
+
+/** A tools-environment.yml as CMSIS Solution 1.70.1 writes it (trimmed). */
+const TOOLS_ENVIRONMENT = [
+    'cmsis-tools-environment:',
+    '  version: 1.0.0',
+    '  generated-by: arm.cmsis-csolution version 1.70.1-63-20260910',
+    '  solution: ../Blinky.csolution.yml',
+    '  environment:',
+    '    path:',
+    '      - /home/me/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-linux-x64/tools/pyocd',
+    '  tools:',
+    '    - name: CMSIS-Toolbox',
+    '      version: 2.14.1',
+    '      origin: built-in',
+    '      directory: /home/me/.vscode/extensions/arm.cmsis-csolution-1.70.1/tools/cmsis-toolbox/bin',
+    '    - name: pyOCD',
+    '      version: 0.45.1',
+    '      origin: built-in',
+    '      provider:',
+    '        type: vscode-extension',
+    '        id: arm.vscode-cmsis-debugger',
+    '        directory: /not/this/one',
+    '      directory: /home/me/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-linux-x64/tools/pyocd',
+    '      manual: https://pyocd.io/docs/',
+    '    - name: Arm GNU GDB',
+    '      directory: /home/me/gdb/bin',
+    '',
+].join('\n');
+
+suite('pyOCD lookup (#46, #45)', () => {
+    const only = (...present: string[]) => (candidate: string): boolean => present.includes(candidate);
+
+    test('tools-environment.yml: the directory of the pyOCD entry, not of a nested key or another tool', () => {
+        assert.strictEqual(pyocdDirectoryIn(TOOLS_ENVIRONMENT), '/home/me/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-linux-x64/tools/pyocd');
+        assert.strictEqual(pyocdDirectoryIn('cmsis-tools-environment:\r\n  tools:\r\n    - name: "pyocd"\r\n      directory: \'C:/tools/pyocd\'\r\n'),
+            'C:/tools/pyocd');
+        assert.strictEqual(pyocdDirectoryIn('cmsis-tools-environment:\n  tools:\n    - name: CMSIS-Toolbox\n      directory: /x\n'), undefined);
+        assert.strictEqual(pyocdDirectoryIn(''), undefined);
+    });
+
+    test('macOS and Linux: the CMSIS Debugger\'s bundled pyOCD first, then tools-environment.yml, then the first on PATH', () => {
+        const extension = '/Users/me/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-darwin-arm64';
+        const bundled = `${extension}/tools/pyocd/pyocd`;
+        const listed = '/home/me/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-linux-x64/tools/pyocd/pyocd';
+        const found = resolvePyocd({
+            debuggerExtensionPath: extension, debuggerVersion: '1.8.0', toolsEnvironmentYml: TOOLS_ENVIRONMENT,
+            platform: 'darwin', pathEnv: '/usr/bin:/opt/pyocd/bin:/usr/local/bin',
+            isFile: only(bundled, listed, '/opt/pyocd/bin/pyocd', '/usr/local/bin/pyocd'),
+        });
+        assert.deepStrictEqual(found, [
+            { bin: bundled, origin: 'debugger-extension', from: 'CMSIS Debugger 1.8.0' },
+            { bin: listed, origin: 'tools-environment', from: '.cmsis/tools-environment.yml' },
+            { bin: '/opt/pyocd/bin/pyocd', origin: 'path', from: 'PATH' },
+        ]);
+        const linux = resolvePyocd({ debuggerExtensionPath: '/home/me/ext', platform: 'linux', isFile: only('/home/me/ext/tools/pyocd/pyocd') });
+        assert.deepStrictEqual(linux, [{ bin: '/home/me/ext/tools/pyocd/pyocd', origin: 'debugger-extension', from: 'CMSIS Debugger' }]);
+    });
+
+    test('Windows: pyocd.exe, backslash paths, PATH split on ; with quoted entries', () => {
+        const extension = 'C:\\Users\\me\\.vscode\\extensions\\arm.vscode-cmsis-debugger-1.8.0-win32-x64';
+        const bundled = 'C:\\Users\\me\\.vscode\\extensions\\arm.vscode-cmsis-debugger-1.8.0-win32-x64\\tools\\pyocd\\pyocd.exe';
+        const listed = 'C:\\tools\\pyocd\\pyocd.exe';
+        const onPath = 'C:\\Program Files\\Python\\Scripts\\pyocd.exe';
+        const found = resolvePyocd({
+            debuggerExtensionPath: extension, debuggerVersion: '1.8.0',
+            toolsEnvironmentYml: 'cmsis-tools-environment:\n  tools:\n    - name: pyOCD\n      directory: C:/tools/pyocd\n',
+            platform: 'win32', pathEnv: 'C:\\Windows;"C:\\Program Files\\Python\\Scripts"',
+            isFile: only(bundled, listed, onPath),
+        });
+        assert.deepStrictEqual(found.map((candidate) => candidate.bin), [bundled, listed, onPath]);
+    });
+
+    test('nothing installed is an empty list; the same file is offered once', () => {
+        assert.deepStrictEqual(resolvePyocd({ platform: 'linux', pathEnv: '/usr/bin', isFile: only() }), []);
+        const same = resolvePyocd({
+            toolsEnvironmentYml: 'x:\n  tools:\n    - name: pyOCD\n      directory: /usr/bin\n', platform: 'linux', pathEnv: '/usr/bin',
+            isFile: only('/usr/bin/pyocd'),
+        });
+        assert.deepStrictEqual(same.map((candidate) => candidate.origin), ['tools-environment']);
+    });
+
+    test('a real extension folder resolves under the path it was given, /private/var realpath or not', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-pyocd-'));
+        try {
+            const executable = process.platform === 'win32' ? 'pyocd.exe' : 'pyocd';
+            fs.mkdirSync(path.join(root, 'tools', 'pyocd'), { recursive: true });
+            fs.writeFileSync(path.join(root, 'tools', 'pyocd', executable), '');
+            for (const given of [root, fs.realpathSync(root)]) {
+                const found = resolvePyocd({ debuggerExtensionPath: given, platform: process.platform, pathEnv: '' });
+                assert.deepStrictEqual(found.map((candidate) => candidate.bin), [path.join(given, 'tools', 'pyocd', executable)]);
+            }
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    test('flashWithPyocd runs the resolved binary and shows it in the command line, quoted when it has a space', async () => {
+        const seen: Array<{ command: string; args: string[] }> = [];
+        const fakeSpawn = ((command: string, args: string[]) => {
+            seen.push({ command, args });
+            const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), exitCode: null, signalCode: null, kill: () => true });
+            setImmediate(() => {
+                child.stdout.end('programmed 1024 bytes (4 pages) at 10.00 kB/s\n');
+                child.emit('close', 0);
+            });
+            return child;
+        }) as unknown as typeof spawn;
+        const bin = '/Users/me/Library/Application Support/ext/tools/pyocd/pyocd';
+        const result = await flashWithPyocd('/w/out/x.cbuild-run.yml', 5_000, { spawn: fakeSpawn, bin });
+        assert.deepStrictEqual(seen, [{ command: bin, args: ['load', '--cbuild-run', '/w/out/x.cbuild-run.yml'] }]);
+        assert.strictEqual(result.commandLine, `"${bin}" load --cbuild-run /w/out/x.cbuild-run.yml`);
+        assert.strictEqual(result.ok, true);
+        assert.strictEqual(result.programmedBytes, 1024);
     });
 });

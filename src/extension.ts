@@ -18,7 +18,7 @@
  * The VS Code entry point (`main` in package.json, bundled by esbuild.js).
  *
  * `activate` wires the modules together in a fixed order: settings read once
- * for this activation, the debug-session trackers, the agent and skill
+ * for this activation, the debug-session and CMSIS task trackers, the agent and skill
  * manager, the documentation handlers and their commands, this window's
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
  * for in-editor Copilot, agent-configuration migration, the settings and
@@ -33,6 +33,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { registerCmsisJobTracker } from './cmsisJobTracker';
 import { clearSvdCache } from './core/svdParser';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { registerPackDocsCommands } from './packDocsCommands';
@@ -245,6 +246,7 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     logActivationSettings(active);
 
     registerSessionStateTracker(extensionContext);
+    registerCmsisJobTracker(extensionContext);
     registerToolchainPackRootInvalidation(extensionContext);
     // A new session may use another device, so the parsed SVD files are dropped when one ends.
     extensionContext.subscriptions.push(vscode.debug.onDidTerminateDebugSession(() => clearSvdCache()));
