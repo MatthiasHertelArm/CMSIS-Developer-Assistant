@@ -42,7 +42,7 @@ import type { SerialOpName } from './core/opTable';
 import { ToolMetrics, formatBytes, type ToolSample } from './core/toolMetrics';
 import type { ToolText } from './core/toolResult';
 import type { HardwareTimeouts } from './debuggingExecutor';
-import { ShippedDocs, buildSessionServer } from './debugTools';
+import { ShippedDocs, buildSessionServer, loadToolRules } from './debugTools';
 import type { PackDocsDispatch } from './packDocsDispatch';
 import { serialHandler } from './serialHandler';
 import { closeHttpServer } from './utils/closeHttpServer';
@@ -217,6 +217,8 @@ export class DebugMCPServer {
     private readonly instanceTotals = new ToolMetrics(INSTANCE_SAMPLES);
     private readonly sink: ((sample: ToolSample) => void) | undefined;
     private readonly docs = new ShippedDocs();
+    /** The tool rules every session's instructions start with, read once for the instance (#50). */
+    private readonly toolRules = loadToolRules(this.docs);
     private readonly sessions = new Map<string, McpSession>();
     private listener: http.Server | undefined;
     private boundPort: number | undefined;
@@ -372,6 +374,7 @@ export class DebugMCPServer {
             ring,
             serverTotals: this.instanceTotals,
             docs: this.docs,
+            toolRules: this.toolRules,
         });
         const session: McpSession = {
             server,

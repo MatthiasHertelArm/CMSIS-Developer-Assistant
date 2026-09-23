@@ -84,7 +84,10 @@ its text; a router depends on all members of its category. The cmsis-skills
 skills plus the routers are the *AI Skills Pack* (`isPackSkill()`); the
 bundled skills are not part of it (`isBundledSkill()`).
 `cmsis-help` is itself generated (`src/utils/skillHelp.ts`) from the catalog,
-`package.json` and the `help` block of `scripts/skills.config.json`. See
+`package.json`, the `help` block of `scripts/skills.config.json` and the tool
+contract. The contract (`docs/agent-resources/tool-contract.md`, #50) is also
+copied between marker comments into the three hand-written bundled skills,
+which the installer then copies out like any other file. See
 `skills/README.md`.
 
 ### Explicit vs implied skills
@@ -186,7 +189,7 @@ again* (turns the setting off).
 - Install-prompt decision: `src/utils/skillPrompt.ts`
 - Help skill renderer (generator + tests only): `src/utils/skillHelp.ts`
 - Copying, hiding, marker-guarded removal: `src/utils/skillInstaller.ts`
-- Generator: `scripts/sync-skills.ts`, hand-authored input `scripts/skills.config.json`
+- Generator: `scripts/sync-skills.ts` (`--offline` without a fetch), hand-authored input `scripts/skills.config.json` and `docs/agent-resources/tool-contract.md`; marker blocks: `src/utils/markerBlock.ts`
 - Tests: `src/test/skillCatalog.test.ts` (catalog ↔ disk ↔ lock ↔ help skill), `src/test/skillInstaller.test.ts` (temp-dir behaviour), `src/test/skillPrompt.test.ts` (prompt decision, server detection), `test/transport/config-scenarios.js` (the files written for each agent per platform, migration, popup state, the pickers, `syncSkills()` and the nudge, against `config-scenarios.snapshot.json`)
 
 ## User Flow

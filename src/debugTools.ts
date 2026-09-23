@@ -16,9 +16,10 @@
 
 /**
  * What an agent sees of one MCP session: the server identity and
- * instructions, the debugging, serial and window-routing tools (the
- * documentation and build-artefact groups come from their own modules), and
- * the Markdown shipped under docs/ as resources.
+ * instructions (their text is in core/serverInstructions.ts), the debugging,
+ * serial and window-routing tools (the documentation and build-artefact
+ * groups come from their own modules), and the Markdown shipped under docs/
+ * as resources.
  *
  * `buildSessionServer` assembles it once per session. The gates read the
  * server options and the session's handlers at that moment only, so the tool
@@ -38,6 +39,8 @@ import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { TOPICS, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
+import { TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
+import { TOOL_CONTRACT_DOC, parseToolContract } from './core/toolContract';
 import type { ToolMetrics } from './core/toolMetrics';
 import { ToolText, textOf } from './core/toolResult';
 import { SERVER_VERSION } from './debuggingExecutor';
@@ -48,66 +51,6 @@ import { logger } from './utils/logger';
 
 /** The name in the initialize result, and the scheme of every resource URI. */
 const SERVER_NAME = 'cmsis-developer-assistant';
-
-// ── Server instructions ─────────────────────────────────────────────────────
-
-/** What the tools are for. The problem kinds named here are what make an agent reach for them. */
-const PURPOSE =
-    'With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that ' +
-    'only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, ' +
-    'or a board that simply does not behave.';
-
-/** The skill comes first; say what it brings and why that beats improvising. */
-const SKILL_FIRST =
-    'Before anything else in such an investigation, invoke the Agent Skill "cmsis-debug-live". It brings the ' +
-    'target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault ' +
-    'decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary ' +
-    'printf/UART logging in the firmware.';
-
-const WITHOUT_SKILLS =
-    'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
-
-const TIMEOUT_OVERRIDE =
-    'Tools that accept timeoutMs use it as a one-call override of the default, capped at 60 s (cmsis_action and flash: 600 s); '
-    + 'set it when you can estimate the work.';
-
-/** How to read an outcome (#11); it rides in the initialize result, so tools/list does not grow. */
-const READING_RESULTS =
-    'A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on '
-    + 'the line after; a result with structuredContent status "timeout" or "running" is not a failure — the wait ran out or the work goes on.';
-
-const DOCUMENTATION_ON =
-    'The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer ' +
-    'from the manuals the target\'s packs ship or link, page-cited; they accept timeoutMs up to 600 s because indexing a ' +
-    'manual on first use can take minutes. Use them before asking the user for a datasheet or reference manual ' +
-    '(list_target_docs, then fetch_doc for a web-linked one) and instead of reading a PDF into your context: a document the ' +
-    'user provides belongs in the workspace docs/ folder or the "Import Document for Current Target" command, then search ' +
-    'it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same way: for any part number ' +
-    'call list_target_docs first, then search_target_docs; if the datasheet is not listed, find its PDF URL on the web and ' +
-    'fetch_doc { url } — never read the PDF yourself.';
-
-const DOCUMENTATION_OFF =
-    'Page-cited documentation tools (search over the target\'s pack manuals, datasheets, errata and third-party part ' +
-    'datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather ' +
-    'than asking the user for a document or reading a PDF yourself.';
-
-const BUILD_ARTEFACTS_ON =
-    'The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, ' +
-    'get_build_diagnostics) read the ELF, linker map and build log of the current target.';
-
-/**
- * The `instructions` of the initialize result. The tails follow the two
- * options alone, not whether the session has a documentation dispatch, and
- * the build-artefact tools go unmentioned while they are off.
- */
-export function composeInstructions(options: Readonly<DebugMCPServerOptions>): string {
-    const parts = [PURPOSE, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
-    parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
-    if (options.buildInfoEnabled === true) {
-        parts.push(BUILD_ARTEFACTS_ON);
-    }
-    return parts.join(' ');
-}
 
 // ── Tool descriptions ───────────────────────────────────────────────────────
 
@@ -382,17 +325,68 @@ export class ShippedDocs {
         for (const shelf of this.shelves) {
             const where = path.join(shelf, relative);
             try {
-                const body = await fs.promises.readFile(where, 'utf8');
-                this.remembered.set(relative, body);
-                logger.debug(`Shipped document ${relative} read from ${where} (${body.length} characters)`);
-                return body;
+                return this.keep(relative, where, await fs.promises.readFile(where, 'utf8'));
             } catch (miss) {
-                misses.push(`${where} (${(miss as NodeJS.ErrnoException | undefined)?.code ?? String(miss)})`);
+                misses.push(missNote(where, miss));
             }
         }
         const reason = new Error(`not readable at any of: ${misses.join(', ')}`);
         logger.error(`Shipped document ${relative} is unavailable`, reason);
         return `The document ${relative} is not available in this installation: ${reason.message}`;
+    }
+
+    /**
+     * The document's text, read at once, for what has to be known before a
+     * session answers its first request; undefined, with a warning, when it
+     * cannot be read.
+     */
+    readNow(relative: string): string | undefined {
+        const known = this.remembered.get(relative);
+        if (known !== undefined) {
+            return known;
+        }
+        const misses: string[] = [];
+        for (const shelf of this.shelves) {
+            const where = path.join(shelf, relative);
+            try {
+                return this.keep(relative, where, fs.readFileSync(where, 'utf8'));
+            } catch (miss) {
+                misses.push(missNote(where, miss));
+            }
+        }
+        logger.warn(`Shipped document ${relative} is unavailable: not readable at any of: ${misses.join(', ')}`);
+        return undefined;
+    }
+
+    private keep(relative: string, where: string, body: string): string {
+        this.remembered.set(relative, body);
+        logger.debug(`Shipped document ${relative} read from ${where} (${body.length} characters)`);
+        return body;
+    }
+}
+
+/** One place a document was looked for, and why it was not there. */
+function missNote(where: string, miss: unknown): string {
+    return `${where} (${(miss as NodeJS.ErrnoException | undefined)?.code ?? String(miss)})`;
+}
+
+/**
+ * The rules section of the tool contract (#50), heading included, which leads
+ * the instructions of every session. The server reads it once, when it is
+ * built. Without the file, or without its rules block, the sessions get the
+ * instructions without the rules, and the log says why.
+ */
+export function loadToolRules(docs: ShippedDocs): string | undefined {
+    const contract = docs.readNow(TOOL_CONTRACT_DOC);
+    if (contract === undefined) {
+        logger.warn('The server instructions go out without the tool rules: the tool contract is missing');
+        return undefined;
+    }
+    try {
+        return parseToolContract(contract).rules;
+    } catch (broken) {
+        logger.warn('The server instructions go out without the tool rules: the tool contract cannot be read', broken);
+        return undefined;
     }
 }
 
@@ -459,6 +453,8 @@ export interface SessionParts {
     /** Every session's samples; the stats resource reports it as `server`. */
     serverTotals: ToolMetrics;
     docs: ShippedDocs;
+    /** The rules of the tool contract (`loadToolRules`); undefined leaves them out of the session. */
+    toolRules: string | undefined;
 }
 
 /** The two extra methods of the window router, recognised by shape so that its module is not imported here. */
@@ -477,7 +473,7 @@ function windowRoutingOf(handler: IDebuggingHandler): (IDebuggingHandler & Windo
 export function buildSessionServer(parts: SessionParts): MeasuredMcpServer {
     const mcp = new MeasuredMcpServer(
         { name: SERVER_NAME, version: SERVER_VERSION },
-        { instructions: composeInstructions(parts.options) },
+        { instructions: buildServerInstructions(parts.toolRules, parts.options) },
         parts.ring,
     );
     registerTools(mcp, parts.handlers(), parts);
@@ -752,10 +748,14 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         annotations: ALTERS_TARGET,
     }, (args) => debug.handleFlash(args).then(reply));
 
+    // The first status of the session repeats the tool rules in one line (#50); the state lives in this closure.
+    let rulesRepeated = parts.toolRules === undefined;
     mcp.registerTool('get_session_status', { description: ABOUT.get_session_status, annotations: LOOK_ONLY }, async () => {
         const state = await debug.handleGetSessionStatus();
+        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER}`;
+        rulesRepeated = true;
         // Read after the handler: the totals cover this session's earlier calls, not this one.
-        return reply(`${textOf(state)}\n\n${ring.formatTotals()}`);
+        return reply(`${textOf(state)}${reminder}\n\n${ring.formatTotals()}`);
     });
 
     // Only a router has windows to list and pin.

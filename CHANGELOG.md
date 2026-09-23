@@ -6,15 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-### Security
-- **The window registry and the control servers are closed to other local users (#19).**
-  - Every VS Code window publishes its control port and token in the registry, and the token is enough to flash or erase that window's board. The directory was created 0755 and the files 0644, so on Linux, where it sits in the shared `/tmp`, any local user could read every token.
-  - The directory is now 0700 and each window file 0600. An existing 0755 directory of the user is narrowed on first start, and each window rewrites its file 0600 within 20 s.
-  - Where every user may write to the temp directory (Linux `/tmp`, macOS with `TMPDIR` unset), the directory name carries the uid: `cmsis-developer-assistant-registry-<uid>`. The per-user temp directories of macOS and Windows keep the old name.
-  - A registry directory that is a symbolic link or belongs to another user is neither written nor read. The window logs an error, shows one warning, and keeps serving its own tool calls; only the other windows are out of reach.
-  - The control server refuses a request whose `Host` is not loopback or that carries an `Origin` at all, before it looks at the token, and compares the token in constant time. Its 403 and 404 answers, and a new `_note` field first in each registry file, tell an agent that found them to use `list_debug_windows` and `select_debug_window`.
-  - The registry format and the protocol between windows stay compatible with 2.5.0 and 2.3.10.
-  - **Linux: reload every VS Code window after updating.** A window that was not reloaded keeps using the old registry directory and is invisible to updated windows until it is reloaded. On macOS and Windows the directory name does not change.
+### Added
+- **Tool rules keep agents on the MCP tools instead of the shell (part of #50, part of #45).**
+  - `docs/agent-resources/tool-contract.md` holds the tool rules, ten lines, and a table of shell commands with the tools that replace them. Talk to the board only through the tools; never run pyocd, gdb, JLinkExe, JLinkGDBServer or openocd against it, and never install pyOCD. Build and flash with `cmsis_action` and `flash`; run cbuild, csolution or cpackget in a shell only when the user asks or a CMSIS skill step names the command. Serial I/O through the `serial_*` tools, documents through the documentation tools. After a tool failed twice, call `get_session_status`, then stop and tell the user what to do in VS Code instead of working around it in a shell.
+  - The server `instructions` start with the rules, about 1.5 kB per session. `tools/list` is unchanged to the byte.
+  - The first `get_session_status` of each MCP session repeats them in one line: "Tool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions)."
+  - The bundled skills `cmsis-debug-live`, `cmsis-pack-docs`, `add-board-layer` and `cmsis-help`, and the overview of `get_debug_instructions`, carry the rules below their title. `cmsis-debug-live`, `cmsis-help` and the `build` topic of the guide also carry the table.
+- `npm run skills:sync -- --offline` regenerates the routers, the catalog, `cmsis-help` and the rule blocks without a network fetch, and leaves the vendored skills and the lock alone.
+- `src/utils/markerBlock.ts` inserts, replaces, extracts and removes text between marker comments without touching the rest of a file, line endings included. The step that writes the rules into agents' rule files will use it too.
+
+### Changed
+- **Shipped texts no longer send agents to the shell (part of #45, part of #50).**
+  - The embedded troubleshooting guide, as resource and in the skill, no longer says the GDB server must be "installed and on PATH" or that the probe is checked with `pyocd list` or `JLinkExe`. The GDB server comes from the CMSIS Debugger, `cmsis_action load_and_debug` starts it, and `check_target_connection` checks the probe.
+  - `add-board-layer` builds with `cmsis_action build { target }` instead of `cbuild … --packs --update-rte` in a shell; the `cbuild` line stays for users who build from a terminal. The CMSIS Solution extension downloads missing packs for that build (setting `cmsis-csolution.downloadPacks`) and updates the RTE when it re-reads the solution.
+  - `cmsis-help` no longer says the documentation tools need pdftotext (poppler): they use the bundled pdf.js.
+- The step list of the agent guide and the opening text of the bundled skills get a heading of their own, so they no longer sit under the rules heading.
 
 ### Fixed
 - **A serial port that goes away by itself is reported as closed, with the reason (part of #49).**
@@ -33,6 +39,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **The Pack Docs panel runs only the command its own page offers.** A message from its webview naming any other command id is ignored and logged. The page is CSP-protected, so the risk was low, but it shows text taken from PDFs and pdsc files.
 - **`read_cycle_counter` is no longer annotated read-only.** Its first call enables the DWT cycle counter by writing DEMCR and DWT_CTRL; it is now marked not read-only, not destructive and idempotent.
 - **`npm run skills:sync -- --update` accepts the `ethos-u` category that upstream cmsis-skills added** (label "Ethos-U NPU", listed after the CMSIS-Pack skills). A category without skills at the pinned commit adds no router, picker heading or help section, so the generated files are unchanged; the sync warns about a category that has skills but no router.
+
+### Security
+- **The window registry and the control servers are closed to other local users (#19).**
+  - Every VS Code window publishes its control port and token in the registry, and the token is enough to flash or erase that window's board. The directory was created 0755 and the files 0644, so on Linux, where it sits in the shared `/tmp`, any local user could read every token.
+  - The directory is now 0700 and each window file 0600. An existing 0755 directory of the user is narrowed on first start, and each window rewrites its file 0600 within 20 s.
+  - Where every user may write to the temp directory (Linux `/tmp`, macOS with `TMPDIR` unset), the directory name carries the uid: `cmsis-developer-assistant-registry-<uid>`. The per-user temp directories of macOS and Windows keep the old name.
+  - A registry directory that is a symbolic link or belongs to another user is neither written nor read. The window logs an error, shows one warning, and keeps serving its own tool calls; only the other windows are out of reach.
+  - The control server refuses a request whose `Host` is not loopback or that carries an `Origin` at all, before it looks at the token, and compares the token in constant time. Its 403 and 404 answers, and a new `_note` field first in each registry file, tell an agent that found them to use `list_debug_windows` and `select_debug_window`.
+  - The registry format and the protocol between windows stay compatible with 2.5.0 and 2.3.10.
+  - **Linux: reload every VS Code window after updating.** A window that was not reloaded keeps using the old registry directory and is invisible to updated windows until it is reloaded. On macOS and Windows the directory name does not change.
 
 ## [2.5.0] - 2026-09-23
 

@@ -5,6 +5,24 @@ description: Add a board layer to an existing CMSIS csolution by interviewing th
 
 # Add a board layer by interviewing the user
 
+<!-- cmsis-developer-assistant:rules:begin -->
+## CMSIS Developer Assistant tool rules
+
+Only the user can lift a rule, by asking for the specific command.
+
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Serial I/O only through the `serial_*` tools, not `screen`, `cat /dev/tty*` or a serial script.
+- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
+- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- A running target rejects reads and steps: call `pause_execution` first.
+- If a tool fails twice, call `get_session_status`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+<!-- cmsis-developer-assistant:rules:end -->
+
+## Goal and method
+
 Goal: produce a **working board layer** for a new target in an existing
 csolution — `Board.clayer.yml` plus whatever startup / stdio / memory files it
 needs — and wire it in as a target-type, ending on a green build. Real-hardware
@@ -81,8 +99,11 @@ and Dname suffixes are lookups (§2/§3), never multiple-choice questions.
 ## 2. Resolve the board and device identity — from the pdsc, never by guess
 
 Pack root: `$CMSIS_PACK_ROOT` (default `~/.cache/arm/packs` on Linux and macOS,
-`%LOCALAPPDATA%\Arm\Packs` on Windows). Install missing packs with
-`cpackget add Vendor::Pack` or `cbuild --packs`.
+`%LOCALAPPDATA%\Arm\Packs` on Windows). Missing packs need no command from
+you: the CMSIS Solution extension downloads them when it loads the solution
+and when `cmsis_action build` runs (its setting `cmsis-csolution.downloadPacks`,
+on by default). `cpackget add Vendor::Pack` or `cbuild --packs` only when the
+user works from a terminal.
 
 - Device `Dname`: `grep -oE '<device Dname="[^"]*"' <DFP>.pdsc` — pick the exact
   suffix variant (`STM32H7B3LIHxQ`, not `…I6Q`).
@@ -130,8 +151,8 @@ compiler, generator, weight — and let that drive the "Layer strategy" answer:
    requires (e.g. `Device:CubeMX`, `Device:Config Tools`) plus `CMSIS:CORE`,
    `CMSIS-Compiler:*` and the Board files group; the DFP's own examples or
    the BSP layer show the exact component set.
-2. Add the target-type (§5), then run one build pass:
-   `cbuild <sol>.csolution.yml --active <target-type> --packs --update-rte`.
+2. Add the target-type (§5), then run one build pass with
+   `cmsis_action build { target: '<target-type>' }` (§6).
    It stops asking for the generator and writes the generator's input
    (`out/<…>/<generator>/*.cgen.yml` or the `.ioc`/config project under the
    layer's `RTE/`) — that is expected, not a failure.
@@ -221,14 +242,28 @@ the new `out/<name>/<target>/<build>`.
 
 ## 6. Build to green
 
-Build with the toolbox the solution needs — bleeding-edge nodes (`mlops:`) may
-exist only in the VS Code extension's bundled toolbox; check `csolution -V`.
-`cbuild <sol>.csolution.yml --active <target-type> --packs --update-rte`. A
-generated layer (AI/codegen keyed off the target, or a §4a generator) forces a
+Build with `cmsis_action build { target: '<target-type>' }`. It switches the
+CMSIS Solution panel to the new target-type and builds with the extension's
+bundled toolbox — the one bleeding-edge nodes (`mlops:`) may need. The
+extension adds `--packs` (setting `cmsis-csolution.downloadPacks`, on by
+default) and updates the RTE directory itself whenever it re-reads the
+solution after one of its YAML files changed; the build does not pass
+`--update-rte`. Read the ✅/❌ line that ends the result; a build still running
+when the call's wait ends returns status `running`, and `cmsis_action` with
+`action: 'status'` waits for it. If the result says RTE or configuration
+files of the new target-type are missing, ask the user to run **CMSIS:
+Refresh (Reload Packs, Update RTE)** in VS Code, then build again.
+
+A generated layer (AI/codegen keyed off the target, or a §4a generator) forces a
 **two-pass** build — the first pass regenerates the component list or asks for
 the generator and stops with "Re-run the build"; run the generator if it asked
-for one, then cbuild again. RAM at "100%" in the summary is usually the stack
-pinned at the region top by the template — read the map before panicking.
+for one, then `cmsis_action build` again. RAM at "100%" in the summary is
+usually the stack pinned at the region top by the template — read the map
+before panicking.
+
+Only when the user builds from a terminal:
+`cbuild <sol>.csolution.yml --active <target-type> --packs --update-rte`, with
+that terminal's toolbox (`csolution -V` shows whether it knows `mlops:`).
 
 ## 7. Confirm and hand off
 

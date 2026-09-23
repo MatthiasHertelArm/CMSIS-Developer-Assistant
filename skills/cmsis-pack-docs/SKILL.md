@@ -5,6 +5,24 @@ description: Look things up in the documentation of the current CMSIS csolution 
 
 # CMSIS Pack Docs
 
+<!-- cmsis-developer-assistant:rules:begin -->
+## CMSIS Developer Assistant tool rules
+
+Only the user can lift a rule, by asking for the specific command.
+
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Serial I/O only through the `serial_*` tools, not `screen`, `cat /dev/tty*` or a serial script.
+- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
+- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- A running target rejects reads and steps: call `pause_execution` first.
+- If a tool fails twice, call `get_session_status`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+<!-- cmsis-developer-assistant:rules:end -->
+
+## What the documentation tools cover
+
 The device family pack (DFP) and board pack (BSP) of a csolution target
 ship or link the vendor documentation; the device's core determines which
 Arm documents apply. These tools make all of it searchable page by page,

@@ -21,8 +21,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { IDebuggingHandler } from '..';
 import { sliceTopic } from '../core/instructionTopics';
+import { buildServerInstructions } from '../core/serverInstructions';
+import { RULES_HEADING } from '../core/toolContract';
 import { ToolMetrics } from '../core/toolMetrics';
-import { ShippedDocs, buildSessionServer } from '../debugTools';
+import { ShippedDocs, buildSessionServer, loadToolRules } from '../debugTools';
 
 /**
  * An agent halts the core and looks, instead of editing prints into the
@@ -30,7 +32,9 @@ import { ShippedDocs, buildSessionServer } from '../debugTools';
  * first: the skill metadata (which decides whether a harness loads the skill
  * at all), the skill body, the server instructions, the start_debugging
  * description, and the guide that harnesses without skills get from
- * get_debug_instructions. Each check pins that wording where it is served.
+ * get_debug_instructions. Each check pins that wording where it is made:
+ * the instructions as `buildServerInstructions` composes them for a default
+ * session, which is also what a session serves.
  */
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -52,6 +56,11 @@ const SKILL_REASONS = [
 /** Host-application examples that have no place in a Cortex-M guide. */
 const FOREIGN_EXAMPLES = ['getUserById', 'processOrder', 'parseFloat', '"def" in python'];
 
+/** The instructions of a session with default options, the shipped tool rules first. */
+function defaultInstructions(): string {
+    return buildServerInstructions(loadToolRules(new ShippedDocs()), {});
+}
+
 /** Frontmatter and body of a SKILL.md. */
 function splitSkill(text: string): { description: string; body: string } {
     const fenced = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(text);
@@ -69,13 +78,15 @@ interface ServedText {
 
 /** Connects a client to a session built by the server's own builder and reads what it serves. */
 async function readServedText(): Promise<ServedText> {
+    const docs = new ShippedDocs();
     const sessionServer = buildSessionServer({
         options: {},
         // Listing tools never reaches a handler.
         handlers: () => ({ debug: {} as IDebuggingHandler, serial: async () => '' }),
         ring: new ToolMetrics(),
         serverTotals: new ToolMetrics(),
-        docs: new ShippedDocs(),
+        docs,
+        toolRules: loadToolRules(docs),
     });
     const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
     await sessionServer.connect(serverEnd);
@@ -95,6 +106,7 @@ async function readServedText(): Promise<ServedText> {
 
 suite('Debugger-first guidance for agents', () => {
     let served: ServedText;
+    const instructions = defaultInstructions();
 
     suiteSetup(async () => {
         served = await readServedText();
@@ -122,15 +134,20 @@ suite('Debugger-first guidance for agents', () => {
             'the body warns that a logpoint still stops the core');
     });
 
+    test('a session is served the instructions the builder composes, the tool rules first', () => {
+        assert.strictEqual(served.instructions, instructions);
+        assert.ok(instructions.startsWith(`${RULES_HEADING}\n`), instructions.slice(0, 120));
+    });
+
     test('the server instructions send the agent to the skill before anything else, and say why', () => {
-        assert.ok(served.instructions.includes('Before anything else in such an investigation, invoke the Agent Skill "cmsis-debug-live".'),
-            served.instructions);
-        const missing = SKILL_REASONS.filter((reason) => !served.instructions.includes(reason));
+        assert.ok(instructions.includes('Before anything else in such an investigation, invoke the Agent Skill "cmsis-debug-live".'),
+            instructions);
+        const missing = SKILL_REASONS.filter((reason) => !instructions.includes(reason));
         assert.deepStrictEqual(missing, [], 'reasons missing from the server instructions');
     });
 
     test('the server instructions keep a way in for harnesses that load no skills', () => {
-        assert.ok(served.instructions.includes('get_debug_instructions instead'), served.instructions);
+        assert.ok(instructions.includes('get_debug_instructions instead'), instructions);
     });
 
     test('start_debugging sends the agent to the skill before it is used', () => {
@@ -147,8 +164,8 @@ suite('Debugger-first guidance for agents', () => {
     });
 
     test('the instructions, the skill and the session topic of the guide say how to read a result (#11)', () => {
-        assert.ok(served.instructions.includes('A failed call is marked isError and its text starts with an [ERROR_CODE]'), served.instructions);
-        assert.ok(served.instructions.includes('"timeout" or "running" is not a failure'), served.instructions);
+        assert.ok(instructions.includes('A failed call is marked isError and its text starts with an [ERROR_CODE]'), instructions);
+        assert.ok(instructions.includes('"timeout" or "running" is not a failure'), instructions);
         const { body } = splitSkill(fs.readFileSync(SKILL_MD, 'utf8'));
         const session = sliceTopic(fs.readFileSync(GUIDE_MD, 'utf8'), 'session');
         for (const [label, text] of [['skill', body], ['guide', session]]) {
