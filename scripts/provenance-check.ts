@@ -51,6 +51,24 @@ const MS_LINE = ['Copyright (c)', 'Microsoft', 'Corporation'].join(' ');
  * Independently written files of this repository measure 0-5 with the filters below.
  */
 const GATE_MAX_SHARED = 5;
+/**
+ * Files the gate does not judge, with the reason. Everything else with a
+ * DebugMCP counterpart, or new since REWRITE_BASE, must pass.
+ */
+const GATE_EXEMPT: Record<string, string> = {
+    'package.json': 'manifest: identifiers, script names and contribution keys',
+    'CHANGELOG.md': 'historical release entries (issue #53, phase 5)',
+    'CHANGES-VS-UPSTREAM.md': 'the provenance record itself (issue #53, phase 5)',
+    'NOTICE': 'licence decision pending (issue #53, decision 3)',
+    'LICENSE-MIT': 'licence decision pending (issue #53, decision 3)',
+    'docs/agent-resources/troubleshooting/cpp.md': 'language guides: decision pending (issue #53, decision 4)',
+    'docs/agent-resources/troubleshooting/csharp.md': 'language guides: decision pending (issue #53, decision 4)',
+    'docs/agent-resources/troubleshooting/go.md': 'language guides: decision pending (issue #53, decision 4)',
+    'docs/agent-resources/troubleshooting/java.md': 'language guides: decision pending (issue #53, decision 4)',
+    'docs/agent-resources/troubleshooting/javascript.md': 'language guides: decision pending (issue #53, decision 4)',
+    'docs/agent-resources/troubleshooting/python.md': 'language guides: decision pending (issue #53, decision 4)',
+    'skills/cmsis-debug-live/references/troubleshooting/cpp.md': 'language guides: decision pending (issue #53, decision 4)',
+};
 /** The commit the rewrite started from; files created after it are gated too. */
 const REWRITE_BASE = '951530e';
 /** Files whose counterpart upstream lives under another name. */
@@ -66,6 +84,8 @@ const RENAMED_DIRS: Array<[string, string]> = [
     ['docs/agent-resources/troubleshooting/', 'skills/debug-live/references/troubleshooting/'],
     ['skills/cmsis-debug-live/references/troubleshooting/', 'skills/debug-live/references/troubleshooting/'],
 ];
+/** Files whose lines are compared: code, prose, data and ignore lists. */
+const TEXT_FILE = /(\.(ts|js|mjs|cjs|md|json|ya?ml)|(^|\/)\.[\w-]*ignore)$/;
 /** Lines too generic to say anything about where a file came from. */
 const BOILERPLATE = new Set([
     "import * as vscode from 'vscode';",
@@ -183,7 +203,7 @@ function upstreamHistoryLines(upstream: string): Set<string> {
     const blobs = new Set<string>();
     for (const line of objects.split('\n')) {
         const [sha, file] = line.split(' ');
-        if (sha && file && /\.(ts|js|mjs|cjs|md|json|ya?ml)$/.test(file) && !file.endsWith('package-lock.json')) { blobs.add(sha); }
+        if (sha && file && TEXT_FILE.test(file) && !file.endsWith('package-lock.json')) { blobs.add(sha); }
     }
     const batch = execFileSync('git', ['-C', upstream, 'cat-file', '--batch'], { input: [...blobs].join('\n') + '\n', maxBuffer: 512 << 20 });
     const lines = new Set<string>();
@@ -227,10 +247,10 @@ function main(): void {
     const anyReports: AnyReport[] = [];
     for (const file of tracked) {
         if (file.startsWith('skills/cmsis-skills/') || file.endsWith('package-lock.json') || file.startsWith('docs/provenance/')) { continue; }
-        const text = /\.(ts|js|mjs|cjs|md|json|ya?ml)$|^\.gitignore$/.test(file) ? readOurs(file) : '';
+        const text = TEXT_FILE.test(file) ? readOurs(file) : '';
         const ours = significantText(text);
         const hasMsLine = text.includes(MS_LINE);
-        if (/^(src|scripts|test)\/.*\.(ts|js|mjs|cjs)$/.test(file) || /^[^/]+\.(js|mjs|cjs)$/.test(file)) {
+        if (text.length > 0 && !file.endsWith('.snapshot.json') && !file.startsWith('docs/proposals/')) {
             anyReports.push({ file, lines: ours.length, anyShared: [...new Set(ours.filter((l) => history.has(l)))], hasMsLine });
         }
         const theirs = counterpart(file, upstream);
@@ -269,7 +289,7 @@ function main(): void {
     console.log(`\n${reports.length} file(s), ${totalShared} of ${totalLines} non-trivial lines shared`);
 
     const withHistory = anyReports.filter((r) => r.anyShared.length > 0).sort((x, y) => y.anyShared.length - x.anyShared.length);
-    console.log(`\nSource files with lines found anywhere in DebugMCP's history (${history.size} distinct upstream lines, all commits to ${UPSTREAM_SHA}):\n`);
+    console.log(`\nFiles with lines found anywhere in DebugMCP's history (${history.size} distinct upstream lines, all commits to ${UPSTREAM_SHA}):\n`);
     for (const r of withHistory) {
         console.log(`${r.file.padEnd(58)} ${String(r.lines).padStart(6)} ${String(r.anyShared.length).padStart(7)}  ${r.hasMsLine ? 'MS line' : ''}`);
     }
@@ -278,7 +298,13 @@ function main(): void {
         // Gated: files with a DebugMCP counterpart, and every file created since the rewrite began
         // (an implementer may split a rewritten file into new modules).
         const atBase = new Set(execFileSync('git', ['-C', root, 'ls-tree', '-r', '--name-only', REWRITE_BASE], { encoding: 'utf8' }).split('\n'));
-        const gated = anyReports.filter((r) => !r.hasMsLine && (counterpart(r.file, upstream) !== undefined || !atBase.has(r.file)));
+        const exempt = anyReports.filter((r) => GATE_EXEMPT[r.file] !== undefined && r.anyShared.length > 0);
+        const gated = anyReports.filter((r) => !r.hasMsLine && GATE_EXEMPT[r.file] === undefined
+            && (counterpart(r.file, upstream) !== undefined || !atBase.has(r.file)));
+        if (exempt.length > 0) {
+            console.log('\nNot gated, with the reason:');
+            for (const r of exempt) { console.log(`  ${r.file} (${r.anyShared.length}): ${GATE_EXEMPT[r.file]}`); }
+        }
         const offenders = gated.filter((r) => r.anyShared.length > GATE_MAX_SHARED);
         if (offenders.length > 0) {
             console.log(`\nGATE FAILED: ${offenders.length} file(s) without the Microsoft line contain more than ${GATE_MAX_SHARED} lines found in DebugMCP's history:`);
