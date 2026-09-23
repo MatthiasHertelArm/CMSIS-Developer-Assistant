@@ -12,7 +12,6 @@ out/**
 dist/**/*.map
 .gitignore
 .yarnrc
-vsc-extension-quickstart.md
 esbuild.js
 **/tsconfig.json
 **/eslint.config.mjs

@@ -1,13 +1,13 @@
 # CMSIS Developer Assistant - Debugging Instructions Guide
 
-⚠️  **CRITICAL INSTRUCTIONS - FOLLOW THESE STEPS:**
+**Work through these steps in order:**
 
-0. **FIRST OF ALL:** Establish target awareness — read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.
-1. **THEN:** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.
-2. **THEN:** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).
-3. **THEN:** Bring the target up only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.
-4. **THEN:** Run, wait, look, read: `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).
-5. **FINALLY:** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.
+1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.
+2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.
+3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).
+4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.
+5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).
+6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.
 
 ## 🐞 DEBUGGER FIRST — do not start by adding prints
 
@@ -239,70 +239,73 @@ This is tuned for firmware and should rarely get in your way:
 <!-- /topic -->
 
 <!-- topic: troubleshooting | Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist -->
-## 🚨 ROOT CAUSE ANALYSIS - CRITICAL FRAMEWORK
+## 🧭 From symptom to root cause
 
-### **NEVER STOP AT SYMPTOMS - ALWAYS FIND THE ROOT CAUSE**
+The first thing that looks wrong is rarely the thing that is broken. A buffer full of zeros, a HardFault, a peripheral that ignores its writes: each sits at the far end of a chain that often starts somewhere harmless-looking — a clock nobody enabled, a cache line nobody invalidated, an init call in the wrong order. A fix aimed at what you saw first tends to hide the fault rather than remove it, so keep going until you can say where the chain starts.
 
-When you encounter an issue during debugging (a wrong value, a fault, a peripheral that does not respond), apply this systematic approach:
+Two sentences show the difference. The symptom says *what* is wrong: "the ADC buffer is all zeros". The root cause says *why*: "the buffer is in cacheable SRAM and the driver never invalidates the D-cache after the DMA transfer".
 
-#### **SYMPTOM vs ROOT CAUSE**
+### The investigation loop
 
-- **SYMPTOM:** what you observe is wrong ("the ADC buffer is all zeros")
-- **ROOT CAUSE:** *why* it is wrong ("the buffer is in cacheable SRAM and the driver never invalidates the D-cache after the DMA transfer")
+Go round this loop until a step leads to something that explains everything before it:
 
-#### **ROOT CAUSE INVESTIGATION PROCESS**
+1. **Pin down the observation.** Note the current line, the values involved and, after a fault, the decoded flags. This is what your explanation has to account for.
+2. **Ask where it came from.** Which write produced the wrong value, which branch brought execution here, which access raised the fault?
+3. **Move upstream.** Break where that value or decision is made — with `condition`, so the core stops only when it goes wrong — then `restart_debugging` or `reset` and step through it. Wherever the explanation relies on the hardware having done something, read the hardware: `read_peripheral_register`, `read_memory`.
+4. **Stop at the origin, not before.** The loop ends where wrong data first enters, or where a basic assumption fails: a clock that is off, memory that is not coherent, an initialisation order, a stack that is too small.
 
-1. **Identify the symptom** — what exactly is wrong; record the current line, the variable state and, on a fault, the decoded flags.
-2. **Ask why** — why is this value wrong, why did this function return early, why did this condition fail.
-3. **Trace backwards** — set a breakpoint where the wrong value is produced (with `condition` to stop only when it is wrong), restart or reset, step into it. Cross-check every "the hardware should have done X" against the hardware: `read_peripheral_register`, `read_memory`.
-4. **Continue until the origin** — keep asking why until you reach where data enters the system incorrectly or a fundamental assumption (clock enabled, cache coherent, initialisation order, stack size) is violated.
+### Four cases from Cortex-M boards
 
-#### **⚠️ WARNING SIGNS YOU'RE STOPPING TOO EARLY**
+Each case shows the explanation that stops too early, then the chain that reaches the cause.
+
+#### Example 1: `adc_buffer[0]` reads 0 on the board, correct on the FVP
+
+- **Tempting to stop at:** "the DMA does not fill the buffer on hardware"
+- **Where the chain leads:** breakpoint after the transfer-complete flag → `get_variables_values adc_buffer` shows zeros → `read_memory` at `&adc_buffer` shows the samples → the core is reading a stale D-cache line: the buffer lives in cacheable SRAM and the driver never invalidates after DMA. The FVP models no cache, so it "works" there.
+
+#### Example 2: HardFault a few seconds after boot
+
+- **Tempting to stop at:** "HardFault_Handler is reached"
+- **Where the chain leads:** `get_fault_info` → BusFault `PRECISERR`, BFAR `0x40005400` (the I2C1 block) → stacked PC in `i2c_init` → `read_peripheral_register RCC APB1ENR` shows `I2C1EN = 0` → the sensor driver's init runs before the clock tree is configured. Root cause: initialisation order in `main`, not the I2C driver.
+
+#### Example 3: the firmware restarts every few seconds, no fault flags
+
+- **Tempting to stop at:** "it crashes"
+- **Where the chain leads:** `read_peripheral_register RCC CSR` shows the independent-watchdog reset flag → breakpoint in the loop that kicks the watchdog with `condition` on the loop counter → the kick sits behind a semaphore wait that blocks for longer than the timeout. Root cause: the watchdog is fed from a task that can block.
+
+#### Example 4: UART prints garbage after the clock switch
+
+- **Tempting to stop at:** "the UART is misconfigured"
+- **Where the chain leads:** `read_peripheral_register` on the UART's baud register matches the divisor the driver computed → `get_variables_values SystemCoreClock` is still the reset-clock value → `SystemCoreClockUpdate()` was never called after the PLL switch. Root cause: a stale clock variable, not the UART.
+
+### When it did not reach your breakpoint
+
+`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`. If the breakpoint never bound, `list_breakpoints` shows it unverified: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
+
+### Not there yet
+
+Keep investigating while any of these is true:
 
 - You found a wrong value but did not check who last wrote it.
 - You decoded a fault but did not resolve BFAR / the stacked PC to a line and a reason.
 - You saw the peripheral register was wrong but did not check the clock gate and the init order.
 - You have an explanation that the FVP / simulation would contradict.
 
-#### **✅ SIGNS YOU'VE FOUND THE ROOT CAUSE**
+### Found the cause
 
-- You can explain the complete chain from root cause to symptom.
-- Fixing it would prevent the symptom, and you can verify that on the target (reflash, run to the same breakpoint, read the same register).
-- It sits at a fundamental level: initialisation order, clock tree, memory attributes, a violated hardware assumption, a wrong constant.
+You have reached it when all three hold:
 
-### **🔍 PRACTICAL EXAMPLES - SYMPTOM vs ROOT CAUSE**
+- Every link from the cause to the symptom you observed can be stated, and nothing is left unexplained.
+- Changing the cause removes the symptom, and you have shown that on the target: reflash, run to the same breakpoint, read the same register.
+- The cause is basic: an initialisation order, the clock tree, memory attributes, a hardware assumption that does not hold, a wrong constant.
 
-#### **Example 1: `adc_buffer[0]` reads 0 on the board, correct on the FVP**
+### Before you close the investigation
 
-❌ **STOPPING AT SYMPTOM:** "the DMA does not fill the buffer on hardware"
-✅ **FINDING ROOT CAUSE:** breakpoint after the transfer-complete flag → `get_variables_values adc_buffer` shows zeros → `read_memory` at `&adc_buffer` shows the samples → the core is reading a stale D-cache line: the buffer lives in cacheable SRAM and the driver never invalidates after DMA. The FVP models no cache, so it "works" there.
+Answer each question with evidence from the target. An open answer means the work is not finished:
 
-#### **Example 2: HardFault a few seconds after boot**
-
-❌ **STOPPING AT SYMPTOM:** "HardFault_Handler is reached"
-✅ **FINDING ROOT CAUSE:** `get_fault_info` → BusFault `PRECISERR`, BFAR `0x40005400` (the I2C1 block) → stacked PC in `i2c_init` → `read_peripheral_register RCC APB1ENR` shows `I2C1EN = 0` → the sensor driver's init runs before the clock tree is configured. Root cause: initialisation order in `main`, not the I2C driver.
-
-#### **Example 3: the firmware restarts every few seconds, no fault flags**
-
-❌ **STOPPING AT SYMPTOM:** "it crashes"
-✅ **FINDING ROOT CAUSE:** `read_peripheral_register RCC CSR` shows the independent-watchdog reset flag → breakpoint in the loop that kicks the watchdog with `condition` on the loop counter → the kick sits behind a semaphore wait that blocks for longer than the timeout. Root cause: the watchdog is fed from a task that can block.
-
-#### **Example 4: UART prints garbage after the clock switch**
-
-❌ **STOPPING AT SYMPTOM:** "the UART is misconfigured"
-✅ **FINDING ROOT CAUSE:** `read_peripheral_register` on the UART's baud register matches the divisor the driver computed → `get_variables_values SystemCoreClock` is still the reset-clock value → `SystemCoreClockUpdate()` was never called after the PLL switch. Root cause: a stale clock variable, not the UART.
-
-### When it did not reach your breakpoint
-
-`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`. If the breakpoint never bound, `list_breakpoints` shows it unverified: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
-
-#### **🎯 ROOT CAUSE INVESTIGATION CHECKLIST**
-
-Before stopping your debug session, ensure you can answer:
-
-- [ ] What is the immediate symptom?
-- [ ] What code produced it, and what did the hardware (registers, memory) say at that point?
-- [ ] What input, state or hardware condition made that code misbehave?
-- [ ] Where did that incorrect input or condition originate?
-- [ ] If I fix this root cause, will it prevent the symptom — and did I verify that on the target?
+1. **Symptom** — what exactly did you observe, and where?
+2. **Producer** — which code produced it, and what did the registers and memory hold at that moment?
+3. **Trigger** — which input, state or hardware condition made that code go wrong?
+4. **Origin** — where did that input or condition come from?
+5. **Proof** — does fixing the origin remove the symptom, and did you confirm that on the target?
 <!-- /topic -->

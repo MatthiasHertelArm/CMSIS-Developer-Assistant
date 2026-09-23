@@ -1,51 +1,208 @@
-# Agent Guidelines for CMSIS Developer Assistant
+# CMSIS Developer Assistant: notes for coding agents
 
-## Project Overview
+Read this before changing the repository. It says what the extension does,
+where each part lives, how to build and test it, and the house rules for
+code and documentation.
 
-CMSIS Developer Assistant is a VS Code extension (fork of microsoft/DebugMCP) that embeds an MCP (Model Context Protocol) server, enabling AI coding agents to control VS Code's debugger via DAP. It specializes in Arm Cortex-M embedded debugging through the CMSIS Debugger extension (`gdbtarget` configurations) — reading memory, core registers, peripheral registers (via SVD), and decoding Cortex-M fault status — while retaining general multi-language debugging support.
+## What the extension does
 
-### Architecture
+The CMSIS Developer Assistant is a VS Code extension with an MCP (Model
+Context Protocol) server built in. Through that server an AI coding agent
+drives VS Code's debugger, which in turn talks to the debug adapter over DAP.
+The focus is Arm Cortex-M firmware on sessions of the CMSIS Debugger
+extension (launch configurations of type `gdbtarget`): memory, core
+registers, peripheral registers described by the device SVD, decoded
+Cortex-M fault status, the build, flash and debug actions of the CMSIS
+Solution extension, and serial consoles. Other debug types, such as Python,
+Node.js or C/C++ on the host, are still served by the generic tools. The
+extension also installs Agent Skills for CMSIS work and, behind settings,
+offers tools over the target's documentation and build artefacts.
+
+The project started as a fork of microsoft/DebugMCP. The code that still
+came from there has since been replaced by independently written code
+(issue #53); `docs/provenance/README.md` describes how.
+
+## From agent to target
 
 ```txt
-AI Agent (Cline/Copilot/Cursor) → MCP/HTTP → DebugMCPServer → DebuggingHandler → DebuggingExecutor → VS Code Debug API
-                                                                                                       │
-                                                                                            ┌──────────┴──────────┐
-                                                                                    gdbtarget (CMSIS)        other debug types
-                                                                                            │
-                                                                                   CDT GDB Debug Adapter
-                                                                                            │
-                                                                                    arm-none-eabi-gdb
-                                                                                            │
-                                                                                   pyOCD / J-Link GDB Server
-                                                                                            │
-                                                                                    SWD/JTAG → Cortex-M target
+AI agent: Claude Code, Codex, Cursor, Cline, Copilot, ...
+   |  MCP over Streamable HTTP, POST http://localhost:3001/mcp
+   v
+DebugMCPServer + debugTools.ts          one MCP server per session (router window)
+   |
+RoutingDebuggingHandler                 picks the VS Code window that owns the target
+   |  HTTP POST /op with that window's token
+   v
+ControlServer -> DebuggingHandler -> DebuggingExecutor -> VS Code debug API, DAP
+                                                                |
+                               gdbtarget: CDT GDB debug adapter -> arm-none-eabi-gdb
+                                                                |
+                                       pyOCD or J-Link GDB server -> SWD/JTAG -> Cortex-M
 ```
 
-### Key Components
+Every window of VS Code runs its own extension host. The window that binds
+the MCP port serves all agents and forwards each call to the window whose
+workspace or debug session it concerns; with a single window, the router
+simply forwards to itself.
 
-| Component | Responsibility | Docs |
-| --------- | -------------- | ---- |
-| `DebugMCPServer` | MCP server, tool/resource registration | [docs/architecture/debugMCPServer.md](docs/architecture/debugMCPServer.md) |
-| `DebuggingHandler` | Operation orchestration, state change detection | [docs/architecture/debuggingHandler.md](docs/architecture/debuggingHandler.md) |
-| `DebuggingExecutor` | VS Code debug API calls, DAP requests | [docs/architecture/debuggingExecutor.md](docs/architecture/debuggingExecutor.md) |
-| `DebugState` | Debug session state model | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
-| `DebugConfigurationManager` | Launch configs, language detection | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
-| `AgentConfigurationManager` | AI agent auto-configuration and agent-skill installation | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
-| `PackDocsHandler` / `BuildInfoHandler` | Documentation tools (pack PDFs, Arm documents, user/workspace docs, core SVDs — `src/core/packDocs`) and build-artefact tools (ELF, map, log — `src/core/buildInfo`); off by default, routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
-| `skills/` | Bundled Agent Skills: `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs`, the generated `cmsis-help`, the vendored Open-CMSIS-Pack/cmsis-skills skills, per-category routers, `catalog.json` | [skills/README.md](skills/README.md) |
+## Components
 
-## Documentation Maintenance
+| Component | Code | Job | Design notes |
+| --------- | ---- | --- | ------------ |
+| `DebugMCPServer` | `src/debugMCPServer.ts`, `src/debugTools.ts` | The loopback MCP endpoint: sessions, transport, measurement; the instructions, tools and resources each session offers | [docs/architecture/debugMCPServer.md](docs/architecture/debugMCPServer.md) |
+| `DebuggingHandler` | `src/debuggingHandler.ts`, `src/handler/` | One `handle*` method per debugging tool: state gates, waits for the stop, the texts agents read, `cmsis_action`, `flash` | [docs/architecture/debuggingHandler.md](docs/architecture/debuggingHandler.md) |
+| `DebuggingExecutor` | `src/debuggingExecutor.ts`, `src/executor/` | The one caller of VS Code's debug API and of DAP requests, each under a deadline | [docs/architecture/debuggingExecutor.md](docs/architecture/debuggingExecutor.md) |
+| `DebugState` | `src/debugState.ts` | Value object for location, stack and breakpoints, rendered in a full and a compact form | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
+| `DebugConfigurationManager` | `src/utils/debugConfigurationManager.ts` | The `launch.json` picker and configurations synthesized from the file type for `start_debugging` | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
+| Window routing | `src/windowCoordinator.ts`, `src/routingDebuggingHandler.ts`, `src/controlServer.ts`, `src/utils/workspaceRegistry.ts`, `src/core/opTable.ts` | Router and worker windows, the window registry, forwarding of every op | [docs/architecture/windowRouting.md](docs/architecture/windowRouting.md) |
+| `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts` | Registers the server in AI agents' configuration files and installs Agent Skills | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
+| `PackDocsHandler` / `BuildInfoHandler` | `src/packDocsHandler.ts`, `src/buildInfoHandler.ts`, `src/core/packDocs/`, `src/core/buildInfo/` | Documentation tools (pack PDFs, Arm documents, user and workspace documents, core SVDs) and build-artefact tools (ELF, map file, build log); off by default, routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
+| `skills/` | `skills/` | Bundled Agent Skills `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and the generated `cmsis-help`; the vendored Open-CMSIS-Pack/cmsis-skills skills; one router skill per category; `catalog.json` | [skills/README.md](skills/README.md) |
 
-**IMPORTANT**: Keep `docs/*.md` files up to date when modifying components. These docs should remain high-level:
+Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts` and
+`src/core/serialMonitorBridge.ts` (the `serial_*` tools);
+`src/utils/sessionStateTracker.ts` (which session is active, stop events);
+`src/core/` in general (SVD parsing, fault decoding and triage, CMSIS target
+selection, tool metrics, topic slicing of the agent guide), where most
+modules do not import `vscode` at all.
 
-- Purpose and motivation
-- Responsibility scope
-- Key concepts and patterns
-- Pointers to relevant code sections
+## Entry points
 
-Do NOT duplicate detailed implementation in docs - that information should be inferred from the code itself.
+- **Activation:** `activate()` in `src/extension.ts`. esbuild bundles it into
+  `dist/extension.js`, the `main` of `package.json`; the extension activates
+  on `onStartupFinished` and `onDebug`.
+- **MCP endpoint:** `http://localhost:{serverPort}/mcp` (port 3001 by
+  default), Streamable HTTP, bound to 127.0.0.1. The legacy `/sse` route
+  answers 410.
+- **Copilot in VS Code** finds the server through the MCP server definition
+  provider `cmsis-developer-assistant`; no configuration file is needed.
 
-## File Header
+## Commands
+
+| Command | What it does |
+| ------- | ------------ |
+| `npm run compile` | Type-check and compile `src/` with `tsc` into `out/` (what the tests run) |
+| `npm run check-types` | Type-check only, no output files |
+| `npm run watch` | `tsc` in watch mode |
+| `npm run build` | `check-types`, then the production esbuild bundle in `dist/` |
+| `npm run package` | `build`, then a platform-specific VSIX (`scripts/package.ts`) |
+| `npm run lint` | ESLint over `src/` |
+| `npm run lint:md` | markdownlint over the repository's Markdown with `.github/markdownlint.jsonc` (`docs/architecture/`, `skills/cmsis-skills/`, `CHANGELOG.md` and build folders are skipped) |
+| `npm test` | Compile and lint first (`pretest`), then run `src/test/*.test.ts` inside VS Code with `vscode-test`, coverage into `coverage/` |
+| `npm run test:transport` | Compile, then `test/transport/session-lifecycle.js` and `test/transport/two-window-routing.js` over real sockets |
+| `npm run test:surface` | Compile, then compare everything an agent can see without hardware — the initialize result, `tools/list`, the resources and each tool's reply without a session — with `test/transport/surface.snapshot.json`. Pass `-- --update` only for an intended change. The snapshot depends on the host, so this is a local check, not a CI job |
+| `npm run provenance:check` | Per file, the lines shared with microsoft/DebugMCP (clones it once, so it needs network the first time). With `-- --gate` it fails when a gated file — any path DebugMCP ever had, or any file added since the rewrite began, unless it still carries the Microsoft line or is on the script's exemption list — contains more than five lines found anywhere in DebugMCP's history. `-- --lines <file>` prints DebugMCP text; do not use it while writing independent code |
+| `npm run skills:sync` | Vendor the cmsis-skills skills again at the pinned commit and regenerate `skills/catalog.json`, the router skills and `skills/cmsis-help`; `-- --update` moves the pin to upstream `main` |
+
+Behaviour oracles, run with `node` after `npm run compile`:
+`test/transport/dap-scenarios.js` (tool replies and adapter traffic over
+scripted `gdbtarget` sessions), `test/transport/config-scenarios.js` (agent
+configuration files, launch configurations, activation) and
+`test/transport/executor-cases.js` (the executor alone). The first two take
+`--update` for an intended change. `test/transport/packaged-vsix.js <vsix>`
+checks a built package.
+
+## Settings
+
+| Setting | Default | Effect |
+| ------- | ------- | ------ |
+| `cmsis-developer-assistant.serverPort` | 3001 | Port of the MCP server |
+| `cmsis-developer-assistant.timeoutInSeconds` | 180 | Time limit of debugging operations; waits for a stop or a session never exceed 60 s |
+| `cmsis-developer-assistant.dapRequestTimeoutMs` | 10000 | Deadline of one DAP request |
+| `cmsis-developer-assistant.memoryReadTimeoutMs` | 30000 | Deadline of a read that takes several requests (memory, registers, peripherals) |
+| `cmsis-developer-assistant.redactSecrets` | `true` | Withhold variable and expression values that look like credentials; raw target reads are never redacted |
+| `cmsis-developer-assistant.serial.enabled` | `true` | Offer the ten `serial_*` tools |
+| `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off |
+| `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills from `skills/catalog.json` to install. Where the value is set decides where they go: the User value into the personal skills directories, a Workspace or Folder value into that folder's `.agents/skills` (plus `.claude/skills` when Claude Code is installed or the folder has a `.claude` directory), pack skills only. `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed for the user. Scope `resource` |
+| `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills step of the setup and the prompt. Scope `application` |
+| `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | At most once a month, offer the pack when an agent has the server registered but no pack skill is selected. Scope `application` |
+| `cmsis-developer-assistant.packDocs.enabled` | `false` | Register the five documentation tools. PDF text comes from the bundled pdf.js, or from `pdftotext` when `packDocs.extractor` says so; `packDocs.*` also set the size limit, unlisted pack PDFs and the workspace and user document folders |
+| `cmsis-developer-assistant.buildInfo.enabled` | `false` | Register the five build-artefact tools; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
+
+`installedSkills` and `aiSkills.enabled` take effect at once and
+`redactSecrets` is read on every call. The port, the timeouts, the tool-group
+switches and the telemetry file are read at activation; after a change the
+window has to be reloaded, and the extension offers to do it when the port,
+`packDocs.enabled` or `buildInfo.enabled` changes.
+
+## Documents served to agents
+
+The MCP server offers these resources (`registerResources()` in
+`src/debugTools.ts`), so that agents can learn the workflow at run time:
+
+| Resource URI | Source | Content |
+| ------------ | ------ | ------- |
+| `cmsis-developer-assistant://docs/debug_instructions` | `docs/agent-resources/debug_instructions.md` | The debugging workflow; `get_debug_instructions` serves it by topic |
+| `cmsis-developer-assistant://docs/cmsis-embedded-guide` | `docs/agent-resources/cmsis-embedded-guide.md` | Cortex-M debugging knowledge |
+| `cmsis-developer-assistant://docs/troubleshooting/embedded` | `docs/agent-resources/troubleshooting/embedded.md` | Embedded troubleshooting tips |
+| `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `docs/agent-resources/troubleshooting/<lang>.md` | Tips per language, for `python`, `javascript`, `java` and `csharp` |
+| `cmsis-developer-assistant://stats` | — | Tool-call statistics of the session and the server, JSON |
+
+`debug_instructions.md` is split into topics by
+`<!-- topic: name | blurb -->` … `<!-- /topic -->` comments, which
+`src/core/instructionTopics.ts` parses. Keep the markers and the topic names;
+`src/test/instructionTopics.test.ts` and `src/test/debugSkillGuidance.test.ts`
+also pin the size of the overview and a few phrases.
+
+## Dependencies
+
+- `@modelcontextprotocol/sdk`: `McpServer` and `StreamableHTTPServerTransport`
+- `zod`: the input schema of every tool
+- `express`: the HTTP app behind `/mcp`
+- `jsonc-parser`: reads `launch.json`, comments and trailing commas included
+- `serialport`: the serial tools; left out of the esbuild bundle because of
+  its native binary, and shipped in `node_modules` (see
+  `docs/packaging-esbuild.md`)
+- `pdfjs-dist`: PDF text for the documentation tools, on a worker thread
+
+## Writing code
+
+These rules follow from `tsconfig.json`, `eslint.config.mjs` and the code as
+it is:
+
+- **Language:** TypeScript with `strict` on, target and library ES2022,
+  `module` Node16 (CommonJS output). Unit tests are `src/test/*.test.ts` and
+  compile with the sources.
+- **Layout:** four spaces per indent level, no tabs; semicolons; single
+  quotes; braces around every `if`, `else`, `for` and `while` body (ESLint
+  `curly`).
+- **Comparisons and errors:** `===` and `!==` (`eqeqeq`). Throw `Error`
+  objects, never literals (`no-throw-literal`), with a message that says what
+  failed. A caught value is `unknown` until checked.
+- **Imports:** `import * as vscode from 'vscode'` first, then Node built-ins
+  and packages, then this repository's modules; `import type` for type-only
+  imports. Import names are camelCase or PascalCase (ESLint naming rule).
+- **Names:** camelCase for functions, methods and variables; PascalCase for
+  classes, interfaces and types; UPPER_SNAKE_CASE for module constants such as
+  limits and fixed texts. Only the three layer contracts carry an `I` prefix:
+  `IDebuggingHandler`, `IDebuggingExecutor`, `IDebugConfigurationManager`.
+- **Types:** give parameters and return values explicit types. Avoid `any`;
+  use `unknown` for values of unknown shape.
+- **Time:** async/await throughout. Every call that reaches the hardware has
+  a deadline (`withTimeout()`, `customRequestWithTimeout()` in
+  `src/utils/timeout.ts`); a wait that polls backs off exponentially, as
+  `awaitLiveSession()` in the handler does.
+- **Logging:** `logger` from `src/utils/logger.ts` (`debug`, `info`, `warn`,
+  `error`, each with an optional detail), which writes to the *CMSIS
+  Developer Assistant* output channel. No `console.log` in extension code.
+- **Without VS Code:** no module calls the `vscode` API at load time; the
+  transport harness and `test/transport/packaged-vsix.js` load the code under
+  a minimal stub. Logic that needs no editor goes into modules without a
+  `vscode` import (most of `src/core/`, `src/debugState.ts`,
+  `src/debugMCPServer.ts`), where tests reach it directly.
+- **Comments:** each module opens with a comment that says what it is for;
+  exported classes and functions carry `/** … */` comments.
+- **Agent-visible text:** tool names, descriptions, instructions and replies
+  are recorded in `test/transport/surface.snapshot.json` and
+  `test/transport/dap-scenarios.snapshot.json`. Change them on purpose,
+  update the snapshot in the same commit and say in the message what
+  changed. `registerTool('…'` calls keep literal tool names:
+  `src/test/skill.test.ts` compares them with the skill's `allowed-tools`.
+
+ESLint reports every rule as a warning, so `npm run lint` does not fail on
+them; keep its output clean anyway.
+
+## File header
 
 New source files carry the Arm Apache-2.0 header, as in `src/core/toolRun.ts`:
 
@@ -58,68 +215,24 @@ New source files carry the Arm Apache-2.0 header, as in `src/core/toolRun.ts`:
  */
 ```
 
-A few files still derive from microsoft/DebugMCP and keep its copyright line until they are rewritten (issue #53). They are listed in `src/test/provenance.test.ts`, and that test fails if any other file gains the line. Never copy that line into a new file. When a file is rewritten, remove the line and its list entry in the same change, and run `npm run provenance:check -- --gate`.
+A few files still derive from microsoft/DebugMCP and keep its copyright line
+until they are rewritten (issue #53). They are listed in
+`src/test/provenance.test.ts`, and that test fails if any other file gains
+the line. Never copy that line into a new file. When a file is rewritten,
+remove the line and its list entry in the same change, and run
+`npm run provenance:check -- --gate`.
 
-## Build/Lint/Test Commands
+## Keeping the documentation current
 
-| Command | Description |
-| ------- | ----------- |
-| `npm run compile` | Compile TypeScript to `out/` |
-| `npm run lint` | Run ESLint on `src/` |
-| `npm test` | Run all tests (`src/test/*.test.ts`) |
-| `npm run watch` | Compile in watch mode |
-| `npm run test:surface` | Compare the agent-visible surface with `test/transport/surface.snapshot.json`: the initialize result, `tools/list`, resources and every tool's reply without a session. Add `-- --update` only for a deliberate change. The snapshot is host-specific, so this is a local check, not CI |
-| `npm run provenance:check` | Lines shared with microsoft/DebugMCP per file (needs network once); add `-- --gate` to fail on rewritten files that still share lines |
-| `npm run skills:sync` | Re-vendor the cmsis-skills skills at the pinned commit and regenerate `skills/catalog.json`, the routers and `skills/cmsis-help` (`-- --update` moves the pin to upstream `main`) |
+When a component changes, update the documentation that describes it in the
+same change: its page under `docs/architecture/`, and the files under
+`docs/agent-resources/` when agents will see different behaviour. The
+architecture pages stay at the level of design:
 
-## Code Style & Conventions
+- why the component exists and what problem it solves;
+- what it is responsible for, and what it leaves to others;
+- the ideas and patterns needed to read its code;
+- where to look: files, classes and functions.
 
-- **TypeScript**: Strict mode, ES2022 target, Node16 modules
-- **Imports**: vscode → external packages → internal modules
-- **Naming**: camelCase (variables/functions), PascalCase (classes/interfaces), `I` prefix for interfaces
-- **Types**: Explicit types preferred, strict null checks, avoid `any`
-- **Error Handling**: try-catch with descriptive messages, throw `Error` objects
-- **Formatting**: Semicolons, curly braces for all control structures, tabs for indentation
-- **Async**: async/await, exponential backoff for retries
-- **Logging**: Use `logger` from `./utils/logger` (not `console.log`). Simple wrapper providing `info`, `warn`, `error` methods with consistent formatting.
-- **VS Code API**: Import as `import * as vscode from 'vscode'`
-
-## Key Dependencies
-
-- `@modelcontextprotocol/sdk`: Official MCP server framework (`McpServer`, `SSEServerTransport`)
-- `zod`: Schema validation for tool parameters
-- `express`: HTTP server for SSE transport
-
-## Entry Points
-
-- **Extension activation**: `src/extension.ts` → `activate()`
-- **MCP endpoint**: `http://localhost:{port}/mcp` (default port: 3001, Streamable HTTP transport)
-
-## Configuration
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `cmsis-developer-assistant.serverPort` | 3001 | MCP server port |
-| `cmsis-developer-assistant.timeoutInSeconds` | 180 | Operation timeout |
-| `cmsis-developer-assistant.installedSkills` | `[]` | AI Skills Pack skills from `skills/catalog.json` to install. The User value is copied into the user's skills directories, a Workspace / Folder value into that project's `.agents/skills` (pack skills only) — the setting's target is the "this user or this workspace" choice; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally (resource scope) |
-| `cmsis-developer-assistant.packDocs.enabled` | `false` | Register the five documentation tools (needs `pdftotext`); `packDocs.*` tune extractor, size limit, unlisted PDFs, workspace and user document folders |
-| `cmsis-developer-assistant.buildInfo.enabled` | `false` | Register the five build-artefact tools; `buildInfo.maxSymbols`, `buildInfo.logGlobs` |
-| `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills setup step and the prompt (application scope) |
-| `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Monthly prompt to install the pack when an agent has the server registered but no pack skill is selected (application scope) |
-
-## Documentation Resources
-
-The `docs/` folder contains two types of documentation:
-
-**Component docs** (referenced in Key Components table above): Developer documentation for understanding the codebase architecture.
-
-**AI Agent resources** (served via MCP at runtime):
-
-| Resource URI | Source file | Purpose |
-|------|---------|---------|
-| `cmsis-developer-assistant://docs/debug_instructions` | `agent-resources/debug_instructions.md` | Core debugging workflow guide |
-| `cmsis-developer-assistant://docs/cmsis-embedded-guide` | `agent-resources/cmsis-embedded-guide.md` | Cortex-M debugging expertise |
-| `cmsis-developer-assistant://docs/troubleshooting/embedded` | `agent-resources/troubleshooting/embedded.md` | Embedded-specific tips |
-| `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `agent-resources/troubleshooting/<lang>.md` | Language-specific tips |
-
-These resource files are loaded by `DebugMCPServer` and exposed as MCP resources that AI agents can read to learn how to use the debugging tools effectively.
+Leave the details to the code. A page that restates implementation goes
+stale with the next change and then misleads.

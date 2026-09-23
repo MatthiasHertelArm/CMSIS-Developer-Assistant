@@ -1,67 +1,78 @@
 # DebugState
 
-## Purpose
+`DebugState` (`src/debugState.ts`) is a plain value that says where the
+debugger is at one moment: whether a session is active, the name of its
+launch configuration, the source location of the top frame, the DAP frame and
+thread ids, the function name, the call stack, and the breakpoints of the
+window. The executor fills a fresh one for every query
+(`captureDebugState()` in `src/executor/snapshot.ts`); the handler turns it
+into the state text an agent reads after a session start, a step, a
+continue, a pause or a `wait_for_stop`.
 
-Immutable data class representing a snapshot of the current debugging session state. Used for state comparison to detect when debugging operations complete.
+## Why a separate value
 
-## Motivation
+- One definition of what an agent sees about the current location, used by
+  every tool that moves the target.
+- The module imports nothing, `vscode` included, so it is tested in plain
+  Node, and the executor and the handler can pass it around without sharing
+  any other state.
 
-Debugging operations are asynchronous - the debugger takes time to execute and update. To know when an operation completes, we compare "before" and "after" state snapshots. `DebugState` provides a clean, clonable structure for these comparisons.
+## What it holds
 
-## Responsibility
+| Field | Meaning |
+| ----- | ------- |
+| `sessionActive` | A debug session exists; when false, the renderings carry nothing else |
+| `configurationName` | Name of the launch configuration the session runs |
+| `fileFullPath`, `fileName` | Source file of the top frame, absolute and base name |
+| `currentLine`, `currentLineContent` | Its 1-based line and that line's text, trimmed |
+| `nextLines` | The next few non-empty source lines after it |
+| `frameId`, `threadId` | DAP ids of the focused frame and thread (0 is a valid id) |
+| `frameName` | Function name of the top frame |
+| `stackTrace` | `StackFrame` entries: name, source, line, column, optional `frameId` |
+| `breakpoints` | One string per source breakpoint: `<file>:<line>` and its modifiers |
 
-- Hold all relevant debug session state in one object
-- Provide helper methods to check state validity
-- Support cloning for before/after comparisons
-- Provide state update methods for building state incrementally
+The `update*` methods set related fields together and copy arrays;
+`reset()` restores the initial values and `clone()` copies the arrays too.
+`hasValidContext()`, `hasLocationInfo()` and `hasFrameName()` answer the
+questions callers ask most.
 
-## Properties
+## Two renderings
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `sessionActive` | `boolean` | Whether a debug session is running |
-| `fileFullPath` | `string \| null` | Full path to current file |
-| `fileName` | `string \| null` | Just the filename |
-| `currentLine` | `number \| null` | 1-based line number |
-| `currentLineContent` | `string \| null` | Content of current line |
-| `nextLines` | `string[]` | Preview of upcoming lines |
-| `frameId` | `number \| null` | DAP frame identifier |
-| `threadId` | `number \| null` | DAP thread identifier |
-| `frameName` | `string \| null` | Current function/method name |
-| `stackTrace` | `StackFrame[]` | Frames of the active thread (up to 50 from the adapter) |
-| `breakpoints` | `string[]` | Every breakpoint in the window as `file:line [modifiers]` |
-| `configurationName` | `string \| null` | The launch configuration of the session |
+Both are JSON with two-space indentation and a fixed key order, which agents
+and the recorded snapshots see.
 
-## Key Methods
+- `toString()`, the full form, lists every field, every frame as `name:line`
+  and every breakpoint. The handler uses it after `start_debugging` and after
+  a `cmsis_action` that attached a session.
+- `toCompactString({ includeBreakpoints, maxFrames })`, the compact form,
+  follows every step, continue, pause and wait. It leaves out the
+  configuration name and the base file name, lists the top five frames and
+  then a marker such as `… 7 more — get_call_stack`, and carries the
+  breakpoint list only when the caller says it changed; otherwise it carries
+  `breakpointsUnchanged` with the count. The handler decides "changed" by
+  comparing the list with the one it showed last.
 
-| Method | Purpose |
-|--------|---------|
-| `hasValidContext()` | Check if frame/thread IDs are set |
-| `hasLocationInfo()` | Check if file/line info is available |
-| `hasFrameName()` | Check if frame name is available |
-| `clone()` | Create a deep copy for comparison |
-| `reset()` | Clear all state to initial values |
-| `updateContext()` | Set frame and thread IDs |
-| `updateLocation()` | Set file and line information |
-| `updateFrameName()` | Set the current frame name |
-| `toString()` | Full JSON snapshot — every field, every frame, every breakpoint. Used when a session comes up (`start_debugging`, `cmsis_action load_and_debug` / `attach`) |
-| `toCompactString({ includeBreakpoints })` | The form motion tools return after every step, continue, pause and `wait_for_stop`: location, frame ids, the top 5 frames with the rest counted (`get_call_stack` has them all), the breakpoint list only when the handler saw it change (a count otherwise); no `fileName` / `configurationName`. Paid on every move, so it keeps what the next step needs |
+Without an active session both forms hold the single key `sessionActive`,
+set to `false`.
 
-## Key Code Locations
+## Breakpoint modifiers
 
-- Class definition: `src/debugState.ts`
+`formatBreakpointModifiers()` turns a breakpoint's condition, log message,
+hit condition and disabled flag into a suffix such as `[when: n > 0, disabled]`
+(after a space), or nothing for a plain enabled breakpoint. The
+snapshot uses it for `breakpoints`, and the handler uses it for the
+`list_breakpoints` listing, so both show a breakpoint the same way.
 
-## Usage Pattern
+## Where to look
 
-```
-1. Capture before state: beforeState = executor.getCurrentDebugState()
-2. Execute debug command
-3. Poll for changes: compare beforeState with currentState
-4. State changed when: file, line, frame, or session status differs
-```
+- `src/debugState.ts`: `DebugState`, `StackFrame`, `BreakpointModifiers`,
+  `formatBreakpointModifiers()`; the key orders are `FULL_KEYS` and
+  `COMPACT_LEAD_KEYS`
+- `src/executor/snapshot.ts`: how a snapshot is filled
+- `src/debuggingHandler.ts`: `fullState()` and `compactState()`
 
-## Design Notes
+## Tests
 
-- **Immutable by convention**: Use `clone()` when you need a snapshot
-- **Incremental building**: State is built via multiple update calls during retrieval
-- **Null-safe**: All optional fields default to null, with helper methods to check validity
+- `src/test/debugState.test.ts`: fields, helpers and both renderings
+- `test/transport/dap-scenarios.js`: the renderings as agents receive them
+  after real tool calls

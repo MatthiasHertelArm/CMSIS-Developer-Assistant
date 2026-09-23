@@ -4,6 +4,39 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The code that still derived from microsoft/DebugMCP is replaced by independently written code (#53).** The files are the MCP server, the debugging handler and executor, the debug state, secret redaction, the logger, the multi-window control server, registry and router, both configuration managers, extension activation, the esbuild/ESLint/test-runner configs and the skill-trigger scripts. Each was rewritten from a behaviour specification by an implementer who did not see the previous version. [docs/provenance/](docs/provenance/README.md) records the method, the specifications and the per-file result: at most five lines of any rewritten file occur anywhere in DebugMCP's history, and those are declarations the exported names dictate. No source file carries the Microsoft copyright line any more.
+- **Behaviour is unchanged, including the known bugs, which are fixed separately.** Four recorded oracles replay identically:
+  - the agent-visible surface: tools, schemas, instructions, resources and every reply without a session;
+  - 28 scripted debug sessions, with their DAP requests and replies;
+  - 85 configuration scenarios, with every agent config file written byte for byte;
+  - 124 executor cases.
+  The wire protocol between windows and the registry format are unchanged, so windows on 2.3.10 and on this version still route to each other.
+- **New module layout.** The tool registrations, resources and instructions move from `src/debugMCPServer.ts` to `src/debugTools.ts`. The executor splits into `src/executor/` (contract, snapshot, GDB memory ladder, reset, session reports), and the handler into `src/handler/` (fence, `cmsis_action`, flash, GDB and target texts, test hooks).
+- **Texts that still matched DebugMCP are reworded, with the same meaning.**
+  - The first two sentences of the server instructions.
+  - The descriptions of `stop_debugging`, `step_over`, `step_into`, `step_out`, `continue_execution`, `restart_debugging`, `remove_breakpoint`, `clear_all_breakpoints`, `list_breakpoints`, `list_variable_names`, `get_variables_values` and `evaluate_expression`, the skill sentence of `start_debugging`, and six field descriptions (tools/list: 28 890 bytes).
+  - Replies of the stop, restart, step, continue and breakpoint tools and the root-cause checkpoint on stop. `evaluate_expression` now reports the type on its own line: `Evaluated: …`, `Result: …`, `Type: …`.
+  - The redaction notice, the setup and migration notifications, the launch-configuration picker and the resource names.
+- **Documentation and configuration written anew.**
+  - The architecture docs of the rewritten components, plus a new `docs/architecture/windowRouting.md`.
+  - `AGENTS.md`, with stale facts corrected: 4-space indentation, Streamable HTTP only (`/sse` answers 410), `pdftotext` optional since pdf.js is bundled.
+  - The root-cause part and the opening step list of the agent guide (`get_debug_instructions`).
+  - `tsconfig.json`, with the same effective configuration.
+  - A 39-line `.gitignore` in place of the inherited Visual Studio template, whose `[Bb]uild[Ll]og.*` pattern once swallowed `buildLog.ts`. What git tracks and ignores is unchanged, except that a root `.vscode/` folder is now ignored as a whole.
+
+### Added
+- Provenance tooling for #53:
+  - `src/test/provenance.test.ts` keeps any file from gaining the Microsoft copyright line.
+  - `npm run provenance:check` measures each file against every commit of DebugMCP up to the last synced one; `--gate` fails on rewritten or new files above the limit.
+  - `npm run test:surface`, `test/transport/dap-scenarios.js`, `test/transport/config-scenarios.js` and `test/transport/executor-cases.js` record and replay behaviour for refactorings.
+
+### Removed
+- `dist/extension.js.map` and `dist/pdfWorker.js` are no longer tracked. `dist/` has been ignored since 2026-09-03, both files are build output, and the source map embedded the pre-rewrite sources.
+- `vsc-extension-quickstart.md`, the extension generator's template.
+
 ## [2.3.10] - 2026-09-07
 
 ### Added
