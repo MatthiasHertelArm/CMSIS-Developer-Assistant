@@ -46,6 +46,12 @@ The session-status output includes a hint for each state. If state is `running` 
 - Causes: probe disconnect, target reset in mid-flight, GDB server crash
 - Run the first-line diagnostic sweep above; `restart_debugging` if probe is wedged
 
+### `reset` Says the Target Did NOT Reset
+
+- Trust the verification, not the command echo: the PC is not at the reset vector.
+- `stop_debugging`, then `cmsis_action load_and_debug` — a fresh connect and reset. This is the fallback on J-Link and on secure-boot parts (Alif Ensemble), where nSRST alone does not re-vector the core.
+- Only if that fails: power-cycle the board or reconnect the probe.
+
 ### HardFault on Startup
 
 - Call `get_fault_info` to decode the fault registers

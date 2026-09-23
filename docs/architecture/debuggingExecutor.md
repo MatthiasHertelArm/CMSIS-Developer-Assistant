@@ -138,7 +138,11 @@ can fake only the part a case drives.
   table VTOR points to. The
   method `auto` escalates from `system` to `core` to `hardware` until one
   verifies, and the target is resumed only after a verified reset with
-  `halt: false`.
+  `halt: false`. When none verifies, the reply (`renderResetOutcome()`)
+  says the target is halted and names a next step that needs no one at the
+  board: `stop_debugging`, then `cmsis_action load_and_debug`, which brings
+  back J-Link targets and secure-boot parts whose core nSRST alone does not
+  re-vector; power-cycling comes only after that (#20).
 
 `SERVER_VERSION` is defined in `src/debuggingExecutor.ts` and must equal the
 version in `package.json`; the release steps update it with `npm version`.

@@ -80,6 +80,14 @@ suite('Bundled agent skill', () => {
         }
     });
 
+    test('its embedded troubleshooting notes are the MCP resource\'s, byte for byte', () => {
+        // Agents with the skill read the skill's copy; agents without it read the resource (#20).
+        const skillCopy = fs.readFileSync(path.join(skillDir, 'references', 'troubleshooting', 'embedded.md'));
+        const resource = fs.readFileSync(path.join(repoRoot, 'docs', 'agent-resources', 'troubleshooting', 'embedded.md'));
+        assert.ok(skillCopy.equals(resource),
+            'skills/cmsis-debug-live/references/troubleshooting/embedded.md and docs/agent-resources/troubleshooting/embedded.md differ');
+    });
+
     test('it does not carry upstream\'s non-embedded troubleshooting files', () => {
         const refs = path.join(skillDir, 'references', 'troubleshooting');
         for (const irrelevant of ['python.md', 'java.md', 'go.md', 'javascript.md', 'csharp.md']) {

@@ -88,9 +88,21 @@ export interface ResetOutcomeView {
 }
 
 /**
+ * What to do when no reset method verified, for every kind of GDB server: a
+ * fresh connect needs no one at the board, and it is what brings back J-Link
+ * targets and secure-boot parts whose core nSRST alone does not re-vector
+ * (#20). Only when that fails too does a person have to act.
+ */
+const UNVERIFIED_RESET_NEXT_STEP =
+    'Next: stop_debugging, then cmsis_action load_and_debug (a fresh connect and reset). That is the working fallback on '
+    + 'J-Link and on secure-boot parts such as Alif Ensemble, where nSRST alone does not re-vector the core. '
+    + 'If that fails too, power-cycle the board or reconnect the probe.';
+
+/**
  * The `reset` tool's result text. Tells the truth about the end state: an
  * unverified reset leaves the target halted — and says so, including that
- * `halt: false` was not applied and whether the target was running before.
+ * `halt: false` was not applied and whether the target was running before —
+ * and names the next step.
  */
 export function renderResetOutcome(outcome: ResetOutcomeView, halt: boolean | undefined): string {
     const commandsLine = outcome.commandsIssued.length > 0
@@ -108,7 +120,6 @@ export function renderResetOutcome(outcome: ResetOutcomeView, halt: boolean | un
     return `⚠️ Reset was issued but the target does NOT appear to have reset. ${outcome.verificationDetail}. ` +
         `Method(s) tried: ${outcome.methodsTried.join(', ')}.${commandsLine} ` +
         `The target is halted${before}${notApplied} — use continue_execution to run. ` +
-        `'hardware' requires nSRST wired from probe to target — if it is not connected, no software reset can ` +
-        `recover this; power-cycle the board or reconnect the probe. ` +
+        `${UNVERIFIED_RESET_NEXT_STEP} ` +
         `Adapter replies: ${outcome.replies.join(' | ') || '<none>'}`;
 }
