@@ -30,32 +30,48 @@
  *   and, for reads that take several requests, a fence around the whole read.
  * - Thread and frame ids are those of VS Code's focused stack item (KB7). A
  *   frame lookup is a state snapshot, `stackTrace` request included (KB8).
+ * - On the CMSIS Debugger (`gdbtarget`) nothing goes through VS Code's
+ *   workbench commands: a request GDB refuses comes back to the caller
+ *   instead of repeating itself as a toast (#13), and raw GDB commands use
+ *   the adapter's `>` prefix (#56).
  *
  * The contract types live in src/executor/contract.ts and are re-exported
- * here. The snapshot, the GDB word read, the reset and the session reports
- * have modules of their own under src/executor/. `SERVER_VERSION` stays in
- * this file because the release recipe edits its literal with `npm version`.
+ * here. The snapshot, the GDB command and word read, the reset and the
+ * session reports have modules of their own under src/executor/.
+ * `SERVER_VERSION` stays in this file because the release recipe edits its
+ * literal with `npm version`.
  */
 
 import * as vscode from 'vscode';
 import { DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
 import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, FaultRegisters, faultRegistersFromBlock } from './core/faultDecoder';
+import { CMSIS_DEBUGGER_TYPE, gdbRequestRefusal, miQuoted, passthroughCommand } from './core/gdbDialect';
 import { readPeripheralViaMemory, tryReadPeripheralViaExtension } from './core/peripheralReader';
 import { ResetMethod } from './core/resetAssist';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
-import { getLiveSessionCount, getLiveSessionNames, getStoppedReason, isSessionStopped, resolveActiveSession, StopWaitResult, waitForStopEvent } from './utils/sessionStateTracker';
+import {
+    awaitBreakpointsApplied, forgetGdbLogpoints, GdbLogpoint, gdbLogpointsOf, getLiveSessionCount, getLiveSessionNames, getStoppedReason,
+    isSessionStopped, rememberGdbLogpoint, resolveActiveSession, StopWaitResult, waitForSessionEnd, waitForStopEvent,
+} from './utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
 import { Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, ReadMemoryBody, ScopesBody, sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody } from './executor/common';
-import { AlreadyStopped, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome, SessionStatus } from './executor/contract';
+import {
+    AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome,
+    RestartOutcome, SessionStatus,
+} from './executor/contract';
+import { GdbReply, runGdbCommand } from './executor/gdbCommand';
 import { nthWordAddress, readWordThroughGdb, withHexPrefix } from './executor/gdbMemory';
 import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession } from './executor/sessionReports';
 import { captureDebugState } from './executor/snapshot';
 import { performReset, programCounterFrom } from './executor/targetReset';
 
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
-export type { DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome, SessionState, SessionStatus } from './executor/contract';
+export type {
+    BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, GdbLogpoint, GdbReply, HardwareTimeouts, IDebuggingExecutor, ResetOutcome,
+    RestartOutcome, SessionState, SessionStatus,
+} from './executor/contract';
 
 /** The version the MCP server, the server definition and the HTTP user agent report. Equals package.json. */
 export const SERVER_VERSION = '2.3.10';
@@ -65,8 +81,8 @@ type Motion = 'stepOver' | 'stepInto' | 'stepOut' | 'continue' | 'pause';
 /**
  * Each run-control operation: the DAP request it sends, and the workbench
  * command it runs instead when that request fails for any reason but a
- * timeout. The command acts on VS Code's focused session and its outcome is
- * not checked (KB1, #13).
+ * timeout, on adapters other than the CMSIS Debugger. The command acts on
+ * VS Code's focused session and its outcome is not checked (KB1).
  */
 const MOTIONS: Readonly<Record<Motion, { request: string; workbenchCommand: string }>> = {
     stepOver: { request: 'next', workbenchCommand: 'workbench.action.debug.stepOver' },
@@ -76,8 +92,17 @@ const MOTIONS: Readonly<Record<Motion, { request: string; workbenchCommand: stri
     pause: { request: 'pause', workbenchCommand: 'workbench.action.debug.pause' },
 };
 
-/** Restart goes through the workbench only, on the focused session (KB2, #13). */
+/** Restart on adapters other than the CMSIS Debugger: the workbench, on the focused session (KB2). */
 const WORKBENCH_RESTART = 'workbench.action.debug.restart';
+
+/** How long a restart waits for the stopped session to end before it starts the configuration again. */
+const SESSION_END_WAIT_MS = 10_000;
+
+/** How often `breakpointBinding` asks VS Code again while the adapter has not answered. */
+const BINDING_POLL_MS = 50;
+
+/** How long a model change waits for the adapter to answer VS Code's `setBreakpoints`. */
+const BREAKPOINT_SYNC_MS = 2_000;
 
 /** Registers `read_core_registers` returns when no names are given, in this order. */
 const CORE_REGISTER_NAMES: readonly string[] =
@@ -96,11 +121,22 @@ const EXCEPTION_FRAME_BYTES = 32;
 /** The fault status registers in the order the word-by-word read visits them. */
 const FAULT_REGISTER_ORDER: ReadonlyArray<keyof FaultRegisters> = ['CFSR', 'HFSR', 'DFSR', 'MMFAR', 'BFAR', 'AFSR'];
 
-/** A GDB passthrough reply. Callers read only the text; `adapterError` goes unused (KB4). */
-interface GdbReply {
-    text: string;
-    adapterError: boolean;
+/** The session a child session (a core of a multi-core launch) was started from, or the session itself. */
+function rootSessionOf(session: vscode.DebugSession): vscode.DebugSession {
+    let root = session;
+    while (root.parentSession) {
+        root = root.parentSession;
+    }
+    return root;
 }
+
+/** The distinct source files of these breakpoints, as file-system paths. */
+function sourceFilesOf(breakpoints: readonly vscode.Breakpoint[]): string[] {
+    const files = breakpoints.flatMap((entry) => entry instanceof vscode.SourceBreakpoint ? [entry.location.uri.fsPath] : []);
+    return [...new Set(files)];
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
 
 export class DebuggingExecutor implements IDebuggingExecutor {
     private readonly budgets: Budgets;
@@ -145,9 +181,29 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         }
     }
 
-    async restart(): Promise<void> {
+    async restart(): Promise<RestartOutcome> {
         try {
-            await vscode.commands.executeCommand(WORKBENCH_RESTART);
+            const session = resolveActiveSession();
+            if (session?.type !== CMSIS_DEBUGGER_TYPE) {
+                await vscode.commands.executeCommand(WORKBENCH_RESTART);
+                return { via: 'workbench' };
+            }
+            // The whole launch, not one core of it: its root was started from the configuration.
+            const root = rootSessionOf(session);
+            const folder = root.workspaceFolder;
+            const configuration = root.configuration;
+            await vscode.debug.stopDebugging(root);
+            if (!(await waitForSessionEnd(root, SESSION_END_WAIT_MS))) {
+                throw new Error(`The session '${root.name}' did not end within ${SESSION_END_WAIT_MS / 1000} s of the stop request.`);
+            }
+            if (!(await vscode.debug.startDebugging(folder, configuration))) {
+                throw new Error(`VS Code did not start the launch configuration '${configuration.name}' again.`);
+            }
+            return {
+                via: 'relaunched',
+                configurationName: configuration.name,
+                preLaunchTask: typeof configuration.preLaunchTask === 'string' ? configuration.preLaunchTask : undefined,
+            };
         } catch (err) {
             throw wrapError('Restarting the debug session failed', err);
         }
@@ -246,35 +302,49 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         try {
             await customRequestWithTimeout(session, request, { threadId: focusedThreadId() }, this.budgets.request(overrideMs));
         } catch (err) {
-            if (err instanceof HardwareTimeoutError) {
-                throw err;
-            }
-            await vscode.commands.executeCommand(workbenchCommand);
+            await this.rejectOrFallBack(session, request, workbenchCommand, err);
         }
+    }
+
+    /**
+     * A run-control request the adapter did not carry out. A timeout is
+     * passed on. On the CMSIS Debugger GDB's refusal is thrown as it is: the
+     * workbench command would repeat the refused request from VS Code's UI,
+     * where GDB's text becomes a toast and nothing comes back (#13). Other
+     * adapters keep the workbench command.
+     */
+    private async rejectOrFallBack(session: vscode.DebugSession, request: string, workbenchCommand: string, err: unknown): Promise<void> {
+        if (err instanceof HardwareTimeoutError) {
+            throw err;
+        }
+        if (session.type === CMSIS_DEBUGGER_TYPE) {
+            throw gdbRequestRefusal(request, messageOf(err));
+        }
+        await vscode.commands.executeCommand(workbenchCommand);
     }
 
     // ── Breakpoints: VS Code model ─────────────────────────────────────
 
-    async addBreakpoint(file: vscode.Uri, line: number, extras?: { condition?: string; logMessage?: string }): Promise<void> {
+    async addBreakpoint(file: vscode.Uri, line: number, extras?: { condition?: string; logMessage?: string }): Promise<vscode.SourceBreakpoint> {
         try {
             // A Position, not a Range: the transport stub's Location keeps its second argument as `range.start`.
             const anchor = new vscode.Location(file, new vscode.Position(line - 1, 0));
             const added = new vscode.SourceBreakpoint(anchor, true, extras?.condition, undefined, extras?.logMessage);
             vscode.debug.addBreakpoints([added]);
+            return added;
         } catch (err) {
             throw wrapError('Adding the breakpoint failed', err);
         }
     }
 
-    async removeBreakpoint(file: vscode.Uri, line: number): Promise<void> {
+    async removeBreakpoint(file: vscode.Uri, line: number, options?: { logpointsOnly?: boolean }): Promise<BreakpointRemoval> {
         try {
             const target = file.toString();
             const matching = vscode.debug.breakpoints.filter((entry) => entry instanceof vscode.SourceBreakpoint
                 && entry.location.uri.toString() === target
-                && entry.location.range.start.line === line - 1);
-            if (matching.length > 0) {
-                vscode.debug.removeBreakpoints(matching);
-            }
+                && entry.location.range.start.line === line - 1
+                && (!options?.logpointsOnly || Boolean(entry.logMessage)));
+            return await this.removeFromModel(matching);
         } catch (err) {
             throw wrapError('Removing the breakpoint failed', err);
         }
@@ -284,58 +354,111 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         return vscode.debug.breakpoints;
     }
 
-    clearAllBreakpoints(): void {
-        const everything = [...vscode.debug.breakpoints];
-        if (everything.length > 0) {
-            vscode.debug.removeBreakpoints(everything);
-        }
-    }
-
-    // ── Breakpoints and logpoints through GDB ──────────────────────────
-    // Paths and expressions go in verbatim; the handler escapes `format`.
-
-    async setBreakpointViaGdb(sourcePath: string, line: number, overrideMs?: number, condition?: string): Promise<string> {
-        const guard = condition?.trim();
-        const command = guard ? `break ${sourcePath}:${line} if ${guard}` : `break ${sourcePath}:${line}`;
-        return (await this.gdb(command, overrideMs)).text;
-    }
-
-    async setLogpointViaGdb(sourcePath: string, line: number, format: string, values: string[], overrideMs?: number): Promise<string> {
-        const tail = values.length > 0 ? `,${values.join(',')}` : '';
-        return (await this.gdb(`dprintf ${sourcePath}:${line},"${format}"${tail}`, overrideMs)).text;
-    }
-
-    async setBreakpointConditionViaGdb(breakpointNo: number, condition: string, overrideMs?: number): Promise<string> {
-        return (await this.gdb(`condition ${breakpointNo} ${condition}`, overrideMs)).text;
-    }
-
-    async clearBreakpointViaGdb(sourcePath: string, line: number, overrideMs?: number): Promise<string> {
-        return (await this.gdb(`clear ${sourcePath}:${line}`, overrideMs)).text;
-    }
-
-    async clearAllBreakpointsViaGdb(overrideMs?: number): Promise<string> {
-        return (await this.gdb('delete', overrideMs)).text;
+    clearAllBreakpoints(): Promise<BreakpointRemoval> {
+        return this.removeFromModel([...vscode.debug.breakpoints]);
     }
 
     /**
-     * One GDB command as a REPL evaluate of `-exec <command>` in the focused
-     * frame. cdt-gdb-adapter treats that input as an expression, not a CLI
-     * command, so on `gdbtarget` the command does not reach GDB (KB3). An
-     * adapter error becomes the reply text; only a timeout rejects.
+     * Removes `which` from VS Code's model. With a session, the wait for the
+     * adapter's answers to the `setBreakpoints` requests VS Code sends is
+     * armed before the change, so no answer can slip past it.
+     */
+    private async removeFromModel(which: readonly vscode.Breakpoint[]): Promise<BreakpointRemoval> {
+        if (which.length === 0) {
+            return { removed: 0 };
+        }
+        const session = resolveActiveSession();
+        const applied = session ? awaitBreakpointsApplied(session, sourceFilesOf(which), BREAKPOINT_SYNC_MS) : undefined;
+        vscode.debug.removeBreakpoints([...which]);
+        return { removed: which.length, applied: applied ? await applied : undefined };
+    }
+
+    async breakpointBinding(breakpoint: vscode.Breakpoint, waitMs: number): Promise<BreakpointBinding | undefined> {
+        const session = resolveActiveSession();
+        if (!session) {
+            return undefined;
+        }
+        if (typeof session.getDebugProtocolBreakpoint !== 'function') {
+            return { reported: false, verified: false };
+        }
+        const deadline = Date.now() + Math.max(waitMs, 0);
+        for (;;) {
+            const remaining = deadline - Date.now();
+            let reported: any;
+            try {
+                reported = await withTimeout('getDebugProtocolBreakpoint', Math.max(remaining, BINDING_POLL_MS),
+                    Promise.resolve(session.getDebugProtocolBreakpoint(breakpoint)));
+            } catch (err) {
+                logger.debug('breakpointBinding: VS Code did not answer getDebugProtocolBreakpoint', err);
+            }
+            if (reported) {
+                return {
+                    reported: true,
+                    verified: reported.verified === true,
+                    message: typeof reported.message === 'string' && reported.message ? reported.message : undefined,
+                    line: typeof reported.line === 'number' ? reported.line : undefined,
+                    id: typeof reported.id === 'number' ? reported.id : undefined,
+                };
+            }
+            if (Date.now() >= deadline) {
+                return { reported: false, verified: false };
+            }
+            await sleep(Math.min(BINDING_POLL_MS, Math.max(deadline - Date.now(), 1)));
+        }
+    }
+
+    // ── GDB's own breakpoints (logpoints on the CMSIS Debugger) ────────
+    // Locations, formats and expressions go in as given; the handler escapes `format`.
+
+    async insertDprintfViaGdb(location: string, format: string, values: readonly string[], overrideMs?: number): Promise<GdbReply> {
+        const argumentList = values.map((value) => ` ${miQuoted(value)}`).join('');
+        return this.gdb(`-dprintf-insert ${miQuoted(location)} "${format}"${argumentList}`, overrideMs);
+    }
+
+    async setBreakpointConditionViaGdb(breakpointNo: number, condition: string, overrideMs?: number): Promise<GdbReply> {
+        return this.gdb(`condition ${breakpointNo} ${condition}`, overrideMs);
+    }
+
+    async deleteBreakpointsViaGdb(numbers: readonly number[], overrideMs?: number): Promise<GdbReply> {
+        if (numbers.length === 0) {
+            // A bare `delete` would take every breakpoint the adapter manages with it.
+            return { text: '', errored: false };
+        }
+        return this.gdb(`delete ${numbers.join(' ')}`, overrideMs);
+    }
+
+    async listBreakpointsViaGdb(overrideMs?: number): Promise<GdbReply> {
+        return this.gdb('-break-list', overrideMs);
+    }
+
+    gdbLogpoints(): GdbLogpoint[] {
+        const session = resolveActiveSession();
+        return session ? gdbLogpointsOf(session) : [];
+    }
+
+    rememberGdbLogpoint(logpoint: GdbLogpoint): void {
+        const session = resolveActiveSession();
+        if (session) {
+            rememberGdbLogpoint(session, logpoint);
+        }
+    }
+
+    forgetGdbLogpoints(numbers: readonly number[]): void {
+        const session = resolveActiveSession();
+        if (session) {
+            forgetGdbLogpoints(session, numbers);
+        }
+    }
+
+    /**
+     * One GDB command in the prefix of the session's adapter, in the focused
+     * frame (src/executor/gdbCommand.ts). An adapter error comes back as an
+     * `errored` reply; only a timeout rejects.
      */
     private async gdb(command: string, overrideMs?: number): Promise<GdbReply> {
         const session = sessionOrThrow();
         const frame = await this.frameArg();
-        try {
-            const reply = await customRequestWithTimeout<EvaluateBody | undefined>(session, 'evaluate',
-                { expression: `-exec ${command}`, context: 'repl', ...frame }, this.budgets.request(overrideMs));
-            return { text: String(reply?.result ?? '').trim(), adapterError: false };
-        } catch (err) {
-            if (err instanceof HardwareTimeoutError) {
-                throw err;
-            }
-            return { text: messageOf(err).trim(), adapterError: true };
-        }
+        return runGdbCommand(session, command, frame, this.budgets.request(overrideMs));
     }
 
     // ── State, stack, threads, variables, expressions ──────────────────
@@ -418,7 +541,16 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     async evaluateExpression(expression: string, frameId: number, overrideMs?: number): Promise<any> {
         try {
             const session = sessionOrThrow();
-            // Verbatim, an agent's own `-exec …` included.
+            const command = passthroughCommand(expression);
+            if (command !== undefined && session.type === CMSIS_DEBUGGER_TYPE) {
+                // `-exec <cmd>` would be a C expression to cdt-gdb-adapter; `>` makes it a GDB command.
+                const reply = await runGdbCommand(session, command, frameArgOf(frameId), this.budgets.request(overrideMs));
+                if (reply.errored) {
+                    throw new Error(reply.text);
+                }
+                return { result: reply.text, variablesReference: 0 };
+            }
+            // Verbatim, an agent's own `-exec …` on other adapters included.
             return await customRequestWithTimeout(session, 'evaluate', { expression, frameId, context: 'repl' }, this.budgets.request(overrideMs));
         } catch (err) {
             throw wrapError('Evaluating the expression failed', err);

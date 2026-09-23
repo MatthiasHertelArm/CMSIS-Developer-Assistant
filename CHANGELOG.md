@@ -48,6 +48,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - A missing task label fails at once with `INVALID_ARGUMENT`. `get_session_status` names the CMSIS jobs and tasks. A `load_and_debug` whose session has no threads yet is `running`, not "did not survive".
 - **`flash` uses the CMSIS Debugger's bundled pyOCD,** then the one in `.cmsis/tools-environment.yml`, then PATH. It no longer advises `pip install pyocd` (part of #45).
 
+- **GDB commands reach GDB in CMSIS Debugger sessions (#56).**
+  - We sent them as `-exec …`. That is the Microsoft C/C++ adapter's prefix; the CMSIS Debugger's adapter (cdt-gdb-adapter) takes `>` and evaluated `-exec …` as a C expression.
+  - As a result, `monitor reset`, the GDB memory-read fallbacks and agents' own `evaluate_expression("-exec …")` did nothing, and `reset` on J-Link often reported "did NOT appear to have reset".
+  - Commands now use each adapter's own prefix. On `gdbtarget` the console output is collected and returned. `evaluate_expression` accepts `-exec <command>` and `>command`, and neither is secret-redacted. The memory fallbacks use expressions and MI `-data-read-memory-bytes`, and `reset` flushes GDB's register cache before it verifies.
+- **Breakpoints go through VS Code's model only, and logpoints on `gdbtarget` are GDB dprintfs.**
+  - Previously, `add_breakpoint` also sent GDB `break` and `clear_all_breakpoints` sent GDB `delete`. Once commands reach GDB, that would duplicate every breakpoint and delete the adapter's own.
+  - Binding is now reported from the adapter's `verified` state and message, and `list_breakpoints` shows it.
+  - On `gdbtarget`, logpoints are GDB dprintfs (MI `-dprintf-insert`), so `{expr:%08lx}` is filled in and a condition really applies. They are tracked by number, removed and cleared by number (never a bare `delete`), and listed with their hit counts. Other adapters keep VS Code logpoints.
+- **Breakpoint changes and restarts are safe while a CMSIS target runs (#13).**
+  - `add_breakpoint`, `add_logpoint`, `remove_breakpoint` and `clear_all_breakpoints` pause a running `gdbtarget` target, apply the change, check it and resume, and say how long the target was paused.
+  - `restart_debugging` pauses, then stops the session and starts its launch configuration again through the debug API, instead of the UI's restart command.
+  - On `gdbtarget`, a step, continue or pause refused with GDB's "target is running" returns `TARGET_RUNNING` instead of retrying through VS Code's UI, where the refusal appeared as a toast.
+- The agent guides no longer claim that a breakpoint condition keeps the core from halting (the FPB has no condition logic; GDB evaluates the condition and resumes), and no longer advise `-exec break` / `-exec condition`.
+
 ### Added
 - Provenance tooling for #53:
   - `src/test/provenance.test.ts` keeps any file from gaining the Microsoft copyright line.

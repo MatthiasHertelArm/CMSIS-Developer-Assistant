@@ -17,7 +17,8 @@
 /**
  * The state snapshot: one `DebugState` filled from the session, VS Code's
  * focused stack frame, a 50-level `stackTrace` of that frame's thread, the
- * source text around the top frame, and the window's source breakpoints.
+ * source text around the top frame, and the window's source breakpoints
+ * followed by the session's GDB `dprintf` logpoints.
  *
  * The location always comes from the adapter's top frame, never from the
  * active editor. The same snapshot, without the source text, serves as the
@@ -31,7 +32,7 @@
 import * as vscode from 'vscode';
 import { DebugState, formatBreakpointModifiers } from '../debugState';
 import { logger } from '../utils/logger';
-import { resolveActiveSession } from '../utils/sessionStateTracker';
+import { gdbLogpointsOf, resolveActiveSession } from '../utils/sessionStateTracker';
 import { customRequestWithTimeout } from '../utils/timeout';
 import { DapFrameBody, NAME_PLACEHOLDER, StackTraceBody, toStackFrame } from './common';
 
@@ -63,7 +64,7 @@ export async function captureDebugState(plan: SnapshotPlan): Promise<DebugState>
                 }
             }
         }
-        snapshot.updateBreakpoints(describeSourceBreakpoints());
+        snapshot.updateBreakpoints([...describeSourceBreakpoints(), ...(session ? describeGdbLogpoints(session) : [])]);
     } catch (err) {
         logger.warn('Debug state snapshot cut short by an unexpected error', err);
     }
@@ -134,6 +135,15 @@ function describeSourceBreakpoints(): string[] {
             const file = lastPathSegment(entry.location.uri.fsPath) || NAME_PLACEHOLDER;
             return `${file}:${entry.location.range.start.line + 1}${formatBreakpointModifiers(entry)}`;
         });
+}
+
+/** `<file>:<line><modifiers> (GDB dprintf <n>)` for every logpoint the tools set as a GDB `dprintf` in the session. */
+function describeGdbLogpoints(session: vscode.DebugSession): string[] {
+    return gdbLogpointsOf(session).map((logpoint) => {
+        const file = lastPathSegment(logpoint.file) || NAME_PLACEHOLDER;
+        const modifiers = formatBreakpointModifiers({ condition: logpoint.condition, logMessage: logpoint.message });
+        return `${file}:${logpoint.line}${modifiers} (GDB dprintf ${logpoint.number})`;
+    });
 }
 
 /** The part after the last `/` or `\`. */

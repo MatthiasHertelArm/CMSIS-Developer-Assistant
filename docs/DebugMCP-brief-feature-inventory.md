@@ -82,7 +82,7 @@ Upstream has no concept of a GDB target server, hardware memory or registers, fa
 | Per-call timeouts | Reliability | Every hardware tool accepts `timeoutMs` (60 s cap); handler-level deadlines guarantee a call never hangs the agent. |
 | Auto-heal on motion timeout | Reliability | `continue` / `step_*` pause the target on overshoot, read PC + frame, and report where the firmware actually was. |
 | Session-state tracking | Reliability | A DAP tracker records `stopped`/`continued` events, curing spurious "session not ready" errors under `gdbtarget`. |
-| GDB-native breakpoint binding | Reliability | Binds via `-exec break file:line` so breakpoints actually take on `gdbtarget` sessions. |
+| Adapter-reported breakpoint binding | Reliability | Every breakpoint answer and `list_breakpoints` say whether the debug adapter bound the breakpoint, or why not; on `gdbtarget` a logpoint is a GDB `dprintf` that fills in its values, and a change on a running target pauses it briefly. |
 | Per-request server + concurrency | Reliability | A fresh MCP server/transport per HTTP request — concurrent tool calls no longer trample each other. |
 | Loopback-only bind + DNS-rebind guard | Security | Binds `127.0.0.1` only and rejects non-local Host/Origin — no unauthenticated flash/erase access from the network. |
 | Auto-registration & dynamic discovery | Integration | Registers with Copilot (dynamic port), Cline, Cursor, Codex, Copilot CLI, Claude Code & Claude Desktop; embedded-specific agent guidance docs. |
@@ -140,7 +140,7 @@ Ranked by how often an agent reaches for each tool across this class of bug. Ori
 
 **Always-on infrastructure** _(not called · active every step)_
 
-per-call timeouts [fork] · handler deadlines [fork] · auto-heal on timeout [fork] · session-state tracking [fork] · GDB-native breakpoints [fork] · loopback bind + DNS-rebind guard [fork]
+per-call timeouts [fork] · handler deadlines [fork] · auto-heal on timeout [fork] · session-state tracking [fork] · adapter-reported breakpoint binding [fork] · loopback bind + DNS-rebind guard [fork]
 
 > Invisible to the agent, but the reason the run above doesn't stall on a wedged probe or a phantom session.
 

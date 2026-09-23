@@ -40,13 +40,18 @@
  * Steps, continue and pause wait only for the DAP `stopped` event the
  * executor arms before the request goes out; VS Code's stack-item events,
  * which also fire when the item is cleared on resume, never end a wait.
- * Behaviour that is known to be wrong is kept for now and listed in the
- * specification; each item is fixed in its own change.
+ *
+ * Breakpoints live in VS Code's breakpoint model on every adapter, and the
+ * answer reports how the adapter bound them. On the CMSIS Debugger a
+ * logpoint is a GDB `dprintf` remembered under its number, and a breakpoint
+ * change on a running target pauses it, applies the change and resumes it
+ * (#13, #56). Behaviour that is known to be wrong is kept for now and listed
+ * in the specification; each item is fixed in its own change.
  */
 
 import * as vscode from 'vscode';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
-import type { IDebuggingExecutor } from './debuggingExecutor';
+import type { BreakpointBinding, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
 import type { IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { logger } from './utils/logger';
 import { REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
@@ -54,11 +59,12 @@ import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/
 import { HardwareTimeoutError } from './utils/timeout';
 import { decodeFault } from './core/faultDecoder';
 import { classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
+import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
 import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
 import { findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup, SvdDevice } from './core/svdParser';
 import { shortenPath } from './core/textBudget';
-import { ToolError, ToolText, wrapError } from './core/toolResult';
+import { toToolError, ToolError, ToolText, wrapError } from './core/toolResult';
 import {
     DapScope,
     DEFAULT_LISTING_LIMITS,
@@ -71,7 +77,10 @@ import {
 import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, runCmsisAction } from './handler/cmsisAction';
 import { CapOutcome, failureText, fenced, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
-import { classifyGdbReply, DprintfCall, echoedBreakpointNumber, GdbReplyKind, removalEchoed, translateLogMessage } from './handler/gdbText';
+import {
+    breakpointTableFromMiReply, classifyGdbReply, DprintfCall, DprintfPlacement, dprintfFromMiReply, gdbRefusal, gdbSourceLocation, GdbTableEntry,
+    translateLogMessage, unknownBreakpointNumbers,
+} from './handler/gdbText';
 import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
 import { recentAdapterTraffic, renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
@@ -160,6 +169,10 @@ const WAIT_FOR_STOP_DEFAULT_MS = 28_500;
 const WAIT_FOR_STOP_MARGIN_MS = 1_500;
 /** Pause between a stop and reading the state, so VS Code has focused the new frame. */
 const STOP_SETTLE_MS = 300;
+/** How long a CMSIS Debugger target may take to stop before a breakpoint change or a restart. */
+const CHANGE_PAUSE_MS = 5_000;
+/** How long a new breakpoint waits for the adapter to report whether it bound (#13 proposal: 2 s). */
+const BINDING_WAIT_MS = 2_000;
 /** Registers `diagnose_fault` reads (`control` is read but not used). */
 const TRIAGE_REGISTERS = ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim'];
 
@@ -175,7 +188,13 @@ const NO_EVALUATION_RESULT = 'The debug adapter returned no result for this expr
 const START_REFUSED = 'The debug session did not start. Make sure the debugger extension for this kind of file is installed.';
 const NO_BREAKPOINTS = 'The breakpoint list is empty.';
 const NOTHING_TO_CLEAR = 'Nothing to clear — no breakpoints are set.';
-const UNBOUND_NOTE = '<no echo from adapter — normal>';
+const NO_SESSION_YET = '(No debug session yet — added to VS Code\'s breakpoint list; the debugger binds it when a session starts.)';
+const ADAPTER_SILENT = '⚠️ The debug adapter did not confirm the change within 2 s; list_breakpoints shows what it reports.';
+const UNBOUND_ADVICE = 'An unverified breakpoint never stops the target: the line may have no code (a declaration, a comment, code the '
+    + 'optimiser removed), the path may not match the ELF\'s compiled paths, or the FPB comparators may be used up.';
+const LOGPOINT_COST = 'ℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. '
+    + 'In a hot loop or an ISR this distorts timing far more than it would in a host process. '
+    + 'For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.';
 
 /** Appended to a successful stop: make sure the investigation reached a cause. */
 const ROOT_CAUSE_CHECK = [
@@ -248,6 +267,59 @@ function lastSegment(fsPath: string): string {
 
 function sourceLocationOf(bp: vscode.Breakpoint): vscode.Location | undefined {
     return bp instanceof vscode.SourceBreakpoint ? bp.location : undefined;
+}
+
+/** What a breakpoint change works with. */
+interface ChangeContext {
+    /** A debug session exists, so the adapter reports bindings. */
+    live: boolean;
+    /** It is a CMSIS Debugger session: logpoints are GDB dprintfs, and GDB numbers mean something to the agent. */
+    cmsisDebugger: boolean;
+}
+
+/** What setting one CMSIS Debugger logpoint did. */
+interface GdbLogpointOutcome {
+    placed: DprintfPlacement;
+    /** The GDB location it was set at. */
+    location: string;
+    condition?: string;
+    /** VS Code logpoints at that line taken out of the model. */
+    replaced: number;
+}
+
+/** A logpoint set as a GDB dprintf, or in VS Code's model with the adapter's binding. */
+type LogpointOutcome =
+    | { kind: 'dprintf'; dprintf: GdbLogpointOutcome }
+    | { kind: 'model'; binding: BreakpointBinding | undefined; live: boolean };
+
+/** A change's result, and the line that says the target was paused for it (empty when it was not). */
+interface HaltedChange<T> {
+    result: T;
+    pausedNote: string;
+}
+
+/** How the adapter bound a breakpoint, for a list entry or an answer; `requestedLine` tells a moved one. */
+function bindingText(binding: BreakpointBinding, requestedLine: number | undefined, gdbNumbers: boolean): string {
+    if (!binding.reported) {
+        return 'not reported by the adapter yet';
+    }
+    if (!binding.verified) {
+        return `NOT verified${binding.message ? ` — ${binding.message}` : ''}`;
+    }
+    const number = gdbNumbers && binding.id !== undefined ? ` as GDB breakpoint ${binding.id}` : '';
+    const moved = binding.line !== undefined && requestedLine !== undefined && binding.line !== requestedLine ? ` at line ${binding.line}` : '';
+    return `verified${number}${moved}`;
+}
+
+/** `text` ending in a full stop, without doubling one it already has. */
+function asSentence(text: string): string {
+    return text.endsWith('.') ? text : `${text}.`;
+}
+
+/** The logpoints a location names: same file (as VS Code spells the URI) and line. */
+function logpointsAt(logpoints: readonly GdbLogpoint[], place: vscode.Uri, line: number): GdbLogpoint[] {
+    const wanted = place.toString();
+    return logpoints.filter((logpoint) => logpoint.line === line && vscode.Uri.file(logpoint.file).toString() === wanted);
 }
 
 /** All scopes, or only the requested variables plus the names that matched nothing. */
@@ -533,21 +605,62 @@ export class DebuggingHandler
         }
     }
 
-    /** `timeoutMs` is accepted and ignored: the wait uses the configured timeout (KB9). */
+    /**
+     * `timeoutMs` is accepted and ignored: the wait uses the configured
+     * timeout (KB9). A running CMSIS Debugger target is paused first, so the
+     * adapter lets go of a halted core; the executor then stops the session
+     * and starts its launch configuration again (#13).
+     */
     async handleRestart(_args?: TimeoutArg): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
                 throw new ToolError('NO_SESSION', NOTHING_TO_RESTART);
             }
-            await this.dbg.restart();
+            const status = await this.dbg.getSessionStatus();
+            const notes: string[] = [];
+            if (status.sessionType === CMSIS_DEBUGGER_TYPE && status.state === 'running') {
+                notes.push(await this.pauseBeforeRestart());
+            }
+            const logpoints = this.dbg.gdbLogpoints().length;
+            const how = await this.dbg.restart();
             if (!(await this.awaitLiveSession())) {
                 throw new Error(`Debug session restart issued but target did not become ready within the ${this.configuredSeconds}s timeout. `
                     + 'The probe or target may be unresponsive.');
             }
-            return SESSION_RESTARTED;
+            if (how.via === 'relaunched') {
+                notes.unshift(`It was stopped and its launch configuration${how.configurationName ? ` '${how.configurationName}'` : ''} started again.`);
+                if (how.preLaunchTask) {
+                    notes.push(`Its preLaunchTask "${how.preLaunchTask}" ran first; a CMSIS launch configuration flashes the image there `
+                        + 'and resets the target in its initCommands.');
+                }
+                if (logpoints > 0) {
+                    notes.push(`The ${logpoints} GDB dprintf logpoint(s) ended with the old session; add them again with add_logpoint.`);
+                }
+            }
+            return [SESSION_RESTARTED, ...notes].join(' ');
         } catch (caught) {
             throw wrapError('Could not restart the debug session', caught);
         }
+    }
+
+    /** The pause before a restart; the restart goes ahead whatever it says. */
+    private async pauseBeforeRestart(): Promise<string> {
+        try {
+            const paused = await this.pauseAndWait(CHANGE_PAUSE_MS);
+            return paused.kind === 'stopped'
+                ? 'The target was paused first.'
+                : `⚠️ The target did not stop within ${CHANGE_PAUSE_MS / 1000} s of the pause request; the session was restarted anyway.`;
+        } catch (caught) {
+            return `⚠️ Pausing the target first failed (${failureText(caught)}); the session was restarted anyway.`;
+        }
+    }
+
+    /** Arms the stop waiter, sends a pause and waits for the stop, the session's end or `limitMs`. */
+    private async pauseAndWait(limitMs: number): Promise<StopWaitResult> {
+        const armed = this.dbg.armStopWaiter(limitMs);
+        armed.catch(() => undefined);
+        await this.dbg.pause(limitMs);
+        return armed;
     }
 
     handleReset(args: ResetRequest): Answer {
@@ -689,44 +802,110 @@ export class DebuggingHandler
 
     // ── breakpoints ──
 
-    /** Not gated on the run state (KB3). */
+    /**
+     * Runs a breakpoint change with the target halted where that is needed.
+     * On a CMSIS Debugger session whose target runs, the target is paused
+     * first and resumed afterwards, also when the change fails; the answer
+     * then says so (#13). Without a session the change only touches VS
+     * Code's model, and other adapters take changes while the target runs.
+     */
+    private async withTargetHalted<T>(operation: string, change: (context: ChangeContext) => Promise<T>): Promise<HaltedChange<T>> {
+        if (!this.dbg.hasDebugSession()) {
+            return { result: await change({ live: false, cmsisDebugger: false }), pausedNote: '' };
+        }
+        const status = await this.dbg.getSessionStatus();
+        const context: ChangeContext = { live: status.state !== 'no-session', cmsisDebugger: status.sessionType === CMSIS_DEBUGGER_TYPE };
+        if (!context.cmsisDebugger || status.state === 'stopped' || status.state === 'no-session') {
+            return { result: await change(context), pausedNote: '' };
+        }
+        if (status.state === 'initializing') {
+            throw new ToolError('NO_SESSION', `Cannot ${operation} yet: the session is still initializing.`, 'Wait briefly and retry.');
+        }
+        if (status.state === 'unresponsive') {
+            throw new ToolError('TIMEOUT', `Cannot ${operation}: the probe/GDB server is unresponsive.`,
+                'Call check_target_connection, then restart_debugging if needed.');
+        }
+        const began = this.host().now();
+        const paused = await this.pauseAndWait(CHANGE_PAUSE_MS);
+        if (paused.kind === 'ended') {
+            throw new ToolError('NO_SESSION', `Cannot ${operation}: the debug session ended while the target was being paused for it.`);
+        }
+        if (paused.kind === 'timeout') {
+            throw new ToolError('TIMEOUT', `Cannot ${operation}: the target did not stop within ${CHANGE_PAUSE_MS / 1000} s of the pause request.`,
+                'Call check_target_connection; if the probe answers, pause_execution and retry.');
+        }
+        let result: T;
+        try {
+            result = await change(context);
+        } catch (failure) {
+            const stuck = await this.resumeAfterChange();
+            if (!stuck) {
+                throw failure;
+            }
+            const typed = toToolError(failure);
+            throw new ToolError(typed.code, `${typed.message} The target was paused for this and could not be resumed: ${stuck}.`,
+                'The target is halted: call continue_execution when ready.', typed.data);
+        }
+        const stuck = await this.resumeAfterChange();
+        const seconds = ((this.host().now() - began) / 1000).toFixed(1);
+        return {
+            result,
+            pausedNote: stuck
+                ? `⚠️ The target was paused for this and could not be resumed: ${stuck}. It is halted — call continue_execution.`
+                : `Target paused ${seconds} s to apply this, then resumed.`,
+        };
+    }
+
+    /** Resumes the target after a change; the failure text, or undefined when it runs again. */
+    private async resumeAfterChange(): Promise<string | undefined> {
+        try {
+            await this.dbg.continue(CHANGE_PAUSE_MS);
+            return undefined;
+        } catch (caught) {
+            return failureText(caught);
+        }
+    }
+
+    /** The 1-based lines a breakpoint request names: `line`, or every line containing the deprecated `lineContent`. */
+    private async breakpointLines(args: BreakpointRequest): Promise<{ lines: number[]; matchedByContent: boolean }> {
+        if (typeof args.line === 'number') {
+            if (!Number.isInteger(args.line) || args.line < 1) {
+                throw new ToolError('INVALID_ARGUMENT', `Invalid line number ${args.line}: must be a 1-based integer.`);
+            }
+            return { lines: [args.line], matchedByContent: false };
+        }
+        if (!args.lineContent) {
+            throw new ToolError('INVALID_ARGUMENT',
+                'No location given: pass `line` (1-based line number). The legacy `lineContent` form is still accepted but deprecated.');
+        }
+        const needle = args.lineContent;
+        const source = (await vscode.workspace.openTextDocument(vscode.Uri.file(args.fileFullPath))).getText();
+        const lines = source.split(/\r?\n/).flatMap((text, index) => text.includes(needle) ? [index + 1] : []);
+        if (lines.length === 0) {
+            throw new ToolError('INVALID_ARGUMENT', `Could not find any lines containing: ${needle}`);
+        }
+        return { lines, matchedByContent: true };
+    }
+
+    /**
+     * Breakpoints go to VS Code's model on every adapter; the answer reports
+     * how the adapter bound each of them (`getDebugProtocolBreakpoint`).
+     */
     async handleAddBreakpoint(args: BreakpointRequest): Answer {
         try {
-            let lines: number[];
-            let matchedByContent = false;
-            if (typeof args.line === 'number') {
-                if (!Number.isInteger(args.line) || args.line < 1) {
-                    throw new ToolError('INVALID_ARGUMENT', `Invalid line number ${args.line}: must be a 1-based integer.`);
-                }
-                lines = [args.line];
-            } else if (!args.lineContent) {
-                throw new ToolError('INVALID_ARGUMENT',
-                    'No location given: pass `line` (1-based line number). The legacy `lineContent` form is still accepted but deprecated.');
-            } else {
-                const needle = args.lineContent;
-                const source = (await vscode.workspace.openTextDocument(vscode.Uri.file(args.fileFullPath))).getText();
-                lines = source.split(/\r?\n/).flatMap((text, index) => text.includes(needle) ? [index + 1] : []);
-                if (lines.length === 0) {
-                    throw new ToolError('INVALID_ARGUMENT', `Could not find any lines containing: ${needle}`);
-                }
-                matchedByContent = true;
-            }
-
+            const { lines, matchedByContent } = await this.breakpointLines(args);
             const place = vscode.Uri.file(args.fileFullPath);
-            for (const line of lines) {
-                await this.dbg.addBreakpoint(place, line, { condition: args.condition });
-            }
-
-            const echoes: string[] = [];
-            const kinds: GdbReplyKind[] = [];
-            if (this.dbg.hasDebugSession()) {
+            const change = await this.withTargetHalted('add a breakpoint', async (context) => {
+                const added: vscode.SourceBreakpoint[] = [];
                 for (const line of lines) {
-                    const reply = await this.dbg.setBreakpointViaGdb(args.fileFullPath, line, undefined, args.condition);
-                    const kind = classifyGdbReply(reply);
-                    kinds.push(kind);
-                    echoes.push(`line ${line}: ${kind === 'unconfirmed' ? UNBOUND_NOTE : reply} [${kind}]`);
+                    added.push(await this.dbg.addBreakpoint(place, line, { condition: args.condition }));
                 }
-            }
+                if (!context.live) {
+                    return undefined;
+                }
+                const bindings = await Promise.all(added.map((bp) => this.dbg.breakpointBinding(bp, BINDING_WAIT_MS)));
+                return { bindings, cmsisDebugger: context.cmsisDebugger };
+            });
 
             let head = lines.length === 1
                 ? `Breakpoint added at ${args.fileFullPath}:${lines[0]}`
@@ -734,137 +913,264 @@ export class DebuggingHandler
             if (args.condition) {
                 head += ` [when: ${args.condition}]`;
             }
+            const report = [head];
             if (matchedByContent) {
-                head += `\n⚠️ Located via the deprecated \`lineContent\` match (${lines.length} line(s) matched). `
-                    + 'Pass `line` instead — content matching hits every line containing the text.';
+                report.push(`⚠️ Located via the deprecated \`lineContent\` match (${lines.length} line(s) matched). `
+                    + 'Pass `line` instead — content matching hits every line containing the text.');
             }
-            const listed = echoes.join('\n  ');
-            if (!this.dbg.hasDebugSession()) {
-                return `${head}\n(No debug session yet — added to the breakpoint list. `
-                    + 'It will be GDB-bound when you add it again after the session is up, or re-add after attach.)';
+            const outcome = change.result;
+            if (!outcome) {
+                report.push(NO_SESSION_YET);
+                return report.join('\n');
             }
-            if (kinds.includes('rejected')) {
-                return `${head}\n⚠️ GDB rejected one or more breakpoints:\n  ${listed}\n`
-                    + '"No source file" / "No line" means the path does not match the ELF\'s compiled paths — '
-                    + 'try the path as the compiler saw it, or set by function name via evaluate_expression ("-exec break <function>").';
+            const bindings = outcome.bindings.map((binding) => binding ?? { reported: false, verified: false });
+            const described = bindings.map((binding, index) => bindingText(binding, lines[index], outcome.cmsisDebugger));
+            if (lines.length === 1) {
+                report.push(`Adapter: ${asSentence(described[0])}`);
+            } else {
+                report.push('Adapter:', ...described.map((text, index) => `  line ${lines[index]}: ${text}`));
             }
-            if (kinds.includes('bound')) {
-                return `${head}\nGDB confirmed binding:\n  ${listed}`;
+            if (bindings.some((binding) => binding.reported && !binding.verified)) {
+                report.push(UNBOUND_ADVICE);
             }
-            return `${head}\nSent to GDB (\`break\`). The adapter did not echo a confirmation — this is normal for gdbtarget `
-                + 'and does NOT mean it failed. The breakpoint is set; verify by running continue_execution '
-                + `(the target should stop) or list_breakpoints.\n  ${listed}`;
+            if (bindings.some((binding) => !binding.reported)) {
+                report.push('Call list_breakpoints later to see whether the adapter bound it.');
+            }
+            if (change.pausedNote) {
+                report.push(change.pausedNote);
+            }
+            return report.join('\n');
         } catch (caught) {
             throw wrapError('Error adding breakpoint', caught);
         }
     }
 
-    /** Creates both a VS Code logpoint and a GDB `dprintf` (KB6); not gated (KB3). */
+    /**
+     * On the CMSIS Debugger a logpoint is a GDB `dprintf`, which fills in the
+     * `{expr}` values (cdt-gdb-adapter prints a VS Code logpoint's text as it
+     * stands) and is remembered under its GDB number. Other adapters, and a
+     * logpoint set before any session, use VS Code's model.
+     */
     async handleAddLogpoint(args: LogpointRequest): Answer {
         try {
             if (!Number.isInteger(args.line) || args.line < 1) {
                 throw new ToolError('INVALID_ARGUMENT', `Invalid line number ${args.line}: must be a 1-based integer.`);
             }
             const call = translateLogMessage(args.logMessage);
-            await this.dbg.addBreakpoint(vscode.Uri.file(args.fileFullPath), args.line,
-                { condition: args.condition, logMessage: args.logMessage });
-            const added = `Logpoint added at ${args.fileFullPath}:${args.line}`;
-            if (!this.dbg.hasDebugSession()) {
-                return `${added}\n(No debug session yet — added to the breakpoint list. `
-                    + 'Re-add after the session is up so it is bound GDB-native via `dprintf`.)';
-            }
-            const reply = await this.dbg.setLogpointViaGdb(args.fileFullPath, args.line, call.format, call.args);
-            const argumentList = call.args.length > 0 ? `,${call.args.join(',')}` : '';
-            const report = [added, `  GDB: dprintf ${args.fileFullPath}:${args.line},"${call.format}"${argumentList}`];
-            if (classifyGdbReply(reply) === 'rejected') {
-                report.push(`⚠️ GDB rejected the logpoint: ${reply}`,
-                    'Check that the path matches the ELF\'s compiled paths, and that every interpolated expression is in scope at that line.');
-                return report.join('\n');
-            }
-            if (args.condition) {
-                const number = echoedBreakpointNumber(reply);
-                if (number !== undefined) {
-                    const conditionReply = await this.dbg.setBreakpointConditionViaGdb(number, args.condition);
-                    report.push(`  Condition applied to GDB breakpoint ${number}: ${args.condition}${conditionReply ? ` — ${conditionReply}` : ''}`);
-                } else {
-                    report.push(`⚠️ Condition "${args.condition}" was set on the VS Code breakpoint but NOT on the GDB dprintf: `
-                        + 'the adapter did not echo a breakpoint number to attach it to. The logpoint will fire unconditionally. '
-                        + `Apply it manually with evaluate_expression("-exec condition <n> ${args.condition}") `
-                        + 'after finding <n> via evaluate_expression("-exec info breakpoints").');
+            const place = vscode.Uri.file(args.fileFullPath);
+            const change = await this.withTargetHalted('add a logpoint', async (context): Promise<LogpointOutcome> => {
+                if (context.cmsisDebugger) {
+                    return { kind: 'dprintf', dprintf: await this.setGdbLogpoint(args, call, place) };
                 }
+                const added = await this.dbg.addBreakpoint(place, args.line, { condition: args.condition, logMessage: args.logMessage });
+                const binding = context.live ? await this.dbg.breakpointBinding(added, BINDING_WAIT_MS) : undefined;
+                return { kind: 'model', binding, live: context.live };
+            });
+            const report = [`Logpoint added at ${args.fileFullPath}:${args.line}`];
+            const outcome = change.result;
+            if (outcome.kind === 'dprintf') {
+                report.push(...this.dprintfReport(args, call, outcome.dprintf));
+            } else if (!outcome.live) {
+                report.push('(No debug session yet — added to VS Code\'s breakpoint list. The CMSIS Debugger prints such a logpoint\'s '
+                    + 'text without the {expr} values: call add_logpoint again once the session is up to set it as a GDB dprintf.)');
+                return report.join('\n');
+            } else {
+                report.push(`Adapter: ${asSentence(bindingText(outcome.binding ?? { reported: false, verified: false }, args.line, false))}`);
             }
-            report.push('\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. '
-                + 'In a hot loop or an ISR this distorts timing far more than it would in a host process. '
-                + 'For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.');
+            if (change.pausedNote) {
+                report.push(change.pausedNote);
+            }
+            report.push('', LOGPOINT_COST);
             return report.join('\n');
         } catch (caught) {
             throw wrapError('Could not add the logpoint', caught);
         }
     }
 
-    /** Without a model entry nothing is sent to GDB (KB12). */
+    /**
+     * Sets one CMSIS Debugger logpoint: MI `-dprintf-insert` at a location
+     * relative to the workspace, whose result names the new breakpoint, then
+     * its condition. A condition GDB refuses takes the dprintf back out.
+     */
+    private async setGdbLogpoint(args: LogpointRequest, call: DprintfCall, place: vscode.Uri): Promise<GdbLogpointOutcome> {
+        // A VS Code logpoint set here before the session would print its bare text next to the dprintf.
+        const replaced = (await this.dbg.removeBreakpoint(place, args.line, { logpointsOnly: true })).removed;
+        const location = gdbSourceLocation(args.fileFullPath, args.line, this.workspaceRoots());
+        const inserted = await this.dbg.insertDprintfViaGdb(location, call.format, call.args);
+        if (classifyGdbReply(inserted) !== 'done') {
+            throw gdbRefusal('the logpoint', inserted);
+        }
+        const placed = dprintfFromMiReply(inserted.text);
+        if (!placed) {
+            throw new ToolError('INTERNAL', `GDB did not report the new dprintf: ${inserted.text || '<empty reply>'}`,
+                'Check with evaluate_expression("-exec info breakpoints") and delete a stray dprintf with "-exec delete <n>".');
+        }
+        const condition = args.condition?.trim();
+        if (condition) {
+            const conditioned = await this.dbg.setBreakpointConditionViaGdb(placed.number, condition);
+            if (classifyGdbReply(conditioned) !== 'done') {
+                await this.dbg.deleteBreakpointsViaGdb([placed.number]);
+                throw gdbRefusal('the logpoint condition', conditioned);
+            }
+        }
+        this.dbg.rememberGdbLogpoint({ number: placed.number, file: args.fileFullPath, line: args.line, message: args.logMessage, condition });
+        return { placed, location, condition, replaced };
+    }
+
+    /** The lines of an answer that describe a new CMSIS Debugger logpoint. */
+    private dprintfReport(args: LogpointRequest, call: DprintfCall, outcome: GdbLogpointOutcome): string[] {
+        const { placed, location, condition, replaced } = outcome;
+        const where = placed.file && placed.line !== undefined ? `${placed.file}:${placed.line}` : location;
+        const address = placed.locations === 1 && placed.address ? `, ${placed.address}` : '';
+        const argumentList = call.args.length > 0 ? `,${call.args.join(',')}` : '';
+        const lines = [`  GDB dprintf ${placed.number} (${where}${address}): dprintf ${location},"${call.format}"${argumentList}`];
+        if (placed.locations > 1) {
+            lines.push(`⚠️ GDB set it at ${placed.locations} locations: the location matched more than one place.`);
+        }
+        if (condition) {
+            lines.push(`  Condition: ${condition}`);
+        }
+        if (replaced > 0) {
+            lines.push('Replaced the VS Code logpoint set at this line before the session, which printed its text without the values.');
+        }
+        lines.push(`It prints to VS Code's Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on ${args.fileFullPath}:${args.line} deletes it.`);
+        return lines;
+    }
+
+    /** Deletes these CMSIS Debugger logpoints by number and forgets them; the line that says what GDB did. */
+    private async deleteGdbLogpoints(logpoints: readonly GdbLogpoint[]): Promise<string> {
+        const numbers = logpoints.map((logpoint) => logpoint.number);
+        const reply = await this.dbg.deleteBreakpointsViaGdb(numbers);
+        if (classifyGdbReply(reply) !== 'done') {
+            throw gdbRefusal(`the delete of dprintf ${numbers.join(', ')}`, reply);
+        }
+        this.dbg.forgetGdbLogpoints(numbers);
+        const gone = unknownBreakpointNumbers(reply.text).filter((number) => numbers.includes(number));
+        const deleted = numbers.filter((number) => !gone.includes(number));
+        const parts: string[] = [];
+        if (deleted.length > 0) {
+            parts.push(`Deleted GDB dprintf ${deleted.join(', ')}.`);
+        }
+        if (gone.length > 0) {
+            parts.push(`GDB no longer had dprintf ${gone.join(', ')} (deleted outside these tools).`);
+        }
+        return parts.join(' ');
+    }
+
     async handleRemoveBreakpoint(args: SourceLine): Answer {
         try {
             const place = vscode.Uri.file(args.fileFullPath);
             const wanted = place.toString();
-            const known = this.dbg.getBreakpoints().some((bp) => {
+            const inModel = this.dbg.getBreakpoints().some((bp) => {
                 const location = sourceLocationOf(bp);
                 return location !== undefined && location.uri.toString() === wanted && location.range.start.line === args.line - 1;
             });
-            if (!known) {
+            const logpoints = logpointsAt(this.dbg.gdbLogpoints(), place, args.line);
+            if (!inModel && logpoints.length === 0) {
                 return `Nothing to remove — no breakpoint is set at ${args.fileFullPath}:${args.line}.`;
             }
-            await this.dbg.removeBreakpoint(place, args.line);
-            let note = '';
-            if (this.dbg.hasDebugSession()) {
-                const reply = await this.dbg.clearBreakpointViaGdb(args.fileFullPath, args.line);
-                note = `\nGDB \`clear ${args.fileFullPath}:${args.line}\` issued${removalEchoed(reply) ? ` — ${reply}` : '.'}`;
-            }
-            return `Breakpoint removed from ${args.fileFullPath}:${args.line}${note}`;
+            const change = await this.withTargetHalted('remove a breakpoint', async () => {
+                const notes: string[] = [];
+                if (logpoints.length > 0) {
+                    notes.push(await this.deleteGdbLogpoints(logpoints));
+                }
+                if (inModel && (await this.dbg.removeBreakpoint(place, args.line)).applied === false) {
+                    notes.push(ADAPTER_SILENT);
+                }
+                return notes;
+            });
+            const head = `${inModel ? 'Breakpoint' : 'Logpoint'} removed from ${args.fileFullPath}:${args.line}`;
+            return [head, ...change.result, change.pausedNote].filter((line) => line.length > 0).join('\n');
         } catch (caught) {
             throw wrapError('Could not remove the breakpoint', caught);
         }
     }
 
+    /** Clears VS Code's model and deletes the session's GDB logpoints by number — never with a bare `delete`. */
     async handleClearAllBreakpoints(): Answer {
         try {
             const count = this.dbg.getBreakpoints().length;
-            this.dbg.clearAllBreakpoints();
-            let note = '';
-            if (this.dbg.hasDebugSession()) {
-                const reply = await this.dbg.clearAllBreakpointsViaGdb();
-                note = removalEchoed(reply)
-                    ? `\nGDB \`delete\` issued — ${reply}`
-                    : '\nGDB `delete` issued — all GDB-native breakpoints removed.';
-            }
-            if (count === 0 && note === '') {
+            const logpoints = this.dbg.gdbLogpoints();
+            if (count === 0 && logpoints.length === 0) {
                 return NOTHING_TO_CLEAR;
             }
-            return `Cleared ${count} breakpoint(s) from the model.${note}`;
+            const change = await this.withTargetHalted('clear the breakpoints', async () => {
+                const notes: string[] = [];
+                if (logpoints.length > 0) {
+                    notes.push(await this.deleteGdbLogpoints(logpoints));
+                }
+                if (count > 0 && (await this.dbg.clearAllBreakpoints()).applied === false) {
+                    notes.push(ADAPTER_SILENT);
+                }
+                return notes;
+            });
+            return [`Cleared ${count} breakpoint(s) from the model.`, ...change.result, change.pausedNote].filter((line) => line.length > 0).join('\n');
         } catch (caught) {
             throw wrapError('Could not clear the breakpoints', caught);
         }
     }
 
-    /** Kinds other than source and function breakpoints print nothing but keep their number (KB15). */
+    /**
+     * VS Code's breakpoints with the adapter's binding of each while a
+     * session runs, then the CMSIS Debugger logpoints with GDB's hit count.
+     * Kinds other than source and function breakpoints print nothing but
+     * keep their number (KB15).
+     */
     async handleListBreakpoints(): Answer {
         try {
             const all = this.dbg.getBreakpoints();
-            if (all.length === 0) {
+            const logpoints = this.dbg.gdbLogpoints();
+            if (all.length === 0 && logpoints.length === 0) {
                 return NO_BREAKPOINTS;
             }
+            const live = this.dbg.hasDebugSession();
             let listing = 'Breakpoints that are set:\n';
-            all.forEach((bp, index) => {
+            for (const [index, bp] of all.entries()) {
                 const location = sourceLocationOf(bp);
+                let entry: string;
                 if (location) {
-                    listing += `${index + 1}. ${lastSegment(location.uri.fsPath)}:${location.range.start.line + 1}${formatBreakpointModifiers(bp)}\n`;
+                    entry = `${index + 1}. ${lastSegment(location.uri.fsPath)}:${location.range.start.line + 1}${formatBreakpointModifiers(bp)}`;
                 } else if (bp instanceof vscode.FunctionBreakpoint) {
-                    listing += `${index + 1}. Function: ${bp.functionName}${formatBreakpointModifiers(bp)}\n`;
+                    entry = `${index + 1}. Function: ${bp.functionName}${formatBreakpointModifiers(bp)}`;
+                } else {
+                    continue;
                 }
-            });
+                const binding = live ? await this.dbg.breakpointBinding(bp, 0) : undefined;
+                listing += binding ? `${entry} — ${bindingText(binding, location ? location.range.start.line + 1 : undefined, false)}\n` : `${entry}\n`;
+            }
+            if (logpoints.length > 0) {
+                listing += 'GDB dprintf logpoints (they print to the Debug Console):\n';
+                const table = live ? await this.gdbBreakpointTable() : undefined;
+                const gone: number[] = [];
+                logpoints.forEach((logpoint, index) => {
+                    const entry = `${all.length + index + 1}. ${lastSegment(logpoint.file)}:${logpoint.line}`
+                        + `${formatBreakpointModifiers({ condition: logpoint.condition, logMessage: logpoint.message })}`;
+                    const row = table?.get(logpoint.number);
+                    if (table && !row) {
+                        gone.push(logpoint.number);
+                        listing += `${entry} — dprintf ${logpoint.number} is gone from GDB (deleted outside these tools)\n`;
+                    } else {
+                        const hits = row?.hits !== undefined ? `, ${row.hits} hit${row.hits === 1 ? '' : 's'}` : '';
+                        listing += `${entry} — GDB dprintf ${logpoint.number}${hits}\n`;
+                    }
+                });
+                this.dbg.forgetGdbLogpoints(gone);
+            }
             return listing;
         } catch (caught) {
             throw wrapError('Could not list the breakpoints', caught);
+        }
+    }
+
+    /** GDB's breakpoint table by number (MI `-break-list`), or undefined when GDB did not give it. */
+    private async gdbBreakpointTable(): Promise<Map<number, GdbTableEntry> | undefined> {
+        try {
+            const reply = await this.dbg.listBreakpointsViaGdb();
+            const rows = reply.errored ? undefined : breakpointTableFromMiReply(reply.text);
+            return rows ? new Map(rows.map((row) => [row.number, row])) : undefined;
+        } catch (caught) {
+            logger.debug('list_breakpoints: GDB\'s breakpoint table could not be read', caught);
+            return undefined;
         }
     }
 
@@ -930,7 +1236,11 @@ export class DebuggingHandler
         });
     }
 
-    /** GDB passthrough (`-exec …`) is never redacted (KB6). */
+    /**
+     * A GDB command written `-exec <cmd>` or `><cmd>` goes to GDB (on the
+     * CMSIS Debugger in its `>` spelling, with the text GDB printed as the
+     * result) and is never redacted: it is a raw target read like read_memory.
+     */
     handleEvaluateExpression(args: ExpressionRequest): Answer {
         return this.fence('evaluate_expression', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('evaluate expression');
@@ -939,10 +1249,11 @@ export class DebuggingHandler
             if (reply === undefined || reply === null || reply.result === undefined) {
                 throw new Error(NO_EVALUATION_RESULT);
             }
-            const passthrough = args.expression.trimStart().startsWith('-exec');
+            const passthrough = passthroughCommand(args.expression) !== undefined;
+            const printedNothing = passthrough && String(reply.result).trim() === '';
             const shown = redactionEnabled() && !passthrough
                 ? redactExpressionResult(args.expression, reply.result)
-                : { value: String(reply.result), redacted: false };
+                : { value: printedNothing ? '(GDB printed nothing)' : String(reply.result), redacted: false };
             let text = `Evaluated: ${args.expression}\nResult: ${shown.value}`;
             if (reply.type) {
                 text += `\nType: ${reply.type}`;

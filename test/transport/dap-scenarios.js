@@ -31,13 +31,23 @@
 // tracker, breakpoint model, tasks and command log.
 //
 // The scripted adapter answers the way cdt-gdb-adapter (the adapter behind
-// `gdbtarget`) answers today, including where that exposes bugs in the code
-// under test. In particular only REPL input starting with '>' is a GDB CLI
-// command; an evaluate of `-exec <cmd>` is handed to GDB as an expression,
-// -var-create fails, and the adapter answers SUCCESS with the result text
-// "Error: could not evaluate expression". So every `-exec break/clear/delete/
-// dprintf/monitor ...` the code sends does nothing on a real gdbtarget
-// session, and the snapshot pins exactly that. Other fidelity choices:
+// `gdbtarget`) answers, including where that exposes bugs in the code under
+// test. Only REPL input starting with '>' is a GDB command: an evaluate of
+// `-exec <cmd>` is handed to GDB as an expression, -var-create fails, and the
+// adapter answers SUCCESS with the result text "Error: could not evaluate
+// expression". A '>' CLI command answers '\r' and prints its text as `output`
+// events of category stdout (GDB's console and target streams); a '>' MI
+// command (`>-data-read-memory-bytes`, `>-dprintf-insert`, `>-break-list`)
+// answers its MI result as JSON, with the adapter's `cdt-token` and
+// `cdt-command` fields; a command GDB refuses is an error response with GDB's
+// text. The scripted GDB keeps a breakpoint table (the launch configuration's
+// `break main` is number 1): `dprintf` prints "Dprintf N at …" and the adapter
+// announces the new breakpoint with a `breakpoint` event, which an MI
+// `-dprintf-insert` does not; `condition`, `delete` (unknown numbers print
+// "No breakpoint number N.") and `info breakpoints` work on it. `monitor reset
+// …` resets the core as pyOCD or J-Link would and prints their text, but GDB
+// does not see it: registers keep their old values until `maintenance flush
+// register-cache`. Other fidelity choices:
 //   - frame handles are 1000 + level (thread 1), as the adapter's first
 //     allocation after a stop; they are invalid while the target runs;
 //   - registers evaluate in GDB's natural format for pyOCD's target
@@ -45,14 +55,23 @@
 //     so EXC_RETURN 0xfffffff9 reads "-7"), sp/msp/psp are `void *`, pc is a
 //     code pointer "0x80002fe <main+22>", an unknown `$name` is `void`;
 //   - an inaccessible -data-read-memory-bytes fails "Unable to read memory.";
-//     GDB MI commands on a running all-stop remote target fail with GDB's
-//     "Cannot execute this command while the target is running." text;
-//   - a `monitor ...` reset never reaches GDB, so no stopped event follows.
+//     GDB MI and CLI commands on a running all-stop remote target fail with
+//     GDB's "Cannot execute this command while the target is running." text
+//     (the breakpoint table can still be listed);
+//   - lines with code are listed per source file; a breakpoint on a line
+//     without code moves to the next line with code, past the last one GDB
+//     answers "No line N in file".
 // VS Code itself is modelled only as far as the code under test can see it:
 // after a stopped event `activeStackItem` becomes frame 1000 of the focused
-// session at once, a continued event clears it; VS Code's own DAP traffic
-// (its stackTrace after a stop, setBreakpoints for the breakpoint model) is
-// not modelled; the breakpoint model is a plain list without de-duplication.
+// session at once, a continued event clears it; a change of the breakpoint
+// model makes VS Code send `setBreakpoints` for each file concerned a moment
+// later, which the adapter answers as cdt-gdb-adapter does (the file's GDB
+// breakpoints whose location names the file and that VS Code did not send are
+// deleted), and `getDebugProtocolBreakpoint` returns that answer afterwards.
+// VS Code's other DAP traffic (its stackTrace after a stop) is not modelled,
+// nor are the breakpoints VS Code adds to its own model when the adapter
+// announces a new one; the breakpoint model is a plain list without
+// de-duplication.
 //
 // Scenarios are independent: each gets a fresh server, a fresh fake session
 // and an empty breakpoint model. Module-level state in the code under test
@@ -130,10 +149,12 @@ Object.assign(stub.debug, {
     addBreakpoints(bps) {
         current.record(`vscode: debug.addBreakpoints ${bps.map(describeBreakpoint).join(', ')}`);
         stub.debug.breakpoints = [...stub.debug.breakpoints, ...bps];
+        current.syncBreakpoints(bps);
     },
     removeBreakpoints(bps) {
         current.record(`vscode: debug.removeBreakpoints ${bps.map(describeBreakpoint).join(', ')}`);
         stub.debug.breakpoints = stub.debug.breakpoints.filter((bp) => !bps.includes(bp));
+        current.syncBreakpoints(bps);
     },
 });
 
@@ -193,6 +214,70 @@ function symbolise(addr) {
 }
 
 const hex = (n) => `0x${(n >>> 0).toString(16)}`;
+
+/** The lines of each source file that have code: line → [address, function]. */
+const CODE_LINES = {
+    'main.c': {
+        17: [0x0800024c, 'delay_ms'], 18: [0x08000252, 'delay_ms'],
+        21: [0x080002e8, 'main'], 22: [0x080002ea, 'main'], 23: [0x080002ec, 'main'], 24: [0x080002ee, 'main'],
+        25: [0x080002f0, 'main'], 26: [0x080002f2, 'main'], 27: [0x080002f2, 'main'], 29: [0x080002f4, 'main'],
+        30: [0x080002f8, 'main'], 31: [0x080002fe, 'main'], 32: [0x08000302, 'main'], 33: [0x0800030a, 'main'],
+    },
+    'led.c': {
+        12: [0x08000260, 'led_init'], 13: [0x08000262, 'led_init'], 14: [0x08000266, 'led_init'],
+        16: [0x08000268, 'led_toggle'], 17: [0x0800026c, 'led_toggle'], 18: [0x08000276, 'led_toggle'], 19: [0x0800027e, 'led_toggle'],
+    },
+};
+
+/**
+ * Where GDB puts a breakpoint on `line` of `file`: that line or the next one
+ * with code. `file` is matched as GDB matches a linespec, by its trailing path
+ * components; undefined `where` means no such line, null no such file.
+ */
+function resolveSourceLine(file, line) {
+    const name = path.basename(String(file).replace(/\\/g, '/'));
+    const lines = CODE_LINES[name];
+    if (!lines) { return null; }
+    const found = Object.keys(lines).map(Number).sort((a, b) => a - b).find((candidate) => candidate >= line);
+    if (found === undefined) { return { name, where: undefined }; }
+    const [addr, fn] = lines[found];
+    return { name, where: { line: found, addr, fn } };
+}
+
+/** The arguments of an MI command line: words, and c-strings with their escapes resolved. */
+function miArguments(text) {
+    const out = [];
+    let i = 0;
+    while (i < text.length) {
+        while (text[i] === ' ') { i++; }
+        if (i >= text.length) { break; }
+        if (text[i] === '"') {
+            let value = '';
+            i++;
+            while (i < text.length && text[i] !== '"') {
+                if (text[i] === '\\' && i + 1 < text.length) {
+                    const next = text[i + 1];
+                    value += next === 'n' ? '\n' : next;
+                    i += 2;
+                } else {
+                    value += text[i++];
+                }
+            }
+            i++;
+            out.push(value);
+        } else {
+            let word = '';
+            while (i < text.length && text[i] !== ' ') { word += text[i++]; }
+            out.push(word);
+        }
+    }
+    return out;
+}
+
+/** A format string as GDB writes it back into a printf command: newline and quote escaped. */
+function printfLiteral(format) {
+    return `"${format.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+}
 
 /** Where the target can stop. `file` is a project-relative source, or null for no debug info. */
 function frame(fn, file, line, addr) { return { fn, file, line, addr }; }
@@ -311,6 +396,18 @@ class FakeTarget {
         this.dead = false;
         this.tracker = null;
         this.seq = 1;
+        // GDB's breakpoint table; a launch configuration's initCommands set `break main` first.
+        const launched = (spec.config ?? 'pyocd') !== 'pyocd-attach';
+        this.gdbBreakpoints = launched
+            ? [{ number: 1, type: 'breakpoint', file: 'main.c', line: 22, addr: 0x080002ea, fn: 'main', location: 'main', hits: 1 }]
+            : [];
+        this.nextBreakpoint = launched ? 2 : 1;
+        /** What the adapter answered VS Code for each model breakpoint. */
+        this.bindings = new Map();
+        /** Where a monitor reset left the core while GDB's register cache still shows `at`. */
+        this.resetAt = null;
+        this.miToken = 0;
+        this.valueHistory = 0;
     }
 
     attachTracker() {
@@ -318,6 +415,7 @@ class FakeTarget {
         for (const t of trackers) { t.onWillStartSession?.(); }
         this.tracker = {
             send: (m) => { for (const t of trackers) { t.onDidSendMessage?.({ seq: this.seq++, ...m }); } },
+            receive: (m) => { for (const t of trackers) { t.onWillReceiveMessage?.(m); } },
             willStop: () => { for (const t of trackers) { t.onWillStopSession?.(); } },
         };
     }
@@ -345,6 +443,7 @@ class FakeTarget {
         if (this.dead) { return; }
         this.state = 'stopped';
         this.at = at;
+        this.resetAt = null;
         this.emit('stopped', { reason, threadId, allThreadsStopped: true });
         this.setStackItem({ session: this.session, threadId, frameId: 1000 });
     }
@@ -551,6 +650,217 @@ class FakeTarget {
         }
     }
 
+    // ── GDB commands ('>' input) ──
+
+    /** GDB refuses what needs the target while it runs; the breakpoint table can still be listed. */
+    requireHalted(command) {
+        if (this.state !== 'stopped' && !/^(-break-list|info breakpoints)\b/.test(command)) { throw new Error(RUNNING_MSG); }
+    }
+
+    /** A GDB/MI command: its result record as cdt-gdb-adapter hands it on, or GDB's error. */
+    miCommand(cmd) {
+        this.requireHalted(cmd);
+        const [name, ...args] = miArguments(cmd);
+        const done = (result) => ({ ...result, 'cdt-token': String(++this.miToken), 'cdt-command': cmd });
+        switch (name) {
+            case '-data-read-memory-bytes': {
+                const addr = Number(args[0]);
+                const count = Number(args[1]);
+                const buf = this.readBytes(addr, count);
+                if (!buf) { throw new Error('Unable to read memory.'); }
+                return done({ memory: [{ begin: hex(addr), offset: '0x00000000', end: hex(addr + count), contents: buf.toString('hex') }] });
+            }
+            case '-dprintf-insert': {
+                // Options (-t, -f, -d, -c COND, -i N, -p THREAD) come before the location.
+                let cond;
+                let at = 0;
+                while (at < args.length && args[at].startsWith('-')) {
+                    if (['-c', '-i', '-p'].includes(args[at])) { cond = args[at] === '-c' ? args[at + 1] : cond; at += 2; } else { at += 1; }
+                }
+                const [location, format, ...values] = args.slice(at);
+                const bp = this.insertBreakpoint('dprintf', location, { format, values, cond });
+                return done({ bkpt: this.miBreakpoint(bp) });
+            }
+            case '-break-list':
+                return done({
+                    BreakpointTable: {
+                        nr_rows: String(this.gdbBreakpoints.length), nr_cols: '6',
+                        hdr: ['Num', 'Type', 'Disp', 'Enb', 'Address', 'What'].map((colhdr) => ({ colhdr })),
+                        body: this.gdbBreakpoints.map((bp) => this.miBreakpoint(bp)),
+                    },
+                });
+            default:
+                throw new Error(`Undefined MI command: ${name.slice(1)}`);
+        }
+    }
+
+    /** A breakpoint as GDB/MI describes it. */
+    miBreakpoint(bp) {
+        const fullname = this.sc.sourcePath(bp.file);
+        return {
+            number: String(bp.number), type: bp.type, disp: 'keep', enabled: 'y', addr: `0x${bp.addr.toString(16).padStart(8, '0')}`,
+            func: bp.fn, file: bp.file, fullname, line: String(bp.line), 'thread-groups': ['i1'],
+            ...(bp.cond ? { cond: bp.cond } : {}), times: String(bp.hits),
+            ...(bp.type === 'dprintf' ? { script: [`printf ${printfLiteral(bp.format)}${bp.values.map((v) => `,${v}`).join('')}`] } : {}),
+            'original-location': bp.location,
+        };
+    }
+
+    /** A new GDB breakpoint at a linespec (`file:line`, the file matched by its trailing path), or GDB's error. */
+    insertBreakpoint(type, location, extra = {}) {
+        const colon = location.lastIndexOf(':');
+        const file = location.slice(0, colon);
+        const line = Number(location.slice(colon + 1));
+        const resolved = resolveSourceLine(file, line);
+        if (!resolved) { throw new Error(`No source file named ${file}.`); }
+        if (!resolved.where) { throw new Error(`No line ${line} in file "${resolved.name}".`); }
+        const { where } = resolved;
+        const bp = { number: this.nextBreakpoint++, type, file: resolved.name, line: where.line, addr: where.addr, fn: where.fn, location, hits: 0, ...extra };
+        this.gdbBreakpoints.push(bp);
+        return bp;
+    }
+
+    /** A GDB CLI command: its text goes out as stdout output events, a refusal throws GDB's error. */
+    cliCommand(cmd) {
+        this.requireHalted(cmd);
+        const print = (text) => this.output('stdout', text);
+        let hit;
+        if (cmd === 'info registers') {
+            const regs = this.regs(0);
+            print(REGISTER_ORDER.map((n) => {
+                const natural = n === 'pc' ? symbolise(regs[n]) : ['sp', 'msp', 'psp'].includes(n) ? hex(regs[n]) : String(regs[n] | 0);
+                return `${n.padEnd(15)}${hex(regs[n]).padEnd(19)}${natural}`;
+            }).join('\n') + '\n');
+        } else if (cmd === 'info breakpoints') {
+            const rows = this.gdbBreakpoints.map((bp) => `${String(bp.number).padEnd(8)}${bp.type.padEnd(15)}keep y   0x${bp.addr.toString(16).padStart(8, '0')} in ${bp.fn} at ${bp.file}:${bp.line}`
+                + (bp.cond ? `\n\tstop only if ${bp.cond}` : '')
+                + (bp.type === 'dprintf' ? `\n        printf ${printfLiteral(bp.format)}${bp.values.map((v) => `,${v}`).join('')}` : ''));
+            print(rows.length > 0 ? `Num     Type           Disp Enb Address    What\n${rows.join('\n')}\n` : 'No breakpoints or watchpoints.\n');
+        } else if ((hit = /^dprintf\s+([^,]+),"((?:[^"\\]|\\.)*)"(.*)$/.exec(cmd))) {
+            const values = hit[3].split(',').map((v) => v.trim()).filter(Boolean);
+            const bp = this.insertBreakpoint('dprintf', hit[1].trim(), { format: miArguments(`"${hit[2]}"`)[0], values });
+            print(`Dprintf ${bp.number} at 0x${bp.addr.toString(16)}: file ${bp.file}, line ${bp.line}.\n`);
+            // cdt-gdb-adapter announces a breakpoint GDB created from a CLI command.
+            this.emit('breakpoint', { reason: 'new', breakpoint: { id: bp.number, verified: true, source: { name: bp.file, path: this.sc.sourcePath(bp.file) }, line: bp.line } });
+        } else if ((hit = /^condition\s+(\d+)\s*(.*)$/.exec(cmd))) {
+            const bp = this.gdbBreakpoints.find((b) => b.number === Number(hit[1]));
+            if (!bp) { throw new Error(`No breakpoint number ${hit[1]}.`); }
+            if (hit[2] && !this.knownExpression(hit[2])) { throw new Error(`No symbol "${hit[2].split(/\W+/)[0]}" in current context.`); }
+            bp.cond = hit[2] || undefined;
+            if (!hit[2]) { print(`Breakpoint ${bp.number} now unconditional.\n`); }
+            this.emit('breakpoint', { reason: 'changed', breakpoint: { id: bp.number, verified: true, source: { name: bp.file, path: this.sc.sourcePath(bp.file) }, line: bp.line } });
+        } else if ((hit = /^delete(?:\s+(.*))?$/.exec(cmd))) {
+            const numbers = hit[1] ? hit[1].trim().split(/\s+/).map(Number) : this.gdbBreakpoints.map((b) => b.number);
+            if (!hit[1]) { print('Delete all breakpoints, watchpoints, tracepoints, and catchpoints? (y or n) [answered Y; input not from terminal]\n'); }
+            for (const number of numbers) {
+                if (!this.gdbBreakpoints.some((b) => b.number === number)) {
+                    print(`No breakpoint number ${number}.\n`);
+                    continue;
+                }
+                this.gdbBreakpoints = this.gdbBreakpoints.filter((b) => b.number !== number);
+                this.emit('breakpoint', { reason: 'removed', breakpoint: { id: number, verified: false } });
+            }
+        } else if ((hit = /^monitor\s+(.*)$/.exec(cmd))) {
+            this.monitor(hit[1].trim(), print);
+        } else if (cmd === 'maintenance flush register-cache') {
+            if (this.resetAt) { this.at = this.resetAt; this.resetAt = null; }
+            print('Register cache flushed.\n');
+        } else if (cmd === 'maintenance flush dcache') {
+            // Nothing to show.
+        } else if ((hit = /^set\s+\{unsigned int\}\s*(0x[0-9a-f]+)\s*=\s*(\d+)$/i.exec(cmd))) {
+            const addr = Number(hit[1]);
+            if (!this.readBytes(addr, 4)) { throw new Error(`Cannot access memory at address ${hex(addr)}`); }
+            const buf = Buffer.alloc(4);
+            buf.writeUInt32LE(Number(hit[2]) >>> 0, 0);
+            this.writeBytes(addr, buf);
+        } else if ((hit = /^x\/1xw\s+(0x[0-9a-f]+)$/i.exec(cmd))) {
+            const buf = this.readBytes(Number(hit[1]), 4);
+            if (!buf) { throw new Error(`Cannot access memory at address ${hit[1]}`); }
+            print(`${hit[1]}:\t0x${buf.readUInt32LE(0).toString(16).padStart(8, '0')}\n`);
+        } else if ((hit = /^print(?:\/x)?\s+(.*)$/.exec(cmd))) {
+            const ref = this.frameRef(1000);
+            const v = ref ? this.varCreate(hit[1].trim(), ref) : null;
+            if (!v) { throw new Error(`No symbol "${hit[1].trim()}" in current context.`); }
+            const shown = cmd.startsWith('print/x') && /^-?\d+$/.test(v.value) ? hex(Number(v.value)) : v.value;
+            print(`$${++this.valueHistory} = ${shown}\n`);
+        } else {
+            throw new Error(`Undefined command: "${cmd.split(/\s+/)[0]}".  Try "help".`);
+        }
+    }
+
+    /** Whether `expression` names only symbols GDB knows at the stop (for a condition). */
+    knownExpression(expression) {
+        const ref = this.frameRef(1000);
+        const names = expression.match(/[A-Za-z_]\w*/g) ?? [];
+        return names.every((name) => GLOBALS[name] || (ref && LOCALS[ref.frame.fn]?.[name]));
+    }
+
+    /** A monitor command as the GDB server behind the session answers it. */
+    monitor(command, print) {
+        const jlink = this.spec.config === 'jlink';
+        let reset;
+        if (jlink) {
+            if (command === 'halt') { return; }
+            reset = /^reset\s+[01]$/.test(command);
+            if (reset) { print('Resetting target\n'); }
+        } else {
+            reset = /^reset\s+halt\s+(system|core|hardware)$/.exec(command);
+            if (reset) { print('Resetting target with halt\nSuccessfully halted device on reset\n'); }
+        }
+        if (!reset) {
+            print(jlink ? `Unknown monitor command: ${command}\n` : `Error: No command named '${command.split(' ')[0]}'\n`);
+            return;
+        }
+        // The core now sits at the reset vector; GDB does not know until its register cache is flushed.
+        this.resetAt = 'resetHandler';
+    }
+
+    /** VS Code's `setBreakpoints` for one file of its model, answered as cdt-gdb-adapter answers it. */
+    setBreakpointsFromVsCode(fsPath) {
+        if (this.dead || this.hung) { return; }
+        const name = path.basename(fsPath);
+        const requested = stub.debug.breakpoints.filter((bp) => bp instanceof stub.SourceBreakpoint && bp.location.uri.fsPath === fsPath);
+        const seq = 5000 + this.seq++;
+        this.tracker?.receive({
+            type: 'request', seq, command: 'setBreakpoints',
+            arguments: {
+                source: { name, path: fsPath },
+                breakpoints: requested.map((bp) => ({ line: bp.location.range.start.line + 1, condition: bp.condition, logMessage: bp.logMessage })),
+            },
+        });
+        // The file's GDB breakpoints are those whose location names it; VS Code's list replaces them.
+        const inFile = this.gdbBreakpoints.filter((bp) => bp.location.includes(`-source ${fsPath} -line `) || bp.location.includes(fsPath));
+        const kept = new Set();
+        const answers = requested.map((vsbp) => {
+            const line = vsbp.location.range.start.line + 1;
+            // cdt-gdb-adapter matches on the line, the condition and hardware or not; never on the type.
+            const match = inFile.find((bp) => !kept.has(bp) && /(?:-line |:)(\d+)$/.exec(bp.location)?.[1] === String(line)
+                && (bp.cond || undefined) === (vsbp.condition || undefined));
+            if (match) {
+                kept.add(match);
+                return { id: match.number, line: match.line, verified: true };
+            }
+            try {
+                const bp = this.insertBreakpoint('breakpoint', `${fsPath}:${line}`, { cond: vsbp.condition || undefined });
+                bp.location = `-source ${fsPath} -line ${line}`;
+                kept.add(bp);
+                return { id: bp.number, line: bp.line, verified: true };
+            } catch (err) {
+                return { verified: false, message: err.message };
+            }
+        });
+        const deleted = inFile.filter((bp) => !kept.has(bp)).map((bp) => bp.number);
+        this.gdbBreakpoints = this.gdbBreakpoints.filter((bp) => !deleted.includes(bp.number));
+        requested.forEach((bp, i) => this.bindings.set(bp, answers[i]));
+        const shown = requested.map((bp, i) => {
+            const a = answers[i];
+            const line = bp.location.range.start.line + 1;
+            return a.verified ? `${line} → #${a.id}${a.line !== line ? ` line ${a.line}` : ''}` : `${line} → ${a.message}`;
+        });
+        this.sc.record(`vscode: setBreakpoints ${name} [${shown.join(', ')}]${deleted.length ? ` (deleted #${deleted.join(', #')})` : ''}`);
+        this.tracker?.send({ type: 'response', request_seq: seq, command: 'setBreakpoints', success: true, body: { breakpoints: answers } });
+    }
+
     children(ref) {
         const level = ref % 100;
         const index = Math.floor((ref - 3000) / 100);
@@ -567,11 +877,12 @@ class FakeTarget {
         const ref = this.frameRef(args.frameId);
         if (!isCli && !ref) { return notEvaluated; }
         if (isCli) {
-            // Console output goes to the Debug Console as stdout; the reply carries none of it.
             const cmd = expression.slice(1).trim();
-            this.output('stdout', `(gdb) ${cmd}\n` + (cmd === 'info registers'
-                ? REGISTER_ORDER.map((n) => `${n.padEnd(15)}${hex(this.regs(0)[n])}`).join('\n') + '\n'
-                : ''));
+            if (cmd.startsWith('-')) {
+                return { result: JSON.stringify(this.miCommand(cmd)), variablesReference: 0 };
+            }
+            // A CLI command's text goes to the Debug Console as stdout; the reply carries none of it.
+            this.cliCommand(cmd);
             return { result: '\r', variablesReference: 0 };
         }
         const fmt = /,([a-z])$/i.exec(expression);
@@ -617,7 +928,6 @@ const DEFAULT_COMMANDS = {
     'cmsis-csolution.getSolutionFile': (sc) => path.join(sc.env.project, 'Blinky.csolution.yml'),
     'cmsis-csolution.getActiveTargetSet': () => 'NUCLEO-F401RE',
     'cmsis-csolution.getPackRootPath': (sc) => sc.env.packRoot,
-    'workbench.action.debug.restart': (sc) => sc.restartSession(),
 };
 
 class ScenarioContext {
@@ -651,7 +961,7 @@ class ScenarioContext {
             configuration: config,
             workspaceFolder: stub.workspace.workspaceFolders[0],
             customRequest: (command, args) => target.request(command, args),
-            getDebugProtocolBreakpoint: async () => undefined,
+            getDebugProtocolBreakpoint: async (bp) => target.bindings.get(bp),
         };
         const target = new FakeTarget(this, spec, session);
         this.targets.push(target);
@@ -661,16 +971,29 @@ class ScenarioContext {
             bus.didChangeActiveSession.fire(session);
         }
         bus.didStart.fire(session);
+        // VS Code sends its breakpoints while the adapter configures the session.
+        this.syncBreakpoints(stub.debug.breakpoints);
         // cdt-gdb-adapter prints this at configurationDone, which a failed launch never reaches.
         if (spec.banner !== false) { target.output('console', GDB_BANNER); }
         if (spec.initial === 'running') {
             target.stopAt('main31', 'breakpoint');
             target.run();
+        } else if (spec.initial && spec.initialDelayMs) {
+            target.state = 'running';
+            target.scheduleStop(spec.initialDelayMs, spec.initial.at, spec.initial.reason);
         } else if (spec.initial) {
             target.stopAt(spec.initial.at, spec.initial.reason);
         }
         if (spec.hangAfterStart) { target.hung = true; }
         return session;
+    }
+
+    /** VS Code sends `setBreakpoints` for each file of these breakpoints to the live session a moment later. */
+    syncBreakpoints(bps) {
+        const target = this.target;
+        const files = [...new Set(bps.filter((bp) => bp instanceof stub.SourceBreakpoint).map((bp) => bp.location.uri.fsPath))];
+        if (!target || target.dead || files.length === 0) { return; }
+        setTimeout(() => { for (const file of files) { target.setBreakpointsFromVsCode(file); } }, 2);
     }
 
     /** vscode.debug.startDebugging: the scenario's `launches` say what each configuration does. */
@@ -689,21 +1012,6 @@ class ScenarioContext {
         }
         this.launch(plan);
         return true;
-    }
-
-    /** workbench.action.debug.restart: tear the adapter down and relaunch it in the same session. */
-    restartSession() {
-        const target = this.target;
-        if (!target || target.dead) { return undefined; }
-        this.record('adapter: restart — adapter relaunched in the same session; it stops at main 500 ms later');
-        target.tracker.willStop();
-        target.setStackItem(undefined);
-        target.state = 'starting';
-        target.at = null;
-        target.attachTracker();
-        target.output('console', GDB_BANNER);
-        setTimeout(() => target.stopAt('main31', 'breakpoint'), 500);
-        return undefined;
     }
 
     endSession(session, { quiet = false } = {}) {
@@ -788,7 +1096,7 @@ const SCENARIOS = [
     },
     {
         name: 'evaluate',
-        description: 'Halted in main: symbols, arithmetic, format suffix, struct, secret-named pointer and array, unknown symbol, and GDB passthrough both ways (-exec is evaluated as an expression, > is a CLI command whose output goes to the console only).',
+        description: 'Halted in main: symbols, arithmetic, format suffix, struct, secret-named pointer and array, unknown symbol, and the GDB passthrough both ways: -exec is sent as the adapter\'s > and > as it is; the text GDB printed as stdout output comes back as the result.',
         session: { initial: { at: 'main31', reason: 'breakpoint' } },
         calls: [
             { tool: 'evaluate_expression', args: { expression: 'SystemCoreClock' } },
@@ -906,7 +1214,7 @@ const SCENARIOS = [
     },
     {
         name: 'step-ui-fallback',
-        description: 'The tracker says stopped but the adapter rejects `next` with GDB\'s running-target error: the executor falls back to the UI command, which (sent by VS Code) steps.',
+        description: 'The tracker says stopped but the adapter rejects `next` with GDB\'s running-target error: on gdbtarget the step answers TARGET_RUNNING and no UI command runs (the scripted UI command would step).',
         session: {
             initial: { at: 'main31', reason: 'breakpoint' },
             failures: RUNNING_RACE,
@@ -970,7 +1278,7 @@ const SCENARIOS = [
     },
     {
         name: 'breakpoints',
-        description: 'Halted in main: breakpoints and logpoints go to the VS Code model and to GDB as -exec break/dprintf/clear/delete (answered as a failed expression), then steps show the breakpoint list diff.',
+        description: 'Halted in main: breakpoints go to the VS Code model, VS Code sends them to the adapter and the answer reports its binding; logpoints become GDB dprintfs through MI -dprintf-insert (a condition through `condition N`), remembered and deleted by number; steps show the breakpoint list diff.',
         session: {
             initial: { at: 'main31', reason: 'breakpoint' },
             stops: [{ on: 'next', at: 'main32', reason: 'step' }, { on: 'next', at: 'main29', reason: 'step' }],
@@ -996,7 +1304,7 @@ const SCENARIOS = [
     },
     {
         name: 'reset-verified',
-        description: 'pyOCD, halted at Reset_Handler: `monitor reset halt system` never reaches GDB (no stopped event), but PC already equals the reset vector, so the reset reads as verified.',
+        description: 'pyOCD, halted at Reset_Handler: `monitor reset halt system` reaches GDB with `>` and pyOCD\'s text comes back; GDB\'s caches are flushed and PC equals the reset vector.',
         session: { initial: { at: 'resetHandler', reason: 'breakpoint' } },
         calls: [
             { tool: 'reset', args: { method: 'system' } },
@@ -1004,7 +1312,7 @@ const SCENARIOS = [
     },
     {
         name: 'reset-not-verified-jlink',
-        description: 'J-Link, target running, reset with halt=false and the default auto method: pause first, then system/core/hardware, none verified.',
+        description: 'J-Link, target running, reset with halt=false and the default auto method: pause first; `monitor halt` and `monitor reset 0` reach GDB, the cache flush shows the core at the reset vector, the first method verifies and the target is resumed.',
         session: { config: 'jlink', initial: 'running', runningAt: 'delayLoop' },
         calls: [
             { tool: 'reset', args: { halt: false } },
@@ -1013,14 +1321,87 @@ const SCENARIOS = [
     },
     {
         name: 'restart-and-stop',
-        description: 'restart_debugging relaunches the adapter in the same session (the stop at main lands 500 ms after the command), then stop_debugging ends it.',
+        description: 'restart_debugging on a halted gdbtarget session stops it and starts its launch configuration again through the debug API (the new session stops at main 500 ms later), then stop_debugging ends it.',
         session: { initial: { at: 'main31', reason: 'breakpoint' } },
+        launches: { 'CMSIS Debugger: pyOCD': { config: 'pyocd', initial: { at: 'main31', reason: 'breakpoint' }, initialDelayMs: 500 } },
         calls: [
             { tool: 'restart_debugging', settleMs: 800 },
             { tool: 'get_session_status' },
             { tool: 'stop_debugging' },
             { tool: 'get_session_status' },
             { tool: 'stop_debugging' },
+        ],
+    },
+    {
+        name: 'restart-running',
+        description: 'restart_debugging while the gdbtarget target runs: it is paused first, then the session is stopped and its launch configuration started again (the model breakpoint is sent to the new session).',
+        session: { initial: 'running', runningAt: 'delayLoop' },
+        launches: { 'CMSIS Debugger: pyOCD': { config: 'pyocd', initial: { at: 'main31', reason: 'breakpoint' }, initialDelayMs: 300 } },
+        calls: [
+            { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 31 } },
+            { tool: 'restart_debugging', settleMs: 600 },
+            { tool: 'get_session_status' },
+            { tool: 'list_breakpoints' },
+        ],
+    },
+    {
+        name: 'breakpoint-running-target',
+        description: 'Target running in delay_ms: each breakpoint change pauses it, applies the change (VS Code\'s setBreakpoints, or GDB\'s dprintf and delete) and resumes it, and the answer says so.',
+        session: { initial: 'running', runningAt: 'delayLoop' },
+        calls: [
+            { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 31 } },
+            { tool: 'add_logpoint', args: { fileFullPath: '@main.c', line: 32, logMessage: 'counter={counter}' } },
+            { tool: 'get_session_status' },
+            { tool: 'list_breakpoints' },
+            { tool: 'remove_breakpoint', args: { fileFullPath: '@main.c', line: 31 } },
+            { tool: 'clear_all_breakpoints' },
+            { tool: 'get_session_status' },
+        ],
+    },
+    {
+        name: 'logpoint-dprintf',
+        description: 'Halted in main: logpoints are GDB dprintfs at a workspace-relative location, remembered by number; a model breakpoint in the same file leaves them alone; one is deleted by remove_breakpoint, one by an agent\'s own `-exec delete` (the adapter\'s breakpoint event makes the tools forget it); they end with the session.',
+        session: { initial: { at: 'main31', reason: 'breakpoint' } },
+        launches: { 'CMSIS Debugger: pyOCD': { config: 'pyocd', initial: { at: 'main31', reason: 'breakpoint' } } },
+        calls: [
+            { tool: 'add_logpoint', args: { fileFullPath: '@main.c', line: 32, logMessage: 'counter={counter:%08lx}' } },
+            { tool: 'add_logpoint', args: { fileFullPath: '@main.c', line: 30, logMessage: 'toggle {ledState}', condition: 'counter > 3' } },
+            { tool: 'add_logpoint', args: { fileFullPath: '@main.c', line: 30, logMessage: 'never', condition: 'nosuch > 3' } },
+            { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 29 } },
+            { tool: 'list_breakpoints' },
+            { tool: 'evaluate_expression', args: { expression: '-exec info breakpoints' } },
+            { tool: 'remove_breakpoint', args: { fileFullPath: '@main.c', line: 32 } },
+            { tool: 'evaluate_expression', args: { expression: '-exec delete 3' } },
+            { tool: 'list_breakpoints' },
+            { tool: 'add_logpoint', args: { fileFullPath: '@led.c', line: 18, logMessage: 'mask={mask}' } },
+            { tool: 'stop_debugging' },
+            { tool: 'start_debugging', args: { workingDirectory: '@', configurationName: 'CMSIS Debugger: pyOCD' } },
+            { tool: 'list_breakpoints' },
+            { tool: 'clear_all_breakpoints' },
+        ],
+    },
+    {
+        name: 'gdb-passthrough',
+        description: 'Halted in main: GDB commands through evaluate_expression in both spellings — CLI commands answer with the text GDB printed (a CLI dprintf also makes the adapter announce the new breakpoint), an MI command with its result, a command GDB does not know is an error.',
+        session: { initial: { at: 'main31', reason: 'breakpoint' } },
+        calls: [
+            { tool: 'evaluate_expression', args: { expression: '-exec dprintf main.c:31,"led %d\\n",ledState' } },
+            { tool: 'evaluate_expression', args: { expression: '-exec info breakpoints' } },
+            { tool: 'evaluate_expression', args: { expression: '>delete 2' } },
+            { tool: 'evaluate_expression', args: { expression: '-exec print/x counter' } },
+            { tool: 'evaluate_expression', args: { expression: '>x/1xw 0x20000010' } },
+            { tool: 'evaluate_expression', args: { expression: '>-data-read-memory-bytes 0x20000000 4' } },
+            { tool: 'evaluate_expression', args: { expression: '-exec frobnicate' } },
+            { tool: 'evaluate_expression', args: { expression: '-exec maintenance flush dcache' } },
+        ],
+    },
+    {
+        name: 'reset-reaches-gdb',
+        description: 'pyOCD, halted in main: `monitor reset halt system` resets the core; only after GDB\'s register cache is flushed does the PC read the reset vector, so the reset verifies, and the call stack shows Reset_Handler.',
+        session: { initial: { at: 'main31', reason: 'breakpoint' } },
+        calls: [
+            { tool: 'reset', args: { method: 'system' } },
+            { tool: 'get_call_stack' },
         ],
     },
     {
@@ -1356,6 +1737,8 @@ function normalisePaths(text, ctx) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** After every reply: longer than any follow-up event the fake adapter schedules (1-5 ms). */
+const QUIET_AFTER_REPLY_MS = 20;
 
 async function withTimeout(promise, ms) {
     let timer;
@@ -1386,6 +1769,12 @@ async function runScenario(def, index, env, ctx, DebugMCPServer) {
         const args = sc.resolveArgs(call.args ?? {});
         call.before?.(sc);
         const res = await withTimeout(client.call(call.tool, args), CALL_TIMEOUT_MS);
+        // The fake adapter answers some requests first and emits their events a
+        // few milliseconds later (a continue's `continued` after 1 ms). Whether
+        // they arrived before the reply crossed HTTP is a race, so every call
+        // gets a short quiet period: follow-up events always belong to the call
+        // that caused them. Deliberately delayed traffic uses settleMs.
+        await sleep(QUIET_AFTER_REPLY_MS);
         const replied = sc.log.length;
         const traffic = sc.log.slice(consumed, replied);
         let late = [];

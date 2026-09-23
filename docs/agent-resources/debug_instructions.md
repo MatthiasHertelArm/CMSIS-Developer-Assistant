@@ -23,7 +23,7 @@ Always call `get_session_status` *before* any session-changing tool. The five po
 | `no-session` | No debug session is attached. | **CMSIS solutions: `cmsis_action load_and_debug`** (flashes then attaches via the CMSIS Solution panel — the panel's *Debug* button). `start_debugging` ONLY for non-CMSIS launch configurations or to attach without flashing. |
 | `initializing` | The adapter is starting / flashing. | Wait briefly and call `get_session_status` again — do NOT issue another start. |
 | `stopped` | A session is attached and the target is paused. | Skip `start_debugging` entirely. Use inspection tools (`get_call_stack`, `get_variables_values`, `read_memory`, …) directly, or `continue_execution` to resume. |
-| `running` | A session is attached and the CPU is executing. | Inspection reads, breakpoint changes and stepping are rejected. Call `pause_execution`, or `wait_for_stop` if a breakpoint is expected to hit, or `stop_debugging`. |
+| `running` | A session is attached and the CPU is executing. | Inspection reads and stepping are rejected; breakpoint and logpoint changes still work (on the CMSIS Debugger the tool pauses the target for the change and resumes it). Call `pause_execution`, or `wait_for_stop` if a breakpoint is expected to hit, or `stop_debugging`. |
 | `unresponsive` | The probe / GDB server is hung. | Call `check_target_connection` to confirm, then `restart_debugging` or `stop_debugging`. Do NOT issue more inspection calls — they will time out. |
 
 `start_debugging` and `cmsis_action load_and_debug` refuse with a structured error if a session is already active, naming the existing session and pointing you at `restart_debugging` / `stop_debugging`. Save the round-trip by checking up front.
@@ -131,14 +131,16 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 - Set breakpoints inside the function body, on an executable line — not on the signature, a comment, an empty line or a lone brace.
 - Set breakpoints before loops or conditionals, at assignments you want to inspect, at the start of functions to inspect parameters, and before and after critical operations (peripheral init, DMA start, a mutex handover).
 - Set at least one breakpoint before bringing the target up: the program then stops at a place you chose instead of somewhere in a busy loop.
+- Read the answer: it says how the debugger bound the breakpoint — `verified` (with the GDB breakpoint number, and the line when it moved to the next line with code) or NOT verified with the adapter's reason, in which case the target never stops there. `list_breakpoints` shows the same for every breakpoint.
+- Breakpoints can be set, removed and cleared while the target runs: on the CMSIS Debugger the tool pauses the target for the change, resumes it, and says for how long it was paused.
 
 ### Conditional breakpoints
 
-Pass `condition` to `add_breakpoint` (e.g. `i == 100`, `p != 0`, `state == FSM_ERROR`) instead of hitting a breakpoint hundreds of times. The condition becomes GDB's native `if` clause, so **the core is only halted when it holds** — a host-side condition would still stop the CPU on every hit and decide afterwards, which wrecks timing in a hot loop or an ISR. `list_breakpoints` shows conditions as `file:line [when: ...]`.
+Pass `condition` to `add_breakpoint` (e.g. `i == 100`, `p != 0`, `state == FSM_ERROR`) instead of stopping at a breakpoint hundreds of times: the target stops for you only when the condition holds. It does not spare the core, though: the FPB comparator has no condition logic, so the core halts at every hit while GDB evaluates the condition over the probe and resumes it when the condition is false. That costs milliseconds per hit — nothing on a line that runs now and then, noticeable in an ISR or a tight loop. `list_breakpoints` shows conditions as `file:line [when: ...]`.
 
 ### Logpoints — useful, but not free on Cortex-M
 
-`add_logpoint` prints a message and resumes instead of pausing. Embed expressions in braces: `"adc={sample} state={fsm}"`.
+`add_logpoint` prints a message and resumes instead of pausing. Embed expressions in braces: `"adc={sample} state={fsm}"`. On the CMSIS Debugger the logpoint is a GDB `dprintf`: GDB fills in the values and prints to VS Code's Debug Console, which no tool returns — `list_breakpoints` shows how often each logpoint fired, and `remove_breakpoint` on its line deletes it.
 
 GDB infers nothing about types, so specifiers are explicit:
 
@@ -175,7 +177,7 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 
 ❌ Starting the target without a breakpoint → ✅ set the initial breakpoint first.
 ❌ Locating a breakpoint with `lineContent` → ✅ pass the 1-based `line`.
-❌ Hitting a breakpoint 500 times to reach one iteration → ✅ pass `condition` so GDB only halts the core when it holds.
+❌ Stopping at a breakpoint 500 times to reach one iteration → ✅ pass `condition`, so the target stops for you only when it holds (the core still halts briefly at every hit while GDB tests it).
 ❌ Stepping over the problematic line without understanding why → ✅ break *on* it, restart, and inspect before it executes.
 ❌ Leaving six breakpoints bound on a Cortex-M4 → ✅ stay within the comparator budget, `clear_all_breakpoints` between phases.
 <!-- /topic -->
@@ -200,7 +202,7 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 - Step, continue, pause and `wait_for_stop` return a compact state: the location, the top 5 frames (the rest counted — `get_call_stack` has them all, workspace-relative, 20 inline unless you pass `levels`), and the breakpoint list only when it changed.
 - Names that match nothing are reported back explicitly, so a typo does not look like "the variable does not exist".
 - To inspect a **caller's** frame without disturbing the active one: `get_call_stack` → take a `frameId` → `get_frame_variables`.
-- `evaluate_expression` evaluates C expressions in the current frame; `-exec …` passes a GDB command through (`-exec x/8xw $sp`, `-exec info registers`).
+- `evaluate_expression` evaluates C expressions in the current frame; `-exec …` passes a GDB command through and returns what GDB printed (`-exec x/8xw $sp`, `-exec info breakpoints`). On the CMSIS Debugger the tool sends it with that adapter's own prefix, `>`, which you may write as well (`>info registers`).
 
 ## 🔌 When the variable and the hardware disagree
 
@@ -220,7 +222,7 @@ Values whose name or content looks like a credential are withheld before leaving
 This is tuned for firmware and should rarely get in your way:
 
 - **Numeric scalars are never withheld** — a `uint8_t auth`, a `token` counter, or `0xDEADBEEF` stays readable whatever it is called.
-- **Raw target reads are never redacted**: `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and `-exec` GDB passthrough through `evaluate_expression`. Real SVDs name registers `KEY`, `KR`, `KEYR` and `UNLOCK` — the watchdog and flash unlock registers — and those are exactly what you need when the watchdog is resetting you.
+- **Raw target reads are never redacted**: `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and GDB commands through `evaluate_expression` (`-exec …` or `>…`). Real SVDs name registers `KEY`, `KR`, `KEYR` and `UNLOCK` — the watchdog and flash unlock registers — and those are exactly what you need when the watchdog is resetting you.
 <!-- /topic -->
 
 <!-- topic: faults | Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes -->
@@ -261,7 +263,7 @@ Go round this loop until a step leads to something that explains everything befo
 
 1. **Pin down the observation.** Note the current line, the values involved and, after a fault, the decoded flags. This is what your explanation has to account for.
 2. **Ask where it came from.** Which write produced the wrong value, which branch brought execution here, which access raised the fault?
-3. **Move upstream.** Break where that value or decision is made — with `condition`, so the core stops only when it goes wrong — then `restart_debugging` or `reset` and step through it. Wherever the explanation relies on the hardware having done something, read the hardware: `read_peripheral_register`, `read_memory`.
+3. **Move upstream.** Break where that value or decision is made — with `condition`, so execution stops for you only when it goes wrong — then `restart_debugging` or `reset` and step through it. Wherever the explanation relies on the hardware having done something, read the hardware: `read_peripheral_register`, `read_memory`.
 4. **Stop at the origin, not before.** The loop ends where wrong data first enters, or where a basic assumption fails: a clock that is off, memory that is not coherent, an initialisation order, a stack that is too small.
 
 ### Four cases from Cortex-M boards
@@ -290,7 +292,7 @@ Each case shows the explanation that stops too early, then the chain that reache
 
 ### When it did not reach your breakpoint
 
-`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`. If the breakpoint never bound, `list_breakpoints` shows it unverified: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
+`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`. If the breakpoint never bound, `list_breakpoints` shows it NOT verified with the adapter's reason: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
 
 ### Not there yet
 

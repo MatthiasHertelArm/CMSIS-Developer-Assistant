@@ -20,6 +20,7 @@ import {
     decodeFields, SvdPeripheral, SvdRegister, SvdDevice
 } from './svdParser.js';
 import { matchName } from './svdLookup.js';
+import { bytesFromMiMemoryReply, CMSIS_DEBUGGER_TYPE, miReadMemoryCommand } from './gdbDialect.js';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout.js';
 
 /**
@@ -297,19 +298,19 @@ export async function readWord(
         // Fall through
     }
 
-    // Strategy 2: GDB x command via REPL context
+    // Strategy 2: a raw GDB read whose answer comes back in the reply — on the
+    // CMSIS Debugger the MI command (a CLI command's text only reaches the
+    // Debug Console there), elsewhere `x` through `-exec`.
+    const cmsisDebugger = session.type === CMSIS_DEBUGGER_TYPE;
     try {
         const result = await customRequestWithTimeout<any>(session, 'evaluate', {
-            expression: `-exec x/1xw ${hexAddr}`,
+            expression: cmsisDebugger ? `>${miReadMemoryCommand(hexAddr, 4)}` : `-exec x/1xw ${hexAddr}`,
             context: 'repl',
             ...frameOpt,
         }, dapTimeoutMs);
-        if (result?.result) {
-            const match = result.result.match(/:\s*(0x[0-9a-fA-F]+)/);
-            if (match) {
-                const val = parseInt(match[1], 16);
-                if (!isNaN(val)) { return val; }
-            }
+        if (typeof result?.result === 'string') {
+            const val = cmsisDebugger ? wordFromMiReply(result.result, hexAddr) : wordAfterColon(result.result);
+            if (val !== null) { return val; }
         }
     } catch (err) {
         if (err instanceof HardwareTimeoutError) { throw err; }
@@ -317,6 +318,20 @@ export async function readWord(
     }
 
     throw new Error(`All read strategies failed for ${hexAddr}`);
+}
+
+/** `x/1xw` answers `0x20000000:\t0x12345678`: the word follows the colon. */
+function wordAfterColon(raw: string): number | null {
+    const match = raw.match(/:\s*(0x[0-9a-fA-F]+)/);
+    if (!match) { return null; }
+    const val = parseInt(match[1], 16);
+    return isNaN(val) ? null : val;
+}
+
+/** `-data-read-memory-bytes` answers the bytes as hex text: the word is the first four, little-endian. */
+function wordFromMiReply(raw: string, hexAddr: string): number | null {
+    const bytes = bytesFromMiMemoryReply(raw, hexAddr);
+    return bytes && bytes.length >= 4 ? bytes.readUInt32LE(0) : null;
 }
 
 function parseGdbInt(raw: string): number | null {

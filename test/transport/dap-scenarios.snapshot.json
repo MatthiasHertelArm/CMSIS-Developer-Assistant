@@ -262,7 +262,7 @@
     },
     {
       "name": "evaluate",
-      "description": "Halted in main: symbols, arithmetic, format suffix, struct, secret-named pointer and array, unknown symbol, and GDB passthrough both ways (-exec is evaluated as an expression, > is a CLI command whose output goes to the console only).",
+      "description": "Halted in main: symbols, arithmetic, format suffix, struct, secret-named pointer and array, unknown symbol, and the GDB passthrough both ways: -exec is sent as the adapter's > and > as it is; the text GDB printed as stdout output comes back as the result.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -350,10 +350,11 @@
           "args": {
             "expression": "-exec info registers"
           },
-          "text": "Evaluated: -exec info registers\nResult: Error: could not evaluate expression",
+          "text": "Evaluated: -exec info registers\nResult: r0             0x2a               42\nr1             0x40020000         1073872896\nr2             0x20               32\nr3             0x20000010         536870928\nr4             0x1f4              500\nr5             0x0                0\nr6             0x0                0\nr7             0x20017fd0         536969168\nr8             0x0                0\nr9             0x0                0\nr10            0x0                0\nr11            0x0                0\nr12            0x8000f10          134221584\nsp             0x20017fd0         0x20017fd0\nlr             0x80001b1          134218161\npc             0x80002fe          0x80002fe <main+22>\nxpsr           0x61000000         1627389952\nmsp            0x20017fd0         0x20017fd0\npsp            0x0                0x0\nprimask        0x0                0\nbasepri        0x0                0\nfaultmask      0x0                0\ncontrol        0x0                0",
           "traffic": [
             "dap: threads {}",
-            "dap: evaluate {\"expression\":\"-exec info registers\",\"frameId\":1000,\"context\":\"repl\"} -> \"Error: could not evaluate expression\""
+            "dap: evaluate {\"expression\":\">info registers\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"r0             0x2a               42\""
           ]
         },
         {
@@ -361,11 +362,11 @@
           "args": {
             "expression": ">info registers"
           },
-          "text": "Evaluated: >info registers\nResult: \r",
+          "text": "Evaluated: >info registers\nResult: r0             0x2a               42\nr1             0x40020000         1073872896\nr2             0x20               32\nr3             0x20000010         536870928\nr4             0x1f4              500\nr5             0x0                0\nr6             0x0                0\nr7             0x20017fd0         536969168\nr8             0x0                0\nr9             0x0                0\nr10            0x0                0\nr11            0x0                0\nr12            0x8000f10          134221584\nsp             0x20017fd0         0x20017fd0\nlr             0x80001b1          134218161\npc             0x80002fe          0x80002fe <main+22>\nxpsr           0x61000000         1627389952\nmsp            0x20017fd0         0x20017fd0\npsp            0x0                0x0\nprimask        0x0                0\nbasepri        0x0                0\nfaultmask      0x0                0\ncontrol        0x0                0",
           "traffic": [
             "dap: threads {}",
-            "dap: evaluate {\"expression\":\">info registers\",\"frameId\":1000,\"context\":\"repl\"} -> \"\\r\"",
-            "event: output [stdout] \"(gdb) info registers\""
+            "dap: evaluate {\"expression\":\">info registers\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"r0             0x2a               42\""
           ]
         },
         {
@@ -440,8 +441,7 @@
             "dap: readMemory {\"memoryReference\":\"0x60000000\",\"count\":8} -> error: \"Unable to read memory. (@ 0x60000000)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0x60000000\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\"-exec x/1xw 0x60000000\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
-            "dap: evaluate {\"expression\":\"-exec print/x *(unsigned int*)0x60000000\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x60000000 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\""
           ]
         }
       ]
@@ -869,7 +869,7 @@
     },
     {
       "name": "step-ui-fallback",
-      "description": "The tracker says stopped but the adapter rejects `next` with GDB's running-target error: the executor falls back to the UI command, which (sent by VS Code) steps.",
+      "description": "The tracker says stopped but the adapter rejects `next` with GDB's running-target error: on gdbtarget the step answers TARGET_RUNNING and no UI command runs (the scripted UI command would step).",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -878,22 +878,18 @@
         {
           "tool": "step_over",
           "args": {},
-          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 32,\n  \"currentLineContent\": \"delay_ms(config.period_ms);\",\n  \"nextLines\": [\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:32\"\n  ],\n  \"breakpoints\": []\n}",
+          "isError": true,
+          "text": "[TARGET_RUNNING] Step over failed: Error: GDB rejected 'next': the target is running.\npause_execution first, or wait_for_stop if a stop is expected.",
           "traffic": [
             "dap: threads {}",
             "dap: next {\"threadId\":1} -> error: \"Cannot execute this command while the target is running.\\nUse the \\\"interrupt\\\" command to stop the target\\nand then try again.\"",
-            "event: output [console] \"Error occurred during the nextRequest: Cannot execute this command while the target is running.\"",
-            "command: workbench.action.debug.stepOver",
-            "adapter: next (sent by the VS Code UI, succeeds)",
-            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
-            "event: stopped {\"reason\":\"step\",\"threadId\":1,\"allThreadsStopped\":true}",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+            "event: output [console] \"Error occurred during the nextRequest: Cannot execute this command while the target is running.\""
           ]
         },
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: step\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1116,7 +1112,7 @@
     },
     {
       "name": "breakpoints",
-      "description": "Halted in main: breakpoints and logpoints go to the VS Code model and to GDB as -exec break/dprintf/clear/delete (answered as a failed expression), then steps show the breakpoint list diff.",
+      "description": "Halted in main: breakpoints go to the VS Code model, VS Code sends them to the adapter and the answer reports its binding; logpoints become GDB dprintfs through MI -dprintf-insert (a condition through `condition N`), remembered and deleted by number; steps show the breakpoint list diff.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -1134,11 +1130,11 @@
             "fileFullPath": "<tmp>/project/main.c",
             "line": 29
           },
-          "text": "Breakpoint added at <tmp>/project/main.c:29\nSent to GDB (`break`). The adapter did not echo a confirmation — this is normal for gdbtarget and does NOT mean it failed. The breakpoint is set; verify by running continue_execution (the target should stop) or list_breakpoints.\n  line 29: <no echo from adapter — normal> [unconfirmed]",
+          "text": "Breakpoint added at <tmp>/project/main.c:29\nAdapter: verified as GDB breakpoint 2.",
           "traffic": [
+            "dap: threads {}",
             "vscode: debug.addBreakpoints <tmp>/project/main.c:29",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:29\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "vscode: setBreakpoints main.c [29 → #2]"
           ]
         },
         {
@@ -1148,11 +1144,11 @@
             "line": 30,
             "condition": "counter > 10"
           },
-          "text": "Breakpoint added at <tmp>/project/main.c:30 [when: counter > 10]\nSent to GDB (`break`). The adapter did not echo a confirmation — this is normal for gdbtarget and does NOT mean it failed. The breakpoint is set; verify by running continue_execution (the target should stop) or list_breakpoints.\n  line 30: <no echo from adapter — normal> [unconfirmed]",
+          "text": "Breakpoint added at <tmp>/project/main.c:30 [when: counter > 10]\nAdapter: verified as GDB breakpoint 3.",
           "traffic": [
+            "dap: threads {}",
             "vscode: debug.addBreakpoints <tmp>/project/main.c:30 [when: counter > 10]",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:30 if counter > 10\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "vscode: setBreakpoints main.c [29 → #2, 30 → #3]"
           ]
         },
         {
@@ -1161,14 +1157,13 @@
             "fileFullPath": "<tmp>/project/main.c",
             "lineContent": "counter"
           },
-          "text": "Breakpoints added at 2 locations in <tmp>/project/main.c: lines 8, 29\n⚠️ Located via the deprecated `lineContent` match (2 line(s) matched). Pass `line` instead — content matching hits every line containing the text.\nSent to GDB (`break`). The adapter did not echo a confirmation — this is normal for gdbtarget and does NOT mean it failed. The breakpoint is set; verify by running continue_execution (the target should stop) or list_breakpoints.\n  line 8: <no echo from adapter — normal> [unconfirmed]\n  line 29: <no echo from adapter — normal> [unconfirmed]",
+          "text": "Breakpoints added at 2 locations in <tmp>/project/main.c: lines 8, 29\n⚠️ Located via the deprecated `lineContent` match (2 line(s) matched). Pass `line` instead — content matching hits every line containing the text.\nAdapter:\n  line 8: verified as GDB breakpoint 4 at line 17\n  line 29: verified as GDB breakpoint 5",
           "traffic": [
+            "dap: threads {}",
             "vscode: debug.addBreakpoints <tmp>/project/main.c:8",
             "vscode: debug.addBreakpoints <tmp>/project/main.c:29",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:8\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec break <tmp>/project/main.c:29\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "vscode: setBreakpoints main.c [29 → #2, 30 → #3, 8 → #4 line 17, 29 → #5]",
+            "vscode: setBreakpoints main.c [29 → #2, 30 → #3, 8 → #4 line 17, 29 → #5]"
           ]
         },
         {
@@ -1197,11 +1192,11 @@
             "line": 32,
             "logMessage": "counter={counter} led={ledState:%u} 100%"
           },
-          "text": "Logpoint added at <tmp>/project/main.c:32\n  GDB: dprintf <tmp>/project/main.c:32,\"counter=%d led=%u 100%%\\n\",counter,ledState\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "text": "Logpoint added at <tmp>/project/main.c:32\n  GDB dprintf 6 (main.c:32, 0x08000302): dprintf main.c:32,\"counter=%d led=%u 100%%\\n\",counter,ledState\nIt prints to VS Code's Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on <tmp>/project/main.c:32 deletes it.\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
           "traffic": [
-            "vscode: debug.addBreakpoints <tmp>/project/main.c:32 [log: counter={counter} led={ledState:%u} 100%]",
+            "dap: threads {}",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec dprintf <tmp>/project/main.c:32,\\\"counter=%d led=%u 100%%\\\\n\\\",counter,ledState\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "dap: evaluate {\"expression\":\">-dprintf-insert \\\"main.c:32\\\" \\\"counter=%d led=%u 100%%\\\\n\\\" \\\"counter\\\" \\\"ledState\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"bkpt\\\":{\\\"number\\\":\\\"6\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x08000302\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"32\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"counter=%d led=%u 100%%\\\\\\\\n\\\\\\\",counter,ledState\\\"],\\\"original-location\\\":\\\"main.c:32\\\"},\\\"cdt-token\\\":\\\"1\\\",\\\"cdt-command\\\":\\\"-dprintf-insert \\\\\\\"main.c:32\\\\\\\" \\\\\\\"counter=%d led=%u 100%%\\\\\\\\n\\\\\\\" \\\\\\\"counter\\\\\\\" \\\\\\\"ledState\\\\\\\"\\\"}\""
           ]
         },
         {
@@ -1212,11 +1207,14 @@
             "logMessage": "tick",
             "condition": "counter % 100 == 0"
           },
-          "text": "Logpoint added at <tmp>/project/main.c:33\n  GDB: dprintf <tmp>/project/main.c:33,\"tick\\n\"\n⚠️ Condition \"counter % 100 == 0\" was set on the VS Code breakpoint but NOT on the GDB dprintf: the adapter did not echo a breakpoint number to attach it to. The logpoint will fire unconditionally. Apply it manually with evaluate_expression(\"-exec condition <n> counter % 100 == 0\") after finding <n> via evaluate_expression(\"-exec info breakpoints\").\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "text": "Logpoint added at <tmp>/project/main.c:33\n  GDB dprintf 7 (main.c:33, 0x0800030a): dprintf main.c:33,\"tick\\n\"\n  Condition: counter % 100 == 0\nIt prints to VS Code's Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on <tmp>/project/main.c:33 deletes it.\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
           "traffic": [
-            "vscode: debug.addBreakpoints <tmp>/project/main.c:33 [when: counter % 100 == 0, log: tick]",
+            "dap: threads {}",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec dprintf <tmp>/project/main.c:33,\\\"tick\\\\n\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "dap: evaluate {\"expression\":\">-dprintf-insert \\\"main.c:33\\\" \\\"tick\\\\n\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"bkpt\\\":{\\\"number\\\":\\\"7\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x0800030a\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"33\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"tick\\\\\\\\n\\\\\\\"\\\"],\\\"original-location\\\":\\\"main.c:33\\\"},\\\"cdt-token\\\":\\\"2\\\",\\\"cdt-command\\\":\\\"-dprintf-insert \\\\\\\"main.c:33\\\\\\\" \\\\\\\"tick\\\\\\\\n\\\\\\\"\\\"}\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">condition 7 counter % 100 == 0\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"changed\",\"breakpoint\":{\"id\":7,\"verified\":true,\"source\":{\"name\":\"main.c\",\"path\":\"<tmp>/project/main.c\"},\"line\":33}}"
           ]
         },
         {
@@ -1233,13 +1231,16 @@
         {
           "tool": "list_breakpoints",
           "args": {},
-          "text": "Breakpoints that are set:\n1. main.c:29\n2. main.c:30 [when: counter > 10]\n3. main.c:8\n4. main.c:29\n5. main.c:32 [log: counter={counter} led={ledState:%u} 100%]\n6. main.c:33 [when: counter % 100 == 0, log: tick]\n",
-          "traffic": []
+          "text": "Breakpoints that are set:\n1. main.c:29 — verified\n2. main.c:30 [when: counter > 10] — verified\n3. main.c:8 — verified at line 17\n4. main.c:29 — verified\nGDB dprintf logpoints (they print to the Debug Console):\n5. main.c:32 [log: counter={counter} led={ledState:%u} 100%] — GDB dprintf 6, 0 hits\n6. main.c:33 [when: counter % 100 == 0, log: tick] — GDB dprintf 7, 0 hits\n",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">-break-list\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"BreakpointTable\\\":{\\\"nr_rows\\\":\\\"7\\\",\\\"nr_cols\\\":\\\"6\\\",\\\"hdr\\\":[{\\\"colhdr\\\":\\\"Num\\\"},{\\\"colhdr\\\":\\\"Type\\\"},{\\\"colhdr\\\":\\\"Disp\\\"},{\\\"colhdr\\\":\\\"Enb\\\"},{\\\"colhdr\\\":\\\"Address\\\"},{\\\"colhdr\\\":\\\"What\\\"}],\\\"body\\\":[{\\\"number\\\":\\\"1\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002ea\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"22\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"1\\\",\\\"original-location\\\":\\\"main\\\"},{\\\"number\\\":\\\"2\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002f4\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"29\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"original-location\\\":\\\"-source <tmp>/project/main.c -line 29\\\"},{\\\"number\\\":\\\"3\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002f8\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"30\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"cond\\\":\\\"counter > 10\\\",\\\"times\\\":\\\"0\\\",\\\"original-location\\\":\\\"-source <tmp>/project/main.c -line 30\\\"},{\\\"number\\\":\\\"4\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x0800024c\\\",\\\"func\\\":\\\"delay_ms\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"17\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"original-location\\\":\\\"-source <tmp>/project/main.c -line 8\\\"},{\\\"number\\\":\\\"5\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002f4\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"29\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"original-location\\\":\\\"-source <tmp>/project/main.c -line 29\\\"},{\\\"number\\\":\\\"6\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x08000302\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"32\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"counter=%d led=%u 100%%\\\\\\\\n\\\\\\\",counter,ledState\\\"],\\\"original-location\\\":\\\"main.c:32\\\"},{\\\"number\\\":\\\"7\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x0800030a\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"33\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"cond\\\":\\\"counter % 100 == 0\\\",\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"tick\\\\\\\\n\\\\\\\"\\\"],\\\"original-location\\\":\\\"main.c:33\\\"}]},\\\"cdt-token\\\":\\\"3\\\",\\\"cdt-command\\\":\\\"-break-list\\\"}\""
+          ]
         },
         {
           "tool": "step_over",
           "args": {},
-          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 32,\n  \"currentLineContent\": \"delay_ms(config.period_ms);\",\n  \"nextLines\": [\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:32\"\n  ],\n  \"breakpoints\": [\n    \"main.c:29\",\n    \"main.c:30 [when: counter > 10]\",\n    \"main.c:8\",\n    \"main.c:29\",\n    \"main.c:32 [log: counter={counter} led={ledState:%u} 100%]\",\n    \"main.c:33 [when: counter % 100 == 0, log: tick]\"\n  ]\n}",
+          "text": "Target stopped (reason: step).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 32,\n  \"currentLineContent\": \"delay_ms(config.period_ms);\",\n  \"nextLines\": [\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:32\"\n  ],\n  \"breakpoints\": [\n    \"main.c:29\",\n    \"main.c:30 [when: counter > 10]\",\n    \"main.c:8\",\n    \"main.c:29\",\n    \"main.c:32 [log: counter={counter} led={ledState:%u} 100%] (GDB dprintf 6)\",\n    \"main.c:33 [when: counter % 100 == 0, log: tick] (GDB dprintf 7)\"\n  ]\n}",
           "traffic": [
             "dap: threads {}",
             "dap: next {\"threadId\":1}",
@@ -1266,11 +1267,11 @@
             "fileFullPath": "<tmp>/project/main.c",
             "line": 29
           },
-          "text": "Breakpoint removed from <tmp>/project/main.c:29\nGDB `clear <tmp>/project/main.c:29` issued.",
+          "text": "Breakpoint removed from <tmp>/project/main.c:29",
           "traffic": [
+            "dap: threads {}",
             "vscode: debug.removeBreakpoints <tmp>/project/main.c:29, <tmp>/project/main.c:29",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec clear <tmp>/project/main.c:29\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "vscode: setBreakpoints main.c [30 → #3, 8 → #4 line 17] (deleted #2, #5)"
           ]
         },
         {
@@ -1285,11 +1286,15 @@
         {
           "tool": "clear_all_breakpoints",
           "args": {},
-          "text": "Cleared 4 breakpoint(s) from the model.\nGDB `delete` issued — all GDB-native breakpoints removed.",
+          "text": "Cleared 2 breakpoint(s) from the model.\nDeleted GDB dprintf 6, 7.",
           "traffic": [
-            "vscode: debug.removeBreakpoints <tmp>/project/main.c:30 [when: counter > 10], <tmp>/project/main.c:8, <tmp>/project/main.c:32 [log: counter={counter} led={ledState:%u} 100%], <tmp>/project/main.c:33 [when: counter % 100 == 0, log: tick]",
+            "dap: threads {}",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec delete\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\""
+            "dap: evaluate {\"expression\":\">delete 6 7\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"removed\",\"breakpoint\":{\"id\":6,\"verified\":false}}",
+            "event: breakpoint {\"reason\":\"removed\",\"breakpoint\":{\"id\":7,\"verified\":false}}",
+            "vscode: debug.removeBreakpoints <tmp>/project/main.c:30 [when: counter > 10], <tmp>/project/main.c:8",
+            "vscode: setBreakpoints main.c [] (deleted #3, #4)"
           ]
         },
         {
@@ -1302,7 +1307,7 @@
     },
     {
       "name": "reset-verified",
-      "description": "pyOCD, halted at Reset_Handler: `monitor reset halt system` never reaches GDB (no stopped event), but PC already equals the reset vector, so the reset reads as verified.",
+      "description": "pyOCD, halted at Reset_Handler: `monitor reset halt system` reaches GDB with `>` and pyOCD's text comes back; GDB's caches are flushed and PC equals the reset vector.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -1316,7 +1321,13 @@
           "text": "Target reset verified. PC=0x08000198 matches the reset vector (0x08000198, vector table at 0x08000000). Method(s) tried: system. Commands: 'monitor reset halt system' (server: pyocd). Target is halted at the reset vector — use continue_execution to run.",
           "traffic": [
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec monitor reset halt system\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: evaluate {\"expression\":\">monitor reset halt system\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Resetting target with halt\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush register-cache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Register cache flushed.\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush dcache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
@@ -1327,7 +1338,7 @@
     },
     {
       "name": "reset-not-verified-jlink",
-      "description": "J-Link, target running, reset with halt=false and the default auto method: pause first, then system/core/hardware, none verified.",
+      "description": "J-Link, target running, reset with halt=false and the default auto method: pause first; `monitor halt` and `monitor reset 0` reach GDB, the cache flush shows the core at the reset vector, the first method verifies and the target is resumed.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
@@ -1339,40 +1350,32 @@
           "args": {
             "halt": false
           },
-          "text": "⚠️ Reset was issued but the target does NOT appear to have reset. PC=0x08000256 does NOT match the reset vector 0x08000198 (vector table at 0x08000000). Method(s) tried: system, core, hardware. Commands: 'monitor halt', 'monitor reset 0', 'monitor halt', 'monitor reset 1', 'monitor halt', 'monitor reset 0' (server: jlink). The target is halted (it was running before the reset); halt=false was not applied because the reset could not be verified — use continue_execution to run. 'hardware' requires nSRST wired from probe to target — if it is not connected, no software reset can recover this; power-cycle the board or reconnect the probe. Adapter replies: Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression | Error: could not evaluate expression",
+          "text": "Target reset verified. PC=0x08000198 matches the reset vector (0x08000198, vector table at 0x08000000). Method(s) tried: system. Commands: 'monitor halt', 'monitor reset 0' (server: jlink). Target resumed (halt=false).",
           "traffic": [
             "dap: pause {\"threadId\":1}",
             "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: evaluate {\"expression\":\">monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec monitor reset 0\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
+            "dap: evaluate {\"expression\":\">monitor reset 0\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Resetting target\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush register-cache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Register cache flushed.\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush dcache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec monitor reset 1\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
-            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"-exec monitor reset 0\",\"context\":\"repl\",\"frameId\":1000} -> \"Error: could not evaluate expression\"",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
-            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\""
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000198 <Reset_Handler>\"",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
           ]
         },
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: J-LINK\nType: gdbtarget\nConfiguration: CMSIS Debugger: J-LINK\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: J-LINK], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "text": "State: running\nSession: CMSIS Debugger: J-LINK\nType: gdbtarget\nConfiguration: CMSIS Debugger: J-LINK\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: J-LINK], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1381,7 +1384,7 @@
     },
     {
       "name": "restart-and-stop",
-      "description": "restart_debugging relaunches the adapter in the same session (the stop at main lands 500 ms after the command), then stop_debugging ends it.",
+      "description": "restart_debugging on a halted gdbtarget session stops it and starts its launch configuration again through the debug API (the new session stops at main 500 ms later), then stop_debugging ends it.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -1390,10 +1393,12 @@
         {
           "tool": "restart_debugging",
           "args": {},
-          "text": "The debug session has been restarted.",
+          "text": "The debug session has been restarted. It was stopped and its launch configuration 'CMSIS Debugger: pyOCD' started again.",
           "traffic": [
-            "command: workbench.action.debug.restart",
-            "adapter: restart — adapter relaunched in the same session; it stops at main 500 ms later",
+            "dap: threads {}",
+            "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
+            "event: terminated {}",
+            "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
             "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
             "dap: threads {}"
           ],
@@ -1429,6 +1434,498 @@
           "args": {},
           "text": "Nothing to stop — no debug session is active.",
           "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "restart-running",
+      "description": "restart_debugging while the gdbtarget target runs: it is paused first, then the session is stopped and its launch configuration started again (the model breakpoint is sent to the new session).",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 31
+          },
+          "text": "Breakpoint added at <tmp>/project/main.c:31\nAdapter: verified as GDB breakpoint 2.\nTarget paused <n>s to apply this, then resumed.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:31",
+            "vscode: setBreakpoints main.c [31 → #2]",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "restart_debugging",
+          "args": {},
+          "text": "The debug session has been restarted. It was stopped and its launch configuration 'CMSIS Debugger: pyOCD' started again. The target was paused first.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
+            "event: terminated {}",
+            "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
+            "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+            "dap: threads {}",
+            "vscode: setBreakpoints main.c [31 → #2]"
+          ],
+          "lateTraffic": [
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "Breakpoints that are set:\n1. main.c:31 — verified\n",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "breakpoint-running-target",
+      "description": "Target running in delay_ms: each breakpoint change pauses it, applies the change (VS Code's setBreakpoints, or GDB's dprintf and delete) and resumes it, and the answer says so.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 31
+          },
+          "text": "Breakpoint added at <tmp>/project/main.c:31\nAdapter: verified as GDB breakpoint 2.\nTarget paused <n>s to apply this, then resumed.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:31",
+            "vscode: setBreakpoints main.c [31 → #2]",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 32,
+            "logMessage": "counter={counter}"
+          },
+          "text": "Logpoint added at <tmp>/project/main.c:32\n  GDB dprintf 3 (main.c:32, 0x08000302): dprintf main.c:32,\"counter=%d\\n\",counter\nIt prints to VS Code's Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on <tmp>/project/main.c:32 deletes it.\nTarget paused <n>s to apply this, then resumed.\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">-dprintf-insert \\\"main.c:32\\\" \\\"counter=%d\\\\n\\\" \\\"counter\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"bkpt\\\":{\\\"number\\\":\\\"3\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x08000302\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"32\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"counter=%d\\\\\\\\n\\\\\\\",counter\\\"],\\\"original-location\\\":\\\"main.c:32\\\"},\\\"cdt-token\\\":\\\"1\\\",\\\"cdt-command\\\":\\\"-dprintf-insert \\\\\\\"main.c:32\\\\\\\" \\\\\\\"counter=%d\\\\\\\\n\\\\\\\" \\\\\\\"counter\\\\\\\"\\\"}\"",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "Breakpoints that are set:\n1. main.c:31 — verified\nGDB dprintf logpoints (they print to the Debug Console):\n2. main.c:32 [log: counter={counter}] — GDB dprintf 3, 0 hits\n",
+          "traffic": [
+            "dap: evaluate {\"expression\":\">-break-list\",\"context\":\"repl\"} -> \"{\\\"BreakpointTable\\\":{\\\"nr_rows\\\":\\\"3\\\",\\\"nr_cols\\\":\\\"6\\\",\\\"hdr\\\":[{\\\"colhdr\\\":\\\"Num\\\"},{\\\"colhdr\\\":\\\"Type\\\"},{\\\"colhdr\\\":\\\"Disp\\\"},{\\\"colhdr\\\":\\\"Enb\\\"},{\\\"colhdr\\\":\\\"Address\\\"},{\\\"colhdr\\\":\\\"What\\\"}],\\\"body\\\":[{\\\"number\\\":\\\"1\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002ea\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"22\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"1\\\",\\\"original-location\\\":\\\"main\\\"},{\\\"number\\\":\\\"2\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002fe\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"31\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"original-location\\\":\\\"-source <tmp>/project/main.c -line 31\\\"},{\\\"number\\\":\\\"3\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x08000302\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"32\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"counter=%d\\\\\\\\n\\\\\\\",counter\\\"],\\\"original-location\\\":\\\"main.c:32\\\"}]},\\\"cdt-token\\\":\\\"2\\\",\\\"cdt-command\\\":\\\"-break-list\\\"}\""
+          ]
+        },
+        {
+          "tool": "remove_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 31
+          },
+          "text": "Breakpoint removed from <tmp>/project/main.c:31\nTarget paused <n>s to apply this, then resumed.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "vscode: debug.removeBreakpoints <tmp>/project/main.c:31",
+            "vscode: setBreakpoints main.c [] (deleted #2)",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "clear_all_breakpoints",
+          "args": {},
+          "text": "Cleared 0 breakpoint(s) from the model.\nDeleted GDB dprintf 3.\nTarget paused <n>s to apply this, then resumed.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">delete 3\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"removed\",\"breakpoint\":{\"id\":3,\"verified\":false}}",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=2.3.10, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "logpoint-dprintf",
+      "description": "Halted in main: logpoints are GDB dprintfs at a workspace-relative location, remembered by number; a model breakpoint in the same file leaves them alone; one is deleted by remove_breakpoint, one by an agent's own `-exec delete` (the adapter's breakpoint event makes the tools forget it); they end with the session.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 32,
+            "logMessage": "counter={counter:%08lx}"
+          },
+          "text": "Logpoint added at <tmp>/project/main.c:32\n  GDB dprintf 2 (main.c:32, 0x08000302): dprintf main.c:32,\"counter=%08lx\\n\",counter\nIt prints to VS Code's Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on <tmp>/project/main.c:32 deletes it.\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">-dprintf-insert \\\"main.c:32\\\" \\\"counter=%08lx\\\\n\\\" \\\"counter\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"bkpt\\\":{\\\"number\\\":\\\"2\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x08000302\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"32\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"counter=%08lx\\\\\\\\n\\\\\\\",counter\\\"],\\\"original-location\\\":\\\"main.c:32\\\"},\\\"cdt-token\\\":\\\"1\\\",\\\"cdt-command\\\":\\\"-dprintf-insert \\\\\\\"main.c:32\\\\\\\" \\\\\\\"counter=%08lx\\\\\\\\n\\\\\\\" \\\\\\\"counter\\\\\\\"\\\"}\""
+          ]
+        },
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 30,
+            "logMessage": "toggle {ledState}",
+            "condition": "counter > 3"
+          },
+          "text": "Logpoint added at <tmp>/project/main.c:30\n  GDB dprintf 3 (main.c:30, 0x080002f8): dprintf main.c:30,\"toggle %d\\n\",ledState\n  Condition: counter > 3\nIt prints to VS Code's Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on <tmp>/project/main.c:30 deletes it.\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">-dprintf-insert \\\"main.c:30\\\" \\\"toggle %d\\\\n\\\" \\\"ledState\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"bkpt\\\":{\\\"number\\\":\\\"3\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002f8\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"30\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"toggle %d\\\\\\\\n\\\\\\\",ledState\\\"],\\\"original-location\\\":\\\"main.c:30\\\"},\\\"cdt-token\\\":\\\"2\\\",\\\"cdt-command\\\":\\\"-dprintf-insert \\\\\\\"main.c:30\\\\\\\" \\\\\\\"toggle %d\\\\\\\\n\\\\\\\" \\\\\\\"ledState\\\\\\\"\\\"}\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">condition 3 counter > 3\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"changed\",\"breakpoint\":{\"id\":3,\"verified\":true,\"source\":{\"name\":\"main.c\",\"path\":\"<tmp>/project/main.c\"},\"line\":30}}"
+          ]
+        },
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 30,
+            "logMessage": "never",
+            "condition": "nosuch > 3"
+          },
+          "isError": true,
+          "text": "[INVALID_ARGUMENT] Could not add the logpoint: Error: GDB rejected the logpoint condition: No symbol \"nosuch\" in current context.\nCheck that the line has code and the path matches the ELF's compiled paths, and that every expression is in scope at that line.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">-dprintf-insert \\\"main.c:30\\\" \\\"never\\\\n\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"bkpt\\\":{\\\"number\\\":\\\"4\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002f8\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"30\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"never\\\\\\\\n\\\\\\\"\\\"],\\\"original-location\\\":\\\"main.c:30\\\"},\\\"cdt-token\\\":\\\"3\\\",\\\"cdt-command\\\":\\\"-dprintf-insert \\\\\\\"main.c:30\\\\\\\" \\\\\\\"never\\\\\\\\n\\\\\\\"\\\"}\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">condition 4 nosuch > 3\",\"context\":\"repl\",\"frameId\":1000} -> error: \"No symbol \\\"nosuch\\\" in current context.\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">delete 4\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"removed\",\"breakpoint\":{\"id\":4,\"verified\":false}}"
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 29
+          },
+          "text": "Breakpoint added at <tmp>/project/main.c:29\nAdapter: verified as GDB breakpoint 5.",
+          "traffic": [
+            "dap: threads {}",
+            "vscode: debug.addBreakpoints <tmp>/project/main.c:29",
+            "vscode: setBreakpoints main.c [29 → #5]"
+          ]
+        },
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "Breakpoints that are set:\n1. main.c:29 — verified\nGDB dprintf logpoints (they print to the Debug Console):\n2. main.c:32 [log: counter={counter:%08lx}] — GDB dprintf 2, 0 hits\n3. main.c:30 [when: counter > 3, log: toggle {ledState}] — GDB dprintf 3, 0 hits\n",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">-break-list\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"BreakpointTable\\\":{\\\"nr_rows\\\":\\\"4\\\",\\\"nr_cols\\\":\\\"6\\\",\\\"hdr\\\":[{\\\"colhdr\\\":\\\"Num\\\"},{\\\"colhdr\\\":\\\"Type\\\"},{\\\"colhdr\\\":\\\"Disp\\\"},{\\\"colhdr\\\":\\\"Enb\\\"},{\\\"colhdr\\\":\\\"Address\\\"},{\\\"colhdr\\\":\\\"What\\\"}],\\\"body\\\":[{\\\"number\\\":\\\"1\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002ea\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"22\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"1\\\",\\\"original-location\\\":\\\"main\\\"},{\\\"number\\\":\\\"2\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x08000302\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"32\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"counter=%08lx\\\\\\\\n\\\\\\\",counter\\\"],\\\"original-location\\\":\\\"main.c:32\\\"},{\\\"number\\\":\\\"3\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002f8\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"30\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"cond\\\":\\\"counter > 3\\\",\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"toggle %d\\\\\\\\n\\\\\\\",ledState\\\"],\\\"original-location\\\":\\\"main.c:30\\\"},{\\\"number\\\":\\\"5\\\",\\\"type\\\":\\\"breakpoint\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x080002f4\\\",\\\"func\\\":\\\"main\\\",\\\"file\\\":\\\"main.c\\\",\\\"fullname\\\":\\\"<tmp>/project/main.c\\\",\\\"line\\\":\\\"29\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"original-location\\\":\\\"-source <tmp>/project/main.c -line 29\\\"}]},\\\"cdt-token\\\":\\\"4\\\",\\\"cdt-command\\\":\\\"-break-list\\\"}\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec info breakpoints"
+          },
+          "text": "Evaluated: -exec info breakpoints\nResult: Num     Type           Disp Enb Address    What\n1       breakpoint     keep y   0x080002ea in main at main.c:22\n2       dprintf        keep y   0x08000302 in main at main.c:32\n        printf \"counter=%08lx\\n\",counter\n3       dprintf        keep y   0x080002f8 in main at main.c:30\n\tstop only if counter > 3\n        printf \"toggle %d\\n\",ledState\n5       breakpoint     keep y   0x080002f4 in main at main.c:29",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">info breakpoints\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Num     Type           Disp Enb Address    What\""
+          ]
+        },
+        {
+          "tool": "remove_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 32
+          },
+          "text": "Logpoint removed from <tmp>/project/main.c:32\nDeleted GDB dprintf 2.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">delete 2\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"removed\",\"breakpoint\":{\"id\":2,\"verified\":false}}"
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec delete 3"
+          },
+          "text": "Evaluated: -exec delete 3\nResult: (GDB printed nothing)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">delete 3\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"removed\",\"breakpoint\":{\"id\":3,\"verified\":false}}"
+          ]
+        },
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "Breakpoints that are set:\n1. main.c:29 — verified\n",
+          "traffic": []
+        },
+        {
+          "tool": "add_logpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/led.c",
+            "line": 18,
+            "logMessage": "mask={mask}"
+          },
+          "text": "Logpoint added at <tmp>/project/led.c:18\n  GDB dprintf 6 (led.c:18, 0x08000276): dprintf led.c:18,\"mask=%d\\n\",mask\nIt prints to VS Code's Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on <tmp>/project/led.c:18 deletes it.\n\nℹ️ On Cortex-M a logpoint is not free: the core halts on every hit while GDB formats and prints, then resumes. In a hot loop or an ISR this distorts timing far more than it would in a host process. For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">-dprintf-insert \\\"led.c:18\\\" \\\"mask=%d\\\\n\\\" \\\"mask\\\"\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"bkpt\\\":{\\\"number\\\":\\\"6\\\",\\\"type\\\":\\\"dprintf\\\",\\\"disp\\\":\\\"keep\\\",\\\"enabled\\\":\\\"y\\\",\\\"addr\\\":\\\"0x08000276\\\",\\\"func\\\":\\\"led_toggle\\\",\\\"file\\\":\\\"led.c\\\",\\\"fullname\\\":\\\"<tmp>/project/led.c\\\",\\\"line\\\":\\\"18\\\",\\\"thread-groups\\\":[\\\"i1\\\"],\\\"times\\\":\\\"0\\\",\\\"script\\\":[\\\"printf \\\\\\\"mask=%d\\\\\\\\n\\\\\\\",mask\\\"],\\\"original-location\\\":\\\"led.c:18\\\"},\\\"cdt-token\\\":\\\"5\\\",\\\"cdt-command\\\":\\\"-dprintf-insert \\\\\\\"led.c:18\\\\\\\" \\\\\\\"mask=%d\\\\\\\\n\\\\\\\" \\\\\\\"mask\\\\\\\"\\\"}\""
+          ]
+        },
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
+            "event: terminated {}"
+          ]
+        },
+        {
+          "tool": "start_debugging",
+          "args": {
+            "workingDirectory": "<tmp>/project",
+            "configurationName": "CMSIS Debugger: pyOCD"
+          },
+          "text": "Debug session started successfully for: CMSIS Debugger: pyOCD using configuration 'CMSIS Debugger: pyOCD'. Current state: {\n  \"sessionActive\": true,\n  \"configurationName\": \"CMSIS Debugger: pyOCD\",\n  \"stackTrace\": [\n    \"main:31\"\n  ],\n  \"breakpoints\": [\n    \"main.c:29\"\n  ],\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"fileName\": \"main.c\",\n  \"currentLine\": 31,\n  \"currentLineContent\": \"led_toggle();\",\n  \"nextLines\": [\n    \"delay_ms(config.period_ms);\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"frameName\": \"main\"\n}",
+          "traffic": [
+            "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
+            "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "vscode: setBreakpoints main.c [29 → #2]"
+          ]
+        },
+        {
+          "tool": "list_breakpoints",
+          "args": {},
+          "text": "Breakpoints that are set:\n1. main.c:29 — verified\n",
+          "traffic": []
+        },
+        {
+          "tool": "clear_all_breakpoints",
+          "args": {},
+          "text": "Cleared 1 breakpoint(s) from the model.",
+          "traffic": [
+            "dap: threads {}",
+            "vscode: debug.removeBreakpoints <tmp>/project/main.c:29",
+            "vscode: setBreakpoints main.c [] (deleted #2)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gdb-passthrough",
+      "description": "Halted in main: GDB commands through evaluate_expression in both spellings — CLI commands answer with the text GDB printed (a CLI dprintf also makes the adapter announce the new breakpoint), an MI command with its result, a command GDB does not know is an error.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec dprintf main.c:31,\"led %d\\n\",ledState"
+          },
+          "text": "Evaluated: -exec dprintf main.c:31,\"led %d\\n\",ledState\nResult: Dprintf 2 at 0x80002fe: file main.c, line 31.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">dprintf main.c:31,\\\"led %d\\\\n\\\",ledState\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Dprintf 2 at 0x80002fe: file main.c, line 31.\"",
+            "event: breakpoint {\"reason\":\"new\",\"breakpoint\":{\"id\":2,\"verified\":true,\"source\":{\"name\":\"main.c\",\"path\":\"<tmp>/project/main.c\"},\"line\":31}}"
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec info breakpoints"
+          },
+          "text": "Evaluated: -exec info breakpoints\nResult: Num     Type           Disp Enb Address    What\n1       breakpoint     keep y   0x080002ea in main at main.c:22\n2       dprintf        keep y   0x080002fe in main at main.c:31\n        printf \"led %d\\n\",ledState",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">info breakpoints\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Num     Type           Disp Enb Address    What\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": ">delete 2"
+          },
+          "text": "Evaluated: >delete 2\nResult: (GDB printed nothing)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">delete 2\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: breakpoint {\"reason\":\"removed\",\"breakpoint\":{\"id\":2,\"verified\":false}}"
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec print/x counter"
+          },
+          "text": "Evaluated: -exec print/x counter\nResult: $1 = 0x2a",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">print/x counter\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"$1 = 0x2a\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": ">x/1xw 0x20000010"
+          },
+          "text": "Evaluated: >x/1xw 0x20000010\nResult: 0x20000010:\t0x0000002a",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">x/1xw 0x20000010\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"0x20000010:\\t0x0000002a\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": ">-data-read-memory-bytes 0x20000000 4"
+          },
+          "text": "Evaluated: >-data-read-memory-bytes 0x20000000 4\nResult: {\"memory\":[{\"begin\":\"0x20000000\",\"offset\":\"0x00000000\",\"end\":\"0x20000004\",\"contents\":\"48656c6c\"}],\"cdt-token\":\"1\",\"cdt-command\":\"-data-read-memory-bytes 0x20000000 4\"}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x20000000 4\",\"context\":\"repl\",\"frameId\":1000} -> \"{\\\"memory\\\":[{\\\"begin\\\":\\\"0x20000000\\\",\\\"offset\\\":\\\"0x00000000\\\",\\\"end\\\":\\\"0x20000004\\\",\\\"contents\\\":\\\"48656c6c\\\"}],\\\"cdt-token\\\":\\\"1\\\",\\\"cdt-command\\\":\\\"-data-read-memory-bytes 0x20000000 4\\\"}\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec frobnicate"
+          },
+          "isError": true,
+          "text": "[INTERNAL] Evaluating the expression failed: Error: Undefined command: \"frobnicate\".  Try \"help\".",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">frobnicate\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Undefined command: \\\"frobnicate\\\".  Try \\\"help\\\".\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "-exec maintenance flush dcache"
+          },
+          "text": "Evaluated: -exec maintenance flush dcache\nResult: (GDB printed nothing)",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">maintenance flush dcache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reset-reaches-gdb",
+      "description": "pyOCD, halted in main: `monitor reset halt system` resets the core; only after GDB's register cache is flushed does the PC read the reset vector, so the reset verifies, and the call stack shows Reset_Handler.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "reset",
+          "args": {
+            "method": "system"
+          },
+          "text": "Target reset verified. PC=0x08000198 matches the reset vector (0x08000198, vector table at 0x08000000). Method(s) tried: system. Commands: 'monitor reset halt system' (server: pyocd). Target is halted at the reset vector — use continue_execution to run.",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">monitor reset halt system\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Resetting target with halt\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush register-cache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Register cache flushed.\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush dcache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000198 <Reset_Handler>\""
+          ]
+        },
+        {
+          "tool": "get_call_stack",
+          "args": {},
+          "text": "Call stack (1 frame):\n  # 0  Reset_Handler  @ <no source>:? [frameId=1000]\n\nTip: use get_frame_variables with a frameId to inspect variables of a specific frame.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
         }
       ]
     },

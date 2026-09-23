@@ -19,19 +19,25 @@
  *
  * A running target is halted first. Each reset method is then sent as GDB
  * monitor commands in the dialect of the GDB server behind the session
- * (src/core/resetAssist.ts), always in the form that leaves the core halted.
- * Whether the reset happened is judged by the PC afterwards: it has to equal
- * the reset vector in the vector table that VTOR points to. Only a verified
- * reset is resumed, and only when the caller asked for `halt: false`.
+ * (src/core/resetAssist.ts), always in the form that leaves the core halted,
+ * and in the prefix of the session's adapter (src/core/gdbDialect.ts, #56).
+ * GDB does not see a reset done by a monitor command, so its register and
+ * memory caches are flushed afterwards, as the CMSIS Solution launch
+ * templates do in their `customResetCommands`; without that the PC read
+ * below would be the one from before the reset. Whether the reset happened
+ * is judged by that PC: it has to equal the reset vector in the vector table
+ * that VTOR points to. Only a verified reset is resumed, and only when the
+ * caller asked for `halt: false`.
  *
  * Known weak spots, kept on purpose: a target already halted at the reset
- * vector verifies even when no command reached GDB (KB5), and both stop waits
- * are armed only after their trigger returned (KB6).
+ * vector verifies even when the reset command failed (KB5), and both stop
+ * waits are armed only after their trigger returned (KB6).
  */
 
 import * as vscode from 'vscode';
 import { buildResetCommands, detectGdbServerKind, replyLooksUnsupported, ResetMethod, unsupportedResetDetail } from '../core/resetAssist';
 import { isSessionStopped, waitForStopEvent } from '../utils/sessionStateTracker';
+import { HardwareTimeoutError } from '../utils/timeout';
 import { hex8, messageOf } from './common';
 import { ResetOutcome } from './contract';
 
@@ -49,14 +55,16 @@ const TABLE_BASE_MASK = 0xFFFFFF80;
 const WITHOUT_THUMB_BIT = 0xFFFFFFFE;
 /** Methods of an `auto` reset, mildest first. */
 const AUTO_METHODS: readonly ResetMethod[] = ['system', 'core', 'hardware'];
+/** Sent after the reset commands of a method, so GDB reads the registers and memory of the reset core. */
+const CACHE_FLUSH_COMMANDS: readonly string[] = ['maintenance flush register-cache', 'maintenance flush dcache'];
 
 /** What a reset needs from the executor. Each call gets the reset's request budget. */
 export interface ResetPort {
-    /** DAP `pause`, with the executor's workbench fallback. */
+    /** DAP `pause`, as the executor sends it. */
     halt(budgetMs: number): Promise<void>;
-    /** DAP `continue`, with the executor's workbench fallback. */
+    /** DAP `continue`, as the executor sends it. */
     resume(budgetMs: number): Promise<void>;
-    /** One GDB command through the `-exec` passthrough; resolves the reply text. */
+    /** One GDB command in the prefix of the session's adapter; resolves its text. */
     monitor(command: string, budgetMs: number): Promise<string>;
     readWord(address: string, budgetMs: number): Promise<number>;
     /** The PC, Thumb bit cleared. */
@@ -116,7 +124,10 @@ export async function performReset(
             outcome.verificationDetail = unsupportedResetDetail(method, methods.length - 1 - position);
             continue;
         }
-        const afterwards = await waitForStopEvent(session, POST_RESET_WAIT_MS);
+        // Armed before the cache flush, so a session that ends during it is still noticed.
+        const stopOrEnd = waitForStopEvent(session, POST_RESET_WAIT_MS);
+        await flushGdbCaches(port, budgetMs);
+        const afterwards = await stopOrEnd;
         if (afterwards.kind === 'ended') {
             outcome.verificationDetail = 'debug session ended during the reset';
             return outcome;
@@ -171,6 +182,19 @@ async function compareWithResetVector(port: ResetPort, budgetMs: number): Promis
         return { verified: false, detail: `PC=${hex8(pc)} does NOT match the reset vector ${hex8(vector)} (vector table at ${hex8(tableBase)})` };
     } catch (err) {
         return { verified: false, detail: `verification reads failed: ${messageOf(err)}` };
+    }
+}
+
+/** Best effort: a flush that fails leaves the verification to read what it can; only a hung probe ends the reset. */
+async function flushGdbCaches(port: ResetPort, budgetMs: number): Promise<void> {
+    for (const command of CACHE_FLUSH_COMMANDS) {
+        try {
+            await port.monitor(command, budgetMs);
+        } catch (err) {
+            if (err instanceof HardwareTimeoutError) {
+                throw err;
+            }
+        }
     }
 }
 

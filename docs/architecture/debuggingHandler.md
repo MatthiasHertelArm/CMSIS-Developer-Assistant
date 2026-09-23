@@ -67,8 +67,8 @@ whether a session exists, answers its `threads` probe and is stopped
 `stoppedTargetRefusal()` (`src/handler/sessionText.ts`) builds for the
 current state: `NO_SESSION` for `no-session` and `initializing`,
 `TARGET_RUNNING` for `running`, `TIMEOUT` for `unresponsive`, each with the
-next action for that state as its hint. Breakpoint tools and the SVD lookups
-are not gated. `get_session_status` never fails: it reports the state, the
+next action for that state as its hint. The SVD lookups are not gated, and
+the breakpoint tools do not refuse a running target (see below). `get_session_status` never fails: it reports the state, the
 session's identity, the probe round trip and a hint for each state
 (`renderSessionStatus()`).
 
@@ -109,23 +109,50 @@ the session state with exponential backoff (`awaitLiveSession()`) until the
 target runs or stops, and answers with the full state; a failed start
 carries the last lines the adapter reported. `handleStopDebugging()` adds a
 short root-cause check to its reply: a reminder to explain the bug, not only
-where it showed, before the investigation is closed.
+where it showed, before the investigation is closed. `handleRestart()`
+pauses a running CMSIS Debugger target first, so the adapter lets go of a
+halted core, and then has the executor stop the session and start its
+launch configuration again; the answer says so, names the configuration's
+`preLaunchTask` and counts the GDB logpoints that ended with the old
+session.
 
 ## Breakpoints and logpoints
 
-A breakpoint is set in two places: in VS Code's breakpoint model, which the
-editor and the adapter see, and, while a session is live, in GDB itself
-through the executor's `-exec` passthrough (`break file:line if condition`).
-`classifyGdbReply()` (`src/handler/gdbText.ts`) sorts GDB's reply into bound,
-rejected or unconfirmed; a `gdbtarget` adapter usually echoes nothing, and
-the answer says that this is normal. A logpoint becomes a VS Code logpoint
-plus a GDB `dprintf`, whose format string `translateLogMessage()` derives
-from the `{expr}` and `{expr:%fmt}` message syntax. Conditions are handed to
-GDB — an `if` clause on the breakpoint, a `condition` command for a logpoint
-— so GDB evaluates them and the session stops only when they hold. The
-deprecated
-`lineContent` argument still works and sets a breakpoint on every line that
-contains the text.
+A breakpoint lives in VS Code's breakpoint model on every adapter, its
+condition included; VS Code sends it to the adapter, and the answer reports
+how the adapter bound it (`breakpointBinding()`: verified — on the CMSIS
+Debugger with GDB's breakpoint number and the line it moved to — or not,
+with the adapter's reason), waiting at most 2 s for the adapter.
+`list_breakpoints` shows the same for every breakpoint. A condition is
+evaluated by GDB at every hit, which halts the core each time; the session
+stops only when it holds. The deprecated `lineContent` argument still works
+and sets a breakpoint on every line that contains the text.
+
+On the CMSIS Debugger a logpoint is a GDB `dprintf` (#56), because
+cdt-gdb-adapter prints a VS Code logpoint's message without filling in the
+values. `translateLogMessage()` (`src/handler/gdbText.ts`) derives the format
+string and arguments from the `{expr}` and `{expr:%fmt}` message syntax; the
+executor sends MI `-dprintf-insert` at the file's path relative to its
+workspace folder (a location that does not name the absolute path, so the
+adapter's sync of VS Code's breakpoints for that file leaves the dprintf
+alone), then `condition <n>` for a condition — a condition GDB refuses takes
+the dprintf back out. The number from the MI result is remembered for the
+session: `remove_breakpoint` and `clear_all_breakpoints` delete by number,
+never with a bare `delete`, and `list_breakpoints` shows each logpoint with
+its hit count from `-break-list`, forgetting one GDB no longer has. A VS
+Code logpoint set at that line before the session is replaced. Other
+adapters, and a logpoint set without a session, use a VS Code logpoint.
+`classifyGdbReply()` sorts GDB's replies into done, running, rejected and
+failed, and `gdbRefusal()` turns a refusal into `TARGET_RUNNING`,
+`INVALID_ARGUMENT` or `INTERNAL`.
+
+A breakpoint change on a running CMSIS Debugger target pauses the target,
+applies the change and resumes it, also when the change fails
+(`withTargetHalted()`, #13); the answer says for how long the target was
+paused. The change is refused while the session initialises (`NO_SESSION`),
+when the probe hangs (`TIMEOUT`) or when the pause does not stop the target
+within 5 s (`TIMEOUT`). Other adapters take breakpoint changes while their
+target runs.
 
 ## Reading the target
 
@@ -136,8 +163,9 @@ contains the text.
 - Variable and expression values that look like credentials are withheld
   while `redactSecrets` is on (read on every call; `src/utils/secretRedaction.ts`).
   Raw target reads — memory, core registers, peripherals, fault status — and
-  the GDB passthrough are never redacted: real SVDs name registers `KEY` or
-  `UNLOCK`.
+  GDB commands (`-exec …` or `>…`) are never redacted: real SVDs name
+  registers `KEY` or `UNLOCK`. On the CMSIS Debugger the executor sends such
+  a command in the adapter's `>` prefix and returns the text GDB printed.
 - The memory dump, the core-register table and the cycle-counter text come
   from `src/handler/targetText.ts`.
 - `diagnose_fault` combines the decoded fault registers, the stacked
@@ -240,12 +268,15 @@ over fake task events.
 
 A few behaviours are known to be wrong and were kept on purpose, so that the
 rewrite could be reviewed as behaviour-neutral. Comments in the code mark
-each with its number (`KB3`, `KB6`, …); the list is in the *Known bugs to
+each with its number (`KB9`, `KB15`, …); the list is in the *Known bugs to
 preserve* section of `docs/provenance/specs/debuggingHandler.md`. Each is
-fixed in a change of its own; KB1, failures answered as ordinary text, is
-fixed by the typed results of #11, and KB2, KB4 and KB5 — the 60 s cap, the
-missing probe guards and the task matching of `cmsis_action` — by the CMSIS
-jobs of #12, #46 and #47.
+fixed in a change of its own: KB1, failures answered as ordinary text, by
+the typed results of #11; KB2, KB4 and KB5 — the 60 s cap, the missing
+probe guards and the task matching of `cmsis_action` — by the CMSIS jobs of
+issues #12, #46 and #47; KB3 and KB12, breakpoint changes that ignored the
+run state and a GDB breakpoint `remove_breakpoint` could not reach, by #13;
+KB6, the `-exec` passthrough that never reached GDB on the CMSIS Debugger,
+by #56.
 
 ## Where to look
 
@@ -255,7 +286,7 @@ jobs of #12, #46 and #47.
 | `src/handler/fence.ts` | `fenced()` and its `onCap` choice, `fenceLimitMs()`, `failureText()` |
 | `src/core/toolResult.ts` | `ToolText`, `ToolReply`, `ToolError`, `ErrorCode`, `classifyError()`, `wrapError()` |
 | `src/handler/host.ts` | `HandlerHost`, `VSCODE_HOST` |
-| `src/handler/gdbText.ts` | GDB reply classification, logpoint message to `dprintf` |
+| `src/handler/gdbText.ts` | GDB reply classification and refusals, the MI results of `-dprintf-insert` and `-break-list`, a logpoint's GDB location, logpoint message to `dprintf` |
 | `src/handler/sessionText.ts` | state refusals with their codes, the `get_session_status` text, call-stack and thread listings, recent adapter lines |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
@@ -273,8 +304,10 @@ jobs of #12, #46 and #47.
   classifier, the job state machine, the guard matrix and the tracker,
   replayed over task sequences derived from CMSIS Solution 1.70.1
   (`src/test/fixtures/cmsisTasks/`)
-- `test/transport/dap-scenarios.js`: 28 scripted `gdbtarget` sessions
+- `test/transport/dap-scenarios.js`: 33 scripted `gdbtarget` sessions
   through the real server; every reply and the adapter traffic are compared
   with `dap-scenarios.snapshot.json`
+- `src/test/gdbText.test.ts`: GDB reply classification, MI results, logpoint
+  locations
 - `test/transport/surface-snapshot.js`: every tool's reply without a session
 - `test/realboard/run.ts`: every tool against a real board, run by hand
