@@ -180,6 +180,19 @@ suite('Debugger-first guidance for agents', () => {
         }
     });
 
+    test('the skill, the troubleshooting notes and the guide say what to do when the target runs or a reset did not take (#20)', () => {
+        const flat = (text: string): string => text.replace(/\s+/g, ' ');
+        const { body } = splitSkill(fs.readFileSync(SKILL_MD, 'utf8'));
+        assert.ok(flat(body).includes('`get_variables_values`: call `pause_execution` first.'), 'the skill lists what a running target rejects');
+        assert.ok(flat(body).includes('`stop_debugging`, then `cmsis_action load_and_debug`. Power-cycle only if that fails too.'),
+            'the skill names the reset fallback');
+        const embedded = fs.readFileSync(path.join(REPO_ROOT, 'docs', 'agent-resources', 'troubleshooting', 'embedded.md'), 'utf8');
+        assert.match(embedded, /^### `reset` Says the Target Did NOT Reset$/m);
+        assert.ok(embedded.includes('`stop_debugging`, then `cmsis_action load_and_debug` — a fresh connect and reset.'));
+        const inspection = sliceTopic(fs.readFileSync(GUIDE_MD, 'utf8'), 'inspection');
+        assert.ok(inspection.includes('`cmsis_action load_and_debug` again; power-cycle only if that fails too.'), 'the guide names the fallback order');
+    });
+
     test('the guide speaks Cortex-M rather than host applications', () => {
         const guide = fs.readFileSync(GUIDE_MD, 'utf8');
         const present = FOREIGN_EXAMPLES.filter((example) => guide.includes(example));

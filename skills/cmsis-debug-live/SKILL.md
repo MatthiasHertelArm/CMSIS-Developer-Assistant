@@ -178,6 +178,18 @@ never throws.
 | `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. |
 | `unresponsive` | `check_target_connection`, then `restart_debugging`. More reads will only time out. |
 
+`running` rejects `step_over`, `step_into`, `step_out`, `continue_execution`,
+`read_memory`, `read_core_registers`, `read_peripheral_register`,
+`read_cycle_counter`, `get_fault_info`, `diagnose_fault`,
+`evaluate_expression`, `get_call_stack`, `get_frame_variables`,
+`get_threads`, `list_variable_names` and `get_variables_values`: call
+`pause_execution` first.
+
+`reset` verifies the PC against the reset vector. When it says the target did
+NOT reset (common with J-Link and on secure-boot parts such as Alif Ensemble,
+where nSRST alone does not re-vector the core), `stop_debugging`, then
+`cmsis_action load_and_debug`. Power-cycle only if that fails too.
+
 `start_debugging` and `cmsis_action load_and_debug` refuse when a session is
 already live, so checking first saves a round trip.
 
@@ -309,7 +321,8 @@ The pieces stay available when you need one of them alone: `get_fault_info`
 
 `references/cmsis-embedded-guide.md` has the SCS memory map and the decode
 recipes. `references/troubleshooting/embedded.md` covers probe-not-detected,
-target-not-halted, SVD-missing and wrong-core-on-multicore.
+target-not-halted, a reset that did not take, SVD-missing and
+wrong-core-on-multicore.
 
 ## When it did not reach your breakpoint
 

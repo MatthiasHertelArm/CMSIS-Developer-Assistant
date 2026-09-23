@@ -83,4 +83,21 @@ suite('resetAssist outcome rendering', () => {
         assert.match(renderResetOutcome({ ...base, verified: true, resumed: true }, false), /^Target reset verified\..*Target resumed \(halt=false\)\./);
         assert.match(renderResetOutcome({ ...base, verified: true }, undefined), /halted at the reset vector — use continue_execution to run/);
     });
+
+    test('an unverified reset names the fresh connect as the next step, for every server, and power-cycling only after it (#20)', () => {
+        for (const serverKind of ['pyocd', 'jlink', 'unknown'] as const) {
+            const text = renderResetOutcome({ ...base, serverKind }, undefined);
+            assert.match(text, /Next: stop_debugging, then cmsis_action load_and_debug \(a fresh connect and reset\)\./);
+            assert.match(text, /secure-boot parts such as Alif Ensemble, where nSRST alone does not re-vector the core\./);
+            assert.match(text, /If that fails too, power-cycle the board or reconnect the probe\. Adapter replies: ok$/);
+            assert.ok(text.indexOf('use continue_execution to run.') < text.indexOf('Next: stop_debugging'), 'the end state comes first');
+        }
+    });
+
+    test('a verified reset suggests no fallback', () => {
+        for (const resumed of [false, true]) {
+            const text = renderResetOutcome({ ...base, verified: true, resumed }, resumed ? false : undefined);
+            assert.doesNotMatch(text, /load_and_debug|power-cycle/);
+        }
+    });
 });
