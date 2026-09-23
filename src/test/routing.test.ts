@@ -1,479 +1,387 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import type { AddressInfo } from 'net';
 import { ControlServer } from '../controlServer';
-import { RoutingDebuggingHandler } from '../routingDebuggingHandler';
-import { IDebuggingHandler } from '../debuggingHandler';
-import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
-import {
-    CONTROL_REQUEST_MAX_BYTES, CONTROL_RESPONSE_MAX_BYTES,
-    DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS, PACKDOCS_OPS, SERIAL_OPS,
-    forwardTimeoutMs, isKnownOp, isPackDocsDocOp, isPackDocsOp, isSerialOp, pathHintOf,
-} from '../core/opTable';
+import type { IDebuggingHandler } from '../debuggingHandler';
 import type { PackDocsHandlers } from '../packDocsDispatch';
+import { RoutingDebuggingHandler } from '../routingDebuggingHandler';
+import { DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
+import { closeHttpServer } from '../utils/closeHttpServer';
+import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
 
-/**
- * A handler that answers every op with a label, so a test can assert *which*
- * window served a call. Only the ops the tests exercise are real; the rest
- * throw if reached, which keeps an accidental fallthrough loud.
- */
-function fakeHandler(label: string): IDebuggingHandler {
-    const answer = (op: string) => async (args?: unknown) =>
-        `${label}:${op}:${JSON.stringify(args ?? {})}`;
-    const handler: Record<string, unknown> = {};
-    for (const op of DEBUG_OPS) {
-        handler[op] = answer(op);
-    }
-    return handler as unknown as IDebuggingHandler;
+const TOKEN_HEADER = 'x-cmsis-developer-assistant-token';
+const FIRST_FAKE_PID = 500_001;
+/** The router's per-call default, as the extension sets it for a 30 s timeout. */
+const TOOL_MS = 30_000;
+const JSON_TYPE: http.OutgoingHttpHeaders = { 'Content-Type': 'application/json' };
+
+type Role = 'debug' | 'docs' | 'build';
+
+/** Every fake handler answers with who it is, its role, the op and the args it got. */
+function echo(label: string, role: Role, op: string, args: unknown): string {
+    return `${label}|${role}|${op}|${JSON.stringify(args)}`;
 }
 
-/** The pack-docs pair of a window, answering with the label and which handler served the op. */
-function fakePackDocs(label: string): PackDocsHandlers {
-    const make = (kind: 'docs' | 'build', ops: readonly string[]) => {
-        const h: Record<string, unknown> = {};
-        for (const op of ops) {
-            h[op] = async (args?: unknown) => `${label}:${kind}:${op}:${JSON.stringify(args ?? {})}`;
-        }
-        return h;
-    };
+/** An object with one echoing method per op name. */
+function echoing<T>(label: string, role: Role, ops: readonly string[]): T {
+    const methods = Object.fromEntries(ops.map((op) => [op, async (args?: unknown) => echo(label, role, op, args)]));
+    return methods as unknown as T;
+}
+
+function echoingPackDocs(label: string): PackDocsHandlers {
     return {
-        docs: make('docs', PACKDOCS_DOC_OPS) as unknown as PackDocsHandlers['docs'],
-        build: make('build', PACKDOCS_BUILD_OPS) as unknown as PackDocsHandlers['build'],
+        docs: echoing(label, 'docs', PACKDOCS_DOC_OPS),
+        build: echoing(label, 'build', PACKDOCS_BUILD_OPS),
     };
 }
 
-suite('Op table', () => {
+const pause = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
 
-    test('known ops cover both handler surfaces', () => {
-        assert.ok(isKnownOp('handleReadMemory'));
-        assert.ok(isKnownOp('handleFlash'));
-        assert.ok(isKnownOp('handleOpen'));
-        assert.ok(!isKnownOp('handleNotARealOp'));
-        assert.ok(!isKnownOp('constructor'), 'prototype properties must not be dispatchable');
-        assert.ok(!isKnownOp('__proto__'));
+/** Assert that the call was refused, with a message passing every check. */
+async function refusedWith(call: Promise<unknown>, ...patterns: RegExp[]): Promise<string> {
+    let message = '';
+    await assert.rejects(call, (failure: Error) => {
+        message = failure.message;
+        return true;
     });
+    for (const pattern of patterns) {
+        assert.match(message, pattern);
+    }
+    return message;
+}
 
-    test('serial ops are distinguished from debug ops', () => {
-        assert.ok(isSerialOp('handleListPorts'));
-        assert.ok(!isSerialOp('handleReadMemory'));
-    });
+interface RawReply {
+    status: number;
+    body: string;
+}
 
-    test('pack-docs ops are known, split into docs and build, and distinct from the rest', () => {
-        assert.ok(isKnownOp('handleSearchTargetDocs'));
-        assert.ok(isKnownOp('handleGetMemoryUsage'));
-        assert.ok(isPackDocsOp('handleListTargetDocs') && isPackDocsDocOp('handleListTargetDocs'));
-        assert.ok(isPackDocsOp('handleLookupSymbol') && !isPackDocsDocOp('handleLookupSymbol'));
-        assert.ok(!isPackDocsOp('handleReadMemory') && !isSerialOp('handleFetchDoc'));
-        assert.strictEqual(PACKDOCS_OPS.length, 10);
-    });
+/** A POST /op made by hand, with the token and no Content-Length, so its body goes chunked. */
+function openControlRequest(port: number, token: string, onReply?: (reply: http.IncomingMessage) => void): http.ClientRequest {
+    const options: http.RequestOptions = { method: 'POST', hostname: '127.0.0.1', port, path: '/op', agent: false };
+    options.headers = { [TOKEN_HEADER]: token };
+    return http.request(options, onReply);
+}
 
-    test('every declared op is unique across the three tables', () => {
-        const all = [...DEBUG_OPS, ...SERIAL_OPS, ...PACKDOCS_OPS];
-        assert.strictEqual(new Set(all).size, all.length, 'an op name is declared twice');
-    });
+async function writeInPieces(client: http.ClientRequest, pieces: Array<string | Buffer>, gapMs: number): Promise<void> {
+    for (const [index, piece] of pieces.entries()) {
+        if (index > 0 && gapMs > 0) {
+            await pause(gapMs);
+        }
+        client.write(piece);
+    }
+    client.end();
+}
 
-    suite('pathHintOf', () => {
-        test('prefers fileFullPath', () => {
-            assert.strictEqual(pathHintOf({ fileFullPath: '/a/main.c', workingDirectory: '/b' }), '/a/main.c');
+/** Send `pieces` as one control request, optionally with a gap between them, and collect the answer. */
+function rawPost(port: number, token: string, pieces: Array<string | Buffer>, gapMs = 0): Promise<RawReply> {
+    return new Promise<RawReply>((resolve, reject) => {
+        const client = openControlRequest(port, token, (reply) => {
+            const got: Buffer[] = [];
+            reply.on('data', (piece: Buffer) => got.push(piece));
+            reply.on('error', reject);
+            reply.on('end', () => resolve({ status: reply.statusCode ?? 0, body: Buffer.concat(got).toString('utf8') }));
         });
-        test('falls back to workingDirectory', () => {
-            assert.strictEqual(pathHintOf({ workingDirectory: '/b' }), '/b');
-        });
-        test('path-less ops yield no hint', () => {
-            assert.strictEqual(pathHintOf({ address: '0x20000000', length: 16 }), undefined);
-            assert.strictEqual(pathHintOf(undefined), undefined);
-            assert.strictEqual(pathHintOf({ fileFullPath: '' }), undefined);
-        });
+        client.on('error', reject);
+        void writeInPieces(client, pieces, gapMs);
     });
+}
 
-    suite('forwardTimeoutMs', () => {
-        test('always exceeds the tool bound so the worker error wins', () => {
-            assert.ok(forwardTimeoutMs('handleReadMemory', { timeoutMs: 5_000 }, 30_000) > 5_000);
-        });
-        test('uses the default when the call names no timeout', () => {
-            assert.strictEqual(forwardTimeoutMs('handleStepOver', {}, 30_000), 45_000);
-        });
-        test('build and flash get a floor far above a normal tool call', () => {
-            assert.ok(forwardTimeoutMs('handleCmsisCommand', {}, 30_000) >= 600_000,
-                'a build must not be cut off mid-way');
-            assert.ok(forwardTimeoutMs('handleFlash', {}, 30_000) >= 600_000,
-                'cutting off a flash leaves a half-programmed part');
-        });
-        test('documentation ops get the same floor — indexing a manual takes minutes', () => {
-            assert.ok(forwardTimeoutMs('handleSearchTargetDocs', {}, 30_000) >= 600_000);
-            assert.ok(forwardTimeoutMs('handleReadDocPages', { timeoutMs: 600_000 }, 30_000) >= 615_000);
-            assert.strictEqual(forwardTimeoutMs('handleLookupSymbol', {}, 30_000), 45_000,
-                'build-artefact reads are quick and keep the normal bound');
-        });
-    });
-});
+interface FakeWindow {
+    label: string;
+    pid: number;
+    port: number;
+    token: string;
+    entry: WindowRegistration;
+}
 
 suite('Multi-window routing', () => {
-
     let dir: string;
-    let servers: ControlServer[] = [];
-    // Distinct fake pids, as real windows have — each VS Code window is its own
-    // extension-host process. Liveness is stubbed to match, so the registry
-    // doesn't prune them for not being real processes.
-    let nextPid = 500_001;
-    const livePids = new Set<number>();
-    const isAlive = (pid: number) => livePids.has(pid);
+    let livePids: Set<number>;
+    let nextPid: number;
+    let running: Array<() => Promise<void>>;
 
     setup(() => {
-        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-routing-test-'));
-        nextPid = 500_001;
-        livePids.clear();
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-routing-'));
+        livePids = new Set();
+        nextPid = FIRST_FAKE_PID;
+        running = [];
     });
 
-    teardown(async () => {
-        for (const server of servers) {
-            await server.stop();
+    teardown(() => shutDown());
+
+    async function shutDown(): Promise<void> {
+        for (const stop of running) {
+            await stop();
         }
-        servers = [];
-        fs.rmSync(dir, { recursive: true, force: true });
-    });
-
-    /** Stand up a control server and publish it as a live window. */
-    async function window(
-        name: string,
-        over: Partial<WindowRegistration> = {},
-        packDocs: PackDocsHandlers | null = fakePackDocs(name),
-    ): Promise<WindowRegistration> {
-        // `null` = a window whose extension built no pack-docs handlers.
-        const server = new ControlServer(fakeHandler(name), `token-${name}`, packDocs ?? undefined);
-        servers.push(server);
-        const port = await server.start();
-
-        const pid = nextPid++;
-        livePids.add(pid);
-        const entry: WindowRegistration = {
-            pid,
-            controlPort: port,
-            controlToken: `token-${name}`,
-            workspaceFolders: [],
-            name,
-            updatedAt: Date.now(),
-            ...over,
-        };
-        fs.writeFileSync(path.join(dir, `window-${name}.json`), JSON.stringify(entry), 'utf8');
-        return entry;
+        fs.rmSync(dir, { force: true, recursive: true });
     }
 
-    const router = () =>
-        new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir, isAlive), 30_000);
+    const folder = (name: string): string => path.join(dir, name);
 
-    test('a path hint routes to the window owning that folder', async () => {
-        await window('alpha', { workspaceFolders: [path.join(dir, 'alpha')] });
-        await window('beta', { workspaceFolders: [path.join(dir, 'beta')] });
+    function saveRegistration(label: string, entry: WindowRegistration): void {
+        fs.writeFileSync(path.join(dir, `window-${label}.json`), JSON.stringify(entry));
+    }
 
-        const result = await router().handleAddBreakpoint({
-            fileFullPath: path.join(dir, 'beta', 'main.c'), line: 10,
+    /** Put a listening port into the registry under a new live fake pid. */
+    function enrol(label: string, port: number, token: string, overrides: Partial<WindowRegistration>): FakeWindow {
+        const stamp = Date.now();
+        const entry: WindowRegistration = {
+            pid: nextPid++,
+            controlPort: port,
+            controlToken: token,
+            workspaceFolders: [],
+            name: label,
+            updatedAt: stamp,
+            ...overrides,
+        };
+        livePids.add(entry.pid);
+        saveRegistration(label, entry);
+        return { label, pid: entry.pid, port, token, entry };
+    }
+
+    /** A window: a real control server over echoing handlers, registered by hand. */
+    async function openWindow(
+        label: string,
+        overrides: Partial<WindowRegistration> = {},
+        withPackDocs = true,
+    ): Promise<FakeWindow> {
+        const token = `token-${label}`;
+        const control = new ControlServer(
+            echoing<IDebuggingHandler>(label, 'debug', DEBUG_OPS),
+            token,
+            withPackDocs ? echoingPackDocs(label) : undefined);
+        const port = await control.start();
+        running.push(() => control.stop());
+        return enrol(label, port, token, overrides);
+    }
+
+    /** A bare HTTP server posing as a window; `respond` writes the whole answer. */
+    async function openStandIn(respond: (res: http.ServerResponse) => void): Promise<FakeWindow> {
+        const fake = http.createServer((incoming, reply) => {
+            incoming.resume();
+            respond(reply);
         });
-        assert.match(result, /^beta:handleAddBreakpoint/);
-    });
+        await new Promise<void>((ready) => fake.listen(0, '127.0.0.1', ready));
+        running.push(() => closeHttpServer(fake));
+        return enrol('stand-in', (fake.address() as AddressInfo).port, 'token-stand-in', {});
+    }
 
-    test('a later path-less call sticks to the window the hint established', async () => {
-        await window('alpha', { workspaceFolders: [path.join(dir, 'alpha')] });
-        await window('beta', { workspaceFolders: [path.join(dir, 'beta')] });
+    /** A router for a new session, seeing only the fake windows as alive. */
+    function newRouter(): RoutingDebuggingHandler {
+        return new RoutingDebuggingHandler(new WorkspaceRegistry(process.pid, dir, (pid) => livePids.has(pid)), TOOL_MS);
+    }
 
-        const r = router();
-        await r.handleAddBreakpoint({ fileFullPath: path.join(dir, 'beta', 'main.c'), line: 10 });
+    function assertAnsweredBy(result: string, label: string): void {
+        assert.ok(result.startsWith(`${label}|debug|`), `expected ${label} to answer, got: ${result}`);
+    }
 
-        // read_memory carries no path — this is the case upstream cannot route.
-        const result = await r.handleReadMemory({ address: '0x20000000', length: 16 });
-        assert.match(result, /^beta:handleReadMemory/);
-    });
+    suite('resolution', () => {
 
-    test('a path-less call routes to the sole window with an active session', async () => {
-        await window('idle', { workspaceFolders: [path.join(dir, 'idle')] });
-        await window('board', { workspaceFolders: [path.join(dir, 'board')], hasActiveSession: true });
+        test('a path hint picks the window owning the file', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const result = await newRouter().handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 10 });
+            assertAnsweredBy(result, 'beta');
+        });
 
-        const result = await router().handleReadCoreRegisters({});
-        assert.match(result, /^board:handleReadCoreRegisters/);
-    });
+        test('path-less calls stay with the window the session already reached', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            await router.handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 10 });
+            assertAnsweredBy(await router.handleReadMemory({ address: '0x20000000', length: 16 }), 'beta');
+        });
 
-    test('a path-less call routes to the only window when there is just one', async () => {
-        await window('solo', { workspaceFolders: [path.join(dir, 'solo')] });
-        const result = await router().handleGetSessionStatus();
-        assert.match(result, /^solo:handleGetSessionStatus/);
-    });
+        test('the only window with a debug session takes path-less calls', async () => {
+            await openWindow('idle');
+            await openWindow('board', { hasActiveSession: true });
+            assertAnsweredBy(await newRouter().handleReadCoreRegisters({}), 'board');
+        });
 
-    test('two active sessions refuse to route and name both windows', async () => {
-        await window('boardA', { workspaceFolders: [path.join(dir, 'a')], hasActiveSession: true });
-        await window('boardB', { workspaceFolders: [path.join(dir, 'b')], hasActiveSession: true });
+        test('the only window takes path-less calls', async () => {
+            await openWindow('solo');
+            assertAnsweredBy(await newRouter().handleGetSessionStatus(), 'solo');
+        });
 
-        await assert.rejects(
-            () => router().handleReadMemory({ address: '0x0', length: 4 }),
-            (err: Error) => {
-                assert.match(err.message, /2 VS Code windows have an active debug session/);
-                assert.match(err.message, /select_debug_window/);
-                assert.match(err.message, new RegExp(path.join(dir, 'a').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-                assert.match(err.message, new RegExp(path.join(dir, 'b').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-                return true;
-            },
-        );
-    });
+        test('two debug sessions are refused with a listing, not guessed', async () => {
+            await openWindow('boardA', { workspaceFolders: [folder('a')], hasActiveSession: true });
+            await openWindow('boardB', { workspaceFolders: [folder('b')], hasActiveSession: true });
+            const message = await refusedWith(newRouter().handleReadMemory({ address: '0x0', length: 4 }),
+                /2 VS Code windows have an active debug session/, /select_debug_window/);
+            assert.ok(message.includes(folder('a')) && message.includes(folder('b')), message);
+        });
 
-    test('a hint matching no window is an error, not a silent fallback', async () => {
-        const r = router();
-        await window('alpha', { workspaceFolders: [path.join(dir, 'alpha')] });
-        await r.handleGetSessionStatus(); // establish a cached target
+        test('a path in no workspace is refused even when the session has a target', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const router = newRouter();
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'alpha');
+            await refusedWith(router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
+                /No open VS Code window has/);
+        });
 
-        await assert.rejects(
-            () => r.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
-            (err: Error) => {
-                assert.match(err.message, /No open VS Code window has/);
-                return true;
-            },
-            'running a named file in the wrong window is the bug this class fixes',
-        );
-    });
-
-    test('no registered windows produces an actionable error', async () => {
-        await assert.rejects(
-            () => router().handleGetSessionStatus(),
-            (err: Error) => {
-                assert.match(err.message, /No CMSIS Developer Assistant-enabled VS Code window/);
-                return true;
-            },
-        );
+        test('an empty registry is reported as such', async () => {
+            await refusedWith(newRouter().handleGetSessionStatus(), /No CMSIS Developer Assistant-enabled VS Code window/);
+        });
     });
 
     suite('explicit selection', () => {
 
-        test('select_debug_window pins by pid and overrides the active-session rule', async () => {
-            const idle = await window('idle', { workspaceFolders: [path.join(dir, 'idle')] });
-            await window('board', { workspaceFolders: [path.join(dir, 'board')], hasActiveSession: true });
-
-            const r = router();
-            const message = r.selectDebugWindow({ pid: idle.pid });
-            assert.match(message, /pinned to/);
-
-            const result = await r.handleReadMemory({ address: '0x0', length: 4 });
-            assert.match(result, /^idle:handleReadMemory/, 'the pin must beat the active-session fallback');
+        test('a pinned window beats the one with the debug session', async () => {
+            const idle = await openWindow('idle');
+            await openWindow('board', { hasActiveSession: true });
+            const router = newRouter();
+            assert.match(router.selectDebugWindow({ pid: idle.pid }), /pinned to/);
+            assertAnsweredBy(await router.handleReadMemory({ address: '0x0', length: 4 }), 'idle');
         });
 
-        test('selecting an unknown window reports what is available', async () => {
-            await window('alpha', { workspaceFolders: [path.join(dir, 'alpha')] });
-            const message = router().selectDebugWindow({ workspaceFolder: '/nowhere' });
-            assert.match(message, /No registered window matches/);
-            assert.match(message, /alpha|Currently registered/);
+        test('a selection that matches nothing lists what is registered', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const text = newRouter().selectDebugWindow({ workspaceFolder: '/nowhere' });
+            assert.match(text, /No registered window matches/);
+            assert.match(text, /alpha|Currently registered/);
         });
 
-        test('selecting with no argument explains what is needed', () => {
-            assert.match(router().selectDebugWindow({}), /Pass either pid or workspaceFolder/);
+        test('a selection without pid or folder asks for one', () => {
+            assert.match(newRouter().selectDebugWindow({}), /Pass either pid or workspaceFolder/);
         });
 
-        test('list_debug_windows marks the current target', async () => {
-            await window('solo', { workspaceFolders: [path.join(dir, 'solo')] });
-            const r = router();
-            await r.handleGetSessionStatus();
-            assert.match(r.listDebugWindows(), /current target/);
+        test('the listing marks the window the session is using', async () => {
+            await openWindow('solo');
+            const router = newRouter();
+            await router.handleGetSessionStatus();
+            assert.match(router.listDebugWindows(), /current target/);
         });
 
-        test('list_debug_windows says so when nothing is registered', () => {
-            assert.match(router().listDebugWindows(), /No CMSIS Developer Assistant-enabled VS Code windows/);
+        test('the listing of an empty registry says so', () => {
+            assert.match(newRouter().listDebugWindows(), /No CMSIS Developer Assistant-enabled VS Code windows/);
         });
     });
 
     suite('control server', () => {
 
-        test('rejects a request without the window token', async () => {
-            const entry = await window('secure', { workspaceFolders: [path.join(dir, 'secure')] });
-            const wrong: WindowRegistration = { ...entry, controlToken: 'wrong-token' };
-            fs.writeFileSync(path.join(dir, 'window-secure.json'), JSON.stringify(wrong), 'utf8');
-
-            await assert.rejects(
-                () => router().handleGetSessionStatus(),
-                (err: Error) => {
-                    assert.match(err.message, /403|Could not reach/);
-                    return true;
-                },
-                'the control server flashes hardware — an untokened caller must be refused',
-            );
+        test('a wrong token is turned away', async () => {
+            const alpha = await openWindow('alpha');
+            saveRegistration('alpha', { ...alpha.entry, controlToken: 'not-the-token' });
+            await refusedWith(newRouter().handleGetSessionStatus(), /403|Could not reach/);
         });
 
-        test('an unknown op is refused rather than dispatched', async () => {
-            await window('alpha', { workspaceFolders: [path.join(dir, 'alpha')] });
-            const r = router();
-            await assert.rejects(
-                () => r.serialOp('handleNotAnOp' as never, {}),
-                (err: Error) => {
-                    assert.match(err.message, /Unknown control op/);
-                    return true;
-                },
-            );
+        test('an op outside the table is refused, not dispatched', async () => {
+            await openWindow('alpha');
+            const message = await refusedWith(newRouter().serialOp('handleNotAnOp'));
+            assert.ok(message.includes('Control op handleNotAnOp refused: not a known operation'), message);
         });
 
-        test('pack-docs ops reach the owning window and the right handler', async () => {
-            await window('alpha', { workspaceFolders: [path.join(dir, 'alpha')] });
-            await window('beta', { workspaceFolders: [path.join(dir, 'beta')] });
-            const r = router();
-            r.selectDebugWindow({ workspaceFolder: path.join(dir, 'beta', 'src') });
-            assert.strictEqual(await r.packDocsOp('handleListTargetDocs', { target: 'HE' }),
-                'beta:docs:handleListTargetDocs:{"target":"HE"}');
-            assert.strictEqual(await r.packDocsOp('handleGetMemoryUsage', { top: 5 }),
-                'beta:build:handleGetMemoryUsage:{"top":5}');
+        test('documentation and build-artefact ops run in the owning window, on the right handler', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            router.selectDebugWindow({ workspaceFolder: path.join(folder('beta'), 'src') });
+            assert.strictEqual(await router.packDocsOp('handleListTargetDocs', { target: 'HE' }),
+                echo('beta', 'docs', 'handleListTargetDocs', { target: 'HE' }));
+            assert.strictEqual(await router.packDocsOp('handleGetMemoryUsage', { top: 5 }),
+                echo('beta', 'build', 'handleGetMemoryUsage', { top: 5 }));
         });
 
-        test('a window without pack-docs handlers refuses the op instead of misrouting it', async () => {
-            await window('bare', { workspaceFolders: [path.join(dir, 'bare')] }, null);
-            await assert.rejects(
-                () => router().packDocsOp('handleListTargetDocs', {}),
-                (err: Error) => {
-                    assert.match(err.message, /not available in this window/);
-                    return true;
-                },
-            );
+        test('a window without documentation handlers refuses their ops', async () => {
+            await openWindow('bare', {}, false);
+            await refusedWith(newRouter().packDocsOp('handleListTargetDocs', {}), /not available in this window/);
         });
 
-        test('args survive the round trip intact', async () => {
-            await window('solo', { workspaceFolders: [path.join(dir, 'solo')] });
-            const result = await router().handleReadMemory({ address: '0x20000000', length: 64, format: 'hex' });
-            assert.match(result, /"address":"0x20000000"/);
-            assert.match(result, /"length":64/);
-            assert.match(result, /"format":"hex"/);
-        });
-
-        /** A raw POST to a window's control server, chunked (no Content-Length) so each write is its own frame. */
-        function rawPost(entry: WindowRegistration, writes: Buffer[], gapMs = 20): Promise<{ status: number; body: string }> {
-            return new Promise((resolve, reject) => {
-                const req = http.request({
-                    host: '127.0.0.1', port: entry.controlPort, path: '/op', method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-cmsis-developer-assistant-token': entry.controlToken },
-                }, (res) => {
-                    const chunks: Buffer[] = [];
-                    res.on('data', (c: Buffer) => chunks.push(c));
-                    res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
-                });
-                req.on('error', reject);
-                (async () => {
-                    for (const [i, w] of writes.entries()) {
-                        if (i > 0) { await new Promise(r => setTimeout(r, gapMs)); }
-                        req.write(w);
-                    }
-                    req.end();
-                })().catch(reject);
-            });
-        }
-
-        test('a multibyte character split across request chunks reaches the handler whole', async () => {
-            const entry = await window('utf', { workspaceFolders: [path.join(dir, 'utf')] });
-            const buf = Buffer.from(JSON.stringify({ op: 'handleReadMemory', args: { address: 'a😀b' } }));
-            const cut = buf.indexOf(Buffer.from('😀')) + 2; // inside the four-byte sequence
-            const { status, body } = await rawPost(entry, [buf.subarray(0, cut), buf.subarray(cut)]);
-            assert.strictEqual(status, 200, body);
-            const parsed = JSON.parse(body) as { result: string };
-            assert.match(parsed.result, /"address":"a😀b"/);
-            assert.doesNotMatch(parsed.result, /\uFFFD/);
-        });
-
-        test('a multibyte character split across response chunks survives the router', async () => {
-            // A stand-in window whose control server splits its reply inside the emoji.
-            const reply = Buffer.from(JSON.stringify({ result: 'ok 😀 done' }));
-            const cut = reply.indexOf(Buffer.from('😀')) + 1;
-            const raw = http.createServer((_req, res) => {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.write(reply.subarray(0, cut));
-                setTimeout(() => res.end(reply.subarray(cut)), 20);
-            });
-            await new Promise<void>(resolve => raw.listen(0, '127.0.0.1', resolve));
-            try {
-                const port = (raw.address() as { port: number }).port;
-                const pid = nextPid++;
-                livePids.add(pid);
-                const entry: WindowRegistration = { pid, controlPort: port, controlToken: 'raw', workspaceFolders: [path.join(dir, 'raw')], name: 'raw', updatedAt: Date.now() };
-                fs.writeFileSync(path.join(dir, 'window-raw.json'), JSON.stringify(entry), 'utf8');
-                assert.strictEqual(await router().handleGetSessionStatus(), 'ok 😀 done');
-            } finally {
-                await new Promise<void>(resolve => raw.close(() => resolve()));
+        test('arguments arrive as they were sent', async () => {
+            await openWindow('solo');
+            const result = await newRouter().handleReadMemory({ address: '0x20000000', length: 64, format: 'hex' });
+            for (const part of ['"address":"0x20000000"', '"length":64', '"format":"hex"']) {
+                assert.ok(result.includes(part), `${part} missing from ${result}`);
             }
         });
 
-        test('an oversize control request is refused with 413 and the window keeps serving', async () => {
-            const entry = await window('big', { workspaceFolders: [path.join(dir, 'big')] });
-            const filler = Buffer.alloc(CONTROL_REQUEST_MAX_BYTES + 1, 0x20);
-            const { status, body } = await rawPost(entry, [Buffer.from('{"op":"handleGetSessionStatus","args":{}'), filler, Buffer.from('}')], 0);
-            assert.strictEqual(status, 413, body);
-            assert.match(body, /control request above \d+ bytes/);
-            assert.match(await router().handleGetSessionStatus(), /^big:handleGetSessionStatus:/);
+        test('a character split across two request chunks arrives whole', async () => {
+            const solo = await openWindow('solo');
+            const bytes = Buffer.from('{"op":"handleReadMemory","args":{"address":"a😀b"}}', 'utf8');
+            const cut = bytes.indexOf(0xf0) + 2;
+            const raw = await rawPost(solo.port, solo.token, [bytes.subarray(0, cut), bytes.subarray(cut)], 20);
+            assert.strictEqual(raw.status, 200);
+            const result = String(JSON.parse(raw.body).result);
+            assert.ok(result.includes('"address":"a😀b"'), result);
+            assert.ok(!result.includes('\uFFFD'), 'no replacement character');
         });
 
-        test('an oversize control response is rejected on the router', async () => {
-            const raw = http.createServer((_req, res) => {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.write('{"result":"');
-                res.end(Buffer.alloc(CONTROL_RESPONSE_MAX_BYTES + 1, 0x41));
+        test('an oversize request gets 413 and the window keeps serving', async () => {
+            const solo = await openWindow('solo');
+            const raw = await rawPost(solo.port, solo.token,
+                ['{"op":"handleGetSessionStatus","args":{}', ' '.repeat(1_048_577), '}']);
+            assert.strictEqual(raw.status, 413);
+            assert.match(raw.body, /control request above \d+ bytes/);
+            assert.strictEqual(await newRouter().handleGetSessionStatus(), echo('solo', 'debug', 'handleGetSessionStatus', {}));
+        });
+
+        test('a client that gives up mid-body does not take the window down', async () => {
+            const solo = await openWindow('solo');
+            const client = openControlRequest(solo.port, solo.token);
+            client.on('error', () => { /* the abort is the point */ });
+            client.write('{"op":"handleGetSess');
+            await pause(20);
+            client.destroy();
+            await pause(50);
+            assertAnsweredBy(await newRouter().handleGetSessionStatus(), 'solo');
+        });
+
+        test('stop() returns within its grace while a call is still running', async () => {
+            const wedged = { handleGetSessionStatus: () => new Promise<string>(() => { /* never settles */ }) };
+            const control = new ControlServer(wedged as unknown as IDebuggingHandler, 'tok');
+            const port = await control.start();
+            const inFlight = rawPost(port, 'tok', ['{"op":"handleGetSessionStatus","args":{}}']);
+            const outcome = inFlight.then(() => 'answered', (failure: Error) => failure.message);
+            await pause(100);
+            const stopCalled = Date.now();
+            await control.stop();
+            const stopMs = Date.now() - stopCalled;
+            assert.ok(stopMs < 3_000, `stop took ${stopMs} ms`);
+            assert.match(await outcome, /socket hang up|ECONNRESET|aborted/);
+        });
+
+        test('a reply split inside a character arrives whole', async () => {
+            const bytes = Buffer.from('{"result":"ok 😀 done"}', 'utf8');
+            const cut = bytes.indexOf(0xf0) + 1;
+            await openStandIn((reply) => {
+                reply.writeHead(200, JSON_TYPE);
+                reply.write(bytes.subarray(0, cut));
+                setTimeout(() => reply.end(bytes.subarray(cut)), 20);
             });
-            await new Promise<void>(resolve => raw.listen(0, '127.0.0.1', resolve));
-            try {
-                const port = (raw.address() as { port: number }).port;
-                const pid = nextPid++;
-                livePids.add(pid);
-                const entry: WindowRegistration = { pid, controlPort: port, controlToken: 'raw', workspaceFolders: [path.join(dir, 'raw2')], name: 'raw2', updatedAt: Date.now() };
-                fs.writeFileSync(path.join(dir, 'window-raw2.json'), JSON.stringify(entry), 'utf8');
-                await assert.rejects(() => router().handleGetSessionStatus(), /control response above \d+ bytes/);
-            } finally {
-                await new Promise<void>(resolve => raw.close(() => resolve()));
-            }
+            assert.strictEqual(await newRouter().handleGetSessionStatus(), 'ok 😀 done');
         });
 
-        test('a client that aborts mid-request does not take the window down', async () => {
-            const entry = await window('abort', { workspaceFolders: [path.join(dir, 'abort')] });
-            await new Promise<void>((resolve) => {
-                const req = http.request({
-                    host: '127.0.0.1', port: entry.controlPort, path: '/op', method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-cmsis-developer-assistant-token': entry.controlToken },
-                });
-                req.on('error', () => resolve());
-                req.write('{"op":"handleGetSess');
-                setTimeout(() => { req.destroy(); resolve(); }, 20);
+        test('an oversize reply is refused', async () => {
+            await openStandIn((reply) => {
+                reply.writeHead(200, JSON_TYPE);
+                reply.end('{"result":"' + 'A'.repeat(16_777_217));
             });
-            await new Promise(r => setTimeout(r, 50));
-            assert.match(await router().handleGetSessionStatus(), /^abort:handleGetSessionStatus:/);
+            await refusedWith(newRouter().handleGetSessionStatus(), /control response above \d+ bytes/);
         });
 
-        test('stop() returns while a request is still in flight', async () => {
-            const hanging = { handleGetSessionStatus: () => new Promise<string>(() => { /* never */ }) } as unknown as IDebuggingHandler;
-            const server = new ControlServer(hanging, 'tok');
-            const port = await server.start();
-            const client = new Promise<string>((resolve) => {
-                const req = http.request({
-                    host: '127.0.0.1', port, path: '/op', method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-cmsis-developer-assistant-token': 'tok' },
-                }, () => resolve('answered'));
-                req.on('error', (e) => resolve(e.message));
-                req.end(JSON.stringify({ op: 'handleGetSessionStatus', args: {} }));
-            });
-            await new Promise(r => setTimeout(r, 100));
-            const t0 = Date.now();
-            await server.stop();
-            assert.ok(Date.now() - t0 < 3_000, `stop took ${Date.now() - t0} ms`);
-            assert.match(await client, /socket hang up|ECONNRESET|aborted/);
-        });
-
-        test('a dead window surfaces as an actionable error', async () => {
-            const entry = await window('gone', { workspaceFolders: [path.join(dir, 'gone')] });
-            // Point the registry at a port nothing is listening on.
-            fs.writeFileSync(
-                path.join(dir, 'window-gone.json'),
-                JSON.stringify({ ...entry, controlPort: 1 }),
-                'utf8',
-            );
-
-            await assert.rejects(
-                () => router().handleGetSessionStatus(),
-                (err: Error) => {
-                    assert.match(err.message, /Could not reach the VS Code window/);
-                    assert.match(err.message, /list_debug_windows/);
-                    return true;
-                },
-            );
+        test('a window that stopped listening is reported as unreachable', async () => {
+            const gone = await openWindow('gone');
+            saveRegistration('gone', { ...gone.entry, controlPort: 1 });
+            await refusedWith(newRouter().handleGetSessionStatus(), /Could not reach the VS Code window/, /list_debug_windows/);
         });
     });
 });

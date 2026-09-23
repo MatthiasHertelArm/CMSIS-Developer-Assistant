@@ -1,174 +1,232 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
-
-import * as http from 'http';
-import { IDebuggingHandler } from './debuggingHandler';
-import { serialHandler } from './serialHandler';
-import { isKnownOp, isPackDocsDocOp, isPackDocsOp, isSerialOp, CONTROL_REQUEST_MAX_BYTES } from './core/opTable';
-import type { PackDocsHandlers } from './packDocsDispatch';
-import { logger } from './utils/logger';
-import { closeHttpServer } from './utils/closeHttpServer';
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 /**
- * Per-window loopback HTTP server that runs debug operations against this
- * window's own handlers.
+ * The receiving end of multi-window routing. Every window runs one: a
+ * loopback HTTP endpoint that runs a single named op against this window's
+ * own handlers (debugging, serial, documentation and build artefacts) and
+ * answers with the handler's result. The router window forwards each tool
+ * call here, so the call runs in the window that owns the workspace and the
+ * probe.
  *
- * Every VS Code window runs one. The router window (the one holding the
- * well-known MCP port) forwards each tool call here, so the debugging happens
- * in the window that actually owns the workspace and the probe — not in
- * whichever window happened to win the port race.
+ * Windows of different extension versions talk to each other through this
+ * endpoint; its request and response shapes are a contract (POST /op, the
+ * token header, `{op, args}` in, `{result}` or `{error}` out).
  *
- * Bound to 127.0.0.1 and gated by a per-window token published through the
- * registry. The token matters: this endpoint flashes and erases hardware with
- * no other authentication, so anything that can reach the port must prove it
- * read the registry file, which is owned by the user.
+ * The only gate is the per-window token the window publishes in the
+ * registry, and the ops include flashing and erasing the target.
  */
+
+import * as http from 'http';
+import type { AddressInfo } from 'net';
+import type { IDebuggingHandler } from './debuggingHandler';
+import type { PackDocsHandlers } from './packDocsDispatch';
+import { serialHandler } from './serialHandler';
+import {
+    CONTROL_REQUEST_MAX_BYTES,
+    isKnownOp,
+    isPackDocsDocOp,
+    isPackDocsOp,
+    isSerialOp,
+} from './core/opTable';
+import { closeHttpServer } from './utils/closeHttpServer';
+import { logger } from './utils/logger';
+
+/** Loopback only: nothing off this machine may reach the endpoint. */
+const LOOPBACK_ONLY = '127.0.0.1';
+const OP_ENDPOINT = '/op';
+/** Node lower-cases incoming header names; the sender may use any case. */
+const TOKEN_HEADER = 'x-cmsis-developer-assistant-token';
+const JSON_REPLY: http.OutgoingHttpHeaders = { 'Content-Type': 'application/json' };
+
+/** What one request asks for, once its body is parsed. */
+interface OpRequest {
+    op: string;
+    args: unknown;
+}
+
+/** The text of whatever was thrown: an Error's message, else its string form. */
+function describeFailure(thrown: unknown): string {
+    return thrown instanceof Error ? thrown.message : String(thrown);
+}
+
+/** UTF-8 size of a handler result for the trace line; nothing counts as 0. */
+function resultBytes(value: unknown): number {
+    return value === undefined || value === null ? 0 : Buffer.byteLength(String(value), 'utf8');
+}
+
+/** Milliseconds since the returned function was made. */
+function stopwatch(): () => number {
+    const origin = Date.now();
+    return () => Date.now() - origin;
+}
+
+/**
+ * The body as an op request. An empty body counts as `{}`; JSON `null`
+ * fails on the property read, which ends as a 500 like any other failure.
+ */
+function parseOpRequest(body: string): OpRequest {
+    const parsed = body.length === 0 ? {} : JSON.parse(body);
+    const named: unknown = parsed.op;
+    if (typeof named === 'string') {
+        return { op: named, args: parsed.args ?? {} };
+    }
+    throw new Error('Control request has no op');
+}
+
+/** A status with no body and no content type. */
+function replyBare(reply: http.ServerResponse, status: number): void {
+    reply.writeHead(status).end();
+}
+
+function replyJson(reply: http.ServerResponse, status: number, payload: object): void {
+    reply.writeHead(status, JSON_REPLY).end(JSON.stringify(payload), 'utf8');
+}
+
 export class ControlServer {
-    private server: http.Server | undefined;
+    private listener: http.Server | undefined;
     private boundPort = 0;
 
     constructor(
         private readonly handler: IDebuggingHandler,
         private readonly token: string,
-        /** The documentation / build-artefact handlers of this window, when the extension built them. */
         private readonly packDocs?: PackDocsHandlers,
     ) {}
 
-    /** The ephemeral loopback port chosen by the OS, or 0 before start(). */
-    public getPort(): number {
+    /** The listening port; 0 before `start()` resolved and from the moment `stop()` begins. */
+    getPort(): number {
         return this.boundPort;
     }
 
-    /** Start listening on an ephemeral loopback port. Resolves with the port. */
-    public async start(): Promise<number> {
-        return new Promise<number>((resolve, reject) => {
-            const server = http.createServer((req, res) => this.onRequest(req, res));
-            server.on('error', reject);
-            server.listen(0, '127.0.0.1', () => {
-                const address = server.address();
-                this.boundPort = typeof address === 'object' && address ? address.port : 0;
-                this.server = server;
-                // Keep a permanent error listener: an unhandled 'error' later
-                // would otherwise take down the extension host.
-                server.removeListener('error', reject);
-                server.on('error', (err) => logger.error('Control server error', err));
-                logger.info(`CMSIS Developer Assistant control server listening on 127.0.0.1:${this.boundPort}`);
-                resolve(this.boundPort);
+    /** Listen on an OS-chosen loopback port and resolve with it. */
+    start(): Promise<number> {
+        const httpServer = http.createServer((incoming, reply) => this.accept(incoming, reply));
+        return new Promise<number>((resolvePort, rejectListen) => {
+            httpServer.once('error', rejectListen);
+            httpServer.listen(0, LOOPBACK_ONLY, () => {
+                httpServer.removeListener('error', rejectListen);
+                // From here on an unhandled 'error' would take the extension host down.
+                httpServer.on('error', (fault) => logger.error('Control server error', fault));
+                this.listener = httpServer;
+                this.boundPort = (httpServer.address() as AddressInfo).port;
+                logger.info(`Accepting forwarded tool calls on ${LOOPBACK_ONLY}:${this.boundPort}`);
+                resolvePort(this.boundPort);
             });
         });
     }
 
-    /** Stop listening. */
-    public async stop(): Promise<void> {
-        if (this.server) {
-            const server = this.server;
-            this.server = undefined;
-            this.boundPort = 0;
-            await closeHttpServer(server);
-        }
+    /**
+     * Close within the grace of `closeHttpServer`: idle connections at once,
+     * in-flight ones when the grace ends. Their ops are not cancelled.
+     */
+    stop(): Promise<void> {
+        const closing = this.listener;
+        this.listener = undefined;
+        this.boundPort = 0;
+        // Never started, or a stop already under way: nothing to wait for.
+        return closing ? closeHttpServer(closing) : Promise.resolve();
     }
 
-    private onRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-        if (req.method !== 'POST' || req.url !== '/op') {
-            res.writeHead(404).end();
+    private accept(incoming: http.IncomingMessage, reply: http.ServerResponse): void {
+        if (incoming.method !== 'POST' || incoming.url !== OP_ENDPOINT) {
+            replyBare(reply, 404);
             return;
         }
-        if (req.headers['x-cmsis-developer-assistant-token'] !== this.token) {
-            res.writeHead(403).end();
+        // Plain equality; a repeated header arrives joined and so never matches.
+        if (incoming.headers[TOKEN_HEADER] !== this.token) {
+            replyBare(reply, 403);
             return;
         }
 
-        // Collect the raw bytes and decode once: appending Buffer chunks to a
-        // string decodes each chunk on its own, which turns a multibyte
-        // character split across two chunks into two U+FFFD.
-        const chunks: Buffer[] = [];
-        let size = 0;
-        let refused = false;
-        req.on('data', (chunk: Buffer) => {
-            if (refused) { return; } // drained, not buffered
-            size += chunk.length;
-            if (size > CONTROL_REQUEST_MAX_BYTES) {
-                // Stop buffering, keep draining, answer 413 once the body
-                // has ended: destroying the socket — or closing it right
-                // after an early answer — while the client is still writing
-                // resets the connection (ECONNRESET on Windows) before the
-                // answer is read. The channel is loopback and the MCP side
-                // caps requests at the same size, so the drain is bounded.
-                refused = true;
-                chunks.length = 0;
-            } else {
-                chunks.push(chunk);
-            }
-        });
-        req.on('error', (err) => {
-            logger.warn(`Control request aborted: ${err.message}`);
-            if (!res.headersSent) { res.writeHead(400).end(); }
-        });
-        req.on('end', async () => {
-            if (refused) {
-                res.writeHead(413, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: `control request above ${CONTROL_REQUEST_MAX_BYTES} bytes` }));
+        // Raw bytes, decoded once at the end, so a character split across two
+        // chunks arrives whole.
+        const received: Buffer[] = [];
+        let byteCount = 0;
+        let oversize = false;
+        incoming.on('data', (piece: Buffer) => {
+            byteCount += piece.length;
+            if (oversize) {
                 return;
             }
-            const body = Buffer.concat(chunks).toString('utf8');
-            try {
-                const { op, args } = JSON.parse(body || '{}') as { op?: string; args?: unknown };
-                if (typeof op !== 'string') {
-                    throw new Error('Control request has no op');
-                }
-                const result = await this.dispatch(op, args ?? {});
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ result }));
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: message }));
+            if (byteCount > CONTROL_REQUEST_MAX_BYTES) {
+                // Keep draining to the end: answering while the client is
+                // still writing resets the connection before it reads the 413.
+                oversize = true;
+                received.length = 0;
+                return;
             }
+            received.push(piece);
         });
+        incoming.on('error', (fault: Error) => {
+            logger.warn(`Control request aborted: ${fault.message}`);
+            if (!reply.headersSent) { replyBare(reply, 400); }
+        });
+        incoming.on('end', () => this.finish(reply, oversize ? undefined : Buffer.concat(received)));
     }
 
-    /**
-     * Run one op against this window's handlers.
-     *
-     * The op name is checked against the shared table before use, so this is a
-     * lookup in a fixed allowlist rather than dynamic dispatch on attacker-
-     * controlled input — `op` never reaches a property access unvalidated.
-     */
-    private dispatch(op: string, args: unknown): Promise<string> {
-        if (!isKnownOp(op)) {
-            return Promise.reject(new Error(`Unknown control op: ${op}`));
+    /** Answer a completely received request; `body` is undefined when it was over the cap. */
+    private finish(reply: http.ServerResponse, body: Buffer | undefined): void {
+        if (body === undefined) {
+            replyJson(reply, 413, { error: `control request above ${CONTROL_REQUEST_MAX_BYTES} bytes` });
+            return;
         }
-
-        let target: Record<string, unknown>;
-        if (isSerialOp(op)) {
-            target = serialHandler as unknown as Record<string, unknown>;
-        } else if (isPackDocsOp(op)) {
-            if (!this.packDocs) {
-                return Promise.reject(new Error(
-                    `Control op ${op}: the documentation and build-artefact handlers are not available in this window`));
-            }
-            target = (isPackDocsDocOp(op) ? this.packDocs.docs : this.packDocs.build) as unknown as Record<string, unknown>;
-        } else {
-            target = this.handler as unknown as Record<string, unknown>;
-        }
-
-        const method = target[op];
-        if (typeof method !== 'function') {
-            return Promise.reject(new Error(`Control op ${op} is not implemented in this window`));
-        }
-
-        // Worker-side timing next to the router's per-tool line, so a slow
-        // call can be attributed to the window that did the work or to the hop.
-        const started = Date.now();
-        return Promise.resolve((method as (a: unknown) => Promise<string>).call(target, args)).then(
-            (result) => {
-                logger.info(`control op=${op} ms=${Date.now() - started} out=${Buffer.byteLength(result ?? '')} B`);
-                return result;
-            },
-            (err: unknown) => {
-                logger.info(`control op=${op} ms=${Date.now() - started} failed: ${err instanceof Error ? err.message : String(err)}`);
-                throw err;
-            },
+        this.execute(body.toString('utf8')).then(
+            (result) => replyJson(reply, 200, { result }),
+            (failure: unknown) => replyJson(reply, 500, { error: describeFailure(failure) }),
         );
+    }
+
+    /** Parse the body and run its op; every failure, parsing included, is a rejection. */
+    private async execute(text: string): Promise<unknown> {
+        const request = parseOpRequest(text);
+        return this.dispatch(request.op, request.args);
+    }
+
+    /** Run one op against the handler that owns it, and trace the outcome. */
+    private async dispatch(op: string, opArgs: unknown): Promise<unknown> {
+        // Before any property lookup: `constructor` or `__proto__` stop here.
+        if (!isKnownOp(op)) {
+            throw new Error(`Control op ${op} refused: not a known operation`);
+        }
+        const owner = this.ownerOf(op);
+        const entryPoint: unknown = Reflect.get(owner, op);
+        if (!(entryPoint instanceof Function)) {
+            throw new Error(`Control op ${op} is not implemented in this window`);
+        }
+        const elapsed = stopwatch();
+        try {
+            const outcome: unknown = await entryPoint.call(owner, opArgs);
+            logger.info(`control op=${op} ms=${elapsed()} out=${resultBytes(outcome)} B`);
+            return outcome;
+        } catch (failure) {
+            logger.info(`control op=${op} ms=${elapsed()} failed: ${describeFailure(failure)}`);
+            throw failure;
+        }
+    }
+
+    private ownerOf(op: string): object {
+        if (isSerialOp(op)) {
+            return serialHandler;
+        }
+        if (!isPackDocsOp(op)) {
+            return this.handler;
+        }
+        if (this.packDocs === undefined) {
+            throw new Error(`Control op ${op}: the documentation and build-artefact handlers are not available in this window`);
+        }
+        return isPackDocsDocOp(op) ? this.packDocs.docs : this.packDocs.build;
     }
 }

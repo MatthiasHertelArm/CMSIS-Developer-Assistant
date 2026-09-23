@@ -1,5 +1,18 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -7,244 +20,236 @@ import * as os from 'os';
 import * as path from 'path';
 import { WindowRegistration, WorkspaceRegistry, describeWindow } from '../utils/workspaceRegistry';
 
-/**
- * The registry is what makes routing possible, so its pruning and matching
- * rules are the difference between "drives the right board" and "silently
- * drives the wrong one".
- */
+/** How far `backdate` moves a file's times: past the registry's one-minute limit. */
+const BACKDATE_MS = 120_000;
+
 suite('Workspace registry', () => {
-
     let dir: string;
-    let counter = 0;
-
-    const registryFor = (pid: number) => new WorkspaceRegistry(pid, dir);
-
-    const register = (
-        registry: WorkspaceRegistry,
-        overrides: Partial<Omit<WindowRegistration, 'pid' | 'updatedAt'>> = {},
-    ) => registry.register({
-        controlPort: 40000 + (counter++),
-        controlToken: 'token',
-        workspaceFolders: [],
-        name: 'window',
-        ...overrides,
-    });
+    let port: number;
 
     setup(() => {
-        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-registry-test-'));
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-registry-'));
+        port = 40_000;
     });
 
     teardown(() => {
-        fs.rmSync(dir, { recursive: true, force: true });
+        fs.rmSync(dir, { force: true, recursive: true });
     });
 
-    test('a registered window is listed back', () => {
-        const registry = registryFor(process.pid);
-        register(registry, { workspaceFolders: ['/proj/blinky'], name: 'blinky' });
+    const inDir = (name: string): string => path.join(dir, name);
+    const exists = (name: string): boolean => fs.existsSync(inDir(name));
 
-        const all = registry.list();
-        assert.strictEqual(all.length, 1);
-        assert.strictEqual(all[0].pid, process.pid);
-        assert.deepStrictEqual(all[0].workspaceFolders, ['/proj/blinky']);
-    });
+    /** A registry for `pid` over the test directory, with the real liveness check. */
+    const open = (pid: number = process.pid): WorkspaceRegistry => new WorkspaceRegistry(pid, dir);
 
-    test('unregister removes the entry', () => {
-        const registry = registryFor(process.pid);
-        register(registry);
-        registry.unregister();
-        assert.deepStrictEqual(registry.list(), []);
-    });
+    /** Register through the public API with a distinct port per call. */
+    function publish(registry: WorkspaceRegistry, overrides: Partial<WindowRegistration> = {}): void {
+        registry.register({
+            controlPort: port++,
+            controlToken: 'test-token',
+            workspaceFolders: [],
+            name: 'test-window',
+            ...overrides,
+        });
+    }
 
-    test('an entry whose process is gone is pruned on read', () => {
-        // pid 1 is alive; use an implausible pid that is almost certainly not.
-        const dead = registryFor(999_999);
-        register(dead);
-        const reader = registryFor(process.pid);
-        register(reader);
+    /** Write `window-<label>.json` by hand, as a peer of another version might. */
+    function plant(label: string, overrides: Partial<WindowRegistration> = {}): WindowRegistration {
+        const stamp = Date.now();
+        const entry: WindowRegistration = {
+            pid: process.pid,
+            controlPort: port++,
+            controlToken: `token-${label}`,
+            workspaceFolders: [],
+            name: label,
+            updatedAt: stamp,
+            ...overrides,
+        };
+        fs.writeFileSync(inDir(`window-${label}.json`), JSON.stringify(entry));
+        return entry;
+    }
 
-        const pids = reader.list().map(w => w.pid);
-        assert.deepStrictEqual(pids, [process.pid], 'the dead window should be pruned');
-    });
+    function backdate(name: string): void {
+        const then = new Date(Date.now() - BACKDATE_MS);
+        fs.utimesSync(inDir(name), then, then);
+    }
 
-    test('a freshly written unparsable file is skipped, not deleted — a peer may be mid-write', () => {
-        const file = path.join(dir, 'window-123.json');
-        fs.writeFileSync(file, '{"pid": 1', 'utf8');
-        const registry = registryFor(process.pid);
-        register(registry);
-        assert.strictEqual(registry.list().length, 1);
-        assert.ok(fs.existsSync(file), 'the torn file survives the read');
-    });
+    suite('registration and pruning', () => {
 
-    test('an unparsable file older than the staleness window is pruned', () => {
-        const file = path.join(dir, 'window-123.json');
-        fs.writeFileSync(file, 'not json at all', 'utf8');
-        const old = (Date.now() - 120_000) / 1000;
-        fs.utimesSync(file, old, old);
-        const registry = registryFor(process.pid);
-        register(registry);
-        assert.strictEqual(registry.list().length, 1);
-        assert.ok(!fs.existsSync(file), 'stale garbage is removed');
-    });
+        test('a registered window is listed with its pid and folders', () => {
+            const registry = open();
+            publish(registry, { workspaceFolders: ['/proj/blinky'] });
+            const windows = registry.list();
+            assert.strictEqual(windows.length, 1);
+            assert.strictEqual(windows[0].pid, process.pid);
+            assert.deepStrictEqual(windows[0].workspaceFolders, ['/proj/blinky']);
+        });
 
-    test('a registration is written atomically and the heartbeat rewrites it without reading it back', () => {
-        const registry = registryFor(process.pid);
-        register(registry);
-        const file = path.join(dir, `window-${process.pid}.json`);
-        const before = JSON.parse(fs.readFileSync(file, 'utf8')).updatedAt as number;
-        assert.ok(!fs.readdirSync(dir).some(f => f.endsWith('.tmp')), 'no temp file left behind');
-        // A peer pruned this window by mistake: the next beat heals it.
-        fs.unlinkSync(file);
-        registry.heartbeat();
-        const entries = registry.list();
-        assert.strictEqual(entries.length, 1);
-        assert.ok(entries[0].updatedAt >= before);
-        // Never registered: a heartbeat writes nothing.
-        const silent = registryFor(process.pid + 1);
-        silent.heartbeat();
-        assert.ok(!fs.existsSync(path.join(dir, `window-${process.pid + 1}.json`)));
-    });
+        test('unregister withdraws the window', () => {
+            const registry = open();
+            publish(registry);
+            registry.unregister();
+            assert.deepStrictEqual(registry.list(), []);
+        });
 
-    test('temp files of a crashed writer are swept once stale, fresh ones are left alone', () => {
-        const stale = path.join(dir, 'window-77.json.77.deadbeef.tmp');
-        const fresh = path.join(dir, 'window-78.json.78.cafebabe.tmp');
-        fs.writeFileSync(stale, '{}', 'utf8');
-        fs.writeFileSync(fresh, '{}', 'utf8');
-        const old = (Date.now() - 120_000) / 1000;
-        fs.utimesSync(stale, old, old);
-        const registry = registryFor(process.pid);
-        register(registry);
-        assert.strictEqual(registry.list().length, 1, 'temp files are never listed as windows');
-        assert.ok(!fs.existsSync(stale));
-        assert.ok(fs.existsSync(fresh));
+        test('the entry of a process that is gone is pruned by the next reader', () => {
+            publish(open(999_999));
+            const reader = open();
+            publish(reader);
+            assert.deepStrictEqual(reader.list().map((w) => w.pid), [process.pid]);
+            assert.ok(!exists('window-999999.json'), 'the dead window\'s file is removed');
+        });
+
+        test('a fresh unparsable file is skipped but left alone: a peer may still be writing it', () => {
+            fs.writeFileSync(inDir('window-123.json'), '{"pid": 1');
+            const registry = open();
+            publish(registry);
+            assert.strictEqual(registry.list().length, 1);
+            assert.ok(exists('window-123.json'));
+        });
+
+        test('an unparsable file older than a minute is removed', () => {
+            fs.writeFileSync(inDir('window-123.json'), 'not json at all');
+            backdate('window-123.json');
+            const registry = open();
+            publish(registry);
+            assert.strictEqual(registry.list().length, 1);
+            assert.ok(!exists('window-123.json'));
+        });
+
+        test('writes leave no temp file, and a heartbeat restores a deleted entry', () => {
+            const registry = open();
+            publish(registry);
+            assert.deepStrictEqual(fs.readdirSync(dir).filter((name) => name.endsWith('.tmp')), []);
+            const firstStamp = registry.list()[0].updatedAt;
+
+            fs.unlinkSync(inDir(`window-${process.pid}.json`));
+            registry.heartbeat();
+            const healed = registry.list();
+            assert.strictEqual(healed.length, 1);
+            assert.ok(healed[0].updatedAt >= firstStamp);
+
+            const neverRegistered = open(process.pid + 1);
+            neverRegistered.heartbeat();
+            assert.ok(!exists(`window-${process.pid + 1}.json`), 'nothing to refresh, nothing written');
+        });
+
+        test('a crashed writer\'s temp file is never listed and goes once it is old', () => {
+            const stale = 'window-77.json.77.deadbeef.tmp';
+            const fresh = 'window-78.json.78.cafebabe.tmp';
+            fs.writeFileSync(inDir(stale), '{}');
+            fs.writeFileSync(inDir(fresh), '{}');
+            backdate(stale);
+            const registry = open();
+            publish(registry);
+            assert.strictEqual(registry.list().length, 1);
+            assert.ok(!exists(stale), 'abandoned temp file removed');
+            assert.ok(exists(fresh), 'recent temp file kept');
+        });
     });
 
     suite('findByPath', () => {
 
-        test('matches a file inside a workspace folder', () => {
-            const registry = registryFor(process.pid);
-            register(registry, { workspaceFolders: [path.join(dir, 'blinky')] });
-
-            const found = registry.findByPath(path.join(dir, 'blinky', 'src', 'main.c'));
-            assert.strictEqual(found?.pid, process.pid);
+        test('a path inside a window\'s folder finds that window', () => {
+            const registry = open();
+            publish(registry, { workspaceFolders: [inDir('blinky')] });
+            assert.strictEqual(registry.findByPath(inDir('blinky/src/main.c'))?.pid, process.pid);
         });
 
-        test('prefers the deepest matching folder', () => {
-            const outer = registryFor(process.pid);
-            register(outer, { workspaceFolders: [path.join(dir, 'work')] });
-
-            // A second live entry for the nested folder. Reuse this pid so the
-            // liveness check passes, writing the file directly.
-            const nested: WindowRegistration = {
-                pid: process.pid, controlPort: 41000, controlToken: 't',
-                workspaceFolders: [path.join(dir, 'work', 'blinky')],
-                name: 'nested', updatedAt: Date.now(),
-            };
-            fs.writeFileSync(path.join(dir, 'window-nested.json'), JSON.stringify(nested), 'utf8');
-
-            const found = outer.findByPath(path.join(dir, 'work', 'blinky', 'main.c'));
-            assert.strictEqual(found?.name, 'nested');
+        test('the deepest containing folder wins', () => {
+            const registry = open();
+            publish(registry, { workspaceFolders: [inDir('work')] });
+            plant('nested', { workspaceFolders: [inDir('work/blinky')] });
+            assert.strictEqual(registry.findByPath(inDir('work/blinky/main.c'))?.name, 'nested');
         });
 
-        test('a sibling directory sharing a name prefix is not a match', () => {
-            const registry = registryFor(process.pid);
-            register(registry, { workspaceFolders: [path.join(dir, 'blinky')] });
-
-            const found = registry.findByPath(path.join(dir, 'blinky-old', 'main.c'));
-            assert.strictEqual(found, undefined, 'prefix match must respect path separators');
+        test('a sibling that merely shares the prefix is not inside the folder', () => {
+            const registry = open();
+            publish(registry, { workspaceFolders: [inDir('blinky')] });
+            assert.strictEqual(registry.findByPath(inDir('blinky-old/main.c')), undefined);
         });
 
-        test('returns undefined when no folder contains the path', () => {
-            const registry = registryFor(process.pid);
-            register(registry, { workspaceFolders: [path.join(dir, 'blinky')] });
+        test('a path outside every folder finds nothing', () => {
+            const registry = open();
+            publish(registry, { workspaceFolders: [inDir('blinky')] });
             assert.strictEqual(registry.findByPath('/somewhere/else/main.c'), undefined);
         });
 
-        test('a sole folderless window is the fallback', () => {
-            const registry = registryFor(process.pid);
-            register(registry, { workspaceFolders: [] });
+        test('the only window, when it has no folder open, takes any path', () => {
+            const registry = open();
+            publish(registry);
             assert.strictEqual(registry.findByPath('/anything.c')?.pid, process.pid);
         });
     });
 
-    suite('CMSIS resolution helpers', () => {
+    suite('routing helpers', () => {
 
-        const writeEntry = (name: string, over: Partial<WindowRegistration>) => {
-            const entry: WindowRegistration = {
-                pid: process.pid, controlPort: 42000, controlToken: 't',
-                workspaceFolders: [], name, updatedAt: Date.now(), ...over,
-            };
-            fs.writeFileSync(path.join(dir, `window-${name}.json`), JSON.stringify(entry), 'utf8');
-            return entry;
-        };
-
-        test('the sole window with an active session is found', () => {
-            writeEntry('idle', { controlPort: 42001, hasActiveSession: false });
-            writeEntry('busy', { controlPort: 42002, hasActiveSession: true });
-
-            const found = registryFor(process.pid).findSoleActiveSession();
-            assert.strictEqual(found?.name, 'busy');
+        test('the one window with a debug session is found', () => {
+            const registry = open();
+            plant('idle', { hasActiveSession: false });
+            plant('busy', { hasActiveSession: true });
+            assert.strictEqual(registry.findSoleActiveSession()?.name, 'busy');
         });
 
-        test('two active sessions resolve to nothing rather than a guess', () => {
-            writeEntry('a', { controlPort: 42003, hasActiveSession: true });
-            writeEntry('b', { controlPort: 42004, hasActiveSession: true });
-
-            assert.strictEqual(registryFor(process.pid).findSoleActiveSession(), undefined,
-                'guessing here would read the wrong board');
+        test('two debug sessions: no guess', () => {
+            const registry = open();
+            plant('first', { hasActiveSession: true });
+            plant('second', { hasActiveSession: true });
+            assert.strictEqual(registry.findSoleActiveSession(), undefined);
         });
 
-        test('no active session resolves to nothing', () => {
-            writeEntry('a', { controlPort: 42005, hasActiveSession: false });
-            assert.strictEqual(registryFor(process.pid).findSoleActiveSession(), undefined);
+        test('no debug session: nothing found', () => {
+            const registry = open();
+            plant('quiet', { hasActiveSession: false });
+            assert.strictEqual(registry.findSoleActiveSession(), undefined);
         });
 
-        test('findSoleWindow only answers when exactly one is registered', () => {
-            const registry = registryFor(process.pid);
-            writeEntry('only', { controlPort: 42006 });
+        test('findSoleWindow answers only while exactly one window is registered', () => {
+            const registry = open();
+            plant('only');
             assert.strictEqual(registry.findSoleWindow()?.name, 'only');
-
-            writeEntry('second', { controlPort: 42007 });
+            plant('another');
             assert.strictEqual(registry.findSoleWindow(), undefined);
         });
 
-        test('isLive follows the control port, so a restarted window is not stale', () => {
-            const registry = registryFor(process.pid);
-            const entry = writeEntry('w', { controlPort: 42008 });
-            assert.strictEqual(registry.isLive(entry), true);
-
-            writeEntry('w', { controlPort: 49999 }); // same window, new port
-            assert.strictEqual(registry.isLive(entry), false,
-                'a stale port must not be treated as live');
+        test('isLive follows the control port of the same pid', () => {
+            const registry = open();
+            const original = plant('w', { controlPort: 42_008 });
+            assert.strictEqual(registry.isLive(original), true);
+            plant('w', { controlPort: 49_999 });
+            assert.strictEqual(registry.isLive(original), false);
         });
     });
 
     suite('describeWindow', () => {
 
         const base: WindowRegistration = {
-            pid: 4242, controlPort: 1, controlToken: 't',
-            workspaceFolders: ['/proj/blinky'], name: 'blinky', updatedAt: 0,
+            pid: 4242,
+            controlPort: 1,
+            controlToken: 'never-shown',
+            workspaceFolders: ['/proj/blinky'],
+            name: 'blinky',
+            updatedAt: 0,
         };
 
-        test('reports pid and folders', () => {
-            const text = describeWindow(base);
-            assert.match(text, /pid=4242/);
-            assert.match(text, /\/proj\/blinky/);
+        test('names the pid and the folders', () => {
+            const line = describeWindow(base);
+            assert.match(line, /pid=4242/);
+            assert.match(line, /\/proj\/blinky/);
         });
 
-        test('a folderless window says so instead of rendering empty', () => {
+        test('says so when no folder is open', () => {
             assert.match(describeWindow({ ...base, workspaceFolders: [] }), /no folder open/);
         });
 
-        test('an active session and its configuration are surfaced', () => {
-            const text = describeWindow({
-                ...base, hasActiveSession: true, activeConfigurationName: 'AppKit-E8 Debug',
-            });
-            assert.match(text, /debugging: AppKit-E8 Debug/);
+        test('shows the active debug configuration', () => {
+            const line = describeWindow({ ...base, hasActiveSession: true, activeConfigurationName: 'AppKit-E8 Debug' });
+            assert.match(line, /debugging: AppKit-E8 Debug/);
         });
 
-        test('the CMSIS project is surfaced when known', () => {
-            const text = describeWindow({ ...base, cmsisProject: '/proj/blinky/blinky.csolution.yml' });
-            assert.match(text, /cmsis=\/proj\/blinky\/blinky\.csolution\.yml/);
+        test('shows the CMSIS solution', () => {
+            const line = describeWindow({ ...base, cmsisProject: '/proj/blinky/blinky.csolution.yml' });
+            assert.match(line, /cmsis=\/proj\/blinky\/blinky\.csolution\.yml/);
         });
     });
 });

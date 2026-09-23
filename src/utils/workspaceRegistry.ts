@@ -1,283 +1,312 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * The machine-wide list of CMSIS Developer Assistant windows. Each window
+ * keeps one small JSON file in a shared temp directory that says how to reach
+ * its control server, which folders it has open and whether it is debugging;
+ * the router window reads them all to decide where a tool call runs.
+ *
+ * The file format is shared by every installed version of the extension, so
+ * windows of different versions can find each other: keep it stable. Readers
+ * tidy up as they go, dropping entries of processes that are gone and entries
+ * that stopped being refreshed.
+ */
 
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { logger } from './logger';
 import { isTempPath, writeFileAtomicSync } from './atomicFile';
+import { logger } from './logger';
 
-/** One VS Code window's advertisement in the shared registry. */
+/** One window's registry file, as written by its owner. */
 export interface WindowRegistration {
+    /** Extension-host process of the window; the identity of the entry. */
     pid: number;
+    /** Loopback port of the window's control server. */
     controlPort: number;
+    /** Sent back in the control request's token header. */
     controlToken: string;
+    /** Absolute file-system paths; empty when no folder is open. */
     workspaceFolders: string[];
     name: string;
+    /** Last write, milliseconds since the epoch. */
     updatedAt: number;
-
-    // --- CMSIS additions, not in upstream ---------------------------------
-    //
-    // Upstream routes purely on a file path, because every one of its tools
-    // takes one. Most tools here do not: read_memory, cmsis_action, flash,
-    // reset and the serial tools have no path to match on. Routing them needs
-    // a different signal, and "the window that actually has the board" is it.
-
-    /** True while this window holds an active debug session. */
     hasActiveSession?: boolean;
-    /** Name of the launch configuration driving that session, when known. */
     activeConfigurationName?: string;
-    /** Path of the CMSIS solution loaded in this window, when there is one. */
     cmsisProject?: string;
 }
 
-/** How a routing decision was reached, for the message the agent sees. */
-export type ResolutionReason =
-    | 'path'
-    | 'pinned'
-    | 'cached'
-    | 'active-session'
-    | 'only-window';
+/** Why the router picked a window; it shows up in the routing log line. */
+export type ResolutionReason = 'path' | 'pinned' | 'cached' | 'active-session' | 'only-window';
 
-/** Default directory holding one JSON file per live window. */
-const DEFAULT_REGISTRY_DIR = path.join(os.tmpdir(), 'cmsis-developer-assistant-registry');
-
-/** Entries not refreshed within this window are considered stale. */
-const STALE_MS = 60_000;
-
-/** Best-effort pid liveness check (EPERM means the process exists). */
-export function isProcessAlive(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-        return true;
-    } catch (err: unknown) {
-        return !!(err && (err as NodeJS.ErrnoException).code === 'EPERM');
-    }
-}
-
-/**
- * How the registry decides a window is still there. Injectable so tests can
- * model several windows with distinct pids — the real production shape, since
- * every VS Code window is its own extension-host process — without having to
- * spawn processes to own them.
- */
+/** Answers whether a process with this pid still exists. */
 export type LivenessCheck = (pid: number) => boolean;
 
-/** Resolve, strip trailing separators, and lower-case on Windows. */
-function normalizePath(p: string): string {
-    let normalized = path.resolve(p);
-    if (process.platform === 'win32') {
-        normalized = normalized.toLowerCase();
-    }
-    return normalized.replace(/[\\/]+$/, '');
+/** Refreshed every 20 s by the owner, so a minute of silence means it stopped. */
+const STALE_AFTER_MS = 60_000;
+const FILE_PREFIX = 'window-';
+const FILE_SUFFIX = '.json';
+/** Signal 0 delivers nothing; it only asks the kernel whether the pid exists. */
+const EXISTENCE_PROBE = 0;
+
+function defaultRegistryDir(): string {
+    return path.join(os.tmpdir(), 'cmsis-developer-assistant-registry');
 }
 
-/** True when `target` is `folder` or a descendant of it. */
-function isInside(target: string, folder: string): boolean {
-    return target === folder || target.startsWith(folder + path.sep) || target.startsWith(folder + '/');
+function errnoCode(error: unknown): string | undefined {
+    return (error as NodeJS.ErrnoException | undefined)?.code;
 }
 
 /**
- * File-based registry of CMSIS Developer Assistant-enabled VS Code windows on this machine.
- * One file per window (named by pid); reads prune dead/stale entries.
+ * True while `pid` names a running process. A process of another user
+ * answers the probe with EPERM, which still proves it exists.
  */
+export function isProcessAlive(pid: number): boolean {
+    try {
+        process.kill(pid, EXISTENCE_PROBE);
+        return true;
+    } catch (probeError) {
+        return errnoCode(probeError) === 'EPERM';
+    }
+}
+
+/** Remove a file; one that a peer already removed, or that cannot go, is left be. */
+function discard(file: string): void {
+    try {
+        fs.unlinkSync(file);
+    } catch {
+        // Gone already, or not ours to remove: either way nothing to do.
+    }
+}
+
+/** Milliseconds since the file was last modified, or undefined when that cannot be read. */
+function ageOf(file: string): number | undefined {
+    try {
+        return Date.now() - fs.statSync(file).mtimeMs;
+    } catch {
+        return undefined;
+    }
+}
+
+/** Remove a file only once it is old enough that no writer can still be busy with it. */
+function discardIfAbandoned(file: string): void {
+    const age = ageOf(file);
+    if (age !== undefined && age > STALE_AFTER_MS) {
+        discard(file);
+    }
+}
+
+/** A folder list that is safe to iterate, whatever the file held. */
+function foldersOf(entry: WindowRegistration): string[] {
+    return Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
+}
+
+/**
+ * The form in which paths are compared: absolute, lower-case on Windows,
+ * without trailing separators (so the root becomes the empty string).
+ */
+function comparable(p: string): string {
+    const absolute = path.resolve(p);
+    const folded = process.platform === 'win32' ? absolute.toLowerCase() : absolute;
+    return folded.replace(/[\\/]+$/, '');
+}
+
+/** Whether `target` is `folder` itself or lies below it; both in comparable form. */
+function liesWithin(target: string, folder: string): boolean {
+    if (target === folder) {
+        return true;
+    }
+    return target.startsWith(`${folder}${path.sep}`) || target.startsWith(`${folder}/`);
+}
+
 export class WorkspaceRegistry {
-    private readonly registryDir: string;
-    private readonly filePath: string;
-    private readonly isAlive: LivenessCheck;
-    /** What this window last wrote; the heartbeat rewrites it without reading the file back. */
-    private current: WindowRegistration | undefined;
+    private readonly ownFile: string;
+    /** What this window last published; the heartbeat rewrites it. */
+    private published: WindowRegistration | undefined;
 
     constructor(
         private readonly pid: number = process.pid,
-        registryDir: string = DEFAULT_REGISTRY_DIR,
-        isAlive: LivenessCheck = isProcessAlive,
+        private readonly registryDir: string = defaultRegistryDir(),
+        private readonly isAlive: LivenessCheck = isProcessAlive,
     ) {
-        this.registryDir = registryDir;
-        this.filePath = path.join(this.registryDir, `window-${this.pid}.json`);
-        this.isAlive = isAlive;
+        this.ownFile = path.join(registryDir, `${FILE_PREFIX}${pid}${FILE_SUFFIX}`);
     }
 
-    /**
-     * Write (or overwrite) this window's registration. Written through a
-     * temp file and a rename so a peer reading mid-write never sees a
-     * truncated file (and never prunes this window for it).
-     */
-    public register(reg: Omit<WindowRegistration, 'pid' | 'updatedAt'>): void {
+    /** Publish (or republish) this window. Logs instead of throwing. */
+    register(reg: Omit<WindowRegistration, 'pid' | 'updatedAt'>): void {
+        const next: WindowRegistration = { ...reg, pid: this.pid, updatedAt: Date.now() };
         try {
-            fs.mkdirSync(this.registryDir, { recursive: true });
-            const entry: WindowRegistration = { ...reg, pid: this.pid, updatedAt: Date.now() };
-            writeFileAtomicSync(this.filePath, JSON.stringify(entry));
-            this.current = entry;
+            this.writeOwnFile(next);
+            this.published = next;
         } catch (error) {
-            logger.error('Failed to write CMSIS Developer Assistant registry entry', error);
+            logger.error('Could not write this window into the CMSIS Developer Assistant window registry', error);
         }
     }
 
     /**
-     * Refresh `updatedAt` so other windows don't prune this one. Rewrites
-     * what this window last registered instead of reading the file back, so
-     * a registration a peer pruned by mistake heals on the next beat.
+     * Rewrite the last registration with a new timestamp. It never reads the
+     * file first, so an entry a peer removed by mistake comes back.
      */
-    public heartbeat(): void {
-        if (!this.current) {
-            return; // never registered — the caller registers on change
+    heartbeat(): void {
+        const current = this.published;
+        if (!current) {
+            return;
         }
         try {
             fs.mkdirSync(this.registryDir, { recursive: true });
-            this.current = { ...this.current, updatedAt: Date.now() };
-            writeFileAtomicSync(this.filePath, JSON.stringify(this.current));
+            current.updatedAt = Date.now();
+            writeFileAtomicSync(this.ownFile, JSON.stringify(current));
         } catch (error) {
             logger.error('Failed to refresh CMSIS Developer Assistant registry entry', error);
         }
     }
 
-    /** Remove this window's registration (on deactivate). */
-    public unregister(): void {
-        this.current = undefined;
-        this.tryUnlink(this.filePath);
+    /** Withdraw this window. Never throws. */
+    unregister(): void {
+        this.published = undefined;
+        discard(this.ownFile);
     }
 
     /**
-     * All live windows, pruning dead-pid and stale entries as a side effect.
-     * A file that does not parse is only removed once it is older than the
-     * staleness window: a fresh one is a peer's write in flight, not garbage.
-     * Temp files a crashed writer left behind are swept on the same rule.
+     * Every live registration, in directory order, pruning dead, stale and
+     * broken files on the way.
      */
-    public list(): WindowRegistration[] {
-        let files: string[];
+    list(): WindowRegistration[] {
+        let names: string[];
         try {
-            files = fs.readdirSync(this.registryDir);
+            names = fs.readdirSync(this.registryDir);
         } catch {
             return [];
         }
-        const result: WindowRegistration[] = [];
-        for (const file of files) {
-            const full = path.join(this.registryDir, file);
-            if (isTempPath(file)) {
-                if (this.isOlderThanStale(full)) {
-                    this.tryUnlink(full);
-                }
-                continue;
-            }
-            if (!file.startsWith('window-') || !file.endsWith('.json')) {
-                continue;
-            }
-            try {
-                const entry = JSON.parse(fs.readFileSync(full, 'utf8')) as WindowRegistration;
-                const isStale = Date.now() - entry.updatedAt > STALE_MS;
-                if (!this.isAlive(entry.pid) || (isStale && entry.pid !== this.pid)) {
-                    this.tryUnlink(full);
-                    continue;
-                }
-                result.push(entry);
-            } catch {
-                if (this.isOlderThanStale(full)) {
-                    this.tryUnlink(full);
-                }
+        const found: WindowRegistration[] = [];
+        for (const name of names) {
+            const entry = this.admit(name);
+            if (entry) {
+                found.push(entry);
             }
         }
-        return result;
+        return found;
     }
 
-    private isOlderThanStale(full: string): boolean {
-        try {
-            return Date.now() - fs.statSync(full).mtimeMs > STALE_MS;
-        } catch {
-            return false;
-        }
-    }
-
-    /**
-     * Find the window whose workspace folder best (deepest) contains `targetPath`.
-     *
-     * Returns undefined when no window's folders contain the path — the router
-     * turns that into an actionable error rather than guessing. The only fallback
-     * is a sole window that declares NO folders (an "empty" window that can't be
-     * matched by prefix); a folder-bearing window is never chosen for a path it
-     * doesn't actually contain, which previously caused files to open in the
-     * wrong workspace.
-     */
-    public findByPath(targetPath: string): WindowRegistration | undefined {
-        const target = normalizePath(targetPath);
-        const entries = this.list();
-        let best: WindowRegistration | undefined;
-        let bestLen = -1;
-        for (const entry of entries) {
-            for (const folder of entry.workspaceFolders) {
-                const normalizedFolder = normalizePath(folder);
-                if (isInside(target, normalizedFolder) && normalizedFolder.length > bestLen) {
-                    bestLen = normalizedFolder.length;
-                    best = entry;
+    /** The window whose folder most deeply contains `targetPath`. */
+    findByPath(targetPath: string): WindowRegistration | undefined {
+        const windows = this.list();
+        const target = comparable(targetPath);
+        let owner: WindowRegistration | undefined;
+        let ownerDepth = -1;
+        for (const candidate of windows) {
+            for (const folder of foldersOf(candidate)) {
+                const key = comparable(folder);
+                // Strictly longer only: on a tie the window listed first keeps it.
+                if (key.length > ownerDepth && liesWithin(target, key)) {
+                    owner = candidate;
+                    ownerDepth = key.length;
                 }
             }
         }
-        if (!best && entries.length === 1 && entries[0].workspaceFolders.length === 0) {
-            return entries[0];
+        if (owner) {
+            return owner;
         }
-        return best;
+        // A lone window without folders may take any path; nobody else can claim it.
+        const lone = windows.length === 1 ? windows[0] : undefined;
+        return lone && foldersOf(lone).length === 0 ? lone : undefined;
     }
 
-    /**
-     * The single window holding an active debug session, or undefined when
-     * none or more than one does.
-     *
-     * The fallback that makes path-less tools routable. On an embedded desk the
-     * normal case is one window attached to one board, so "the window that has
-     * the session" is unambiguous and is what the agent means by `read_memory`.
-     * Deliberately returns undefined on a tie rather than guessing: reading the
-     * wrong board's memory is worse than an error telling you to pick.
-     */
-    public findSoleActiveSession(): WindowRegistration | undefined {
-        const active = this.list().filter(w => w.hasActiveSession);
-        return active.length === 1 ? active[0] : undefined;
+    /** The one window with a debug session; none when there are zero or several. */
+    findSoleActiveSession(): WindowRegistration | undefined {
+        const debugging = this.list().filter((candidate) => candidate.hasActiveSession);
+        return debugging.length === 1 ? debugging[0] : undefined;
     }
 
-    /** The only registered window, or undefined when there are zero or many. */
-    public findSoleWindow(): WindowRegistration | undefined {
-        const all = this.list();
-        return all.length === 1 ? all[0] : undefined;
+    /** The one registered window; none when there are zero or several. */
+    findSoleWindow(): WindowRegistration | undefined {
+        const windows = this.list();
+        return windows.length === 1 ? windows[0] : undefined;
     }
 
-    /** Look a window up by pid — how an explicitly pinned target is re-resolved. */
-    public findByPid(pid: number): WindowRegistration | undefined {
-        return this.list().find(w => w.pid === pid);
+    findByPid(pid: number): WindowRegistration | undefined {
+        return this.list().find((candidate) => candidate.pid === pid);
     }
 
-    /**
-     * Look a window up by one of its workspace folders. Accepts any path inside
-     * the folder, so an agent can pin with either the folder or a file in it.
-     */
-    public findByWorkspaceFolder(folder: string): WindowRegistration | undefined {
+    /** The folder itself or any path inside it, with the same folderless fallback. */
+    findByWorkspaceFolder(folder: string): WindowRegistration | undefined {
         return this.findByPath(folder);
     }
 
-    /** True when this exact window (pid, port) is still registered and live. */
-    public isLive(entry: WindowRegistration): boolean {
+    /** Still registered under the same pid and the same control port. */
+    isLive(entry: WindowRegistration): boolean {
         const current = this.findByPid(entry.pid);
-        return !!current && current.controlPort === entry.controlPort;
+        return current !== undefined && current.controlPort === entry.controlPort;
     }
 
-    private tryUnlink(full: string): void {
-        try {
-            fs.unlinkSync(full);
-        } catch {
-            // Another window may have pruned it first — ignore.
+    private writeOwnFile(entry: WindowRegistration): void {
+        fs.mkdirSync(this.registryDir, { recursive: true });
+        writeFileAtomicSync(this.ownFile, JSON.stringify(entry));
+    }
+
+    /** One directory entry through the pruning rules: the registration, or undefined. */
+    private admit(name: string): WindowRegistration | undefined {
+        const file = path.join(this.registryDir, name);
+        // Checked before the name filter: `window-7.json.7.0badc0de.tmp` ends in `.tmp`.
+        if (isTempPath(name)) {
+            discardIfAbandoned(file);
+            return undefined;
         }
+        if (!name.startsWith(FILE_PREFIX) || !name.endsWith(FILE_SUFFIX)) {
+            return undefined;
+        }
+        let entry: WindowRegistration;
+        let owner: number;
+        try {
+            entry = JSON.parse(fs.readFileSync(file, 'utf8')) as WindowRegistration;
+            owner = entry.pid;
+        } catch {
+            // A fresh unreadable file may be a peer's write in flight.
+            discardIfAbandoned(file);
+            return undefined;
+        }
+        if (!this.isAlive(owner)) {
+            discard(file);
+            return undefined;
+        }
+        // The reader's own entry is never pruned for age, only other windows' ones.
+        if (owner !== this.pid && Date.now() - entry.updatedAt > STALE_AFTER_MS) {
+            discard(file);
+            return undefined;
+        }
+        return entry;
     }
 }
 
-/** One line per window, for list_debug_windows and for routing errors. */
+/**
+ * One line naming a window for agents: pid, folders, the debug session and
+ * the CMSIS solution, joined by ` | `. Port and token never appear.
+ */
 export function describeWindow(entry: WindowRegistration): string {
-    const folders = entry.workspaceFolders.length
-        ? entry.workspaceFolders.join(', ')
-        : '(no folder open)';
-    const bits = [`pid=${entry.pid}`, folders];
+    const folders = foldersOf(entry);
+    const parts: string[] = [
+        `pid=${entry.pid}`,
+        folders.length > 0 ? folders.join(', ') : '(no folder open)',
+    ];
     if (entry.hasActiveSession) {
-        bits.push(`debugging${entry.activeConfigurationName ? `: ${entry.activeConfigurationName}` : ''}`);
+        parts.push(entry.activeConfigurationName ? `debugging: ${entry.activeConfigurationName}` : 'debugging');
     }
     if (entry.cmsisProject) {
-        bits.push(`cmsis=${entry.cmsisProject}`);
+        parts.push(`cmsis=${entry.cmsisProject}`);
     }
-    return bits.join(' | ');
+    return parts.join(' | ');
 }

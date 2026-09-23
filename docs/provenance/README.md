@@ -17,7 +17,7 @@ Each file goes through two separate roles:
 
 Every rewrite commit is then checked:
 
-- **Behaviour-neutral.** `npm test`, `npm run test:transport` and `npm run test:surface` pass. The surface snapshot may change only where a `[REWORD]` string was rephrased, and those changes are listed in the commit message.
+- **Behaviour-neutral.** `npm test`, `npm run test:transport` and `npm run test:surface` pass, and `node test/transport/dap-scenarios.js` replays 28 scripted debug sessions (every tool reply plus the adapter traffic). Either snapshot may change only where a `[REWORD]` string was rephrased, and those changes are listed in the commit message.
 - **Independent.** `npm run provenance:check -- --gate` reports at most three shared non-trivial lines for the rewritten file against DebugMCP `148cbb9a`, the last upstream state this project synced with.
 - **Header.** The file carries the Arm Apache-2.0 header only and leaves the list in [src/test/provenance.test.ts](../../src/test/provenance.test.ts).
 
@@ -35,3 +35,8 @@ Known bugs are preserved on purpose, so that each rewrite is reviewable as behav
 | `src/utils/secretRedaction.ts` | 102 | 0 | [secretRedaction.md](specs/secretRedaction.md) |
 | `src/test/secretRedaction.test.ts` | 93 | 1 | [secretRedaction.md](specs/secretRedaction.md) |
 | `src/test/extension.test.ts` | 9 | 0 | [extension-test.md](specs/extension-test.md) |
+| `src/controlServer.ts` | 33 | 3 | [controlServer.md](specs/controlServer.md) |
+| `src/utils/workspaceRegistry.ts` | 58 | 3 | [workspaceRegistry.md](specs/workspaceRegistry.md) |
+| `src/routingDebuggingHandler.ts` | 20 | 3 | [routingDebuggingHandler.md](specs/routingDebuggingHandler.md) |
+| `src/test/routing.test.ts` | 10 | 3 | [routingDebuggingHandler.md](specs/routingDebuggingHandler.md) |
+| `src/test/workspaceRegistry.test.ts` | 6 | 2 | [workspaceRegistry.md](specs/workspaceRegistry.md) |
