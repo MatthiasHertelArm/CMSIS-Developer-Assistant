@@ -272,7 +272,7 @@
           "args": {
             "expression": "SystemCoreClock"
           },
-          "text": "Expression: SystemCoreClock\nResult: 84000000 (uint32_t)",
+          "text": "Evaluated: SystemCoreClock\nResult: 84000000\nType: uint32_t",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"SystemCoreClock\",\"frameId\":1000,\"context\":\"repl\"} -> \"84000000\""
@@ -283,7 +283,7 @@
           "args": {
             "expression": "counter * 2"
           },
-          "text": "Expression: counter * 2\nResult: 84 (unsigned long)",
+          "text": "Evaluated: counter * 2\nResult: 84\nType: unsigned long",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"counter * 2\",\"frameId\":1000,\"context\":\"repl\"} -> \"84\""
@@ -294,7 +294,7 @@
           "args": {
             "expression": "counter,x"
           },
-          "text": "Expression: counter,x\nResult: 0x2a (volatile uint32_t)",
+          "text": "Evaluated: counter,x\nResult: 0x2a\nType: volatile uint32_t",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"counter,x\",\"frameId\":1000,\"context\":\"repl\"} -> \"0x2a\""
@@ -305,7 +305,7 @@
           "args": {
             "expression": "config"
           },
-          "text": "Expression: config\nResult: {...} (led_config_t)",
+          "text": "Evaluated: config\nResult: {...}\nType: led_config_t",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"config\",\"frameId\":1000,\"context\":\"repl\"} -> \"{...}\""
@@ -316,7 +316,7 @@
           "args": {
             "expression": "password"
           },
-          "text": "Expression: password\nResult: 0x8000f10 \"hunter2\" (const char *)",
+          "text": "Evaluated: password\nResult: 0x8000f10 \"hunter2\"\nType: const char *",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"password\",\"frameId\":1000,\"context\":\"repl\"} -> \"0x8000f10 \\\"hunter2\\\"\""
@@ -327,7 +327,7 @@
           "args": {
             "expression": "api_key"
           },
-          "text": "Expression: api_key\nResult: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.",
+          "text": "Evaluated: api_key\nResult: <redacted: possible secret>\nType: char [16]\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"api_key\",\"frameId\":1000,\"context\":\"repl\"} -> \"\\\"AK-7f3a9c21e0b4\\\"\""
@@ -338,7 +338,7 @@
           "args": {
             "expression": "nosuch_symbol"
           },
-          "text": "Expression: nosuch_symbol\nResult: Error: could not evaluate expression",
+          "text": "Evaluated: nosuch_symbol\nResult: Error: could not evaluate expression",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"nosuch_symbol\",\"frameId\":1000,\"context\":\"repl\"} -> \"Error: could not evaluate expression\""
@@ -349,7 +349,7 @@
           "args": {
             "expression": "-exec info registers"
           },
-          "text": "Expression: -exec info registers\nResult: Error: could not evaluate expression",
+          "text": "Evaluated: -exec info registers\nResult: Error: could not evaluate expression",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"-exec info registers\",\"frameId\":1000,\"context\":\"repl\"} -> \"Error: could not evaluate expression\""
@@ -360,7 +360,7 @@
           "args": {
             "expression": ">info registers"
           },
-          "text": "Expression: >info registers\nResult: \r",
+          "text": "Evaluated: >info registers\nResult: \r",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\">info registers\",\"frameId\":1000,\"context\":\"repl\"} -> \"\\r\"",
@@ -372,7 +372,7 @@
           "args": {
             "expression": "$pc"
           },
-          "text": "Expression: $pc\nResult: 0x80002fe <main+22> (void (*)())",
+          "text": "Evaluated: $pc\nResult: 0x80002fe <main+22>\nType: void (*)()",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"$pc\",\"frameId\":1000,\"context\":\"repl\"} -> \"0x80002fe <main+22>\""
@@ -1004,7 +1004,7 @@
           "tool": "step_over",
           "args": {},
           "isError": true,
-          "text": "Error executing step over: Error: Cannot step over: session state is 'running'. The target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "text": "Step over failed: Error: Cannot step over: session state is 'running'. The target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {}",
             "dap: threads {}"
@@ -1119,7 +1119,7 @@
         {
           "tool": "list_breakpoints",
           "args": {},
-          "text": "No breakpoints currently set",
+          "text": "The breakpoint list is empty.",
           "traffic": []
         },
         {
@@ -1221,13 +1221,13 @@
             "logMessage": "broken {counter"
           },
           "isError": true,
-          "text": "Error adding logpoint: Error: Unbalanced '{' in logMessage at position 7. Use {{ for a literal brace.",
+          "text": "Could not add the logpoint: Error: Unbalanced '{' in logMessage at position 7. Use {{ for a literal brace.",
           "traffic": []
         },
         {
           "tool": "list_breakpoints",
           "args": {},
-          "text": "Active Breakpoints:\n1. main.c:29\n2. main.c:30 [when: counter > 10]\n3. main.c:8\n4. main.c:29\n5. main.c:32 [log: counter={counter} led={ledState:%u} 100%]\n6. main.c:33 [when: counter % 100 == 0, log: tick]\n",
+          "text": "Breakpoints that are set:\n1. main.c:29\n2. main.c:30 [when: counter > 10]\n3. main.c:8\n4. main.c:29\n5. main.c:32 [log: counter={counter} led={ledState:%u} 100%]\n6. main.c:33 [when: counter % 100 == 0, log: tick]\n",
           "traffic": []
         },
         {
@@ -1273,7 +1273,7 @@
             "fileFullPath": "<tmp>/project/main.c",
             "line": 99
           },
-          "text": "No breakpoint found at <tmp>/project/main.c:99",
+          "text": "Nothing to remove — no breakpoint is set at <tmp>/project/main.c:99.",
           "traffic": []
         },
         {
@@ -1289,7 +1289,7 @@
         {
           "tool": "list_breakpoints",
           "args": {},
-          "text": "No breakpoints currently set",
+          "text": "The breakpoint list is empty.",
           "traffic": []
         }
       ]
@@ -1384,7 +1384,7 @@
         {
           "tool": "restart_debugging",
           "args": {},
-          "text": "Debug session restarted successfully",
+          "text": "The debug session has been restarted.",
           "traffic": [
             "command: workbench.action.debug.restart",
             "adapter: restart — adapter relaunched in the same session; it stops at main 500 ms later",
@@ -1406,7 +1406,7 @@
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "Debug session stopped successfully\n\n⚠️ **ROOT CAUSE ANALYSIS CHECKPOINT**\n\nBefore concluding your debugging session:\n\n❓ **CRITICAL QUESTION:** Have you found the ROOT CAUSE or just a SYMPTOM?\n\n🔍 **If you only identified WHERE it went wrong:**\n- Variable is null/undefined\n- Function returned unexpected value  \n- Error occurred at specific line\n- Condition evaluated incorrectly\n\n➡️ **You likely found a SYMPTOM - Continue debugging!**\n\nROOT CAUSE means understanding WHY the issue occurred in the first place, for example due to:\n- Incorrect variable initialization\n- Logic error in function implementation\n- Missing error handling\n- Faulty assumptions in conditions\n\nREQUIRED NEXT STEPS:\n1. Use 'add_breakpoint' to set breakpoints at investigation points\n2. Use 'start_debugging' to trace from the beginning\n3. Investigate WHY the issue occurred, not just WHAT happened\n4. Repeat the process as necessary until the ROOT CAUSE is identified",
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
             "event: terminated {}"
@@ -1421,7 +1421,7 @@
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "No active debug session to stop",
+          "text": "Nothing to stop — no debug session is active.",
           "traffic": []
         }
       ]
@@ -1555,7 +1555,7 @@
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "Debug session stopped successfully\n\n⚠️ **ROOT CAUSE ANALYSIS CHECKPOINT**\n\nBefore concluding your debugging session:\n\n❓ **CRITICAL QUESTION:** Have you found the ROOT CAUSE or just a SYMPTOM?\n\n🔍 **If you only identified WHERE it went wrong:**\n- Variable is null/undefined\n- Function returned unexpected value  \n- Error occurred at specific line\n- Condition evaluated incorrectly\n\n➡️ **You likely found a SYMPTOM - Continue debugging!**\n\nROOT CAUSE means understanding WHY the issue occurred in the first place, for example due to:\n- Incorrect variable initialization\n- Logic error in function implementation\n- Missing error handling\n- Faulty assumptions in conditions\n\nREQUIRED NEXT STEPS:\n1. Use 'add_breakpoint' to set breakpoints at investigation points\n2. Use 'start_debugging' to trace from the beginning\n3. Investigate WHY the issue occurred, not just WHAT happened\n4. Repeat the process as necessary until the ROOT CAUSE is identified",
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
             "event: terminated {}"
@@ -1603,7 +1603,7 @@
           "args": {
             "expression": "counter"
           },
-          "text": "Error in 'evaluate_expression': No active stack frame. Make sure execution is paused at a breakpoint.",
+          "text": "Error in 'evaluate_expression': There is no active stack frame. Pause execution at a breakpoint first.",
           "traffic": [
             "dap: threads {}"
           ]
@@ -1707,7 +1707,7 @@
         {
           "tool": "stop_debugging",
           "args": {},
-          "text": "Debug session stopped successfully\n\n⚠️ **ROOT CAUSE ANALYSIS CHECKPOINT**\n\nBefore concluding your debugging session:\n\n❓ **CRITICAL QUESTION:** Have you found the ROOT CAUSE or just a SYMPTOM?\n\n🔍 **If you only identified WHERE it went wrong:**\n- Variable is null/undefined\n- Function returned unexpected value  \n- Error occurred at specific line\n- Condition evaluated incorrectly\n\n➡️ **You likely found a SYMPTOM - Continue debugging!**\n\nROOT CAUSE means understanding WHY the issue occurred in the first place, for example due to:\n- Incorrect variable initialization\n- Logic error in function implementation\n- Missing error handling\n- Faulty assumptions in conditions\n\nREQUIRED NEXT STEPS:\n1. Use 'add_breakpoint' to set breakpoints at investigation points\n2. Use 'start_debugging' to trace from the beginning\n3. Investigate WHY the issue occurred, not just WHAT happened\n4. Repeat the process as necessary until the ROOT CAUSE is identified",
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD (attach)\"",
             "event: terminated {}"

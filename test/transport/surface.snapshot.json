@@ -1308,19 +1308,19 @@
           "text": "Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
         },
         "stop_debugging": {
-          "text": "No active debug session to stop"
+          "text": "Nothing to stop — no debug session is active."
         },
         "step_over": {
           "isError": true,
-          "text": "Error executing step over: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Step over failed: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
-          "text": "Error executing step into: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Step into failed: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
-          "text": "Error executing step out: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Step out failed: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
@@ -1328,14 +1328,14 @@
         },
         "continue_execution": {
           "isError": true,
-          "text": "Error executing continue: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Continue failed: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
           "text": "Error in 'wait_for_stop': No active debug session. Start debugging first — wait_for_stop waits on a live session."
         },
         "restart_debugging": {
           "isError": true,
-          "text": "Error restarting debug session: Error: No active debug session to restart"
+          "text": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
         },
         "reset": {
           "text": "Error in 'reset': No active debug session. Start debugging first — reset drives the target through the live probe."
@@ -1349,13 +1349,13 @@
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
         },
         "remove_breakpoint": {
-          "text": "No breakpoint found at /nonexistent/main.c:1"
+          "text": "Nothing to remove — no breakpoint is set at /nonexistent/main.c:1."
         },
         "clear_all_breakpoints": {
-          "text": "No breakpoints to clear"
+          "text": "Nothing to clear — no breakpoints are set."
         },
         "list_breakpoints": {
-          "text": "No breakpoints currently set"
+          "text": "The breakpoint list is empty."
         },
         "list_variable_names": {
           "text": "Error in 'list_variable_names': Cannot list variable names: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
@@ -4287,19 +4287,19 @@
           "text": "Error starting debug session: TypeError: vscode.Uri.joinPath is not a function"
         },
         "stop_debugging": {
-          "text": "No active debug session to stop"
+          "text": "Nothing to stop — no debug session is active."
         },
         "step_over": {
           "isError": true,
-          "text": "Error executing step over: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Step over failed: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
-          "text": "Error executing step into: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Step into failed: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
-          "text": "Error executing step out: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Step out failed: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
@@ -4307,14 +4307,14 @@
         },
         "continue_execution": {
           "isError": true,
-          "text": "Error executing continue: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "Continue failed: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
           "text": "Error in 'wait_for_stop': No active debug session. Start debugging first — wait_for_stop waits on a live session."
         },
         "restart_debugging": {
           "isError": true,
-          "text": "Error restarting debug session: Error: No active debug session to restart"
+          "text": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
         },
         "reset": {
           "text": "Error in 'reset': No active debug session. Start debugging first — reset drives the target through the live probe."
@@ -4328,13 +4328,13 @@
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
         },
         "remove_breakpoint": {
-          "text": "No breakpoint found at /nonexistent/main.c:1"
+          "text": "Nothing to remove — no breakpoint is set at /nonexistent/main.c:1."
         },
         "clear_all_breakpoints": {
-          "text": "No breakpoints to clear"
+          "text": "Nothing to clear — no breakpoints are set."
         },
         "list_breakpoints": {
-          "text": "No breakpoints currently set"
+          "text": "The breakpoint list is empty."
         },
         "list_variable_names": {
           "text": "Error in 'list_variable_names': Cannot list variable names: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
@@ -7322,19 +7322,19 @@
           "text": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
         },
         "stop_debugging": {
-          "text": "No active debug session to stop"
+          "text": "Nothing to stop — no debug session is active."
         },
         "step_over": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Error executing step over: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "text": "Could not reach the VS Code window handling this session (pid=<n>): Step over failed: Error: Cannot step over: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
         },
         "step_into": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Error executing step into: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "text": "Could not reach the VS Code window handling this session (pid=<n>): Step into failed: Error: Cannot step into: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
         },
         "step_out": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Error executing step out: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "text": "Could not reach the VS Code window handling this session (pid=<n>): Step out failed: Error: Cannot step out: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
         },
         "pause_execution": {
           "isError": true,
@@ -7342,14 +7342,14 @@
         },
         "continue_execution": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Error executing continue: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "text": "Could not reach the VS Code window handling this session (pid=<n>): Continue failed: Error: Cannot continue execution: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification.\nIt may have been closed. Call list_debug_windows to see what is still open."
         },
         "wait_for_stop": {
           "text": "Error in 'wait_for_stop': No active debug session. Start debugging first — wait_for_stop waits on a live session."
         },
         "restart_debugging": {
           "isError": true,
-          "text": "Could not reach the VS Code window handling this session (pid=<n>): Error restarting debug session: Error: No active debug session to restart\nIt may have been closed. Call list_debug_windows to see what is still open."
+          "text": "Could not reach the VS Code window handling this session (pid=<n>): Could not restart the debug session: Error: Nothing to restart — no debug session is active\nIt may have been closed. Call list_debug_windows to see what is still open."
         },
         "reset": {
           "text": "Error in 'reset': No active debug session. Start debugging first — reset drives the target through the live probe."
@@ -7367,10 +7367,10 @@
           "text": "No open VS Code window has \"/nonexistent/main.c\" inside its workspace.\nOpen the folder containing it, or pass a path that is inside one of these:\n  • pid=<n> | <tmp>"
         },
         "clear_all_breakpoints": {
-          "text": "No breakpoints to clear"
+          "text": "Nothing to clear — no breakpoints are set."
         },
         "list_breakpoints": {
-          "text": "No breakpoints currently set"
+          "text": "The breakpoint list is empty."
         },
         "list_variable_names": {
           "text": "Error in 'list_variable_names': Cannot list variable names: session state is 'no-session'. No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."

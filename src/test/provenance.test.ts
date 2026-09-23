@@ -27,9 +27,7 @@ const DERIVED_FILES = [
     'LICENSE-MIT',
     'NOTICE',
     'src/debugMCPServer.ts',
-    'src/debuggingHandler.ts',
     'src/test/debugSkillGuidance.test.ts',
-    'src/test/debuggingHandler.test.ts',
 ];
 
 const MARKER = ['Copyright (c)', 'Microsoft', 'Corporation'].join(' ');

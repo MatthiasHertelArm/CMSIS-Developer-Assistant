@@ -50,3 +50,6 @@ Known bugs are preserved on purpose, so that each rewrite is reviewable as behav
 | `scripts/lib/copilotCli.ts` (Arm header only, but derived) | 12 | 2 | [copilotCli.md](specs/copilotCli.md) |
 | `src/debuggingExecutor.ts` | 136 | 3 | [debuggingExecutor.md](specs/debuggingExecutor.md) |
 | `src/executor/*.ts` (six new modules) | – | 0–4 | [debuggingExecutor.md](specs/debuggingExecutor.md) |
+| `src/debuggingHandler.ts` | 148 | 3 | [debuggingHandler.md](specs/debuggingHandler.md) |
+| `src/handler/*.ts` (seven new modules) | – | 0–2 | [debuggingHandler.md](specs/debuggingHandler.md) |
+| `src/test/debuggingHandler.test.ts` | 5 | 4 | [debuggingHandler.md](specs/debuggingHandler.md) |
