@@ -449,7 +449,8 @@ async function attachToJob(
 
 /**
  * `status`: wait for the latest job in flight until the deadline and give
- * its result; with none, the recent results and the live CMSIS tasks.
+ * its result; with none, the recent results and the live CMSIS tasks, once
+ * the error lines of a failed build are in (#15) or the deadline passed.
  * Launches nothing, and needs no solution.
  */
 async function reportStatus(context: CmsisActionContext, deadline: number): Promise<ToolText> {
@@ -458,6 +459,10 @@ async function reportStatus(context: CmsisActionContext, deadline: number): Prom
     const open = tracker.openJobs();
     const latest = open[open.length - 1];
     if (!latest) {
+        const completing = tracker.recent().find((job) => tracker.isCompleting(job.id));
+        if (completing) {
+            await tracker.waitFor(completing.id, deadline - DEADLINE_MARGIN_MS);
+        }
         return idleStatus(tracker.recent(), tracker.liveExecutions(), host.now());
     }
     const others = open.filter((job) => job.id !== latest.id).map((job) => `${job.action} (job ${job.id})`);

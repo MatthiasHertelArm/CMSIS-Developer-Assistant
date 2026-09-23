@@ -1,0 +1,20 @@
++--------------------------------------------------------------------
+(1/1) Building context: "Blinky.Debug+MPS3"
+Using GCC V14.3.1 compiler, from: '/Users/dev/.vcpkg/artifacts/2139c4c6/compilers.arm.arm.none.eabi.gcc/14.3.1/bin'
+Building CMake target 'Blinky.Debug+MPS3'
+[1/4] Building C object CMakeFiles/Group_Blinky.dir/Users/dev/work/Blinky/Blinky/main.c.obj
+FAILED: [code=1] CMakeFiles/Group_Blinky.dir/Users/dev/work/Blinky/Blinky/main.c.obj 
+/Users/dev/.vcpkg/artifacts/2139c4c6/compilers.arm.arm.none.eabi.gcc/14.3.1/bin/arm-none-eabi-gcc -DARMCM55 -D_RTE_ -I/Users/dev/work/Blinky/Blinky/RTE/_Debug_MPS3 -mcpu=cortex-m55 -mthumb -O0 -g3 -std=gnu11 -Wall -MD -MT CMakeFiles/Group_Blinky.dir/Users/dev/work/Blinky/Blinky/main.c.obj -MF CMakeFiles/Group_Blinky.dir/Users/dev/work/Blinky/Blinky/main.c.obj.d -o CMakeFiles/Group_Blinky.dir/Users/dev/work/Blinky/Blinky/main.c.obj -c /Users/dev/work/Blinky/Blinky/main.c
+/Users/dev/work/Blinky/Blinky/main.c: In function 'app_main':
+/Users/dev/work/Blinky/Blinky/main.c:40:12: warning: unused variable 'tick' [-Wunused-variable]
+   40 |   uint32_t tick;
+      |            ^~~~
+/Users/dev/work/Blinky/Blinky/main.c:42:5: error: 'ledx' undeclared (first use in this function)
+   42 |     ledx = 1;
+      |     ^~~~
+/Users/dev/work/Blinky/Blinky/main.c:42:5: note: each undeclared identifier is reported only once for each function it appears in
+ninja: build stopped: subcommand failed.
+error cbuild: error building 'cmake --build /Users/dev/work/Blinky/tmp --target Blinky.Debug+MPS3'
++--------------------------------------------------------------------
+Build summary: 0 succeeded, 1 failed - Time Elapsed: 00:00:02
++====================================================================

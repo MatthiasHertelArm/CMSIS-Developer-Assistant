@@ -21,22 +21,27 @@
  * guard's `PROBE_BUSY` refusals, and the task line of `get_session_status`.
  *
  * Every result names the task, its exit code, how long it ran and the job id,
- * so that a later `status` call can be matched to it.
+ * so that a later `status` call can be matched to it. A failed build adds
+ * the error lines of its diagnosis (#15, `src/cmsisBuildDiagnosis.ts`), or
+ * says they are still being collected, and carries them in `data`.
  */
 
 import {
     ACTION_PHASES,
+    BuildMessage,
     bystanders,
     CMSIS_TASK_LABELS,
     executionIn,
     GuardVerdict,
     Job,
     JobAction,
+    JobDiagnosis,
     JobExecution,
     NOTHING_STARTED_MS,
     ProbeOwner,
     runtimeOf,
 } from '../core/cmsisTasks';
+import { DIAGNOSTIC_RERUN_CAP_MS } from '../core/buildFailure';
 import { JsonObject, ToolError, ToolReply, ToolText } from '../core/toolResult';
 import type { LiveExecution } from '../cmsisJobTracker';
 
@@ -66,6 +71,16 @@ const AFTER_SUCCESS: Readonly<Record<JobAction, string>> = {
 
 const BUILD_FAILED_HINT = 'Open the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, '
     + 'then re-run cmsis_action build. This is a terminal result — do not wait for an output file.';
+
+/** After a failed build whose error lines the result shows. */
+const BUILD_ERRORS_HINT = 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.';
+
+/** After a failed build whose error lines are still being collected. */
+const BUILD_LINES_PENDING_HINT = 'Call cmsis_action {action:\'status\'} for the error lines — do not start another build to see them. '
+    + 'This is a terminal result — do not wait for an output file.';
+
+/** Messages of a diagnosis that go into `data`, of each kind. */
+const DATA_MESSAGES = 10;
 
 /** The hint after a failed Load, Erase or single Load+Run task. */
 function flashFailedHint(task: string): string {
@@ -172,6 +187,63 @@ export function missingTaskRefusal(action: JobAction, tag: string, label: string
         'Use one of those, or flash. (Arm Debugger adapters offer only load_and_run and load_and_debug.)');
 }
 
+/** A build message as `data` carries it. */
+function messageData(message: BuildMessage): JsonObject {
+    const data: JsonObject = { severity: message.severity, message: message.message };
+    if (message.file !== undefined) {
+        data.file = message.file;
+    }
+    if (message.line !== undefined) {
+        data.line = message.line;
+    }
+    if (message.column !== undefined) {
+        data.column = message.column;
+    }
+    if (message.code !== undefined) {
+        data.code = message.code;
+    }
+    if (message.context !== undefined) {
+        data.context = message.context;
+    }
+    return data;
+}
+
+/** A failed build's diagnosis as `data` carries it: the first messages of each kind and the full counts. */
+export function diagnosisData(diagnosis: JobDiagnosis): JsonObject {
+    return {
+        state: diagnosis.state,
+        source: diagnosis.source,
+        errorCount: diagnosis.errorCount,
+        warningCount: diagnosis.warningCount,
+        errors: diagnosis.errors.slice(0, DATA_MESSAGES).map(messageData),
+        warnings: diagnosis.warnings.slice(0, DATA_MESSAGES).map(messageData),
+        logFile: diagnosis.logFile ?? null,
+        note: diagnosis.note ?? null,
+    };
+}
+
+/** The lines a failed build's diagnosis adds to its result: its block, or that it is still coming. */
+function diagnosisLines(diagnosis: JobDiagnosis): string {
+    if (diagnosis.state === 'pending') {
+        return `\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s).`;
+    }
+    return `\n${diagnosis.text}`;
+}
+
+/** A failed build: its task line, and the lines of its diagnosis when there is one. */
+function failedBuild(job: Job, context: ResultContext, decided: JobExecution): ToolError {
+    const head = `${context.preface ?? ''}❌ CMSIS 'build' FAILED${context.tag} — task '${decided.name}' exited with code ${decided.exitCode} `
+        + `after ${ranFor(decided, context.now)} (job ${job.id}).${meanwhile(job)}`;
+    const diagnosis = job.diagnosis;
+    if (!diagnosis) {
+        return new ToolError('TASK_FAILED', head, BUILD_FAILED_HINT);
+    }
+    const hint = diagnosis.state === 'pending' ? BUILD_LINES_PENDING_HINT
+        : diagnosis.source === 'none' ? BUILD_FAILED_HINT : BUILD_ERRORS_HINT;
+    return new ToolError('TASK_FAILED', `${head}${diagnosisLines(diagnosis)}`, hint,
+        { job: jobData(job, context.now), diagnosis: diagnosisData(diagnosis) });
+}
+
 function failed(job: Job, context: ResultContext, decided: JobExecution): ToolError {
     const { tag, now } = context;
     const preface = context.preface ?? '';
@@ -196,10 +268,13 @@ function failed(job: Job, context: ResultContext, decided: JobExecution): ToolEr
             `${preface}❌ CMSIS 'load_and_run' FAILED${tag} — '${decided.name}' ended without a live 'CMSIS Run' (job ${id}).${meanwhile(job)}`,
             RUN_FAILED_HINT);
     }
+    if (job.action === 'build') {
+        return failedBuild(job, context, decided);
+    }
     return new ToolError('TASK_FAILED',
         `${preface}❌ CMSIS '${job.action}' FAILED${tag} — task '${decided.name}' exited with code ${code} after ${ranFor(decided, now)} `
             + `(job ${id}).${meanwhile(job)}`,
-        job.action === 'build' ? BUILD_FAILED_HINT : flashFailedHint(decided.name));
+        flashFailedHint(decided.name));
 }
 
 /**
@@ -281,7 +356,10 @@ function liveEntry(execution: LiveExecution, now: number, holds: (kind: string) 
 
 const PROBE_HOLDERS: ReadonlySet<string> = new Set(['run', 'loadRun', 'load', 'erase', 'targetInfo']);
 
-/** The `status` answer when no job is open: recent results and the live CMSIS tasks of the window. */
+/**
+ * The `status` answer when no job is open: recent results with the error
+ * lines of a failed build, and the live CMSIS tasks of the window.
+ */
 export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[], now: number): string {
     const lines: string[] = [];
     if (recent.length === 0) {
@@ -294,6 +372,13 @@ export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[
             return `${job.action}${where} ${verdictMark(job)} ${formatDuration(now - (job.settledAt ?? now))} ago (job ${job.id}${named})`;
         });
         lines.push(`No CMSIS job in flight in this window. Last results (10 min): ${results.join('; ')}.`);
+        for (const job of recent) {
+            if (job.diagnosis?.state === 'done') {
+                lines.push(`Build job ${job.id} failed: ${job.diagnosis.text}`);
+            } else if (job.diagnosis?.state === 'pending') {
+                lines.push(`The error lines of build job ${job.id} are still being collected — cmsis_action {action:'status'} again shows them.`);
+            }
+        }
     }
     if (live.length === 0) {
         lines.push('No CMSIS task is running in this window.');

@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - The step list of the agent guide and the opening text of the bundled skills get a heading of their own, so they no longer sit under the rules heading.
 
 ### Fixed
+- **A failed `cmsis_action build` shows its error lines (#15).**
+  - Before, the result carried only the exit code and sent the agent to a terminal it cannot read: CMSIS Solution runs cbuild in a pseudoterminal and keeps no log.
+  - The errors csolution records in the solution's `cbuild-idx.yml`, such as a missing pack or component, are read first; when that file names no error, cbuild runs once more with `--log` and its log is parsed. The re-run leaves out pack downloads, RTE updates and cleaning, adds `--skip-convert` after a fresh index, stops after 120 s or when another build starts, and writes `out/cmsis-developer-assistant/build-diagnostic.log` next to the solution, where `get_build_diagnostics` finds it.
+  - The result shows at most 10 lines, errors first with file and line, and says that a re-run's warnings are only those of the files it recompiled. It also carries the errors and warnings in `data`. When the lines take longer than the call's wait, the result says so and `cmsis_action {action:'status'}` returns them.
+  - The new setting `cmsis-developer-assistant.build.diagnosticRerun` (default on) switches the re-run off; the csolution messages are always read. Without `.cmsis/tools-environment.yml` (CMSIS Solution before 1.70.1) there is no re-run, and the result says why.
 - **A serial port that goes away by itself is reported as closed, with the reason (part of #49).**
   - Previously the port's `close` and `error` events were only logged. After an unplug, `serial_status` still showed the old path, baud rate and open time, and `serial_write` said only "No serial port open".
   - The owned port is now forgotten when it closes by itself, or fails after closing; a late event of a port already replaced changes nothing. The bytes received before stay readable.

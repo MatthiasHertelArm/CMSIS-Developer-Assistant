@@ -30,6 +30,7 @@ import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail } from '../core/toolResult';
 import type { HandlerHost } from '../handler/host';
 import { CmsisJobTracker } from '../cmsisJobTracker';
+import type { JobDiagnosis } from '../core/cmsisTasks';
 import { FakeExecution, FakeTasks, FixtureTask, workspaceTasks } from './cmsisTaskFixtures';
 
 /**
@@ -1702,6 +1703,41 @@ suite('DebuggingHandler', () => {
                 const cancelled = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
                 assert.match(cancelled.message, /^CMSIS 'build' on HE — task '.*' ended without an exit code after [\d.]+ s \(it may have been cancelled; job b-3\)\.$/);
                 assert.strictEqual(cancelled.hint, 'Re-run cmsis_action build to get a definite result.');
+            });
+
+            test('a failed build shows its error lines when they arrive within the deadline; after it, status shows them (#15)', async () => {
+                const w = jobWorld();
+                const diagnosis: JobDiagnosis = {
+                    state: 'done', source: 'rerun', errorCount: 1, warningCount: 0, logFile: '/w/out/cmsis-developer-assistant/build-diagnostic.log',
+                    errors: [{ severity: 'error', file: '/w/main.c', line: 42, column: 5, message: '\'ledx\' undeclared' }], warnings: [],
+                    text: '1 error (from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0):\n'
+                        + '  main.c:42:5 error: \'ledx\' undeclared',
+                };
+                let deliver: () => void = () => undefined;
+                w.tracker.onDidFinishJob((job) => {
+                    if (job.state === 'failed') {
+                        w.tracker.completeWith(job.id, new Promise<JobDiagnosis>((resolve) => {
+                            deliver = () => resolve(diagnosis);
+                        }));
+                    }
+                });
+                solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 2, true) });
+                setTimeout(() => deliver(), 100);
+                const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
+                assert.match(failed.message, /^❌ CMSIS 'build' FAILED on HE — task '.*' exited with code 2 after [\d.]+ s \(job b-1\)\.\n1 error \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0\):\n {2}main\.c:42:5 error: 'ledx' undeclared$/);
+                assert.strictEqual(failed.hint, 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.');
+                assert.strictEqual((failed.data?.diagnosis as Record<string, unknown>).errorCount, 1);
+                assert.strictEqual((failed.data?.job as Record<string, unknown>).id, 'b-1');
+
+                again();
+                solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 2, true) });
+                const early = await refusalOf(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'TASK_FAILED');
+                assert.ok(early.message.endsWith('(job b-2).\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most 120 s).'), early.message);
+                assert.strictEqual(early.hint, 'Call cmsis_action {action:\'status\'} for the error lines — do not start another build to see them. '
+                    + 'This is a terminal result — do not wait for an output file.');
+                setTimeout(() => deliver(), 50);
+                const idle = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
+                assert.match(idle, /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE ❌ exit 2 [\d.]+ s ago \(job b-2, '.*'\)\.\nBuild job b-2 failed: 1 error \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0\):\n {2}main\.c:42:5 error: 'ledx' undeclared\nNo CMSIS task is running in this window\.$/);
             });
 
             test('the build the command returns is the result, not another build that started first', async () => {

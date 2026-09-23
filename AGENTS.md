@@ -63,10 +63,11 @@ Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts` and
 `src/core/serialMonitorBridge.ts` (the `serial_*` tools);
 `src/utils/sessionStateTracker.ts` (which session is active, stop events);
 `src/cmsisJobTracker.ts` (the window's CMSIS tasks, the `cmsis_action` jobs
-and what holds the probe); `src/core/` in general (SVD parsing, fault
-decoding and triage, CMSIS target selection and task classification, tool
-metrics, topic slicing of the agent guide), where most modules do not import
-`vscode` at all.
+and what holds the probe); `src/cmsisBuildDiagnosis.ts` with
+`src/core/buildFailure.ts` (the error lines of a failed build);
+`src/core/` in general (SVD parsing, fault decoding and triage, CMSIS
+target selection and task classification, tool metrics, topic slicing of
+the agent guide), where most modules do not import `vscode` at all.
 
 ## Entry points
 
@@ -114,6 +115,7 @@ checks a built package.
 | `cmsis-developer-assistant.dapRequestTimeoutMs` | 10000 | Deadline of one DAP request |
 | `cmsis-developer-assistant.memoryReadTimeoutMs` | 30000 | Deadline of a read that takes several requests (memory, registers, peripherals) |
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withhold variable and expression values that look like credentials; raw target reads are never redacted |
+| `cmsis-developer-assistant.build.diagnosticRerun` | `true` | After a failed build, re-run cbuild once with `--log` (no pack download, RTE update or clean; 120 s cap) so the `cmsis_action` result shows the error lines; off leaves only the csolution messages of `cbuild-idx.yml`. Scope `window` |
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the ten `serial_*` tools |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off |
 | `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills from `skills/catalog.json` to install. Where the value is set decides where they go: the User value into the personal skills directories, a Workspace or Folder value into that folder's `.agents/skills` (plus `.claude/skills` when Claude Code is installed or the folder has a `.claude` directory), pack skills only. `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed for the user. Scope `resource` |
@@ -122,10 +124,11 @@ checks a built package.
 | `cmsis-developer-assistant.packDocs.enabled` | `false` | Register the five documentation tools. PDF text comes from the bundled pdf.js, or from `pdftotext` when `packDocs.extractor` says so; `packDocs.*` also set the size limit, unlisted pack PDFs and the workspace and user document folders |
 | `cmsis-developer-assistant.buildInfo.enabled` | `false` | Register the five build-artefact tools; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
 
-`installedSkills` and `aiSkills.enabled` take effect at once and
-`redactSecrets` is read on every call. The port, the timeouts, the tool-group
-switches and the telemetry file are read at activation; after a change the
-window has to be reloaded, and the extension offers to do it when the port,
+`installedSkills` and `aiSkills.enabled` take effect at once,
+`redactSecrets` is read on every call and `build.diagnosticRerun` for every
+failed build. The port, the timeouts, the tool-group switches and the
+telemetry file are read at activation; after a change the window has to be
+reloaded, and the extension offers to do it when the port,
 `packDocs.enabled` or `buildInfo.enabled` changes.
 
 ## Documents served to agents

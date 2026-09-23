@@ -17,10 +17,14 @@
 /**
  * Plain-text renderers for the build-info tools. Every line names the file
  * it came from (`[Blinky.axf]`, `[Blinky.axf.map]`), results stay under a
- * character budget, and each ends with a `Next:` hint.
+ * character budget, and each ends with a `Next:` hint. `renderBuildFailure`
+ * is the short block a failed `cmsis_action build` shows (#15).
  */
 
 import * as path from 'path';
+import { DIAGNOSTIC_RERUN_CAP_MS } from '../buildFailure';
+import type { BuildFailureReport } from '../buildFailure';
+import type { BuildMessage } from '../cmsisTasks';
 import { clipValue, formatBytes, truncateList } from '../packDocs/textBudget';
 import { BuildContext, ImageArtifacts, MemoryRegion } from './artifacts';
 import { BuildLogSummary, Diagnostic, shortPath } from './buildLog';
@@ -386,6 +390,136 @@ export function renderDiagnostics(input: DiagnosticsRenderInput): string {
     lines.push('');
     lines.push('Next: open the file:line of the first error; after a fix, rebuild with `cbuild … --log <file>` and call again.');
     return clipValue(lines.join('\n'), input.maxChars ?? DEFAULT_MAX_CHARS);
+}
+
+/** How much of a failed build the `cmsis_action` result shows (#15). */
+export interface BuildFailureRenderOptions {
+    /** Message lines at most, errors first; 10 by default. */
+    limit?: number;
+    /** Characters at most for the whole block; 3 000 by default. */
+    maxChars?: number;
+    /** Paths inside it are shown relative to it: the solution directory. */
+    root?: string;
+}
+
+const BUILD_FAILURE_LIMIT = 10;
+const BUILD_FAILURE_MAX_CHARS = 3_000;
+/** One message line is cut after this many characters. */
+const BUILD_MESSAGE_MAX_CHARS = 300;
+
+function plural(count: number, noun: string): string {
+    return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** A file as a message line shows it: relative to `root` when inside it, else its last three parts. */
+function shownPath(file: string, root?: string): string {
+    const slashed = file.replace(/\\/g, '/');
+    if (root) {
+        const prefix = `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/`;
+        const inside = /^[a-z]:/i.test(prefix) ? slashed.toLowerCase().startsWith(prefix.toLowerCase()) : slashed.startsWith(prefix);
+        if (inside && slashed.length > prefix.length) {
+            return slashed.slice(prefix.length);
+        }
+    }
+    return /^(?:\/|[a-z]:\/)/i.test(slashed) ? shortPath(slashed) : slashed;
+}
+
+/** `Blinky/main.c:42:5 error: 'ledx' undeclared`, `error L6218E: …`, `error csolution: …`, `… [-Wunused-variable]`. */
+function buildMessageLine(message: BuildMessage, root: string | undefined, prefix = ''): string {
+    const where = message.file
+        ? `${shownPath(message.file, root)}${message.line ? `:${message.line}` : ''}${message.column ? `:${message.column}` : ''} `
+        : '';
+    const flag = message.code?.startsWith('-W') ? ` [${message.code}]` : '';
+    const code = message.code && !flag ? ` ${message.code}` : '';
+    const text = message.message.split(/\r?\n/).map((part) => part.trim()).filter((part) => part.length > 0).join('; ');
+    const line = `  ${prefix}${where}${message.severity}${code}: ${text}${flag}`;
+    return line.length > BUILD_MESSAGE_MAX_CHARS ? `${line.slice(0, BUILD_MESSAGE_MAX_CHARS - 1)}…` : line;
+}
+
+/** The one context all messages share, if they share one. */
+function sharedContext(messages: readonly BuildMessage[]): string | undefined {
+    const contexts = new Set(messages.map((message) => message.context));
+    return contexts.size === 1 ? [...contexts][0] : undefined;
+}
+
+/** The first line: how many errors, from where, and what limits the warnings. */
+function buildFailureHeader(report: BuildFailureReport): string {
+    const warnings = report.warningCount;
+    switch (report.source) {
+        case 'csolution': {
+            const context = sharedContext([...report.errors, ...report.warnings]);
+            const from = `${report.idxFile ? path.basename(report.idxFile) : 'cbuild-idx.yml'}${context ? `, context ${context}` : ''}`;
+            return `${plural(report.errorCount, 'error')} from csolution (${from})${warnings > 0 ? `, ${plural(warnings, 'warning')}` : ''}:`;
+        }
+        case 'rerun': {
+            const rerun = report.rerun;
+            const stopped = rerun?.stoppedAtCap ? `; the re-run was stopped after ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s` : '';
+            if (report.errorCount > 0) {
+                return `${plural(report.errorCount, 'error')} (from a diagnostic re-run of cbuild with --log; `
+                    + `warnings only from the files it recompiled: ${warnings}${stopped}):`;
+            }
+            const status = rerun?.status ? `, "${rerun.status}"` : '';
+            if (report.failedSteps.length > 0) {
+                return `No compiler error line, but ninja steps failed in a diagnostic re-run of cbuild with --log${status}${stopped}:`;
+            }
+            if (rerun?.exitCode === 0) {
+                return 'A diagnostic re-run of cbuild with --log succeeded (exit 0): the failure did not repeat. '
+                    + 'cmsis_action build again to confirm.';
+            }
+            if (rerun?.stoppedAtCap) {
+                return `A diagnostic re-run of cbuild with --log was stopped after ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s `
+                    + 'before it printed an error line.';
+            }
+            const exit = rerun?.exitCode !== undefined && rerun.exitCode !== null ? ` with exit code ${rerun.exitCode}` : '';
+            return `A diagnostic re-run of cbuild with --log failed${exit}${status} but printed no error line in a known format.`;
+        }
+        case 'none':
+            return `No error lines: ${report.skipped ?? 'there was nothing to read'}.`;
+    }
+}
+
+/**
+ * The block a failed build's `cmsis_action` result shows (#15): a header
+ * that says where the lines come from, then errors, failed ninja steps,
+ * warnings and csolution's warnings, each with file:line where the tool
+ * gave one, at most `limit` lines and `maxChars` characters in all, and
+ * where to read more. A re-run's warning count is only that of the files it
+ * recompiled, and the header says so.
+ */
+export function renderBuildFailure(report: BuildFailureReport, options: BuildFailureRenderOptions = {}): string {
+    const limit = options.limit ?? BUILD_FAILURE_LIMIT;
+    const maxChars = options.maxChars ?? BUILD_FAILURE_MAX_CHARS;
+    const root = options.root;
+    const header = buildFailureHeader(report);
+    const shared = report.source === 'csolution' ? sharedContext([...report.errors, ...report.warnings]) : undefined;
+    const withContext = (message: BuildMessage): string => (message.context && message.context !== shared ? `[${message.context}] ` : '');
+    const entries = [
+        ...report.errors.map((message) => buildMessageLine(message, root, withContext(message))),
+        ...report.failedSteps.map((step) => `  ninja FAILED: ${step}`),
+        ...report.warnings.map((message) => buildMessageLine(message, root, withContext(message))),
+        ...report.csolutionWarnings.map((message) => buildMessageLine(message, root, 'csolution ')),
+    ];
+    const footer: string[] = [];
+    if (report.logFile) {
+        footer.push(`Full log: ${shownPath(report.logFile, root)} (get_build_diagnostics reads it).`);
+    } else if (report.source === 'none') {
+        footer.push('get_build_diagnostics (setting cmsis-developer-assistant.buildInfo.enabled) reads a build log if the user captures one with cbuild --log.');
+    }
+    const shown: string[] = [];
+    const room = (extra: string): boolean => [header, ...shown, extra, ...footer].join('\n').length <= maxChars;
+    for (const entry of entries) {
+        const remaining = entries.length - shown.length - 1;
+        const more = remaining > 0 ? `  … ${remaining} more` : '';
+        if (shown.length >= limit || !room(more ? `${entry}\n${more}` : entry)) {
+            break;
+        }
+        shown.push(entry);
+    }
+    if (shown.length < entries.length) {
+        shown.push(`  … ${entries.length - shown.length} more${report.logFile ? ' in the log' : ''}`);
+    }
+    const text = [header, ...shown, ...footer].join('\n');
+    return text.length <= maxChars ? text : `${text.slice(0, maxChars - 1)}…`;
 }
 
 export function renderNoLog(globs: readonly string[], ctxLine?: string): string {
