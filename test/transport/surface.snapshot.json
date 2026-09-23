@@ -291,7 +291,7 @@
                 "maximum": 9007199254740991
               },
               "condition": {
-                "description": "Optional condition, e.g. \"i == 100\" — GDB-native, so the core halts only when it holds.",
+                "description": "Optional condition, e.g. \"i == 100\": the target stops only when it holds, though GDB tests it at every hit, halting the core briefly each time.",
                 "type": "string"
               },
               "lineContent": {
@@ -381,7 +381,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "Show the breakpoints that are set, in every file.",
+          "description": "Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1260,24 +1260,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 34860,
-          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
+          "bytes": 36142,
+          "sha256": "1a173b95a5bc962b8ba48dcdfe533be336754ba78087b0cb564143ceb1cd00d8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
           "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11244,
-          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
+          "bytes": 11339,
+          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6143,
-          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
+          "bytes": 6297,
+          "sha256": "604b6a23af60a9e00cdd68e9e17c87e9852d3907f23a51ef282a84c4501fd887"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5241,
-          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
+          "bytes": 5457,
+          "sha256": "4b14216cdd87e0bf901fa88b2d42d03cfef923a385b21dcca75d72628d1c5877"
         }
       },
       "calls": {
@@ -1885,7 +1885,7 @@
                 "maximum": 9007199254740991
               },
               "condition": {
-                "description": "Optional condition, e.g. \"i == 100\" — GDB-native, so the core halts only when it holds.",
+                "description": "Optional condition, e.g. \"i == 100\": the target stops only when it holds, though GDB tests it at every hit, halting the core briefly each time.",
                 "type": "string"
               },
               "lineContent": {
@@ -1975,7 +1975,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "Show the breakpoints that are set, in every file.",
+          "description": "Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -2607,24 +2607,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 34860,
-          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
+          "bytes": 36142,
+          "sha256": "1a173b95a5bc962b8ba48dcdfe533be336754ba78087b0cb564143ceb1cd00d8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
           "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11244,
-          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
+          "bytes": 11339,
+          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6143,
-          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
+          "bytes": 6297,
+          "sha256": "604b6a23af60a9e00cdd68e9e17c87e9852d3907f23a51ef282a84c4501fd887"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5241,
-          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
+          "bytes": 5457,
+          "sha256": "4b14216cdd87e0bf901fa88b2d42d03cfef923a385b21dcca75d72628d1c5877"
         }
       },
       "calls": {}
@@ -2919,7 +2919,7 @@
                 "maximum": 9007199254740991
               },
               "condition": {
-                "description": "Optional condition, e.g. \"i == 100\" — GDB-native, so the core halts only when it holds.",
+                "description": "Optional condition, e.g. \"i == 100\": the target stops only when it holds, though GDB tests it at every hit, halting the core briefly each time.",
                 "type": "string"
               },
               "lineContent": {
@@ -3009,7 +3009,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "Show the breakpoints that are set, in every file.",
+          "description": "Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -4367,24 +4367,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 34860,
-          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
+          "bytes": 36142,
+          "sha256": "1a173b95a5bc962b8ba48dcdfe533be336754ba78087b0cb564143ceb1cd00d8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
           "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11244,
-          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
+          "bytes": 11339,
+          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6143,
-          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
+          "bytes": 6297,
+          "sha256": "604b6a23af60a9e00cdd68e9e17c87e9852d3907f23a51ef282a84c4501fd887"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5241,
-          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
+          "bytes": 5457,
+          "sha256": "4b14216cdd87e0bf901fa88b2d42d03cfef923a385b21dcca75d72628d1c5877"
         }
       },
       "calls": {
@@ -5022,7 +5022,7 @@
                 "maximum": 9007199254740991
               },
               "condition": {
-                "description": "Optional condition, e.g. \"i == 100\" — GDB-native, so the core halts only when it holds.",
+                "description": "Optional condition, e.g. \"i == 100\": the target stops only when it holds, though GDB tests it at every hit, halting the core briefly each time.",
                 "type": "string"
               },
               "lineContent": {
@@ -5112,7 +5112,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "Show the breakpoints that are set, in every file.",
+          "description": "Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -6029,24 +6029,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 34860,
-          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
+          "bytes": 36142,
+          "sha256": "1a173b95a5bc962b8ba48dcdfe533be336754ba78087b0cb564143ceb1cd00d8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
           "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11244,
-          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
+          "bytes": 11339,
+          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6143,
-          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
+          "bytes": 6297,
+          "sha256": "604b6a23af60a9e00cdd68e9e17c87e9852d3907f23a51ef282a84c4501fd887"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5241,
-          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
+          "bytes": 5457,
+          "sha256": "4b14216cdd87e0bf901fa88b2d42d03cfef923a385b21dcca75d72628d1c5877"
         }
       },
       "calls": {
@@ -6770,7 +6770,7 @@
                 "maximum": 9007199254740991
               },
               "condition": {
-                "description": "Optional condition, e.g. \"i == 100\" — GDB-native, so the core halts only when it holds.",
+                "description": "Optional condition, e.g. \"i == 100\": the target stops only when it holds, though GDB tests it at every hit, halting the core briefly each time.",
                 "type": "string"
               },
               "lineContent": {
@@ -6860,7 +6860,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "Show the breakpoints that are set, in every file.",
+          "description": "Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -7777,24 +7777,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 34860,
-          "sha256": "fa2a1be0b9139b77a858cbf91237ab2a795eb8fb6224442b439a8fa169c58b7f"
+          "bytes": 36142,
+          "sha256": "1a173b95a5bc962b8ba48dcdfe533be336754ba78087b0cb564143ceb1cd00d8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
           "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11244,
-          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
+          "bytes": 11339,
+          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6143,
-          "sha256": "dc467f77837da32a931ee90b5ebf62c22c39e17376d795c5693011d3876c7ae7"
+          "bytes": 6297,
+          "sha256": "604b6a23af60a9e00cdd68e9e17c87e9852d3907f23a51ef282a84c4501fd887"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 5241,
-          "sha256": "70f89aec54653c489550f3c0ef440c78c83276d0e877d55f8a30cbb7556e62f1"
+          "bytes": 5457,
+          "sha256": "4b14216cdd87e0bf901fa88b2d42d03cfef923a385b21dcca75d72628d1c5877"
         }
       },
       "calls": {

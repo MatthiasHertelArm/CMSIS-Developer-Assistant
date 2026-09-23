@@ -20,7 +20,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
-import type { IDebuggingExecutor } from '../debuggingExecutor';
+import type { BreakpointBinding, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
 import type { IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
@@ -83,7 +83,21 @@ class ScriptedExecutor {
     state: DebugState = sampleState();
     registers: Record<string, string> = { pc: '0x08000100', lr: '0x08000200' };
     breakpoints: vscode.Breakpoint[] = [];
-    gdbReply = '';
+    /** What the adapter reports for a breakpoint; by default verified where it was set. */
+    binding: (bp: vscode.Breakpoint) => BreakpointBinding | undefined = (bp) => ({
+        reported: true, verified: true, line: bp instanceof vscode.SourceBreakpoint ? bp.location.range.start.line + 1 : undefined, id: 7,
+    });
+    /** Whether the adapter answers `setBreakpoints` in time after a removal. */
+    removalApplied: boolean | undefined = true;
+    /** GDB's answers, by the first word of the command. */
+    gdbReplies: Record<string, GdbReply> = {
+        dprintf: { text: JSON.stringify({ bkpt: { number: '3', type: 'dprintf', addr: '0x080002f4', file: 'main.c', line: '12' } }), errored: false },
+        condition: { text: '', errored: false },
+        delete: { text: '', errored: false },
+        list: { text: JSON.stringify({ BreakpointTable: { body: [{ number: '3', type: 'dprintf', times: '4' }] } }), errored: false },
+    };
+    logpoints: GdbLogpoint[] = [];
+    restartOutcome: Awaited<ReturnType<IDebuggingExecutor['restart']>> = { via: 'workbench' };
 
     note(name: string, ...args: unknown[]): void {
         this.calls.push([name, ...args]);
@@ -152,42 +166,65 @@ class ScriptedExecutor {
         this.note('stopDebugging', ...args);
     };
     restart: IDebuggingExecutor['restart'] = async () => {
+        this.moves.push('restart');
         this.note('restart');
+        this.failIfScripted('restart');
+        return this.restartOutcome;
     };
     waitForStop: IDebuggingExecutor['waitForStop'] = async (ms) => {
         this.note('waitForStop', ms);
         return { kind: 'timeout' };
     };
     addBreakpoint: IDebuggingExecutor['addBreakpoint'] = async (uri, line, options) => {
+        this.moves.push('addBreakpoint');
         this.note('addBreakpoint', uri.fsPath, line, options);
+        this.failIfScripted('addBreakpoint');
+        const added = new vscode.SourceBreakpoint(new vscode.Location(uri, new vscode.Position(line - 1, 0)), true,
+            options?.condition, undefined, options?.logMessage);
+        this.breakpoints = [...this.breakpoints, added];
+        return added;
     };
-    removeBreakpoint: IDebuggingExecutor['removeBreakpoint'] = async (uri, line) => {
-        this.note('removeBreakpoint', uri.fsPath, line);
+    removeBreakpoint: IDebuggingExecutor['removeBreakpoint'] = async (uri, line, options) => {
+        this.moves.push('removeBreakpoint');
+        this.note('removeBreakpoint', uri.fsPath, line, options);
+        const matching = this.breakpoints.filter((bp) => bp instanceof vscode.SourceBreakpoint
+            && bp.location.uri.toString() === uri.toString() && bp.location.range.start.line === line - 1
+            && (!options?.logpointsOnly || Boolean(bp.logMessage)));
+        this.breakpoints = this.breakpoints.filter((bp) => !matching.includes(bp));
+        return matching.length > 0 ? { removed: matching.length, applied: this.session ? this.removalApplied : undefined } : { removed: 0 };
     };
     getBreakpoints: IDebuggingExecutor['getBreakpoints'] = () => this.breakpoints;
-    clearAllBreakpoints: IDebuggingExecutor['clearAllBreakpoints'] = () => {
+    clearAllBreakpoints: IDebuggingExecutor['clearAllBreakpoints'] = async () => {
+        this.moves.push('clearAllBreakpoints');
         this.note('clearAllBreakpoints');
+        const removed = this.breakpoints.length;
         this.breakpoints = [];
+        return removed > 0 ? { removed, applied: this.session ? this.removalApplied : undefined } : { removed: 0 };
     };
-    setBreakpointViaGdb: IDebuggingExecutor['setBreakpointViaGdb'] = async (file, line, ms, condition) => {
-        this.note('setBreakpointViaGdb', file, line, ms, condition);
-        return this.gdbReply;
+    breakpointBinding: IDebuggingExecutor['breakpointBinding'] = async (bp, waitMs) => {
+        this.note('breakpointBinding', waitMs);
+        return this.session ? this.binding(bp) : undefined;
     };
-    setLogpointViaGdb: IDebuggingExecutor['setLogpointViaGdb'] = async (file, line, format, args) => {
-        this.note('setLogpointViaGdb', file, line, format, args);
-        return this.gdbReply;
+    private gdb(name: string, key: string, ...args: unknown[]): GdbReply {
+        this.moves.push(name);
+        this.note(name, ...args);
+        return this.gdbReplies[key];
+    }
+    insertDprintfViaGdb: IDebuggingExecutor['insertDprintfViaGdb'] = async (location, format, values) =>
+        this.gdb('insertDprintfViaGdb', 'dprintf', location, format, values);
+    setBreakpointConditionViaGdb: IDebuggingExecutor['setBreakpointConditionViaGdb'] = async (num, condition) =>
+        this.gdb('setBreakpointConditionViaGdb', 'condition', num, condition);
+    deleteBreakpointsViaGdb: IDebuggingExecutor['deleteBreakpointsViaGdb'] = async (numbers) =>
+        this.gdb('deleteBreakpointsViaGdb', 'delete', numbers);
+    listBreakpointsViaGdb: IDebuggingExecutor['listBreakpointsViaGdb'] = async () => this.gdb('listBreakpointsViaGdb', 'list');
+    gdbLogpoints: IDebuggingExecutor['gdbLogpoints'] = () => this.logpoints.map((logpoint) => ({ ...logpoint }));
+    rememberGdbLogpoint: IDebuggingExecutor['rememberGdbLogpoint'] = (logpoint) => {
+        this.note('rememberGdbLogpoint', logpoint);
+        this.logpoints = [...this.logpoints, logpoint];
     };
-    setBreakpointConditionViaGdb: IDebuggingExecutor['setBreakpointConditionViaGdb'] = async (num, condition) => {
-        this.note('setBreakpointConditionViaGdb', num, condition);
-        return '';
-    };
-    clearBreakpointViaGdb: IDebuggingExecutor['clearBreakpointViaGdb'] = async (file, line) => {
-        this.note('clearBreakpointViaGdb', file, line);
-        return this.gdbReply;
-    };
-    clearAllBreakpointsViaGdb: IDebuggingExecutor['clearAllBreakpointsViaGdb'] = async () => {
-        this.note('clearAllBreakpointsViaGdb');
-        return this.gdbReply;
+    forgetGdbLogpoints: IDebuggingExecutor['forgetGdbLogpoints'] = (numbers) => {
+        this.note('forgetGdbLogpoints', numbers);
+        this.logpoints = this.logpoints.filter((logpoint) => !numbers.includes(logpoint.number));
     };
     getVariables: IDebuggingExecutor['getVariables'] = async (frameId, scope, ms) => {
         this.note('getVariables', frameId, scope, ms);
@@ -719,14 +756,63 @@ suite('DebuggingHandler', () => {
                 'Could not restart the debug session: Error: Nothing to restart — no debug session is active');
 
             const x = new ScriptedExecutor();
+            x.sessionStatus = status('stopped');
             assert.strictEqual(await textAnswer(handlerFor(x).handleRestart({ timeoutMs: 1 })), 'The debug session has been restarted.');
             assert.deepStrictEqual(x.argsOf('restart'), [[]]);
+            assert.deepStrictEqual(x.moves, ['restart'], 'a stopped target is not paused');
 
             const stuck = new ScriptedExecutor();
             stuck.sessionStatus = status('initializing');
             assert.strictEqual(await rejectionOf(handlerFor(stuck, fastClock(200), 7).handleRestart()),
                 'Could not restart the debug session: Error: Debug session restart issued but target did not become ready '
                 + 'within the 7s timeout. The probe or target may be unresponsive.');
+        });
+
+        test('restart pauses a running CMSIS Debugger target first and says how it restarted', async () => {
+            const x = new ScriptedExecutor();
+            x.sessionStatus = status('running');
+            x.waiters.push({ kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            x.restartOutcome = { via: 'relaunched', configurationName: 'CMSIS Debugger: pyOCD', preLaunchTask: 'CMSIS Load' };
+            x.logpoints = [{ number: 3, file: '/w/main.c', line: 12, message: 'tick' }];
+            const reply = await textAnswer(handlerFor(x).handleRestart());
+            assert.deepStrictEqual(x.moves, ['arm', 'pause', 'restart'], 'the pause is armed and sent before the restart');
+            assert.deepStrictEqual(x.argsOf('pause'), [[5000]]);
+            assert.strictEqual(reply, 'The debug session has been restarted. '
+                + 'It was stopped and its launch configuration \'CMSIS Debugger: pyOCD\' started again. '
+                + 'The target was paused first. '
+                + 'Its preLaunchTask "CMSIS Load" ran first; a CMSIS launch configuration flashes the image there and resets the target in its initCommands. '
+                + 'The 1 GDB dprintf logpoint(s) ended with the old session; add them again with add_logpoint.');
+        });
+
+        test('restart goes ahead when the pause before it does not stop the target or fails', async () => {
+            const silent = new ScriptedExecutor();
+            silent.sessionStatus = status('running');
+            silent.waiters.push({ kind: 'timeout' });
+            const late = await textAnswer(handlerFor(silent).handleRestart());
+            assert.deepStrictEqual(silent.moves, ['arm', 'pause', 'restart']);
+            assert.strictEqual(late, 'The debug session has been restarted. '
+                + '⚠️ The target did not stop within 5 s of the pause request; the session was restarted anyway.');
+
+            const refused = new ScriptedExecutor();
+            refused.sessionStatus = status('running');
+            refused.waiters.push(new Promise<StopWaitResult>(() => undefined));
+            refused.failures.pause = new ToolError('INTERNAL', 'GDB rejected \'pause\': no thread');
+            const failed = await textAnswer(handlerFor(refused).handleRestart());
+            assert.ok(failed.endsWith('⚠️ Pausing the target first failed (GDB rejected \'pause\': no thread); the session was restarted anyway.'), failed);
+            assert.deepStrictEqual(refused.argsOf('restart'), [[]]);
+        });
+
+        test('restart does not pause other adapters, and a failed restart is wrapped with its code', async () => {
+            const python = new ScriptedExecutor();
+            python.sessionStatus = status('running', { sessionType: 'python' });
+            assert.strictEqual(await textAnswer(handlerFor(python).handleRestart()), 'The debug session has been restarted.');
+            assert.deepStrictEqual(python.moves, ['restart']);
+
+            const broken = new ScriptedExecutor();
+            broken.sessionStatus = status('stopped');
+            broken.failures.restart = new Error('Restarting the debug session failed: Error: VS Code did not start the launch configuration \'X\' again.');
+            const failure = await refusalOf(handlerFor(broken).handleRestart(), 'INTERNAL');
+            assert.ok(failure.message.startsWith('Could not restart the debug session: Error: Restarting the debug session failed:'), failure.message);
         });
 
         test('reset passes the method default and renders the outcome', async () => {
@@ -810,14 +896,22 @@ suite('DebuggingHandler', () => {
             }
         });
 
-        test('line numbers are checked and a location is required', async () => {
+        /** A scripted CMSIS Debugger session whose target is halted. */
+        function halted(): ScriptedExecutor {
             const x = new ScriptedExecutor();
+            x.sessionStatus = status('stopped');
+            return x;
+        }
+
+        test('line numbers are checked and a location is required', async () => {
+            const x = halted();
             assert.strictEqual((await refusalOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 0 }), 'INVALID_ARGUMENT')).message,
                 'Error adding breakpoint: Error: Invalid line number 0: must be a 1-based integer.');
             assert.strictEqual(await rejectionOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c' })),
                 'Error adding breakpoint: Error: No location given: pass `line` (1-based line number). '
                 + 'The legacy `lineContent` form is still accepted but deprecated.');
             assert.deepStrictEqual(x.argsOf('addBreakpoint'), []);
+            assert.deepStrictEqual(x.moves, [], 'a refused request pauses nothing');
         });
 
         test('without a session the breakpoint only goes to the model', async () => {
@@ -825,138 +919,297 @@ suite('DebuggingHandler', () => {
             x.session = false;
             const reply = await textAnswer(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10, condition: 'i > 3' }));
             assert.deepStrictEqual(x.argsOf('addBreakpoint'), [['/w/main.c', 10, { condition: 'i > 3' }]]);
-            assert.deepStrictEqual(x.argsOf('setBreakpointViaGdb'), []);
-            assert.strictEqual(reply, 'Breakpoint added at /w/main.c:10 [when: i > 3]\n(No debug session yet — added to the breakpoint list. '
-                + 'It will be GDB-bound when you add it again after the session is up, or re-add after attach.)');
+            assert.deepStrictEqual(x.argsOf('breakpointBinding'), []);
+            assert.deepStrictEqual(x.moves, ['addBreakpoint']);
+            assert.strictEqual(reply, 'Breakpoint added at /w/main.c:10 [when: i > 3]\n'
+                + '(No debug session yet — added to VS Code\'s breakpoint list; the debugger binds it when a session starts.)');
         });
 
-        test('the GDB reply decides how the result reads', async () => {
-            const x = new ScriptedExecutor();
+        test('the adapter\'s own report says how the breakpoint bound', async () => {
+            const x = halted();
             const h = handlerFor(x);
-            x.gdbReply = 'Breakpoint 2 at 0x800012c: file main.c, line 10.';
             assert.strictEqual(await textAnswer(h.handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 })),
-                'Breakpoint added at /w/main.c:10\nGDB confirmed binding:\n  line 10: Breakpoint 2 at 0x800012c: file main.c, line 10. [bound]');
-            x.gdbReply = 'No source file named foo.c.';
-            assert.ok((await textAnswer(h.handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }))).startsWith(
-                'Breakpoint added at /w/main.c:10\n⚠️ GDB rejected one or more breakpoints:\n  line 10: No source file named foo.c. [rejected]\n'
-                + '"No source file" / "No line" means the path does not match'));
-            x.gdbReply = 'Error: could not evaluate expression';
-            assert.strictEqual(await textAnswer(h.handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 })),
-                'Breakpoint added at /w/main.c:10\nSent to GDB (`break`). The adapter did not echo a confirmation — this is normal for gdbtarget '
-                + 'and does NOT mean it failed. The breakpoint is set; verify by running continue_execution (the target should stop) '
-                + 'or list_breakpoints.\n  line 10: <no echo from adapter — normal> [unconfirmed]');
-            assert.deepStrictEqual(x.argsOf('setBreakpointViaGdb')[0], ['/w/main.c', 10, undefined, undefined]);
+                'Breakpoint added at /w/main.c:10\nAdapter: verified as GDB breakpoint 7.');
+            assert.deepStrictEqual(x.argsOf('breakpointBinding'), [[2000]], 'the wait for the adapter is bounded to 2 s');
+
+            x.binding = () => ({ reported: true, verified: true, line: 12, id: 8 });
+            assert.strictEqual(await textAnswer(h.handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 11 })),
+                'Breakpoint added at /w/main.c:11\nAdapter: verified as GDB breakpoint 8 at line 12.');
+
+            x.binding = () => ({ reported: true, verified: false, message: 'No line 99 in file "main.c".' });
+            const unbound = await textAnswer(h.handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 99 }));
+            assert.strictEqual(unbound, 'Breakpoint added at /w/main.c:99\nAdapter: NOT verified — No line 99 in file "main.c".\n'
+                + 'An unverified breakpoint never stops the target: the line may have no code (a declaration, a comment, code the '
+                + 'optimiser removed), the path may not match the ELF\'s compiled paths, or the FPB comparators may be used up.');
+
+            x.binding = () => ({ reported: false, verified: false });
+            assert.strictEqual(await textAnswer(h.handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 13 })),
+                'Breakpoint added at /w/main.c:13\nAdapter: not reported by the adapter yet.\n'
+                + 'Call list_breakpoints later to see whether the adapter bound it.');
+            assert.deepStrictEqual(x.argsOf('insertDprintfViaGdb'), [], 'no parallel GDB breakpoint');
         });
 
-        test('a rejection wins over a binding', async () => {
-            scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-handler-'));
-            const file = path.join(scratch, 'mix.c');
-            fs.writeFileSync(file, 'int a;\nint b;\n');
+        test('other adapters: no GDB numbers, and a running target is not paused', async () => {
             const x = new ScriptedExecutor();
-            const replies = ['Breakpoint 1 at 0x8000100: file mix.c, line 1.', 'No line 2 in file "mix.c".'];
-            x.setBreakpointViaGdb = async () => replies.shift() ?? '';
-            const reply = await textAnswer(handlerFor(x).handleAddBreakpoint({ fileFullPath: file, lineContent: 'int' }));
-            assert.ok(reply.includes('⚠️ GDB rejected one or more breakpoints:\n  line 1: Breakpoint 1 at 0x8000100: file mix.c, line 1. [bound]\n'
-                + '  line 2: No line 2 in file "mix.c". [rejected]'), reply);
+            x.sessionStatus = status('running', { sessionType: 'cppdbg' });
+            const reply = await textAnswer(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }));
+            assert.strictEqual(reply, 'Breakpoint added at /w/main.c:10\nAdapter: verified.');
+            assert.deepStrictEqual(x.moves, ['addBreakpoint']);
         });
 
-        test('the deprecated lineContent form sets every matching line', async () => {
+        test('the deprecated lineContent form sets every matching line and reports each', async () => {
             scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-handler-'));
             const file = path.join(scratch, 'loop.c');
             fs.writeFileSync(file, ['a', 'b', '  return;', 'c', 'd', 'e', 'return;', 'f', 'x = 1; return;', 'g'].join('\r\n'));
-            const x = new ScriptedExecutor();
+            const x = halted();
+            x.binding = (bp) => {
+                const line = (bp as vscode.SourceBreakpoint).location.range.start.line + 1;
+                return line === 7 ? { reported: true, verified: false, message: 'no code' } : { reported: true, verified: true, line };
+            };
             const reply = await textAnswer(handlerFor(x).handleAddBreakpoint({ fileFullPath: file, lineContent: 'return;' }));
             assert.deepStrictEqual(x.argsOf('addBreakpoint').map((call) => call[1]), [3, 7, 9]);
-            assert.deepStrictEqual(x.argsOf('setBreakpointViaGdb').map((call) => call[1]), [3, 7, 9]);
             assert.ok(reply.startsWith(`Breakpoints added at 3 locations in ${file}: lines 3, 7, 9\n`
                 + '⚠️ Located via the deprecated `lineContent` match (3 line(s) matched). '
-                + 'Pass `line` instead — content matching hits every line containing the text.\nSent to GDB'), reply);
+                + 'Pass `line` instead — content matching hits every line containing the text.\n'
+                + 'Adapter:\n  line 3: verified\n  line 7: NOT verified — no code\n  line 9: verified\nAn unverified breakpoint'), reply);
             assert.strictEqual(await rejectionOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: file, lineContent: 'nowhere' })),
                 'Error adding breakpoint: Error: Could not find any lines containing: nowhere');
         });
 
-        test('a logpoint without a session only goes to the model', async () => {
-            const x = new ScriptedExecutor();
-            x.session = false;
-            const reply = await textAnswer(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'n={n}', condition: 'n > 1' }));
-            assert.deepStrictEqual(x.argsOf('addBreakpoint'), [['/w/main.c', 12, { condition: 'n > 1', logMessage: 'n={n}' }]]);
-            assert.strictEqual(reply, 'Logpoint added at /w/main.c:12\n(No debug session yet — added to the breakpoint list. '
-                + 'Re-add after the session is up so it is bound GDB-native via `dprintf`.)');
+        suite('a change on a running CMSIS Debugger target pauses, applies and resumes', () => {
+            /** A running target whose pause stops it. */
+            function running(): ScriptedExecutor {
+                const x = new ScriptedExecutor();
+                x.sessionStatus = status('running');
+                x.waiters.push({ kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+                x.breakpoints = [sourceBreakpoint('/w/main.c', 4)];
+                x.logpoints = [{ number: 3, file: '/w/main.c', line: 5, message: 'tick' }];
+                return x;
+            }
+
+            const tools: Array<[string, (h: DebuggingHandler) => Promise<ToolText>, string[]]> = [
+                ['add_breakpoint', (h) => h.handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }), ['addBreakpoint']],
+                ['add_logpoint', (h) => h.handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'n={n}' }),
+                    ['removeBreakpoint', 'insertDprintfViaGdb']],
+                ['remove_breakpoint', (h) => h.handleRemoveBreakpoint({ fileFullPath: '/w/main.c', line: 5 }),
+                    ['deleteBreakpointsViaGdb', 'removeBreakpoint']],
+                ['clear_all_breakpoints', (h) => h.handleClearAllBreakpoints(), ['deleteBreakpointsViaGdb', 'clearAllBreakpoints']],
+            ];
+
+            for (const [tool, call, mutation] of tools) {
+                test(`${tool}: arm, pause, change, continue — and the answer says so`, async () => {
+                    const x = running();
+                    const reply = await textAnswer(call(handlerFor(x)));
+                    assert.deepStrictEqual(x.moves, ['arm', 'pause', ...mutation, 'continue']);
+                    assert.deepStrictEqual(x.argsOf('pause'), [[5000]]);
+                    assert.match(reply, /\nTarget paused \d+\.\d s to apply this, then resumed\.(\n|$)/);
+                });
+            }
+
+            test('a stopped target is not paused, and without a session nothing is', async () => {
+                for (const [tool, call] of tools) {
+                    const x = running();
+                    x.sessionStatus = status('stopped');
+                    const reply = await textAnswer(call(handlerFor(x)));
+                    assert.ok(!x.moves.includes('pause') && !x.moves.includes('continue'), `${tool}: ${x.moves.join(', ')}`);
+                    assert.ok(!reply.includes('Target paused'), `${tool}: ${reply}`);
+                }
+                const idle = new ScriptedExecutor();
+                idle.session = false;
+                await handlerFor(idle).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 });
+                assert.deepStrictEqual(idle.moves, ['addBreakpoint']);
+                assert.deepStrictEqual(idle.argsOf('getSessionStatus'), []);
+            });
+
+            test('a change that fails still resumes the target, and the failure keeps its code', async () => {
+                const x = running();
+                x.failures.addBreakpoint = new Error('model refused');
+                const failure = await refusalOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }), 'INTERNAL');
+                assert.deepStrictEqual(x.moves, ['arm', 'pause', 'addBreakpoint', 'continue']);
+                assert.strictEqual(failure.message, 'Error adding breakpoint: Error: model refused');
+
+                const refused = running();
+                refused.gdbReplies.dprintf = { text: 'No source file named nowhere.c.', errored: true };
+                const rejected = await refusalOf(handlerFor(refused).handleAddLogpoint({ fileFullPath: '/w/nowhere.c', line: 3, logMessage: 'x' }),
+                    'INVALID_ARGUMENT');
+                assert.deepStrictEqual(refused.moves, ['arm', 'pause', 'removeBreakpoint', 'insertDprintfViaGdb', 'continue']);
+                assert.strictEqual(rejected.message, 'Could not add the logpoint: Error: GDB rejected the logpoint: No source file named nowhere.c.');
+            });
+
+            test('a target that cannot be resumed is reported, with or without a failing change', async () => {
+                const x = running();
+                x.failures.continue = new Error('probe gone');
+                const reply = await textAnswer(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }));
+                assert.ok(reply.endsWith('\n⚠️ The target was paused for this and could not be resumed: probe gone. It is halted — call continue_execution.'),
+                    reply);
+
+                const both = running();
+                both.failures.continue = new Error('probe gone');
+                both.failures.addBreakpoint = new Error('model refused');
+                const failure = await refusalOf(handlerFor(both).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }), 'INTERNAL');
+                assert.ok(failure.message.endsWith('model refused The target was paused for this and could not be resumed: probe gone.'), failure.message);
+                assert.strictEqual(failure.hint, 'The target is halted: call continue_execution when ready.');
+            });
+
+            test('initializing, unresponsive, a pause that does not stop and a session that ends are refused before any change', async () => {
+                const cases: Array<[StatusShape['state'], StopWaitResult | undefined, ErrorCode, string]> = [
+                    ['initializing', undefined, 'NO_SESSION', 'Error adding breakpoint: Error: Cannot add a breakpoint yet: the session is still initializing.'],
+                    ['unresponsive', undefined, 'TIMEOUT', 'Error adding breakpoint: Error: Cannot add a breakpoint: the probe/GDB server is unresponsive.'],
+                    ['running', { kind: 'timeout' }, 'TIMEOUT',
+                        'Error adding breakpoint: Error: Cannot add a breakpoint: the target did not stop within 5 s of the pause request.'],
+                    ['running', { kind: 'ended' }, 'NO_SESSION',
+                        'Error adding breakpoint: Error: Cannot add a breakpoint: the debug session ended while the target was being paused for it.'],
+                ];
+                for (const [state, waiter, code, message] of cases) {
+                    const x = new ScriptedExecutor();
+                    x.sessionStatus = status(state);
+                    if (waiter) {
+                        x.waiters.push(waiter);
+                    }
+                    const failure = await refusalOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }), code);
+                    assert.strictEqual(failure.message, message);
+                    assert.ok(!x.moves.includes('addBreakpoint') && !x.moves.includes('continue'), x.moves.join(', '));
+                }
+            });
         });
 
-        test('a logpoint condition goes to the dprintf GDB numbered', async () => {
-            const x = new ScriptedExecutor();
-            x.gdbReply = 'Dprintf 3 at 0x8000100';
-            x.setBreakpointConditionViaGdb = async (num, condition) => {
-                x.note('setBreakpointConditionViaGdb', num, condition);
-                return 'ok';
-            };
-            const reply = await textAnswer(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'n={n:%u}', condition: 'n > 5' }));
-            assert.deepStrictEqual(x.argsOf('setLogpointViaGdb'), [['/w/main.c', 12, 'n=%u\\n', ['n']]]);
-            assert.deepStrictEqual(x.argsOf('setBreakpointConditionViaGdb'), [[3, 'n > 5']]);
-            const lines = reply.split('\n');
-            assert.deepStrictEqual(lines.slice(0, 4), [
-                'Logpoint added at /w/main.c:12',
-                '  GDB: dprintf /w/main.c:12,"n=%u\\n",n',
-                '  Condition applied to GDB breakpoint 3: n > 5 — ok',
-                '',
-            ]);
-            assert.ok(lines[4].startsWith('ℹ️ On Cortex-M a logpoint is not free:'), lines[4]);
+        suite('logpoints', () => {
+            test('without a session a logpoint only goes to the model', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const reply = await textAnswer(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'n={n}', condition: 'n > 1' }));
+                assert.deepStrictEqual(x.argsOf('addBreakpoint'), [['/w/main.c', 12, { condition: 'n > 1', logMessage: 'n={n}' }]]);
+                assert.strictEqual(reply, 'Logpoint added at /w/main.c:12\n(No debug session yet — added to VS Code\'s breakpoint list. '
+                    + 'The CMSIS Debugger prints such a logpoint\'s text without the {expr} values: '
+                    + 'call add_logpoint again once the session is up to set it as a GDB dprintf.)');
+            });
+
+            test('on the CMSIS Debugger a logpoint is a GDB dprintf at a workspace-relative location, remembered by number', async () => {
+                const x = halted();
+                const h = handlerFor(x, { workspaceFolders: () => [{ uri: vscode.Uri.file('/w'), name: 'w', index: 0 }] });
+                const reply = await textAnswer(h.handleAddLogpoint({ fileFullPath: '/w/src/main.c', line: 12, logMessage: 'n={n:%u} at {p->x}', condition: ' n > 5 ' }));
+                assert.deepStrictEqual(x.argsOf('insertDprintfViaGdb'), [['src/main.c:12', 'n=%u at %d\\n', ['n', 'p->x']]]);
+                assert.deepStrictEqual(x.argsOf('setBreakpointConditionViaGdb'), [[3, 'n > 5']]);
+                assert.deepStrictEqual(x.argsOf('rememberGdbLogpoint'),
+                    [[{ number: 3, file: '/w/src/main.c', line: 12, message: 'n={n:%u} at {p->x}', condition: 'n > 5' }]]);
+                assert.deepStrictEqual(x.argsOf('addBreakpoint'), [], 'no VS Code logpoint besides the dprintf');
+                assert.deepStrictEqual(x.argsOf('removeBreakpoint'), [['/w/src/main.c', 12, { logpointsOnly: true }]]);
+                const lines = reply.split('\n');
+                assert.deepStrictEqual(lines.slice(0, 5), [
+                    'Logpoint added at /w/src/main.c:12',
+                    '  GDB dprintf 3 (main.c:12, 0x080002f4): dprintf src/main.c:12,"n=%u at %d\\n",n,p->x',
+                    '  Condition: n > 5',
+                    'It prints to VS Code\'s Debug Console; list_breakpoints shows how often it fired. remove_breakpoint on /w/src/main.c:12 deletes it.',
+                    '',
+                ]);
+                assert.ok(lines[5].startsWith('ℹ️ On Cortex-M a logpoint is not free:'), lines[5]);
+            });
+
+            test('a VS Code logpoint set there before the session is replaced; several locations are flagged', async () => {
+                const x = halted();
+                x.breakpoints = [new vscode.SourceBreakpoint(new vscode.Location(vscode.Uri.file('/w/main.c'), new vscode.Position(11, 0)),
+                    true, undefined, undefined, 'n={n}')];
+                x.gdbReplies.dprintf = {
+                    text: JSON.stringify({ bkpt: [{ number: '4', addr: '<MULTIPLE>' }, { number: '4.1', file: 'main.c', line: '12' }, { number: '4.2' }] }),
+                    errored: false,
+                };
+                const reply = await textAnswer(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'n={n}' }));
+                assert.deepStrictEqual(x.breakpoints, []);
+                assert.ok(reply.includes('\n  GDB dprintf 4 (main.c:12): dprintf main.c:12,"n=%d\\n",n\n'
+                    + '⚠️ GDB set it at 2 locations: the location matched more than one place.\n'
+                    + 'Replaced the VS Code logpoint set at this line before the session, which printed its text without the values.\n'), reply);
+            });
+
+            test('GDB\'s refusals: location, condition (taken back out), running target, and a reply that names no breakpoint', async () => {
+                const x = halted();
+                x.gdbReplies.dprintf = { text: 'No line 99 in file "main.c".', errored: true };
+                const rejected = await refusalOf(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 99, logMessage: '{q}' }), 'INVALID_ARGUMENT');
+                assert.strictEqual(errorDetail(rejected), 'Could not add the logpoint: Error: GDB rejected the logpoint: No line 99 in file "main.c".\n'
+                    + 'Check that the line has code and the path matches the ELF\'s compiled paths, and that every expression is in scope at that line.');
+                assert.deepStrictEqual(x.argsOf('rememberGdbLogpoint'), []);
+
+                const badCondition = halted();
+                badCondition.gdbReplies.condition = { text: 'No symbol "q" in current context.', errored: true };
+                await refusalOf(handlerFor(badCondition).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'x', condition: 'q' }),
+                    'INVALID_ARGUMENT');
+                assert.deepStrictEqual(badCondition.argsOf('deleteBreakpointsViaGdb'), [[[3]]], 'the dprintf is taken back out');
+                assert.deepStrictEqual(badCondition.argsOf('rememberGdbLogpoint'), []);
+
+                const racing = halted();
+                racing.gdbReplies.dprintf = { text: 'Cannot execute this command while the target is running.', errored: true };
+                const raced = await refusalOf(handlerFor(racing).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'x' }), 'TARGET_RUNNING');
+                assert.strictEqual(raced.hint, 'pause_execution first, or wait_for_stop if a stop is expected.');
+
+                const garbled = halted();
+                garbled.gdbReplies.dprintf = { text: '', errored: false };
+                assert.match((await refusalOf(handlerFor(garbled).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'x' }), 'INTERNAL'))
+                    .message, /GDB did not report the new dprintf: <empty reply>$/);
+
+                assert.strictEqual(await rejectionOf(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 3, logMessage: 'x={' })),
+                    'Could not add the logpoint: Error: Unbalanced \'{\' in logMessage at position 2. Use {{ for a literal brace.');
+            });
+
+            test('other adapters keep a VS Code logpoint, which they fill in themselves', async () => {
+                const x = new ScriptedExecutor();
+                x.sessionStatus = status('stopped', { sessionType: 'cppdbg' });
+                const reply = await textAnswer(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 12, logMessage: 'n={n}' }));
+                assert.deepStrictEqual(x.argsOf('addBreakpoint'), [['/w/main.c', 12, { condition: undefined, logMessage: 'n={n}' }]]);
+                assert.deepStrictEqual(x.argsOf('insertDprintfViaGdb'), []);
+                assert.ok(reply.startsWith('Logpoint added at /w/main.c:12\nAdapter: verified.\n\nℹ️'), reply);
+            });
         });
 
-        test('a logpoint condition without a number, and a rejected dprintf', async () => {
-            const x = new ScriptedExecutor();
-            x.gdbReply = 'Error: could not evaluate expression';
-            const unnumbered = await textAnswer(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 3, logMessage: 'tick', condition: 'c % 2 == 0' }));
-            assert.ok(unnumbered.includes('\n⚠️ Condition "c % 2 == 0" was set on the VS Code breakpoint but NOT on the GDB dprintf: '
-                + 'the adapter did not echo a breakpoint number to attach it to. The logpoint will fire unconditionally. '
-                + 'Apply it manually with evaluate_expression("-exec condition <n> c % 2 == 0") '
-                + 'after finding <n> via evaluate_expression("-exec info breakpoints").\n\nℹ️'), unnumbered);
-            assert.deepStrictEqual(x.argsOf('setBreakpointConditionViaGdb'), []);
-
-            x.gdbReply = 'No symbol "q" in current context.';
-            const rejected = await textAnswer(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 3, logMessage: '{q}', condition: 'q' }));
-            assert.strictEqual(rejected, 'Logpoint added at /w/main.c:3\n  GDB: dprintf /w/main.c:3,"%d\\n",q\n'
-                + '⚠️ GDB rejected the logpoint: No symbol "q" in current context.\n'
-                + 'Check that the path matches the ELF\'s compiled paths, and that every interpolated expression is in scope at that line.');
-            assert.deepStrictEqual(x.argsOf('setBreakpointConditionViaGdb'), []);
-            assert.strictEqual(await rejectionOf(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 3, logMessage: 'x={' })),
-                'Could not add the logpoint: Error: Unbalanced \'{\' in logMessage at position 2. Use {{ for a literal brace.');
-        });
-
-        test('remove clears GDB only for a breakpoint the model has', async () => {
-            const x = new ScriptedExecutor();
+        test('remove: the model breakpoint and the logpoint at that line, and nothing when there is none', async () => {
+            const x = halted();
             const h = handlerFor(x);
             assert.strictEqual(await textAnswer(h.handleRemoveBreakpoint({ fileFullPath: '/w/main.c', line: 5 })),
                 'Nothing to remove — no breakpoint is set at /w/main.c:5.');
-            assert.deepStrictEqual(x.argsOf('clearBreakpointViaGdb'), []);
+            assert.deepStrictEqual(x.moves, []);
 
             x.breakpoints = [sourceBreakpoint('/w/main.c', 4)];
+            assert.strictEqual(await textAnswer(h.handleRemoveBreakpoint({ fileFullPath: '/w/main.c', line: 5 })), 'Breakpoint removed from /w/main.c:5');
+            assert.deepStrictEqual(x.argsOf('removeBreakpoint'), [['/w/main.c', 5, undefined]]);
+            assert.deepStrictEqual(x.argsOf('deleteBreakpointsViaGdb'), [], 'no GDB `clear`');
+
+            x.breakpoints = [sourceBreakpoint('/w/main.c', 4)];
+            x.removalApplied = false;
             assert.strictEqual(await textAnswer(h.handleRemoveBreakpoint({ fileFullPath: '/w/main.c', line: 5 })),
-                'Breakpoint removed from /w/main.c:5\nGDB `clear /w/main.c:5` issued.');
-            assert.deepStrictEqual(x.argsOf('removeBreakpoint'), [['/w/main.c', 5]]);
-            x.gdbReply = 'Deleted breakpoint 1';
-            assert.strictEqual(await textAnswer(h.handleRemoveBreakpoint({ fileFullPath: '/w/main.c', line: 5 })),
-                'Breakpoint removed from /w/main.c:5\nGDB `clear /w/main.c:5` issued — Deleted breakpoint 1');
+                'Breakpoint removed from /w/main.c:5\n⚠️ The debug adapter did not confirm the change within 2 s; list_breakpoints shows what it reports.');
+
+            x.logpoints = [{ number: 3, file: '/w/main.c', line: 7, message: 'tick' }, { number: 5, file: '/w/led.c', line: 7, message: 'tock' }];
+            assert.strictEqual(await textAnswer(h.handleRemoveBreakpoint({ fileFullPath: '/w/main.c', line: 7 })),
+                'Logpoint removed from /w/main.c:7\nDeleted GDB dprintf 3.');
+            assert.deepStrictEqual(x.argsOf('deleteBreakpointsViaGdb'), [[[3]]]);
+            assert.deepStrictEqual(x.logpoints.map((logpoint) => logpoint.number), [5]);
+
+            x.gdbReplies.delete = { text: 'No breakpoint number 5.', errored: false };
+            assert.strictEqual(await textAnswer(h.handleRemoveBreakpoint({ fileFullPath: '/w/led.c', line: 7 })),
+                'Logpoint removed from /w/led.c:7\nGDB no longer had dprintf 5 (deleted outside these tools).');
+            assert.deepStrictEqual(x.logpoints, []);
         });
 
-        test('clear all counts the model and notes the GDB delete', async () => {
+        test('clear all: the model and the logpoints by number — never a bare delete', async () => {
             const idle = new ScriptedExecutor();
             idle.session = false;
             assert.strictEqual(await textAnswer(handlerFor(idle).handleClearAllBreakpoints()), 'Nothing to clear — no breakpoints are set.');
             idle.breakpoints = [sourceBreakpoint('/w/a.c', 1), sourceBreakpoint('/w/b.c', 2)];
             assert.strictEqual(await textAnswer(handlerFor(idle).handleClearAllBreakpoints()), 'Cleared 2 breakpoint(s) from the model.');
 
-            const live = new ScriptedExecutor();
+            const live = halted();
+            assert.strictEqual(await textAnswer(handlerFor(live).handleClearAllBreakpoints()), 'Nothing to clear — no breakpoints are set.');
+            assert.deepStrictEqual(live.moves, [], 'nothing is sent to GDB when nothing is set');
+
+            live.breakpoints = [sourceBreakpoint('/w/a.c', 1)];
+            live.logpoints = [{ number: 3, file: '/w/main.c', line: 7, message: 'tick' }, { number: 4, file: '/w/main.c', line: 9, message: 'tock' }];
             assert.strictEqual(await textAnswer(handlerFor(live).handleClearAllBreakpoints()),
-                'Cleared 0 breakpoint(s) from the model.\nGDB `delete` issued — all GDB-native breakpoints removed.');
-            live.gdbReply = 'Deleted breakpoints 1 2';
-            assert.strictEqual(await textAnswer(handlerFor(live).handleClearAllBreakpoints()),
-                'Cleared 0 breakpoint(s) from the model.\nGDB `delete` issued — Deleted breakpoints 1 2');
+                'Cleared 1 breakpoint(s) from the model.\nDeleted GDB dprintf 3, 4.');
+            assert.deepStrictEqual(live.moves, ['deleteBreakpointsViaGdb', 'clearAllBreakpoints'], 'the logpoints go first');
+            assert.deepStrictEqual(live.argsOf('deleteBreakpointsViaGdb'), [[[3, 4]]]);
+            assert.deepStrictEqual(live.logpoints, []);
         });
 
-        test('the list numbers every breakpoint, printing source and function kinds', async () => {
-            const x = new ScriptedExecutor();
+        test('the list numbers every breakpoint and shows the binding and the logpoints with their hits', async () => {
+            const x = halted();
             assert.strictEqual(await textAnswer(handlerFor(x).handleListBreakpoints()), 'The breakpoint list is empty.');
             x.breakpoints = [
                 sourceBreakpoint('/w/src/main.c', 41, 'x'),
@@ -964,8 +1217,33 @@ suite('DebuggingHandler', () => {
                 { enabled: true } as unknown as vscode.Breakpoint,
                 sourceBreakpoint('/w/src/led.c', 0),
             ];
+            x.binding = (bp) => bp instanceof vscode.FunctionBreakpoint
+                ? { reported: true, verified: false, message: 'Function "HardFault_Handler" not defined.' }
+                : bp instanceof vscode.SourceBreakpoint && bp.location.range.start.line === 0
+                    ? { reported: false, verified: false }
+                    : { reported: true, verified: true, line: 42 };
+            x.logpoints = [
+                { number: 3, file: '/w/src/main.c', line: 50, message: 'n={n}', condition: 'n > 2' },
+                { number: 9, file: '/w/src/main.c', line: 60, message: 'gone' },
+            ];
             assert.strictEqual(await textAnswer(handlerFor(x).handleListBreakpoints()),
-                'Breakpoints that are set:\n1. main.c:42 [when: x]\n2. Function: HardFault_Handler\n4. led.c:1\n');
+                'Breakpoints that are set:\n'
+                + '1. main.c:42 [when: x] — verified\n'
+                + '2. Function: HardFault_Handler — NOT verified — Function "HardFault_Handler" not defined.\n'
+                + '4. led.c:1 — not reported by the adapter yet\n'
+                + 'GDB dprintf logpoints (they print to the Debug Console):\n'
+                + '5. main.c:50 [when: n > 2, log: n={n}] — GDB dprintf 3, 4 hits\n'
+                + '6. main.c:60 [log: gone] — dprintf 9 is gone from GDB (deleted outside these tools)\n');
+            assert.deepStrictEqual(x.argsOf('breakpointBinding'), [[0], [0], [0]], 'the list does not wait for the adapter');
+            assert.deepStrictEqual(x.logpoints.map((logpoint) => logpoint.number), [3], 'a logpoint GDB no longer has is forgotten');
+
+            x.gdbReplies.list = { text: 'Cannot access memory', errored: true };
+            assert.ok((await textAnswer(handlerFor(x).handleListBreakpoints())).endsWith('5. main.c:50 [when: n > 2, log: n={n}] — GDB dprintf 3\n'));
+
+            const idle = new ScriptedExecutor();
+            idle.session = false;
+            idle.breakpoints = [sourceBreakpoint('/w/src/main.c', 41)];
+            assert.strictEqual(await textAnswer(handlerFor(idle).handleListBreakpoints()), 'Breakpoints that are set:\n1. main.c:42\n');
         });
     });
 
@@ -1010,6 +1288,11 @@ suite('DebuggingHandler', () => {
                 `Evaluated: apiKey\nResult: <redacted: possible secret>\nType: char *\n\n${REDACTION_NOTICE}`);
             assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: '  -exec info registers' })),
                 'Evaluated:   -exec info registers\nResult: ghp_abcdefghijklmnopqrstuv0123');
+            assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: '>info registers' })),
+                'Evaluated: >info registers\nResult: ghp_abcdefghijklmnopqrstuv0123', 'the > spelling is a GDB command too');
+            x.evaluateExpression = async () => ({ result: '' });
+            assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: '-exec set var x = 1' })),
+                'Evaluated: -exec set var x = 1\nResult: (GDB printed nothing)');
             x.evaluateExpression = async () => ({ result: undefined });
             assert.strictEqual((await refusalOf(h.handleEvaluateExpression({ expression: 'x' }), 'INTERNAL')).message,
                 'The debug adapter returned no result for this expression.');

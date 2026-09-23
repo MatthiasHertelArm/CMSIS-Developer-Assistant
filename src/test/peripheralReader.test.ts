@@ -20,8 +20,8 @@ import { readWord } from '../core/peripheralReader';
 import { HardwareTimeoutError } from '../utils/timeout';
 
 /** A DAP session whose answers are scripted per command. */
-function session(answer: (command: string, args: Record<string, unknown>) => Promise<unknown>): vscode.DebugSession {
-    return { customRequest: answer } as unknown as vscode.DebugSession;
+function session(answer: (command: string, args: Record<string, unknown>) => Promise<unknown>, type?: string): vscode.DebugSession {
+    return { type, customRequest: answer } as unknown as vscode.DebugSession;
 }
 
 suite('peripheralReader readWord', () => {
@@ -57,5 +57,21 @@ suite('peripheralReader readWord', () => {
         assert.strictEqual(await readWord(s, '0x20000000', null, 1_000), 255);
         const failing = session(async () => { throw new Error('nope'); });
         await assert.rejects(() => readWord(failing, '0x20000000', null, 1_000), /All read strategies failed for 0x20000000/);
+    });
+
+    test('on the CMSIS Debugger the GDB read is the MI command, whose result comes back in the reply (#56)', async () => {
+        const expressions: string[] = [];
+        const s = session(async (command, args) => {
+            if (command === 'readMemory') { throw new Error('Unable to read memory.'); }
+            const expr = args.expression as string;
+            expressions.push(`${args.context} ${expr}`);
+            if (expr.startsWith('*(unsigned int*)')) { return { result: 'Error: could not evaluate expression' }; }
+            if (expr === '>-data-read-memory-bytes 0x40023800 4') {
+                return { result: JSON.stringify({ memory: [{ begin: '0x40023800', offset: '0x00000000', end: '0x40023804', contents: '83000003' }] }) };
+            }
+            return { result: '\r' };
+        }, 'gdbtarget');
+        assert.strictEqual(await readWord(s, '0x40023800', 1000, 1_000), 0x03000083);
+        assert.deepStrictEqual(expressions, ['watch *(unsigned int*)0x40023800', 'repl >-data-read-memory-bytes 0x40023800 4']);
     });
 });

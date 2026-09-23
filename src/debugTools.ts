@@ -160,7 +160,7 @@ const ABOUT = {
     remove_breakpoint: 'Delete one breakpoint, identified by its file and line.',
     clear_all_breakpoints:
         'Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.',
-    list_breakpoints: 'Show the breakpoints that are set, in every file.',
+    list_breakpoints: 'Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.',
     list_variable_names: say(
         'Show which variables exist where the target is stopped, with their types but not their values.',
         'Discover first, then pull only what you need with get_variables_values — on a slow probe that is the difference ' +
@@ -534,7 +534,8 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         inputSchema: {
             fileFullPath: z.string().describe(SOURCE_PATH_DESC),
             line: z.number().int().min(1).optional().describe(`${SOURCE_LINE_DESC}; preferred over lineContent`),
-            condition: z.string().optional().describe('Optional condition, e.g. "i == 100" — GDB-native, so the core halts only when it holds.'),
+            condition: z.string().optional().describe('Optional condition, e.g. "i == 100": the target stops only when it holds, ' +
+                'though GDB tests it at every hit, halting the core briefly each time.'),
             lineContent: z.string().optional()
                 .describe('DEPRECATED: substring match that breaks on EVERY line containing the text; pass line instead.'),
         },

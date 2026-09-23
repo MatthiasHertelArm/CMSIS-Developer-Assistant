@@ -58,19 +58,23 @@ single-window server against a scripted `gdbtarget` session and compares with
 `dap-scenarios.snapshot.json`; `--update` rewrites the snapshot and
 `--only=<name>` prints one scenario. About 40 s, no window, network or probe.
 
-Each of the 28 scenarios gets a fresh server and fake session (pyOCD or J-Link
+Each of the 33 scenarios gets a fresh server and fake session (pyOCD or J-Link
 launch/attach configuration, cbuild-run file, SVD under a fake pack root) and
 records, per tool call, the reply and its traffic: DAP requests with the
-scripted answer, VS Code commands, breakpoint and start/stop API calls, and
-the adapter events. The stub extensions live in the harness; `vscode-stub.js`
-is unchanged.
+scripted answer, VS Code commands, breakpoint and start/stop API calls, the
+`setBreakpoints` VS Code sends for its breakpoint model with the adapter's
+answer, and the adapter events. The stub extensions live in the harness;
+`vscode-stub.js` is unchanged.
 
-The scripted adapter answers as cdt-gdb-adapter does today, bugs included:
-an evaluate of `-exec <cmd>` is an expression to it, so every `-exec break`,
-`dprintf`, `clear`, `delete` and `monitor reset` comes back as the result
-"Error: could not evaluate expression" and does nothing; GDB prints `$lr` as
-an int, so EXC_RETURN reads "-7". The header of the harness lists the other
-fidelity choices.
+The scripted adapter answers as cdt-gdb-adapter does: an evaluate of
+`-exec <cmd>` is an expression to it and comes back as the result "Error:
+could not evaluate expression"; a `>` CLI command answers '\r' and prints its
+text as `stdout` output events; a `>` MI command answers its MI result as
+JSON. The scripted GDB behind it keeps a breakpoint table (`dprintf`,
+`-dprintf-insert`, `condition`, `delete`, `-break-list`, `info breakpoints`),
+resets the core on `monitor reset …` without telling GDB until the register
+cache is flushed, and prints `$lr` as an int, so EXC_RETURN reads "-7". The
+header of the harness lists the other fidelity choices.
 
 ## `config-scenarios.js`: configuration behaviour oracle
 
@@ -122,7 +126,8 @@ node test/transport/executor-cases.js
 Runs the characterization cases of
 [docs/provenance/specs/debuggingExecutor.md](../../docs/provenance/specs/debuggingExecutor.md)
 against the compiled executor with scripted fake debug sessions: the DAP
-requests and their arguments, the UI fallbacks, timeouts, reset verification
-and the GDB memory-read ladder. About 40 s, mostly deliberate timeouts; no
+requests and their arguments, the UI fallbacks and GDB's refusals, restart,
+timeouts, reset verification, the GDB command prefixes and output capture,
+breakpoint bindings and the GDB memory-read ladder. About 40 s, mostly deliberate timeouts; no
 window, network or probe. It complements `dap-scenarios.js`, which reaches the
 executor only through the handler.

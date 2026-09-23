@@ -30,7 +30,7 @@ The session-status output includes a hint for each state. If state is `running` 
 
 - The 🩹 Recovery section of the response tells you where the firmware actually was — read the PC and frame name first
 - Common causes: the breakpoint wasn't hit (wrong line / inlined / optimized out), firmware is in a polling loop, or firmware sat in an ISR waiting for something that never arrived
-- Verify the breakpoint location with `list_breakpoints` after the next stop; on Flash-resident code, an "unbound" hardware breakpoint silently never triggers
+- Check the breakpoint with `list_breakpoints`: it shows whether the debugger bound each one. A breakpoint that is NOT verified never triggers, and the adapter's reason says why (no code on the line, a path the ELF does not know, no free comparator)
 
 ### Too Many Breakpoints
 
@@ -55,8 +55,8 @@ The session-status output includes a hint for each state. If state is `running` 
 
 ### Variables Show "optimized out"
 
-- The compiler optimized the variable away. Rebuild with `-O0` (no optimization)
-- For CMSIS projects, set optimization in the `.cproject` or `csolution.yml`
+- The compiler optimized the variable away. Rebuild without optimization (`-O0` or `-Og`)
+- For CMSIS projects the build-type in `<name>.csolution.yml` (or the `.cproject.yml`) sets it: `optimize: debug` (or `none`) and `debug: on`
 
 ### Memory Read Returns All 0xFF or 0x00
 
@@ -66,7 +66,7 @@ The session-status output includes a hint for each state. If state is `running` 
 
 ### Stepping Doesn't Work / Steps to Wrong Line
 
-- This can happen with optimized code — rebuild with `-O0 -g3`
+- This can happen with optimized code — rebuild with `-O0 -g3` (CMSIS build-type: `optimize: debug`, `debug: on`)
 - For inline functions, the debugger may jump between files unexpectedly
 - Try `step_into` instead of `step_over` to see what's actually executing
 

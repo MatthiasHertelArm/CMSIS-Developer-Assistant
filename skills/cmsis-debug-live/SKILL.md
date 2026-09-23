@@ -137,7 +137,7 @@ never throws.
 | `no-session` | `cmsis_action load_and_debug` for CMSIS projects — builds, flashes, attaches. `start_debugging` only for non-CMSIS targets, or to attach without reflashing. |
 | `initializing` | Wait, ask again. Do **not** issue a second start. |
 | `stopped` | Inspect freely. |
-| `running` | Reads will be rejected. `pause_execution`, or set a breakpoint and `continue_execution`. |
+| `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. |
 | `unresponsive` | `check_target_connection`, then `restart_debugging`. More reads will only time out. |
 
 `start_debugging` and `cmsis_action load_and_debug` refuse when a session is
@@ -184,7 +184,10 @@ method.
 
 1. **Breakpoint by line number.** `add_breakpoint` takes `line`. Use
    `condition` (e.g. `i == 100`, `p != 0`) rather than stopping 99 times —
-   it becomes GDB's native `if`, so the core is not halted on every hit.
+   the target stops for you only when it holds. The core still halts
+   briefly at every hit while GDB tests it (the FPB has no condition logic),
+   which matters in an ISR or a tight loop. The answer says whether the
+   debugger bound the breakpoint; one that is NOT verified never stops.
 2. **Run and wait.** `continue_execution`, then `wait_for_stop` when you want an
    explicit bound. If the target never stops, the response tells you where the
    PC actually is rather than leaving you guessing.
@@ -215,7 +218,9 @@ around the region, or have the firmware fill a RAM buffer you read back with
 `read_memory`.
 
 GDB infers nothing about types, so `{expr}` defaults to `%d` and you write
-`{expr:%s}` / `{expr:%f}` / `{expr:%p}` when it is not an integer.
+`{expr:%s}` / `{expr:%f}` / `{expr:%p}` when it is not an integer. On the
+CMSIS Debugger a logpoint is a GDB `dprintf`: its text goes to VS Code's
+Debug Console, not to you, and `list_breakpoints` counts its hits.
 
 ---
 

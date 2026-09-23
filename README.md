@@ -105,7 +105,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 
 | Tool | Description |
 |------|-------------|
-| `add_breakpoint` | Sets a breakpoint at a source line, optionally with a condition. The condition is evaluated by GDB on the target, so the core only halts when it holds. |
+| `add_breakpoint` | Sets a breakpoint at a source line, optionally with a condition, and reports whether the debugger bound it. GDB tests a condition at every hit, halting the core briefly each time, and the target stops only when it holds. On a running target the tool pauses it to apply the change and resumes it. |
 | `add_logpoint` | Prints a message and resumes instead of halting (GDB `dprintf`). Expressions are interpolated with `{expr}`; `{expr:%s}` overrides the format. |
 | `remove_breakpoint`, `clear_all_breakpoints`, `list_breakpoints` | Breakpoint management. |
 

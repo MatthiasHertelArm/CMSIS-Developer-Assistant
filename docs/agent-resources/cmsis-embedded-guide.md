@@ -71,7 +71,7 @@ If the firmware is in a free run and you need to know where it is:
 ### Debugging Tips
 
 - After a fault, the stacked PC (at SP+24 for basic frame, SP+104 for FP frame) shows the faulting instruction
-- Use `evaluate_expression` with GDB commands: e.g., `info registers`
+- Core registers: `read_core_registers`, or GDB's own listing with `evaluate_expression("-exec info registers")`. Every GDB command needs that `-exec` prefix; a bare `info registers` is evaluated as a C expression and fails
 - For RTOS-aware debugging: `get_threads` enumerates FreeRTOS / RTX / ThreadX tasks (when the GDB server has an RTOS plugin); pass any thread's id to `get_call_stack` to inspect a specific task
 - `read_memory` at the stack pointer shows the exception frame: R0,R1,R2,R3,R12,LR,PC,xPSR
 

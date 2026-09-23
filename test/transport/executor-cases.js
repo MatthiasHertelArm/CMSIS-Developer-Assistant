@@ -128,15 +128,31 @@ async function main() {
             ['pause', 'pause', 'workbench.action.debug.pause']];
         for (const [method, dap, ui] of pairs) {
             reset();
-            const { session, calls } = makeSession(() => { throw new Error('Cannot execute this command while the target is running'); });
+            const { session, calls } = makeSession(() => { throw new Error('Cannot execute this command while the target is running'); }, { type: 'python', name: 'Py' });
             focusOn(session);
             const ex = new DebuggingExecutor();
             const r = await rejects(ex[method]());
-            check(`RC2 ${method} falls back to ${ui}`, r === undefined && calls.length === 1 && calls[0].command === dap
+            check(`RC2 ${method} falls back to ${ui} on other adapters`, r === undefined && calls.length === 1 && calls[0].command === dap
                 && commandLog.length === 1 && commandLog[0].command === ui && commandLog[0].args.length === 0, { r: String(r), commandLog });
         }
+        for (const [method, dap] of pairs) {
+            reset();
+            const { session, calls } = makeSession(() => { throw new Error('Cannot execute this command while the target is running.\nUse the "interrupt" command to stop the target\nand then try again.'); });
+            focusOn(session);
+            const r = await rejects(new DebuggingExecutor()[method]());
+            check(`RC2 ${method} on gdbtarget rejects TARGET_RUNNING, no UI command (#13)`, r && r.code === 'TARGET_RUNNING'
+                && r.message === `GDB rejected '${dap}': the target is running.` && r.hint === 'pause_execution first, or wait_for_stop if a stop is expected.'
+                && calls.length === 1 && commandLog.length === 0, { r: r && `${r.code} ${r.message}`, commandLog });
+        }
         reset();
-        const { session } = makeSession(() => { throw new Error('x'); });
+        {
+            const { session } = makeSession(() => { throw new Error('Thread 2 does not exist'); });
+            focusOn(session);
+            const r = await rejects(new DebuggingExecutor().stepInto());
+            check('RC2 other GDB refusal on gdbtarget → INTERNAL with the text', r && r.code === 'INTERNAL' && r.message === "GDB rejected 'stepIn': Thread 2 does not exist" && commandLog.length === 0, r && r.message);
+        }
+        reset();
+        const { session } = makeSession(() => { throw new Error('x'); }, { type: 'python', name: 'Py' });
         focusOn(session);
         stub.commandHandlers['workbench.action.debug.stepOver'] = () => { throw new Error('ui boom'); };
         const r = await rejects(new DebuggingExecutor().stepOver());
@@ -181,11 +197,51 @@ async function main() {
     reset();
     {
         const ex = new DebuggingExecutor();
-        await ex.restart();
-        check('RC6 restart without session', commandLog.length === 1 && commandLog[0].command === 'workbench.action.debug.restart' && commandLog[0].args.length === 0);
+        const how = await ex.restart();
+        check('RC6 restart without session', commandLog.length === 1 && commandLog[0].command === 'workbench.action.debug.restart' && commandLog[0].args.length === 0
+            && eq(how, { via: 'workbench' }), how);
         stub.commandHandlers['workbench.action.debug.restart'] = () => { throw new Error('nope'); };
         const e = await rejects(ex.restart());
         console.log(`       S6 text: ${e && e.message}`);
+    }
+    reset();
+    {
+        const { session } = makeSession(() => undefined, { type: 'python', name: 'Py' });
+        focusOn(session);
+        await new DebuggingExecutor().restart();
+        check('RC6 restart of another adapter: the workbench command', commandLog.length === 1 && commandLog[0].command === 'workbench.action.debug.restart');
+    }
+    reset();
+    {
+        // gdbtarget: the root session is stopped and its configuration started again through the API (#13).
+        const rootConfig = { type: 'gdbtarget', name: 'CMSIS Debugger: pyOCD', request: 'launch', preLaunchTask: 'CMSIS Load' };
+        const root = makeSession(() => undefined, rootConfig, 'Root').session;
+        root.workspaceFolder = { uri: stub.Uri.file('/w'), name: 'w', index: 0 };
+        const child = makeSession(() => undefined, { type: 'gdbtarget', name: 'core 1' }, 'Child').session;
+        child.parentSession = root;
+        const rootTracker = trackerFor(root);
+        trackerFor(child);
+        focusOn(child);
+        const api = [];
+        const savedStop = stub.debug.stopDebugging;
+        const savedStart = stub.debug.startDebugging;
+        stub.debug.stopDebugging = async (s) => { api.push(`stop ${s.name}`); setTimeout(() => rootTracker.onWillStopSession(), 20); };
+        stub.debug.startDebugging = async (folder, cfg) => { api.push(`start ${folder && folder.uri.fsPath} ${cfg === rootConfig}`); return true; };
+        try {
+            const how = await new DebuggingExecutor().restart();
+            check('RC6 gdbtarget restart: stop the root, wait for its end, start its configuration', eq(api, ['stop Root', 'start /w true']) && commandLog.length === 0
+                && eq(how, { via: 'relaunched', configurationName: 'CMSIS Debugger: pyOCD', preLaunchTask: 'CMSIS Load' }), { api, how, commandLog });
+            stub.debug.startDebugging = async () => false;
+            const again = makeSession(() => undefined, rootConfig, 'Root2').session;
+            const againTracker = trackerFor(again);
+            focusOn(again);
+            stub.debug.stopDebugging = async () => { setTimeout(() => againTracker.onWillStopSession(), 5); };
+            const e = await rejects(new DebuggingExecutor().restart());
+            check('RC6 a start VS Code refuses comes back as an error', e && e.message === "Restarting the debug session failed: Error: VS Code did not start the launch configuration 'CMSIS Debugger: pyOCD' again.", e && e.message);
+        } finally {
+            stub.debug.stopDebugging = savedStop;
+            stub.debug.startDebugging = savedStart;
+        }
     }
 
     // ── Session and status ──
@@ -324,37 +380,165 @@ async function main() {
         ex.clearAllBreakpoints();
         check('BP clearAll empty → no call', removeLog.length === 2);
     }
+    // GDB commands (#56): the prefix of the session's adapter, and where the text comes back.
     reset();
     {
-        let reply = { result: ' Breakpoint 2 at 0x8000100: file main.c, line 42. \n' };
-        const { session, calls } = makeSession((c) => c === 'stackTrace' ? { stackFrames: [] } : (typeof reply === 'function' ? reply() : reply));
+        let reply = (expression) => ({ result: '\r' });
+        const { session, calls } = makeSession((c, a) => c === 'stackTrace' ? { stackFrames: [] } : reply(a.expression));
+        const t = trackerFor(session);
         focusOn(session);
         stub.debug.activeStackItem = { session, threadId: 2, frameId: 5 };
         const ex = new DebuggingExecutor();
-        const r = await ex.setBreakpointViaGdb('/w/main.c', 42, undefined, '  x > 3 ');
-        check('BP2 requests', calls.length === 2 && calls[0].command === 'stackTrace' && calls[0].json === '{"threadId":2,"startFrame":0,"levels":50}'
-            && calls[1].command === 'evaluate' && calls[1].json === '{"expression":"-exec break /w/main.c:42 if x > 3","context":"repl","frameId":5}', calls.map((c) => c.command + ' ' + c.json));
-        check('BP3 trimmed text', r === 'Breakpoint 2 at 0x8000100: file main.c, line 42.', r);
+        reply = (expression) => {
+            event(t, 'output', { category: 'stdout', output: 'Deleted breakpoints ' });
+            event(t, 'output', { category: 'console', output: 'not this' });
+            event(t, 'output', { category: 'stdout', output: '3 4\n' });
+            return { result: '\r', variablesReference: 0 };
+        };
+        const r = await ex.deleteBreakpointsViaGdb([3, 4]);
+        check('G1 gdbtarget: `>` prefix in the focused frame, the text from stdout output events', eq(calls.map((c) => c.command + ' ' + c.json), [
+            'stackTrace {"threadId":2,"startFrame":0,"levels":50}',
+            'evaluate {"expression":">delete 3 4","context":"repl","frameId":5}']) && eq(r, { text: 'Deleted breakpoints 3 4', errored: false }),
+        { calls: calls.map((c) => c.json), r });
         stub.debug.activeStackItem = undefined;
         calls.length = 0;
-        await ex.setBreakpointViaGdb('/w/main.c', 42);
-        check('BP2 no stack item: no stackTrace, no frameId', calls.length === 1 && calls[0].json === '{"expression":"-exec break /w/main.c:42","context":"repl"}', calls.map((c) => c.json));
-        reply = () => { throw new Error(' could not evaluate expression '); };
-        check('BP3 rejection → text', (await ex.clearAllBreakpointsViaGdb()) === 'could not evaluate expression');
-        reply = { result: undefined };
-        check('BP3 absent result → empty', (await ex.clearAllBreakpointsViaGdb()) === '');
+        reply = () => {
+            setTimeout(() => event(t, 'output', { category: 'stdout', output: 'late but within the quiet period\n' }), 10);
+            return { result: '\r' };
+        };
+        const late = await ex.setBreakpointConditionViaGdb(3, 'i == 2');
+        check('G1 output right after the reply is still collected; no frame, no frameId', eq(calls.map((c) => c.json), ['{"expression":">condition 3 i == 2","context":"repl"}'])
+            && late.text === 'late but within the quiet period', { calls: calls.map((c) => c.json), late });
+        reply = () => {
+            const timer = setInterval(() => event(t, 'output', { category: 'stdout', output: '.' }), 5);
+            setTimeout(() => clearInterval(timer), 1000);
+            return { result: '\r' };
+        };
+        const t0 = Date.now();
+        await ex.setBreakpointConditionViaGdb(3, 'x');
+        const settleMs = Date.now() - t0;
+        check('G1 a target that keeps printing does not hold the command beyond the cap', settleMs >= 200 && settleMs < 700, settleMs);
+        await sleep(1050);
+        reply = () => { throw new Error('No symbol "q" in current context.'); };
+        const refused = await ex.setBreakpointConditionViaGdb(3, 'q');
+        check('G1 a refusal is an errored reply with GDB\'s text', eq(refused, { text: 'No symbol "q" in current context.', errored: true }), refused);
+        reply = () => ({ result: 'Error: could not evaluate expression', variablesReference: 0 });
+        const skipped = await ex.setBreakpointConditionViaGdb(3, 'x');
+        check('G1 the adapter\'s default answer to a `>` command means it did not run it', skipped.errored
+            && skipped.text === 'The debug adapter did not run the command: its session is not ready (it answered "Error: could not evaluate expression").', skipped);
+        reply = () => ({ result: JSON.stringify({ bkpt: { number: '7', type: 'dprintf' } }) });
         calls.length = 0;
-        reply = {};
-        await ex.setLogpointViaGdb('/w/m.c', 7, 'n=%d\\n', ['n', 'p->x']);
-        await ex.setLogpointViaGdb('/w/m.c', 7, 'tick', []);
-        await ex.setBreakpointConditionViaGdb(3, 'i == 2');
-        await ex.clearBreakpointViaGdb('/w/m.c', 9);
-        await ex.clearAllBreakpointsViaGdb();
-        const exprs = calls.map((c) => c.args.expression);
-        check('BP4 commands', eq(exprs, ['-exec dprintf /w/m.c:7,"n=%d\\n",n,p->x', '-exec dprintf /w/m.c:7,"tick"', '-exec condition 3 i == 2', '-exec clear /w/m.c:9', '-exec delete']), exprs);
+        const inserted = await ex.insertDprintfViaGdb('src/main.c:12', 'n=%d at \\"%s\\"\\n', ['n', 'a + b', 'say("x")']);
+        check('G2 -dprintf-insert: MI c-string arguments, the MI result as the text', eq(calls.map((c) => c.args.expression),
+            ['>-dprintf-insert "src/main.c:12" "n=%d at \\"%s\\"\\n" "n" "a + b" "say(\\"x\\")"'])
+            && inserted.text === JSON.stringify({ bkpt: { number: '7', type: 'dprintf' } }) && !inserted.errored, { calls: calls.map((c) => c.args.expression), inserted });
+        calls.length = 0;
+        await ex.listBreakpointsViaGdb();
+        const none = await ex.deleteBreakpointsViaGdb([]);
+        check('G2 -break-list; no bare delete for an empty list', eq(calls.map((c) => c.args.expression), ['>-break-list']) && eq(none, { text: '', errored: false }),
+            calls.map((c) => c.args.expression));
         reply = never;
         const ex2 = new DebuggingExecutor({ dapRequestMs: 60 });
-        check('BP3 hang → HardwareTimeoutError', (await rejects(ex2.clearAllBreakpointsViaGdb())) instanceof HardwareTimeoutError);
+        const e = await rejects(ex2.deleteBreakpointsViaGdb([1]));
+        event(t, 'output', { category: 'stdout', output: 'after the timeout\n' });
+        reply = () => ({ result: '\r' });
+        const next = await ex.deleteBreakpointsViaGdb([2]);
+        check('G3 a hang is a HardwareTimeoutError, and its capture is closed', e instanceof HardwareTimeoutError && next.text === '', { e: String(e), next });
+    }
+    reset();
+    {
+        const { session, calls } = makeSession(() => ({ result: 'Deleted breakpoint 3 ' }), { type: 'cppdbg', name: 'C++' });
+        focusOn(session);
+        const r = await new DebuggingExecutor().deleteBreakpointsViaGdb([3]);
+        check('G4 cppdbg: `-exec ` prefix, the text in the reply', calls[0].args.expression === '-exec delete 3' && eq(r, { text: 'Deleted breakpoint 3', errored: false }),
+            { calls: calls.map((c) => c.json), r });
+    }
+    reset();
+    {
+        // An agent's passthrough: translated on gdbtarget, verbatim elsewhere.
+        let answer = () => ({ result: '\r' });
+        const { session, calls } = makeSession((c, a) => answer(a));
+        const t = trackerFor(session);
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        answer = () => { event(t, 'output', { category: 'stdout', output: 'r0             0x2a                42\n' }); return { result: '\r', variablesReference: 0 }; };
+        const translated = await ex.evaluateExpression('-exec info registers', 1000);
+        const kept = await ex.evaluateExpression('>info registers', 1000);
+        check('E5 gdbtarget: -exec and > both reach GDB as >cmd, with the printed text as the result',
+            eq(calls.map((c) => c.json), ['{"expression":">info registers","context":"repl","frameId":1000}', '{"expression":">info registers","context":"repl","frameId":1000}'])
+            && eq(translated, { result: 'r0             0x2a                42', variablesReference: 0 }) && eq(kept, translated), { calls: calls.map((c) => c.json), translated });
+        answer = () => { throw new Error('Cannot execute this command while the target is running.'); };
+        const e = await rejects(ex.evaluateExpression('-exec x/4xw $sp', 1000));
+        check('E5 a GDB refusal rejects, classified TARGET_RUNNING', e && e.code === 'TARGET_RUNNING'
+            && e.message === 'Evaluating the expression failed: Error: Cannot execute this command while the target is running.', e && `${e.code} ${e.message}`);
+        calls.length = 0;
+        answer = () => ({ result: '42' });
+        await ex.evaluateExpression('-execCount', 1000);
+        check('E5 an expression that starts with -exec but is none stays an expression', calls[0].json === '{"expression":"-execCount","frameId":1000,"context":"repl"}', calls[0].json);
+        reset();
+        const cpp = makeSession(() => ({ result: 'rax 0x1 1' }), { type: 'cppdbg', name: 'C++' });
+        focusOn(cpp.session);
+        const verbatim = await new DebuggingExecutor().evaluateExpression('-exec info registers', 4);
+        check('E5 cppdbg: -exec passes verbatim, the reply is returned unchanged', cpp.calls[0].json === '{"expression":"-exec info registers","frameId":4,"context":"repl"}'
+            && eq(verbatim, { result: 'rax 0x1 1' }), cpp.calls[0].json);
+    }
+    reset();
+    {
+        // The adapter's binding of a model breakpoint (getDebugProtocolBreakpoint), polled until it answers.
+        const ex = new DebuggingExecutor();
+        const uri = stub.Uri.file('/w/src/main.c');
+        const bp = await ex.addBreakpoint(uri, 12);
+        check('BB1 addBreakpoint returns the model breakpoint; no binding without a session', bp === addLog[0][0] && (await ex.breakpointBinding(bp, 500)) === undefined);
+        const { session } = makeSession(() => undefined);
+        focusOn(session);
+        check('BB1 a session without getDebugProtocolBreakpoint reports nothing at once', eq(await ex.breakpointBinding(bp, 5000), { reported: false, verified: false }));
+        let asks = 0;
+        session.getDebugProtocolBreakpoint = async (asked) => { asks++; return asks < 3 || asked !== bp ? undefined : { id: 2, verified: true, line: 13, message: '' }; };
+        const bound = await ex.breakpointBinding(bp, 2000);
+        check('BB1 asked again until the adapter answers', asks === 3 && eq(bound, { reported: true, verified: true, message: undefined, line: 13, id: 2 }), { asks, bound });
+        session.getDebugProtocolBreakpoint = async () => ({ verified: false, message: 'No line 99 in file "main.c".' });
+        check('BB1 unverified with the adapter\'s message', eq(await ex.breakpointBinding(bp, 0), { reported: true, verified: false, message: 'No line 99 in file "main.c".', line: undefined, id: undefined }));
+        session.getDebugProtocolBreakpoint = async () => undefined;
+        const t0 = Date.now();
+        const silent = await ex.breakpointBinding(bp, 150);
+        check('BB1 bounded wait', eq(silent, { reported: false, verified: false }) && Date.now() - t0 >= 140 && Date.now() - t0 < 800, Date.now() - t0);
+    }
+    reset();
+    {
+        // A removal waits for the adapter's setBreakpoints answer for each file concerned.
+        const { session } = makeSession(() => undefined);
+        const t = trackerFor(session);
+        focusOn(session);
+        const uri = stub.Uri.file('/w/src/main.c');
+        stub.debug.breakpoints = [new stub.SourceBreakpoint(new stub.Location(uri, new stub.Position(11, 0)), true),
+            new stub.SourceBreakpoint(new stub.Location(uri, new stub.Position(12, 0)), true, undefined, undefined, 'n={n}')];
+        let seq = 100;
+        stub.debug.removeBreakpoints = (bps) => {
+            removeLog.push(bps);
+            stub.debug.breakpoints = stub.debug.breakpoints.filter((b) => !bps.includes(b));
+            const files = [...new Set(bps.map((b) => b.location.uri.fsPath))];
+            setTimeout(() => {
+                for (const file of files) {
+                    const request = { type: 'request', seq: ++seq, command: 'setBreakpoints', arguments: { source: { path: file } } };
+                    t.onWillReceiveMessage(request);
+                    t.onDidSendMessage({ type: 'response', request_seq: request.seq, command: 'setBreakpoints', success: true, body: { breakpoints: [] } });
+                }
+            }, 20);
+        };
+        const ex = new DebuggingExecutor();
+        const savedRemove = stub.debug.removeBreakpoints;
+        const logOnly = await ex.removeBreakpoint(uri, 12, { logpointsOnly: true });
+        check('BR1 logpointsOnly leaves a plain breakpoint alone', eq(logOnly, { removed: 0 }) && removeLog.length === 0 && stub.debug.breakpoints.length === 2, logOnly);
+        const logpoint = await ex.removeBreakpoint(uri, 13, { logpointsOnly: true });
+        check('BR1 the adapter answered: applied', eq(logpoint, { removed: 1, applied: true }) && stub.debug.breakpoints.length === 1, logpoint);
+        const all = await ex.clearAllBreakpoints();
+        check('BR1 clear all: applied', eq(all, { removed: 1, applied: true }), all);
+        stub.debug.breakpoints = [new stub.SourceBreakpoint(new stub.Location(uri, new stub.Position(11, 0)), true)];
+        stub.debug.removeBreakpoints = (bps) => { stub.debug.breakpoints = stub.debug.breakpoints.filter((b) => !bps.includes(b)); };
+        const t0 = Date.now();
+        const silent = await ex.removeBreakpoint(uri, 12);
+        check('BR1 an adapter that never answers: not applied after the 2 s bound', eq(silent, { removed: 1, applied: false }) && Date.now() - t0 >= 1900, { silent, ms: Date.now() - t0 });
+        stub.debug.removeBreakpoints = savedRemove;
     }
     reset();
     {
@@ -422,7 +606,7 @@ async function main() {
     reset();
     {
         let script;
-        const { session, calls } = makeSession((c, a) => script(c, a));
+        const { session, calls } = makeSession((c, a) => script(c, a), { type: 'cppdbg', name: 'C++' });
         focusOn(session);
         stub.debug.activeStackItem = { session, threadId: 1, frameId: 3 };
         const ex = new DebuggingExecutor({ dapRequestMs: 100 });
@@ -465,6 +649,34 @@ async function main() {
     }
     reset();
     {
+        // gdbtarget: after the watch expression, the MI read whose result comes back in the reply (#56).
+        let script;
+        const { session, calls } = makeSession((c, a) => script(c, a));
+        focusOn(session);
+        stub.debug.activeStackItem = { session, threadId: 1, frameId: 3 };
+        const ex = new DebuggingExecutor({ dapRequestMs: 100 });
+        script = (c, a) => {
+            if (c === 'readMemory') { throw new Error('x'); }
+            if (c === 'stackTrace') { return { stackFrames: [] }; }
+            if (a.context === 'watch') { return { result: 'Error: could not evaluate expression' }; }
+            if (a.expression === '>-data-read-memory-bytes 0x20000000 4') {
+                return { result: JSON.stringify({ memory: [{ begin: '0x20000000', offset: '0x00000000', end: '0x20000004', contents: 'ff000000' }], 'cdt-token': '9' }) };
+            }
+            return { result: 'Error: could not evaluate expression' };
+        };
+        check('M3g MI read → 255', (await ex.readMemoryWord('0x20000000')) === 255);
+        check('M3g ladder requests', eq(calls.map((c) => c.command + ' ' + c.json), [
+            'readMemory {"memoryReference":"0x20000000","count":4}',
+            'stackTrace {"threadId":1,"startFrame":0,"levels":50}',
+            'evaluate {"expression":"*(unsigned int*)0x20000000","context":"watch","frameId":3}',
+            'evaluate {"expression":">-data-read-memory-bytes 0x20000000 4","context":"repl","frameId":3}']), calls.map((c) => c.command + ' ' + c.json));
+        script = (c) => { if (c === 'stackTrace') { return { stackFrames: [] }; } if (c === 'readMemory') { throw new Error('x'); } return { result: '\r' }; };
+        const e = await rejects(ex.readMemoryWord('0x20000000'));
+        check('M3g no -exec forms on gdbtarget; all fail → S11', e && e.message === 'Failed to read memory at 0x20000000 — all GDB strategies exhausted'
+            && !calls.some((c) => String(c.args && c.args.expression).startsWith('-exec')), e && e.message);
+    }
+    reset();
+    {
         const { session } = makeSession(never);
         focusOn(session);
         const ex = new DebuggingExecutor({ dapRequestMs: 1000, memoryReadMs: 100 });
@@ -497,7 +709,7 @@ async function main() {
         calls.length = 0;
         words.set('0xE000EDFC', 0);
         const e = await rejects(ex.writeMemoryWord('0xE000EDFC', 0x01000000));
-        check('M5 set fallback then read-back', eq(calls.map((c) => c.command + ' ' + (c.args?.expression ?? c.args?.memoryReference)), ['writeMemory 0xE000EDFC', 'evaluate -exec set {unsigned int}0xE000EDFC = 16777216', 'readMemory 0xE000EDFC']), calls.map((c) => c.command + ' ' + c.json));
+        check('M5 set fallback (`>` on gdbtarget) then read-back', eq(calls.map((c) => c.command + ' ' + (c.args?.expression ?? c.args?.memoryReference)), ['writeMemory 0xE000EDFC', 'evaluate >set {unsigned int}0xE000EDFC = 16777216', 'readMemory 0xE000EDFC']), calls.map((c) => c.command + ' ' + c.json));
         check('M5 did not stick', e && e.message === 'Write to 0xE000EDFC did not stick (wrote 0x01000000, read back 0x00000000)', e && e.message);
     }
     reset();
@@ -591,6 +803,7 @@ async function main() {
     async function resetCase(name, { config, stopped = true, method, halt, words = {}, pc = '0x08000100 <Reset_Handler>', monitorReply = () => ({ result: '' }), stopEvents, pauseStops = false, terminateDuringWait = false }) {
         reset();
         const cfg = { type: 'gdbtarget', name: 'Cfg', ...(config ?? {}) };
+        const gdbCommands = [];
         let t;
         const { session, calls } = makeSession((c, a) => {
             if (c === 'readMemory') {
@@ -599,9 +812,11 @@ async function main() {
             }
             if (c === 'stackTrace') { return { stackFrames: [] }; }
             if (c === 'evaluate' && a.expression === '$pc') { return { result: typeof pc === 'function' ? pc() : pc }; }
-            if (c === 'evaluate' && a.expression.startsWith('-exec ')) {
-                if (terminateDuringWait) { setTimeout(() => event(t, 'terminated'), 50); }
-                return monitorReply(a.expression.slice(6));
+            if (c === 'evaluate' && a.context === 'repl' && a.expression.startsWith('>')) {
+                const command = a.expression.slice(1);
+                gdbCommands.push(command);
+                if (terminateDuringWait && command.startsWith('monitor ')) { setTimeout(() => event(t, 'terminated'), 50); }
+                return monitorReply(command);
             }
             if (c === 'pause') { if (pauseStops) { setTimeout(() => event(t, 'stopped', { reason: 'pause', threadId: 1 }), 5); } return undefined; }
             if (c === 'continue') { return undefined; }
@@ -613,10 +828,12 @@ async function main() {
         const ex = new DebuggingExecutor();
         const t0 = Date.now();
         const out = await ex.resetTarget({ method, halt });
-        return { out, calls, ms: Date.now() - t0 };
+        return { out, calls, gdbCommands, ms: Date.now() - t0 };
     }
     {
-        const { out, calls, ms } = await resetCase('pyOCD S', { config: { target: { server: 'pyocd' } }, method: 'auto', words: { '0xE000ED08': 0, '0x00000004': 0x08000101 } });
+        const { out, calls, gdbCommands, ms } = await resetCase('pyOCD S', { config: { target: { server: 'pyocd' } }, method: 'auto', words: { '0xE000ED08': 0, '0x00000004': 0x08000101 } });
+        check('RS1 the reset command reaches GDB with `>`, then GDB\'s caches are flushed (#56)',
+            eq(gdbCommands, ['monitor reset halt system', 'maintenance flush register-cache', 'maintenance flush dcache']), gdbCommands);
         check('RS1 pyocd verified', out.serverKind === 'pyocd' && eq(out.commandsIssued, ['monitor reset halt system']) && eq(out.replies, ['<no echo from adapter>'])
             && eq(out.methodsTried, ['system']) && out.verified === true && out.verificationDetail === 'PC=0x08000100 matches the reset vector (0x08000100, vector table at 0x00000000)'
             && out.haltedByUs === false && out.resumed === false, out);
@@ -624,9 +841,10 @@ async function main() {
         check('RS1 VTOR exact reference, vector at 0x00000004', calls.some((c) => c.json === '{"memoryReference":"0xE000ED08","count":4}') && calls.some((c) => c.json === '{"memoryReference":"0x00000004","count":4}'));
     }
     {
-        const { out, calls } = await resetCase('J-Link S', { config: { target: { server: 'JLinkGDBServer' } }, method: 'core', monitorReply: (cmd) => ({ result: cmd === 'monitor reset 1' ? 'Unknown monitor command' : '' }) });
+        const { out, calls, gdbCommands } = await resetCase('J-Link S', { config: { target: { server: 'JLinkGDBServer' } }, method: 'core', monitorReply: (cmd) => ({ result: cmd === 'monitor reset 1' ? 'Unknown monitor command' : '' }) });
         check('RS2 jlink core unsupported', out.serverKind === 'jlink' && eq(out.commandsIssued, ['monitor halt', 'monitor reset 1']) && out.verificationDetail === unsupportedResetDetail('core', 0)
             && !calls.some((c) => c.command === 'readMemory') && out.verified === false, out);
+        check('RS2 no cache flush after a command the server did not know', eq(gdbCommands, ['monitor halt', 'monitor reset 1']), gdbCommands);
     }
     {
         const { out, calls } = await resetCase('S', { method: 'auto', halt: false, words: { '0xE000ED08': 0x08000000, '0x08000004': 0x08000199 }, pc: '0x8000256 <delay_ms+14>' });

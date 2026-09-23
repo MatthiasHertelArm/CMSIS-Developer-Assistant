@@ -29,7 +29,11 @@ import * as vscode from 'vscode';
 import { FaultRegisters } from '../core/faultDecoder';
 import { ResetMethod, ResetOutcomeView } from '../core/resetAssist';
 import { DebugState, StackFrame } from '../debugState';
-import { StopWaitResult } from '../utils/sessionStateTracker';
+import type { GdbLogpoint, StopWaitResult } from '../utils/sessionStateTracker';
+import type { GdbReply } from './gdbCommand';
+
+export type { GdbLogpoint } from '../utils/sessionStateTracker';
+export type { GdbReply } from './gdbCommand';
 
 /** Deadlines from the settings `dapRequestTimeoutMs` and `memoryReadTimeoutMs`. */
 export interface HardwareTimeouts {
@@ -80,14 +84,31 @@ export interface AlreadyStopped {
     reason: string | null;
 }
 
+/** How `restart` restarted the session. */
+export interface RestartOutcome {
+    /**
+     * `relaunched`: a CMSIS Debugger session was stopped and its root
+     * session's launch configuration started again through the debug API;
+     * `workbench`: VS Code's restart command ran on the focused session.
+     */
+    via: 'relaunched' | 'workbench';
+    configurationName?: string;
+    /** The relaunched configuration's `preLaunchTask`, which ran again. */
+    preLaunchTask?: string;
+}
+
 /** Starting and ending sessions, and finding the one this window acts on. */
 export interface SessionLifecycle {
     startDebugging(folderPath: string, launch: vscode.DebugConfiguration): Promise<boolean>;
     /** Resolves `launchName` from launch.json in the workspace folder that fits `folderPath`. */
     startDebuggingByName(folderPath: string, launchName: string): Promise<boolean>;
     stopDebugging(which?: vscode.DebugSession): Promise<void>;
-    /** Runs VS Code's restart command, which acts on the session VS Code has focused. */
-    restart(): Promise<void>;
+    /**
+     * On the CMSIS Debugger: stops the root of the session and starts its
+     * launch configuration again through the debug API, so a failure comes
+     * back here. Elsewhere: VS Code's restart command on the focused session.
+     */
+    restart(): Promise<RestartOutcome>;
     /** Synchronous, and sends nothing to the adapter. */
     hasDebugSession(): boolean;
     getActiveSession(): vscode.DebugSession | undefined;
@@ -105,7 +126,13 @@ export interface Readiness {
     getDeviceInfo(): Promise<string>;
 }
 
-/** Moving the target. None of these waits for the stop that may follow. */
+/**
+ * Moving the target. None of these waits for the stop that may follow. A
+ * request the adapter rejects (other than by a timeout) throws on the CMSIS
+ * Debugger: `TARGET_RUNNING` when GDB says the target is running, `INTERNAL`
+ * otherwise. Other adapters answer it with VS Code's workbench command for
+ * the same action.
+ */
 export interface RunControl {
     stepOver(overrideMs?: number): Promise<void>;
     stepInto(overrideMs?: number): Promise<void>;
@@ -117,18 +144,66 @@ export interface RunControl {
     waitForStop(limitMs?: number): Promise<StopWaitResult | AlreadyStopped>;
 }
 
-/** Breakpoints in VS Code's model, and GDB's own through the `-exec` passthrough. */
+/** How the session's adapter reports one breakpoint of VS Code's model (`getDebugProtocolBreakpoint`). */
+export interface BreakpointBinding {
+    /** The adapter has answered for this breakpoint; false when the wait ran out first. */
+    reported: boolean;
+    verified: boolean;
+    /** The adapter's explanation, typically why it could not bind. */
+    message?: string;
+    /** The line the adapter bound it to. */
+    line?: number;
+    /** The adapter's id for it; GDB's breakpoint number on the CMSIS Debugger. */
+    id?: number;
+}
+
+/** What a removal from VS Code's breakpoint model did. */
+export interface BreakpointRemoval {
+    removed: number;
+    /**
+     * With a session: whether the adapter answered VS Code's `setBreakpoints`
+     * for every file concerned within the wait. Undefined without a session
+     * or when nothing was removed.
+     */
+    applied?: boolean;
+}
+
+/**
+ * Breakpoints live in VS Code's model on every adapter; the adapter reports
+ * how it bound each of them. Logpoints on the CMSIS Debugger are GDB
+ * `dprintf`s instead, remembered per session under their GDB number.
+ */
 export interface BreakpointControl {
-    addBreakpoint(file: vscode.Uri, line: number, extras?: { condition?: string; logMessage?: string }): Promise<void>;
-    removeBreakpoint(file: vscode.Uri, line: number): Promise<void>;
+    /** Adds one source breakpoint (or logpoint) to VS Code's model and returns it. */
+    addBreakpoint(file: vscode.Uri, line: number, extras?: { condition?: string; logMessage?: string }): Promise<vscode.SourceBreakpoint>;
+    /**
+     * Removes the model's source breakpoints at `line` of `file` (with
+     * `logpointsOnly`, only those that log) and waits, bounded, until the
+     * session's adapter has taken the change.
+     */
+    removeBreakpoint(file: vscode.Uri, line: number, options?: { logpointsOnly?: boolean }): Promise<BreakpointRemoval>;
     getBreakpoints(): ReadonlyArray<vscode.Breakpoint>;
-    clearAllBreakpoints(): void;
-    // The GDB methods resolve GDB's reply text; telling success from failure is up to the caller.
-    setBreakpointViaGdb(sourcePath: string, line: number, overrideMs?: number, condition?: string): Promise<string>;
-    setLogpointViaGdb(sourcePath: string, line: number, format: string, values: string[], overrideMs?: number): Promise<string>;
-    setBreakpointConditionViaGdb(breakpointNo: number, condition: string, overrideMs?: number): Promise<string>;
-    clearBreakpointViaGdb(sourcePath: string, line: number, overrideMs?: number): Promise<string>;
-    clearAllBreakpointsViaGdb(overrideMs?: number): Promise<string>;
+    /** Removes every breakpoint of the model and waits, bounded, until the adapter has taken the change. */
+    clearAllBreakpoints(): Promise<BreakpointRemoval>;
+    /**
+     * How the session's adapter reports `breakpoint`, asking again until it
+     * has answered or `waitMs` has passed; undefined without a session.
+     */
+    breakpointBinding(breakpoint: vscode.Breakpoint, waitMs: number): Promise<BreakpointBinding | undefined>;
+    // GDB's own breakpoints, for the CMSIS Debugger's logpoints. Each resolves
+    // GDB's reply; telling success from failure is up to the caller.
+    /** MI `-dprintf-insert` at `location` (a GDB linespec); the reply is the MI result as JSON. */
+    insertDprintfViaGdb(location: string, format: string, values: readonly string[], overrideMs?: number): Promise<GdbReply>;
+    /** CLI `condition <n> <condition>`. */
+    setBreakpointConditionViaGdb(breakpointNo: number, condition: string, overrideMs?: number): Promise<GdbReply>;
+    /** CLI `delete <n>…` with the numbers given; never a bare `delete`. */
+    deleteBreakpointsViaGdb(numbers: readonly number[], overrideMs?: number): Promise<GdbReply>;
+    /** MI `-break-list`; the reply is GDB's breakpoint table as JSON. */
+    listBreakpointsViaGdb(overrideMs?: number): Promise<GdbReply>;
+    /** The logpoints set as `dprintf` in the current session, by GDB number. */
+    gdbLogpoints(): GdbLogpoint[];
+    rememberGdbLogpoint(logpoint: GdbLogpoint): void;
+    forgetGdbLogpoints(numbers: readonly number[]): void;
 }
 
 /** Program state: location, stack, threads, variables and expressions. */
@@ -138,7 +213,11 @@ export interface ProgramInspection {
     getThreads(overrideMs?: number): Promise<DapThread[]>;
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all', overrideMs?: number): Promise<any>;
     getVariablesForFrame(frameId: number, scope?: 'local' | 'global' | 'all', overrideMs?: number): Promise<any>;
-    /** Resolves the adapter's evaluate reply body unchanged. */
+    /**
+     * Resolves the adapter's evaluate reply body unchanged. A GDB command
+     * written `-exec <cmd>` or `><cmd>` goes to GDB in the prefix of a CMSIS
+     * Debugger session, and its text comes back as the `result`.
+     */
     evaluateExpression(expression: string, frameId: number, overrideMs?: number): Promise<any>;
 }
 

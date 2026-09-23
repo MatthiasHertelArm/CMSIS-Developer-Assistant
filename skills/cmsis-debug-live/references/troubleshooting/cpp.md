@@ -69,7 +69,7 @@ Notes for C and C++ programs on the host, through the C/C++ extension (`cppdbg`,
 
 - A `condition` on `add_breakpoint` is a C expression for the debugger: `i == 100`, `p != 0 && p->len > 64`, `name[0] == 'e'`. Keep calls such as `strcmp` out of it; they run in the program at every hit.
 - The debugger tests the condition after the program has stopped at the breakpoint and resumes it when the condition is false. The FPB of a Cortex-M has no condition logic, so the core halts on every hit, and in an ISR or a fast loop each of those halts costs milliseconds through the probe. On the host a busy conditional breakpoint slows the program the same way.
-- `add_logpoint` prints to VS Code's Debug Console and lets the program run on. No tool returns that output: it serves a user who watches the console, and values you need yourself come from a conditional breakpoint and a read at the stop. `cppdbg` fills in `{expr}` placeholders; the CMSIS Debugger's adapter (cdt-gdb-adapter 1.10) prints the message text as written. On Cortex-M each hit halts the core as well.
+- `add_logpoint` prints to VS Code's Debug Console and lets the program run on. No tool returns that output: it serves a user who watches the console, and values you need yourself come from a conditional breakpoint and a read at the stop. `cppdbg` fills in `{expr}` placeholders itself; on the CMSIS Debugger the tool sets the logpoint as a GDB `dprintf`, which fills them in (`{expr:%08lx}` picks the printf conversion) and whose hits `list_breakpoints` counts. On Cortex-M each hit halts the core as well.
 
 ## Checklist
 
