@@ -24,8 +24,8 @@
  *     (every text file of every commit up to the synced one).
  *
  *   npm run provenance:check                 both tables
- *   npm run provenance:check -- --gate       also fail when a gated file (a DebugMCP
- *                                            counterpart, or new since REWRITE_BASE)
+ *   npm run provenance:check -- --gate       also fail when a gated file (a path DebugMCP
+ *                                            ever had, or new since REWRITE_BASE)
  *                                            without the Microsoft line contains more
  *                                            than GATE_MAX_SHARED lines from the history
  *   npm run provenance:check -- --at REV     measure the files as they were at REV
@@ -151,7 +151,12 @@ function isTrivial(line: string): boolean {
     // Imports are dictated by module names, short declarations by the types they declare.
     if (/^import\b.*\bfrom\s+['"][^'"]+['"];?$/.test(line)) { return true; }
     if (line.length < 48 && /^(readonly\s+|private\s+|public\s+)*[\w$]+\??\s*:\s*[\w$.<>[\]| ']+[;,]?$/.test(line)) { return true; }
-    return /^[\s{}()[\];,.:*/\\-]*$/.test(line);
+    // Formats, not prose: Markdown tables with one-word headings, lists of
+    // identifiers (tool names, keys), and short JSON settings.
+    if (/^\|(\s*[\w#.-]+\s*\|)+$/.test(line)) { return true; }
+    if (/^[-*]\s+`?[\w.-]+`?$/.test(line)) { return true; }
+    if (line.length < 48 && /^"[\w$.-]+"\s*:\s*("[^"]*"|true|false|null|-?\d+|\{|\[)\s*,?$/.test(line)) { return true; }
+    return /^[\s{}()[\];,.:*/\\|-]*$/.test(line);
 }
 
 function significantText(text: string): string[] {
@@ -198,11 +203,12 @@ function counterpart(file: string, upstream: string): string | undefined {
  * commit up to the pinned one. Catches strings that came from an older
  * upstream version or moved between upstream files.
  */
-function upstreamHistoryLines(upstream: string): Set<string> {
+function upstreamHistoryLines(upstream: string, pathsEver: Set<string>): Set<string> {
     const objects = execFileSync('git', ['-C', upstream, 'rev-list', '--objects', UPSTREAM_SHA], { encoding: 'utf8', maxBuffer: 64 << 20 });
     const blobs = new Set<string>();
     for (const line of objects.split('\n')) {
         const [sha, file] = line.split(' ');
+        if (file) { pathsEver.add(file); }
         if (sha && file && TEXT_FILE.test(file) && !file.endsWith('package-lock.json')) { blobs.add(sha); }
     }
     const batch = execFileSync('git', ['-C', upstream, 'cat-file', '--batch'], { input: [...blobs].join('\n') + '\n', maxBuffer: 512 << 20 });
@@ -237,7 +243,9 @@ function main(): void {
         ? execFileSync('git', ['-C', root, 'show', `${at}:${file}`], { encoding: 'utf8', maxBuffer: 64 << 20 })
         : fs.readFileSync(path.join(root, file), 'utf8');
     const upstream = upstreamCheckout();
-    const history = upstreamHistoryLines(upstream);
+    // Every path that existed in DebugMCP at any commit up to the pinned one.
+    const pathsEver = new Set<string>();
+    const history = upstreamHistoryLines(upstream, pathsEver);
     const tracked = at
         ? execFileSync('git', ['-C', root, 'ls-tree', '-r', '--name-only', at], { encoding: 'utf8' }).split('\n').filter(Boolean)
         : execFileSync('git', ['-C', root, 'ls-files', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' })
@@ -295,12 +303,14 @@ function main(): void {
     }
 
     if (gate) {
-        // Gated: files with a DebugMCP counterpart, and every file created since the rewrite began
-        // (an implementer may split a rewritten file into new modules).
+        // Gated: files whose path exists or existed in DebugMCP (or is mapped to one), and every
+        // file created since the rewrite began (an implementer may split a file into new modules).
         const atBase = new Set(execFileSync('git', ['-C', root, 'ls-tree', '-r', '--name-only', REWRITE_BASE], { encoding: 'utf8' }).split('\n'));
         const exempt = anyReports.filter((r) => GATE_EXEMPT[r.file] !== undefined && r.anyShared.length > 0);
+        const descends = (file: string): boolean => counterpart(file, upstream) !== undefined
+            || pathsEver.has(file) || (RENAMED[file] !== undefined && pathsEver.has(RENAMED[file]));
         const gated = anyReports.filter((r) => !r.hasMsLine && GATE_EXEMPT[r.file] === undefined
-            && (counterpart(r.file, upstream) !== undefined || !atBase.has(r.file)));
+            && (descends(r.file) || !atBase.has(r.file)));
         if (exempt.length > 0) {
             console.log('\nNot gated, with the reason:');
             for (const r of exempt) { console.log(`  ${r.file} (${r.anyShared.length}): ${GATE_EXEMPT[r.file]}`); }
@@ -311,7 +321,7 @@ function main(): void {
             for (const r of offenders) { console.log(`  ${r.file} (${r.anyShared.length})`); }
             process.exit(1);
         }
-        console.log(`\ngate passed: ${gated.length} gated file(s) (DebugMCP counterparts and files new since ${REWRITE_BASE}) each contain at most ${GATE_MAX_SHARED} lines found in DebugMCP's history`);
+        console.log(`\ngate passed: ${gated.length} gated file(s) (paths DebugMCP ever had, and files new since ${REWRITE_BASE}) each contain at most ${GATE_MAX_SHARED} lines found in DebugMCP's history`);
     }
 }
 
