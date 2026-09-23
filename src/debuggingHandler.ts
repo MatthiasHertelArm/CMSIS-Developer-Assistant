@@ -35,7 +35,9 @@
  *     …), failed tasks (`TASK_FAILED`), and the fence cap of the reads
  *     (`TIMEOUT`);
  *   - session, execution and breakpoint tools wrap a cause with `wrapError`
- *     as `<what failed>: <String(error)>`, keeping its code and hint.
+ *     as `<what failed>: <cause>`, keeping its code and hint; a `Refusal`
+ *     (the state gate, "nothing to restart") needs no prefix and passes as
+ *     it is.
  *
  * Steps, continue and pause wait only for the DAP `stopped` event the
  * executor arms before the request goes out; VS Code's stack-item events,
@@ -64,7 +66,7 @@ import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
 import { findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup, SvdDevice } from './core/svdParser';
 import { shortenPath } from './core/textBudget';
-import { toToolError, ToolError, ToolText, wrapError } from './core/toolResult';
+import { Refusal, toToolError, ToolError, ToolText, wrapError } from './core/toolResult';
 import {
     DapScope,
     DEFAULT_LISTING_LIMITS,
@@ -182,7 +184,13 @@ const NOTHING_TO_STOP = 'Nothing to stop — no debug session is active.';
 const SESSION_STOPPED = 'The debug session has been stopped.';
 const NOTHING_TO_RESTART = 'Nothing to restart — no debug session is active';
 const SESSION_RESTARTED = 'The debug session has been restarted.';
-const NO_FOCUSED_FRAME = 'There is no active stack frame. Pause execution at a breakpoint first.';
+const NO_FOCUSED_FRAME = 'There is no active stack frame.';
+/** The frame is missing while VS Code has not yet shown the stop, or because the target runs after all. */
+const NO_FOCUSED_FRAME_HINT = 'Call wait_for_stop, which returns once the target is stopped at a frame, '
+    + 'or pause_execution if it is running; then retry.';
+/** A step or continue whose session went away while it waited. */
+const SESSION_ENDED_HINT = 'Call get_session_status to confirm; to debug again, start a session with '
+    + 'cmsis_action load_and_debug (CMSIS projects) or start_debugging.';
 const NO_SCOPES_HERE = 'The debug adapter reports no variable scopes at the current execution point.';
 const NO_EVALUATION_RESULT = 'The debug adapter returned no result for this expression.';
 const START_REFUSED = 'The debug session did not start. Make sure the debugger extension for this kind of file is installed.';
@@ -449,29 +457,32 @@ export class DebuggingHandler
 
     /**
      * A step or continue: gate, request, wait, and the recovery pause when
-     * nothing stopped, which answers with status `timeout`.
+     * nothing stopped, which answers with status `timeout`. A session that
+     * ends during the wait is a failure, `NO_SESSION`, as for pause and
+     * `wait_for_stop`; the gate's own refusal passes unwrapped.
      */
     private async move(spec: MotionSpec, args: TimeoutArg | undefined): Answer {
+        let outcome: StopOutcome;
         try {
             await this.requireStoppedTarget(spec.gate);
-            const outcome = await this.sendAndAwaitStop(() => spec.send(this.dbg, args?.timeoutMs), args?.timeoutMs);
-            const body = outcome.reason
-                ? `Target stopped (reason: ${outcome.reason}).\n\n${this.compactState(outcome.state)}`
-                : this.compactState(outcome.state);
-            if (outcome.ended) {
-                return `${body}\n\n⚠️ Debug session ended during '${spec.tool}'. `
-                    + 'The target may have run to completion, crashed, or lost its connection.';
-            }
-            if (outcome.timedOut) {
-                const overrun = `\n\n⚠️ '${spec.tool}' did not complete within ${this.configuredSeconds}s. `
-                    + 'The target is still running or the probe is unresponsive. '
-                    + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
-                return { text: body + overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
-            }
-            return body;
+            outcome = await this.sendAndAwaitStop(() => spec.send(this.dbg, args?.timeoutMs), args?.timeoutMs);
         } catch (caught) {
             throw wrapError(spec.failure, caught);
         }
+        if (outcome.ended) {
+            throw new ToolError('NO_SESSION', `Debug session ended during '${spec.tool}' — `
+                + 'the target may have run to completion, crashed, or lost its connection.', SESSION_ENDED_HINT);
+        }
+        const body = outcome.reason
+            ? `Target stopped (reason: ${outcome.reason}).\n\n${this.compactState(outcome.state)}`
+            : this.compactState(outcome.state);
+        if (outcome.timedOut) {
+            const overrun = `\n\n⚠️ '${spec.tool}' did not complete within ${this.configuredSeconds}s. `
+                + 'The target is still running or the probe is unresponsive. '
+                + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
+            return { text: body + overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
+        }
+        return body;
     }
 
     /**
@@ -518,11 +529,17 @@ export class DebuggingHandler
         return report.join('\n');
     }
 
-    /** The frame id of the focused stack frame, or the "pause first" error. */
+    /**
+     * The frame id of the focused stack frame. Asked only after the state
+     * gate found the target stopped, so a missing frame means VS Code has
+     * not shown the stop yet, has a thread or another session in focus, or
+     * saw the target resume without the adapter reporting it: the call needs
+     * the target stopped at a frame first, hence `TARGET_RUNNING`.
+     */
     private focusedFrame(): number {
         const frameId = this.host().focusedFrameId();
         if (frameId === undefined) {
-            throw new Error(NO_FOCUSED_FRAME);
+            throw new Refusal('TARGET_RUNNING', NO_FOCUSED_FRAME, NO_FOCUSED_FRAME_HINT);
         }
         return frameId;
     }
@@ -614,7 +631,7 @@ export class DebuggingHandler
     async handleRestart(_args?: TimeoutArg): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
-                throw new ToolError('NO_SESSION', NOTHING_TO_RESTART);
+                throw new Refusal('NO_SESSION', NOTHING_TO_RESTART);
             }
             const status = await this.dbg.getSessionStatus();
             const notes: string[] = [];
@@ -706,7 +723,7 @@ export class DebuggingHandler
     async handleGetDeviceInfo(): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
-                throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, START_FIRST);
+                throw new Refusal('NO_SESSION', NO_ACTIVE_SESSION, START_FIRST);
             }
             const info = await this.dbg.getDeviceInfo();
             const cmsisTarget = await activeTargetName();
@@ -819,19 +836,19 @@ export class DebuggingHandler
             return { result: await change(context), pausedNote: '' };
         }
         if (status.state === 'initializing') {
-            throw new ToolError('NO_SESSION', `Cannot ${operation} yet: the session is still initializing.`, 'Wait briefly and retry.');
+            throw new Refusal('NO_SESSION', `Cannot ${operation} yet: the session is still initializing.`, 'Wait briefly and retry.');
         }
         if (status.state === 'unresponsive') {
-            throw new ToolError('TIMEOUT', `Cannot ${operation}: the probe/GDB server is unresponsive.`,
+            throw new Refusal('TIMEOUT', `Cannot ${operation}: the probe/GDB server is unresponsive.`,
                 'Call check_target_connection, then restart_debugging if needed.');
         }
         const began = this.host().now();
         const paused = await this.pauseAndWait(CHANGE_PAUSE_MS);
         if (paused.kind === 'ended') {
-            throw new ToolError('NO_SESSION', `Cannot ${operation}: the debug session ended while the target was being paused for it.`);
+            throw new Refusal('NO_SESSION', `Cannot ${operation}: the debug session ended while the target was being paused for it.`);
         }
         if (paused.kind === 'timeout') {
-            throw new ToolError('TIMEOUT', `Cannot ${operation}: the target did not stop within ${CHANGE_PAUSE_MS / 1000} s of the pause request.`,
+            throw new Refusal('TIMEOUT', `Cannot ${operation}: the target did not stop within ${CHANGE_PAUSE_MS / 1000} s of the pause request.`,
                 'Call check_target_connection; if the probe answers, pause_execution and retry.');
         }
         let result: T;

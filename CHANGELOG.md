@@ -22,6 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - The owned port is now forgotten when it closes by itself, or fails after closing; a late event of a port already replaced changes nothing. The bytes received before stay readable.
   - `serial_status` reports `closed (COM7 disconnected at 10:42:07)`, and `serial_read`, `serial_write` and `serial_close` name the same reason and point to `serial_open`.
   - The Serial Monitor bridge no longer sends agents to `serial_read_owned`, a tool that does not exist, but to `serial_open` and `serial_read`.
+- **Refusals say what to do next, and failures read without a stray `Error: ` (#20, #11).**
+  - Without a session, the hint of an inspection or step refusal is "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise." While the target runs it is "The target is running: call pause_execution first, or set a breakpoint and wait_for_stop."
+  - A step or continue whose debug session ends while it waits now fails with `NO_SESSION` ("Debug session ended during 'continue_execution' — …") and a hint naming `get_session_status`, `cmsis_action load_and_debug` and `start_debugging`, as `pause_execution` and `wait_for_stop` already did. Before, it answered as a success with a ⚠️ note.
+  - A refusal of the state gate is no longer wrapped a second time: `[NO_SESSION] Cannot step over: session state is 'no-session'.` instead of `[NO_SESSION] Step over failed: Error: Cannot step over: …`. The same holds for "Nothing to restart", `get_device_info` without a session, and breakpoint changes refused by the session state.
+  - Other wrapped failures drop the `Error: ` of a plain error (`Error adding breakpoint: Could not find any lines containing: …`) and keep a class name that says something (`HardwareTimeoutError: …`).
+  - `get_call_stack` with a thread id the target does not have is `INVALID_ARGUMENT` with the hint to call `get_threads`, not `INTERNAL`.
+  - An inspection that finds no focused stack frame is `TARGET_RUNNING` with the hint `wait_for_stop` or `pause_execution`, not `INTERNAL`.
+  - The README explains how to read a result (`isError`, the `[CODE]` prefix and hint, `structuredContent`).
 
 ## [2.5.0] - 2026-09-23
 

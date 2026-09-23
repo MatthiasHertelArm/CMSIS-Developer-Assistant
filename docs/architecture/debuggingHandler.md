@@ -38,7 +38,15 @@ cannot be left out of the routing (see [windowRouting.md](windowRouting.md)).
 | ----- | ------- | -------- |
 | Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads | rejected with the body's `ToolError`; a plain error gets a code from `classifyError()` | rejected with `TIMEOUT`: a read that returned nothing has failed |
 | `reset`, `wait_for_stop`, `cmsis_action`, `flash` | as above | answered with status `timeout` and the notice that the call did not complete within its limit |
-| Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint | bounded by the executor's request deadlines and by the stop and session waits below |
+| Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint; a `Refusal` passes as it is | bounded by the executor's request deadlines and by the stop and session waits below |
+
+The cause reads as its message: a plain `Error` loses the `Error: ` its
+string form would put in front, while a named class such as
+`HardwareTimeoutError` keeps its name, which says what happened. A
+`Refusal` (`src/core/toolResult.ts`) is a refusal that already names the
+operation, the reason and the next step — the state gate, "nothing to
+restart", a breakpoint change the session state rules out — so
+`wrapError()` hands it on unchanged instead of prefixing it a second time.
 
 The first two groups run inside `fenced()` (`src/handler/fence.ts`); its
 `onCap` argument says which answer the cap gives. The limit is the call's
@@ -63,11 +71,14 @@ the session starts or after it ended). `get_session_status` and
 
 Most reads need a halted target. `requireStoppedTarget()` asks the executor
 whether a session exists, answers its `threads` probe and is stopped
-(`hasActiveSession()`). If not, it throws the `ToolError` that
+(`hasActiveSession()`). If not, it throws the `Refusal` that
 `stoppedTargetRefusal()` (`src/handler/sessionText.ts`) builds for the
 current state: `NO_SESSION` for `no-session` and `initializing`,
 `TARGET_RUNNING` for `running`, `TIMEOUT` for `unresponsive`, each with the
-next action for that state as its hint. The SVD lookups are not gated, and
+next action for that state as its hint: `cmsis_action load_and_debug` (or
+`start_debugging` outside CMSIS projects) without a session, and
+`pause_execution`, or a breakpoint and `wait_for_stop`, while the target
+runs (#20). The SVD lookups are not gated, and
 the breakpoint tools do not refuse a running target (see below). `get_session_status` never fails: it reports the state, the
 session's identity, the probe round trip and a hint for each state
 (`renderSessionStatus()`).
@@ -89,7 +100,9 @@ handler before it sets more breakpoints; that answer has status `timeout`,
 as has a pause that sees no stop in time.
 `wait_for_stop` sends nothing: it waits for the next stop, or returns at
 once when the target is already halted. A wait that runs out answers with
-status `timeout`, a session that ends meanwhile rejects with `NO_SESSION`.
+status `timeout`. A session that ends meanwhile rejects with `NO_SESSION`,
+in a step or continue as in `pause_execution` and `wait_for_stop`, with the
+calls that confirm it and start a new session as the hint.
 
 After a stop the handler takes a `DebugState` from the executor and returns
 its compact form. `compactState()` includes the breakpoint list only when it
@@ -156,9 +169,14 @@ target runs.
 
 ## Reading the target
 
-- Variables come from the frame VS Code has focused (`focusedScopes()`); a
-  request for `global` falls back to all scopes when the adapter reports no
-  global scope. `src/core/variableView.ts` renders them, with caps unless the
+- Variables and expressions use the frame VS Code has focused
+  (`focusedFrame()`, `focusedScopes()`); a request for `global` falls back to
+  all scopes when the adapter reports no global scope. The frame is asked
+  for only after the state gate passed, so when none is focused the stop has
+  not reached VS Code yet, a thread rather than a frame is focused, focus is
+  on another session, or the target resumed without the adapter saying so:
+  a `TARGET_RUNNING` refusal whose hint is `wait_for_stop` or
+  `pause_execution`. `src/core/variableView.ts` renders them, with caps unless the
   agent names the variables it wants.
 - Variable and expression values that look like credentials are withheld
   while `redactSecrets` is on (read on every call; `src/utils/secretRedaction.ts`).

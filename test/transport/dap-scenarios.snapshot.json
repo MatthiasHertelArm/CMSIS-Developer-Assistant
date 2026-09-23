@@ -91,7 +91,7 @@
             "threadId": 9
           },
           "isError": true,
-          "text": "[INTERNAL] Invalid thread id: 9",
+          "text": "[INVALID_ARGUMENT] Invalid thread id: 9\nCall get_threads: it lists the current thread ids.",
           "traffic": [
             "dap: threads {}",
             "dap: stackTrace {\"threadId\":9,\"startFrame\":0,\"levels\":50} -> error: \"Invalid thread id: 9\""
@@ -879,7 +879,7 @@
           "tool": "step_over",
           "args": {},
           "isError": true,
-          "text": "[TARGET_RUNNING] Step over failed: Error: GDB rejected 'next': the target is running.\npause_execution first, or wait_for_stop if a stop is expected.",
+          "text": "[TARGET_RUNNING] Step over failed: GDB rejected 'next': the target is running.\npause_execution first, or wait_for_stop if a stop is expected.",
           "traffic": [
             "dap: threads {}",
             "dap: next {\"threadId\":1} -> error: \"Cannot execute this command while the target is running.\\nUse the \\\"interrupt\\\" command to stop the target\\nand then try again.\"",
@@ -964,7 +964,7 @@
             "length": 16
           },
           "isError": true,
-          "text": "[TARGET_RUNNING] Cannot read memory: session state is 'running'.\nThe target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "text": "[TARGET_RUNNING] Cannot read memory: session state is 'running'.\nThe target is running: call pause_execution first, or set a breakpoint and wait_for_stop. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {}",
             "dap: threads {}"
@@ -974,7 +974,7 @@
           "tool": "get_variables_values",
           "args": {},
           "isError": true,
-          "text": "[TARGET_RUNNING] Cannot read variables: session state is 'running'.\nThe target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "text": "[TARGET_RUNNING] Cannot read variables: session state is 'running'.\nThe target is running: call pause_execution first, or set a breakpoint and wait_for_stop. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {}",
             "dap: threads {}"
@@ -986,7 +986,7 @@
             "expression": "counter"
           },
           "isError": true,
-          "text": "[TARGET_RUNNING] Cannot evaluate expression: session state is 'running'.\nThe target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "text": "[TARGET_RUNNING] Cannot evaluate expression: session state is 'running'.\nThe target is running: call pause_execution first, or set a breakpoint and wait_for_stop. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {}",
             "dap: threads {}"
@@ -996,7 +996,7 @@
           "tool": "get_call_stack",
           "args": {},
           "isError": true,
-          "text": "[TARGET_RUNNING] Cannot get call stack: session state is 'running'.\nThe target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "text": "[TARGET_RUNNING] Cannot get call stack: session state is 'running'.\nThe target is running: call pause_execution first, or set a breakpoint and wait_for_stop. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {}",
             "dap: threads {}"
@@ -1006,7 +1006,7 @@
           "tool": "step_over",
           "args": {},
           "isError": true,
-          "text": "[TARGET_RUNNING] Step over failed: Error: Cannot step over: session state is 'running'.\nThe target is currently running. Add a breakpoint or wait for the previous continue/step to stop before issuing another inspection or step command. Use get_session_status for a definitive, never-failing classification.",
+          "text": "[TARGET_RUNNING] Cannot step over: session state is 'running'.\nThe target is running: call pause_execution first, or set a breakpoint and wait_for_stop. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {}",
             "dap: threads {}"
@@ -1173,7 +1173,7 @@
             "lineContent": "no such text"
           },
           "isError": true,
-          "text": "[INVALID_ARGUMENT] Error adding breakpoint: Error: Could not find any lines containing: no such text",
+          "text": "[INVALID_ARGUMENT] Error adding breakpoint: Could not find any lines containing: no such text",
           "traffic": []
         },
         {
@@ -1182,7 +1182,7 @@
             "fileFullPath": "<tmp>/project/main.c"
           },
           "isError": true,
-          "text": "[INVALID_ARGUMENT] Error adding breakpoint: Error: No location given: pass `line` (1-based line number). The legacy `lineContent` form is still accepted but deprecated.",
+          "text": "[INVALID_ARGUMENT] Error adding breakpoint: No location given: pass `line` (1-based line number). The legacy `lineContent` form is still accepted but deprecated.",
           "traffic": []
         },
         {
@@ -1225,7 +1225,7 @@
             "logMessage": "broken {counter"
           },
           "isError": true,
-          "text": "[INVALID_ARGUMENT] Could not add the logpoint: Error: Unbalanced '{' in logMessage at position 7. Use {{ for a literal brace.",
+          "text": "[INVALID_ARGUMENT] Could not add the logpoint: Unbalanced '{' in logMessage at position 7. Use {{ for a literal brace.",
           "traffic": []
         },
         {
@@ -1649,7 +1649,7 @@
             "condition": "nosuch > 3"
           },
           "isError": true,
-          "text": "[INVALID_ARGUMENT] Could not add the logpoint: Error: GDB rejected the logpoint condition: No symbol \"nosuch\" in current context.\nCheck that the line has code and the path matches the ELF's compiled paths, and that every expression is in scope at that line.",
+          "text": "[INVALID_ARGUMENT] Could not add the logpoint: GDB rejected the logpoint condition: No symbol \"nosuch\" in current context.\nCheck that the line has code and the path matches the ELF's compiled paths, and that every expression is in scope at that line.",
           "traffic": [
             "dap: threads {}",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
@@ -1870,7 +1870,7 @@
             "expression": "-exec frobnicate"
           },
           "isError": true,
-          "text": "[INTERNAL] Evaluating the expression failed: Error: Undefined command: \"frobnicate\".  Try \"help\".",
+          "text": "[INTERNAL] Evaluating the expression failed: Undefined command: \"frobnicate\".  Try \"help\".",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\">frobnicate\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Undefined command: \\\"frobnicate\\\".  Try \\\"help\\\".\""
@@ -1981,7 +1981,7 @@
             "configurationName": "CMSIS Debugger: pyOCD"
           },
           "isError": true,
-          "text": "[INTERNAL] Error starting debug session: Error: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
           "traffic": [
             "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
             "event: output [stderr] \"0000410 C No connected debug probes [__main__]\"",
@@ -1996,7 +1996,7 @@
             "configurationName": "Nope"
           },
           "isError": true,
-          "text": "[INTERNAL] Error starting debug session: Error: Failed to start debug session with configuration 'Nope'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'Nope'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
           "traffic": [
             "vscode: debug.startDebugging folder=<tmp>/project configuration=\"Nope\""
           ]
@@ -2110,7 +2110,7 @@
             "expression": "counter"
           },
           "isError": true,
-          "text": "[INTERNAL] There is no active stack frame. Pause execution at a breakpoint first.",
+          "text": "[TARGET_RUNNING] There is no active stack frame.\nCall wait_for_stop, which returns once the target is stopped at a frame, or pause_execution if it is running; then retry.",
           "traffic": [
             "dap: threads {}"
           ]
