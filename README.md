@@ -139,7 +139,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 | Tool | Description |
 |------|-------------|
 | `serial_list_ports` | Lists the serial ports (via the Serial Monitor extension, falling back to the bundled `serialport` package). |
-| `serial_open`, `serial_close`, `serial_write`, `serial_read`, `serial_status`, `serial_clear_buffer` | Owns a serial connection from the MCP server. Use these when no Serial Monitor session holds the same port. |
+| `serial_open`, `serial_close`, `serial_write`, `serial_read`, `serial_status`, `serial_clear_buffer` | Owns a serial connection from the MCP server. Use these when no Serial Monitor session holds the same port. When the adapter is unplugged the port is released: `serial_status`, `serial_read` and `serial_write` say so and when, and the bytes received before stay readable. |
 | `serial_open_monitor` | Opens the Serial Monitor panel for the user. |
 | `serial_subscribe_monitor`, `serial_unsubscribe_monitor` | Reads data through an open Serial Monitor session once the Serial Monitor extension exposes a data event in its API (see [Known Limitations](#known-limitations-and-workarounds)). |
 
