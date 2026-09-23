@@ -32,27 +32,22 @@ const DERIVED_FILES = [
     'scripts/test-skill-trigger.ts',
     'src/controlServer.ts',
     'src/debugMCPServer.ts',
-    'src/debugState.ts',
     'src/debuggingExecutor.ts',
     'src/debuggingHandler.ts',
     'src/extension.ts',
-    'src/index.ts',
     'src/routingDebuggingHandler.ts',
     'src/test/debugSkillGuidance.test.ts',
     'src/test/debuggingHandler.test.ts',
-    'src/test/extension.test.ts',
     'src/test/routing.test.ts',
-    'src/test/secretRedaction.test.ts',
     'src/test/workspaceRegistry.test.ts',
     'src/utils/agentConfigurationManager.ts',
     'src/utils/debugConfigurationManager.ts',
-    'src/utils/logger.ts',
-    'src/utils/secretRedaction.ts',
     'src/utils/workspaceRegistry.ts',
 ];
 
 const MARKER = ['Copyright (c)', 'Microsoft', 'Corporation'].join(' ');
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'out', 'dist', 'coverage', '.vscode-test', 'cmsis-skills', '.work']);
+// .claude holds local agent worktrees (full checkouts of other revisions).
+const SKIP_DIRS = new Set(['.git', '.claude', 'node_modules', 'out', 'dist', 'coverage', '.vscode-test', 'cmsis-skills', '.work']);
 // Code and licence files. Prose may quote the line (docs about this very rule).
 const TEXT_FILE = /\.(ts|js|mjs|cjs|json|jsonc)$|^(NOTICE|LICENSE[-\w]*)$/;
 

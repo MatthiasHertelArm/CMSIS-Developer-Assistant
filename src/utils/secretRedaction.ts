@@ -1,204 +1,203 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
-
 /**
- * Redaction of secret-looking runtime values before they leave the extension.
+ * Copyright 2026 Arm Limited
  *
- * Debug adapters happily hand back every variable in scope, which routinely
- * includes API keys, tokens, passwords and whole `os.environ` / `process.env`
- * dumps. Those values are then streamed to an AI agent (and usually to a remote
- * model provider). This module scrubs values that look like credentials so
- * inspecting program state does not exfiltrate them.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The heuristics are deliberately conservative in one direction: values that
- * are empty, null-ish or otherwise carry no secret material are left intact so
- * "why is my token undefined?" remains debuggable.
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-export const REDACTION_PLACEHOLDER = '<redacted: possible secret>';
+/**
+ * Decides whether a program value about to go to an AI agent must be withheld
+ * as a possible credential. Debug adapters hand back everything in scope, API
+ * keys and environment dumps included, and the agent usually forwards it to a
+ * remote model.
+ *
+ * A value is withheld when its variable name is a well-known credential name
+ * or its text contains a well-known credential shape. Two kinds of value are
+ * always shown, whatever the name: empty and null-like ones (so "why is my
+ * token empty?" stays debuggable) and plain numeric scalars — in firmware a
+ * variable called `auth`, `token` or `pass` is nearly always a flag, counter
+ * or parser tag, and a 32-bit integer cannot hold a credential.
+ *
+ * Pure and stateless: the callers decide where it applies (the variable views
+ * and evaluate_expression, while `redactSecrets` is on).
+ */
 
-export const REDACTION_NOTICE =
-    `NOTE: values matching '${REDACTION_PLACEHOLDER}' were withheld because their name or ` +
-    'content looks like a credential (key, token, password, connection string, ...). ' +
-    'Use debug-specific checks (type, length, is-null) instead of reading the raw value. ' +
-    'Numeric scalars are never withheld, so firmware flags and counters stay readable. ' +
-    'Turn this off with the "cmsis-developer-assistant.redactSecrets" setting.';
+export const REDACTION_PLACEHOLDER: string = '<redacted: possible secret>';
+
+export const REDACTION_NOTICE: string = [
+    `NOTE: values matching '${REDACTION_PLACEHOLDER}' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string.`,
+    'To debug such a value, check its type, its length or whether it is null rather than asking for its contents.',
+    'Numeric scalars are never withheld, so firmware flags and counters stay readable.',
+    'Turn this off with the "cmsis-developer-assistant.redactSecrets" setting.',
+].join(' ');
+
+type Verdict = { value: string; redacted: boolean };
+
+const words = (list: string): string[] => list.split(' ');
 
 /**
- * Names that mark a variable as credential-bearing.
- *
- * Matched *exactly* (case-insensitively, ignoring `_`/`-` separators) rather
- * than as substrings: a substring rule flags any name merely containing
- * 'token' or 'cookie', so benign variables like `tokenCount` or `cookieCount`
- * get withheld and stop being debuggable.
- *
- * The cost of exact matching is that arbitrary compound names are no longer
- * inferred, so widely used compound forms are listed explicitly below.
+ * Credential names after normalisation (lower case; whitespace, `_` and `-`
+ * removed). Matched whole, so `tokenCount` or `passwordLength` are not on it.
+ * Register names from SVDs (`KEY`, `KR`, `KEYR`, `UNLOCK`, …) stay off on
+ * purpose.
  */
-const SENSITIVE_NAMES = new Set([
-    // Keys
-    'apikey', 'apikeys', 'apisecret', 'apisecretkey', 'accesskey', 'accesskeyid',
-    'secretkey', 'secretaccesskey', 'privatekey', 'publicprivatekey', 'encryptionkey',
-    'signingkey', 'sessionkey', 'masterkey', 'clientkey', 'sshkey', 'gpgkey', 'saskey',
-    // Secrets
-    'secret', 'secrets', 'clientsecret', 'consumersecret',
-    // Passwords
-    'password', 'passwords', 'passwd', 'pwd', 'pass', 'passphrase',
-    'dbpassword', 'dbpasswd', 'dbpass', 'rootpassword', 'adminpassword', 'userpassword',
+const CREDENTIAL_NAMES: ReadonlySet<string> = new Set([
+    // Passwords and one-time codes
+    ...words('pass passwd password passwords passphrase pwd otp adminpassword rootpassword userpassword dbpass dbpasswd dbpassword'),
+    // Generic secrets, sessions, connection strings
+    ...words('secret secrets credential credentials auth authorization cookie cookies sessionid connectionstring connstr'),
     // Tokens
-    'token', 'tokens', 'accesstoken', 'refreshtoken', 'idtoken', 'authtoken', 'apitoken',
-    'sessiontoken', 'bearertoken', 'bearer', 'oauthtoken', 'personalaccesstoken',
-    'csrftoken', 'xsrftoken', 'sastoken', 'jwt',
-    // Credentials / auth
-    'credential', 'credentials', 'authorization', 'auth', 'otp',
-    // Sessions and cookies
-    'cookie', 'cookies', 'sessionid',
-    // Connection strings
-    'connectionstring', 'connstr', 'accountkey', 'sasurl',
-    // Common environment-variable spellings
-    'openaiapikey', 'anthropicapikey', 'awssecretaccesskey', 'awsaccesskeyid',
-    'awssessiontoken', 'githubtoken', 'ghtoken', 'gitlabtoken', 'npmtoken', 'slacktoken',
-    'azurestoragekey', 'googleapikey'
+    ...words('token tokens accesstoken refreshtoken idtoken authtoken apitoken bearer bearertoken oauthtoken sessiontoken csrftoken xsrftoken jwt personalaccesstoken'),
+    // API keys and client secrets
+    ...words('apikey apikeys apisecret apisecretkey accesskey accesskeyid secretkey secretaccesskey clientkey clientsecret consumersecret'),
+    // Cryptographic keys
+    ...words('privatekey publicprivatekey encryptionkey signingkey masterkey sessionkey sshkey gpgkey'),
+    // Vendor-specific
+    ...words('anthropicapikey openaiapikey googleapikey awsaccesskeyid awssecretaccesskey awssessiontoken azurestoragekey accountkey saskey sastoken sasurl'),
+    ...words('ghtoken githubtoken gitlabtoken npmtoken slacktoken'),
 ]);
 
 /**
- * Fold a name to its comparison form: case and `_`/`-`/space separators carry
- * no meaning, so `API_KEY`, `api-key` and `apiKey` are all `apikey`.
+ * Well-known credential shapes, searched anywhere in a value. None has the
+ * `g` or `y` flag, so `test()` carries no state from one call to the next.
  */
-function normalizeName(name: string): string {
-    return name.toLowerCase().replace(/[\s_-]/g, '');
+const CREDENTIAL_SHAPES: ReadonlyArray<{ kind: string; shape: RegExp }> = [
+    { kind: 'PEM private key', shape: /-----BEGIN[A-Z ]*PRIVATE KEY-----/ },
+    { kind: 'JSON Web Token', shape: /\beyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]/ },
+    { kind: 'AWS access key id', shape: /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{12,}\b/ },
+    { kind: 'GitHub token', shape: /\bgh[pousr]_[a-zA-Z0-9]{16,}\b/ },
+    { kind: 'GitHub fine-grained token', shape: /\bgithub_pat_\w{20,}\b/ },
+    { kind: 'Slack token', shape: /\bxox[abopsr]-[a-zA-Z0-9-]{10,}\b/ },
+    { kind: 'Google API key', shape: /\bAIza[\w-]{30,}\b/ },
+    { kind: 'OpenAI or Anthropic key', shape: /\bsk-(?:[\w-]+-)?[a-zA-Z0-9]{16,}\b/ },
+    { kind: 'Stripe key', shape: /\b[rs]k_(?:live|test)_[a-zA-Z0-9]{10,}\b/ },
+    { kind: 'npm token', shape: /\bnpm_[a-zA-Z0-9]{30,}\b/ },
+    { kind: 'GitLab token', shape: /\bglpat-[\w-]{16,}\b/ },
+    { kind: 'Bearer token', shape: /\bbearer\s+[\w.~+/=-]{12,}/i },
+    { kind: 'Connection-string secret', shape: /\b(?:accountkey|sharedaccesssignature|password|pwd)\s*=\s*[^;\s'"]+/i },
+];
+
+/** Values that say "nothing here" rather than carry data (compared lower-cased, unwrapped). */
+const TRIVIAL_VALUES: ReadonlySet<string> = new Set(['', ...words('none null nil undefined nan true false 0 -1 [] {} () empty <empty>')]);
+
+/**
+ * A C-style number: optional sign; hex (`0x…`), binary (`0b…`) or decimal with
+ * optional fraction and exponent; any `u`/`l`/`f` suffix letters. Matched
+ * case-insensitively, which only widens the letters the three forms already
+ * accept in either case.
+ */
+const NUMBER_LITERAL = /^[+-]?(?:0x[0-9a-f]+|0b[01]+|[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?)[ulf]*$/i;
+
+const QUOTE_CHARS = '\'"`';
+/** A GDB annotation after a value opens with one of these (`<main+8>`, `'\f'`, `"text"`). */
+const ANNOTATION_OPENERS = '<\'"';
+const WHITESPACE = /\s/;
+const LINE_BREAK = /[\n\r\u2028\u2029]/;
+
+/** Trim, then peel matching outer quotes (and the whitespace inside them) layer by layer. */
+function unwrap(text: string): string {
+    let core = text.trim();
+    while (core.length >= 2 && QUOTE_CHARS.includes(core[0]) && core.endsWith(core[0])) {
+        core = core.slice(1, -1).trim();
+    }
+    return core;
 }
 
 /**
- * Well-known credential shapes. These are redacted regardless of the variable
- * name, because a secret assigned to `x` is still a secret.
+ * Drop what GDB prints after a value — ` <main+8>` after an address, ` '\f'`
+ * after a char: the leftmost stretch of whitespace followed by an opener that
+ * runs to the end of the text on one line. Without whitespace before the
+ * opener nothing is dropped. A linear scan: every whitespace run is visited
+ * once.
  */
-const SECRET_VALUE_PATTERNS: RegExp[] = [
-    // PEM blocks. The body is matched with a base64/whitespace class (not `[\s\S]*?`)
-    // so the match is unambiguous and linear, and so an unterminated block still has
-    // its key material consumed rather than only its header.
-    /-----BEGIN[A-Z ]*PRIVATE KEY-----[A-Za-z0-9+/=\s]*(?:-----END[A-Z ]*PRIVATE KEY-----)?/g,
-    /\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+/g,                     // JWTs
-    /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{12,}\b/g,                            // AWS key ids
-    /\bgh[pousr]_[A-Za-z0-9]{16,}\b/g,                                                // GitHub tokens
-    /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-    /\bxox[abopsr]-[A-Za-z0-9-]{10,}\b/g,                                             // Slack tokens
-    /\bAIza[0-9A-Za-z_-]{30,}\b/g,                                                    // Google API keys
-    /\bsk-(?:[A-Za-z0-9_-]+-)?[A-Za-z0-9]{16,}\b/g,                                   // OpenAI / Anthropic style
-    /\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}\b/g,                                      // Stripe
-    /\bnpm_[A-Za-z0-9]{30,}\b/g,
-    /\bglpat-[A-Za-z0-9_-]{16,}\b/g,                                                  // GitLab
-    /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
-    /\b(?:AccountKey|SharedAccessSignature|Password|Pwd)\s*=\s*[^;\s'"]+/gi           // connection strings
-];
-
-/** Values that cannot carry a secret and stay readable for debugging. */
-const TRIVIAL_VALUES = new Set([
-    '', 'none', 'null', 'nil', 'undefined', 'nan', 'true', 'false',
-    '0', '-1', '[]', '{}', '()', 'empty', '<empty>'
-]);
-
-/** Quote/decoration stripping so `'None'` and `None` are treated alike. */
-function unwrap(value: string): string {
-    let text = value.trim();
-    while (text.length >= 2 &&
-        ((text.startsWith("'") && text.endsWith("'")) ||
-            (text.startsWith('"') && text.endsWith('"')) ||
-            (text.startsWith('`') && text.endsWith('`')))) {
-        text = text.slice(1, -1).trim();
+function dropAnnotation(text: string): string {
+    let lastBreak = -1;
+    for (let k = text.length - 1; k >= 0; k--) {
+        if (LINE_BREAK.test(text[k])) {
+            lastBreak = k;
+            break;
+        }
+    }
+    let pos = 0;
+    while (pos < text.length) {
+        if (!WHITESPACE.test(text[pos])) {
+            pos++;
+            continue;
+        }
+        const runStart = pos;
+        while (pos < text.length && WHITESPACE.test(text[pos])) {
+            pos++;
+        }
+        // `pos` is the first character after the run; the opener and all
+        // that follows it must lie beyond the last line break.
+        if (pos < text.length && pos > lastBreak && ANNOTATION_OPENERS.includes(text[pos])) {
+            return text.slice(0, runStart);
+        }
     }
     return text;
 }
 
-function isTrivialValue(value: string): boolean {
-    return TRIVIAL_VALUES.has(unwrap(value).toLowerCase());
+function isTrivialValue(text: string): boolean {
+    return TRIVIAL_VALUES.has(unwrap(text).toLowerCase());
+}
+
+function isNumericScalar(text: string): boolean {
+    const core = unwrap(text);
+    return core.length > 0 && NUMBER_LITERAL.test(dropAnnotation(core).trim());
+}
+
+/** Empty, null-like and numeric values are shown under any name. */
+function isAlwaysShown(text: string): boolean {
+    return text.length === 0 || isTrivialValue(text) || isNumericScalar(text);
+}
+
+function normaliseName(name: string): string {
+    return name.toLowerCase().split(/[\s_-]/).join('');
+}
+
+/** The name, normalised, is a credential name. `API_KEY`, `api-key` and `apiKey` are one name. */
+export function isSensitiveName(identifier: string | undefined | null): boolean {
+    return identifier ? CREDENTIAL_NAMES.has(normaliseName(identifier)) : false;
+}
+
+/** The text contains a well-known credential shape somewhere. */
+export function looksLikeSecretValue(text: string | undefined | null): boolean {
+    return text ? CREDENTIAL_SHAPES.some(({ shape }) => shape.test(text)) : false;
 }
 
 /**
- * A plain numeric scalar, as the overwhelming majority of firmware variables
- * are: `42`, `-1`, `0x20000000`, `0b1011`, `3.14`, `1e-6`, `0xDEADBEEF <sym+4>`.
- *
- * CMSIS-fork addition, not in upstream. Upstream redacts on the variable's
- * *name* alone, which is right for a host process where `auth` holds a bearer
- * token. In firmware `auth`, `token`, `secret` and `pass` are routinely
- * `uint8_t` flags and protocol counters — a BLE pairing state, a ring-buffer
- * token, a parser tag. Withholding those makes the bug unreadable and protects
- * nothing: a 32-bit integer cannot carry a credential. So a scalar value is
- * never redacted, whatever it is called. Strings, buffers and structures still
- * go through the full name and content checks.
+ * The decision in order: always-shown values first (so a credential name never
+ * hides an empty or numeric value), then the name, then the value's shape.
  */
-function isNumericScalar(value: string): boolean {
-    const text = unwrap(value);
-    if (text.length === 0) { return false; }
-    // Trailing GDB symbol/type annotation, e.g. `0x8000414 <main+8>` or `12 '\f'`.
-    const core = text.replace(/\s+[<'"].*$/, '').trim();
-    return /^[+-]?(?:0[xX][0-9a-fA-F]+|0[bB][01]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)[uUlLfF]*$/.test(core);
-}
-
-export function isSensitiveName(name: string | undefined | null): boolean {
-    if (!name) {
-        return false;
-    }
-    return SENSITIVE_NAMES.has(normalizeName(name));
-}
-
-export function looksLikeSecretValue(value: string | undefined | null): boolean {
-    if (!value) {
-        return false;
-    }
-    return SECRET_VALUE_PATTERNS.some(pattern => {
-        pattern.lastIndex = 0;
-        return pattern.test(value);
-    });
+function judge(label: string | undefined, raw: unknown): Verdict {
+    const text = raw === undefined || raw === null ? '' : String(raw);
+    const withhold = !isAlwaysShown(text) && (isSensitiveName(label) || looksLikeSecretValue(text));
+    return withhold ? { value: REDACTION_PLACEHOLDER, redacted: true } : { value: text, redacted: false };
 }
 
 /**
- * Redact a single variable value based on its name and content.
- * Returns the (possibly rewritten) value and whether anything was withheld.
- *
- * The decision is made from the variable itself - its own name and its own
- * value - and never by descending into the entries of a structure. A struct
- * whose name is not a credential name is returned intact, even if some field
- * inside it is called `password`; scrub the field by inspecting it directly.
+ * The value as it may be shown, judged by the variable's own name and its own
+ * rendering. A structure is not searched field by field; its whole rendering
+ * is scanned for credential shapes.
  */
-export function redactVariableValue(name: string | undefined, value: unknown): { value: string; redacted: boolean } {
-    const text = value === undefined || value === null ? '' : String(value);
-
-    if (text === '' || isTrivialValue(text) || isNumericScalar(text)) {
-        return { value: text, redacted: false };
-    }
-
-    if (isSensitiveName(name)) {
-        return { value: REDACTION_PLACEHOLDER, redacted: true };
-    }
-
-    if (looksLikeSecretValue(text)) {
-        // A recognizable credential shape, whatever the variable is called.
-        return { value: REDACTION_PLACEHOLDER, redacted: true };
-    }
-
-    return { value: text, redacted: false };
+export function redactVariableValue(variableName: string | undefined, raw: unknown): Verdict {
+    return judge(variableName, raw);
 }
 
 /**
- * Redact free-form debugger output (for example an `evaluate` result), which is
- * the trivial bypass for per-variable redaction: `evaluate_expression` on
- * `os.environ` or `process.env.API_KEY` returns the same secrets.
+ * The same judgement for an `evaluate_expression` result, with the whole
+ * expression standing in for the name: only a bare credential name counts as
+ * one (`apiKey` does, `process.env.API_KEY` does not).
  */
-export function redactExpressionResult(expression: string, value: unknown): { value: string; redacted: boolean } {
-    const text = value === undefined || value === null ? '' : String(value);
-
-    if (text === '' || isTrivialValue(text) || isNumericScalar(text)) {
-        return { value: text, redacted: false };
-    }
-
-    if (isSensitiveName(expression)) {
-        return { value: REDACTION_PLACEHOLDER, redacted: true };
-    }
-
-    if (looksLikeSecretValue(text)) {
-        return { value: REDACTION_PLACEHOLDER, redacted: true };
-    }
-
-    return { value: text, redacted: false };
+export function redactExpressionResult(expressionText: string, raw: unknown): Verdict {
+    return judge(expressionText, raw);
 }
