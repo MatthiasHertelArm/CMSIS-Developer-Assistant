@@ -152,3 +152,52 @@ suite('MeasuredMcpServer results', () => {
         assert.deepStrictEqual(listed.tools.filter((tool) => tool.outputSchema !== undefined).map((tool) => tool.name), []);
     });
 });
+
+/**
+ * An input a session adds to some of its tools (#16: the router's `window`):
+ * it joins the named tools after their own inputs and reaches their callback.
+ */
+suite('MeasuredMcpServer added arguments', () => {
+    let client: Client;
+    let server: MeasuredMcpServer;
+    let received: unknown[];
+
+    setup(async () => {
+        received = [];
+        server = new MeasuredMcpServer({ name: 'added-test', version: '1.0.0' }, {}, new ToolMetrics());
+        server.addArgument('window', z.string().optional().describe('Which window'), new Set(['aimed', 'bare']));
+        const keep = async (args: unknown): Promise<CallToolResult> => {
+            received.push(args);
+            return toCallToolResult('fine');
+        };
+        server.registerTool('aimed', { description: 'takes the argument', inputSchema: { n: z.number() } }, keep);
+        server.registerTool('plain', { description: 'does not', inputSchema: { n: z.number() } }, keep);
+        const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
+        await server.connect(serverEnd);
+        client = new Client({ name: 'added-test', version: '1.0.0' });
+        await client.connect(clientEnd);
+    });
+
+    teardown(async () => {
+        await client.close();
+        await server.close();
+    });
+
+    test('the named tools list it after their own inputs; the others do not', async () => {
+        const listed = await client.listTools();
+        const properties = (name: string): string[] => Object.keys(listed.tools.find((tool) => tool.name === name)?.inputSchema.properties ?? {});
+        assert.deepStrictEqual(properties('aimed'), ['n', 'window']);
+        assert.deepStrictEqual(properties('plain'), ['n']);
+    });
+
+    test('its value reaches the callback with the other arguments', async () => {
+        await client.callTool({ name: 'aimed', arguments: { n: 1, window: '4711' } });
+        await client.callTool({ name: 'aimed', arguments: { n: 2 } });
+        assert.deepStrictEqual(received, [{ n: 1, window: '4711' }, { n: 2 }]);
+    });
+
+    test('a named tool without an input shape cannot take it', () => {
+        assert.throws(() => server.registerTool('bare', { description: 'no inputs' }, async () => toCallToolResult('fine')),
+            /Tool bare declares no input shape, so it cannot take window/);
+    });
+});

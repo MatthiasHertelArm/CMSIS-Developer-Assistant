@@ -32,6 +32,11 @@
 //      AMBIGUOUS_WINDOW and both windows come back as candidates (#11).
 //   8. Closing the router frees the port and a worker is promoted.
 //   9. The routed tools/list, what agents see, stays within its byte budget.
+//  10. The window argument (#16): each window publishes its role; the routed
+//      tools/list offers window on exactly the listed tools; cmsis_action
+//      {window} runs in the named window, by pid or by path, and re-aims the
+//      session; one that matches nothing is INVALID_ARGUMENT; the promoted
+//      window publishes its new role.
 
 const stub = require('./vscode-stub.js');
 
@@ -133,8 +138,14 @@ async function callTool(port, sid, name, args, id) {
     return (await callToolResult(port, sid, name, args, id)).content?.[0]?.text ?? '';
 }
 
+/** The line of a window listing that names `folder`. */
+function rowOf(listing, folder) {
+    return listing.split('\n').find((line) => line.includes(folder)) ?? '';
+}
+
 async function main() {
     const { WindowCoordinator } = require(path.join(OUT, 'windowCoordinator.js'));
+    const { WINDOW_ARGUMENT_TOOLS } = require(path.join(OUT, 'debugTools.js'));
 
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-projects-'));
     const alphaDir = path.join(root, 'alpha');
@@ -170,23 +181,63 @@ async function main() {
     const registered = alpha.registry.list();
     check('both windows are in the registry', registered.length === 2, `${registered.length} entries`);
 
+    // #16: each entry says what its window does.
+    const roleOf = (c) => (c.isRouter() ? 'router' : 'worker');
+    const published = Object.fromEntries(registered.map((w) => [w.pid, w.role]));
+    check('each window publishes its role', published[alpha.pid] === roleOf(c1) && published[beta.pid] === roleOf(c2),
+        JSON.stringify(published));
+
     const sid = await openSession(PORT);
 
     // The routed list is what agents see: a router always routes, so it adds
     // list_debug_windows and select_debug_window to the single-window list
-    // that session-lifecycle.js measures. It rides along on every agent turn.
-    // 47 tools measured 30 104 bytes in 2.5.0; the budget leaves room for the
-    // 2.5.1 additions (get_recent_problems, serial_capture, the window argument).
+    // that session-lifecycle.js measures, and the window argument (#16). It
+    // rides along on every agent turn. 47 tools measured 30 104 bytes in
+    // 2.5.0; the budget leaves room for the 2.5.1 additions
+    // (get_recent_problems, serial_capture, the window argument).
     const ROUTED_TOOLS_LIST_BUDGET_BYTES = 34_000;
     const routedList = await post(PORT, { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 90, method: 'tools/list', params: {} });
     const routedTools = parseSse(routedList.body)?.result?.tools ?? [];
     const routedBytes = Buffer.byteLength(JSON.stringify(routedTools));
     check(`the routed tools/list stays under the ${ROUTED_TOOLS_LIST_BUDGET_BYTES} byte budget`,
         routedTools.length > 30 && routedBytes <= ROUTED_TOOLS_LIST_BUDGET_BYTES, `${routedTools.length} tools, ${routedBytes} bytes`);
+    const withWindow = routedTools.filter((t) => t.inputSchema?.properties?.window !== undefined).map((t) => t.name).sort();
+    const listed = [...WINDOW_ARGUMENT_TOOLS].filter((name) => routedTools.some((t) => t.name === name)).sort();
+    check('the routed tools/list offers window on exactly the listed tools',
+        JSON.stringify(withWindow) === JSON.stringify(listed) && ['cmsis_action', 'flash', 'reset', 'serial_open'].every((n) => withWindow.includes(n)),
+        withWindow.join(', '));
 
     const listing = await callTool(PORT, sid, 'list_debug_windows', {}, 2);
-    check('list_debug_windows reports both windows',
-        listing.includes(alphaDir) && listing.includes(betaDir), listing.replace(/\n/g, ' | '));
+    check('list_debug_windows reports both windows and marks the router',
+        listing.includes(alphaDir) && listing.includes(betaDir) && rowOf(listing, c1.isRouter() ? alphaDir : betaDir).includes(' | router'),
+        listing.replace(/\n/g, ' | '));
+
+    // #16: two idle windows are a tie for a path-less call.
+    const idleTie = await callToolResult(PORT, sid, 'read_memory', { address: '0x20000000', length: 4 }, 20);
+    const idleData = idleTie.structuredContent ?? {};
+    check('two idle windows are refused as AMBIGUOUS_WINDOW; the hint names the window argument, the candidates their role',
+        idleTie.isError === true && idleData.error_code === 'AMBIGUOUS_WINDOW' && /window set to its pid/.test(idleData.hint ?? '')
+            && (idleData.candidates ?? []).length === 2
+            && (idleData.candidates ?? []).every((c) => c.role === published[c.pid]),
+        JSON.stringify(idleData.candidates));
+
+    // The window argument names the window for one call, by pid or by path, and re-aims the session:
+    // the listing then marks that window as the session's current target.
+    const byPid = await callToolResult(PORT, sid, 'cmsis_action', { action: 'status', window: String(beta.pid) }, 21);
+    const byPidText = byPid.content?.[0]?.text ?? '';
+    const aimed = await callTool(PORT, sid, 'list_debug_windows', {}, 22);
+    check('cmsis_action {window: pid} runs in the named window and re-aims the session',
+        byPid.isError !== true && /^No CMSIS job in this window/.test(byPidText) && rowOf(aimed, betaDir).includes('current target'),
+        `${byPidText.split('\n')[0]} | ${rowOf(aimed, betaDir)}`);
+    const byPath = await callToolResult(PORT, sid, 'cmsis_action', { action: 'status', window: path.join(alphaDir, 'src') }, 23);
+    const aimedByPath = await callTool(PORT, sid, 'list_debug_windows', {}, 30);
+    check('cmsis_action {window: path} runs in the window owning the path',
+        byPath.isError !== true && rowOf(aimedByPath, alphaDir).includes('current target'), rowOf(aimedByPath, alphaDir));
+    const missed = await callToolResult(PORT, sid, 'flash', { window: path.join(root, 'no-such-window') }, 24);
+    check('a window that matches nothing is INVALID_ARGUMENT with the candidates',
+        missed.isError === true && missed.structuredContent?.error_code === 'INVALID_ARGUMENT'
+            && (missed.structuredContent?.candidates ?? []).length === 2,
+        (missed.content?.[0]?.text ?? '').split('\n')[0]);
 
     // A path hint must reach the window owning that folder. The handler will
     // fail for lack of a real debug session — what matters is *which* window
@@ -197,7 +248,7 @@ async function main() {
         pinned.startsWith('This session is now pinned to:') && pinned.includes(betaDir), pinned);
 
     const afterPin = await callTool(PORT, sid, 'list_debug_windows', {}, 4);
-    const betaLine = afterPin.split('\n').find((l) => l.includes(betaDir)) ?? '';
+    const betaLine = rowOf(afterPin, betaDir);
     check('the pinned window is marked as the current target',
         betaLine.includes('pinned') && betaLine.includes('current target'), betaLine);
 
@@ -235,12 +286,16 @@ async function main() {
     // Router failover: close the router, the survivor must take the port.
     const router = c1.isRouter() ? c1 : c2;
     const worker = c1.isRouter() ? c2 : c1;
+    const workerWindow = c1.isRouter() ? beta : alpha;
     await router.dispose();
     check('the router released the port', !router.isRouter());
 
-    await worker.tryBecomeRouter();
+    // The promotion republishes the window, which reads its folders from `vscode`.
+    await withWindowContext(workerWindow, undefined, () => worker.tryBecomeRouter());
     check('the surviving worker was promoted to router', worker.isRouter(),
         `isRouter=${worker.isRouter()}`);
+    const promotedEntry = workerWindow.registry.list().find((w) => w.pid === workerWindow.pid);
+    check('the promoted window publishes its new role', promotedEntry?.role === 'router', promotedEntry?.role);
 
     const sid3 = await openSession(PORT);
     const listing3 = await callTool(PORT, sid3, 'list_debug_windows', {}, 6);

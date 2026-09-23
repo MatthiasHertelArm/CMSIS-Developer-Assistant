@@ -393,5 +393,11 @@ suite('Workspace registry', () => {
             const line = describeWindow({ ...base, cmsisProject: '/proj/blinky/blinky.csolution.yml' });
             assert.match(line, /cmsis=\/proj\/blinky\/blinky\.csolution\.yml/);
         });
+
+        test('marks the router window; a worker and a window of 2.5.0 carry no mark', () => {
+            assert.strictEqual(describeWindow({ ...base, role: 'router', hasActiveSession: true }), 'pid=4242 | /proj/blinky | router | debugging');
+            assert.strictEqual(describeWindow({ ...base, role: 'worker' }), 'pid=4242 | /proj/blinky');
+            assert.strictEqual(describeWindow(base), 'pid=4242 | /proj/blinky');
+        });
     });
 });

@@ -11616,6 +11616,10 @@
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "settled",
           "fn": "coordinator.start",
           "value": "<undefined>"
@@ -12680,6 +12684,7 @@
               "workspaceFolders": [],
               "name": "(no workspace)",
               "hasActiveSession": false,
+              "role": "router",
               "pid": "<pid>",
               "updatedAt": "<time>"
             }
@@ -13197,6 +13202,7 @@
               ],
               "name": "fixture-workspace",
               "hasActiveSession": false,
+              "role": "worker",
               "pid": "<pid>",
               "updatedAt": "<time>"
             }
@@ -14080,6 +14086,10 @@
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "settled",
           "fn": "coordinator.start",
           "value": "<undefined>"
@@ -14322,6 +14332,7 @@
               "workspaceFolders": [],
               "name": "(no workspace)",
               "hasActiveSession": false,
+              "role": "router",
               "pid": "<pid>",
               "updatedAt": "<time>"
             }

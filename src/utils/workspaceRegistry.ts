@@ -39,6 +39,9 @@ import * as path from 'path';
 import { isTempPath, writeFileAtomicSync } from './atomicFile';
 import { logger } from './logger';
 
+/** What a window does: serve MCP and forward every call (router), or run what is forwarded to it (worker). */
+export type WindowRole = 'router' | 'worker';
+
 /** One window's registry file, as written by its owner. */
 export interface WindowRegistration {
     /** Extension-host process of the window; the identity of the entry. */
@@ -55,12 +58,19 @@ export interface WindowRegistration {
     hasActiveSession?: boolean;
     activeConfigurationName?: string;
     cmsisProject?: string;
+    /** Written since 2.5.1; the entries of older windows have none. */
+    role?: WindowRole;
     /** First in the file, for whoever opens it: it says the file is internal. Readers ignore it. */
     _note?: string;
 }
 
-/** Why the router picked a window; it shows up in the routing log line. */
-export type ResolutionReason = 'path' | 'pinned' | 'cached' | 'active-session' | 'only-window';
+/**
+ * Why the router picked a window, strongest first: the call's `window`
+ * argument, its file path, the session's pin, the window it reached before,
+ * the one debugging window, the one window. It shows up in the routing log
+ * line.
+ */
+export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'active-session' | 'only-window';
 
 /** Answers whether a process with this pid still exists. */
 export type LivenessCheck = (pid: number) => boolean;
@@ -456,8 +466,9 @@ export class WorkspaceRegistry {
 }
 
 /**
- * One line naming a window for agents: pid, folders, the debug session and
- * the CMSIS solution, joined by ` | `. Port and token never appear.
+ * One line naming a window for agents: pid, folders, `router` for the window
+ * that serves MCP, the debug session and the CMSIS solution, joined by
+ * ` | `. Port and token never appear.
  */
 export function describeWindow(entry: WindowRegistration): string {
     const folders = foldersOf(entry);
@@ -465,6 +476,9 @@ export function describeWindow(entry: WindowRegistration): string {
         `pid=${entry.pid}`,
         folders.length > 0 ? folders.join(', ') : '(no folder open)',
     ];
+    if (entry.role === 'router') {
+        parts.push('router');
+    }
     if (entry.hasActiveSession) {
         parts.push(entry.activeConfigurationName ? `debugging: ${entry.activeConfigurationName}` : 'debugging');
     }

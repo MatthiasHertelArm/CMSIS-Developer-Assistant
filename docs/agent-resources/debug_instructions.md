@@ -55,9 +55,11 @@ Every tool call is measured; `get_session_status` ends with the session's tool-c
 
 ## 🪟 Several VS Code windows open
 
-The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one, otherwise from the window that has an active debug session.
+The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one, otherwise from the window this session pinned or used last, then from the window that has an active debug session.
 
-When **two windows are debugging at once** it refuses to guess and names both — reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and `select_debug_window({ pid })` to pin one for the rest of the session.
+`cmsis_action`, `flash`, `reset` and `serial_open` also take `window` — a pid, or a path inside that window's workspace. It aims that call, and the session's later calls without a path follow it to the same window: `cmsis_action({ action: 'load_and_debug', window: '4711' })`, then `read_memory` reads that board.
+
+When **no rule decides** — two windows debugging at once, or several idle ones — it refuses to guess and names them all (`AMBIGUOUS_WINDOW`): reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and `select_debug_window({ pid })` to pin one for the rest of the session.
 
 ## 🧹 Clean up
 

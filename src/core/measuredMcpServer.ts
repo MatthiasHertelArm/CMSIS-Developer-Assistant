@@ -15,8 +15,9 @@
  */
 
 /**
- * The MCP boundary of every tool: the measurement of each call and the one
- * place where a handler's outcome becomes an MCP result (`toCallToolResult`).
+ * The MCP boundary of every tool: the measurement of each call, the one
+ * place where a handler's outcome becomes an MCP result (`toCallToolResult`),
+ * and the inputs a session adds to some of its tools (`addArgument`).
  */
 
 import { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -40,6 +41,14 @@ type RegisterToolConfig = {
     _meta?: Record<string, unknown>;
 };
 type AnyToolCallback = (...callArgs: unknown[]) => CallToolResult | Promise<CallToolResult>;
+
+/** An input a session adds to the inputs some of its tools declare themselves. */
+interface AddedArgument {
+    name: string;
+    /** A zod schema, as in a tool's own input shape. */
+    schema: unknown;
+    tools: ReadonlySet<string>;
+}
 
 /** `base`, then the keys of `data` that do not collide with it: a detail never overwrites the status. */
 function withDetail(base: JsonObject, data: JsonObject | undefined): JsonObject {
@@ -97,7 +106,8 @@ export function toCallToolResult(outcome: ToolText | ToolError): CallToolResult 
  * handler, redaction and routing step, and the wall time including any
  * forward to another window. Registration is untouched — callers keep using
  * `registerTool(name, config, cb)` with literal names, which the skill test
- * greps for.
+ * greps for — except that a session can add one input to a set of tools
+ * (`addArgument`), as a router session adds `window` (#16).
  *
  * A callback that throws is answered here, through `toCallToolResult`, rather
  * than by the SDK, whose error result would carry the message alone. Schema
@@ -107,11 +117,24 @@ export function toCallToolResult(outcome: ToolText | ToolError): CallToolResult 
  * onSample callback.
  */
 export class MeasuredMcpServer extends McpServer {
+    private readonly addedArguments: AddedArgument[] = [];
+
     constructor(serverInfo: ServerInfo, options: ServerOptions, private readonly metrics: ToolMetrics) {
         super(serverInfo, options);
     }
 
-    public override registerTool(name: string, config: RegisterToolConfig, cb: unknown): RegisteredTool {
+    /**
+     * Give each tool named in `tools` that is registered from now on one more
+     * input, `name` with the zod `schema`, after the inputs it declares. The
+     * value reaches the tool's callback with its other arguments. Only a tool
+     * that declares an input shape can take one; registering another throws.
+     */
+    public addArgument(name: string, schema: unknown, tools: ReadonlySet<string>): void {
+        this.addedArguments.push({ name, schema, tools });
+    }
+
+    public override registerTool(name: string, declared: RegisterToolConfig, cb: unknown): RegisteredTool {
+        const config = this.withAddedArguments(name, declared);
         // Tools without an input schema receive only the request extra; tools
         // with one receive (args, extra).
         const hasArgs = config.inputSchema !== undefined;
@@ -150,5 +173,23 @@ export class MeasuredMcpServer extends McpServer {
             this: McpServer, n: string, c: RegisterToolConfig, f: AnyToolCallback,
         ) => RegisteredTool;
         return register.call(this, name, config, measured);
+    }
+
+    /** The tool's config with the added arguments that name it appended to its input shape. */
+    private withAddedArguments(tool: string, config: RegisterToolConfig): RegisterToolConfig {
+        const added = this.addedArguments.filter((argument) => argument.tools.has(tool));
+        if (added.length === 0) {
+            return config;
+        }
+        const shape = config.inputSchema;
+        // A zod schema object (it carries `_zod` or `_def`) is not a shape whose keys are the inputs.
+        if (typeof shape !== 'object' || shape === null || '_zod' in shape || '_def' in shape) {
+            throw new Error(`Tool ${tool} declares no input shape, so it cannot take ${added.map((argument) => argument.name).join(', ')}`);
+        }
+        const inputSchema: Record<string, unknown> = { ...(shape as Record<string, unknown>) };
+        for (const argument of added) {
+            inputSchema[argument.name] = argument.schema;
+        }
+        return { ...config, inputSchema };
     }
 }

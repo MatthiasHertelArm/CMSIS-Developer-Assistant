@@ -186,20 +186,49 @@ export function forwardTimeoutMs(op: string, args: unknown, defaultToolMs: numbe
 }
 
 /**
- * The path an op names, if any — the strongest routing signal available.
- *
- * Only the source-oriented ops carry one. Everything else (memory, registers,
- * peripherals, CMSIS actions, flash, serial, documentation and build
- * artefacts) has nothing to match on and falls through to the
- * session/active-session rules in the router.
+ * The argument that names a call's window (#16). A routed session offers it
+ * on the tools that start or own something; the router reads it and never
+ * forwards it.
  */
-export function pathHintOf(args: unknown): string | undefined {
-    const a = args as { fileFullPath?: unknown; workingDirectory?: unknown } | undefined;
-    if (typeof a?.fileFullPath === 'string' && a.fileFullPath.length > 0) {
-        return a.fileFullPath;
+export const WINDOW_ARGUMENT = 'window';
+
+/**
+ * What a call says about its window: the `window` argument — a pid when it
+ * is all digits, else a path inside the window's workspace — or the file or
+ * directory it is about (`source: 'path'`).
+ */
+export type TargetHint =
+    | { source: 'window'; pid: number }
+    | { source: 'window'; path: string }
+    | { source: 'path'; path: string };
+
+/** A string argument with something in it, trimmed; undefined otherwise. */
+function filled(value: unknown): string | undefined {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return text.length > 0 ? text : undefined;
+}
+
+/**
+ * The strongest routing signal an op's arguments carry, if any: `window`,
+ * then `fileFullPath`, then `workingDirectory`; empty strings say nothing.
+ *
+ * Only the source-oriented ops carry a path, and only a routed session's
+ * tools that start or own something carry `window`. Everything else
+ * (memory, registers, peripherals, serial reads, documentation and build
+ * artefacts) has nothing to match on and falls through to the session rules
+ * in the router.
+ */
+export function targetHintOf(args: unknown): TargetHint | undefined {
+    const given = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>;
+    const named = filled(given[WINDOW_ARGUMENT]);
+    if (named !== undefined) {
+        return /^\d+$/.test(named) ? { source: 'window', pid: Number(named) } : { source: 'window', path: named };
     }
-    if (typeof a?.workingDirectory === 'string' && a.workingDirectory.length > 0) {
-        return a.workingDirectory;
+    for (const key of ['fileFullPath', 'workingDirectory']) {
+        const value = given[key];
+        if (typeof value === 'string' && value.length > 0) {
+            return { source: 'path', path: value };
+        }
     }
     return undefined;
 }

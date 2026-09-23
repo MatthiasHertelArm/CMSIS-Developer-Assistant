@@ -32,6 +32,8 @@ Each exits non-zero if any check failed.
   second does not, and `tools/list` keeps its pinned size to the byte — the
   contract never goes into a tool description. A deliberate change to a
   description or schema updates `TOOLS_LIST_BYTES` in the same commit.
+- No tool of the single-window list takes the router's `window` argument
+  (#16).
 
 Belongs here rather than in `src/test/` because it needs a real listening
 socket, which the `vscode-test` Electron harness does not give us.
@@ -51,6 +53,10 @@ same code path the extension uses — and drives the router over MCP:
   routable at all.
 - Closing the router frees the port and a worker is promoted, so the agents'
   single URL survives the router window being closed.
+- The window argument (#16): each window publishes its role; the routed
+  `tools/list` offers `window` on exactly the tools of `WINDOW_ARGUMENT_TOOLS`;
+  `cmsis_action {window}` runs in the named window, by pid or by path, and
+  re-aims the session; a `window` that matches nothing is `INVALID_ARGUMENT`.
 
 Note: requests use `agent: false`. `server.close()` stops new connections but
 leaves keep-alive sockets open, so a pooled socket to the disposed router would

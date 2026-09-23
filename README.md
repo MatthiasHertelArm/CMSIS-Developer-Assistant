@@ -175,7 +175,7 @@ Deterministic reads of the current target's build output — no debug session ne
 | `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state. Never throws. |
 | `check_target_connection` | Low-cost liveness check of the debug adapter and probe. |
 | `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot): a short overview with the topic list by default, or one section with `topic` (`session`, `build`, `breakpoints`, `inspection`, `faults`, `troubleshooting`). |
-| `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach and pins one for this session. Relevant when more than one window is open. |
+| `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach, with the router marked, and pins one for this session. Relevant when more than one window is open; then `cmsis_action`, `flash`, `reset` and `serial_open` also take `window`, a pid or a path inside the window's workspace. |
 
 ### MCP resources
 
@@ -276,7 +276,15 @@ The MCP server binds to **`127.0.0.1` only** and rejects requests whose `Host` o
 
 Several VS Code windows are supported. One window binds `serverPort` and becomes the _router_; every other window runs a token-protected loopback control server and publishes itself to a shared registry. The router forwards each tool call to the window that owns the target, so agents that read a single global configuration (Claude Code, Codex, Copilot CLI) reach every window through one URL. When the router window closes, another window takes over within about ten seconds.
 
-The target window is selected from a file path when the tool has one (`add_breakpoint`, `start_debugging`); otherwise the window with the active debug session is used. When two windows are debugging at the same time, the call fails and names both windows. Use `list_debug_windows` and `select_debug_window` to pin one.
+The target window of a call is chosen in this order:
+
+1. The `window` argument of `cmsis_action`, `flash`, `reset` or `serial_open`: a process id, or a path inside the window's workspace. The agent's later calls follow it.
+2. The file path the tool has (`add_breakpoint`, `start_debugging`).
+3. The window the agent pinned with `select_debug_window`.
+4. The window the agent's session used last.
+5. The one window with an active debug session, then the one window.
+
+When none of these decides, for example with two windows debugging or two idle ones, the call fails and names every window, and the agent pins one or names it in the call.
 
 ### Manual agent registration
 
@@ -381,7 +389,7 @@ If the port is held by an unrelated process, set `cmsis-developer-assistant.serv
 
 ### Two windows are debugging at the same time
 
-Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the serial tools) cannot tell which window is meant and return an error naming both. Ask the agent to call `select_debug_window`, or close the other debug session.
+Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the serial tools) cannot tell which window is meant and return an error naming both. The same holds for several windows of which none is debugging. Ask the agent to call `select_debug_window`, or close the other debug session.
 
 ### A `gdbtarget` session fails to launch
 

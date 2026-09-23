@@ -20,10 +20,11 @@
  * window that owns the target, so one MCP URL reaches whichever window holds
  * the board, and two sessions can drive two boards at once.
  *
- * The target comes from a fixed ladder — path hint, pin, the session's
- * established target, the sole window with a debug session, the sole window —
- * and a tie is refused with a listing, never guessed. The two routing tools,
- * `list_debug_windows` and `select_debug_window`, are answered here.
+ * The target comes from a fixed ladder — the call's `window` argument, its
+ * path, the pin, the session's established target, the sole window with a
+ * debug session, the sole window — and a tie is refused with a listing,
+ * never guessed. The two routing tools, `list_debug_windows` and
+ * `select_debug_window`, are answered here.
  *
  * The worker's outcome comes back typed (#11): its result as it is, its
  * `ToolError` with code and hint, and the session keeps its target either
@@ -41,8 +42,10 @@ import {
     CONTROL_RESPONSE_MAX_BYTES,
     DEBUG_OPS,
     DebugOpName,
+    TargetHint,
+    WINDOW_ARGUMENT,
     forwardTimeoutMs,
-    pathHintOf,
+    targetHintOf,
 } from './core/opTable';
 import {
     JsonObject,
@@ -71,7 +74,8 @@ const NO_WINDOW_HINT = 'Open your project in VS Code and wait for the extension 
 const NO_WINDOW_LISTING = 'No CMSIS Developer Assistant-enabled VS Code windows are currently registered.';
 const SELECT_NEEDS_ARGUMENT = 'Pass either pid or workspaceFolder.';
 const SELECT_HINT = 'Call list_debug_windows to see the options.';
-const LISTING_FOOTER = 'Pin one for this session with select_debug_window({ pid }) when the automatic choice is wrong.';
+const LISTING_FOOTER = 'Pin one for this session with select_debug_window({ pid }) when the automatic choice is wrong, '
+    + 'or pass window to a tool that takes it.';
 const UNREACHABLE_HINT = 'It may have been closed. Call list_debug_windows to see what is still open.';
 const BUSY_HINT = 'The call may still be running there. Call get_session_status to see the state of that window, then retry.';
 
@@ -90,14 +94,29 @@ interface Resolved {
  */
 class ChannelFailure extends Error {}
 
-/** A window as `AMBIGUOUS_WINDOW` lists it in `data.candidates`. */
+/** A window as `AMBIGUOUS_WINDOW` and a `window` argument that matches nothing list it in `data.candidates`. */
 function candidateOf(w: WindowRegistration): JsonObject {
-    return {
+    const candidate: JsonObject = {
         pid: w.pid,
         name: w.name,
         workspaceFolders: Array.isArray(w.workspaceFolders) ? [...w.workspaceFolders] : [],
         hasActiveSession: w.hasActiveSession === true,
     };
+    // Windows of 2.5.0 and earlier publish no role.
+    if (w.role === 'router' || w.role === 'worker') {
+        candidate.role = w.role;
+    }
+    return candidate;
+}
+
+/** The arguments as the worker gets them: without `window`, which only the router reads. */
+function withoutWindow(args: unknown): unknown {
+    if (typeof args !== 'object' || args === null || !Object.prototype.hasOwnProperty.call(args, WINDOW_ARGUMENT)) {
+        return args;
+    }
+    const rest: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+    delete rest[WINDOW_ARGUMENT];
+    return rest;
 }
 
 /** The indented window list inside routing errors and the selection miss. */
@@ -203,8 +222,9 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
      * failed channel drops the window as this session's target.
      */
     private async relay(op: string, args: unknown): Promise<ToolText> {
-        const sent = args === undefined ? {} : args;
-        const { entry, reason } = this.resolveTarget(pathHintOf(sent));
+        const given = args === undefined ? {} : args;
+        const { entry, reason } = this.resolveTarget(targetHintOf(given));
+        const sent = withoutWindow(given);
         logger.info(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
         try {
             return await this.post(entry, op, sent);
@@ -221,12 +241,18 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     }
 
     /** The resolution ladder; the first rung that applies decides, and a miss throws. */
-    private resolveTarget(hint: string | undefined): Resolved {
+    private resolveTarget(hint: TargetHint | undefined): Resolved {
+        if (hint !== undefined && hint.source === 'window') {
+            // Named for this call, and like a path it re-aims the session's later path-less calls.
+            const named = this.namedWindow(hint);
+            this.target = named;
+            return { entry: named, reason: 'window-arg' };
+        }
         if (hint !== undefined) {
             // A named file must never run in another window, cached or pinned.
-            const owner = this.registry.findByPath(hint);
+            const owner = this.registry.findByPath(hint.path);
             if (!owner) {
-                throw this.unroutable(hint);
+                throw this.unroutable(hint.path);
             }
             this.target = owner;
             return { entry: owner, reason: 'path' };
@@ -258,6 +284,22 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         throw this.unroutable(undefined);
     }
 
+    /** The window a `window` argument names; one that matches nothing is refused with the candidates. */
+    private namedWindow(hint: TargetHint & { source: 'window' }): WindowRegistration {
+        const found = 'pid' in hint ? this.registry.findByPid(hint.pid) : this.registry.findByPath(hint.path);
+        if (found) {
+            return found;
+        }
+        const windows = this.registry.list();
+        if (windows.length === 0) {
+            throw new ToolError('WINDOW_UNREACHABLE', NO_WINDOW_ERROR, NO_WINDOW_HINT);
+        }
+        const given = 'pid' in hint ? String(hint.pid) : hint.path;
+        throw new ToolError('INVALID_ARGUMENT', `The window argument "${given}" matches no open VS Code window.`,
+            `Pass the pid of one of these, or a path inside its workspace:\n${bulletList(windows)}`,
+            { candidates: windows.map(candidateOf) });
+    }
+
     /**
      * Why no window could take the call, from a fresh look at the registry:
      * no window at all, a path outside every workspace, or a tie, which lists
@@ -283,7 +325,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         return new ToolError('AMBIGUOUS_WINDOW',
             `${windows.length} VS Code windows are registered and none has an active debug session, `
                 + 'so there is no unambiguous target for this call.',
-            `Start a session (cmsis_action load_and_debug), or pick a window with select_debug_window:\n${listing}`, candidates);
+            `Start a session in one with cmsis_action load_and_debug and window set to its pid, `
+                + `or pin one with select_debug_window:\n${listing}`, candidates);
     }
 
     /**

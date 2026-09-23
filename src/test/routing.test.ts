@@ -324,6 +324,73 @@ suite('Multi-window routing', () => {
         });
     });
 
+    suite('the window argument (#16)', () => {
+        const READ = { address: '0x0', length: 4 };
+
+        /** Two idle windows, each with its folder: a tie for a path-less call. */
+        async function twoIdleWindows(): Promise<[FakeWindow, FakeWindow]> {
+            const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const beta = await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            return [alpha, beta];
+        }
+
+        test('a window argument by pid or by path routes the call and re-aims the later path-less calls', async () => {
+            const [alpha] = await twoIdleWindows();
+            const router = newRouter();
+            assertAnsweredBy(await router.handleCmsisCommand({ action: 'status', window: String(alpha.pid) }), 'alpha');
+            assertAnsweredBy(await router.handleReadMemory(READ), 'alpha');
+            assertAnsweredBy(await router.handleFlash({ window: path.join(folder('beta'), 'out') }), 'beta');
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'beta');
+        });
+
+        test('a window argument beats the pin for its own call, and the pin keeps the calls after it', async () => {
+            const [alpha, beta] = await twoIdleWindows();
+            const router = newRouter();
+            router.selectDebugWindow({ pid: alpha.pid });
+            assertAnsweredBy(await router.handleReset({ halt: true, window: String(beta.pid) }), 'beta');
+            assertAnsweredBy(await router.handleReadMemory(READ), 'alpha');
+        });
+
+        test('the window argument never reaches the worker', async () => {
+            const [alpha] = await twoIdleWindows();
+            const answer = textOf(await newRouter().handleCmsisCommand({ action: 'build', target: 'HE', window: ` ${alpha.pid} ` }));
+            assert.strictEqual(answer, echo('alpha', 'debug', 'handleCmsisCommand', { action: 'build', target: 'HE' }));
+        });
+
+        test('a window argument that matches nothing is INVALID_ARGUMENT with the candidates, and the session keeps its target', async () => {
+            const [alpha, beta] = await twoIdleWindows();
+            const router = newRouter();
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('alpha'), 'main.c'), line: 3 }), 'alpha');
+            const miss = await refusedAs('INVALID_ARGUMENT', router.handleFlash({ window: '4' }),
+                /^The window argument "4" matches no open VS Code window\./, /Pass the pid of one of these, or a path inside its workspace:\n {2}• pid=/);
+            assert.deepStrictEqual(miss.data, {
+                candidates: [alpha, beta].map((w) => ({ pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false })),
+            });
+            await refusedAs('INVALID_ARGUMENT', router.handleFlash({ window: '/not/in/any/workspace' }),
+                /^The window argument "\/not\/in\/any\/workspace" matches no open VS Code window\./);
+            assertAnsweredBy(await router.handleReadMemory(READ), 'alpha');
+        });
+
+        test('the candidates of a tie carry the role their windows publish, and its hint names the window argument', async () => {
+            const a = await openWindow('boardA', { workspaceFolders: [folder('a')], role: 'router' });
+            const b = await openWindow('boardB', { workspaceFolders: [folder('b')], role: 'worker' });
+            const tie = await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleReadMemory(READ),
+                /none has an active debug session/, /cmsis_action load_and_debug and window set to its pid/);
+            const candidate = (w: FakeWindow, role: string): object => ({
+                pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false, role,
+            });
+            assert.deepStrictEqual(tie.data, { candidates: [candidate(a, 'router'), candidate(b, 'worker')] });
+        });
+
+        test('the listing marks the router window', async () => {
+            const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')], role: 'router' });
+            await openWindow('beta', { workspaceFolders: [folder('beta')], role: 'worker' });
+            const rows = newRouter().listDebugWindows().split('\n');
+            assert.match(rows.find((row) => row.includes(folder('alpha'))) ?? '', new RegExp(`^• pid=${alpha.pid} \\| .* \\| router$`));
+            assert.ok(!(rows.find((row) => row.includes(folder('beta'))) ?? '').includes('router'));
+        });
+    });
+
     suite('control server', () => {
 
         test('a wrong token is turned away', async () => {
