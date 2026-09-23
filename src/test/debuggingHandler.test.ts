@@ -464,11 +464,14 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('pause'), [[5000]]);
         });
 
-        test('the end of the session during a continue is reported', async () => {
+        test('the end of the session during a continue rejects with NO_SESSION, unwrapped, like pause and wait_for_stop', async () => {
             const x = new ScriptedExecutor();
             x.waiters.push({ kind: 'ended' });
-            const reply = await textAnswer(handlerFor(x).handleContinue());
-            assert.ok(reply.includes('Debug session ended during \'continue_execution\''), reply);
+            const failure = await refusalOf(handlerFor(x).handleContinue(), 'NO_SESSION');
+            assert.strictEqual(failure.message, 'Debug session ended during \'continue_execution\' — '
+                + 'the target may have run to completion, crashed, or lost its connection.');
+            assert.strictEqual(failure.hint, 'Call get_session_status to confirm; to debug again, start a session with '
+                + 'cmsis_action load_and_debug (CMSIS projects) or start_debugging.');
         });
 
         test('pause on a running target waits for the stop', async () => {
@@ -532,19 +535,19 @@ suite('DebuggingHandler', () => {
             x.waiters.push(new Promise<StopWaitResult>(() => undefined));
             x.failures.stepOver = new Error('adapter gone');
             const failure = await refusalOf(handlerFor(x).handleStepOver(), 'INTERNAL');
-            assert.strictEqual(failure.message, 'Step over failed: Error: adapter gone');
+            assert.strictEqual(failure.message, 'Step over failed: adapter gone', 'a plain Error reads without "Error: "');
             x.waiters.push(new Promise<StopWaitResult>(() => undefined));
             x.failures.stepOver = new HardwareTimeoutError('DAP next', 50);
             assert.match((await refusalOf(handlerFor(x).handleStepOver(), 'TIMEOUT')).message, /^Step over failed: HardwareTimeoutError: /);
         });
 
-        test('a step while the target runs rejects with TARGET_RUNNING through the wrap', async () => {
+        test('a step while the target runs rejects with the gate\'s TARGET_RUNNING refusal, not wrapped again', async () => {
             const x = new ScriptedExecutor();
             x.stopped = false;
             x.sessionStatus = status('running');
             const failure = await refusalOf(handlerFor(x).handleStepOver(), 'TARGET_RUNNING');
-            assert.strictEqual(failure.message, 'Step over failed: Error: Cannot step over: session state is \'running\'.');
-            assert.match(failure.hint ?? '', /^The target is currently running\./);
+            assert.strictEqual(failure.message, 'Cannot step over: session state is \'running\'.');
+            assert.match(failure.hint ?? '', /^The target is running: call pause_execution first, or set a breakpoint and wait_for_stop\./);
             assert.deepStrictEqual(x.moves, [], 'nothing was sent');
         });
     });
@@ -582,7 +585,7 @@ suite('DebuggingHandler', () => {
             x.sessionStatus = status('no-session');
             const failure = await refusalOf(handlerFor(x).handleReadMemory({ address: '0x20000000', length: 4 }), 'NO_SESSION');
             assert.strictEqual(failure.message, 'Cannot read memory: session state is \'no-session\'.');
-            assert.strictEqual(failure.hint, 'No active debug session. Call start_debugging first. '
+            assert.strictEqual(failure.hint, 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. '
                 + 'Use get_session_status for a definitive, never-failing classification.');
         });
 
@@ -626,10 +629,9 @@ suite('DebuggingHandler', () => {
 
         test('each session state has its own refusal code and hint', async () => {
             const hints: Record<StatusShape['state'], string> = {
-                'no-session': 'No active debug session. Call start_debugging first.',
+                'no-session': 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.',
                 initializing: 'The debug adapter is still starting. Wait briefly and retry; the session has not torn down.',
-                running: 'The target is currently running. Add a breakpoint or wait for the previous continue/step to stop '
-                    + 'before issuing another inspection or step command.',
+                running: 'The target is running: call pause_execution first, or set a breakpoint and wait_for_stop.',
                 unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm, then restart_debugging or stop_debugging.',
                 stopped: 'Session reports stopped — please retry the operation.',
             };
@@ -646,7 +648,7 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(read.hint, fullHint);
                 assert.deepStrictEqual(x.argsOf('readMemory'), [], 'the gate runs before anything else');
                 const step = await refusalOf(handlerFor(x).handleStepInto(), codes[state]);
-                assert.strictEqual(step.message, `Step into failed: Error: Cannot step into: session state is '${state}'.`);
+                assert.strictEqual(step.message, `Cannot step into: session state is '${state}'.`, 'the gate refusal is not wrapped');
                 assert.strictEqual(step.hint, fullHint);
             }
         });
@@ -681,7 +683,7 @@ suite('DebuggingHandler', () => {
                 },
             }).handleStartDebugging({ workingDirectory: '/w', fileFullPath: '/w/main.c' }));
             assert.deepStrictEqual(asked, ['/w']);
-            assert.ok(message.startsWith('Error starting debug session: Error: picker dismissed'), message);
+            assert.ok(message.startsWith('Error starting debug session: picker dismissed'), message);
             assert.deepStrictEqual(x.argsOf('startDebugging'), []);
         });
 
@@ -707,7 +709,7 @@ suite('DebuggingHandler', () => {
             x.session = false;
             const refused = await refusalOf(handlerFor(x).handleStartDebugging({ workingDirectory: '/w', configurationName: 'Default Configuration' }),
                 'INVALID_ARGUMENT');
-            assert.ok(refused.message.startsWith('Error starting debug session: Error: fileFullPath is required when no named configuration is provided.'),
+            assert.ok(refused.message.startsWith('Error starting debug session: fileFullPath is required when no named configuration is provided.'),
                 refused.message);
         });
 
@@ -735,7 +737,7 @@ suite('DebuggingHandler', () => {
             x.sessionStatus = status('initializing');
             const message = await rejectionOf(handlerFor(x, fastClock(200), 5)
                 .handleStartDebugging({ workingDirectory: '/w', configurationName: 'CMSIS Debugger: pyOCD' }));
-            assert.ok(message.startsWith('Error starting debug session: Error: Debug session started but failed to become active within timeout period'), message);
+            assert.ok(message.startsWith('Error starting debug session: Debug session started but failed to become active within timeout period'), message);
         });
 
         test('stop without a session, and with one', async () => {
@@ -754,7 +756,7 @@ suite('DebuggingHandler', () => {
             const idle = new ScriptedExecutor();
             idle.session = false;
             assert.strictEqual((await refusalOf(handlerFor(idle).handleRestart(), 'NO_SESSION')).message,
-                'Could not restart the debug session: Error: Nothing to restart — no debug session is active');
+                'Nothing to restart — no debug session is active', 'a refusal, not wrapped');
 
             const x = new ScriptedExecutor();
             x.sessionStatus = status('stopped');
@@ -765,7 +767,7 @@ suite('DebuggingHandler', () => {
             const stuck = new ScriptedExecutor();
             stuck.sessionStatus = status('initializing');
             assert.strictEqual(await rejectionOf(handlerFor(stuck, fastClock(200), 7).handleRestart()),
-                'Could not restart the debug session: Error: Debug session restart issued but target did not become ready '
+                'Could not restart the debug session: Debug session restart issued but target did not become ready '
                 + 'within the 7s timeout. The probe or target may be unresponsive.');
         });
 
@@ -811,9 +813,10 @@ suite('DebuggingHandler', () => {
 
             const broken = new ScriptedExecutor();
             broken.sessionStatus = status('stopped');
-            broken.failures.restart = new Error('Restarting the debug session failed: Error: VS Code did not start the launch configuration \'X\' again.');
+            broken.failures.restart = new Error('Restarting the debug session failed: VS Code did not start the launch configuration \'X\' again.');
             const failure = await refusalOf(handlerFor(broken).handleRestart(), 'INTERNAL');
-            assert.ok(failure.message.startsWith('Could not restart the debug session: Error: Restarting the debug session failed:'), failure.message);
+            assert.strictEqual(failure.message,
+                'Could not restart the debug session: Restarting the debug session failed: VS Code did not start the launch configuration \'X\' again.');
         });
 
         test('reset passes the method default and renders the outcome', async () => {
@@ -907,9 +910,9 @@ suite('DebuggingHandler', () => {
         test('line numbers are checked and a location is required', async () => {
             const x = halted();
             assert.strictEqual((await refusalOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 0 }), 'INVALID_ARGUMENT')).message,
-                'Error adding breakpoint: Error: Invalid line number 0: must be a 1-based integer.');
+                'Error adding breakpoint: Invalid line number 0: must be a 1-based integer.');
             assert.strictEqual(await rejectionOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c' })),
-                'Error adding breakpoint: Error: No location given: pass `line` (1-based line number). '
+                'Error adding breakpoint: No location given: pass `line` (1-based line number). '
                 + 'The legacy `lineContent` form is still accepted but deprecated.');
             assert.deepStrictEqual(x.argsOf('addBreakpoint'), []);
             assert.deepStrictEqual(x.moves, [], 'a refused request pauses nothing');
@@ -974,7 +977,7 @@ suite('DebuggingHandler', () => {
                 + 'Pass `line` instead — content matching hits every line containing the text.\n'
                 + 'Adapter:\n  line 3: verified\n  line 7: NOT verified — no code\n  line 9: verified\nAn unverified breakpoint'), reply);
             assert.strictEqual(await rejectionOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: file, lineContent: 'nowhere' })),
-                'Error adding breakpoint: Error: Could not find any lines containing: nowhere');
+                'Error adding breakpoint: Could not find any lines containing: nowhere');
         });
 
         suite('a change on a running CMSIS Debugger target pauses, applies and resumes', () => {
@@ -1027,14 +1030,14 @@ suite('DebuggingHandler', () => {
                 x.failures.addBreakpoint = new Error('model refused');
                 const failure = await refusalOf(handlerFor(x).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }), 'INTERNAL');
                 assert.deepStrictEqual(x.moves, ['arm', 'pause', 'addBreakpoint', 'continue']);
-                assert.strictEqual(failure.message, 'Error adding breakpoint: Error: model refused');
+                assert.strictEqual(failure.message, 'Error adding breakpoint: model refused');
 
                 const refused = running();
                 refused.gdbReplies.dprintf = { text: 'No source file named nowhere.c.', errored: true };
                 const rejected = await refusalOf(handlerFor(refused).handleAddLogpoint({ fileFullPath: '/w/nowhere.c', line: 3, logMessage: 'x' }),
                     'INVALID_ARGUMENT');
                 assert.deepStrictEqual(refused.moves, ['arm', 'pause', 'removeBreakpoint', 'insertDprintfViaGdb', 'continue']);
-                assert.strictEqual(rejected.message, 'Could not add the logpoint: Error: GDB rejected the logpoint: No source file named nowhere.c.');
+                assert.strictEqual(rejected.message, 'Could not add the logpoint: GDB rejected the logpoint: No source file named nowhere.c.');
             });
 
             test('a target that cannot be resumed is reported, with or without a failing change', async () => {
@@ -1052,14 +1055,14 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(failure.hint, 'The target is halted: call continue_execution when ready.');
             });
 
-            test('initializing, unresponsive, a pause that does not stop and a session that ends are refused before any change', async () => {
+            test('initializing, unresponsive, a pause that does not stop and a session that ends are refused before any change, unwrapped', async () => {
                 const cases: Array<[StatusShape['state'], StopWaitResult | undefined, ErrorCode, string]> = [
-                    ['initializing', undefined, 'NO_SESSION', 'Error adding breakpoint: Error: Cannot add a breakpoint yet: the session is still initializing.'],
-                    ['unresponsive', undefined, 'TIMEOUT', 'Error adding breakpoint: Error: Cannot add a breakpoint: the probe/GDB server is unresponsive.'],
+                    ['initializing', undefined, 'NO_SESSION', 'Cannot add a breakpoint yet: the session is still initializing.'],
+                    ['unresponsive', undefined, 'TIMEOUT', 'Cannot add a breakpoint: the probe/GDB server is unresponsive.'],
                     ['running', { kind: 'timeout' }, 'TIMEOUT',
-                        'Error adding breakpoint: Error: Cannot add a breakpoint: the target did not stop within 5 s of the pause request.'],
+                        'Cannot add a breakpoint: the target did not stop within 5 s of the pause request.'],
                     ['running', { kind: 'ended' }, 'NO_SESSION',
-                        'Error adding breakpoint: Error: Cannot add a breakpoint: the debug session ended while the target was being paused for it.'],
+                        'Cannot add a breakpoint: the debug session ended while the target was being paused for it.'],
                 ];
                 for (const [state, waiter, code, message] of cases) {
                     const x = new ScriptedExecutor();
@@ -1125,7 +1128,7 @@ suite('DebuggingHandler', () => {
                 const x = halted();
                 x.gdbReplies.dprintf = { text: 'No line 99 in file "main.c".', errored: true };
                 const rejected = await refusalOf(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 99, logMessage: '{q}' }), 'INVALID_ARGUMENT');
-                assert.strictEqual(errorDetail(rejected), 'Could not add the logpoint: Error: GDB rejected the logpoint: No line 99 in file "main.c".\n'
+                assert.strictEqual(errorDetail(rejected), 'Could not add the logpoint: GDB rejected the logpoint: No line 99 in file "main.c".\n'
                     + 'Check that the line has code and the path matches the ELF\'s compiled paths, and that every expression is in scope at that line.');
                 assert.deepStrictEqual(x.argsOf('rememberGdbLogpoint'), []);
 
@@ -1147,7 +1150,7 @@ suite('DebuggingHandler', () => {
                     .message, /GDB did not report the new dprintf: <empty reply>$/);
 
                 assert.strictEqual(await rejectionOf(handlerFor(x).handleAddLogpoint({ fileFullPath: '/w/main.c', line: 3, logMessage: 'x={' })),
-                    'Could not add the logpoint: Error: Unbalanced \'{\' in logMessage at position 2. Use {{ for a literal brace.');
+                    'Could not add the logpoint: Unbalanced \'{\' in logMessage at position 2. Use {{ for a literal brace.');
             });
 
             test('other adapters keep a VS Code logpoint, which they fill in themselves', async () => {
@@ -1270,8 +1273,10 @@ suite('DebuggingHandler', () => {
 
         test('the variable tools need a focused frame and scopes', async () => {
             const x = new ScriptedExecutor();
-            assert.strictEqual((await refusalOf(handlerFor(x, focusedOn(undefined)).handleListVariableNames({}), 'INTERNAL')).message,
-                'There is no active stack frame. Pause execution at a breakpoint first.');
+            const unfocused = await refusalOf(handlerFor(x, focusedOn(undefined)).handleListVariableNames({}), 'TARGET_RUNNING');
+            assert.strictEqual(errorDetail(unfocused), 'There is no active stack frame.\n'
+                + 'Call wait_for_stop, which returns once the target is stopped at a frame, or pause_execution if it is running; then retry.');
+            await refusalOf(handlerFor(x, focusedOn(undefined)).handleEvaluateExpression({ expression: 'x' }), 'TARGET_RUNNING');
             assert.strictEqual(await textAnswer(handlerFor(x, focusedOn(0)).handleGetVariables({})),
                 'The debug adapter reports no variable scopes at the current execution point.');
             assert.deepStrictEqual(x.argsOf('getVariables'), [[0, 'all', undefined]]);
@@ -1496,7 +1501,7 @@ suite('DebuggingHandler', () => {
             x.checkTargetConnection = async () => {
                 throw new Error('boom');
             };
-            assert.strictEqual(await rejectionOf(handlerFor(x).handleCheckTargetConnection()), 'Error checking target connection: Error: boom');
+            assert.strictEqual(await rejectionOf(handlerFor(x).handleCheckTargetConnection()), 'Error checking target connection: boom');
             x.checkTargetConnection = async () => 'No active debug session.';
             assert.strictEqual(await textAnswer(handlerFor(x).handleCheckTargetConnection()), 'No active debug session.');
         });
@@ -1546,7 +1551,7 @@ suite('DebuggingHandler', () => {
             }
             x.session = false;
             assert.strictEqual(errorDetail(await refusalOf(handlerFor(x).handleGetDeviceInfo(), 'NO_SESSION')),
-                'Error getting device info: Error: No active debug session.\nStart debugging first.');
+                'No active debug session.\nStart debugging first.', 'a refusal, not wrapped');
         });
     });
 

@@ -17,6 +17,7 @@
 import * as assert from 'assert';
 import {
     ErrorCode,
+    Refusal,
     ToolError,
     classifyError,
     errorDetail,
@@ -55,6 +56,7 @@ suite('Tool outcomes', () => {
             ['Empty interpolation \'{}\' in logMessage at position 2.', 'INVALID_ARGUMENT'],
             ['No location given: pass `line` (1-based line number).', 'INVALID_ARGUMENT'],
             ['Could not find any lines containing: return;', 'INVALID_ARGUMENT'],
+            ['Invalid thread id: 9', 'INVALID_ARGUMENT'],
             ['The debug adapter returned no result for this expression.', 'INTERNAL'],
             ['', 'INTERNAL'],
         ];
@@ -88,6 +90,13 @@ suite('Tool outcomes', () => {
             assert.ok(typed.message.startsWith('Hardware operation \'DAP threads\' timed out after 3000ms.'), typed.message);
         });
 
+        test('a family with a next step gives it as the hint: an unknown thread id points to get_threads', () => {
+            const typed = toToolError(new Error('Invalid thread id: 9'));
+            assert.deepStrictEqual([typed.code, typed.message, typed.hint],
+                ['INVALID_ARGUMENT', 'Invalid thread id: 9', 'Call get_threads: it lists the current thread ids.']);
+            assert.strictEqual(toToolError(new Error('Invalid line number 0: must be a 1-based integer.')).hint, undefined);
+        });
+
         test('anything else becomes its string form, without throwing', () => {
             assert.deepStrictEqual([toToolError('plain words').code, toToolError('plain words').message], ['INTERNAL', 'plain words']);
             assert.strictEqual(toToolError(Object.create(null)).message, '[object Object]');
@@ -96,20 +105,36 @@ suite('Tool outcomes', () => {
 
     suite('wrapError', () => {
         test('keeps the code, hint and data of a ToolError and prefixes its message', () => {
-            const cause = new ToolError('TARGET_RUNNING', 'Cannot step over: session state is \'running\'.', 'Add a breakpoint.', { state: 'running' });
+            const cause = new ToolError('TARGET_RUNNING', 'GDB rejected \'next\': the target is running.', 'Pause first.', { state: 'running' });
             const wrapped = wrapError('Step over failed', cause);
             assert.strictEqual(wrapped.code, 'TARGET_RUNNING');
-            assert.strictEqual(wrapped.message, 'Step over failed: Error: Cannot step over: session state is \'running\'.');
-            assert.strictEqual(wrapped.hint, 'Add a breakpoint.');
+            assert.strictEqual(wrapped.message, 'Step over failed: GDB rejected \'next\': the target is running.');
+            assert.strictEqual(wrapped.hint, 'Pause first.');
             assert.deepStrictEqual(wrapped.data, { state: 'running' });
         });
 
-        test('reads a plain cause as String(err), as the plain re-wraps did, and classifies it', () => {
-            const wrapped = wrapError('Reading the variables failed', new HardwareTimeoutError('DAP scopes', 80));
-            assert.strictEqual(wrapped.code, 'TIMEOUT');
-            assert.ok(wrapped.message.startsWith('Reading the variables failed: HardwareTimeoutError: Hardware operation \'DAP scopes\''), wrapped.message);
-            assert.strictEqual(wrapError('Adding the breakpoint failed', new Error('add bad')).message, 'Adding the breakpoint failed: Error: add bad');
-            assert.strictEqual(wrapError('Adding the breakpoint failed', new Error('add bad')).code, 'INTERNAL');
+        test('a Refusal is complete already and comes back unchanged', () => {
+            const refusal = new Refusal('NO_SESSION', 'Cannot step over: session state is \'no-session\'.', 'Start a session.');
+            assert.strictEqual(wrapError('Step over failed', refusal), refusal);
+            assert.ok(refusal instanceof ToolError);
+            assert.strictEqual(toToolError(refusal), refusal);
+        });
+
+        test('a plain cause reads without "Error: "; a named one keeps its name, and both are classified', () => {
+            const plain = wrapError('Adding the breakpoint failed', new Error('add bad'));
+            assert.deepStrictEqual([plain.code, plain.message], ['INTERNAL', 'Adding the breakpoint failed: add bad']);
+            const timedOut = wrapError('Reading the variables failed', new HardwareTimeoutError('DAP scopes', 80));
+            assert.strictEqual(timedOut.code, 'TIMEOUT');
+            assert.ok(timedOut.message.startsWith('Reading the variables failed: HardwareTimeoutError: Hardware operation \'DAP scopes\''), timedOut.message);
+            assert.strictEqual(classifyError(timedOut.message), 'TIMEOUT', 'the name still classifies the wrapped text');
+            assert.strictEqual(wrapError('Error starting debug session', new TypeError('x is not a function')).message,
+                'Error starting debug session: TypeError: x is not a function');
+            const stale = wrapError('Evaluating the expression failed', new Error('No debug session is running in this window'));
+            assert.deepStrictEqual([stale.code, stale.message],
+                ['NO_SESSION', 'Evaluating the expression failed: No debug session is running in this window']);
+            const thread = wrapError('Reading the stack failed', new Error('Invalid thread id: 4'));
+            assert.deepStrictEqual([thread.code, thread.hint], ['INVALID_ARGUMENT', 'Call get_threads: it lists the current thread ids.']);
+            assert.strictEqual(wrapError('Stop failed', 'plain words').message, 'Stop failed: plain words');
         });
     });
 

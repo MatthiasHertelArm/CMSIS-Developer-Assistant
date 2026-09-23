@@ -1301,30 +1301,30 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step over failed: Error: Cannot step over: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step over: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step over failed: Error: Cannot step over: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step over: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step into failed: Error: Cannot step into: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step into: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step into failed: Error: Cannot step into: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step into: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step out failed: Error: Cannot step out: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step out: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step out failed: Error: Cannot step out: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step out: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
@@ -1341,10 +1341,10 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Continue failed: Error: Cannot continue execution: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot continue execution: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Continue failed: Error: Cannot continue execution: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot continue execution: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
           "isError": true,
@@ -1361,9 +1361,9 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+            "message": "Nothing to restart — no debug session is active"
           },
-          "text": "[NO_SESSION] Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          "text": "[NO_SESSION] Nothing to restart — no debug session is active"
         },
         "reset": {
           "isError": true,
@@ -1380,9 +1380,9 @@
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error adding breakpoint: Error: not stubbed"
+            "message": "Error adding breakpoint: not stubbed"
           },
-          "text": "[INTERNAL] Error adding breakpoint: Error: not stubbed"
+          "text": "[INTERNAL] Error adding breakpoint: not stubbed"
         },
         "add_logpoint": {
           "isError": true,
@@ -1403,9 +1403,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot list variable names: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_variables_values": {
           "isError": true,
@@ -1413,9 +1413,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read variables: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "evaluate_expression": {
           "isError": true,
@@ -1423,9 +1423,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot evaluate expression: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_memory": {
           "isError": true,
@@ -1433,9 +1433,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read memory: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_core_registers": {
           "isError": true,
@@ -1443,9 +1443,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read core registers: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_cycle_counter": {
           "isError": true,
@@ -1453,9 +1453,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read cycle counter: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_peripheral_register": {
           "isError": true,
@@ -1463,9 +1463,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read peripheral register: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_fault_info": {
           "isError": true,
@@ -1473,9 +1473,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read fault info: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "diagnose_fault": {
           "isError": true,
@@ -1483,9 +1483,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot diagnose the fault: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "lookup_peripheral": {
           "text": "No SVD file found for a lookup.\nTried:\n  - workspace *.svd (none)\nPass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so out/<context>.cbuild-run.yml names it, or add \"svdFile\" to the launch configuration. For a multi-core device pass pname to pick the core."
@@ -1499,10 +1499,10 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Error getting device info: Error: No active debug session.",
+            "message": "No active debug session.",
             "hint": "Start debugging first."
           },
-          "text": "[NO_SESSION] Error getting device info: Error: No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
         },
         "check_target_connection": {
           "text": "No active debug session."
@@ -1513,9 +1513,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot get call stack: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_threads": {
           "isError": true,
@@ -1523,9 +1523,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot get threads: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_frame_variables": {
           "isError": true,
@@ -1591,7 +1591,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · continue_execution <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
         }
       }
     },
@@ -4408,30 +4408,30 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step over failed: Error: Cannot step over: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step over: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step over failed: Error: Cannot step over: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step over: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step into failed: Error: Cannot step into: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step into: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step into failed: Error: Cannot step into: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step into: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step out failed: Error: Cannot step out: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step out: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step out failed: Error: Cannot step out: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step out: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
@@ -4448,10 +4448,10 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Continue failed: Error: Cannot continue execution: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot continue execution: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Continue failed: Error: Cannot continue execution: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot continue execution: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
           "isError": true,
@@ -4468,9 +4468,9 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+            "message": "Nothing to restart — no debug session is active"
           },
-          "text": "[NO_SESSION] Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          "text": "[NO_SESSION] Nothing to restart — no debug session is active"
         },
         "reset": {
           "isError": true,
@@ -4487,9 +4487,9 @@
           "structuredContent": {
             "status": "error",
             "error_code": "INTERNAL",
-            "message": "Error adding breakpoint: Error: not stubbed"
+            "message": "Error adding breakpoint: not stubbed"
           },
-          "text": "[INTERNAL] Error adding breakpoint: Error: not stubbed"
+          "text": "[INTERNAL] Error adding breakpoint: not stubbed"
         },
         "add_logpoint": {
           "isError": true,
@@ -4510,9 +4510,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot list variable names: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_variables_values": {
           "isError": true,
@@ -4520,9 +4520,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read variables: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "evaluate_expression": {
           "isError": true,
@@ -4530,9 +4530,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot evaluate expression: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_memory": {
           "isError": true,
@@ -4540,9 +4540,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read memory: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_core_registers": {
           "isError": true,
@@ -4550,9 +4550,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read core registers: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_cycle_counter": {
           "isError": true,
@@ -4560,9 +4560,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read cycle counter: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_peripheral_register": {
           "isError": true,
@@ -4570,9 +4570,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read peripheral register: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_fault_info": {
           "isError": true,
@@ -4580,9 +4580,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read fault info: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "diagnose_fault": {
           "isError": true,
@@ -4590,9 +4590,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot diagnose the fault: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "lookup_peripheral": {
           "text": "No SVD file found for a lookup.\nTried:\n  - workspace *.svd (none)\nPass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so out/<context>.cbuild-run.yml names it, or add \"svdFile\" to the launch configuration. For a multi-core device pass pname to pick the core."
@@ -4606,10 +4606,10 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Error getting device info: Error: No active debug session.",
+            "message": "No active debug session.",
             "hint": "Start debugging first."
           },
-          "text": "[NO_SESSION] Error getting device info: Error: No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
         },
         "check_target_connection": {
           "text": "No active debug session."
@@ -4620,9 +4620,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot get call stack: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_threads": {
           "isError": true,
@@ -4630,9 +4630,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot get threads: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_frame_variables": {
           "isError": true,
@@ -4728,7 +4728,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 46 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · continue_execution <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): 46 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
         }
       }
     },
@@ -7819,30 +7819,30 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step over failed: Error: Cannot step over: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step over: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step over failed: Error: Cannot step over: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step over: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "step_into": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step into failed: Error: Cannot step into: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step into: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step into failed: Error: Cannot step into: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step into: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "step_out": {
           "isError": true,
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Step out failed: Error: Cannot step out: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot step out: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Step out failed: Error: Cannot step out: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot step out: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "pause_execution": {
           "isError": true,
@@ -7859,10 +7859,10 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Continue failed: Error: Cannot continue execution: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "message": "Cannot continue execution: session state is 'no-session'.",
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Continue failed: Error: Cannot continue execution: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot continue execution: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "wait_for_stop": {
           "isError": true,
@@ -7879,9 +7879,9 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+            "message": "Nothing to restart — no debug session is active"
           },
-          "text": "[NO_SESSION] Could not restart the debug session: Error: Nothing to restart — no debug session is active"
+          "text": "[NO_SESSION] Nothing to restart — no debug session is active"
         },
         "reset": {
           "isError": true,
@@ -7929,9 +7929,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot list variable names: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot list variable names: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_variables_values": {
           "isError": true,
@@ -7939,9 +7939,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read variables: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read variables: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "evaluate_expression": {
           "isError": true,
@@ -7949,9 +7949,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot evaluate expression: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot evaluate expression: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_memory": {
           "isError": true,
@@ -7959,9 +7959,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read memory: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read memory: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_core_registers": {
           "isError": true,
@@ -7969,9 +7969,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read core registers: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read core registers: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_cycle_counter": {
           "isError": true,
@@ -7979,9 +7979,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read cycle counter: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read cycle counter: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "read_peripheral_register": {
           "isError": true,
@@ -7989,9 +7989,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read peripheral register: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read peripheral register: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_fault_info": {
           "isError": true,
@@ -7999,9 +7999,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot read fault info: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot read fault info: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "diagnose_fault": {
           "isError": true,
@@ -8009,9 +8009,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot diagnose the fault: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot diagnose the fault: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "lookup_peripheral": {
           "text": "No SVD file found for a lookup.\nTried:\n  - workspace *.svd (none)\nPass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), or build the solution so out/<context>.cbuild-run.yml names it, or add \"svdFile\" to the launch configuration. For a multi-core device pass pname to pick the core."
@@ -8025,10 +8025,10 @@
           "structuredContent": {
             "status": "error",
             "error_code": "NO_SESSION",
-            "message": "Error getting device info: Error: No active debug session.",
+            "message": "No active debug session.",
             "hint": "Start debugging first."
           },
-          "text": "[NO_SESSION] Error getting device info: Error: No active debug session.\nStart debugging first."
+          "text": "[NO_SESSION] No active debug session.\nStart debugging first."
         },
         "check_target_connection": {
           "text": "No active debug session."
@@ -8039,9 +8039,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot get call stack: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot get call stack: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_threads": {
           "isError": true,
@@ -8049,9 +8049,9 @@
             "status": "error",
             "error_code": "NO_SESSION",
             "message": "Cannot get threads: session state is 'no-session'.",
-            "hint": "No active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+            "hint": "No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
           },
-          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session. Call start_debugging first. Use get_session_status for a definitive, never-failing classification."
+          "text": "[NO_SESSION] Cannot get threads: session state is 'no-session'.\nNo active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise. Use get_session_status for a definitive, never-failing classification."
         },
         "get_frame_variables": {
           "isError": true,

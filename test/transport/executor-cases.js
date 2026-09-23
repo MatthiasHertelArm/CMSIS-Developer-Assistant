@@ -237,7 +237,7 @@ async function main() {
             focusOn(again);
             stub.debug.stopDebugging = async () => { setTimeout(() => againTracker.onWillStopSession(), 5); };
             const e = await rejects(new DebuggingExecutor().restart());
-            check('RC6 a start VS Code refuses comes back as an error', e && e.message === "Restarting the debug session failed: Error: VS Code did not start the launch configuration 'CMSIS Debugger: pyOCD' again.", e && e.message);
+            check('RC6 a start VS Code refuses comes back as an error', e && e.message === "Restarting the debug session failed: VS Code did not start the launch configuration 'CMSIS Debugger: pyOCD' again.", e && e.message);
         } finally {
             stub.debug.stopDebugging = savedStop;
             stub.debug.startDebugging = savedStart;
@@ -259,7 +259,7 @@ async function main() {
         check('SS1 /w → /w/a', started[0]?.folder === '/w/a', started);
         const e = await rejects(ex.startDebuggingByName('/x', 'Cfg'));
         const s4 = "No VS Code workspace folder matches workingDirectory '/x'. Open workspace folders: /w/a, /w/b. launch.json is resolved relative to an open workspace folder — open the project folder (the one containing .vscode/launch.json) in this VS Code window.";
-        check('SS1 /x two folders → S3(S4)', e && e.message === `Failed to start debugging with configuration 'Cfg': Error: ${s4}`, e && e.message);
+        check('SS1 /x two folders → S3(S4)', e && e.message === `Failed to start debugging with configuration 'Cfg': ${s4}`, e && e.message);
         stub.workspace.workspaceFolders = [];
         const e2 = await rejects(ex.startDebuggingByName('/x', 'Cfg'));
         check('SS1 no folders → (none)', e2 && e2.message.includes('Open workspace folders: (none).'), e2 && e2.message);
@@ -470,7 +470,7 @@ async function main() {
         answer = () => { throw new Error('Cannot execute this command while the target is running.'); };
         const e = await rejects(ex.evaluateExpression('-exec x/4xw $sp', 1000));
         check('E5 a GDB refusal rejects, classified TARGET_RUNNING', e && e.code === 'TARGET_RUNNING'
-            && e.message === 'Evaluating the expression failed: Error: Cannot execute this command while the target is running.', e && `${e.code} ${e.message}`);
+            && e.message === 'Evaluating the expression failed: Cannot execute this command while the target is running.', e && `${e.code} ${e.message}`);
         calls.length = 0;
         answer = () => ({ result: '42' });
         await ex.evaluateExpression('-execCount', 1000);

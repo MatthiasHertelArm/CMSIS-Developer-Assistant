@@ -27,7 +27,7 @@
 import type { StackFrame } from '../debugState';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
 import { shortenPath, truncateList } from '../core/textBudget';
-import { ErrorCode, ToolError } from '../core/toolResult';
+import { ErrorCode, Refusal } from '../core/toolResult';
 import { getRecentDiagnostics } from '../utils/sessionStateTracker';
 
 export type SessionStatus = Awaited<ReturnType<IDebuggingExecutor['getSessionStatus']>>;
@@ -42,10 +42,9 @@ const SHOWN_THREADS = 32;
 
 /** What to do next when an inspection meets a session in this state. */
 const REFUSAL_HINTS: Record<SessionState, string> = {
-    'no-session': 'No active debug session. Call start_debugging first.',
+    'no-session': 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.',
     initializing: 'The debug adapter is still starting. Wait briefly and retry; the session has not torn down.',
-    running: 'The target is currently running. Add a breakpoint or wait for the previous continue/step to stop '
-        + 'before issuing another inspection or step command.',
+    running: 'The target is running: call pause_execution first, or set a breakpoint and wait_for_stop.',
     unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm, then restart_debugging or stop_debugging.',
     stopped: 'Session reports stopped — please retry the operation.',
 };
@@ -85,9 +84,10 @@ function statusHint(state: SessionState, liveSessions: number): string {
 /**
  * Why `operation` needs a stopped target and the session is not in that
  * state: the state's code, and the next action for that state as the hint.
+ * A `Refusal`, so a tool that wraps its failures passes it on as it is.
  */
-export function stoppedTargetRefusal(operation: string, state: SessionState): ToolError {
-    return new ToolError(REFUSAL_CODES[state], `Cannot ${operation}: session state is '${state}'.`,
+export function stoppedTargetRefusal(operation: string, state: SessionState): Refusal {
+    return new Refusal(REFUSAL_CODES[state], `Cannot ${operation}: session state is '${state}'.`,
         `${REFUSAL_HINTS[state]} Use get_session_status for a definitive, never-failing classification.`);
 }
 

@@ -23,9 +23,13 @@
  * channel between windows carries them as they are.
  *
  * Errors that are not `ToolError`s (the executor's, VS Code's, Node's) get a
- * code from `classifyError`, an ordered table of the message families the
- * code base produces. New code throws `ToolError` directly; the table is the
- * safety net.
+ * code, and for some families a hint, from an ordered table of the message
+ * families the code base and the adapters produce. New code throws
+ * `ToolError` directly; the table is the safety net.
+ *
+ * `wrapError` puts what failed in front of a cause. A `Refusal` — a state
+ * gate that already names what it refused and why — is complete and passes
+ * unchanged, and a plain cause never reads as `Error: …`.
  *
  * Pure: no `vscode`, no MCP SDK.
  */
@@ -56,6 +60,14 @@ export class ToolError extends Error {
     }
 }
 
+/**
+ * A `ToolError` that is complete as it stands: it names the operation it
+ * refused and why, and its hint says what to do, like the state gate's
+ * "Cannot step over: session state is 'running'.". `wrapError` passes it on
+ * unchanged instead of putting a second "<what failed>:" in front of it.
+ */
+export class Refusal extends ToolError {}
+
 /** An answer that is not a plain success: still `running`, or out of time with no final result (`timeout`). */
 export interface ToolReply {
     text: string;
@@ -78,23 +90,35 @@ export function isToolReply(value: unknown): value is ToolReply {
     return typeof text === 'string' && REPLY_STATUSES.has(status) && dataFits;
 }
 
+/** A family of error messages, the code it means and, where one fits every member, the next step. */
+interface MessageFamily {
+    pattern: RegExp;
+    code: ErrorCode;
+    hint?: string;
+}
+
 /**
  * Message families of errors thrown without a code, in the order they are
  * tried; the first that matches decides. The quoted words are session states
  * as the state refusals name them (`session state is 'running'`).
  */
-const MESSAGE_FAMILIES: ReadonlyArray<readonly [RegExp, ErrorCode]> = [
-    [/no-session|No active debug session|No debug session is running|'initializing'/, 'NO_SESSION'],
-    [/'running'|target is running/, 'TARGET_RUNNING'],
-    [/'unresponsive'|HardwareTimeoutError|timed out after/, 'TIMEOUT'],
-    [/no active (CMSIS )?solution/i, 'CMSIS_NO_SOLUTION'],
-    [/Invalid line|must be a 1-based|Unbalanced|Empty interpolation|No location given|Could not find any lines/, 'INVALID_ARGUMENT'],
+const MESSAGE_FAMILIES: readonly MessageFamily[] = [
+    { pattern: /no-session|No active debug session|No debug session is running|'initializing'/, code: 'NO_SESSION' },
+    { pattern: /'running'|target is running/, code: 'TARGET_RUNNING' },
+    { pattern: /'unresponsive'|HardwareTimeoutError|timed out after/, code: 'TIMEOUT' },
+    { pattern: /no active (CMSIS )?solution/i, code: 'CMSIS_NO_SOLUTION' },
+    { pattern: /Invalid line|must be a 1-based|Unbalanced|Empty interpolation|No location given|Could not find any lines/, code: 'INVALID_ARGUMENT' },
+    // GDB's answer to a thread id it does not know, passed on by the adapter (get_call_stack { threadId }).
+    { pattern: /Invalid thread id/, code: 'INVALID_ARGUMENT', hint: 'Call get_threads: it lists the current thread ids.' },
 ];
+
+function familyOf(message: string): MessageFamily | undefined {
+    return MESSAGE_FAMILIES.find((family) => family.pattern.test(message));
+}
 
 /** The code of an error that was thrown without one; `INTERNAL` when no family matches. */
 export function classifyError(message: string): ErrorCode {
-    const family = MESSAGE_FAMILIES.find(([pattern]) => pattern.test(message));
-    return family ? family[1] : 'INTERNAL';
+    return familyOf(message)?.code ?? 'INTERNAL';
 }
 
 /** True for a code this version knows, as received from another window. */
@@ -114,23 +138,39 @@ function described(caught: unknown): string {
     }
 }
 
-/** A `ToolError` passes unchanged; anything else keeps its message and gets a classified code. */
+/** A `ToolError` passes unchanged; anything else keeps its message and gets a classified code and hint. */
 export function toToolError(err: unknown): ToolError {
     if (err instanceof ToolError) {
         return err;
     }
     // The class name takes part in the classification: `HardwareTimeoutError: …`.
-    return new ToolError(classifyError(described(err)), err instanceof Error ? err.message : described(err));
+    const family = familyOf(described(err));
+    return new ToolError(family?.code ?? 'INTERNAL', err instanceof Error ? err.message : described(err), family?.hint);
 }
 
 /**
- * Put `prefix` before a caught error, keeping its code, hint and data. The
- * cause reads as `String(err)`, as the plain `Error` re-wraps did before, so
- * the text of a wrapped failure stays what it was.
+ * A caught value as the cause of a wrapped message: a plain `Error` or a
+ * `ToolError` by its message alone, since `Error: ` says nothing; a named
+ * subclass as `Name: message`, where the name says what happened
+ * (`HardwareTimeoutError: …`); anything else as its string form.
+ */
+function causeText(caught: unknown): string {
+    if (caught instanceof ToolError || (caught instanceof Error && caught.name === 'Error')) {
+        return caught.message;
+    }
+    return described(caught);
+}
+
+/**
+ * Put `prefix` before a caught error, keeping its code, hint and data. A
+ * `Refusal` is complete already and comes back unchanged.
  */
 export function wrapError(prefix: string, err: unknown): ToolError {
+    if (err instanceof Refusal) {
+        return err;
+    }
     const typed = toToolError(err);
-    return new ToolError(typed.code, `${prefix}: ${described(err)}`, typed.hint, typed.data);
+    return new ToolError(typed.code, `${prefix}: ${causeText(err)}`, typed.hint, typed.data);
 }
 
 /** The text of an outcome, for a peer or a log line that takes a string only. */

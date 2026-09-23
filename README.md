@@ -185,10 +185,17 @@ Deterministic reads of the current target's build output — no debug session ne
 - `cmsis-developer-assistant://docs/troubleshooting/embedded` — embedded-specific troubleshooting.
 - `cmsis-developer-assistant://docs/troubleshooting/<language>` — troubleshooting for `python` and `cpp` (C and C++).
 
+### Reading results
+
+- A failed call is marked `isError`, and its text starts with the error code in brackets, such as `[NO_SESSION]`, `[TARGET_RUNNING]`, `[TIMEOUT]` or `[PROBE_BUSY]`. The line after the message is the hint: the next call to make.
+- `structuredContent` carries the same as fields: `status` (`error`), `error_code`, `message` and `hint`, plus details such as the candidate windows of `AMBIGUOUS_WINDOW`.
+- A `structuredContent.status` of `timeout` (a wait ran out; the target still runs) or `running` (a build or attach goes on in the background) is not a failure, and such a result is not marked `isError`.
+- A result without `isError` whose status is absent or `ok` is a plain success.
+
 ### Behavior the agent can rely on
 
 - **No tool call hangs.** Every hardware-touching tool returns within 60 s at most (`cmsis_action` and `flash` within the wait they are given, at most 600 s); every request to the debug adapter has its own timeout and fails with a `HardwareTimeoutError` instead of blocking.
-- **Inspection tools report the real state.** If the target is running, the call returns an error that names the recovery tool (`pause_execution`, `add_breakpoint`, `continue_execution`) instead of a misleading "no debug session".
+- **Inspection tools report the real state.** If the target is running, the call returns a `TARGET_RUNNING` error whose hint names the recovery (`pause_execution`, or a breakpoint and `wait_for_stop`) instead of a misleading "no debug session".
 - **Motion tools explain overshoots.** When `continue_execution` or a step does not stop in time, the tool pauses the target and reports the program counter and active frame.
 - **`reset` never claims a reset that did not happen.** The program counter is checked against the reset vector; an unverified reset is reported as such, together with the replies of the debug adapter.
 - **Calls never run against the wrong board.** With two windows debugging at once, routing fails with the list of candidates instead of guessing, because memory read from the wrong target looks exactly like a firmware bug.
