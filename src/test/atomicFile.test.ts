@@ -76,6 +76,29 @@ suite('Atomic file writes', () => {
         assert.strictEqual(fs.readFileSync(awaited, 'utf8'), '{"b":1}');
     });
 
+    test('without a mode, a replaced file keeps its permission bits', async function () {
+        if (!POSIX) {
+            this.skip();
+        }
+        // An agent's configuration file the user narrowed to 0600 must not come back 0644.
+        const narrowed = inDir('agent-config.json');
+        fs.writeFileSync(narrowed, '{}');
+        fs.chmodSync(narrowed, 0o600);
+        writeFileAtomicSync(narrowed, '{"servers":1}');
+        assert.strictEqual(permissions(narrowed).toString(8), '600');
+        await writeFileAtomic(narrowed, '{"servers":2}');
+        assert.strictEqual(permissions(narrowed).toString(8), '600');
+        assert.strictEqual(fs.readFileSync(narrowed, 'utf8'), '{"servers":2}');
+
+        // A new file gets the default, and an explicit mode still wins over the old bits.
+        const fresh = inDir('fresh.json');
+        await writeFileAtomic(fresh, '{}');
+        assert.strictEqual(permissions(fresh) & 0o600, 0o600, 'readable and writable by its owner');
+        writeFileAtomicSync(narrowed, '{}', { mode: 0o640 });
+        assert.strictEqual(permissions(narrowed) & 0o640, 0o640);
+        assert.deepStrictEqual(leftovers(), []);
+    });
+
     test('a failed write leaves the old content and no temp file behind', async () => {
         const file = inDir('kept.json');
         fs.writeFileSync(file, 'old');
