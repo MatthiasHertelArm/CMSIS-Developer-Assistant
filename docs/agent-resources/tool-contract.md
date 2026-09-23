@@ -9,6 +9,10 @@ replaces each (#50). This file is the only place they are written:
   into the bundled skills `cmsis-debug-live`, `cmsis-pack-docs`,
   `add-board-layer` and `cmsis-help`, and into `debug_instructions.md`.
   `src/test/toolContract.test.ts` fails when a copy differs.
+- *Configure Agents and Skills* offers to write the rules block into the
+  agents' rule files (`CLAUDE.md`, `AGENTS.md`, …), each change previewed,
+  and activation brings the blocks it wrote up to date
+  (`src/core/agentRules.ts`).
 
 Edit the text between the markers here, then run that command. The rules
 stay at ten lines and under 1 600 bytes: clients keep them in every turn.

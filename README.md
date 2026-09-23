@@ -42,7 +42,7 @@ Reload the VS Code window afterwards. To build the extension from source, see [C
 
 The extension activates on startup and serves MCP at `http://localhost:3001/mcp`. GitHub Copilot in VS Code finds the server automatically through the registered `McpServerDefinitionProvider`; nothing needs to be edited.
 
-For other agents, the extension shows a two-step setup on first activation: step 1 writes the server into the configuration of every agent you select, step 2 lets you choose the [agent skills](#agent-skills) to install. The setup can be opened again at any time with the command **CMSIS Developer Assistant: Configure Agents and Skills** from the [command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette). For manual registration, see [Manual agent registration](#manual-agent-registration).
+For other agents, the extension shows a three-step setup on first activation: step 1 writes the server into the configuration of every agent you select, step 2 lets you choose the [agent skills](#agent-skills) to install, and step 3 offers to add the [tool rules](#tool-rules-in-your-agents-rule-files) to your agents' rule files, each change shown as a diff before it is written. The setup can be opened again at any time with the command **CMSIS Developer Assistant: Configure Agents and Skills** from the [command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette). For manual registration, see [Manual agent registration](#manual-agent-registration).
 
 If an agent has the server registered but none of the CMSIS AI Skills has been selected, the extension offers to install them — at most once a month, with **Select Skills**, **Later** and **Don't ask again** — until a skill from the pack is added (setting `cmsis-developer-assistant.aiSkills.promptOnDetect`).
 
@@ -69,7 +69,7 @@ Everything the agent does goes through the MCP tools below; the commands are for
 
 | Command | What it does |
 |---------|--------------|
-| **Configure Agents and Skills** | The first-run setup, on demand: pick the AI agents to register the MCP server with (their configuration files are written for you), then pick the AI Skills Pack skills to install. Run it again after installing a new agent. |
+| **Configure Agents and Skills** | The first-run setup, on demand: pick the AI agents to register the MCP server with (their configuration files are written for you), pick the AI Skills Pack skills to install, then pick the rule files that get the [tool rules](#tool-rules-in-your-agents-rule-files). Run it again after installing a new agent, or to take the rules out of a file. |
 | **Select Agent Skills** | Just the skills step: choose category entry points (`cmsis-project`, `cmsis-bring-up`, `cmsis-pack`) or individual skills from the [AI Skills Pack](#agent-skills); the four bundled skills are always installed. |
 | **List Target Documentation** | Writes the current csolution target's document list — pack manuals and datasheets, Arm documents for the core, your imported and workspace PDFs, each with its index state — to the _CMSIS Developer Assistant_ output channel. The same list the agent gets from `list_target_docs`. |
 | **Index Target Documentation** | Extracts and indexes every PDF of the current target now, with a progress notification, so the agent's first search is instant instead of paying for extraction. |
@@ -232,6 +232,25 @@ The cmsis-skills skills and their entry points form the **AI Skills Pack**. Choo
 
 Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: the pack skills this extension installed are removed (marker-guarded, your own skills are untouched), the skills step of the setup and the install prompt are skipped, and the bundled skills stay. Your selection is kept, so turning it back on restores exactly what you had.
 
+## Tool rules in your agents' rule files
+
+Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a shell instead of the MCP tools, which fights the running debug session for the probe. The server instructions and the bundled skills therefore start with a short list of tool rules. Skill text can get lost when an agent compacts its context; a rule file is loaded in every session. So step 3 of **Configure Agents and Skills** offers to add the same rules to the files your agents read:
+
+| Agent | This user (preselected) | This workspace |
+|-------|-------------------------|----------------|
+| Claude Code | `~/.claude/CLAUDE.md` (`CLAUDE_CONFIG_DIR` is honoured) | the project's `CLAUDE.md`; `AGENTS.md` when it has none, because a new `CLAUDE.md` would hide the project's `AGENTS.md` from Claude Code |
+| Codex | `~/.codex/AGENTS.md` (`CODEX_HOME`; a non-empty `AGENTS.override.md` wins, as in Codex) | `AGENTS.md` |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` (`COPILOT_HOME`) | `AGENTS.md` |
+| Antigravity | `~/.gemini/AGENTS.md` | `AGENTS.md` |
+| VS Code Copilot Chat | — | `AGENTS.md` (`.github/copilot-instructions.md` when `chat.useAgentsMdFile` is off) |
+| Cursor | — | `.cursor/rules/cmsis-developer-assistant.mdc` (`alwaysApply: true`) |
+| Cline | — | `.clinerules/cmsis-developer-assistant.md` |
+| Roo Code | — | `.roo/rules/cmsis-developer-assistant.md`, or `.roorules` when the project uses that file |
+
+The step lists the files of the agents you set up in step 1, of the agents that have the server registered already, and of Copilot Chat. A file several agents read, such as a workspace `AGENTS.md`, is listed and written once. The user-level files are preselected: the MCP registration is per user too, and a workspace file ends up in the repository, where colleagues without this extension read it as well. Each change opens a diff of the file as it is against the file with the rules, and a dialog; nothing is written unless you choose **Write**.
+
+The rules go between `<!-- cmsis-developer-assistant:rules:begin -->` and `<!-- cmsis-developer-assistant:rules:end -->`, with a comment saying who manages them; nothing else in the file changes, line endings included. To take the rules out, run the command again and uncheck the file, then choose **Remove**: the file is back to what it was, and a file that was created for the rules is deleted. When a new release of the extension changes the rules, activation updates the blocks it wrote, in place, and logs it; it never adds a block to a file. Set `cmsis-developer-assistant.agentRules.install` to `never` to skip the step and leave every rule file alone. Claude Desktop has no rule file and relies on the server instructions.
+
 ## Configuration
 
 | Setting | Default | Description |
@@ -239,6 +258,7 @@ Turning `cmsis-developer-assistant.aiSkills.enabled` off switches the pack off: 
 | `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to install. As a User setting they go into your personal skills directories, as a Workspace or Folder setting into that project's `.agents/skills` only; the bundled `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally. See [Agent Skills](#agent-skills). |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Enable the AI Skills Pack for selected agents. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped, the selection is kept. |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Prompt to install the CMSIS AI Skills for selected agents — monthly, until a pack skill is added. |
+| `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 3 of the setup offers to add the tool rules to your agents' rule files, each change previewed, and activation keeps blocks written earlier current. `never`: the step is skipped and no rule file is touched. See [Tool rules](#tool-rules-in-your-agents-rule-files). |
 | `cmsis-developer-assistant.serverPort` | `3001` | Port of the MCP server. One window binds it and routes to the others. Changing the port requires a window reload; the extension offers to reload. |
 | `cmsis-developer-assistant.timeoutInSeconds` | `180` | Timeout for debugging operations such as starting a session. |
 | `cmsis-developer-assistant.dapRequestTimeoutMs` | `10000` | Per-request timeout for traffic to the debug adapter and probe. Increase for slow targets or large memory reads. |

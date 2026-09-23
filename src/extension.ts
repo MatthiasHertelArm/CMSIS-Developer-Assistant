@@ -21,15 +21,17 @@
  * for this activation, the debug-session and CMSIS task trackers, the agent and skill
  * manager, the documentation handlers and their commands, this window's
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
- * for in-editor Copilot, agent-configuration migration, the settings and
- * workspace-folder listeners, the agent/skill commands, and the first-run
- * setup or skills prompt two seconds later. `deactivate` shuts the coordinator
- * down so the window leaves the shared registry before the host exits.
+ * for in-editor Copilot, agent-configuration migration, the update of the tool
+ * rules recorded in agents' rule files, the settings and workspace-folder
+ * listeners, the agent/skill commands, and the first-run setup or skills
+ * prompt two seconds later. `deactivate` shuts the coordinator down so the
+ * window leaves the shared registry before the host exits.
  *
  * Under the extension test runner (`npm test`) the suites exercise the modules
  * themselves, and activation leaves the developer's machine alone: no skills
- * written into their home directory, no agent configuration rewritten, no
- * prompt, and no router or worker beside their own VS Code windows.
+ * written into their home directory, no agent configuration or rule file
+ * rewritten, no prompt, and no router or worker beside their own VS Code
+ * windows.
  *
  * Only imports and the two references below exist at load time; no `vscode`
  * API is called before `activate` (test/transport/packaged-vsix.js loads the
@@ -279,13 +281,18 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     warnIfStandalonePackDocsInstalled();
 
     if (hostsTests) {
-        logger.info('Running under the extension test runner: no skill installation, agent configuration, prompt or MCP server');
+        logger.info('Running under the extension test runner: no skill installation, agent configuration, rule file, prompt or MCP server');
     } else {
         await startCoordinator(extensionContext, active, packDocs, manager);
         try {
             await manager.migrateExistingConfigurations();
         } catch (failure) {
             logger.error('Migrating the agent configurations failed', failure);
+        }
+        try {
+            await manager.refreshAgentRules();
+        } catch (failure) {
+            logger.error('Updating the tool rules in the agents\' rule files failed', failure);
         }
     }
 
