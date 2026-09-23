@@ -106,6 +106,13 @@ result without either is judged by its wording, the way 2.3.10 texts were.
 Because the sample is taken at the boundary, it measures what the client
 experienced, forwarding to another window included.
 
+The wrapper also gives every call an id, the first eight characters of the
+MCP session id and a count (`ebc40edd-20`), and runs the callback inside a
+call context with that id and the session id (`src/core/callContext.ts`,
+Node's `AsyncLocalStorage`). Whatever the call awaits sees it: the router
+copies both into the control envelope, and the problem journal stamps its
+records with the id (#48). #49 will bind a serial port to the session id.
+
 The sample goes into the session's ring of 200 samples. The ring's callback,
 `observe()`, adds it to the totals of the server instance (500 samples),
 appends it as one JSON line to the file named by the `telemetry.jsonlPath`
@@ -176,7 +183,7 @@ itself (see [Results](#results)). `src/packDocsTools.ts` and
 
 | Group | Registered when | Answered by |
 | ----- | --------------- | ----------- |
-| Session, run control, breakpoints, variables, Cortex-M state, SVD lookups, stack and threads, `cmsis_action`, `flash`, `get_session_status` | always | the session's debugging handler |
+| Session, run control, breakpoints, variables, Cortex-M state, SVD lookups, stack and threads, `cmsis_action`, `flash`, `get_session_status`, `get_recent_problems` | always | the session's debugging handler |
 | `get_debug_instructions` | always | `ShippedDocs` and the topic slicer, no handler |
 | The ten `serial_*` tools | `serialEnabled` is not `false` | the `serial` dispatch, by op name |
 | Documentation (`registerPackDocsTools()`) | `packDocsEnabled`, and the session has a `packDocs` dispatch | `src/packDocsTools.ts`, then the dispatch |
@@ -185,7 +192,14 @@ itself (see [Results](#results)). `src/packDocsTools.ts` and
 | The `window` argument on the tools in `WINDOW_ARGUMENT_TOOLS` (`cmsis_action`, `flash`, `reset`, `serial_open`) | the debugging handler is a window router | the router, which reads it and never forwards it |
 
 A router is recognised by its two extra methods (`windowRoutingOf()`), so this
-module does not import the routing code. Tool names stay literal because
+module does not import the routing code. A router's calls are journaled in
+the window they are forwarded to; on a server without a router,
+`buildSessionServer()` wraps the session's handlers with `journalLocally()`
+(`src/core/problemFeed.ts`), which runs each op the way a control server
+runs a forwarded one: registered in this window's problem journal, with the
+problems of a failure attached, and with the session's notice of new errors
+(#48, see [debuggingHandler.md](debuggingHandler.md#the-problem-journal)).
+Tool names stay literal because
 `src/test/skill.test.ts` collects them from the `registerTool('…'` calls and
 compares them with the `allowed-tools` list of the `cmsis-debug-live` skill.
 The `window` argument is added in one place for all its tools:
@@ -218,6 +232,13 @@ stay its own. No tool declares an `outputSchema`: the SDK passes
 A plain success carries no `structuredContent`, for clients that might read
 it instead of the text. `get_session_status` appends its statistics to the
 text of the handler's outcome.
+
+The problem records that ride along with a failure or a timeout
+(`data.problems`, #48) reach `structuredContent.problems` like any other
+data, and `toCallToolResult()` also lists them under the text as
+"Recent problems:", one line each (`renderProblemsBlock()`). The block is
+rendered here rather than in the window that ran the call, so the records
+cross the control channel once, as data.
 
 ### Resources and shipped documents
 
@@ -259,7 +280,9 @@ whole guide is served and a warning is logged.
   contract's blocks, their copies and the marker comments around them
 - `src/core/measuredMcpServer.ts` (`toCallToolResult`, `addArgument`) and
   `src/core/toolMetrics.ts`: the MCP result, the added arguments and
-  measurement
+  measurement; `src/core/callContext.ts`: the call context
+- `src/core/problemFeed.ts`: `journalLocally`, `renderProblemsBlock` and the
+  rest of the problem journal's delivery
 - `src/core/toolResult.ts`: `ToolText`, `ToolReply`, `ToolError`, the error
   codes and their classification
 - `src/core/instructionTopics.ts`: topic markers of the guide
@@ -271,7 +294,8 @@ whole guide is served and a warning is logged.
 - `src/test/loopback.test.ts`: the `Host` and `Origin` checks;
   `src/test/debugMCPServer.test.ts`: that the server still exports them
 - `src/test/measuredMcpServer.test.ts`: every outcome as a client receives
-  it, the metrics outcome, and an added argument
+  it, the metrics outcome, an added argument, the call ids and context, and
+  the problems block
 - `src/test/toolResult.test.ts`: classification, wrapping, the reading of
   2.3.10 texts
 - `src/test/debugSkillGuidance.test.ts`: instructions, tool descriptions and
@@ -286,7 +310,9 @@ whole guide is served and a warning is logged.
   ids, the 400 answers, three consecutive `get_threads`, the 413 limit,
   topics, statistics, typed errors without a session, no `outputSchema`,
   no `window` argument, the tool rules first and once in a status, the
-  pinned `tools/list` size
+  pinned `tools/list` size, and the problem journal without a router: an
+  empty `get_recent_problems`, the problems of a failing call, the note and
+  the count of new errors
 - `test/transport/surface-snapshot.js` (`npm run test:surface`): initialize
   result, tool list, resources and every tool's reply without a session,
   compared with `test/transport/surface.snapshot.json`

@@ -2116,7 +2116,7 @@
     },
     {
       "name": "start-debugging-fails",
-      "description": "No probe: the launch fails in the adapter and startDebugging resolves false; the reply carries the recent adapter traffic.",
+      "description": "No probe: the launch fails in the adapter and startDebugging resolves false; the reply carries the problems the adapter recorded during the call, and a later start that never reached an adapter carries none.",
       "calls": [
         {
           "tool": "start_debugging",
@@ -2125,10 +2125,10 @@
             "configurationName": "CMSIS Debugger: pyOCD"
           },
           "isError": true,
-          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent problems:\n  #<seq> warning dap error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
           "traffic": [
             "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
-            "event: output [stderr] \"0000410 C No connected debug probes [__main__]\"",
+            "event: output [server] \"0000410 C No connected debug probes [__main__]\"",
             "adapter: response launch -> error: \"Failed to launch the GDB server: pyocd exited with code 1\"",
             "event: terminated {}"
           ]
@@ -2140,7 +2140,7 @@
             "configurationName": "Nope"
           },
           "isError": true,
-          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'Nope'.\nRecent adapter traffic (last 2 lines):\n  [stderr] 0000410 C No connected debug probes [__main__]\n  error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'Nope'.",
           "traffic": [
             "vscode: debug.startDebugging folder=<tmp>/project configuration=\"Nope\""
           ]

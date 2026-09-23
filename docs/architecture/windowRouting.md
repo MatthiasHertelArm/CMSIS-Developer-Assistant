@@ -175,8 +175,21 @@ string without the header as a 2.3.10 result (`upgradeLegacyText()`): the
 old fence failure `Error in '<tool>': …` becomes a classified `ToolError`,
 the old fence cap a `timeout` reply; an `{error: string}` is classified the
 same way. Both ends ignore fields they do not know, in the request body and
-in the reply, so later additions (a call id, a session id, a budget, journal
-counters) need no new version.
+in the reply, so later additions need no new version.
+
+Two such additions carry the problem journal (#48). The request names the
+call it belongs to: `{op, args, callId, sessionId}`, from the call context
+`MeasuredMcpServer` set, and the control server runs the op inside the same
+context, so the target window's journal stamps its records with the id, and
+#49 can bind a serial port to the MCP session. A typed reply carries the
+target window's journal counters, `journalSeq` (the newest record) and
+`journalErrors` (errors ever recorded), next to `result` or `error`. The
+session's `ProblemNotices` keep a baseline per window pid: the first answer
+sets it and `get_recent_problems` moves it. While errors lie beyond it,
+`get_session_status` ends with a count line, and one successful result per
+new batch ends with a note naming the `get_recent_problems` call to make. A
+2.5.0 worker sends no counters, and then there is neither; a 2.3.10 router
+gets no counters at all.
 
 ## The control server
 
@@ -202,9 +215,11 @@ any method, dispatches it to the debugging handler, the serial handler, or
 the documentation or build-artefact handler, and answers `{result}` with 200
 or `{error}` with 500, in the envelope the request asked for (see above). An
 unknown op, a method the window lacks and absent documentation handlers are
-`TOOL_DISABLED`. The trace line of each op logs the size of the result's
-text. Agents never see the token: `describeWindow()` leaves port and token
-out of every listing.
+`TOOL_DISABLED`. The op runs through `runJournaled()`: registered in the
+window's problem journal while it runs, and when it fails or its wait runs
+out, up to five records it produced ride along in `data.problems`. The
+trace line of each op logs the size of the result's text. Agents never see
+the token: `describeWindow()` leaves port and token out of every listing.
 
 ## Window selection for people
 
@@ -259,7 +274,10 @@ releases the window's serial ports, giving that step at most two seconds.
   kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the
   gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`; the
   default target, the `window` argument, the candidates' `isDefault` and
-  `role`, and the op hook (#16)
+  `role`, and the op hook (#16); the problem journal — the call id in the
+  envelope, the counters in the reply, a worker failure with its problems,
+  the note once per batch and after `get_recent_problems` none, no note from
+  a worker without counters
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
   matching; the directory name, modes, and refused directories; the default
   target file and how its window is found again
@@ -274,4 +292,5 @@ releases the window's serial ports, giving that step at most two seconds.
   republishing on session start, `AMBIGUOUS_WINDOW` with two candidates when
   both debug, promotion when the router closes; roles and status-bar items,
   `window` on exactly the listed tools, `cmsis_action {window}`, a default
-  chosen through the quick pick resolving the tie of two idle windows
+  chosen through the quick pick resolving the tie of two idle windows;
+  problem records and the count of new errors from the target window only

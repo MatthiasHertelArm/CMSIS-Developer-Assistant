@@ -77,6 +77,7 @@ Everything the agent does goes through the MCP tools below; the commands are for
 | **Import Document for Current Target** | Adds PDFs the packs do not ship — a sensor or ADC datasheet, an NDA reference manual — to the user documents folder: pick the files, attribute them to the current pack, device family, board, core or all targets, give a title, category and edition, and they are indexed at once. |
 | **Open User Documents Folder** | Reveals that folder (`packDocs.userDocsDir`, default `~/.cmsis-pack-docs/user`) in the file manager, for dropping documents in by hand or editing `docs.json`. |
 | **Open Pack Docs Panel** | A panel showing the resolved target and its documents with their index state, the SVD peripherals with register bit fields, the page store — with two housekeeping actions, each behind a confirmation: _clear extracted text_ (drops every document's extracted pages and search index, re-extracted on next use; downloads stay) and _delete downloaded PDFs_ (removes what `fetch_doc` downloaded, so those documents show as "not fetched" again) — and a runner that executes the documentation tools in place — for checking what the agent will see. |
+| **Copy Recent Problems** | Copies the last 50 warnings and errors this window recorded — failed debug-adapter requests, GDB-server errors, failed CMSIS tasks and build errors with file and line, Problems-panel errors, notifications, serial ports that went away — with time, source and next step, to paste into a bug report instead of a screenshot. The same records the agent reads with `get_recent_problems`; each is also written to the _CMSIS Developer Assistant_ output channel as `[problem #N] …`. |
 
 The five documentation commands work whether or not the documentation tools are enabled for agents (`cmsis-developer-assistant.packDocs.enabled`); they need a built csolution in the workspace to resolve the target, or fall back to asking you which pack and device to attribute a document to.
 
@@ -173,7 +174,8 @@ Deterministic reads of the current target's build output — no debug session ne
 
 | Tool | Description |
 |------|-------------|
-| `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state. Never throws. |
+| `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state, and counts the errors recorded since the agent last looked. Never throws. |
+| `get_recent_problems` | The problem journal of the window the session drives: failed debug-adapter requests (including those of breakpoints set in the editor while the target runs), GDB-server errors, failed CMSIS tasks and build errors with file and line, Problems-panel errors, the extension's notifications, serial ports that went away. One line per record with number, severity, source, code and next step; `sinceSeq`, `sources`, `minSeverity` and `limit` narrow it. |
 | `check_target_connection` | Low-cost liveness check of the debug adapter and probe. |
 | `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot): a short overview with the topic list by default, or one section with `topic` (`session`, `build`, `breakpoints`, `inspection`, `faults`, `troubleshooting`). |
 | `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach, with the router and the default target marked, and pins one for this session. Relevant when more than one window is open; then `cmsis_action`, `flash`, `reset` and `serial_open` also take `window`, a pid or a path inside the window's workspace. |
@@ -191,6 +193,7 @@ Deterministic reads of the current target's build output — no debug session ne
 - `structuredContent` carries the same as fields: `status` (`error`), `error_code`, `message` and `hint`, plus details such as the candidate windows of `AMBIGUOUS_WINDOW`.
 - A `structuredContent.status` of `timeout` (a wait ran out; the target still runs) or `running` (a build or attach goes on in the background) is not a failure, and such a result is not marked `isError`.
 - A result without `isError` whose status is absent or `ok` is a plain success.
+- A failure or a timeout can carry `structuredContent.problems`: up to five records of what the debug adapter, the GDB server or a task reported during the call, each with its code and next step, also listed under "Recent problems:" in the text. When errors were recorded in the window since the agent last looked — a breakpoint the user set in the editor while the target ran, a build started from the CMSIS panel — the next successful result says so once and names the `get_recent_problems` call that lists them.
 
 ### Behavior the agent can rely on
 
@@ -399,7 +402,7 @@ Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the 
 
 **Possible reasons**: The named configuration does not exist in `.vscode/launch.json`, the Arm CMSIS Debugger extension is missing, the `program` file (`.axf`/`.elf`) has not been built, or the GDB server (pyOCD or J-Link) is not available.
 
-**Solution**: Start the session once from the CMSIS Solution view by hand. The agent launches exactly the same configuration, so whatever fails interactively fails for the agent too. The error returned by `cmsis_action` and `start_debugging` includes the recent output of the debug adapter.
+**Solution**: Start the session once from the CMSIS Solution view by hand. The agent launches exactly the same configuration, so whatever fails interactively fails for the agent too. The error returned by `cmsis_action` and `start_debugging` lists the warnings and errors the debug adapter and the GDB server reported during the call under "Recent problems:"; the GDB server's full log is in `get_recent_problems { sources: ['gdb-server'], minSeverity: 'info' }`, and **Copy Recent Problems** puts the window's recent warnings and errors on the clipboard.
 
 ### Serial Monitor data is not readable through the bridge
 

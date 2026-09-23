@@ -43,7 +43,8 @@
  * waits for the job. The window's tracker gets that listener from
  * `src/cmsisBuildDiagnosis.ts`; it reads the failed task's definition
  * (`definitionOf`) and stops its re-run when a build starts
- * (`onDidStartExecution`).
+ * (`onDidStartExecution`). `src/windowProblems.ts` journals failed jobs and
+ * the error lines of failed builds for the problem journal (#48).
  *
  * The class reads its events from a `TaskEventSource` and time from a
  * `TrackerClock`; tests hand it fakes.
@@ -53,6 +54,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { attachBuildDiagnosis, vscodeDiagnosisHost } from './cmsisBuildDiagnosis';
+import { problemJournal } from './core/problemJournal';
+import { attachJobJournal } from './windowProblems';
 import {
     armJob,
     classifyByLabelLoosely,
@@ -875,12 +878,18 @@ function vscodeTaskSource(): TaskEventSource {
 
 let windowTracker: CmsisJobTracker | undefined;
 let windowDiagnosis: { dispose(): void } | undefined;
+let windowJournal: { dispose(): void } | undefined;
 
-/** This window's tracker, created on first use, with the error lines of failed builds (#15). */
+/**
+ * This window's tracker, created on first use, with the error lines of
+ * failed builds (#15) and its failures journaled in the window's problem
+ * journal (#48).
+ */
 export function windowJobTracker(): CmsisJobTracker {
     if (!windowTracker) {
         windowTracker = new CmsisJobTracker(vscodeTaskSource(), SYSTEM_CLOCK, (message) => logger.info(message));
         windowDiagnosis = attachBuildDiagnosis(windowTracker, vscodeDiagnosisHost(SYSTEM_CLOCK));
+        windowJournal = attachJobJournal(windowTracker, problemJournal());
     }
     return windowTracker;
 }
@@ -897,6 +906,8 @@ export function registerCmsisJobTracker(context: vscode.ExtensionContext): void 
             if (windowTracker === tracker) {
                 windowDiagnosis?.dispose();
                 windowDiagnosis = undefined;
+                windowJournal?.dispose();
+                windowJournal = undefined;
                 windowTracker = undefined;
             }
             tracker.dispose();

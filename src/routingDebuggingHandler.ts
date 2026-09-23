@@ -34,10 +34,17 @@
  * connection, a wrong token, an answer that is not a control reply — makes
  * the session forget the window, as `WINDOW_UNREACHABLE`. A window that does
  * not answer in time is busy, not gone: `WORKER_TIMEOUT`, target kept.
+ *
+ * The envelope carries the call's id and MCP session id from the call
+ * context (#48), and the worker's reply its problem-journal counters. From
+ * those the session's `ProblemNotices` add the count line to
+ * `get_session_status` and a one-time note about new errors to a successful
+ * result, per window; a worker that sends no counters gets neither.
  */
 
 import * as http from 'http';
 import type { IDebuggingHandler } from './debuggingHandler';
+import { currentCallContext } from './core/callContext';
 import {
     CONTROL_ENVELOPE_HEADER,
     CONTROL_ENVELOPE_VERSION,
@@ -49,6 +56,8 @@ import {
     forwardTimeoutMs,
     targetHintOf,
 } from './core/opTable';
+import { ProblemNotices } from './core/problemFeed';
+import type { JournalCounters } from './core/problemJournal';
 import {
     JsonObject,
     ToolError,
@@ -92,6 +101,12 @@ type DebugForwarders = { [Op in DebugOpName]: (args?: unknown) => Promise<ToolTe
 interface Resolved {
     entry: WindowRegistration;
     reason: ResolutionReason;
+}
+
+/** What a window answered: its outcome, a failure included, and its journal counters when it sent them. */
+interface WorkerAnswer {
+    outcome: ToolText | ToolError;
+    counters?: JournalCounters;
 }
 
 /**
@@ -159,6 +174,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     private pinnedPid: number | undefined;
     /** `setAt` of the default target this session last saw; a new one drops `target`. */
     private defaultSetAt: number | undefined;
+    /** What this session has seen of each window's problem journal (#48), by pid. */
+    private readonly notices = new ProblemNotices();
 
     /**
      * @param defaultToolMs the tool timeout a call gets without its own `timeoutMs`.
@@ -261,16 +278,18 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
     /**
      * One forwarded call: pick the window, send, and hand back what it
-     * answered. The worker's own failure passes as its `ToolError`; only a
-     * failed channel drops the window as this session's target.
+     * answered, with this session's notice of new errors in that window.
+     * The worker's own failure passes as its `ToolError`; only a failed
+     * channel drops the window as this session's target.
      */
     private async relay(op: string, args: unknown): Promise<ToolText> {
         const given = args === undefined ? {} : args;
         const { entry, reason } = this.resolveTarget(targetHintOf(given));
         const sent = withoutWindow(given);
         logger.info(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
+        let answer: WorkerAnswer;
         try {
-            return await this.post(entry, op, sent);
+            answer = await this.post(entry, op, sent);
         } catch (failure) {
             if (!(failure instanceof ChannelFailure)) {
                 throw toToolError(failure);
@@ -281,6 +300,11 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             throw new ToolError('WINDOW_UNREACHABLE',
                 `Could not reach the VS Code window handling this session (pid=${entry.pid}): ${failure.message}`, UNREACHABLE_HINT);
         }
+        const noticed = this.notices.observe(String(entry.pid), answer.counters, op, answer.outcome);
+        if (noticed instanceof ToolError) {
+            throw noticed;
+        }
+        return noticed;
     }
 
     /** The resolution ladder; the first rung that applies decides, and a miss throws. */
@@ -406,15 +430,18 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     }
 
     /**
-     * POST `{op, args}` to the window's control server, asking for the typed
-     * envelope, and resolve with its outcome. Rejects with the worker's
-     * `ToolError`, with `WORKER_TIMEOUT` when the window stays silent, and with
-     * a `ChannelFailure` when the channel itself fails.
+     * POST `{op, args}` to the window's control server — with the call's id
+     * and MCP session id when the call has a context — asking for the typed
+     * envelope, and resolve with what the window answered, its failure
+     * included. Rejects with `WORKER_TIMEOUT` when the window stays silent, and
+     * with a `ChannelFailure` when the channel itself fails.
      */
-    private post(entry: WindowRegistration, op: string, args: unknown): Promise<ToolText> {
-        const body = Buffer.from(JSON.stringify({ op, args }), 'utf8');
+    private post(entry: WindowRegistration, op: string, args: unknown): Promise<WorkerAnswer> {
+        const call = currentCallContext();
+        const envelope = call ? { op, args, callId: call.callId, ...(call.sessionId ? { sessionId: call.sessionId } : {}) } : { op, args };
+        const body = Buffer.from(JSON.stringify(envelope), 'utf8');
         const idleLimitMs = this.answerWithinMs(op, args);
-        return new Promise<ToolText>((resolve, reject) => {
+        return new Promise<WorkerAnswer>((resolve, reject) => {
             const outgoing = http.request({
                 host: '127.0.0.1',
                 port: entry.controlPort,
@@ -481,13 +508,21 @@ function typedError(reported: Record<string, unknown>): ToolError {
         typeof hint === 'string' ? hint : undefined, detail);
 }
 
+/** The problem-journal counters of a reply (#48); undefined when the worker sent none, as 2.5.0 does. */
+function countersOf(reply: { journalSeq?: unknown; journalErrors?: unknown }): JournalCounters | undefined {
+    const { journalSeq, journalErrors } = reply;
+    const counts = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+    return counts(journalSeq) && counts(journalErrors) ? { seq: journalSeq, errors: journalErrors } : undefined;
+}
+
 /**
- * A complete control-server reply as the call's outcome, or the failure it
- * reports, thrown. `typed` says the worker marked the reply with the
- * envelope header; a string result without it comes from a 2.3.10 worker
- * and is read with `upgradeLegacyText`.
+ * A complete control-server reply as what the window answered: its outcome,
+ * a failure included, and its journal counters. Throws a `ChannelFailure`
+ * for anything that is not a control reply. `typed` says the worker marked
+ * the reply with the envelope header; a string result without it comes from
+ * a 2.3.10 worker and is read with `upgradeLegacyText`.
  */
-function readReply(status: number | undefined, typed: boolean, body: string): ToolText {
+function readReply(status: number | undefined, typed: boolean, body: string): WorkerAnswer {
     if (status === 403 || status === 404) {
         // A stale token, or something else listening on the port.
         throw new ChannelFailure(`control server returned ${status}`);
@@ -501,28 +536,24 @@ function readReply(status: number | undefined, typed: boolean, body: string): To
     if (typeof reply !== 'object' || reply === null) {
         throw new ChannelFailure(`malformed control response: ${body.slice(0, MALFORMED_PREVIEW_CHARS)}`);
     }
-    const { result, error } = reply as { result?: unknown; error?: unknown };
+    const fields = reply as { result?: unknown; error?: unknown; journalSeq?: unknown; journalErrors?: unknown };
+    const { result, error } = fields;
+    const counters = typed ? countersOf(fields) : undefined;
+    const answered = (outcome: ToolText | ToolError): WorkerAnswer => (counters ? { outcome, counters } : { outcome });
     if (status === 413) {
-        throw new ToolError('INVALID_ARGUMENT', typeof error === 'string' ? error : 'control request too large');
+        return answered(new ToolError('INVALID_ARGUMENT', typeof error === 'string' ? error : 'control request too large'));
     }
     if (status === 200 && typeof result === 'string') {
-        if (typed) {
-            return result;
-        }
-        const upgraded = upgradeLegacyText(result);
-        if (upgraded instanceof ToolError) {
-            throw upgraded;
-        }
-        return upgraded;
+        return answered(typed ? result : upgradeLegacyText(result));
     }
     if (status === 200 && isToolReply(result)) {
-        return result;
+        return answered(result);
     }
     if (status === 500 && typeof error === 'string') {
-        throw toToolError(error);
+        return answered(toToolError(error));
     }
     if (status === 500 && typeof error === 'object' && error !== null) {
-        throw typedError(error as Record<string, unknown>);
+        return answered(typedError(error as Record<string, unknown>));
     }
     throw new ChannelFailure(status === 200
         ? `malformed control response: ${body.slice(0, MALFORMED_PREVIEW_CHARS)}`

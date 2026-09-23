@@ -121,7 +121,8 @@ configuration synthesized from the source file (see
 [debugConfigurationManager.md](debugConfigurationManager.md)). It then polls
 the session state with exponential backoff (`awaitLiveSession()`) until the
 target runs or stops, and answers with the full state; a failed start
-carries the last lines the adapter reported. `handleStopDebugging()` adds a
+carries what the adapter and the GDB server reported during the call, as
+problem records (see [The problem journal](#the-problem-journal)). `handleStopDebugging()` adds a
 short root-cause check to its reply: a reminder to explain the bug, not only
 where it showed, before the investigation is closed. `handleRestart()`
 pauses a running CMSIS Debugger target first, so the adapter lets go of a
@@ -307,6 +308,73 @@ are coming, and `status` waits for them. The pure parts — the readers of the
 two YAML files, the re-run's command line and environment — are in
 `src/core/buildFailure.ts`.
 
+## The problem journal
+
+What goes wrong in a window shows up in places the agent cannot see: the
+debug adapter's output, the GDB server behind it, a breakpoint VS Code's own
+UI set while the target ran, a build started from the CMSIS panel, a toast.
+The problem journal (#48) collects all of it in one record shape, one
+journal per window, and the agent reads it in three ways: the records a
+failed call produced ride along with the failure, a successful result notes
+once when errors arrived that the agent has not seen, and
+`get_recent_problems` lists them with a cursor.
+
+- **The journal** (`ProblemJournal` in `src/core/problemJournal.ts`, the
+  window's instance from `problemJournal()`) keeps 200 records. Every record
+  has a `seq`, monotonic per window, which is the cursor; the oldest `info`
+  is evicted first, then the oldest `warning`, then the oldest `error`, so
+  chatter never pushes out an error. A repeat within 10 s is counted in its
+  record, which moves to the end with a new `seq`. Two counters — the newest
+  `seq` and the errors ever appended — travel with every answer of the
+  window. A call running in the window is registered (`beginCall`), so a
+  record written while it runs carries its call id: from the async call
+  context when there is one, else by timing while it is the only call.
+- **Sources.** The adapter tracker (`src/utils/sessionStateTracker.ts`)
+  journals failed responses, adapter errors and output line by line: GDB's
+  `stderr` as warnings; the adapter's `console` and `important` and the GDB
+  server's own log (category `server` on cdt-gdb-adapter) as `info` unless a
+  line is known; never the target's `stdout` or GDB's `log` stream. A failed
+  response is an error when VS Code sent the request and a warning when a
+  tool did, since the tool reports its own outcome;
+  `customRequestWithTimeout` announces the tools' requests to tell them
+  apart. `src/windowProblems.ts` journals a
+  failed CMSIS job as `TASK_FAILED` and the error lines of a failed build
+  (#15) as `BUILD_ERROR` with a workspace-relative file, and reads the
+  Problems panel's errors on demand, diffed against the last reading and
+  without the IntelliSense sources. `src/utils/notify.ts` journals this
+  extension's error and warning toasts, `logger.error` feeds a sink (the same
+  message at most once a minute), and the serial controller journals a port
+  that cannot be opened or goes away. #49's releases and #14's worker fence
+  journal through `problemJournal()` as well.
+- **Codes.** `classifyProblem()` in `src/core/problemCodes.ts` recognises
+  known lines and gives them a code, a weight and the next step as the hint.
+  The codes are this repository's: `ErrorCode` (#11) and the journal's own
+  `DAP_POWER_UP_FAILED` and `BUILD_ERROR`. A row ships only with a line
+  captured from a real session, which its test holds as a fixture:
+
+  | Line | Code | Weight | Source |
+  | ---- | ---- | ------ | ------ |
+  | `Failed to power up DAP` | `DAP_POWER_UP_FAILED` | error | `gdb-server` |
+  | `Waiting for a debug probe matching unique ID` | `PROBE_BUSY` | error | `gdb-server` |
+  | `target is running` | `TARGET_RUNNING` | warning | as reported |
+  | `no active solution` | `CMSIS_NO_SOLUTION` | error | as reported |
+
+  `PROBE_NOT_FOUND` (pyOCD's "No available debug probes", a J-Link connect
+  failure) and `CORE_NOT_FOUND` wait for a captured line, as do the pyOCD log
+  prefix and the J-Link banner that would mark any GDB-server line.
+- **Delivery** (`src/core/problemFeed.ts`). `runJournaled()` runs an op in
+  the window that owns it — the control server for a forwarded call,
+  `journalLocally()` on a server without a router — and attaches up to five
+  records of the call at warning or above to a failure or a timeout, as
+  `data.problems`, leaving out records of another call and records that
+  only restate the failure. `ProblemNotices` keeps, per MCP session and
+  window, what the agent has seen: the first answer sets the baseline,
+  `get_recent_problems` moves it, `get_session_status` carries a count line
+  while errors lie beyond it, and one successful result per batch carries a
+  note naming the call to make. `handleGetRecentProblems()` renders the
+  journal from `sinceSeq` on (`src/handler/problemText.ts`): one line per
+  record, newest 20 (at most 50), within 8 kB.
+
 ## The host seam
 
 Everything else the handler needs comes from a `HandlerHost`
@@ -340,7 +408,12 @@ by #56.
 | `src/core/toolResult.ts` | `ToolText`, `ToolReply`, `ToolError`, `ErrorCode`, `classifyError()`, `wrapError()` |
 | `src/handler/host.ts` | `HandlerHost`, `VSCODE_HOST` |
 | `src/handler/gdbText.ts` | GDB reply classification and refusals, the MI results of `-dprintf-insert` and `-break-list`, a logpoint's GDB location, logpoint message to `dprintf` |
-| `src/handler/sessionText.ts` | state refusals with their codes (`PROBE_WEDGED` and its reconnect hint for `unresponsive`), the `get_session_status` text, call-stack and thread listings, recent adapter lines |
+| `src/handler/sessionText.ts` | state refusals with their codes (`PROBE_WEDGED` and its reconnect hint for `unresponsive`), the `get_session_status` text, call-stack and thread listings |
+| `src/core/problemJournal.ts` | `ProblemJournal`, `problemJournal()`, the record shape, `formatProblemLine()` (#48) |
+| `src/core/problemCodes.ts` | `ProblemCode`, `classifyProblem()` and its rows |
+| `src/core/problemFeed.ts` | `runJournaled()`, `ProblemNotices`, `journalLocally()`, the "Recent problems:" block |
+| `src/handler/problemText.ts` | the `get_recent_problems` reply |
+| `src/windowProblems.ts` | the output-channel mirror, the `logger.error` sink, "Copy Recent Problems", failed jobs and build lines, the Problems panel |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
@@ -368,5 +441,11 @@ by #56.
   with `dap-scenarios.snapshot.json`
 - `src/test/gdbText.test.ts`: GDB reply classification, MI results, logpoint
   locations
+- `src/test/problemJournal.test.ts`: eviction, repeats, the cursor, filters,
+  call ids, the attached records, the notices and the `get_recent_problems`
+  reply; `src/test/problemCodes.test.ts`: every code row against its captured
+  line; `src/test/windowProblems.test.ts`: failed jobs, build lines, the
+  Problems panel and the copied text; the adapter tracker's records in
+  `src/test/sessionStateTracker.test.ts`
 - `test/transport/surface-snapshot.js`: every tool's reply without a session
 - `test/realboard/run.ts`: every tool against a real board, run by hand

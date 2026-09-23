@@ -15,6 +15,7 @@
  */
 
 import * as vscode from 'vscode';
+import { noteOwnRequest } from './sessionStateTracker';
 
 /**
  * Error thrown when a hardware-facing operation exceeds its deadline.
@@ -77,7 +78,9 @@ export async function withTimeout<T>(
 /**
  * Wrapper for `vscode.DebugSession.customRequest` that enforces a deadline.
  * All DAP traffic to an embedded target must go through this helper so that
- * a hung probe cannot block the MCP tool invocation indefinitely.
+ * a hung probe cannot block the MCP tool invocation indefinitely. The
+ * request is announced to the adapter tracker first, so that its failure is
+ * journaled as the tool's own, not as one of VS Code's (#48).
  */
 export async function customRequestWithTimeout<T = unknown>(
     session: vscode.DebugSession,
@@ -85,6 +88,7 @@ export async function customRequestWithTimeout<T = unknown>(
     args: Record<string, unknown> | undefined,
     timeoutMs: number,
 ): Promise<T> {
+    noteOwnRequest(session, command);
     return withTimeout(
         `DAP ${command}`,
         timeoutMs,

@@ -23,9 +23,11 @@ import { HardwareTimeouts } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
+import { problemJournal, type ProblemJournal } from './core/problemJournal';
 import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
 import { logger } from './utils/logger';
+import { notifyWarning } from './utils/notify';
 import { WindowStatus } from './windowStatus';
 
 /** Refresh well inside the registry's 60 s staleness window. */
@@ -69,6 +71,12 @@ export interface CoordinatorOptions {
      * hold `deactivate`.
      */
     serialTeardown?: () => Promise<void>;
+    /**
+     * This window's problem journal (#48), which its control server and
+     * debugging handler use; the window's own by default. Injectable so a
+     * test can tell two windows in one process apart.
+     */
+    journal?: ProblemJournal;
 }
 
 const SERIAL_TEARDOWN_MS = 2_000;
@@ -94,6 +102,7 @@ export class WindowCoordinator {
     private readonly registry: WorkspaceRegistry;
     private readonly controlToken = randomUUID();
     private readonly localHandler: DebuggingHandler;
+    private readonly journal: ProblemJournal;
 
     private controlServer: ControlServer | undefined;
     private mcpServer: DebugMCPServer | undefined;
@@ -104,11 +113,12 @@ export class WindowCoordinator {
 
     constructor(private readonly options: CoordinatorOptions) {
         this.registry = options.registry ?? new WorkspaceRegistry(undefined, undefined, undefined, {
-            onRefused: (message) => void vscode.window.showWarningMessage(`${PRODUCT}: ${message}`),
+            onRefused: (message) => void notifyWarning(`${PRODUCT}: ${message}`),
         });
+        this.journal = options.journal ?? problemJournal();
         const executor = new DebuggingExecutor(options.hardwareTimeouts);
         const configManager = new ConfigurationManager();
-        this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds);
+        this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds, this.journal);
     }
 
     /** True when this window owns the well-known port. */
@@ -133,7 +143,7 @@ export class WindowCoordinator {
     }
 
     public async start(context: vscode.ExtensionContext): Promise<void> {
-        this.controlServer = new ControlServer(this.localHandler, this.controlToken, this.options.packDocs);
+        this.controlServer = new ControlServer(this.localHandler, this.controlToken, this.options.packDocs, this.journal);
         await this.controlServer.start();
 
         this.publish();

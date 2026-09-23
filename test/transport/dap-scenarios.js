@@ -64,6 +64,8 @@
 //   - lines with code are listed per source file; a breakpoint on a line
 //     without code moves to the next line with code, past the last one GDB
 //     answers "No line N in file".
+//   - the GDB server's own output (pyOCD's log) is category `server`, as
+//     cdt-gdb-adapter 1.10 forwards the server's stdout and stderr.
 // VS Code itself is modelled only as far as the code under test can see it:
 // after a stopped event `activeStackItem` becomes frame 1000 of the focused
 // session at once, a continued event clears it; a change of the breakpoint
@@ -78,7 +80,8 @@
 //
 // Scenarios are independent: each gets a fresh server, a fresh fake session
 // and an empty breakpoint model. Module-level state in the code under test
-// (the session tracker's diagnostics ring, the pack-root answer, the parsed
+// (the window's problem journal, whose record numbers count on across
+// scenarios and are masked in the replies, the pack-root answer, the parsed
 // SVD cache) persists across scenarios as it does across sessions in one
 // extension host; `cmsis-csolution.getPackRootPath` is answered but not
 // logged, because it is asked once per process and would otherwise tie the
@@ -1449,12 +1452,13 @@ const SCENARIOS = [
     },
     {
         name: 'start-debugging-fails',
-        description: 'No probe: the launch fails in the adapter and startDebugging resolves false; the reply carries the recent adapter traffic.',
+        description: 'No probe: the launch fails in the adapter and startDebugging resolves false; the reply carries the problems the adapter recorded during the call, and a later start that never reached an adapter carries none.',
         launches: {
             'CMSIS Debugger: pyOCD': {
                 config: 'pyocd',
                 fail: {
-                    output: [['stderr', '0000410 C No connected debug probes [__main__]\n']],
+                    // cdt-gdb-adapter forwards the GDB server's stdout and stderr as category `server`.
+                    output: [['server', '0000410 C No connected debug probes [__main__]\n']],
                     message: 'Failed to launch the GDB server: pyocd exited with code 1',
                 },
             },
@@ -1771,7 +1775,10 @@ function normalise(text, ctx) {
         .replace(/\b\d+(\.\d+)?\s?(ms|s)\b/g, '<n>$2')
         .replace(/\b127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
         // The release number, so that a version bump leaves the snapshot alone.
-        .replace(/\bserverVersion=\d+\.\d+\.\d+\b/g, 'serverVersion=<version>');
+        .replace(/\bserverVersion=\d+\.\d+\.\d+\b/g, 'serverVersion=<version>')
+        // Problem-journal numbers count on across scenarios, so they depend on every scenario before.
+        .replace(/(^|\n) {2}#\d+ (error|warning|info) /g, '$1  #<seq> $2 ')
+        .replace(/\b(sinceSeq: |nextSeq=| since #)\d+/g, '$1<seq>');
 }
 
 function normalisePaths(text, ctx) {

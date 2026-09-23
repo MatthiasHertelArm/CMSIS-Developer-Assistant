@@ -18,6 +18,9 @@ With every DAP request in one class, all of them follow the same rules:
   (`src/utils/timeout.ts`) and has a deadline. A timeout is a
   `HardwareTimeoutError`, and fallbacks pass it on instead of trying a slower
   route: a hung probe is reported, not hidden behind a second attempt.
+  `customRequestWithTimeout()` also announces the request to the adapter
+  tracker, so that its failure is journaled as the tool's own warning rather
+  than as an error of VS Code's (#48).
 - Every deadline comes from `Budgets` (`src/executor/common.ts`).
 - Wording aimed at the agent — refusals, hints, next steps — stays out of the
   executor. The one exception is GDB's refusal of a run-control request on
@@ -189,7 +192,7 @@ memory write and the reset still judge GDB's reply by its text alone.
 | `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
 | `src/executor/sessionReports.ts` | `probeSession()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
-| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, recent adapter output, GDB command output, answers to `setBreakpoints`, GDB logpoints per session |
+| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session |
 | `src/utils/timeout.ts` | `withTimeout()`, `customRequestWithTimeout()`, `HardwareTimeoutError` |
 
 ## Tests

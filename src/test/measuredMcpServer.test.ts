@@ -19,9 +19,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { currentCallContext } from '../core/callContext';
 import { MeasuredMcpServer, toCallToolResult } from '../core/measuredMcpServer';
 import { ToolMetrics } from '../core/toolMetrics';
-import { ToolError, ToolText } from '../core/toolResult';
+import { JsonObject, ToolError, ToolText } from '../core/toolResult';
+
+/** A problem record as it rides along with a failure (#48). */
+const PROBLEM: JsonObject = {
+    seq: 212, time: '2026-09-24T10:42:07.000Z', source: 'gdb-server', origin: 'CMSIS Debugger: pyOCD', severity: 'error',
+    code: 'DAP_POWER_UP_FAILED', message: 'Failed to power up DAP', hint: 'Check the power.',
+};
 
 /**
  * The MCP boundary (#11): every outcome a handler can have, as the client
@@ -51,6 +58,11 @@ suite('MeasuredMcpServer results', () => {
         plain_error: async () => {
             throw new Error('No active debug session.');
         },
+        with_problems: async () => {
+            throw new ToolError('TASK_FAILED', 'Load failed.', 'Read the terminal.', { problems: [PROBLEM] });
+        },
+        waited_with_problems: async () => ({ text: 'Target did not stop.', status: 'timeout', data: { problems: [PROBLEM] } }),
+        whose_call: async () => JSON.stringify(currentCallContext() ?? null),
     };
 
     setup(async () => {
@@ -150,6 +162,25 @@ suite('MeasuredMcpServer results', () => {
         const listed = await client.listTools();
         assert.ok(listed.tools.length > 0);
         assert.deepStrictEqual(listed.tools.filter((tool) => tool.outputSchema !== undefined).map((tool) => tool.name), []);
+    });
+
+    test('every call gets an id, the session\'s first 8 characters and a count, and its handler runs in that call context (#48)', async () => {
+        // The in-memory transport has no session id.
+        assert.deepStrictEqual(JSON.parse(textOfResult(await call('whose_call'))), { callId: 'local-1' });
+        await call('plain');
+        assert.deepStrictEqual(JSON.parse(textOfResult(await call('whose_call'))), { callId: 'local-3' });
+        assert.strictEqual(currentCallContext(), undefined, 'the context ends with the call');
+    });
+
+    test('the problems that ride along with a failure or a timeout are listed under the text (#48)', async () => {
+        const failed = await call('with_problems');
+        assert.strictEqual(textOfResult(failed), '[TASK_FAILED] Load failed.\nRead the terminal.\n'
+            + 'Recent problems:\n  #212 error gdb-server [DAP_POWER_UP_FAILED] Failed to power up DAP → Check the power.');
+        assert.deepStrictEqual((failed.structuredContent as JsonObject).problems, [PROBLEM]);
+        assert.strictEqual((failed.structuredContent as JsonObject).message, 'Load failed.', 'the message stays the message');
+        const waited = await call('waited_with_problems');
+        assert.ok(textOfResult(waited).startsWith('Target did not stop.\nRecent problems:\n  #212 error gdb-server'));
+        assert.deepStrictEqual(waited.structuredContent, { status: 'timeout', message: 'Target did not stop.', problems: [PROBLEM] });
     });
 });
 

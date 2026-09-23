@@ -108,6 +108,11 @@
         "command": "cmsis-developer-assistant.openPackDocsPanel",
         "title": "Open Pack Docs Panel",
         "category": "CMSIS Developer Assistant"
+      },
+      {
+        "command": "cmsis-developer-assistant.copyRecentProblems",
+        "title": "Copy Recent Problems",
+        "category": "CMSIS Developer Assistant"
       }
     ],
     "menus": {

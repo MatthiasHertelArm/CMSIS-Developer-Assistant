@@ -72,7 +72,6 @@ import { withTimeout } from '../utils/timeout';
 import { failureText, LONG_LIMIT_CAP_MS } from './fence';
 import type { HandlerHost } from './host';
 import { formatDuration, idleStatus, jobResult, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
-import { recentAdapterTraffic } from './sessionText';
 
 export type CmsisAction = 'build' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run' | 'status';
 
@@ -349,7 +348,7 @@ function commandFailure(command: string, action: string, caught: unknown, server
             + 'cmsis_action operates on whatever solution the CMSIS Solution extension has active — it cannot select one for you.');
     }
     return new ToolError('TASK_FAILED', `CMSIS command '${command}' failed: ${String(caught)}.`,
-        `Ensure the CMSIS Solution extension is installed and a solution context is active.${recentAdapterTraffic()}`);
+        'Ensure the CMSIS Solution extension is installed and a solution context is active.');
 }
 
 /** ` on HE`, or nothing when the target is unknown. */
@@ -564,7 +563,7 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
         `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${loaded}${survival.detail}.`,
         'For \'attach\' this almost always means no GDB server is listening on the configured port: '
             + `start the GDB server first, or use 'load_and_debug' (which launches one).${noRun} `
-            + `Confirm with get_session_status / check_target_connection.${recentAdapterTraffic()}`);
+            + 'Confirm with get_session_status / check_target_connection.');
 }
 
 /** Wait until load_and_debug's pre-launch Load started or a session exists, for at most `budgetMs`. */

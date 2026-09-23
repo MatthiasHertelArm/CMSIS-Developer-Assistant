@@ -18,7 +18,7 @@ Only the user can lift a rule, by asking for the specific command.
 - If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
 - The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
 <!-- cmsis-developer-assistant:rules:end -->
 
 ## Goal and method

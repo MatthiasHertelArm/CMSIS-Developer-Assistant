@@ -18,7 +18,8 @@
  * The VS Code entry point (`main` in package.json, bundled by esbuild.js).
  *
  * `activate` wires the modules together in a fixed order: settings read once
- * for this activation, the debug-session and CMSIS task trackers, the agent and skill
+ * for this activation, the problem journal's output mirror, error sink and
+ * copy command (#48), the debug-session and CMSIS task trackers, the agent and skill
  * manager, the documentation handlers and their commands, this window's
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
  * for in-editor Copilot, agent-configuration migration, the update of the tool
@@ -49,10 +50,12 @@ import type { PackDocsHandlers } from './packDocsDispatch';
 import { createPackDocsHandlers, readPackDocsGates } from './packDocsHost';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { logger } from './utils/logger';
+import { notifyError, notifyWarning } from './utils/notify';
 import { registerSessionStateTracker } from './utils/sessionStateTracker';
 import { registerToolchainPackRootInvalidation } from './utils/toolchainPackRoot';
 import { WindowCoordinator } from './windowCoordinator';
 import { SELECT_TARGET_WINDOW_COMMAND } from './windowStatus';
+import { registerProblemJournal } from './windowProblems';
 
 const SECTION = 'cmsis-developer-assistant';
 const PRODUCT = 'CMSIS Developer Assistant';
@@ -138,7 +141,7 @@ function logActivationSettings(active: ActivationSettings): void {
 function warnIfStandalonePackDocsInstalled(): void {
     if (vscode.extensions.getExtension('arm.cmsis-pack-docs') !== undefined) {
         logger.warn(DUPLICATE_PACK_DOCS_NOTICE);
-        void vscode.window.showWarningMessage(DUPLICATE_PACK_DOCS_NOTICE);
+        void notifyWarning(DUPLICATE_PACK_DOCS_NOTICE);
     }
 }
 
@@ -187,7 +190,7 @@ async function startCoordinator(
         logger.info(`MCP server definition for ${mcpUri.toString()} offered to VS Code`);
     } catch (failure) {
         logger.error('The MCP server could not be started', failure);
-        void vscode.window.showErrorMessage(`${PRODUCT} could not start its MCP server: ${String(failure)}`);
+        void notifyError(`${PRODUCT} could not start its MCP server: ${String(failure)}`);
     }
 }
 
@@ -277,6 +280,7 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     const active = readActivationSettings();
     logActivationSettings(active);
 
+    registerProblemJournal(extensionContext);
     registerSessionStateTracker(extensionContext);
     registerCmsisJobTracker(extensionContext);
     registerToolchainPackRootInvalidation(extensionContext);

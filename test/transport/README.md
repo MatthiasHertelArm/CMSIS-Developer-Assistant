@@ -34,6 +34,12 @@ Each exits non-zero if any check failed.
   description or schema updates `TOOLS_LIST_BYTES` in the same commit.
 - No tool of the single-window list takes the router's `window` argument
   (#16).
+- The problem journal (#48) on the server without a router:
+  `get_recent_problems` is listed and an empty answer stays under 200 bytes;
+  a failing call carries `structuredContent.problems`, stamped with its call
+  id, and lists them under its text; an error nobody saw is noted once on
+  the next successful result, counted by `get_session_status`, and gone from
+  both after `get_recent_problems`.
 
 Belongs here rather than in `src/test/` because it needs a real listening
 socket, which the `vscode-test` Electron harness does not give us.
@@ -63,6 +69,9 @@ same code path the extension uses — and drives the router over MCP:
   `pickAnswer`) resolves the tie of two idle windows and moves a session that
   already had a target; the router's tooltip lists the sessions; Automatic
   removes the file.
+- The problem journal is per window (#48): `get_recent_problems` and the
+  count of new errors in `get_session_status` come from the window the
+  session is pinned to, never from the router or the other window.
 
 Note: requests use `agent: false`. `server.close()` stops new connections but
 leaves keep-alive sockets open, so a pooled socket to the disposed router would

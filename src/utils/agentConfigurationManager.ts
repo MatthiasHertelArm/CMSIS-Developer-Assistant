@@ -73,6 +73,7 @@ import {
 import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
+import { notifyError } from './notify';
 import {
     AI_SKILLS_ENABLED_SETTING,
     AI_SKILLS_PROMPT_SETTING,
@@ -746,7 +747,7 @@ export class AgentConfigurationManager {
     async showSkillSelectionDialog(stepMark: string = SKILLS_ALONE_MARK): Promise<boolean> {
         const catalog = this.catalog();
         if (!catalog) {
-            void vscode.window.showErrorMessage(`${PRODUCT}: the bundled skill catalog could not be loaded.`);
+            void notifyError(`${PRODUCT}: the bundled skill catalog could not be loaded.`);
             return false;
         }
         if (!this.packEnabled()) {
@@ -855,7 +856,7 @@ export class AgentConfigurationManager {
             }
         } catch (failure) {
             logger.error('The setup flow failed', failure);
-            void vscode.window.showErrorMessage(`Failed to show the ${PRODUCT} setup: ${String(failure)}`);
+            void notifyError(`Failed to show the ${PRODUCT} setup: ${String(failure)}`);
         } finally {
             await this.ctx.globalState.update(SETUP_ANSWERED_KEY, true);
         }
@@ -908,7 +909,7 @@ export class AgentConfigurationManager {
                 }
             } catch (failure) {
                 logger.error(`Setting up ${agent.displayName} failed`, failure);
-                void vscode.window.showErrorMessage(`Could not set up ${agent.displayName}: ${String(failure)}`);
+                void notifyError(`Could not set up ${agent.displayName}: ${String(failure)}`);
             }
         }
     }
@@ -935,7 +936,7 @@ export class AgentConfigurationManager {
                     await writeFileAtomic(file, JSON.stringify({ [field]: { [SERVER_KEY]: entry } }, null, 2));
                 } else if (await rewriteJsonFile(file, (tree) => placeEntry(tree, field, entry)) === 'unparseable') {
                     logger.warn(`Left ${file} alone: it is not a JSON object`);
-                    void vscode.window.showErrorMessage(
+                    void notifyError(
                         `Cannot configure ${agent.displayName}: ${file} exists but is not valid JSON. Please fix or remove the file and try again.`);
                     return false;
                 }
@@ -944,7 +945,7 @@ export class AgentConfigurationManager {
             return true;
         } catch (failure) {
             logger.error(`Could not register the MCP server with ${agent.displayName}`, failure);
-            void vscode.window.showErrorMessage(`The ${PRODUCT} MCP server could not be added to ${agent.displayName}: ${String(failure)}`);
+            void notifyError(`The ${PRODUCT} MCP server could not be added to ${agent.displayName}: ${String(failure)}`);
             return false;
         }
     }
@@ -1108,7 +1109,7 @@ export class AgentConfigurationManager {
             }
         } catch (failure) {
             logger.error('Could not save the skill selection', failure);
-            void vscode.window.showErrorMessage(`Failed to save the skill selection: ${String(failure)}`);
+            void notifyError(`Failed to save the skill selection: ${String(failure)}`);
         }
     }
 

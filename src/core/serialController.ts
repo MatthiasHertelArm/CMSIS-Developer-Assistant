@@ -27,10 +27,15 @@
  * `lastRelease`, which the serial tools name (#49). Tests build their own
  * controller over serialport's `SerialPortMock` and a fixed clock; the
  * extension uses the `serialController` singleton.
+ *
+ * A port that cannot be opened, and one that goes away by itself, are
+ * journaled as warnings in the window's problem journal (#48, source
+ * `serial`), without any payload.
  */
 
 import { SerialPort } from 'serialport';
 import { logger } from '../utils/logger';
+import { problemJournal, type ProblemInput } from './problemJournal';
 
 export interface SerialOpenOptions {
     path: string;
@@ -93,10 +98,12 @@ export interface OwnedPort {
     on(event: 'close', listener: (err?: Error | null) => void): unknown;
 }
 
-/** Where ports and timestamps come from; each defaults to the real thing. */
+/** Where ports, timestamps and problem records go and come from; each defaults to the real thing. */
 export interface SerialControllerDeps {
     createPort?: (options: PortOptions) => OwnedPort;
     clock?: () => Date;
+    /** Records a problem of the port; the window's problem journal by default. */
+    journal?: (problem: ProblemInput) => void;
 }
 
 const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
@@ -129,10 +136,12 @@ export class SerialController {
     private lastRelease: SerialRelease | null = null;
     private readonly createPort: (options: PortOptions) => OwnedPort;
     private readonly clock: () => Date;
+    private readonly journal: (problem: ProblemInput) => void;
 
     constructor(deps: SerialControllerDeps = {}) {
         this.createPort = deps.createPort ?? ((options) => new SerialPort(options));
         this.clock = deps.clock ?? (() => new Date());
+        this.journal = deps.journal ?? ((problem) => { problemJournal().append(problem); });
     }
 
     async listPorts(): Promise<SerialPortInfo[]> {
@@ -175,27 +184,34 @@ export class SerialController {
         const stopBits = opts.stopBits ?? 1;
         const rtscts = opts.rtscts ?? false;
 
-        await new Promise<void>((resolve, reject) => {
-            const p = this.createPort({
-                path: opts.path, baudRate, dataBits, parity, stopBits, rtscts,
-                autoOpen: false,
-            });
+        try {
+            await new Promise<void>((resolve, reject) => {
+                const p = this.createPort({
+                    path: opts.path, baudRate, dataBits, parity, stopBits, rtscts,
+                    autoOpen: false,
+                });
 
-            p.on('data', (chunk: Buffer) => this.appendToBuffer(chunk));
-            p.on('error', (err) => this.onPortError(p, err));
-            p.on('close', (err) => this.onPortClosed(p, opts.path, err));
+                p.on('data', (chunk: Buffer) => this.appendToBuffer(chunk));
+                p.on('error', (err) => this.onPortError(p, err));
+                p.on('close', (err) => this.onPortClosed(p, opts.path, err));
 
-            p.open((err) => {
-                if (err) { reject(err); return; }
-                this.port = p;
-                this.openedAt = this.clock();
-                this.currentPath = opts.path;
-                this.currentBaud = baudRate;
-                this.buffer = Buffer.alloc(0);
-                this.lastRelease = null;
-                resolve();
+                p.open((err) => {
+                    if (err) { reject(err); return; }
+                    this.port = p;
+                    this.openedAt = this.clock();
+                    this.currentPath = opts.path;
+                    this.currentBaud = baudRate;
+                    this.buffer = Buffer.alloc(0);
+                    this.lastRelease = null;
+                    resolve();
+                });
             });
-        });
+        } catch (err) {
+            // The tool reports the failure itself; the record is for whoever reads the journal later.
+            this.recordProblem(opts.path, err instanceof Error ? err.message : String(err),
+                'serial_list_ports lists the ports; if another program holds this one, close it or use serial_subscribe_monitor.');
+            throw err;
+        }
     }
 
     async close(): Promise<void> {
@@ -292,6 +308,16 @@ export class SerialController {
         this.forgetPort();
         this.lastRelease = { path, at: this.clock(), reason, ...(detail && reason !== 'disconnected' ? { detail } : {}) };
         logger.warn(`Serial port released: ${describeRelease(this.lastRelease)}`);
+        this.recordProblem(path, describeRelease(this.lastRelease), 'Reopen it with serial_open once the adapter is back; the bytes received before stay readable.');
+    }
+
+    /** A warning of the port in the problem journal; a failing journal never fails the port. */
+    private recordProblem(path: string, message: string, hint: string): void {
+        try {
+            this.journal({ source: 'serial', origin: path, severity: 'warning', message, hint });
+        } catch (caught) {
+            logger.debug('A serial problem could not be journaled', caught);
+        }
     }
 
     private appendToBuffer(chunk: Buffer): void {

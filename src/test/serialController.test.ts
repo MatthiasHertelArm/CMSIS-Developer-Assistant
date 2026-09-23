@@ -17,6 +17,7 @@
 import * as assert from 'assert';
 import { EventEmitter } from 'events';
 import { SerialPortMock } from 'serialport';
+import type { ProblemInput } from '../core/problemJournal';
 import { OwnedPort, PortOptions, SerialController, describeRelease, serialController } from '../core/serialController';
 import { SerialHandler } from '../serialHandler';
 
@@ -182,5 +183,32 @@ suite('serialController follows the port (#49)', () => {
             'Serial RX (owned): <no data>\nThe owned port is closed: COM7 disconnected at 10:42:07. Reopen it with serial_open.');
         await assert.rejects(handler.handleWrite({ data: 'x' }), /No serial port open: COM7 disconnected at 10:42:07\. Reopen it with serial_open\./);
         assert.strictEqual(await handler.handleClose(), 'No owned serial port was open (COM7 disconnected at 10:42:07).');
+    });
+
+    test('a port that cannot be opened and one that goes away are journaled as serial warnings, without payload (#48)', async () => {
+        const journaled: ProblemInput[] = [];
+        const controller = new SerialController({
+            createPort: (options: PortOptions) => {
+                const port = new SerialPortMock(options);
+                created.push(port);
+                return port;
+            },
+            clock: () => AT,
+            journal: (problem) => journaled.push(problem),
+        });
+        await assert.rejects(controller.open({ path: '/dev/nope' }));
+        SerialPortMock.binding.createPort('COM7');
+        await controller.open({ path: 'COM7' });
+        created[1].port?.emitData(Buffer.from('secret payload'));
+        await controller.read({ waitMs: 2000, consume: false });
+        await unplug(created[1]);
+        await controller.open({ path: 'COM7' });
+        await controller.close();
+
+        assert.deepStrictEqual(journaled.map((problem) => [problem.source, problem.origin, problem.severity]),
+            [['serial', '/dev/nope', 'warning'], ['serial', 'COM7', 'warning']]);
+        assert.match(journaled[0].message, /nope/);
+        assert.strictEqual(journaled[1].message, 'COM7 disconnected at 10:42:07');
+        assert.ok(journaled.every((problem) => !problem.message.includes('secret') && typeof problem.hint === 'string'));
     });
 });

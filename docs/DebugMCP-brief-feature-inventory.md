@@ -66,6 +66,7 @@ Upstream has no concept of a GDB target server, hardware memory or registers, fa
 |------|----------|----------------------------|
 | `get_session_status` | Health | Never-throwing 5-state classifier: `no-session / initializing / running / stopped / unresponsive`, with a next-step hint. |
 | `check_target_connection` | Health | Fast, short-timeout DAP ping — is the probe / GDB server alive? |
+| `get_recent_problems` | Health | The window's problem journal: failed DAP requests (also those of VS Code's own UI), GDB-server errors, failed CMSIS tasks and build errors with file:line, Problems-panel errors, notifications, lost serial ports — each with a code and the next step. |
 
 ### Serial / UART — dual backend
 

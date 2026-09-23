@@ -174,7 +174,7 @@ suite('Debugger-first guidance for agents', () => {
             assert.ok(start >= 0, `${label}: no "Reading results" section`);
             const end = lines.findIndex((line, index) => index > start && /^#+ /.test(line));
             const reading = lines.slice(start, end < 0 ? undefined : end).join('\n');
-            for (const term of ['`isError`', '`structuredContent.error_code`', 'hint', '`timeout`', '`running`']) {
+            for (const term of ['`isError`', '`structuredContent.error_code`', 'hint', '`timeout`', '`running`', '`structuredContent.problems`', '`get_recent_problems`']) {
                 assert.ok(reading.includes(term), `${label}: "Reading results" does not name ${term}`);
             }
         }

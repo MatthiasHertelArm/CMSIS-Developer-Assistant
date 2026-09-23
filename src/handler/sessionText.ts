@@ -17,8 +17,9 @@
 /**
  * Texts about the debug session itself: why an inspection is refused in the
  * current state (with the code that refusal carries), what
- * `get_session_status` reports, the recent adapter lines appended to start
- * failures, and the call-stack and thread listings.
+ * `get_session_status` reports, and the call-stack and thread listings.
+ * What the adapter said when a start failed rides along with the failure as
+ * problem records (#48), not as text of its own.
  *
  * `test/realboard/run.ts` reads `State: …` from the status and `frameId=N`
  * from the call stack; both stay in this form.
@@ -29,7 +30,6 @@ import type { IDebuggingExecutor } from '../debuggingExecutor';
 import { wedgeHint } from '../core/probeWedge';
 import { shortenPath, truncateList } from '../core/textBudget';
 import { ErrorCode, Refusal } from '../core/toolResult';
-import { getRecentDiagnostics } from '../utils/sessionStateTracker';
 
 export type SessionStatus = Awaited<ReturnType<IDebuggingExecutor['getSessionStatus']>>;
 export type SessionState = SessionStatus['state'];
@@ -93,15 +93,6 @@ export function stoppedTargetRefusal(operation: string, state: SessionState, req
     const reconnect = state === 'unresponsive' ? ` ${wedgeHint(request)}` : '';
     return new Refusal(REFUSAL_CODES[state], `Cannot ${operation}: session state is '${state}'.`,
         `${REFUSAL_HINTS[state]}${reconnect} Use get_session_status for a definitive, never-failing classification.`);
-}
-
-/** The last adapter lines of the most recent session, as a suffix; empty when there are none. */
-export function recentAdapterTraffic(): string {
-    const lines = getRecentDiagnostics();
-    if (lines.length === 0) {
-        return '';
-    }
-    return `\nRecent adapter traffic (last ${lines.length} lines):\n  ${lines.join('\n  ')}`;
 }
 
 /** The `get_session_status` text; `extraLines` (the CMSIS task line) go before the closing hint. */

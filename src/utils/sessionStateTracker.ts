@@ -18,13 +18,25 @@
  * What this window knows about its debug sessions from the DAP traffic the
  * adapter tracker sees: the live sessions and the one to act on, whether each
  * target is stopped, waits for the next stop and for a session's end, the
- * recent adapter lines behind launch failures, the output a GDB command
- * prints (#56), when the adapter has answered VS Code's `setBreakpoints`, and
- * the GDB `dprintf` logpoints set in a session. Everything a session holds
- * goes when it ends.
+ * output a GDB command prints (#56), when the adapter has answered VS Code's
+ * `setBreakpoints`, and the GDB `dprintf` logpoints set in a session.
+ * Everything a session holds goes when it ends.
+ *
+ * What goes wrong on the channel goes into the window's problem journal
+ * (#48): failed responses, adapter errors, and the output of the categories
+ * `stderr`, `console`, `important` and `server` (the GDB server's, on
+ * cdt-gdb-adapter), line by line, never the target's `stdout`. A failed
+ * response is an error when VS Code sent the request (a breakpoint the user
+ * set while the target runs) and a warning when a tool sent it through
+ * `customRequestWithTimeout`, since that tool reports its own outcome.
+ * `stderr` is a warning, the other output `info`, unless `classifyProblem`
+ * knows the line.
  */
 
 import * as vscode from 'vscode';
+import { classifyProblem } from '../core/problemCodes';
+import { failedResponseMessage } from '../core/problemFeed';
+import { problemJournal, type ProblemJournal, type ProblemSeverity, type ProblemSource } from '../core/problemJournal';
 import { logger } from './logger';
 
 /**
@@ -203,38 +215,126 @@ export function waitForStopEvent(session: vscode.DebugSession, timeoutMs: number
     });
 }
 
-// ── Recent adapter traffic (launch-failure diagnostics) ───────────
+// ── Problems on the adapter channel (#48) ─────────────────────────
 
-// Ring buffer of recent adapter-originated error/output lines, keyed by
-// session.id (NOT the WeakMap — these must survive session termination,
-// which is exactly when launch-failure reporting needs them). Retained for
-// the last few sessions only.
-const DIAG_RING_SIZE = 20;
-const DIAG_LINE_CAP = 300;
-const DIAG_KEPT_SESSIONS = 3;
-const diagnosticsBySessionId = new Map<string, string[]>();
+/** How long a request the tools announced may take to reach the tracker. */
+const OWN_REQUEST_WINDOW_MS = 5_000;
+/** Announced requests kept per session, and requests awaiting their response. */
+const OWN_REQUESTS_KEPT = 64;
+const REQUESTS_TRACKED = 256;
 
-function recordDiagnostic(session: vscode.DebugSession, line: string): void {
-    const trimmed = line.length > DIAG_LINE_CAP ? line.substring(0, DIAG_LINE_CAP - 1) + '…' : line;
-    let buffer = diagnosticsBySessionId.get(session.id);
-    if (!buffer) {
-        buffer = [];
-        diagnosticsBySessionId.set(session.id, buffer);
-        // Prune oldest session ids (Map preserves insertion order).
-        while (diagnosticsBySessionId.size > DIAG_KEPT_SESSIONS) {
-            const oldest = diagnosticsBySessionId.keys().next().value!;
-            if (oldest === session.id) { break; }
-            diagnosticsBySessionId.delete(oldest);
-        }
-    }
-    buffer.push(trimmed);
-    if (buffer.length > DIAG_RING_SIZE) { buffer.shift(); }
+/** Requests the tools are about to send, by command, not yet seen going to the adapter. */
+const ownRequestsDue = new WeakMap<vscode.DebugSession, Array<{ command: string; at: number }>>();
+/** Requests seen going to the adapter, by seq: true when the tools sent it. Dropped with the response. */
+const requestsSent = new WeakMap<vscode.DebugSession, Map<number, boolean>>();
+
+/**
+ * Announces a request a tool is about to send to `session`, so that its
+ * failure counts as the tool's: `customRequestWithTimeout` calls it. The
+ * tracker matches it to the next request of that command it sees.
+ */
+export function noteOwnRequest(session: vscode.DebugSession, command: string): void {
+    const now = Date.now();
+    const due = (ownRequestsDue.get(session) ?? []).filter((entry) => now - entry.at <= OWN_REQUEST_WINDOW_MS);
+    due.push({ command, at: now });
+    ownRequestsDue.set(session, due.slice(-OWN_REQUESTS_KEPT));
 }
 
-/** The most recent session's captured adapter errors/output, oldest first. */
-export function getRecentDiagnostics(): string[] {
-    const last = [...diagnosticsBySessionId.values()].pop();
-    return last ? [...last] : [];
+/** A request on its way to the adapter: remember its seq, and whether a tool announced it. */
+function noteRequestSent(session: vscode.DebugSession, message: any): void {
+    if (typeof message?.seq !== 'number') {
+        return;
+    }
+    const now = Date.now();
+    const due = ownRequestsDue.get(session);
+    const index = due ? due.findIndex((entry) => entry.command === message.command && now - entry.at <= OWN_REQUEST_WINDOW_MS) : -1;
+    if (index >= 0) {
+        due?.splice(index, 1);
+    }
+    let sent = requestsSent.get(session);
+    if (!sent) {
+        sent = new Map();
+        requestsSent.set(session, sent);
+    }
+    sent.set(message.seq, index >= 0);
+    if (sent.size > REQUESTS_TRACKED) {
+        sent.delete(sent.keys().next().value as number);
+    }
+}
+
+/** Who sent the request a response answers: `tools`, `vscode`, or undefined when the tracker never saw it. */
+function senderOf(session: vscode.DebugSession, response: any): 'tools' | 'vscode' | undefined {
+    const sent = requestsSent.get(session);
+    const seq = response?.request_seq;
+    if (!sent || typeof seq !== 'number' || !sent.has(seq)) {
+        return undefined;
+    }
+    const own = sent.get(seq);
+    sent.delete(seq);
+    return own ? 'tools' : 'vscode';
+}
+
+/**
+ * A failed response: a warning for a request a tool sent (the tool reports
+ * it), an error for one VS Code sent; when the tracker did not see the
+ * request, a warning while a tool call runs in this window, else an error.
+ */
+function journalFailedResponse(journal: ProblemJournal, session: vscode.DebugSession, message: any, sender: 'tools' | 'vscode' | undefined): void {
+    const reason = message.message ?? message.body?.error?.format;
+    if (reason === 'cancelled') {
+        return;
+    }
+    const text = failedResponseMessage(String(message.command), reason ?? '<no message>');
+    const ours = sender === 'tools' || (sender === undefined && journal.callsInFlight() > 0);
+    const known = classifyProblem(text, 'dap');
+    journal.append({
+        source: 'dap',
+        origin: session.name,
+        severity: ours ? 'warning' : 'error',
+        message: text,
+        debugSessionId: session.id,
+        ...(known ? { code: known.code, hint: known.hint } : {}),
+    });
+}
+
+/**
+ * What adapter output weighs, by category, and whose it is. cdt-gdb-adapter
+ * (behind `gdbtarget`) forwards the GDB server's stdout and stderr as
+ * `server`, its whole log included, so that is `info` like the adapter's
+ * `console`; GDB's own `stderr` is a warning. The target's `stdout`, GDB's
+ * `log` stream and anything else are not journaled.
+ */
+const OUTPUT_KINDS: Readonly<Partial<Record<string, { severity: ProblemSeverity; source: ProblemSource }>>> = {
+    stderr: { severity: 'warning', source: 'dap' },
+    console: { severity: 'info', source: 'dap' },
+    important: { severity: 'info', source: 'dap' },
+    server: { severity: 'info', source: 'gdb-server' },
+};
+
+/**
+ * Adapter output of a journaled category, one record per line, each weighed
+ * and coded by `classifyProblem` when it knows the line.
+ */
+function journalOutput(journal: ProblemJournal, session: vscode.DebugSession, category: unknown, output: string): void {
+    const kind = OUTPUT_KINDS[typeof category === 'string' ? category : 'console'];
+    if (!kind) {
+        return;
+    }
+    for (const line of output.split(/\r?\n/)) {
+        const text = line.trim();
+        if (text.length === 0) {
+            continue;
+        }
+        const known = classifyProblem(text, kind.source);
+        journal.append({
+            source: known?.source ?? kind.source,
+            origin: session.name,
+            severity: known?.severity ?? kind.severity,
+            message: text,
+            debugSessionId: session.id,
+            ...(known ? { code: known.code, hint: known.hint } : {}),
+        });
+    }
 }
 
 // ── Output capture (GDB commands on cdt-gdb-adapter) ──────────────
@@ -471,6 +571,8 @@ function sessionEnded(session: vscode.DebugSession): void {
     closeCaptures(session);
     gdbLogpointsBySession.delete(session);
     pendingBreakpointRequests.delete(session);
+    ownRequestsDue.delete(session);
+    requestsSent.delete(session);
     for (const waiter of [...breakpointSyncWaiters]) {
         if (waiter.session === session) {
             waiter.settle(false);
@@ -488,40 +590,40 @@ function sessionEnded(session: vscode.DebugSession): void {
 /**
  * The adapter tracker of one session: what `registerSessionStateTracker`'s
  * factory hands VS Code for every session, exported so tests can feed it
- * messages. Adds the session to the live list.
+ * messages. Adds the session to the live list; problems go to `journal`,
+ * the window's by default.
  */
-export function createSessionTracker(session: vscode.DebugSession): vscode.DebugAdapterTracker {
+export function createSessionTracker(session: vscode.DebugSession, journal: ProblemJournal = problemJournal()): vscode.DebugAdapterTracker {
     // VS Code's restart of an adapter without a restart request relaunches it in the same session.
     endedSessions.delete(session);
     addLiveSession(session);
     return {
         onWillReceiveMessage(message: any): void {
-            if (message?.type === 'request' && message.command === 'setBreakpoints') {
+            if (message?.type !== 'request') {
+                return;
+            }
+            noteRequestSent(session, message);
+            if (message.command === 'setBreakpoints') {
                 noteBreakpointRequest(session, message);
             }
         },
         onDidSendMessage(message: any): void {
-            if (message?.type === 'response' && message.command === 'setBreakpoints') {
-                noteBreakpointResponse(session, message);
-            }
-            // Failed request responses carry the adapter's own error
-            // text — the detail start_debugging failures otherwise
-            // leave in the extension-host log.
-            if (message?.type === 'response' && message.success === false) {
-                recordDiagnostic(session, `error response to '${message.command}': ${message.message ?? '<no message>'}`);
+            if (message?.type === 'response') {
+                const sender = senderOf(session, message);
+                if (message.command === 'setBreakpoints') {
+                    noteBreakpointResponse(session, message);
+                }
+                if (message.success === false) {
+                    journalFailedResponse(journal, session, message, sender);
+                }
                 return;
             }
             if (message?.type !== 'event') { return; }
             if (message.event === 'output') {
                 const category = message.body?.category;
-                collectOutput(session, category, String(message.body?.output ?? ''));
-                // Adapter stderr/console/important output (GDB server
-                // banners, connect errors). stdout is deliberately
-                // excluded — chatty target printf would flush real
-                // errors out of the ring.
-                if (category === 'stderr' || category === 'console' || category === 'important') {
-                    recordDiagnostic(session, `[${category}] ${String(message.body?.output ?? '').trim()}`);
-                }
+                const output = String(message.body?.output ?? '');
+                collectOutput(session, category, output);
+                journalOutput(journal, session, category, output);
                 return;
             }
             if (message.event === 'breakpoint') {
@@ -555,7 +657,10 @@ export function createSessionTracker(session: vscode.DebugSession): vscode.Debug
         },
         onError(error: Error): void {
             logger.debug(`[session-tracker] adapter error on ${session.name}`, error);
-            recordDiagnostic(session, `adapter error: ${error.message ?? String(error)}`);
+            journal.append({
+                source: 'dap', origin: session.name, severity: 'error',
+                message: `adapter error: ${error?.message ?? String(error)}`, debugSessionId: session.id,
+            });
         },
     };
 }

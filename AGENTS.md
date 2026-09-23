@@ -66,6 +66,9 @@ Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts` and
 `src/cmsisJobTracker.ts` (the window's CMSIS tasks, the `cmsis_action` jobs
 and what holds the probe); `src/cmsisBuildDiagnosis.ts` with
 `src/core/buildFailure.ts` (the error lines of a failed build);
+`src/core/problemJournal.ts`, `src/core/problemFeed.ts` and
+`src/windowProblems.ts` (the window's problem journal behind
+`get_recent_problems`; sources append through `problemJournal()`);
 `src/core/` in general (SVD parsing, fault decoding and triage, CMSIS
 target selection and task classification, tool metrics, topic slicing of
 the agent guide), where most modules do not import `vscode` at all.

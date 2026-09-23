@@ -66,6 +66,9 @@ const ARGS = {
     lookup_peripheral: { name: 'SCB' },
     lookup_register: { name: 'SCB_CFSR' },
     get_debug_instructions: {},
+    // Errors only: the journal is shared by the shapes of this process, and the
+    // warnings of the failed serial_open calls fold together or not by timing (10 s).
+    get_recent_problems: { minSeverity: 'error' },
 };
 
 function request(port, method, sid, body) {
