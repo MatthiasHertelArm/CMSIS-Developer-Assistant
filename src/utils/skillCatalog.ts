@@ -25,10 +25,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export type SkillCategory = 'project' | 'bring-up' | 'debug' | 'pack' | 'devops' | 'help';
+/**
+ * The upstream category directories (`generic-mcu-skills/skills/<category>/`)
+ * plus the extension's own. A category may have no skills at the pinned
+ * commit; it then gets no router, no picker heading and no help section.
+ */
+export type SkillCategory = 'project' | 'bring-up' | 'debug' | 'pack' | 'ethos-u' | 'devops' | 'help';
 
 /** Display order in the picker and in the generated catalog. */
-export const SKILL_CATEGORY_ORDER: readonly SkillCategory[] = ['project', 'bring-up', 'debug', 'pack', 'devops', 'help'];
+export const SKILL_CATEGORY_ORDER: readonly SkillCategory[] = ['project', 'bring-up', 'debug', 'pack', 'ethos-u', 'devops', 'help'];
 
 /** Picker group headings. */
 export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
@@ -36,6 +41,7 @@ export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
     'bring-up': 'Device debug and trace knowledge',
     'debug': 'Live debugging',
     'pack': 'CMSIS-Pack debug authoring',
+    'ethos-u': 'Ethos-U NPU',
     'devops': 'DevOps',
     'help': 'Help',
 };

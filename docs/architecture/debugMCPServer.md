@@ -137,8 +137,10 @@ build-artefact sentence appears only while that group is on.
 
 `registerTools()` registers each tool with a literal name
 (`mcp.registerTool('read_memory', …)`), its description from the `ABOUT`
-table, a zod input schema, and the annotations `LOOK_ONLY` or `ALTERS_TARGET`
-where they apply. Every callback passes the parsed arguments to one handler
+table, a zod input schema, and the annotations where they apply:
+`LOOK_ONLY`, `ALTERS_TARGET`, or `SETS_UP_TARGET` for `read_cycle_counter`,
+which enables the cycle counter on first use (not read-only, not
+destructive, idempotent). Every callback passes the parsed arguments to one handler
 method and hands its outcome to `reply()`. Nothing is caught here: a
 rejection reaches `MeasuredMcpServer`, which answers it as an error result
 itself (see [Results](#results)). `src/packDocsTools.ts` and

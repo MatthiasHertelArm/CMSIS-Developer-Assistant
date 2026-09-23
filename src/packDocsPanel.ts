@@ -48,6 +48,21 @@ interface ToolSpec {
     run: (args: never) => Promise<ToolText>;
 }
 
+/** The command the Documents tab's Import button runs, through a `command` message. */
+const IMPORT_USER_DOC_COMMAND = 'cmsis-developer-assistant.importUserDoc';
+/**
+ * The only command ids the panel's own script posts. A `command` message
+ * naming any other id is ignored and logged: the webview is CSP-protected,
+ * but it renders text from PDFs and pdsc files, and must not be able to run
+ * arbitrary VS Code commands.
+ */
+const PANEL_COMMANDS: ReadonlySet<string> = new Set([IMPORT_USER_DOC_COMMAND]);
+
+/** The command id a `command` message may run, or undefined when the panel offers no such command. */
+export function panelCommand(requested: unknown): string | undefined {
+    return typeof requested === 'string' && PANEL_COMMANDS.has(requested) ? requested : undefined;
+}
+
 function tools(docs: PackDocsHandler, build: BuildInfoHandler | undefined): ToolSpec[] {
     const list: ToolSpec[] = [
         { name: 'list_target_docs', template: {}, run: (a) => docs.handleListTargetDocs(a) },
@@ -246,7 +261,12 @@ export class PackDocsPanel {
                     return;
                 }
                 case 'command': {
-                    await vscode.commands.executeCommand(String(m.command ?? ''));
+                    const command = panelCommand(m.command);
+                    if (command === undefined) {
+                        this.log.warn(`[debug panel] ignored a request to run '${String(m.command)}': not a command this panel offers`);
+                        return;
+                    }
+                    await vscode.commands.executeCommand(command);
                     // The import command changes the store and the target's document set.
                     this.post({ type: 'refresh' });
                     return;
@@ -492,7 +512,7 @@ export class PackDocsPanel {
     $('docFilter').oninput = () => { docFilter = $('docFilter').value; renderDocTable(); };
     $('docSource').value = docSource; $('docSource').onchange = () => { docSource = $('docSource').value; renderDocTable(); };
     $('runList').onclick = () => runTool('list_target_docs', { ...currentArgs() });
-    $('importDoc').onclick = () => vscode.postMessage({ type: 'command', command: 'cmsis-developer-assistant.importUserDoc' });
+    $('importDoc').onclick = () => vscode.postMessage({ type: 'command', command: '${IMPORT_USER_DOC_COMMAND}' });
     renderDocTable();
   }
   function renderDocTable() {

@@ -78,8 +78,8 @@ try/catch so one failure does not abort the rest.
 `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help`, the
 Open-CMSIS-Pack/cmsis-skills skills vendored under `skills/cmsis-skills/` at
 the commit pinned in `skills/cmsis-skills.lock.json`, and one generated
-*router* skill per category (`cmsis-project`, `cmsis-bring-up`,
-`cmsis-pack`). Each entry records its `dependsOn` — the `$name` references in
+*router* skill per category that has skills there (`cmsis-project`,
+`cmsis-bring-up`, `cmsis-pack`; `ethos-u` has none yet). Each entry records its `dependsOn` — the `$name` references in
 its text; a router depends on all members of its category. The cmsis-skills
 skills plus the routers are the *AI Skills Pack* (`isPackSkill()`); the
 bundled skills are not part of it (`isBundledSkill()`).

@@ -39,6 +39,14 @@ and the lock's content hash, so a hand edit under `cmsis-skills/` or a
 forgotten re-sync fails `npm test`. Upstream has no tags or releases; the
 commit SHA is the version.
 
+A new upstream category needs its id in `SkillCategory`, a label and a place
+in `SKILL_CATEGORY_ORDER` (`src/utils/skillCatalog.ts`) before the sync
+accepts it; its router needs an entry under `categories` in
+`scripts/skills.config.json`, and the sync warns about a category that has
+skills but no router. A category without skills at the pinned commit (such
+as `ethos-u` today) gets no router, no picker heading and no `cmsis-help`
+section, so it changes none of the generated files.
+
 Router descriptions are the text skills-aware harnesses use to decide when
 to invoke the entry point. Keep them trigger-rich and under 1024 characters
 (the Agent Skills limit — the test checks).

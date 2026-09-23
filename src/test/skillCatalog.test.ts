@@ -18,6 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+    SKILL_CATEGORY_LABELS,
     SKILL_CATEGORY_ORDER,
     SkillCatalog,
     SkillCatalogEntry,
@@ -350,6 +351,46 @@ suite('Agent skill catalog', () => {
             const groups = groupByCategory(fake);
             assert.deepStrictEqual([...groups.keys()], ['bring-up', 'debug', 'pack', 'help']);
             assert.deepStrictEqual(groups.get('pack')?.map(entry => entry.name), ['r-pack', 'gen', 'val']);
+        });
+    });
+
+    /**
+     * Upstream added the `ethos-u` category; `skills:sync -- --update` refused
+     * it until `SkillCategory` knew it. At the pinned commit it has no skills,
+     * so it must leave every generated file as it is.
+     */
+    suite('a category without skills (ethos-u)', () => {
+        test('ethos-u is a known category with a label, placed after the CMSIS ones', () => {
+            assert.deepStrictEqual(SKILL_CATEGORY_ORDER, ['project', 'bring-up', 'debug', 'pack', 'ethos-u', 'devops', 'help']);
+            assert.strictEqual(SKILL_CATEGORY_LABELS['ethos-u'], 'Ethos-U NPU');
+            for (const category of SKILL_CATEGORY_ORDER) {
+                assert.ok(SKILL_CATEGORY_LABELS[category], `${category} has no label`);
+            }
+        });
+
+        test('with no skills it gets no picker heading, no router and no help section', () => {
+            assert.ok(!groupByCategory(catalog()).has('ethos-u'));
+            assert.ok(!catalog().skills.some(entry => entry.category === 'ethos-u'));
+            const help = fs.readFileSync(path.join(skillsDir, HELP_SKILL_NAME, 'SKILL.md'), 'utf8');
+            assert.ok(!help.includes('Ethos-U'), 'the shipped help names no empty category');
+        });
+
+        test('once it has skills and a router, the picker and the help show it after pack', () => {
+            const npu: SkillCatalogEntry = {
+                name: 'npu-skill', description: 'Decode an NPU command stream. Use when asked.', category: 'ethos-u',
+                kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/npu-skill', dependsOn: [],
+            };
+            const router: SkillCatalogEntry = {
+                name: 'cmsis-npu', description: 'Ethos-U entry point.', category: 'ethos-u', kind: 'router', source: 'generated',
+                path: 'skills/cmsis-npu', shortDescription: 'Work on the Ethos-U NPU', dependsOn: ['npu-skill'],
+            };
+            const grown: SkillCatalog = { ...catalog(), skills: [...catalog().skills, npu, router] };
+            const categories = [...groupByCategory(grown).keys()];
+            assert.strictEqual(categories.indexOf('ethos-u'), categories.indexOf('pack') + 1);
+            const help = renderHelpSkillMarkdown(grown,
+                readPackageContributions(JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))),
+                JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'skills.config.json'), 'utf8')).help);
+            assert.ok(help.includes('### Ethos-U NPU (`/cmsis-npu`)\n\n- `$npu-skill` — Decode an NPU command stream.'), help);
         });
     });
 

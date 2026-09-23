@@ -115,9 +115,12 @@ export interface ArmDocEntry {
 const V = '2026-08-27';
 
 /**
- * The Arm documents the debug/trace bring-up skills need, verified against
- * documentation-service.arm.com on the date in `verified` (see
- * test/transport/arm-catalogue-check.js to re-check before a release).
+ * The Arm documents the debug/trace bring-up skills need, verified by hand
+ * against documentation-service.arm.com on the date in `verified`. No script
+ * re-checks them against the service: `src/test/armDocs.test.ts` checks,
+ * offline, only that every entry has a unique id, a URL that parses back and
+ * a date. To re-check before a release, open `armDocApiUrl()` of each entry
+ * (or `fetch_doc` it) and update `verified`.
  * Generic User Guides are listed so pdsc-linked books get a title, but
  * `armDocsFor` does not add them on its own.
  */

@@ -30,6 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - `get_call_stack` with a thread id the target does not have is `INVALID_ARGUMENT` with the hint to call `get_threads`, not `INTERNAL`.
   - An inspection that finds no focused stack frame is `TARGET_RUNNING` with the hint `wait_for_stop` or `pause_execution`, not `INTERNAL`.
   - The README explains how to read a result (`isError`, the `[CODE]` prefix and hint, `structuredContent`).
+- **The Pack Docs panel runs only the command its own page offers.** A message from its webview naming any other command id is ignored and logged. The page is CSP-protected, so the risk was low, but it shows text taken from PDFs and pdsc files.
+- **`read_cycle_counter` is no longer annotated read-only.** Its first call enables the DWT cycle counter by writing DEMCR and DWT_CTRL; it is now marked not read-only, not destructive and idempotent.
+- **`npm run skills:sync -- --update` accepts the `ethos-u` category that upstream cmsis-skills added** (label "Ethos-U NPU", listed after the CMSIS-Pack skills). A category without skills at the pinned commit adds no router, picker heading or help section, so the generated files are unchanged; the sync warns about a category that has skills but no router.
 
 ## [2.5.0] - 2026-09-23
 

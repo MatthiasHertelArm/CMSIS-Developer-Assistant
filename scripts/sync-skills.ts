@@ -352,6 +352,15 @@ function main(): void {
         }
 
         // --- routers ------------------------------------------------------------
+        // A router comes from a `categories` entry of the config; a category with
+        // skills but no entry gets none, and the catalog test then asks for one.
+        const configured = new Set(config.categories.map(category => category.id));
+        for (const category of SKILL_CATEGORY_ORDER) {
+            const count = upstream.filter(skill => skill.category === category).length;
+            if (count > 0 && !configured.has(category)) {
+                console.warn(`  category ${category} has ${count} upstream skill(s) but no router in scripts/skills.config.json; add one`);
+            }
+        }
         const allDescriptions = new Map(upstream.map(skill => [skill.name, skill.description]));
         const routerEntries: SkillCatalogEntry[] = [];
         for (const category of config.categories) {
