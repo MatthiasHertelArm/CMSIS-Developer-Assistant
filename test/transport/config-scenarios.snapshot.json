@@ -11283,6 +11283,11 @@
             "command": "cmsis-developer-assistant.openPackDocsPanel",
             "title": "Open Pack Docs Panel",
             "category": "CMSIS Developer Assistant"
+          },
+          {
+            "command": "cmsis-developer-assistant.copyRecentProblems",
+            "title": "Copy Recent Problems",
+            "category": "CMSIS Developer Assistant"
           }
         ],
         "commandPalette": [
@@ -11434,6 +11439,10 @@
           "fn": "readPackDocsGates",
           "args": [],
           "returned": "<object>"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.copyRecentProblems"
         },
         {
           "ev": "call",
@@ -12647,6 +12656,7 @@
             }
           ],
           "commands": [
+            "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
@@ -12660,6 +12670,9 @@
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
           "subscriptions": [
+            "<Object>",
+            "<Object>",
+            "command:cmsis-developer-assistant.copyRecentProblems",
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
             "<Object>",
@@ -12757,6 +12770,10 @@
           "fn": "readPackDocsGates",
           "args": [],
           "returned": "<object>"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.copyRecentProblems"
         },
         {
           "ev": "call",
@@ -13186,6 +13203,7 @@
             }
           ],
           "commands": [
+            "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
@@ -13199,6 +13217,9 @@
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
           "subscriptions": [
+            "<Object>",
+            "<Object>",
+            "command:cmsis-developer-assistant.copyRecentProblems",
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
             "<Object>",
@@ -13297,6 +13318,10 @@
           "fn": "readPackDocsGates",
           "args": [],
           "returned": "<object>"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.copyRecentProblems"
         },
         {
           "ev": "call",
@@ -13625,6 +13650,7 @@
             }
           ],
           "commands": [
+            "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
@@ -13638,6 +13664,9 @@
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
           "subscriptions": [
+            "<Object>",
+            "<Object>",
+            "command:cmsis-developer-assistant.copyRecentProblems",
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
             "<Object>",
@@ -13694,6 +13723,10 @@
           "fn": "readPackDocsGates",
           "args": [],
           "returned": "<object>"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.copyRecentProblems"
         },
         {
           "ev": "call",
@@ -13901,6 +13934,7 @@
             }
           ],
           "commands": [
+            "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
@@ -13914,6 +13948,9 @@
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
           "subscriptions": [
+            "<Object>",
+            "<Object>",
+            "command:cmsis-developer-assistant.copyRecentProblems",
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
             "<Object>",
@@ -13962,6 +13999,10 @@
           "fn": "readPackDocsGates",
           "args": [],
           "returned": "<object>"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.copyRecentProblems"
         },
         {
           "ev": "call",
@@ -14353,6 +14394,7 @@
             }
           ],
           "commands": [
+            "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
@@ -14366,6 +14408,9 @@
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
           "subscriptions": [
+            "<Object>",
+            "<Object>",
+            "command:cmsis-developer-assistant.copyRecentProblems",
             "debugAdapterTrackerFactory:*",
             "event:debug.onDidTerminateDebugSession",
             "<Object>",

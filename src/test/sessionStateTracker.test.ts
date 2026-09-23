@@ -16,6 +16,7 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import { ProblemJournal, type ProblemRecord } from '../core/problemJournal';
 import {
     awaitBreakpointsApplied,
     captureOutput,
@@ -23,6 +24,7 @@ import {
     forgetGdbLogpoints,
     gdbLogpointsOf,
     getLiveSessionNames,
+    noteOwnRequest,
     rememberGdbLogpoint,
     waitForSessionEnd,
     waitForStopEvent,
@@ -39,9 +41,9 @@ interface Tracked {
 let sessionCount = 0;
 const open: Tracked[] = [];
 
-function track(type = 'gdbtarget'): Tracked {
+function track(type = 'gdbtarget', journal?: ProblemJournal): Tracked {
     const session = { id: `tracker-test-${++sessionCount}`, name: `Tracker test ${sessionCount}`, type, configuration: {} } as unknown as vscode.DebugSession;
-    const tracker = createSessionTracker(session);
+    const tracker = createSessionTracker(session, journal);
     const tracked: Tracked = {
         session,
         tracker,
@@ -238,6 +240,107 @@ suite('Session state tracker', () => {
             again.onDidSendMessage?.({ type: 'event', event: 'stopped', body: { reason: 'breakpoint', threadId: 1 } });
             assert.deepStrictEqual(await stop, { kind: 'stopped', reason: 'breakpoint', threadId: 1 });
             again.onWillStopSession?.();
+        });
+    });
+
+    suite('problems on the adapter channel (#48)', () => {
+        let journal: ProblemJournal;
+
+        setup(() => {
+            journal = new ProblemJournal();
+        });
+
+        /** A tracked session whose problems go to this suite's journal. */
+        function journaled(): Tracked {
+            return track('gdbtarget', journal);
+        }
+
+        const only = (): ProblemRecord => {
+            const { records } = journal.query();
+            assert.strictEqual(records.length, 1, JSON.stringify(records));
+            return records[0];
+        };
+
+        test('a failed response to a request VS Code sent is an error, classified when the line is known', () => {
+            const a = journaled();
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 5, command: 'setBreakpoints', arguments: { source: { path: '/w/main.c' } } });
+            a.tracker.onDidSendMessage?.({
+                type: 'response', request_seq: 5, command: 'setBreakpoints', success: false,
+                message: 'Cannot execute this command while the target is running.',
+            });
+            const record = only();
+            assert.deepStrictEqual(
+                [record.source, record.severity, record.code, record.hint, record.origin, record.debugSessionId, record.message],
+                ['dap', 'error', 'TARGET_RUNNING', 'Call pause_execution first.', a.session.name, a.session.id,
+                    'error response to \'setBreakpoints\': Cannot execute this command while the target is running.']);
+        });
+
+        test('a failed response to a request a tool announced is a warning: the tool reports it', () => {
+            const a = journaled();
+            noteOwnRequest(a.session, 'readMemory');
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 9, command: 'readMemory', arguments: { memoryReference: '0x0', count: 4 } });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 9, command: 'readMemory', success: false, message: 'Unable to read memory.' });
+            assert.deepStrictEqual([only().severity, only().message], ['warning', 'error response to \'readMemory\': Unable to read memory.']);
+            // The announcement is used up: the next readMemory is VS Code's own.
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 10, command: 'readMemory' });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 10, command: 'readMemory', success: false, message: 'Unable to read memory at 0x4.' });
+            assert.strictEqual(journal.query().records[1].severity, 'error');
+        });
+
+        test('a failed response whose request the tracker never saw is a warning while a tool call runs, else an error', () => {
+            const a = journaled();
+            const call = journal.beginCall('abcd1234-1');
+            a.tracker.onDidSendMessage?.({ type: 'response', command: 'launch', success: false, message: 'Failed to launch the GDB server' });
+            call.end();
+            a.tracker.onDidSendMessage?.({ type: 'response', command: 'threads', success: false, body: { error: { id: 1, format: 'No threads' } } });
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.message, record.toolCallId]), [
+                ['warning', 'error response to \'launch\': Failed to launch the GDB server', 'abcd1234-1'],
+                ['error', 'error response to \'threads\': No threads', undefined],
+            ]);
+        });
+
+        test('a cancelled request and a successful response are no problem', () => {
+            const a = journaled();
+            a.tracker.onDidSendMessage?.({ type: 'response', command: 'stackTrace', success: false, message: 'cancelled' });
+            a.tracker.onDidSendMessage?.({ type: 'response', command: 'threads', success: true, body: { threads: [] } });
+            assert.strictEqual(journal.size, 0);
+        });
+
+        test('stderr is a warning, console and important are info, the target\'s stdout and GDB\'s log are left out; a known line takes its code, weight and source', () => {
+            const a = journaled();
+            a.output('hello from the target\n', 'stdout');
+            a.output('&"set pagination off\\n"\n', 'log');
+            a.output('   \n', 'stderr');
+            a.output('warning: could not read symbols\n', 'stderr');
+            a.output('Reading symbols from blinky.elf...\n', 'console');
+            a.output('Program received signal SIGTRAP\n', 'important');
+            a.output('Failed to power up DAP\n', 'stderr');
+            a.output('Waiting for a debug probe matching unique ID \'cmsisdap:\' to be connected...\n', 'console');
+            a.output('telemetry blob', 'telemetry');
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.source, record.code ?? '-', record.message]), [
+                ['warning', 'dap', '-', 'warning: could not read symbols'],
+                ['info', 'dap', '-', 'Reading symbols from blinky.elf...'],
+                ['info', 'dap', '-', 'Program received signal SIGTRAP'],
+                ['error', 'gdb-server', 'DAP_POWER_UP_FAILED', 'Failed to power up DAP'],
+                ['error', 'gdb-server', 'PROBE_BUSY', 'Waiting for a debug probe matching unique ID \'cmsisdap:\' to be connected...'],
+            ]);
+        });
+
+        test('the GDB server\'s output (category server on cdt-gdb-adapter) is the gdb-server\'s, info unless the line is known, one record per line', () => {
+            const a = journaled();
+            a.output('Listening on port 3333\r\nFailed to power up DAP\n\n', 'server');
+            a.output('gdbserver exited with code 1\n', 'server');
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.source, record.code ?? '-', record.message]), [
+                ['info', 'gdb-server', '-', 'Listening on port 3333'],
+                ['error', 'gdb-server', 'DAP_POWER_UP_FAILED', 'Failed to power up DAP'],
+                ['info', 'gdb-server', '-', 'gdbserver exited with code 1'],
+            ]);
+        });
+
+        test('an adapter error is an error', () => {
+            const a = journaled();
+            a.tracker.onError?.(new Error('pipe closed'));
+            assert.deepStrictEqual([only().severity, only().message], ['error', 'adapter error: pipe closed']);
         });
     });
 });

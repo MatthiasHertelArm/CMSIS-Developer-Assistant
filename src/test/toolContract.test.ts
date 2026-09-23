@@ -74,7 +74,7 @@ suite('Tool contract', () => {
             '`cmsis-developer-assistant.buildInfo.enabled`',
             'use `list_debug_windows` and `select_debug_window`',
             'A running target rejects reads and steps: call `pause_execution` first.',
-            'If a tool fails twice, call `get_session_status`',
+            'If a tool fails twice, call `get_session_status` and `get_recent_problems`',
         ]) {
             assert.ok(contract.rules.includes(phrase), `the rules lost "${phrase}"`);
         }

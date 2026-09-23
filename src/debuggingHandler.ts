@@ -86,8 +86,11 @@ import {
 } from './handler/gdbText';
 import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
-import { recentAdapterTraffic, renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
+import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from './handler/problemText';
+import { renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
 import { normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
+import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
+import { syncProblemsPanel } from './windowProblems';
 
 export type { CmsisAction } from './handler/cmsisAction';
 export { probeSchedule } from './handler/cmsisAction';
@@ -116,6 +119,7 @@ interface StackRequest { threadId?: number; levels?: number; timeoutMs?: number 
 interface FrameValuesRequest { frameId: number; scope?: VariableScope; variableNames?: string[]; timeoutMs?: number }
 interface CmsisRequest { action: CmsisAction; target?: string; timeoutMs?: number }
 interface FlashRequest { cbuildRunFile?: string; timeoutMs?: number }
+interface ProblemsRequest { sinceSeq?: number; sources?: ProblemSource[]; minSeverity?: ProblemSeverity; limit?: number }
 
 /**
  * The debugging tools as the MCP server, the control server and the window
@@ -151,6 +155,7 @@ export interface IDebuggingHandler {
     handleGetDeviceInfo(): Answer;
     handleCheckTargetConnection(): Answer;
     handleGetSessionStatus(): Answer;
+    handleGetRecentProblems(args?: ProblemsRequest): Answer;
     handleGetCallStack(args: StackRequest): Answer;
     handleGetThreads(args?: TimeoutArg): Answer;
     handleGetFrameVariables(args: FrameValuesRequest): Answer;
@@ -349,6 +354,8 @@ export class DebuggingHandler
     private readonly dbg: IDebuggingExecutor;
     private readonly launchConfigs: IDebugConfigurationManager;
     private readonly configuredSeconds: number;
+    /** The window's problem journal (#48), which `get_recent_problems` reads. */
+    private readonly journal: ProblemJournal;
     /**
      * The breakpoint list the last state rendering showed, joined by line
      * feeds; undefined until the first one, which is not the same as an
@@ -356,10 +363,16 @@ export class DebuggingHandler
      */
     private shownBreakpoints: string | undefined;
 
-    constructor(executor: IDebuggingExecutor, configurations: IDebugConfigurationManager, timeoutSeconds: number) {
+    constructor(
+        executor: IDebuggingExecutor,
+        configurations: IDebugConfigurationManager,
+        timeoutSeconds: number,
+        journal: ProblemJournal = problemJournal(),
+    ) {
         this.dbg = executor;
         this.launchConfigs = configurations;
         this.configuredSeconds = timeoutSeconds;
+        this.journal = journal;
     }
 
     /** VS Code logpoint message → GDB `dprintf` format and arguments. */
@@ -613,8 +626,8 @@ export class DebuggingHandler
             return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. `
                 + `Current state: ${this.fullState(started)}`;
         } catch (caught) {
-            const failed = wrapError('Error starting debug session', caught);
-            throw new ToolError(failed.code, `${failed.message}${recentAdapterTraffic()}`, failed.hint, failed.data);
+            // What the adapter and the GDB server said rides along as problem records (#48).
+            throw wrapError('Error starting debug session', caught);
         }
     }
 
@@ -708,6 +721,26 @@ export class DebuggingHandler
     async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
         return renderSessionStatus(status, this.dbg.getDiagnostics(), this.cmsisTaskLines());
+    }
+
+    /**
+     * `get_recent_problems` (#48): this window's problem journal from
+     * `sinceSeq` on, at warning or above unless asked otherwise, the newest
+     * 20 (at most 50). The Problems panel is read first when its source is
+     * asked for, as it is when no source is named.
+     */
+    async handleGetRecentProblems(args: ProblemsRequest = {}): Answer {
+        const known = <T>(values: readonly T[], value: unknown): value is T => values.includes(value as T);
+        const sources = Array.isArray(args.sources) ? args.sources.filter((source) => known(PROBLEM_SOURCES, source)) : [];
+        const minSeverity = known(PROBLEM_SEVERITIES, args.minSeverity) ? args.minSeverity : 'warning';
+        const sinceSeq = Number.isInteger(args.sinceSeq) && (args.sinceSeq as number) >= 0 ? args.sinceSeq : undefined;
+        const limit = Number.isInteger(args.limit) ? Math.min(Math.max(args.limit as number, 1), PROBLEMS_MAX_LIMIT) : PROBLEMS_DEFAULT_LIMIT;
+        if (sources.length === 0 || sources.includes('problems')) {
+            syncProblemsPanel(this.journal);
+        }
+        const chosen = sources.length > 0 ? sources : undefined;
+        const page = this.journal.query({ sinceSeq, sources: chosen, minSeverity, limit });
+        return renderProblemPage(page, { sinceSeq, sources: chosen, minSeverity });
     }
 
     /** The CMSIS task line of `get_session_status`; never throws, since that tool must not. */

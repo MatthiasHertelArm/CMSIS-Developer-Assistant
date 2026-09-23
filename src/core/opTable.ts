@@ -18,8 +18,8 @@
  * The set of operations that can cross a window boundary.
  *
  * Upstream hand-writes a switch over ~16 ops in the control server and a
- * matching set of forwarding methods in the router. This project has 34 debugging
- * ops plus 10 serial ops; writing 44 cases twice guarantees the two drift, and
+ * matching set of forwarding methods in the router. This project has 35 debugging
+ * ops plus 10 serial ops; writing 45 cases twice guarantees the two drift, and
  * a tool that falls out of the switch becomes silently unroutable — it would
  * run in the router window instead, against the wrong board.
  *
@@ -86,6 +86,7 @@ export const DEBUG_OPS = [
     'handleGetDeviceInfo',
     'handleCheckTargetConnection',
     'handleGetSessionStatus',
+    'handleGetRecentProblems',
     'handleGetCallStack',
     'handleGetThreads',
     'handleGetFrameVariables',

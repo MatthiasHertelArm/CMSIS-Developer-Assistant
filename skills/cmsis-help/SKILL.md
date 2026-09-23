@@ -18,7 +18,7 @@ Only the user can lift a rule, by asking for the specific command.
 - If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
 - The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
 <!-- cmsis-developer-assistant:rules:end -->
 
 ## How to use this list
@@ -90,6 +90,7 @@ Open the command palette (Ctrl/Cmd+Shift+P) and type the title.
 - **CMSIS Developer Assistant: Import Document for Current Target** (`cmsis-developer-assistant.importUserDoc`) — Copy PDFs the packs do not ship (NDA manuals, portal downloads) into the user documents folder, attributed to the current pack, device, board or core, and index them.
 - **CMSIS Developer Assistant: Open User Documents Folder** (`cmsis-developer-assistant.openUserDocsFolder`) — Reveal the user documents folder in the file manager.
 - **CMSIS Developer Assistant: Open Pack Docs Panel** (`cmsis-developer-assistant.openPackDocsPanel`) — Open the Pack Docs panel: the resolved target, its documents and their index state, the SVD peripherals, the page store (with confirmed actions to clear the extracted text or delete the downloaded PDFs), and a runner for the documentation tools.
+- **CMSIS Developer Assistant: Copy Recent Problems** (`cmsis-developer-assistant.copyRecentProblems`) — Copy the last 50 warnings and errors this window recorded (debug adapter and GDB server, failed tasks and builds, notifications, serial ports) to the clipboard, to paste into a bug report instead of a screenshot.
 
 ## MCP tools
 
@@ -102,7 +103,7 @@ the agents the user selected in the setup) exposes these tool groups:
 - **Inspection** — `get_call_stack`, `get_threads`, `get_frame_variables`, `list_variable_names`, `get_variables_values`, `evaluate_expression`.
 - **Cortex-M** — `read_memory`, `read_core_registers`, `read_peripheral_register` (SVD), `lookup_peripheral` / `lookup_register` (SVD map and bit fields, no session needed), `get_fault_info` (CFSR/HFSR decode), `diagnose_fault` (one-call triage: frame, stack, address, hypotheses), `read_cycle_counter`, `get_device_info`.
 - **Serial ports** — `serial_list_ports`, `serial_open`, `serial_read`, `serial_write`, `serial_close`, `serial_status`, `serial_clear_buffer`, and the Serial Monitor bridge `serial_subscribe_monitor` / `serial_unsubscribe_monitor` / `serial_open_monitor`.
-- **Session health and windows** — `get_session_status`, `check_target_connection`, `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`.
+- **Session health and windows** — `get_session_status`, `check_target_connection`, `get_recent_problems` (what went wrong in the window: adapter and GDB-server errors, failed tasks and builds, notifications), `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`.
 - **Documentation (experimental, off by default — cmsis-developer-assistant.packDocs.enabled)** — `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited answers from the reference manuals, datasheets, errata and board manuals the target's packs ship or link, Arm documents, imported and workspace PDFs, and third-party part datasheets (sensors, ADCs) — start any part-number lookup here; fetch_doc indexes a PDF URL found on the web.
 - **Build artefacts (experimental, off by default — cmsis-developer-assistant.buildInfo.enabled)** — `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current target, read deterministically.
 

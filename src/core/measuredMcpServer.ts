@@ -15,13 +15,16 @@
  */
 
 /**
- * The MCP boundary of every tool: the measurement of each call, the one
- * place where a handler's outcome becomes an MCP result (`toCallToolResult`),
- * and the inputs a session adds to some of its tools (`addArgument`).
+ * The MCP boundary of every tool: the measurement of each call, its call id
+ * and call context (#48), the one place where a handler's outcome becomes an
+ * MCP result (`toCallToolResult`), and the inputs a session adds to some of
+ * its tools (`addArgument`).
  */
 
 import { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { runInCallContext } from './callContext';
+import { renderProblemsBlock } from './problemFeed';
 import { ToolMetrics, classifyOutcome } from './toolMetrics';
 import { JsonObject, ToolError, ToolText, errorText, toToolError } from './toolResult';
 
@@ -72,6 +75,9 @@ function withDetail(base: JsonObject, data: JsonObject | undefined): JsonObject 
  * - a `ToolError`: `[CODE] message` and the hint on the next line, `isError`,
  *   and `structuredContent` `{status: 'error', error_code, message, hint, ...data}`.
  *
+ * The problem records that ride along with a failure or a timeout (#48,
+ * `data.problems`) are also listed under the text, as "Recent problems:".
+ *
  * No tool declares an `outputSchema`, so `tools/list` does not grow; the SDK
  * passes `structuredContent` through without one.
  */
@@ -82,7 +88,7 @@ export function toCallToolResult(outcome: ToolText | ToolError): CallToolResult 
             described.hint = outcome.hint;
         }
         return {
-            content: [{ type: 'text', text: errorText(outcome) }],
+            content: [{ type: 'text', text: errorText(outcome) + renderProblemsBlock(outcome.data?.problems) }],
             isError: true,
             structuredContent: withDetail(described, outcome.data),
         };
@@ -90,7 +96,7 @@ export function toCallToolResult(outcome: ToolText | ToolError): CallToolResult 
     if (typeof outcome === 'string') {
         return { content: [{ type: 'text', text: outcome }] };
     }
-    const content: CallToolResult['content'] = [{ type: 'text', text: outcome.text }];
+    const content: CallToolResult['content'] = [{ type: 'text', text: outcome.text + renderProblemsBlock(outcome.data?.problems) }];
     if (outcome.status === 'ok') {
         return outcome.data === undefined ? { content } : { content, structuredContent: withDetail({ status: 'ok' }, outcome.data) };
     }
@@ -113,11 +119,18 @@ export function toCallToolResult(outcome: ToolText | ToolError): CallToolResult 
  * than by the SDK, whose error result would carry the message alone. Schema
  * errors are raised by the SDK before the callback runs and stay its own.
  *
+ * Every call gets an id, `<first 8 characters of the session id>-<n>` (#48),
+ * and the callback runs in a call context with that id and the session id
+ * (`src/core/callContext.ts`): the router copies both into the control
+ * envelope, and the problem journal stamps its records with the id.
+ *
  * Nothing here depends on vscode; logging and sinks hang off the metrics'
  * onSample callback.
  */
 export class MeasuredMcpServer extends McpServer {
     private readonly addedArguments: AddedArgument[] = [];
+    /** Calls of this server so far; each server serves one MCP session. */
+    private calls = 0;
 
     constructor(serverInfo: ServerInfo, options: ServerOptions, private readonly metrics: ToolMetrics) {
         super(serverInfo, options);
@@ -133,6 +146,12 @@ export class MeasuredMcpServer extends McpServer {
         this.addedArguments.push({ name, schema, tools });
     }
 
+    /** The id of the next call: the session's first 8 characters (`local` without a session) and a count. */
+    private nextCallId(sessionId: string | undefined): string {
+        this.calls += 1;
+        return `${sessionId ? sessionId.slice(0, 8) : 'local'}-${this.calls}`;
+    }
+
     public override registerTool(name: string, declared: RegisterToolConfig, cb: unknown): RegisteredTool {
         const config = this.withAddedArguments(name, declared);
         // Tools without an input schema receive only the request extra; tools
@@ -146,9 +165,10 @@ export class MeasuredMcpServer extends McpServer {
             const args = hasArgs ? callArgs[0] : undefined;
             const extra = (hasArgs ? callArgs[1] : callArgs[0]) as { sessionId?: string } | undefined;
             const argBytes = args === undefined ? 0 : Buffer.byteLength(JSON.stringify(args));
+            const context = { callId: this.nextCallId(extra?.sessionId), ...(extra?.sessionId ? { sessionId: extra.sessionId } : {}) };
             let result: CallToolResult;
             try {
-                result = await original(...callArgs);
+                result = await runInCallContext(context, () => original(...callArgs));
             } catch (err) {
                 result = toCallToolResult(toToolError(err));
             }

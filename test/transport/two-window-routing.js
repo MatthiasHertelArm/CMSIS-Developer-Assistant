@@ -39,6 +39,8 @@
 //      quick pick) saves a default that resolves the tie of two idle windows
 //      and moves a session that had a target; the router's tooltip lists the
 //      sessions; Automatic clears it; the promoted window shows its new role.
+//  11. The problem journal is per window (#48): get_recent_problems and the
+//      count in get_session_status come from the window the session targets.
 
 const stub = require('./vscode-stub.js');
 
@@ -64,9 +66,12 @@ const PORT = Number(process.env.CDA_ROUTER_TEST_PORT) || 39117;
 const { WorkspaceRegistry } = require(path.join(OUT, 'utils', 'workspaceRegistry.js'));
 const origRegistry = WorkspaceRegistry;
 
+const { ProblemJournal } = require(path.join(OUT, 'core', 'problemJournal.js'));
+
 function makeWindow(pid, folder, name) {
     const registry = new origRegistry(pid, REGISTRY_DIR, () => true);
-    return { pid, folder, name, registry };
+    // Two windows in one process: each gets a problem journal of its own, as two extension hosts would have.
+    return { pid, folder, name, registry, journal: new ProblemJournal() };
 }
 
 // The coordinator reads vscode.workspace.* and vscode.debug.* at publish time.
@@ -164,7 +169,7 @@ async function main() {
     // Each coordinator gets its own registry instance (own pid + temp dir),
     // which is what two real windows look like.
     const makeCoordinator = (win) => new WindowCoordinator({
-        port: PORT, timeoutInSeconds: 30, hardwareTimeouts: {}, registry: win.registry,
+        port: PORT, timeoutInSeconds: 30, hardwareTimeouts: {}, registry: win.registry, journal: win.journal,
     });
 
     const c1 = makeCoordinator(alpha);
@@ -305,6 +310,22 @@ async function main() {
     const betaLine = rowOf(afterPin, betaDir);
     check('the pinned window is marked as the current target',
         betaLine.includes('pinned') && betaLine.includes('current target'), betaLine);
+
+    // The problem journal is per window (#48): the session reads the journal of
+    // the window it is pinned to, never the router's, and the count of new
+    // errors follows that window too.
+    alpha.journal.append({ source: 'dap', origin: 'Alpha session', severity: 'error', message: 'alpha: Failed to power up DAP' });
+    beta.journal.append({ source: 'gdb-server', origin: 'Beta session', severity: 'error', message: 'beta: Failed to power up DAP' });
+    const problems = await callTool(PORT, sid, 'get_recent_problems', {}, 11);
+    check('get_recent_problems returns the records of the target window, not those of the router or another window',
+        problems.includes('beta: Failed to power up DAP') && !problems.includes('alpha:') && /\nnextSeq=2$/.test(problems),
+        problems.replace(/\n/g, ' | '));
+    beta.journal.append({ source: 'dap', origin: 'Beta session', severity: 'error', message: 'beta: setBreakpoints refused' });
+    alpha.journal.append({ source: 'dap', origin: 'Alpha session', severity: 'error', message: 'alpha: another error' });
+    const counted = await callTool(PORT, sid, 'get_session_status', {}, 12);
+    check('get_session_status counts the new errors of the target window only',
+        counted.split('\n').includes('Problems: 1 new error since #2 — get_recent_problems {sinceSeq: 2}'),
+        counted.split('\n').filter((l) => l.startsWith('Problems') || l.startsWith('State')).join(' | '));
 
     // An active session in beta only must make beta the automatic target for a
     // fresh session that has no hint and no pin.

@@ -37,6 +37,11 @@
 //  10. The tool contract (#50): the instructions start with the tool rules,
 //      the first get_session_status of a session repeats them in one line and
 //      the second does not, and tools/list keeps its size to the byte.
+//  11. The problem journal (#48): get_recent_problems is listed, an empty
+//      answer stays under 200 bytes, a failing call carries
+//      structuredContent.problems with its call id, and an error nobody saw
+//      is noted once, counted by get_session_status, and cleared by
+//      get_recent_problems.
 
 const stub = require('./vscode-stub.js');
 
@@ -367,6 +372,74 @@ async function main() {
                 && text.startsWith('[NO_SESSION] ') && typeof structured.hint === 'string' && text.endsWith(`\n${structured.hint}`),
             `${JSON.stringify(structured)} | ${text.split('\n')[0]}`);
     }
+
+    // 6c. The problem journal (#48), on the server without a router:
+    //     get_recent_problems is listed and an empty answer is small; a failing
+    //     call carries the problems its call produced, stamped with its call id;
+    //     an error nobody saw is noted once on a successful result, counted in
+    //     get_session_status, and gone from both once get_recent_problems ran.
+    const { problemJournal } = require(path.join(OUT, 'core', 'problemJournal.js'));
+    check('tools/list includes get_recent_problems', names.includes('get_recent_problems'));
+    const first = await callTool('get_recent_problems', {}, 40);
+    const cursor = first.structuredContent?.nextSeq;
+    const empty = await callTool('get_recent_problems', { sinceSeq: cursor }, 41);
+    const emptyText = empty.content?.[0]?.text ?? '';
+    const emptyBytes = Buffer.byteLength(JSON.stringify(empty));
+    check('an empty get_recent_problems answer is under 200 bytes',
+        typeof cursor === 'number' && empty.isError !== true && emptyBytes < 200 && emptyText === `No warnings or errors since #${cursor} (nextSeq=${cursor}).`,
+        `${emptyBytes} B: ${emptyText}`);
+
+    const problemDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-problems-'));
+    const problemSolution = path.join(problemDir, 'demo.csolution.yml');
+    fs.writeFileSync(problemSolution, 'solution:\n  target-types:\n    - type: HE\n  projects:\n    - project: app.cproject.yml\n');
+    stub.workspace.workspaceFolders = [{ uri: { fsPath: problemDir } }];
+    stub.commandHandlers = {
+        'cmsis-csolution.getSolutionFile': async () => problemSolution,
+        'cmsis-csolution.getActiveTargetSet': async () => 'HE',
+        // The GDB server reports a problem while the command runs, then the command fails.
+        'cmsis-csolution.cmsisDetachDebugger': async () => {
+            problemJournal().append({
+                source: 'gdb-server', origin: 'transport-check', severity: 'error', code: 'DAP_POWER_UP_FAILED',
+                message: 'Failed to power up DAP', hint: 'Check the power.',
+            });
+            throw new Error('probe gone');
+        },
+    };
+    const detached = await callTool('cmsis_action', { action: 'detach' }, 42);
+    const detachedText = detached.content?.[0]?.text ?? '';
+    const attached = detached.structuredContent?.problems ?? [];
+    check('a failing call carries structuredContent.problems with its call id, and lists them under its text',
+        detached.isError === true && attached.length === 1 && attached[0].code === 'DAP_POWER_UP_FAILED'
+            && String(attached[0].toolCallId).startsWith(`${sid.slice(0, 8)}-`)
+            && /\nRecent problems:\n {2}#\d+ error gdb-server \[DAP_POWER_UP_FAILED\] Failed to power up DAP → Check the power\.$/.test(detachedText),
+        `${JSON.stringify(attached)} | ${detachedText.split('\n').slice(-2).join(' | ')}`);
+    stub.commandHandlers = {};
+    stub.workspace.workspaceFolders = [];
+    fs.rmSync(problemDir, { recursive: true, force: true });
+
+    // An error in the window outside any call: the user set a breakpoint in the editor while the target ran.
+    problemJournal().append({
+        source: 'dap', origin: 'transport-check', severity: 'error',
+        message: 'error response to \'setBreakpoints\': Cannot execute this command while the target is running.',
+    });
+    const noted = (await callTool('cmsis_action', { action: 'status' }, 43)).content?.[0]?.text ?? '';
+    check('an error nobody saw is noted on the next successful result',
+        /\n\nNote: \d+ new errors? in this window since you last looked — get_recent_problems \{sinceSeq: \d+\}$/.test(noted),
+        noted.split('\n').slice(-1)[0]);
+    const quiet = (await callTool('cmsis_action', { action: 'status' }, 44)).content?.[0]?.text ?? '';
+    check('the note comes once per batch', !quiet.includes('Note:'), quiet.split('\n').slice(-1)[0]);
+    const counted = (await callTool('get_session_status', {}, 45)).content?.[0]?.text ?? '';
+    const countLine = counted.split('\n').find((line) => line.startsWith('Problems: ')) ?? '';
+    const countedSince = /since #(\d+) — get_recent_problems \{sinceSeq: (\d+)\}$/.exec(countLine);
+    check('get_session_status counts the new errors and names the call that lists them',
+        countedSince !== null && countedSince[1] === countedSince[2], countLine || counted.slice(0, 120));
+    const listed = (await callTool('get_recent_problems', { sinceSeq: Number(countedSince?.[2]) }, 46)).content?.[0]?.text ?? '';
+    check('get_recent_problems lists them from there on',
+        listed.includes('[DAP_POWER_UP_FAILED] Failed to power up DAP') && listed.includes('error response to \'setBreakpoints\'')
+            && /\nnextSeq=\d+$/.test(listed), listed.replace(/\n/g, ' | '));
+    const cleared = (await callTool('get_session_status', {}, 47)).content?.[0]?.text ?? '';
+    check('after get_recent_problems the count line is gone', /^State: /.test(cleared) && !cleared.includes('Problems: '),
+        cleared.split('\n').filter((line) => line.startsWith('Problems')).join(' | '));
 
     // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });

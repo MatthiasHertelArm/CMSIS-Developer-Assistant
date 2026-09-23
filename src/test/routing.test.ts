@@ -24,8 +24,11 @@ import { ControlServer } from '../controlServer';
 import type { IDebuggingHandler } from '../debuggingHandler';
 import type { PackDocsHandlers } from '../packDocsDispatch';
 import { RoutingDebuggingHandler } from '../routingDebuggingHandler';
+import { runInCallContext } from '../core/callContext';
 import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
-import { ErrorCode, ToolError, ToolText, errorDetail, textOf, toToolError } from '../core/toolResult';
+import { newErrorsNote, newErrorsStatusLine } from '../core/problemFeed';
+import { ProblemJournal } from '../core/problemJournal';
+import { ErrorCode, JsonObject, ToolError, ToolText, errorDetail, textOf, toToolError } from '../core/toolResult';
 import { closeHttpServer } from '../utils/closeHttpServer';
 import { DefaultTarget, WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
 
@@ -132,6 +135,8 @@ interface FakeWindow {
     port: number;
     token: string;
     entry: WindowRegistration;
+    /** The window's own problem journal (#48); a stand-in has one nobody uses. */
+    journal: ProblemJournal;
     /** Stops the window's control server; its registration stays. */
     close(): Promise<void>;
 }
@@ -168,7 +173,14 @@ suite('Multi-window routing', () => {
     }
 
     /** Put a listening port into the registry under a new live fake pid. */
-    function enrol(label: string, port: number, token: string, overrides: Partial<WindowRegistration>, close: () => Promise<void>): FakeWindow {
+    function enrol(
+        label: string,
+        port: number,
+        token: string,
+        overrides: Partial<WindowRegistration>,
+        close: () => Promise<void>,
+        journal: ProblemJournal = new ProblemJournal(),
+    ): FakeWindow {
         const stamp = Date.now();
         const entry: WindowRegistration = {
             pid: nextPid++,
@@ -181,10 +193,10 @@ suite('Multi-window routing', () => {
         };
         livePids.add(entry.pid);
         saveRegistration(label, entry);
-        return { label, pid: entry.pid, port, token, entry, close };
+        return { label, pid: entry.pid, port, token, entry, journal, close };
     }
 
-    /** A window: a real control server over echoing handlers, registered by hand. */
+    /** A window: a real control server over echoing handlers and a journal of its own, registered by hand. */
     async function openWindow(
         label: string,
         overrides: Partial<WindowRegistration> = {},
@@ -192,13 +204,15 @@ suite('Multi-window routing', () => {
         ops: OpOverrides = {},
     ): Promise<FakeWindow> {
         const token = `token-${label}`;
+        const journal = new ProblemJournal();
         const control = new ControlServer(
             { ...echoing<IDebuggingHandler>(label, 'debug', DEBUG_OPS), ...ops } as IDebuggingHandler,
             token,
-            withPackDocs ? echoingPackDocs(label) : undefined);
+            withPackDocs ? echoingPackDocs(label) : undefined,
+            journal);
         const port = await control.start();
         running.push(() => control.stop());
-        return enrol(label, port, token, overrides, () => control.stop());
+        return enrol(label, port, token, overrides, () => control.stop(), journal);
     }
 
     /** A bare HTTP server posing as a window; `respond` writes the whole answer, or none. */
@@ -794,22 +808,132 @@ suite('Multi-window routing', () => {
             const oldReply = await call('handleWaitForStop', false);
             assert.deepStrictEqual(JSON.parse(oldReply.body), { result: 'still waiting' });
 
+            // A typed reply also carries the window's journal counters (#48).
+            const counters = { journalSeq: 0, journalErrors: 0 };
             const typedFailure = await call('handleReadMemory', true);
             assert.strictEqual(typedFailure.status, 500);
             assert.strictEqual(typedFailure.headers[CONTROL_ENVELOPE_HEADER], '2');
             assert.deepStrictEqual(JSON.parse(typedFailure.body), {
                 error: { message: 'Cannot read memory: session state is \'running\'.', code: 'TARGET_RUNNING', hint: 'Add a breakpoint first.' },
+                ...counters,
             });
             const typedReply = await call('handleWaitForStop', true);
-            assert.deepStrictEqual(JSON.parse(typedReply.body), { result: { text: 'still waiting', status: 'timeout', data: { waitedMs: 5 } } });
+            assert.deepStrictEqual(JSON.parse(typedReply.body), { result: { text: 'still waiting', status: 'timeout', data: { waitedMs: 5 } }, ...counters });
             const typedText = await call('handleGetThreads', true);
-            assert.deepStrictEqual(JSON.parse(typedText.body), { result: echo('solo', 'debug', 'handleGetThreads', {}) });
+            assert.deepStrictEqual(JSON.parse(typedText.body), { result: echo('solo', 'debug', 'handleGetThreads', {}), ...counters });
         });
 
         test('an unknown op and a missing handler group are TOOL_DISABLED', async () => {
             await openWindow('bare', {}, false);
             await refusedAs('TOOL_DISABLED', newRouter().serialOp('handleNotAnOp'), /not a known operation/);
             await refusedAs('TOOL_DISABLED', newRouter().packDocsOp('handleListTargetDocs', {}), /not available in this window/);
+        });
+    });
+
+    suite('the problem journal across windows (#48)', () => {
+        /** A stand-in that answers every request typed, `answer` as its body, and keeps the request bodies. */
+        async function openRecorder(label: string, answer: object): Promise<{ window: FakeWindow; bodies: JsonObject[] }> {
+            const bodies: JsonObject[] = [];
+            const fake = http.createServer((incoming, reply) => {
+                const parts: Buffer[] = [];
+                incoming.on('data', (piece: Buffer) => parts.push(piece));
+                incoming.on('end', () => {
+                    bodies.push(JSON.parse(Buffer.concat(parts).toString('utf8')) as JsonObject);
+                    reply.writeHead(200, { ...JSON_TYPE, [CONTROL_ENVELOPE_HEADER]: '2' }).end(JSON.stringify(answer));
+                });
+            });
+            await new Promise<void>((ready) => fake.listen(0, '127.0.0.1', ready));
+            running.push(() => closeHttpServer(fake));
+            const window = enrol(label, (fake.address() as AddressInfo).port, `token-${label}`, {}, () => closeHttpServer(fake));
+            return { window, bodies };
+        }
+
+        const power = { source: 'gdb-server', origin: 'CMSIS Debugger: pyOCD', severity: 'error', message: 'Failed to power up DAP' } as const;
+
+        test('the envelope carries the call id and the MCP session id of the call, and nothing without a call', async () => {
+            const { bodies } = await openRecorder('recorder', { result: 'ok' });
+            const router = newRouter();
+            await runInCallContext({ callId: 'abcd1234-7', sessionId: 'abcd1234-5678-90ef' }, () => router.handleGetThreads({}));
+            await router.handleGetThreads({});
+            assert.deepStrictEqual(bodies[0], { op: 'handleGetThreads', args: {}, callId: 'abcd1234-7', sessionId: 'abcd1234-5678-90ef' });
+            assert.deepStrictEqual(bodies[1], { op: 'handleGetThreads', args: {} });
+        });
+
+        test('a worker answers with its journal counters; a router without the envelope gets none', async () => {
+            const solo = await openWindow('solo');
+            solo.journal.append({ ...power });
+            solo.journal.append({ ...power, severity: 'warning', message: 'slow probe' });
+            const typed = await rawPost(solo.port, solo.token, ['{"op":"handleGetThreads","args":{}}'], 0, { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.deepStrictEqual(JSON.parse(typed.body), { result: echo('solo', 'debug', 'handleGetThreads', {}), journalSeq: 2, journalErrors: 1 });
+            const old = await rawPost(solo.port, solo.token, ['{"op":"handleGetThreads","args":{}}']);
+            assert.deepStrictEqual(JSON.parse(old.body), { result: echo('solo', 'debug', 'handleGetThreads', {}) });
+        });
+
+        test('a worker failure arrives with the problems its op produced, stamped with the call id', async () => {
+            let journal: ProblemJournal | undefined;
+            const failing = async (): Promise<ToolText> => {
+                journal?.append({ ...power });
+                throw new ToolError('TASK_FAILED', 'CMSIS \'load_and_debug\' did NOT survive the initial connect.', 'Check the probe.');
+            };
+            const beta = await openWindow('beta', { workspaceFolders: [folder('beta')] }, true, { handleCmsisCommand: failing });
+            journal = beta.journal;
+            const refused = await runInCallContext({ callId: 'feedbeef-3', sessionId: 'feedbeef-0000' },
+                () => refusedAs('TASK_FAILED', newRouter().handleCmsisCommand({ action: 'load_and_debug' })));
+            const problems = refused.data?.problems as JsonObject[];
+            assert.deepStrictEqual(problems.map((record) => [record.seq, record.source, record.message, record.toolCallId]),
+                [[1, 'gdb-server', 'Failed to power up DAP', 'feedbeef-3']]);
+            assert.strictEqual(refused.hint, 'Check the probe.');
+        });
+
+        test('a timeout reply of a worker carries the problems of its wait', async () => {
+            let journal: ProblemJournal | undefined;
+            const waiting = async (): Promise<ToolText> => {
+                journal?.append({ ...power, source: 'dap', severity: 'warning', message: 'adapter slow' });
+                return { text: 'did not stop', status: 'timeout' };
+            };
+            const solo = await openWindow('solo', {}, true, { handleWaitForStop: waiting });
+            journal = solo.journal;
+            const reply = await newRouter().handleWaitForStop({});
+            assert.ok(typeof reply !== 'string' && reply.status === 'timeout');
+            assert.strictEqual(((reply.data as JsonObject).problems as JsonObject[])[0].message, 'adapter slow');
+        });
+
+        test('new errors in the target window: a note once per batch, the count in get_session_status, both gone after get_recent_problems', async () => {
+            const solo = await openWindow('solo');
+            const router = newRouter();
+            const threads = echo('solo', 'debug', 'handleGetThreads', {});
+            const status = echo('solo', 'debug', 'handleGetSessionStatus', {});
+            assert.strictEqual(await router.handleGetThreads({}), threads, 'the first answer sets the baseline');
+            solo.journal.append({ ...power, message: 'error response to \'setBreakpoints\': Cannot execute this command while the target is running.' });
+            assert.strictEqual(await router.handleGetThreads({}), `${threads}\n\n${newErrorsNote(1, 1)}`);
+            assert.strictEqual(await router.handleGetThreads({}), threads, 'once per batch');
+            solo.journal.append({ ...power });
+            assert.strictEqual(await router.handleGetThreads({}), `${threads}\n\n${newErrorsNote(2, 1)}`);
+            assert.strictEqual(await router.handleGetSessionStatus(), `${status}\n${newErrorsStatusLine(2, 1)}`);
+            assert.strictEqual(await router.handleGetSessionStatus(), `${status}\n${newErrorsStatusLine(2, 1)}`, 'the count stays until the agent looks');
+            await router.handleGetRecentProblems({ sinceSeq: 1 });
+            assert.strictEqual(await router.handleGetSessionStatus(), status);
+            assert.strictEqual(await router.handleGetThreads({}), threads);
+            // Another session keeps its own baseline, set by its first answer.
+            assert.strictEqual(await newRouter().handleGetThreads({}), threads);
+        });
+
+        test('a worker that sends no counters (2.5.0) gives no note, whatever its journal holds', async () => {
+            const { window } = await openRecorder('old-worker', { result: 'ok' });
+            const router = newRouter();
+            assert.strictEqual(await router.handleGetThreads({}), 'ok');
+            window.journal.append({ ...power });
+            assert.strictEqual(await router.handleGetThreads({}), 'ok');
+            assert.strictEqual(await router.handleGetSessionStatus(), 'ok');
+        });
+
+        test('counters in a reply without the envelope header are not read', async () => {
+            await openStandIn((reply) => {
+                reply.writeHead(200, JSON_TYPE).end(JSON.stringify({ result: 'plain', journalSeq: 9, journalErrors: 9 }));
+            });
+            const router = newRouter();
+            assert.strictEqual(await router.handleGetThreads({}), 'plain');
+            assert.strictEqual(await router.handleGetThreads({}), 'plain');
         });
     });
 });

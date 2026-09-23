@@ -54,7 +54,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 | [`src/core/dwt.ts`](src/core/dwt.ts) | DWT register map (DEMCR/DWT_CTRL/DWT_CYCCNT + TRCENA/CYCCNTENA/NOCYCCNT bits) for `read_cycle_counter`. |
 | [`src/core/flashController.ts`](src/core/flashController.ts) | `pyocd load --cbuild-run` process control + output parsing (bytes programmed, rate, error lines, tail). Node builtins only — testable outside the extension host. |
 | [`src/serialHandler.ts`](src/serialHandler.ts) | Routes the `serial_*` MCP tools to either the OWNED controller or the BRIDGE depending on `from` argument. |
-| [`src/utils/sessionStateTracker.ts`](src/utils/sessionStateTracker.ts) | `DebugAdapterTrackerFactory` that records DAP `stopped` / `continued` events per session, exposed via `isSessionStopped(session)` and `getStoppedReason(session)`. The authoritative "is the target paused?" signal. Also: `waitForStopEvent(session, timeoutMs)` (awaitable stop events with reason + threadId) and a bounded per-session ring of recent adapter traffic (`getRecentDiagnostics()`) for launch-failure reporting. |
+| [`src/utils/sessionStateTracker.ts`](src/utils/sessionStateTracker.ts) | `DebugAdapterTrackerFactory` that records DAP `stopped` / `continued` events per session, exposed via `isSessionStopped(session)` and `getStoppedReason(session)`. The authoritative "is the target paused?" signal. Also: `waitForStopEvent(session, timeoutMs)` (awaitable stop events with reason + threadId), and the adapter channel's problems (failed responses, adapter errors, `stderr` / `console` output) written into the window's problem journal (#48, `src/core/problemJournal.ts`), which replaced the earlier ring of recent adapter traffic. |
 | [`src/utils/timeout.ts`](src/utils/timeout.ts) | `withTimeout(operation, timeoutMs, task)` + `customRequestWithTimeout(session, command, args, timeoutMs)`. `HardwareTimeoutError` class with actionable message. |
 | [`docs/agent-resources/cmsis-embedded-guide.md`](docs/agent-resources/cmsis-embedded-guide.md) | Agent-facing guide on Cortex-M fault-decode recipes, SCS memory map, common register layouts, RTOS tips. Exposed as MCP resource `cmsis-debugmcp://docs/cmsis-embedded-guide`. |
 | [`docs/agent-resources/troubleshooting/embedded.md`](docs/agent-resources/troubleshooting/embedded.md) | Embedded troubleshooting checklist (probe not detected, target not halted, SVD missing, wrong core selected on multi-core parts). Exposed as MCP resource. |
@@ -117,6 +117,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 - `reset(method?, halt?, timeoutMs?)` — in-session target reset via GDB monitor commands, verified PC-vs-reset-vector; honest "did NOT reset" reporting
 - `get_session_status()` — 5-state classifier (`no-session` / `initializing` / `running` / `stopped` / `unresponsive`), never throws
 - `check_target_connection()` — fast DAP `threads` liveness probe
+- `get_recent_problems(sinceSeq?, sources?, minSeverity?, limit?)` — the window's problem journal: failed DAP requests, GDB-server errors, failed CMSIS tasks and build errors with file:line, Problems-panel errors, notifications, lost serial ports (#48)
 
 **Inspection:**
 
@@ -147,7 +148,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 ### Existing tools modified
 
-- `start_debugging` — `fileFullPath` is now optional; `configurationName` is the primary entry point for `gdbtarget`; refuses duplicates; demoted to non-CMSIS use cases in tool description; failures append recent adapter traffic (failed DAP responses, adapter stderr/console) instead of one opaque line.
+- `start_debugging` — `fileFullPath` is now optional; `configurationName` is the primary entry point for `gdbtarget`; refuses duplicates; demoted to non-CMSIS use cases in tool description; failures carry the problem records of the call (failed DAP responses, adapter stderr/console, GDB-server errors) as `structuredContent.problems` and a "Recent problems:" block instead of one opaque line (#48).
 - `step_over` / `step_into` / `step_out` / `continue_execution` — accept `timeoutMs`, auto-heal on overshoot by issuing DAP `pause` and reporting PC.
 - `get_variables_values` / `evaluate_expression` — accept `timeoutMs`, state-aware errors.
 - `restart_debugging` — actually waits for session readiness instead of fixed 300 ms.

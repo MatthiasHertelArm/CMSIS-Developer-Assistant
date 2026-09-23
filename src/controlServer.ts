@@ -29,6 +29,13 @@
  * typed: the `ToolText` as it is, a failure as `{message, code, hint, data}`.
  * Any other router gets the 2.3.10 shapes, strings only.
  *
+ * Each op runs through the window's problem journal (#48): in the call
+ * context the envelope names (`callId`, `sessionId`), registered while it
+ * runs, and with the problems it produced in `data.problems` when it fails
+ * or its wait runs out. A typed reply also carries the journal's counters,
+ * `journalSeq` and `journalErrors`, from which the router tells the agent
+ * about new errors.
+ *
  * The ops include flashing and erasing the target, so a request passes
  * three checks before its body is read (#19): `POST /op` (else 404); a
  * loopback `Host` and no `Origin` at all, since the router never sends one
@@ -46,6 +53,7 @@ import type { AddressInfo } from 'net';
 import type { IDebuggingHandler } from './debuggingHandler';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { serialHandler } from './serialHandler';
+import type { CallContext } from './core/callContext';
 import {
     CONTROL_ENVELOPE_HEADER,
     CONTROL_ENVELOPE_VERSION,
@@ -56,6 +64,8 @@ import {
     isPackDocsOp,
     isSerialOp,
 } from './core/opTable';
+import { JournaledOutcome, runJournaled } from './core/problemFeed';
+import { problemJournal, type JournalCounters, type ProblemJournal } from './core/problemJournal';
 import { JsonObject, ToolError, ToolText, errorDetail, isToolReply, textOf, toToolError } from './core/toolResult';
 import { closeHttpServer } from './utils/closeHttpServer';
 import { logger } from './utils/logger';
@@ -76,14 +86,30 @@ const NOT_FOR_AGENTS = {
 interface OpRequest {
     op: string;
     args: unknown;
+    /** The tool call the router forwarded, when it named one. */
+    call?: CallContext;
 }
 
 /** Told when an op starts running in this window and when it has settled, either way (#16: the status bar). */
 export type OpListener = (op: OpName, phase: 'start' | 'end') => void;
 
-/** The text of whatever was thrown: an Error's message, else its string form. */
-function describeFailure(thrown: unknown): string {
-    return thrown instanceof Error ? thrown.message : String(thrown);
+/** Longest call id and session id taken from an envelope; anything longer is not one of ours. */
+const CALL_ID_MAX_CHARS = 128;
+const SESSION_ID_MAX_CHARS = 256;
+
+/** The call context an envelope names: `callId`, and `sessionId` when present. */
+function callNamed(callId: unknown, sessionId: unknown): CallContext | undefined {
+    if (typeof callId !== 'string' || callId.length === 0 || callId.length > CALL_ID_MAX_CHARS) {
+        return undefined;
+    }
+    return typeof sessionId === 'string' && sessionId.length > 0 && sessionId.length <= SESSION_ID_MAX_CHARS
+        ? { callId, sessionId }
+        : { callId };
+}
+
+/** The journal counters a typed reply carries; nothing for a 2.3.10 router. */
+function countersBody(counters: JournalCounters, typed: boolean): object {
+    return typed ? { journalSeq: counters.seq, journalErrors: counters.errors } : {};
 }
 
 /** A handler result as the text it carries, or undefined when it is none. */
@@ -137,7 +163,8 @@ function parseOpRequest(body: string): OpRequest {
     const parsed = body.length === 0 ? {} : JSON.parse(body);
     const named: unknown = parsed.op;
     if (typeof named === 'string') {
-        return { op: named, args: parsed.args ?? {} };
+        const call = callNamed(parsed.callId, parsed.sessionId);
+        return { op: named, args: parsed.args ?? {}, ...(call ? { call } : {}) };
     }
     throw new Error('Control request has no op');
 }
@@ -176,10 +203,12 @@ export class ControlServer {
     private boundPort = 0;
     private opListener: OpListener | undefined;
 
+    /** @param journal the window's problem journal; a test gives each fake window its own. */
     constructor(
         private readonly handler: IDebuggingHandler,
         private readonly token: string,
         private readonly packDocs?: PackDocsHandlers,
+        private readonly journal: ProblemJournal = problemJournal(),
     ) {}
 
     /** The listening port; 0 before `start()` resolved and from the moment `stop()` begins. */
@@ -274,22 +303,33 @@ export class ControlServer {
             return;
         }
         this.execute(body.toString('utf8')).then(
-            (result) => replyJson(reply, 200, resultBody(result, typed), typed),
-            (failure: unknown) => replyJson(reply, 500, errorBody(toToolError(failure), typed), typed),
+            ({ outcome, counters }) => {
+                const counted = countersBody(counters, typed);
+                if (outcome instanceof ToolError) {
+                    replyJson(reply, 500, { ...errorBody(outcome, typed), ...counted }, typed);
+                } else {
+                    replyJson(reply, 200, { ...resultBody(outcome, typed), ...counted }, typed);
+                }
+            },
+            (failure: unknown) => {
+                const counted = countersBody(this.journal.counters(), typed);
+                replyJson(reply, 500, { ...errorBody(toToolError(failure), typed), ...counted }, typed);
+            },
         );
     }
 
     /**
-     * Parse the body and run its op; every failure, parsing included, is a
-     * rejection. Fields beyond `op` and `args` are ignored.
+     * Parse the body and run its op. A request that cannot be run — no op,
+     * an unknown one — rejects; the op's own failure is the outcome. Fields
+     * beyond `op`, `args`, `callId` and `sessionId` are ignored.
      */
-    private async execute(text: string): Promise<ToolText> {
+    private async execute(text: string): Promise<JournaledOutcome> {
         const request = parseOpRequest(text);
-        return this.dispatch(request.op, request.args);
+        return this.dispatch(request.op, request.args, request.call);
     }
 
-    /** Run one op against the handler that owns it, and trace the outcome. */
-    private async dispatch(op: string, opArgs: unknown): Promise<ToolText> {
+    /** Run one op against the handler that owns it, through the journal, and trace the outcome. */
+    private async dispatch(op: string, opArgs: unknown, call: CallContext | undefined): Promise<JournaledOutcome> {
         // Before any property lookup: `constructor` or `__proto__` stop here.
         if (!isKnownOp(op)) {
             throw new ToolError('TOOL_DISABLED', `Control op ${op} refused: not a known operation`);
@@ -302,12 +342,13 @@ export class ControlServer {
         const elapsed = stopwatch();
         this.tell(op, 'start');
         try {
-            const outcome = await (entryPoint as (args: unknown) => Promise<ToolText>).call(owner, opArgs);
-            logger.info(`control op=${op} ms=${elapsed()} out=${resultBytes(outcome)} B`);
-            return outcome;
-        } catch (failure) {
-            logger.info(`control op=${op} ms=${elapsed()} failed: ${describeFailure(failure)}`);
-            throw failure;
+            const journaled = await runJournaled(this.journal, call,
+                () => (entryPoint as (args: unknown) => Promise<ToolText>).call(owner, opArgs));
+            const { outcome } = journaled;
+            logger.info(outcome instanceof ToolError
+                ? `control op=${op} ms=${elapsed()} failed: ${outcome.message}`
+                : `control op=${op} ms=${elapsed()} out=${resultBytes(outcome)} B`);
+            return journaled;
         } finally {
             this.tell(op, 'end');
         }

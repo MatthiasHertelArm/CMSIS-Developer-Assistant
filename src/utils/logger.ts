@@ -22,6 +22,10 @@
  * Two filters apply in sequence: this module drops entries below its own
  * minimum level (INFO unless `setLogLevel` changes it), and the channel then
  * applies the level the user picked for it in VS Code.
+ *
+ * The problem journal (#48) hooks in twice: every `error` entry also goes to
+ * the sink `setErrorSink` installs, and `problem` writes the journal's own
+ * `[problem #N]` lines, which never reach that sink.
  */
 
 import * as vscode from 'vscode';
@@ -32,6 +36,9 @@ export enum LogLevel {
     WARN = 2,
     ERROR = 3,
 }
+
+/** Receives the message and detail of every `error` entry. */
+export type ErrorSink = (message: string, detail: unknown) => void;
 
 /** The name users pick in the Output view's channel list. */
 const OUTPUT_CHANNEL_NAME = 'CMSIS Developer Assistant';
@@ -74,6 +81,9 @@ export class Logger {
 
     private readonly channel: vscode.LogOutputChannel;
     private threshold: LogLevel = LogLevel.INFO;
+    private errorSink: ErrorSink | undefined;
+    /** True while the sink runs, so that an error it logs does not come back to it. */
+    private sinking = false;
 
     private constructor() {
         this.channel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME, { log: true });
@@ -98,6 +108,29 @@ export class Logger {
 
     error(message: string, error?: unknown): void {
         this.write(LogLevel.ERROR, message, error);
+        const sink = this.errorSink;
+        if (!sink || this.sinking) {
+            return;
+        }
+        this.sinking = true;
+        try {
+            sink(message, error);
+        } catch {
+            // The sink is a side channel; the entry is written.
+        } finally {
+            this.sinking = false;
+        }
+    }
+
+    /** Hands every later `error` entry to `sink` as well; undefined removes it. */
+    setErrorSink(sink: ErrorSink | undefined): void {
+        this.errorSink = sink;
+    }
+
+    /** A line of the problem journal, at the channel level of its severity; it never reaches the error sink. */
+    problem(severity: 'error' | 'warning' | 'info', line: string): void {
+        const level = severity === 'error' ? LogLevel.ERROR : severity === 'warning' ? LogLevel.WARN : LogLevel.INFO;
+        this.write(level, line, undefined);
     }
 
     /** Change the minimum level; the confirmation passes the new filter like any entry. */
