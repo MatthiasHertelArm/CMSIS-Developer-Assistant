@@ -1,27 +1,99 @@
-// Copyright (c) Microsoft Corporation.
-// Copyright 2026 Arm Limited and contributors
-
-import * as http from 'http';
-import { CmsisAction, IDebuggingHandler } from './debuggingHandler';
-import { WindowRegistration, WorkspaceRegistry, ResolutionReason, describeWindow } from './utils/workspaceRegistry';
-import { forwardTimeoutMs, pathHintOf, CONTROL_RESPONSE_MAX_BYTES } from './core/opTable';
-import { logger } from './utils/logger';
+/**
+ * Copyright 2026 Arm Limited
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 /**
- * Router-window handler — one instance per MCP session — that forwards every
- * operation to the ControlServer of the window that owns the target.
+ * The debugging handler the router window gives each MCP session. It runs
+ * nothing itself: every call goes over HTTP to the control server of the
+ * window that owns the target, so one MCP URL reaches whichever window holds
+ * the board, and two sessions can drive two boards at once.
  *
- * Why this exists: agents outside VS Code (Claude Code, Codex, Cursor) get one
- * MCP URL. Before this, every window ran its own server on whatever port it
- * could get and the last one to start overwrote that URL, so the agent
- * routinely drove a window that did not hold the board.
- *
- * Per-session instances let two agents drive two different boards at once.
+ * The target comes from a fixed ladder — path hint, pin, the session's
+ * established target, the sole window with a debug session, the sole window —
+ * and a tie is refused with a listing, never guessed. The two routing tools,
+ * `list_debug_windows` and `select_debug_window`, are answered here.
  */
+
+import * as http from 'http';
+import type { IDebuggingHandler } from './debuggingHandler';
+import {
+    CONTROL_RESPONSE_MAX_BYTES,
+    DEBUG_OPS,
+    DebugOpName,
+    forwardTimeoutMs,
+    pathHintOf,
+} from './core/opTable';
+import {
+    describeWindow,
+    ResolutionReason,
+    WindowRegistration,
+    WorkspaceRegistry,
+} from './utils/workspaceRegistry';
+import { logger } from './utils/logger';
+
+/** Must match the header the control server checks. */
+const TOKEN_HEADER = 'x-cmsis-developer-assistant-token';
+/** How much of an unparsable reply the error quotes. */
+const MALFORMED_PREVIEW_CHARS = 200;
+
+const NO_WINDOW_ERROR =
+    'No CMSIS Developer Assistant-enabled VS Code window is currently registered. '
+    + 'Open your project in VS Code and wait for the extension to activate.';
+const NO_WINDOW_LISTING = 'No CMSIS Developer Assistant-enabled VS Code windows are currently registered.';
+const SELECT_NEEDS_ARGUMENT = 'Pass either pid or workspaceFolder. Call list_debug_windows to see the options.';
+const LISTING_FOOTER = 'Pin one for this session with select_debug_window({ pid }) when the automatic choice is wrong.';
+
+/** One method per debugging op; the class gets them from the op table below. */
+type DebugForwarders = { [Op in DebugOpName]: (args?: unknown) => Promise<string> };
+
+interface Resolved {
+    entry: WindowRegistration;
+    reason: ResolutionReason;
+}
+
+function textOf(thrown: unknown): string {
+    return thrown instanceof Error ? thrown.message : String(thrown);
+}
+
+/** The indented window list inside routing errors and the selection miss. */
+function bulletList(windows: WindowRegistration[]): string {
+    return windows.map((w) => `  • ${describeWindow(w)}`).join('\n');
+}
+
+/** Declaration merge: the class instance carries one forwarder per `DEBUG_OPS` name. */
+export interface RoutingDebuggingHandler extends DebugForwarders {}
+
 export class RoutingDebuggingHandler implements IDebuggingHandler {
-    /** The window this session is driving, once established. */
+    static {
+        // Generated from the op table rather than written out: a tool added to
+        // IDebuggingHandler must be added to DEBUG_OPS (opTable checks that),
+        // and it is then routable here with no further change.
+        for (const op of DEBUG_OPS) {
+            Object.defineProperty(RoutingDebuggingHandler.prototype, op, {
+                configurable: true,
+                writable: true,
+                value(this: RoutingDebuggingHandler, args?: unknown): Promise<string> {
+                    return this.relay(op, args);
+                },
+            });
+        }
+    }
+
+    /** The window this session last reached; reused while it stays registered on the same port. */
     private target: WindowRegistration | undefined;
-    /** Set by select_debug_window; survives a target going briefly stale. */
+    /** Set by `select_debug_window`; only a later selection replaces it. */
     private pinnedPid: number | undefined;
 
     constructor(
@@ -29,333 +101,211 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         private readonly defaultToolMs: number,
     ) {}
 
-    // ---------------------------------------------------------------- routing
+    serialOp(op: string, args?: unknown): Promise<string> {
+        return this.relay(op, args);
+    }
 
-    /**
-     * Decide which window an op belongs to.
-     *
-     * Upstream resolves from a path hint alone, because every one of its tools
-     * takes a file path. Most tools here do not — read_memory, cmsis_action,
-     * flash, reset and the serial tools have nothing to match on — so the
-     * ladder continues past the path:
-     *
-     *   1. an explicit path hint (always re-resolves, and re-aims the session)
-     *   2. a pin set with select_debug_window
-     *   3. the target this session already established
-     *   4. the sole window holding an active debug session
-     *   5. the sole registered window
-     *
-     * Ties are never broken by guessing. Reading the wrong board's memory looks
-     * like a firmware bug and costs far more than an error that says "pick one".
-     */
-    private resolveTarget(pathHint?: string): { target: WindowRegistration; reason: ResolutionReason } {
-        if (pathHint) {
-            const found = this.registry.findByPath(pathHint);
-            if (found) {
-                this.target = found;
-                return { target: found, reason: 'path' };
-            }
-            // A hint that matches nothing is a hard error even if this session
-            // has a cached target: the agent named a file, and silently running
-            // it somewhere else is exactly the misrouting this class fixes.
-            throw new Error(this.noTargetMessage(pathHint));
+    packDocsOp(op: string, args?: unknown): Promise<string> {
+        return this.relay(op, args);
+    }
+
+    /** The `list_debug_windows` text. Changes nothing. */
+    listDebugWindows(): string {
+        const windows = this.registry.list();
+        if (windows.length === 0) {
+            return NO_WINDOW_LISTING;
         }
+        const rows = windows.map((w) => `• ${describeWindow(w)}${this.markers(w)}`);
+        return `Registered VS Code windows:\n${rows.join('\n')}\n\n${LISTING_FOOTER}`;
+    }
 
-        if (this.pinnedPid !== undefined) {
-            const pinned = this.registry.findByPid(this.pinnedPid);
-            if (pinned) {
-                this.target = pinned;
-                return { target: pinned, reason: 'pinned' };
+    /** The `select_debug_window` text; on a match the window is pinned for this session. */
+    selectDebugWindow(args: { pid?: number; workspaceFolder?: string }): string {
+        const { pid, workspaceFolder } = args;
+        if (pid === undefined && !workspaceFolder) {
+            return SELECT_NEEDS_ARGUMENT;
+        }
+        const chosen = pid !== undefined
+            ? this.registry.findByPid(pid)
+            : this.registry.findByWorkspaceFolder(workspaceFolder as string);
+        if (!chosen) {
+            const wanted = pid !== undefined ? `pid=${pid}` : `"${workspaceFolder}"`;
+            const windows = this.registry.list();
+            const known = windows.length > 0
+                ? `Currently registered:\n${bulletList(windows)}`
+                : 'No windows are registered.';
+            return `No registered window matches ${wanted}.\n${known}`;
+        }
+        this.pinnedPid = chosen.pid;
+        this.target = chosen;
+        return `This session is now pinned to: ${describeWindow(chosen)}\n`
+            + 'Every subsequent tool call runs in that window until you pin another.';
+    }
+
+    /** ` ← current target, pinned` (whichever apply) for a listing row. */
+    private markers(w: WindowRegistration): string {
+        const marks: string[] = [];
+        if (this.target !== undefined && this.target.pid === w.pid) {
+            marks.push('current target');
+        }
+        if (this.pinnedPid === w.pid) {
+            marks.push('pinned');
+        }
+        return marks.length > 0 ? `  ← ${marks.join(', ')}` : '';
+    }
+
+    /** One forwarded call: pick the window, send, and wrap any failure. */
+    private async relay(op: string, args: unknown): Promise<string> {
+        const sent = args === undefined ? {} : args;
+        const { entry, reason } = this.resolveTarget(pathHintOf(sent));
+        logger.info(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
+        try {
+            // The worker's result goes back as it is, without a type check.
+            return (await this.post(entry, op, sent)) as string;
+        } catch (failure) {
+            if (this.target !== undefined && this.target.pid === entry.pid) {
+                this.target = undefined;
             }
             throw new Error(
-                `The window pinned with select_debug_window (pid=${this.pinnedPid}) is gone. ` +
-                `Pin another with select_debug_window, or call list_debug_windows to see what is open.`,
-            );
+                `Could not reach the VS Code window handling this session (pid=${entry.pid}): ${textOf(failure)}\n`
+                + 'It may have been closed. Call list_debug_windows to see what is still open.');
         }
+    }
 
-        if (this.target && this.registry.isLive(this.target)) {
-            return { target: this.target, reason: 'cached' };
+    /** The resolution ladder; the first rung that applies decides, and a miss throws. */
+    private resolveTarget(hint: string | undefined): Resolved {
+        if (hint !== undefined) {
+            // A named file must never run in another window, cached or pinned.
+            const owner = this.registry.findByPath(hint);
+            if (!owner) {
+                throw new Error(this.unroutable(hint));
+            }
+            this.target = owner;
+            return { entry: owner, reason: 'path' };
         }
-        // Cached target died — drop it so the fallbacks get a fair look.
+        if (this.pinnedPid !== undefined) {
+            const pinned = this.registry.findByPid(this.pinnedPid);
+            if (!pinned) {
+                throw new Error(
+                    `The window pinned with select_debug_window (pid=${this.pinnedPid}) is gone. `
+                    + 'Pin another with select_debug_window, or call list_debug_windows to see what is open.');
+            }
+            this.target = pinned;
+            return { entry: pinned, reason: 'pinned' };
+        }
+        if (this.target !== undefined && this.registry.isLive(this.target)) {
+            return { entry: this.target, reason: 'cached' };
+        }
         this.target = undefined;
-
-        const active = this.registry.findSoleActiveSession();
-        if (active) {
-            this.target = active;
-            return { target: active, reason: 'active-session' };
+        const debugging = this.registry.findSoleActiveSession();
+        if (debugging) {
+            this.target = debugging;
+            return { entry: debugging, reason: 'active-session' };
         }
-
         const only = this.registry.findSoleWindow();
         if (only) {
             this.target = only;
-            return { target: only, reason: 'only-window' };
+            return { entry: only, reason: 'only-window' };
         }
-
-        throw new Error(this.noTargetMessage(undefined));
+        throw new Error(this.unroutable(undefined));
     }
 
-    private noTargetMessage(pathHint?: string): string {
+    /** Why no window could take the call, from a fresh look at the registry. */
+    private unroutable(hint: string | undefined): string {
         const windows = this.registry.list();
         if (windows.length === 0) {
-            return 'No CMSIS Developer Assistant-enabled VS Code window is currently registered. ' +
-                'Open your project in VS Code and wait for the extension to activate.';
+            return NO_WINDOW_ERROR;
         }
-
-        const listing = windows.map(w => `  • ${describeWindow(w)}`).join('\n');
-
-        if (pathHint) {
-            return `No open VS Code window has "${pathHint}" inside its workspace.\n` +
-                `Open the folder containing it, or pass a path that is inside one of these:\n${listing}`;
+        const listing = bulletList(windows);
+        if (hint !== undefined) {
+            return `No open VS Code window has "${hint}" inside its workspace.\n`
+                + `Open the folder containing it, or pass a path that is inside one of these:\n${listing}`;
         }
-
-        const active = windows.filter(w => w.hasActiveSession);
-        if (active.length > 1) {
-            return `${active.length} VS Code windows have an active debug session, so there is no ` +
-                `unambiguous target for this call.\nPick one with select_debug_window:\n${listing}`;
+        const debugging = windows.filter((w) => w.hasActiveSession).length;
+        if (debugging > 1) {
+            return `${debugging} VS Code windows have an active debug session, so there is no unambiguous target for this call.\n`
+                + `Pick one with select_debug_window:\n${listing}`;
         }
-        return `${windows.length} VS Code windows are registered and none has an active debug session, ` +
-            `so there is no unambiguous target for this call.\n` +
-            `Start a session (cmsis_action load_and_debug), or pick a window with select_debug_window:\n${listing}`;
+        return `${windows.length} VS Code windows are registered and none has an active debug session, `
+            + 'so there is no unambiguous target for this call.\n'
+            + `Start a session (cmsis_action load_and_debug), or pick a window with select_debug_window:\n${listing}`;
     }
 
-    // --------------------------------------------------------------- transport
-
-    private async forward(op: string, args: unknown = {}): Promise<string> {
-        const { target, reason } = this.resolveTarget(pathHintOf(args));
-        logger.info(`Routing ${op} → pid=${target.pid} port=${target.controlPort} (via ${reason})`);
-        try {
-            return await this.post(target, op, args);
-        } catch (error) {
-            // A failed round trip usually means the window closed between the
-            // registry read and the request. Drop the cache so the next call
-            // re-resolves instead of hammering a dead port.
-            if (this.target?.pid === target.pid) {
-                this.target = undefined;
-            }
-            const message = error instanceof Error ? error.message : String(error);
-            throw new Error(
-                `Could not reach the VS Code window handling this session (pid=${target.pid}): ${message}\n` +
-                `It may have been closed. Call list_debug_windows to see what is still open.`,
-            );
-        }
-    }
-
-    private post(target: WindowRegistration, op: string, args: unknown): Promise<string> {
-        const payload = JSON.stringify({ op, args });
-        const timeout = forwardTimeoutMs(op, args, this.defaultToolMs);
-
-        return new Promise<string>((resolve, reject) => {
-            const req = http.request({
+    /** POST `{op, args}` to the window's control server; resolve with its `result`. */
+    private post(entry: WindowRegistration, op: string, args: unknown): Promise<unknown> {
+        const body = Buffer.from(JSON.stringify({ op, args }), 'utf8');
+        const idleLimitMs = forwardTimeoutMs(op, args, this.defaultToolMs);
+        return new Promise<unknown>((resolve, reject) => {
+            const outgoing = http.request({
                 host: '127.0.0.1',
-                port: target.controlPort,
+                port: entry.controlPort,
                 path: '/op',
                 method: 'POST',
+                // Socket inactivity, not a wall-clock deadline.
+                timeout: idleLimitMs,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(payload),
-                    'x-cmsis-developer-assistant-token': target.controlToken,
+                    'Content-Length': body.length,
+                    [TOKEN_HEADER]: entry.controlToken,
                 },
-                timeout,
-            }, (res) => {
-                // Raw bytes, decoded once at the end — see ControlServer.onRequest.
-                const chunks: Buffer[] = [];
+            }, (incoming) => {
+                const parts: Buffer[] = [];
                 let size = 0;
-                res.on('data', (chunk: Buffer) => {
-                    size += chunk.length;
-                    if (size > CONTROL_RESPONSE_MAX_BYTES) {
-                        req.destroy(new Error(`control response above ${CONTROL_RESPONSE_MAX_BYTES} bytes from pid ${target.pid}`));
+                let refused = false;
+                incoming.on('data', (chunk: Buffer) => {
+                    if (refused) {
                         return;
                     }
-                    chunks.push(chunk);
+                    size += chunk.length;
+                    if (size > CONTROL_RESPONSE_MAX_BYTES) {
+                        refused = true;
+                        parts.length = 0;
+                        outgoing.destroy(new Error(
+                            `control response above ${CONTROL_RESPONSE_MAX_BYTES} bytes from pid ${entry.pid}`));
+                        return;
+                    }
+                    parts.push(chunk);
                 });
-                res.on('error', reject);
-                res.on('end', () => {
-                    const body = Buffer.concat(chunks).toString('utf8');
-                    try {
-                        const parsed = JSON.parse(body || '{}') as { result?: string; error?: string };
-                        if (res.statusCode === 200 && parsed.result !== undefined) {
-                            resolve(parsed.result);
-                        } else {
-                            reject(new Error(parsed.error ?? `control server returned ${res.statusCode}`));
-                        }
-                    } catch {
-                        reject(new Error(`malformed control response: ${body.slice(0, 200)}`));
+                incoming.on('error', reject);
+                incoming.on('end', () => {
+                    if (!refused) {
+                        settleReply(incoming.statusCode, Buffer.concat(parts).toString('utf8'), resolve, reject);
                     }
                 });
             });
-
-            req.on('timeout', () => {
-                req.destroy(new Error(
-                    `no response within ${Math.round(timeout / 1000)}s — the target window may be busy or wedged`,
-                ));
+            outgoing.on('timeout', () => {
+                outgoing.destroy(new Error(
+                    `no response within ${Math.round(idleLimitMs / 1000)}s — the target window may be busy or wedged`));
             });
-            req.on('error', reject);
-            req.write(payload);
-            req.end();
+            outgoing.on('error', reject);
+            outgoing.end(body);
         });
     }
+}
 
-    // ------------------------------------------------------- routing-only tools
-
-    /** Everything the agent needs to choose a window, as the registry sees it. */
-    public listDebugWindows(): string {
-        const windows = this.registry.list();
-        if (windows.length === 0) {
-            return 'No CMSIS Developer Assistant-enabled VS Code windows are currently registered.';
-        }
-        const current = this.target;
-        const lines = windows.map((w) => {
-            const marks: string[] = [];
-            if (current?.pid === w.pid) { marks.push('current target'); }
-            if (this.pinnedPid === w.pid) { marks.push('pinned'); }
-            return `• ${describeWindow(w)}${marks.length ? `  ← ${marks.join(', ')}` : ''}`;
-        });
-        return `Registered VS Code windows:\n${lines.join('\n')}\n\n` +
-            'Pin one for this session with select_debug_window({ pid }) when the automatic choice is wrong.';
+/** Turn a complete control-server reply into the call's outcome. */
+function settleReply(
+    status: number | undefined,
+    body: string,
+    resolve: (value: unknown) => void,
+    reject: (reason: Error) => void,
+): void {
+    let reply: { result?: unknown; error?: unknown } | null;
+    try {
+        reply = body.length === 0 ? {} : JSON.parse(body);
+    } catch {
+        reply = null;
     }
-
-    /** Pin this session to one window, by pid or by a path inside its workspace. */
-    public selectDebugWindow(args: { pid?: number; workspaceFolder?: string }): string {
-        const { pid, workspaceFolder } = args;
-        if (pid === undefined && !workspaceFolder) {
-            return 'Pass either pid or workspaceFolder. Call list_debug_windows to see the options.';
-        }
-
-        const found = pid !== undefined
-            ? this.registry.findByPid(pid)
-            : this.registry.findByWorkspaceFolder(workspaceFolder!);
-
-        if (!found) {
-            const listing = this.registry.list().map(w => `  • ${describeWindow(w)}`).join('\n');
-            return `No registered window matches ${pid !== undefined ? `pid=${pid}` : `"${workspaceFolder}"`}.\n` +
-                (listing ? `Currently registered:\n${listing}` : 'No windows are registered.');
-        }
-
-        this.pinnedPid = found.pid;
-        this.target = found;
-        return `This session is now pinned to: ${describeWindow(found)}\n` +
-            'Every subsequent tool call runs in that window until you pin another.';
+    if (reply === null) {
+        reject(new Error(`malformed control response: ${body.slice(0, MALFORMED_PREVIEW_CHARS)}`));
+        return;
     }
-
-    // ------------------------------------------------------- IDebuggingHandler
-    //
-    // One-line delegations. The op names are the method names, checked against
-    // this interface at compile time in core/opTable.ts, so a tool cannot be
-    // added without becoming routable.
-
-    handleStartDebugging(args: { fileFullPath?: string; workingDirectory: string; testName?: string; configurationName?: string; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleStartDebugging', args);
+    if (status === 200 && reply.result !== undefined) {
+        resolve(reply.result);
+        return;
     }
-    handleStopDebugging(): Promise<string> {
-        return this.forward('handleStopDebugging');
-    }
-    handleStepOver(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleStepOver', args);
-    }
-    handleStepInto(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleStepInto', args);
-    }
-    handleStepOut(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleStepOut', args);
-    }
-    handleContinue(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleContinue', args);
-    }
-    handlePause(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handlePause', args);
-    }
-    handleWaitForStop(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleWaitForStop', args);
-    }
-    handleRestart(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleRestart', args);
-    }
-    handleReset(args: { method?: 'auto' | 'system' | 'core' | 'hardware'; halt?: boolean; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleReset', args);
-    }
-    handleAddBreakpoint(args: { fileFullPath: string; line?: number; condition?: string; lineContent?: string }): Promise<string> {
-        return this.forward('handleAddBreakpoint', args);
-    }
-    handleAddLogpoint(args: { fileFullPath: string; line: number; logMessage: string; condition?: string }): Promise<string> {
-        return this.forward('handleAddLogpoint', args);
-    }
-    handleRemoveBreakpoint(args: { fileFullPath: string; line: number }): Promise<string> {
-        return this.forward('handleRemoveBreakpoint', args);
-    }
-    handleClearAllBreakpoints(): Promise<string> {
-        return this.forward('handleClearAllBreakpoints');
-    }
-    handleListBreakpoints(): Promise<string> {
-        return this.forward('handleListBreakpoints');
-    }
-    handleListVariableNames(args: { scope?: 'local' | 'global' | 'all'; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleListVariableNames', args);
-    }
-    handleGetVariables(args: { scope?: 'local' | 'global' | 'all'; variableNames?: string[]; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleGetVariables', args);
-    }
-    handleEvaluateExpression(args: { expression: string; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleEvaluateExpression', args);
-    }
-    handleReadMemory(args: { address: string; length: number; format?: 'hex' | 'ascii' | 'both'; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleReadMemory', args);
-    }
-    handleReadCoreRegisters(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleReadCoreRegisters', args);
-    }
-    handleReadCycleCounter(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleReadCycleCounter', args);
-    }
-    handleReadPeripheralRegister(args: { peripheral: string; register?: string; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleReadPeripheralRegister', args);
-    }
-    handleGetFaultInfo(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleGetFaultInfo', args);
-    }
-    handleDiagnoseFault(args?: { levels?: number; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleDiagnoseFault', args);
-    }
-    handleLookupPeripheral(args?: { name?: string; address?: string; filter?: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleLookupPeripheral', args);
-    }
-    handleLookupRegister(args: { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleLookupRegister', args);
-    }
-    handleGetDeviceInfo(): Promise<string> {
-        return this.forward('handleGetDeviceInfo');
-    }
-    handleCheckTargetConnection(): Promise<string> {
-        return this.forward('handleCheckTargetConnection');
-    }
-    handleGetSessionStatus(): Promise<string> {
-        return this.forward('handleGetSessionStatus');
-    }
-    handleGetCallStack(args: { threadId?: number; levels?: number; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleGetCallStack', args);
-    }
-    handleGetThreads(args?: { timeoutMs?: number }): Promise<string> {
-        return this.forward('handleGetThreads', args);
-    }
-    handleGetFrameVariables(args: { frameId: number; scope?: 'local' | 'global' | 'all'; variableNames?: string[]; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleGetFrameVariables', args);
-    }
-    handleCmsisCommand(args: { action: CmsisAction; target?: string; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleCmsisCommand', args);
-    }
-    handleFlash(args: { cbuildRunFile?: string; timeoutMs?: number }): Promise<string> {
-        return this.forward('handleFlash', args);
-    }
-
-    // Serial tools reach the same control server; the op table decides that
-    // these dispatch to the serial handler singleton on the far side.
-    serialOp(op: string, args: unknown = {}): Promise<string> {
-        return this.forward(op, args);
-    }
-
-    // Documentation and build-artefact tools too: the worker's control server
-    // picks the pack-docs handler by op name, so the lookup runs in the window
-    // that owns the workspace and its cbuild-run files.
-    packDocsOp(op: string, args: unknown = {}): Promise<string> {
-        return this.forward(op, args);
-    }
+    const reported = reply.error;
+    reject(new Error(reported !== undefined && reported !== null
+        ? String(reported)
+        : `control server returned ${status}`));
 }

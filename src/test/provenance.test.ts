@@ -30,19 +30,14 @@ const DERIVED_FILES = [
     'esbuild.js',
     'eslint.config.mjs',
     'scripts/test-skill-trigger.ts',
-    'src/controlServer.ts',
     'src/debugMCPServer.ts',
     'src/debuggingExecutor.ts',
     'src/debuggingHandler.ts',
     'src/extension.ts',
-    'src/routingDebuggingHandler.ts',
     'src/test/debugSkillGuidance.test.ts',
     'src/test/debuggingHandler.test.ts',
-    'src/test/routing.test.ts',
-    'src/test/workspaceRegistry.test.ts',
     'src/utils/agentConfigurationManager.ts',
     'src/utils/debugConfigurationManager.ts',
-    'src/utils/workspaceRegistry.ts',
 ];
 
 const MARKER = ['Copyright (c)', 'Microsoft', 'Corporation'].join(' ');
