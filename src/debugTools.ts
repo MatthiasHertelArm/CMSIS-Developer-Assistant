@@ -23,7 +23,9 @@
  *
  * `buildSessionServer` assembles it once per session. The gates read the
  * server options and the session's handlers at that moment only, so the tool
- * list a client caches stays true for the whole session.
+ * list a client caches stays true for the whole session. A session whose
+ * handler routes between windows also gets the two window tools, and the
+ * `window` argument on the tools in `WINDOW_ARGUMENT_TOOLS` (#16).
  *
  * Every tool hands its parsed arguments to one handler method and replies
  * with that method's outcome through `reply()`. Nothing is caught here: a
@@ -39,6 +41,7 @@ import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { TOPICS, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
+import { WINDOW_ARGUMENT } from './core/opTable';
 import { TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
 import { TOOL_CONTRACT_DOC, parseToolContract } from './core/toolContract';
 import type { ToolMetrics } from './core/toolMetrics';
@@ -270,6 +273,14 @@ const SOURCE_PATH_DESC = 'Absolute path of the source file';
 const SOURCE_LINE_DESC = 'Source line, numbered from 1';
 const SVD_FILE_DESC = 'Explicit .svd path; default: session, cbuild-run.yml, workspace';
 const PNAME_DESC = 'Processor name selecting the SVD in a multi-core cbuild-run';
+const WINDOW_DESC = 'Run in this window: its pid or a path inside its workspace (list_debug_windows).';
+
+/**
+ * The tools that take `window` in a session that routes between windows
+ * (#16): those that start or own something. The others follow the session's
+ * target, which `window` re-aims. A name added here gets the argument.
+ */
+export const WINDOW_ARGUMENT_TOOLS: ReadonlySet<string> = new Set(['cmsis_action', 'flash', 'reset', 'serial_open']);
 
 /** The one-call override of a handler's default timeout (see TIMEOUT_OVERRIDE). */
 const CALL_TIMEOUT = z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC);
@@ -476,7 +487,12 @@ export function buildSessionServer(parts: SessionParts): MeasuredMcpServer {
         { instructions: buildServerInstructions(parts.toolRules, parts.options) },
         parts.ring,
     );
-    registerTools(mcp, parts.handlers(), parts);
+    const handlers = parts.handlers();
+    // A router's tools that start or own something can name the window they run in.
+    if (windowRoutingOf(handlers.debug) !== undefined) {
+        mcp.addArgument(WINDOW_ARGUMENT, z.string().optional().describe(WINDOW_DESC), WINDOW_ARGUMENT_TOOLS);
+    }
+    registerTools(mcp, handlers, parts);
     registerResources(mcp, parts);
     return mcp;
 }

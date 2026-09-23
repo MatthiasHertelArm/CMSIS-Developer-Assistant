@@ -22,6 +22,8 @@ owns the workspace or the board the call is about.
 - Every window advertises the router's URL, also to Copilot in the editor
   (the MCP server definition in `src/extension.ts`), so in-editor and
   external agents agree on which window owns a board.
+- Every window publishes its role in its registry entry (`role`, since
+  2.5.1); `list_debug_windows` marks the router.
 
 ## The pieces
 
@@ -31,15 +33,16 @@ owns the workspace or the board the call is about.
 | `src/utils/workspaceRegistry.ts` | `WorkspaceRegistry`: the machine-wide list of windows, one JSON file per window |
 | `src/routingDebuggingHandler.ts` | `RoutingDebuggingHandler`: picks the target window for a call and forwards it; answers `list_debug_windows` and `select_debug_window` |
 | `src/controlServer.ts` | `ControlServer`: receives a forwarded call and runs it against this window's handlers |
-| `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends |
+| `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends; `targetHintOf()` |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
 
 ## The registry
 
 Each window keeps `window-<pid>.json` in a directory under `os.tmpdir()`: the
 control port and token, the workspace folders, the window name, whether a
-debug session is active and with which configuration, and the CMSIS solution
-path when the CMSIS Solution extension reports one. The file is written
+debug session is active and with which configuration, the CMSIS solution
+path when the CMSIS Solution extension reports one, and its role (`router`
+or `worker`; windows of 2.5.0 and earlier write none). The file is written
 atomically, refreshed every 20 s, and rewritten at once when a debug session
 starts or ends or the folders change — the session state is what routes every
 call that names no file. Readers drop the files of processes that no longer
@@ -82,28 +85,33 @@ only its user may read the registry (#19):
 `RoutingDebuggingHandler.resolveTarget()` walks a fixed ladder; the first rung
 that applies decides:
 
-1. **Path.** A call that carries `fileFullPath` or `workingDirectory`
-   (`pathHintOf()`) goes to the window whose workspace folder contains it most
-   deeply. A pin never overrides a path: a named file must not be opened in
-   another window.
-2. **Pin.** The window chosen with `select_debug_window`, by process id or by a
+1. **Window argument.** `cmsis_action`, `flash`, `reset` and `serial_open`
+   take `window` in a routed session (#16): all digits is a process id,
+   anything else a path inside the window's workspace (`targetHintOf()`). Like
+   a path, it re-aims the session: the calls after it go to the same window,
+   unless the session is pinned.
+2. **Path.** A call that carries `fileFullPath` or `workingDirectory` goes to
+   the window whose workspace folder contains it most deeply. A pin never
+   overrides a path: a named file must not be opened in another window.
+3. **Pin.** The window chosen with `select_debug_window`, by process id or by a
    path inside its workspace, for the rest of the MCP session.
-3. **Cache.** The window this MCP session reached last, while it is still
+4. **Cache.** The window this MCP session reached last, while it is still
    registered on the same control port.
-4. **The only debugging window.** The one window with an active debug
+5. **The only debugging window.** The one window with an active debug
    session.
-5. **The only window.** The one registered window.
+6. **The only window.** The one registered window.
 
-Otherwise the call is refused with the list of windows and the tools to pick
+Otherwise the call is refused with the list of windows and the ways to pick
 one — when two windows are debugging, reading memory from the wrong board
 would look exactly like a firmware bug, so the router never guesses. The
 refusal is `AMBIGUOUS_WINDOW`, and its `data.candidates` lists every
-registered window (`pid`, `name`, `workspaceFolders`, `hasActiveSession`).
-An empty registry and a pinned window that is gone are `WINDOW_UNREACHABLE`;
-a path inside no workspace, and a `select_debug_window` without a selector
-or without a match, are `INVALID_ARGUMENT`.
-`list_debug_windows` shows every registered window and marks the current
-target and the pin.
+registered window (`pid`, `name`, `workspaceFolders`, `hasActiveSession`,
+and `role` for windows that publish one). An empty registry and a pinned
+window that is gone are `WINDOW_UNREACHABLE`; a path inside no workspace, a
+`window` argument that matches nothing (with the same candidates in
+`data`), and a `select_debug_window` without a selector or without a match
+are `INVALID_ARGUMENT`. `list_debug_windows` shows every registered window
+and marks the router, the current target and the pin.
 
 ## Forwarding
 
@@ -114,7 +122,8 @@ from `src/core/opTable.ts`: the debugging ops (the `IDebuggingHandler`
 method names), the serial ops and the documentation and build-artefact ops.
 The table is checked at compile time against the handler interfaces, and the
 router's forwarding methods are generated from it, so a new tool is routable
-without further code.
+without further code. The `window` argument is the router's alone: it is
+taken out of the arguments before they are sent.
 
 - The router waits for socket activity for the tool's timeout plus 15 s, so
   the worker's own, more specific timeout answer arrives first. `cmsis_action`,
@@ -190,14 +199,16 @@ giving that step at most two seconds.
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
   round trip; typed outcomes — a worker error with its code and the target
   kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the
-  gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`
+  gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`;
+  the `window` argument and the candidates' `role` (#16)
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
   matching; the directory name, modes, and refused directories
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'
   `mode` option and the loopback checks
 - `src/test/windowCoordinator.test.ts`: the serial teardown on dispose
-- `src/test/opTable.test.ts`: the op table
+- `src/test/opTable.test.ts`: the op table and `targetHintOf()`
 - `test/transport/two-window-routing.js`: two coordinators against one
   registry — one router, one worker, the same advertised endpoint, pinning,
   republishing on session start, `AMBIGUOUS_WINDOW` with two candidates when
-  both debug, promotion when the router closes
+  both debug, promotion when the router closes; roles, `window` on exactly
+  the listed tools, `cmsis_action {window}` by pid and by path

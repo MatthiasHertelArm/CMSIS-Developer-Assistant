@@ -26,7 +26,8 @@
 //   6. Every tool call is measured: the stats resource, the
 //      get_session_status trailer and the server aggregate all count them.
 //   7. Server options are accepted and readable back; serialEnabled:false
-//      drops the serial tools. The tool list has a byte budget.
+//      drops the serial tools. The tool list has a byte budget, and no tool
+//      takes the router's window argument (#16).
 //   8. Results are typed (#11): a failure without a session is isError with
 //      structuredContent.error_code, get_session_status is not, and no tool
 //      declares an outputSchema, so tools/list does not grow.
@@ -174,6 +175,9 @@ async function main() {
     // structuredContent rides without an outputSchema; declaring one would cost tools/list bytes on every turn.
     const withSchema = tools.filter((t) => t.outputSchema !== undefined).map((t) => t.name);
     check('no tool declares an outputSchema', withSchema.length === 0, withSchema.join(', '));
+    // The window argument (#16) belongs to a router's sessions: a single window has nothing to name.
+    const withWindow = tools.filter((t) => t.inputSchema?.properties?.window !== undefined).map((t) => t.name);
+    check('no tool of the single-window list takes a window argument', withWindow.length === 0, withWindow.join(', '));
 
     // 4a. The MCP body limit is explicit (1 MiB, matching the control channel's request cap).
     const oversize = await request(port, 'POST', { 'mcp-session-id': sid }, {

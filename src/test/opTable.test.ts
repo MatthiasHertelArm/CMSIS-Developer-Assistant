@@ -24,7 +24,7 @@ import {
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
-    pathHintOf,
+    targetHintOf,
 } from '../core/opTable';
 
 /** The router's own default in these cases: 30 s per tool call. */
@@ -66,11 +66,20 @@ suite('Op table', () => {
     });
 
     test('the path hint is fileFullPath first, then workingDirectory, and never an empty string', () => {
-        assert.strictEqual(pathHintOf({ fileFullPath: '/a/main.c', workingDirectory: '/b' }), '/a/main.c');
-        assert.strictEqual(pathHintOf({ workingDirectory: '/b' }), '/b');
-        assert.strictEqual(pathHintOf({ address: '0x20000000', length: 16 }), undefined);
-        assert.strictEqual(pathHintOf(undefined), undefined);
-        assert.strictEqual(pathHintOf({ fileFullPath: '' }), undefined);
+        assert.deepStrictEqual(targetHintOf({ fileFullPath: '/a/main.c', workingDirectory: '/b' }), { source: 'path', path: '/a/main.c' });
+        assert.deepStrictEqual(targetHintOf({ workingDirectory: '/b' }), { source: 'path', path: '/b' });
+        assert.strictEqual(targetHintOf({ address: '0x20000000', length: 16 }), undefined);
+        assert.strictEqual(targetHintOf(undefined), undefined);
+        assert.strictEqual(targetHintOf({ fileFullPath: '' }), undefined);
+    });
+
+    test('the window argument comes first: all digits is a pid, anything else a path, blank is nothing (#16)', () => {
+        assert.deepStrictEqual(targetHintOf({ window: '4711', fileFullPath: '/a/main.c' }), { source: 'window', pid: 4711 });
+        assert.deepStrictEqual(targetHintOf({ window: ' 4711 ' }), { source: 'window', pid: 4711 });
+        assert.deepStrictEqual(targetHintOf({ window: '/work/board-b' }), { source: 'window', path: '/work/board-b' });
+        assert.deepStrictEqual(targetHintOf({ window: '4711/src' }), { source: 'window', path: '4711/src' });
+        assert.deepStrictEqual(targetHintOf({ window: '  ', workingDirectory: '/b' }), { source: 'path', path: '/b' });
+        assert.strictEqual(targetHintOf({ window: 4711 }), undefined, 'the argument is a string; a number is not read as one');
     });
 
     test('the forward timeout outlasts the tool budget, with a ten-minute floor for slow ops', () => {

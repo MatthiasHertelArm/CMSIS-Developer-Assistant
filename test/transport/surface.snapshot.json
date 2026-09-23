@@ -1261,8 +1261,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 41202,
-          "sha256": "42d657b4a88fd3b9e8987f93db076399f1778121b87a93ce159c59e62df4d4c3"
+          "bytes": 41638,
+          "sha256": "93ff326aef2ddb2706471b6d23055dabccbdb23f54ef5f2482abbfecd343af30"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -2609,8 +2609,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 41202,
-          "sha256": "42d657b4a88fd3b9e8987f93db076399f1778121b87a93ce159c59e62df4d4c3"
+          "bytes": 41638,
+          "sha256": "93ff326aef2ddb2706471b6d23055dabccbdb23f54ef5f2482abbfecd343af30"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -4370,8 +4370,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 41202,
-          "sha256": "42d657b4a88fd3b9e8987f93db076399f1778121b87a93ce159c59e62df4d4c3"
+          "bytes": 41638,
+          "sha256": "93ff326aef2ddb2706471b6d23055dabccbdb23f54ef5f2482abbfecd343af30"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -4996,6 +4996,10 @@
                 "type": "integer",
                 "minimum": 100,
                 "maximum": 60000
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             }
           },
@@ -5704,6 +5708,10 @@
               "rtscts": {
                 "description": "RTS/CTS hardware flow control (default false)",
                 "type": "boolean"
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             },
             "required": [
@@ -5901,6 +5909,10 @@
                 "type": "integer",
                 "minimum": 100,
                 "maximum": 600000
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             },
             "required": [
@@ -5927,6 +5939,10 @@
                 "type": "integer",
                 "minimum": 1000,
                 "maximum": 600000
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             }
           },
@@ -6033,8 +6049,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 41202,
-          "sha256": "42d657b4a88fd3b9e8987f93db076399f1778121b87a93ce159c59e62df4d4c3"
+          "bytes": 41638,
+          "sha256": "93ff326aef2ddb2706471b6d23055dabccbdb23f54ef5f2482abbfecd343af30"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -6745,6 +6761,10 @@
                 "type": "integer",
                 "minimum": 100,
                 "maximum": 60000
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             }
           },
@@ -7453,6 +7473,10 @@
               "rtscts": {
                 "description": "RTS/CTS hardware flow control (default false)",
                 "type": "boolean"
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             },
             "required": [
@@ -7650,6 +7674,10 @@
                 "type": "integer",
                 "minimum": 100,
                 "maximum": 600000
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             },
             "required": [
@@ -7676,6 +7704,10 @@
                 "type": "integer",
                 "minimum": 1000,
                 "maximum": 600000
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             }
           },
@@ -7782,8 +7814,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 41202,
-          "sha256": "42d657b4a88fd3b9e8987f93db076399f1778121b87a93ce159c59e62df4d4c3"
+          "bytes": 41638,
+          "sha256": "93ff326aef2ddb2706471b6d23055dabccbdb23f54ef5f2482abbfecd343af30"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -8125,7 +8157,7 @@
           "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · start_debugging <size> over 1 call"
         },
         "list_debug_windows": {
-          "text": "Registered VS Code windows:\n• pid=<n> | <tmp>  ← current target\n\nPin one for this session with select_debug_window({ pid }) when the automatic choice is wrong."
+          "text": "Registered VS Code windows:\n• pid=<n> | <tmp>  ← current target\n\nPin one for this session with select_debug_window({ pid }) when the automatic choice is wrong, or pass window to a tool that takes it."
         },
         "select_debug_window": {
           "isError": true,

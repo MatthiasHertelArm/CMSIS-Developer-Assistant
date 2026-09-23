@@ -22,7 +22,7 @@ import { DebuggingExecutor, ConfigurationManager, DebuggingHandler } from '.';
 import { HardwareTimeouts } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
 import type { PackDocsHandlers } from './packDocsDispatch';
-import { WorkspaceRegistry } from './utils/workspaceRegistry';
+import { WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
 import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
 import { logger } from './utils/logger';
@@ -111,6 +111,11 @@ export class WindowCoordinator {
         return this.mcpServer !== undefined;
     }
 
+    /** What this window does in the routing, as its registry entry says it. */
+    public role(): WindowRole {
+        return this.isRouter() ? 'router' : 'worker';
+    }
+
     /**
      * The URL agents should use — always the router's, in every window.
      *
@@ -170,6 +175,8 @@ export class WindowCoordinator {
             }
             throw error;
         }
+        // The role is part of the registry entry.
+        this.publish();
     }
 
     /**
@@ -229,6 +236,7 @@ export class WindowCoordinator {
             hasActiveSession: !!session,
             activeConfigurationName: session?.configuration?.name,
             cmsisProject: this.cmsisProjectPath(),
+            role: this.role(),
         });
     }
 

@@ -179,11 +179,18 @@ itself (see [Results](#results)). `src/packDocsTools.ts` and
 | Documentation (`registerPackDocsTools()`) | `packDocsEnabled`, and the session has a `packDocs` dispatch | `src/packDocsTools.ts`, then the dispatch |
 | Build artefacts (`registerBuildInfoTools()`) | `buildInfoEnabled`, and the session has a `packDocs` dispatch | `src/buildInfoTools.ts`, then the dispatch |
 | `list_debug_windows`, `select_debug_window` | the debugging handler is a window router | the router |
+| The `window` argument on the tools in `WINDOW_ARGUMENT_TOOLS` (`cmsis_action`, `flash`, `reset`, `serial_open`) | the debugging handler is a window router | the router, which reads it and never forwards it |
 
 A router is recognised by its two extra methods (`windowRoutingOf()`), so this
 module does not import the routing code. Tool names stay literal because
 `src/test/skill.test.ts` collects them from the `registerTool('…'` calls and
 compares them with the `allowed-tools` list of the `cmsis-debug-live` skill.
+The `window` argument is added in one place for all its tools:
+`buildSessionServer()` calls `MeasuredMcpServer.addArgument()` before the
+tools are registered, and the server appends the argument to the input shape
+of each tool in the list, so a tool joins by adding its name to
+`WINDOW_ARGUMENT_TOOLS`. A single window has no windows to name, and its
+`tools/list` does not change.
 
 ### Results
 
@@ -241,13 +248,15 @@ whole guide is served and a warning is logged.
   `PortInUseError`, `SessionHandlers`, `DebugMCPServerOptions`,
   `localSerialDispatch`
 - `src/debugTools.ts`: `buildSessionServer`, `loadToolRules`, `ABOUT`,
-  `registerTools`, `registerResources`, `ShippedDocs`, `SHIPPED_RESOURCES`
+  `WINDOW_ARGUMENT_TOOLS`, `registerTools`, `registerResources`,
+  `ShippedDocs`, `SHIPPED_RESOURCES`
 - `src/core/serverInstructions.ts`: `buildServerInstructions`,
   `composeInstructions`, `TOOL_RULES_REMINDER`
 - `src/core/toolContract.ts` and `src/utils/markerBlock.ts`: the tool
   contract's blocks, their copies and the marker comments around them
-- `src/core/measuredMcpServer.ts` (`toCallToolResult`) and
-  `src/core/toolMetrics.ts`: the MCP result and measurement
+- `src/core/measuredMcpServer.ts` (`toCallToolResult`, `addArgument`) and
+  `src/core/toolMetrics.ts`: the MCP result, the added arguments and
+  measurement
 - `src/core/toolResult.ts`: `ToolText`, `ToolReply`, `ToolError`, the error
   codes and their classification
 - `src/core/instructionTopics.ts`: topic markers of the guide
@@ -259,7 +268,7 @@ whole guide is served and a warning is logged.
 - `src/test/loopback.test.ts`: the `Host` and `Origin` checks;
   `src/test/debugMCPServer.test.ts`: that the server still exports them
 - `src/test/measuredMcpServer.test.ts`: every outcome as a client receives
-  it, and the metrics outcome
+  it, the metrics outcome, and an added argument
 - `src/test/toolResult.test.ts`: classification, wrapping, the reading of
   2.3.10 texts
 - `src/test/debugSkillGuidance.test.ts`: instructions, tool descriptions and
@@ -273,9 +282,10 @@ whole guide is served and a warning is logged.
 - `test/transport/session-lifecycle.js`: sessions over real HTTP — session
   ids, the 400 answers, three consecutive `get_threads`, the 413 limit,
   topics, statistics, typed errors without a session, no `outputSchema`,
-  the tool rules first and once in a status, the pinned `tools/list` size
+  no `window` argument, the tool rules first and once in a status, the
+  pinned `tools/list` size
 - `test/transport/surface-snapshot.js` (`npm run test:surface`): initialize
   result, tool list, resources and every tool's reply without a session,
   compared with `test/transport/surface.snapshot.json`
 - `test/transport/two-window-routing.js`: the server as router for two
-  windows
+  windows, the routed `tools/list` with its budget and the `window` argument

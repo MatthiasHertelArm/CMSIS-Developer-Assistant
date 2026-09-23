@@ -12,6 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - The server `instructions` start with the rules, about 1.5 kB per session. `tools/list` is unchanged to the byte.
   - The first `get_session_status` of each MCP session repeats them in one line: "Tool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions)."
   - The bundled skills `cmsis-debug-live`, `cmsis-pack-docs`, `add-board-layer` and `cmsis-help`, and the overview of `get_debug_instructions`, carry the rules below their title. `cmsis-debug-live`, `cmsis-help` and the `build` topic of the guide also carry the table.
+- **With several VS Code windows open, a call can name the window it runs in, and each window says whether it is the router (part of #16).**
+  - In a session that routes, `cmsis_action`, `flash`, `reset` and `serial_open` take `window`: a pid, or a path inside a window's workspace. It aims that call and, like a file path, the session's later calls without one; a pin from `select_debug_window` keeps the calls after it. A `window` that matches nothing is `INVALID_ARGUMENT` with the candidates in `data`. The router reads the argument and never forwards it.
+  - The routed `tools/list` grows by about 500 bytes; the single-window list is unchanged.
+  - Each registry entry carries the window's `role` (`router` or `worker`). `list_debug_windows` marks the router, and the candidates of `AMBIGUOUS_WINDOW` carry `role`. With several idle windows its hint names `cmsis_action load_and_debug` with `window`.
+  - Windows of 2.5.0 read the new field without harm; their own entries have no role.
 - `npm run skills:sync -- --offline` regenerates the routers, the catalog, `cmsis-help` and the rule blocks without a network fetch, and leaves the vendored skills and the lock alone.
 - `src/utils/markerBlock.ts` inserts, replaces, extracts and removes text between marker comments without touching the rest of a file, line endings included. The step that writes the rules into agents' rule files uses it too.
 - **The setup offers to add the tool rules to your agents' rule files, with your consent (#45, part of #50).**
