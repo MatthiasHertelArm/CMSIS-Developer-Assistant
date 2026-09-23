@@ -46,9 +46,12 @@ and needs no file. The roster: Roo Code, Antigravity, Cline, GitHub Copilot
 CLI, Cursor, Codex (TOML), Claude Code, Claude Desktop (stdio bridge via
 `mcp-remote`). Paths under the platform's application-data directory follow
 `%APPDATA%`, `~/Library/Application Support` or `$XDG_CONFIG_HOME`;
-`CODEX_HOME` and `COPILOT_HOME` move those two agents' files. Roo Code,
-Antigravity, Cline and Cursor share one `streamableHttp` entry shape; Copilot
-CLI, Claude Code and Claude Desktop have their own (`ENTRY_SHAPES`).
+`CODEX_HOME` and `COPILOT_HOME` move those two agents' files. Cursor reads
+`~/.cursor/mcp.json` on every platform. Roo Code, Antigravity and Cline share
+one `streamableHttp` entry shape; Copilot CLI, Cursor (`url` only, as its
+documentation shows a remote server), Claude Code and Claude Desktop have
+their own (`ENTRY_SHAPES`). Each path carries the vendor source it was checked
+against in a code comment.
 
 ### Migration of earlier entries
 
@@ -60,6 +63,13 @@ another transport or another endpoint by the current shape, keeping its
 table and points ours at the current endpoint when that table existed or ours
 still uses SSE (`migrateCodexAgent()`, with the text helpers
 `stripLegacyCodexSection()` and `upsertCodexDebugMCPConfig()`).
+
+Releases before 2.5.1 wrote Cursor's entry to
+`…/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json`, a file
+Cursor never reads. `moveCursorEntry()` moves such an entry to
+`~/.cursor/mcp.json` first — the only migration that creates a file, because
+the user asked for Cursor back then — keeps an entry the user already has
+there, and deletes the old file when nothing but our entry was in it.
 
 ### Safety rules for config files
 

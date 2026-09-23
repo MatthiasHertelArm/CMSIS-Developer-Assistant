@@ -146,6 +146,17 @@ function applicationDataDir(homeRoot: string): string {
     return dataDir;
 }
 
+/**
+ * Where releases before 2.5.1 wrote Cursor's entry. Cursor does not read this
+ * file: it takes its user-level servers from `~/.cursor/mcp.json` on every
+ * platform ("Create ~/.cursor/mcp.json in your home directory for tools
+ * available everywhere", https://cursor.com/docs/context/mcp, checked
+ * 2026-09-24). Activation moves an entry found here (`moveCursorEntry()`).
+ */
+function oldCursorConfigPath(homeRoot: string): string {
+    return below(applicationDataDir(homeRoot), 'Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json');
+}
+
 /** The agents in picker order, with their configuration files as the environment says right now. */
 function supportedAgents(): AgentInfo[] {
     const homeRoot = os.homedir();
@@ -162,7 +173,7 @@ function supportedAgents(): AgentInfo[] {
         viaJson('antigravity', 'Antigravity', below(homeRoot, '.gemini/antigravity/mcp_config.json')),
         viaJson('cline', 'Cline', below(vsCodeStorage, 'saoudrizwan.claude-dev/settings/cline_mcp_settings.json')),
         viaJson('copilot-cli', 'GitHub Copilot CLI', path.join(process.env.COPILOT_HOME || below(homeRoot, '.copilot'), 'mcp-config.json')),
-        viaJson('cursor', 'Cursor', below(appData, 'Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json')),
+        viaJson('cursor', 'Cursor', below(homeRoot, '.cursor/mcp.json')),
         codex,
         viaJson('claude-code', 'Claude Code', path.join(homeRoot, '.claude.json')),
         viaJson('claude-desktop', 'Claude Desktop', below(appData, 'Claude/claude_desktop_config.json')),
@@ -180,12 +191,15 @@ function agentsWithFiles(): AgentInfo[] {
  */
 const ENTRY_SHAPES: Readonly<Record<string, (url: string) => MCPServerConfig>> = {
     'copilot-cli': (url) => ({ type: 'http', url, tools: ['*'] }),
+    // Cursor documents a remote server as `url` (with optional `headers` and `auth`);
+    // the fields of the default shape are not in its schema (https://cursor.com/docs/context/mcp).
+    'cursor': (url) => ({ url }),
     'claude-code': (url) => ({ type: 'http', url }),
     // Claude Desktop starts stdio servers only; mcp-remote bridges to the HTTP endpoint.
     'claude-desktop': (url) => ({ command: 'npx', args: ['-y', 'mcp-remote', url] }),
 };
 
-/** The entry a JSON agent gets under `mcpServers.<SERVER_KEY>`: Roo Code, Antigravity, Cline and Cursor share the default. */
+/** The entry a JSON agent gets under `mcpServers.<SERVER_KEY>`: Roo Code, Antigravity and Cline share the default. */
 function entryFor(agentId: string, url: string, timeout: number): MCPServerConfig {
     const shape = ENTRY_SHAPES[agentId];
     return shape ? shape(url) : { autoApprove: [], disabled: false, timeout, type: 'streamableHttp', url };
@@ -361,6 +375,61 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
         table[SERVER_KEY] = fresh;
     }
     return { changed: replace || renamed, reported: onSse || otherTransport || renamed };
+}
+
+/** A JSON object, not an array or null. */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Move the entry that releases before 2.5.1 wrote to Cursor's old, unread
+ * location (`oldCursorConfigPath()`) to `cursor.configPath`, where Cursor
+ * reads it: the user asked for Cursor to be set up then, so the file is
+ * created when missing. An entry already there is kept. The old file loses
+ * our keys; when nothing else is left in it, it is deleted together with the
+ * `cursor.mcp/settings` directories that only this extension ever created.
+ * True when the old file changed; one that cannot be parsed is left alone.
+ */
+async function moveCursorEntry(cursor: JsonAgentInfo, oldPath: string, entry: MCPServerConfig): Promise<boolean> {
+    let tree: unknown;
+    try {
+        tree = JSON.parse(await fs.promises.readFile(oldPath, 'utf8'));
+    } catch {
+        return false;
+    }
+    const servers = isJsonObject(tree) ? tree.mcpServers : undefined;
+    if (!isJsonObject(tree) || !isJsonObject(servers) || !(servers[SERVER_KEY] || servers[LEGACY_SERVER_KEY])) {
+        return false;
+    }
+    const field = cursor.mcpServerFieldName;
+    if (!fs.existsSync(cursor.configPath)) {
+        await ensureParentDir(cursor.configPath);
+        await writeFileAtomic(cursor.configPath, JSON.stringify({ [field]: { [SERVER_KEY]: entry } }, null, 2));
+    } else {
+        const added = await rewriteJsonFile(cursor.configPath, (config) => {
+            const present = config[field];
+            return isJsonObject(present) && present[SERVER_KEY] ? false : placeEntry(config, field, entry);
+        });
+        if (added === 'unparseable') {
+            logger.warn(`Left the Cursor entry in ${oldPath}: ${cursor.configPath} is not a JSON object`);
+            return false;
+        }
+    }
+    delete servers[SERVER_KEY];
+    delete servers[LEGACY_SERVER_KEY];
+    const othersLeft = Object.keys(servers).length > 0 || Object.keys(tree).some((key) => key !== 'mcpServers');
+    if (othersLeft) {
+        await writeFileAtomic(oldPath, JSON.stringify(tree, null, 2));
+    } else {
+        await fs.promises.unlink(oldPath);
+        // settings/, then cursor.mcp/; rmdir refuses a directory that is not empty.
+        for (const dir of [path.dirname(oldPath), path.dirname(path.dirname(oldPath))]) {
+            await fs.promises.rmdir(dir).catch(() => undefined);
+        }
+    }
+    logger.info(`Moved the Cursor MCP server entry from ${oldPath}, which Cursor does not read, to ${cursor.configPath}`);
+    return true;
 }
 
 /** Migrate one JSON agent file. True when it was written with a change worth reporting. */
@@ -571,10 +640,11 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Update the entries of agents whose configuration file exists (none is
-     * created): rename the pre-rename key, move SSE and wrong-transport
-     * entries to the current shape, refresh a stale endpoint. One agent
-     * failing does not stop the others.
+     * Update the entries of agents whose configuration file exists: rename
+     * the pre-rename key, move SSE and wrong-transport entries to the current
+     * shape, refresh a stale endpoint. No file is created, except Cursor's
+     * when an entry is moved there from the location earlier releases used.
+     * One agent failing does not stop the others.
      */
     migrateExistingConfigurations(): Promise<void> {
         return this.migrateAgentFiles();
@@ -787,6 +857,17 @@ export class AgentConfigurationManager {
     private async migrateAgentFiles(): Promise<void> {
         const url = this.endpointUrl();
         let reported = 0;
+        const cursor = supportedAgents().find((agent): agent is JsonAgentInfo => agent.id === 'cursor' && agent.configFormat === 'json');
+        if (cursor) {
+            const oldPath = oldCursorConfigPath(os.homedir());
+            try {
+                if (await moveCursorEntry(cursor, oldPath, entryFor(cursor.id, url, this.entryTimeoutSeconds))) {
+                    reported++;
+                }
+            } catch (failure) {
+                logger.warn(`Could not move the Cursor entry from ${oldPath} to ${cursor.configPath}`, failure);
+            }
+        }
         for (const agent of agentsWithFiles()) {
             try {
                 const counted = agent.configFormat === 'json'

@@ -708,11 +708,14 @@ const AGENT_FILES = {
     'antigravity': 'home/.gemini/antigravity/mcp_config.json',
     'cline': 'home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json',
     'copilot-cli': 'home/.copilot/mcp-config.json',
-    'cursor': 'home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json',
+    'cursor': 'home/.cursor/mcp.json',
     'codex': 'home/.codex/config.toml',
     'claude-code': 'home/.claude.json',
     'claude-desktop': 'home/Library/Application Support/Claude/claude_desktop_config.json',
 };
+
+/** Where releases before 2.5.1 wrote Cursor's entry (darwin), a file Cursor does not read. */
+const OLD_CURSOR_FILE = 'home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json';
 
 function agentSeeds(byAgent) {
     const out = {};
@@ -1526,6 +1529,40 @@ function agentScenarios() {
             run: migrate(),
         },
         { id: 'agents/migrate-other-port', about: 'constructed with port 4555 and timeout 42', seed: SEED_STALE, run: migrate(42, 4555) },
+        {
+            id: 'agents/migrate-cursor-old-location', about: 'the entry an earlier release wrote where Cursor does not read moves to ~/.cursor/mcp.json; the old file goes',
+            seed: { [OLD_CURSOR_FILE]: json({ mcpServers: { [KEY]: { autoApprove: [], disabled: false, timeout: 180, type: 'streamableHttp', url: URL_3001 } } }) },
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-cursor-old-location-merge', about: 'legacy key in the old file, other servers in both: merged; the old file keeps what is not ours',
+            seed: {
+                [OLD_CURSOR_FILE]: json({ mcpServers: { [LEGACY]: { type: 'sse', url: 'http://localhost:3001/sse' }, other: { url: 'http://other/mcp' } }, note: 1 }),
+                ...agentSeeds({ cursor: json({ mcpServers: { mine: { command: 'x' } } }) }),
+            },
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-cursor-already-registered', about: 'an entry the user put in ~/.cursor/mcp.json wins; the old one is dropped',
+            seed: {
+                [OLD_CURSOR_FILE]: json({ mcpServers: { [KEY]: { type: 'streamableHttp', url: URL_3001 } } }),
+                ...agentSeeds({ cursor: json({ mcpServers: { [KEY]: { url: URL_3001, headers: { a: 'b' } } } }) }),
+            },
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-cursor-target-unparseable', about: 'a JSONC ~/.cursor/mcp.json is not rewritten, and the old entry stays for a later run',
+            seed: {
+                [OLD_CURSOR_FILE]: json({ mcpServers: { [KEY]: { type: 'streamableHttp', url: URL_3001 } } }),
+                ...agentSeeds({ cursor: '{\n  // mine\n  "mcpServers": {}\n}\n' }),
+            },
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-cursor-old-file-without-entry', about: 'an old file without our entry is left alone and nothing is created',
+            seed: { [OLD_CURSOR_FILE]: json({ mcpServers: { other: {} } }) },
+            run: migrate(),
+        },
         {
             id: 'agents/migrate-file-keeps-changing', about: 'Claude Code file differs on every read: skipped (logged); Cline still migrated',
             seed: agentSeeds({
