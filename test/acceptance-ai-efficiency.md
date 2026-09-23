@@ -104,10 +104,32 @@ npm run eval:scenario -- --list
 npm run eval:scenario -- divide-by-zero --wait-for-window 120 --runs 2
 ```
 
-Expect: `# run 1/2: PASS — N tool calls, M turns, S s, B bytes from the server`, a report in
-`test/eval/reports/`, `unknownEventTypes` listed (send them back so the aggregator can be
-refined), and `$COPILOT_HOME/mcp-config.json` unchanged afterwards. Stop the FVP mid-run:
-the report says `infra_error`, not a failed agent.
+Expect: `# run 1/2: PASS — N tool calls, 0 shell bypass(es), M turns, S s, B bytes from the
+server`, a report in `test/eval/reports/`, `unknownEventTypes` listed (send them back so the
+aggregator can be refined), and `$COPILOT_HOME/mcp-config.json` unchanged afterwards. Stop the
+FVP mid-run: the report says `infra_error`, not a failed agent.
+
+Tool rules (#45, #50): run `flash-image-missing` and one fault scenario twice each, without
+and with the rule file, and record `bypassRate` from the reports:
+
+```bash
+npm run eval:scenario -- flash-image-missing --wait-for-window 120 --runs 3
+npm run eval:scenario -- flash-image-missing --wait-for-window 120 --runs 3 --rules
+```
+
+Expect: a shell `pyocd`, `pip install`, `cbuild` or `curl localhost` shows up under the run's
+`bypasses` and fails it; with `--rules` the work copy has an `AGENTS.md` with the rules
+block. Check the first recorded `events.*.jsonl` for the shell tool's name and its argument
+(`bash` / `command` is assumed) and report a mismatch.
+
+## 5b. Rule files (5 min) — a real workspace, no target
+
+| # | Do | Expect |
+|---|----|--------|
+| 5b.1 | **Configure Agents and Skills**, pick Claude Code and Codex in step 1 | Step 3 lists `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` checked, the workspace `AGENTS.md` unchecked |
+| 5b.2 | Accept; for each file look at the diff, choose **Write** once and dismiss once | Only the confirmed file changes; the block sits between the `cmsis-developer-assistant:rules` markers at its end |
+| 5b.3 | **Configure Agents and Skills** again, uncheck the file, choose **Remove** | The file is byte-identical to before (`git diff` clean in a repo), or deleted when it was created for the rules |
+| 5b.4 | Edit one rule inside a written block, reload the window | The output channel logs `Tool rules in … updated to the current tool contract`; the edit is gone, the rest of the file unchanged |
 
 ## 6. Numbers to record
 
@@ -118,6 +140,7 @@ the report says `infra_error`, not a failed agent.
 | `step_over` reply bytes, compact | §2.3 stats `perTool.step_over.bytesOut / calls` | |
 | HardFault triage: calls to root cause | §3, count tool calls until the answer | |
 | Eval scenario: calls / turns / bytes / pass | §5 report | |
+| Bypass rate without / with `--rules` (`flash-image-missing`, one fault scenario) | §5 reports, `bypassRate` | |
 
 ## Pre-existing, not in scope
 

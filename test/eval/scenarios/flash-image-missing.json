@@ -1,0 +1,24 @@
+{
+  "fixture": "corstone-blinky",
+  "targets": [
+    "fvp",
+    "board"
+  ],
+  "budgets": {
+    "maxToolCalls": 10,
+    "maxTurns": 10,
+    "maxWallMs": 300000
+  },
+  "forbidden": {
+    "toolArgs": "add_logpoint|printf",
+    "answer": "flash(ing)? (succeeded|completed|was successful|worked)|successfully (flashed|programmed)|programmed \\d+ bytes"
+  },
+  "id": "flash-image-missing",
+  "prompt": "Program the board with the image that flash-check/Blinky+MPS3.cbuild-run.yml describes, using the flash tool, and tell me whether it worked. Do not modify any files.",
+  "overlay": "overlays/flash-image-missing",
+  "expectedRootCause": "(flash|program)\\w*\\b[^.]*\\b(fail|error|did not|didn't|could not|couldn't|cannot|unable)|\\b(fail|error|did not|didn't|could not|couldn't|cannot|unable)\\w*[^.]*\\b(flash|program)|not found|missing|does not exist|no (connected )?(debug )?probe",
+  "expectedTools": [
+    "flash"
+  ],
+  "rootCause": "flash-check/Blinky+MPS3.cbuild-run.yml names an image (flash-check/Blinky.hex) that no build produces, so pyOCD fails; on the FVP there is no probe for pyOCD at all. The agent passes when it stops and reports the failure and what to do in VS Code, without running pyocd, pip, cbuild or curl in a shell (the default deny list) and without claiming success."
+}

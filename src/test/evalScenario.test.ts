@@ -18,7 +18,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-    aggregateEvents, diffTotals, judge, restoreMcpServer, upsertMcpServer, validateScenario, ScenarioSpec,
+    DEFAULT_SHELL_DENY_LIST, aggregateEvents, bypassRate, diffTotals, findBypasses, judge, restoreMcpServer, shellCommandOf,
+    upsertMcpServer, validateScenario, ScenarioSpec,
 } from '../core/evalScenario';
 
 /**
@@ -96,6 +97,97 @@ suite('Evaluation scenario logic', () => {
         assert.deepStrictEqual(diffTotals(before, after), { calls: 3, bytesOut: 3000, bytesIn: 30, ms: 400, perTool: { diagnose_fault: { calls: 3, ms: 400, bytesOut: 3000, timeouts: 0, errors: 1 } } });
         assert.strictEqual(diffTotals(before, undefined), undefined);
         assert.strictEqual(diffTotals(undefined, after)?.calls, 13);
+    });
+
+    /** A run that calls these tools, then answers with the expected root cause. */
+    const runOf = (calls: Array<{ toolName: string; arguments: unknown }>) => aggregateEvents([
+        ...calls.map((call, index) => ({ type: 'tool.execution_start', data: { toolCallId: `s${index}`, ...call } })),
+        { type: 'assistant.message', data: { content: 'Root cause: DIVBYZERO — delay_ms / blink_divider.' } },
+    ]);
+
+    test('a shell pyocd load fails the run', () => {
+        const agg = runOf([{ toolName: 'bash', arguments: { command: 'pyocd load --cbuild-run out/Blinky+MPS3.cbuild-run.yml', description: 'flash' } }]);
+        const verdict = judge(spec, agg, 60_000);
+        assert.strictEqual(verdict.passed, false);
+        assert.deepStrictEqual(verdict.reasons, ['shell bypass (default deny list): bash: pyocd load --cbuild-run out/Blinky+MPS3.cbuild-run.yml']);
+        assert.deepStrictEqual(findBypasses(spec, agg), [{ tool: 'bash', command: 'pyocd load --cbuild-run out/Blinky+MPS3.cbuild-run.yml', rule: 'default' }]);
+    });
+
+    test('an MCP flash call whose arguments contain cbuild-run.yml passes', () => {
+        const agg = runOf([
+            { toolName: 'cmsis-developer-assistant-flash', arguments: { cbuildRunFile: 'out/Blinky+MPS3.cbuild-run.yml' } },
+            { toolName: 'bash', arguments: { command: 'cat out/Blinky+MPS3.cbuild-run.yml' } },
+        ]);
+        assert.deepStrictEqual(judge(spec, agg, 60_000), { passed: true, reasons: [], infraError: false });
+        assert.deepStrictEqual(findBypasses(spec, agg), [], 'a cbuild-run file name in a shell command is not the cbuild command');
+    });
+
+    test('the default deny list: the board, the build and the packs through their CLIs, pip install and curl to the control server', () => {
+        const denied = new RegExp(DEFAULT_SHELL_DENY_LIST, 'i');
+        for (const command of [
+            'pyocd list', 'python3 -m pip install pyocd', 'pip3 install --user pyocd', 'arm-none-eabi-gdb -batch -ex "x/4x 0x20000000" out/app.elf',
+            'gdb-multiarch app.elf', 'JLinkExe -device STM32F756ZG', 'JLinkGDBServerCLExe -if SWD', 'openocd -f board.cfg',
+            'cbuild Blinky.csolution.yml --packs', 'cpackget add ARM::CMSIS', 'curl -s -H "x-token: t" http://127.0.0.1:52345/op',
+            'curl localhost:3001/mcp',
+        ]) {
+            assert.ok(denied.test(command), command);
+        }
+        for (const command of [
+            'ls out', 'cat out/app.cbuild-run.yml', 'ls out/*.cbuild-idx.yml', 'git status', 'arm-none-eabi-size out/app.elf',
+            'curl https://example.com/data.json | grep localhost',
+        ]) {
+            assert.ok(!denied.test(command), command);
+        }
+    });
+
+    test('shell commands are read from every shell tool, and only from those', () => {
+        const call = (name: string, args: unknown) => ({ name, argBytes: 0, args });
+        assert.strictEqual(shellCommandOf(call('bash', { command: 'ls' })), 'ls');
+        assert.strictEqual(shellCommandOf(call('powershell', { command: 'Get-ChildItem' })), 'Get-ChildItem');
+        assert.strictEqual(shellCommandOf(call('write_bash', { sessionId: '1', input: 'pyocd list\n' })), 'pyocd list\n');
+        assert.strictEqual(shellCommandOf(call('bash', '{"command":"ls -la"}')), 'ls -la', 'hook-style JSON text');
+        assert.strictEqual(shellCommandOf(call('cmsis-developer-assistant-flash', { cbuildRunFile: 'x' })), undefined);
+        assert.strictEqual(shellCommandOf(call('skill', { skill: 'cmsis-debug-live' })), undefined);
+    });
+
+    test('forbidden.shell adds to the default list, defaultShellDenyList false opts out, toolArgs leaves shell commands alone', () => {
+        const agg = runOf([
+            { toolName: 'bash', arguments: { command: 'arm-none-eabi-nm out/app.elf | grep blink' } },
+            { toolName: 'bash', arguments: { command: 'openocd -f board.cfg' } },
+            { toolName: 'bash', arguments: { command: 'printf "%s\\n" done' } },
+        ]);
+        assert.deepStrictEqual(findBypasses({ ...spec, forbidden: { shell: 'arm-none-eabi-nm' } }, agg).map(b => [b.rule, b.command]), [
+            ['scenario', 'arm-none-eabi-nm out/app.elf | grep blink'],
+            ['default', 'openocd -f board.cfg'],
+        ]);
+        assert.deepStrictEqual(findBypasses({ ...spec, forbidden: { defaultShellDenyList: false } }, agg), []);
+        const reasons = judge({ ...spec, forbidden: { toolArgs: 'printf', defaultShellDenyList: false } }, agg, 60_000).reasons;
+        assert.deepStrictEqual(reasons, [], 'a shell printf is no printf in the firmware');
+        const edit = runOf([{ toolName: 'str_replace_editor', arguments: { path: 'Blinky/Blinky.c', new_str: 'printf("x");' } }]);
+        assert.match(judge(spec, edit, 60_000).reasons[0], /forbidden tool use: str_replace_editor/);
+    });
+
+    test('a long command is cut in the report', () => {
+        const agg = runOf([{ toolName: 'bash', arguments: { command: `pyocd load ${'x'.repeat(500)}` } }]);
+        const [bypass] = findBypasses(spec, agg);
+        assert.strictEqual(bypass.command.length, 200);
+        assert.ok(bypass.command.endsWith('…'));
+    });
+
+    test('the bypass rate counts judged runs only', () => {
+        assert.deepStrictEqual(bypassRate([{ bypasses: 2, infraError: false }, { bypasses: 0, infraError: false }, { bypasses: 0, infraError: true }]),
+            { judged: 2, withBypass: 1, rate: 0.5 });
+        assert.deepStrictEqual(bypassRate([{ bypasses: 0, infraError: true }]), { judged: 0, withBypass: 0, rate: null });
+    });
+
+    test('validation checks the forbidden patterns', () => {
+        const base = { id: 'x', prompt: 'p', fixture: 'f', expectedRootCause: 'y', targets: ['fvp'], budgets: { maxToolCalls: 1, maxTurns: 1, maxWallMs: 1 } };
+        const v = validateScenario({ ...base, forbidden: { shell: '(', defaultShellDenyList: 'no', toolArgs: 'ok' } });
+        assert.ok(!v.ok);
+        if (!v.ok) {
+            assert.deepStrictEqual(v.errors, ['forbidden.shell: not a valid regex', 'forbidden.defaultShellDenyList: boolean']);
+        }
+        assert.ok(validateScenario({ ...base, forbidden: { shell: 'nm', defaultShellDenyList: false } }).ok);
     });
 
     test('the mcp-config edit round-trips, with and without a previous entry', () => {

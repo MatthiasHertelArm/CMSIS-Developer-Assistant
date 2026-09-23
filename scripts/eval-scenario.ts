@@ -19,15 +19,18 @@
  * Run one evaluation scenario end to end and report what it cost:
  *
  *   npm run eval:scenario -- <scenario-id> [--target fvp|board] [--endpoint URL]
- *                              [--runs N] [--keep] [--no-mcp-config] [--list]
+ *                              [--runs N] [--rules] [--keep] [--no-mcp-config] [--list]
  *
  * A scenario (test/eval/scenarios/<id>.json) names a fixture csolution and an
  * overlay with one planted bug. The runner materialises fixture + overlay in
  * test/eval/.work/<id>/, installs the cmsis-debug-live skill there, registers
  * the MCP server with the Copilot CLI, snapshots the server's tool-call
  * statistics, runs the agent on the scenario prompt, snapshots again, judges
- * the final answer against the expected root cause and the budgets, and
- * writes test/eval/reports/eval.<id>.<timestamp>.json.
+ * the final answer against the expected root cause, the budgets and the
+ * shell commands that bypass the MCP tools, and writes
+ * test/eval/reports/eval.<id>.<timestamp>.json. `--rules` writes the tool
+ * rules into the work copy's AGENTS.md, as the setup's rule-file step does,
+ * and lets the agent read it; without it custom instructions stay off.
  *
  * Deliberately outside `npm test` and CI: it needs an authenticated Copilot
  * CLI (spends AI credits), a VS Code window with the CMSIS Developer
@@ -43,10 +46,12 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { copilotBatchArgs, getCopilotInvocation, parseEvents, run } from './lib/copilotCli.js';
+import { withRules } from '../src/core/agentRules.js';
 import {
-    aggregateEvents, diffTotals, judge, restoreMcpServer, upsertMcpServer, validateScenario,
+    aggregateEvents, bypassRate, diffTotals, findBypasses, judge, restoreMcpServer, upsertMcpServer, validateScenario,
     ScenarioSpec, TelemetryTotals,
 } from '../src/core/evalScenario.js';
+import { TOOL_CONTRACT_DOC, parseToolContract } from '../src/core/toolContract.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const evalRoot = path.join(repoRoot, 'test', 'eval');
@@ -62,10 +67,12 @@ interface Options {
     mcpConfig: boolean;
     list: boolean;
     waitForWindowMs: number;
+    /** Write the tool rules into the work copy's AGENTS.md and let the agent read it. */
+    rules: boolean;
 }
 
 function parseArgs(argv: string[]): Options {
-    const o: Options = { target: 'fvp', endpoint: 'http://localhost:3001/mcp', runs: 1, keep: false, mcpConfig: true, list: false, waitForWindowMs: 0 };
+    const o: Options = { target: 'fvp', endpoint: 'http://localhost:3001/mcp', runs: 1, keep: false, mcpConfig: true, list: false, waitForWindowMs: 0, rules: false };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         const next = () => argv[++i] ?? usage(`${a} needs a value`);
@@ -75,6 +82,7 @@ function parseArgs(argv: string[]): Options {
         else if (a === '--wait-for-window') { o.waitForWindowMs = (Number.parseInt(next(), 10) || 0) * 1000; }
         else if (a === '--keep') { o.keep = true; }
         else if (a === '--no-mcp-config') { o.mcpConfig = false; }
+        else if (a === '--rules') { o.rules = true; }
         else if (a === '--list') { o.list = true; }
         else if (a === '--help' || a === '-h') { usage(); }
         else if (a.startsWith('--')) { usage(`unknown option ${a}`); }
@@ -86,7 +94,7 @@ function parseArgs(argv: string[]): Options {
 
 function usage(error?: string): never {
     if (error) { console.error(`error: ${error}\n`); }
-    console.error('usage: npm run eval:scenario -- <scenario-id> [--target fvp|board] [--endpoint URL] [--runs N] [--wait-for-window SECONDS] [--keep] [--no-mcp-config]');
+    console.error('usage: npm run eval:scenario -- <scenario-id> [--target fvp|board] [--endpoint URL] [--runs N] [--wait-for-window SECONDS] [--rules] [--keep] [--no-mcp-config]');
     console.error('       npm run eval:scenario -- --list');
     process.exit(error ? 2 : 0);
 }
@@ -120,6 +128,18 @@ function materialise(spec: ScenarioSpec): string {
     fs.mkdirSync(path.dirname(skillDir), { recursive: true });
     fs.cpSync(path.join(repoRoot, 'skills', 'cmsis-debug-live'), skillDir, { recursive: true });
     return work;
+}
+
+/**
+ * The rules block of the tool contract in the work copy's AGENTS.md, written
+ * by the same code as the setup's rule-file step (src/core/agentRules.ts).
+ */
+function writeRulesFile(work: string): string {
+    const contract = parseToolContract(fs.readFileSync(path.join(repoRoot, 'docs', ...TOOL_CONTRACT_DOC.split('/')), 'utf8'));
+    const file = path.join(work, 'AGENTS.md');
+    const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
+    fs.writeFileSync(file, withRules(existing, file, contract.rules));
+    return file;
 }
 
 async function withClient<T>(endpoint: string, fn: (client: Client) => Promise<T>): Promise<T> {
@@ -172,6 +192,9 @@ async function main(): Promise<number> {
     const work = materialise(spec);
     console.log(`# scenario ${spec.id} → ${work}`);
     console.log(`# prompt: ${spec.prompt}`);
+    if (opts.rules) {
+        console.log(`# tool rules written to ${writeRulesFile(work)}; custom instructions on`);
+    }
 
     const reportsDir = path.join(evalRoot, 'reports');
     fs.mkdirSync(reportsDir, { recursive: true });
@@ -201,7 +224,7 @@ async function main(): Promise<number> {
             if (!infra) {
                 const copilot = getCopilotInvocation();
                 try {
-                    const output = run(copilot.command, [...copilot.args, ...copilotBatchArgs(work, spec.prompt)], { cwd: work });
+                    const output = run(copilot.command, [...copilot.args, ...copilotBatchArgs(work, spec.prompt, { customInstructions: opts.rules })], { cwd: work });
                     events = parseEvents(output);
                     fs.writeFileSync(path.join(reportsDir, `events.${spec.id}.${stamp}.${runIndex}.jsonl`), output);
                 } catch (err) {
@@ -213,10 +236,12 @@ async function main(): Promise<number> {
             const agg = aggregateEvents(events);
             const verdict = judge(spec, agg, wallMs, infra ?? (runError ? `copilot run failed: ${runError.split('\n')[0]}` : undefined));
             const statsDiff = diffTotals(before?.server, after?.server);
+            const bypasses = findBypasses(spec, agg);
             anyFail ||= !verdict.passed;
             results.push({
                 run: runIndex, passed: verdict.passed, infraError: verdict.infraError, reasons: verdict.reasons,
                 toolCalls: agg.toolCalls.map(c => ({ name: c.name, argBytes: c.argBytes, resultBytes: c.resultBytes })),
+                bypasses, bypassCount: bypasses.length,
                 toolCallCount: agg.toolCalls.length, turns: agg.turns, durationMs: wallMs,
                 tokenUsage: agg.tokenUsage, unknownEventTypes: agg.unknownEventTypes,
                 telemetry: statsDiff ?? 'unavailable',
@@ -224,7 +249,7 @@ async function main(): Promise<number> {
                 finalAnswer: agg.finalAnswer,
             });
             console.log(`# run ${runIndex}/${opts.runs}: ${verdict.passed ? 'PASS' : verdict.infraError ? 'INFRA_ERROR' : 'FAIL'} — ` +
-                `${agg.toolCalls.length} tool calls, ${agg.turns} turns, ${(wallMs / 1000).toFixed(0)} s` +
+                `${agg.toolCalls.length} tool calls, ${bypasses.length} shell bypass(es), ${agg.turns} turns, ${(wallMs / 1000).toFixed(0)} s` +
                 (statsDiff ? `, ${statsDiff.bytesOut} bytes from the server` : '') +
                 (verdict.reasons.length ? ` — ${verdict.reasons.join('; ')}` : ''));
             if (verdict.infraError) { break; }
@@ -234,9 +259,12 @@ async function main(): Promise<number> {
         if (!opts.keep) { fs.rmSync(work, { recursive: true, force: true }); }
     }
 
+    const judged = results as Array<{ bypassCount: number; infraError: boolean }>;
     const report = {
         scenario: spec.id, target: opts.target, endpoint: opts.endpoint, prompt: spec.prompt,
         expectedRootCause: spec.expectedRootCause, rootCause: spec.rootCause, budgets: spec.budgets,
+        rulesFile: opts.rules,
+        bypassRate: bypassRate(judged.map(r => ({ bypasses: r.bypassCount, infraError: r.infraError }))),
         runs: results, passed: results.length > 0 && !anyFail, workDir: opts.keep ? work : undefined,
     };
     const reportPath = path.join(reportsDir, `eval.${spec.id}.${stamp}.json`);
