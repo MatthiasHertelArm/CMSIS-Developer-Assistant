@@ -202,7 +202,7 @@
           "args": {
             "frameId": 1001
           },
-          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  ledState: true (_Bool)\n  buffer: \"Hello, Cortex-M!\" (char [16])\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000302\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\nNOTE: values matching '<redacted: possible secret>' were withheld because their name or content looks like a credential (key, token, password, connection string, ...). Use debug-specific checks (type, length, is-null) instead of reading the raw value. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\n",
+          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  ledState: true (_Bool)\n  buffer: \"Hello, Cortex-M!\" (char [16])\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nRegisters:\n  r0: 0x2a\n  r1: 0x40020000\n  r2: 0x20\n  r3: 0x20\n  r4: 0x1f4\n  r5: 0x0\n  r6: 0x0\n  r7: 0x20017fc8\n  r8: 0x0\n  r9: 0x0\n  r10: 0x0\n  r11: 0x0\n  r12: 0x8000f10\n  sp: 0x20017fc8\n  lr: 0x8000303\n  pc: 0x8000302\n  xpsr: 0x61000000\n  msp: 0x20017fc8\n  psp: 0x0\n  primask: 0x0\n  basepri: 0x0\n  faultmask: 0x0\n  control: 0x0\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1001}",
@@ -220,7 +220,7 @@
               "api_key"
             ]
           },
-          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were withheld because their name or content looks like a credential (key, token, password, connection string, ...). Use debug-specific checks (type, length, is-null) instead of reading the raw value. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\n",
+          "text": "Variables for frameId=1001:\n==========\n\nLocal:\n  config: {...} (led_config_t)\n  password: 0x8000f10 \"hunter2\" (const char *)\n  api_key: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.\n",
           "traffic": [
             "dap: threads {}",
             "dap: scopes {\"frameId\":1001}",
@@ -327,7 +327,7 @@
           "args": {
             "expression": "api_key"
           },
-          "text": "Expression: api_key\nResult: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were withheld because their name or content looks like a credential (key, token, password, connection string, ...). Use debug-specific checks (type, length, is-null) instead of reading the raw value. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.",
+          "text": "Expression: api_key\nResult: <redacted: possible secret> (char [16])\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.",
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"api_key\",\"frameId\":1000,\"context\":\"repl\"} -> \"\\\"AK-7f3a9c21e0b4\\\"\""
