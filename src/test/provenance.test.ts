@@ -26,8 +26,6 @@ import * as path from 'path';
 const DERIVED_FILES = [
     'LICENSE-MIT',
     'NOTICE',
-    'src/debugMCPServer.ts',
-    'src/test/debugSkillGuidance.test.ts',
 ];
 
 const MARKER = ['Copyright (c)', 'Microsoft', 'Corporation'].join(' ');
