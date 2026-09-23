@@ -10522,6 +10522,268 @@
       }
     },
     {
+      "id": "extension/activate-under-test-runner",
+      "about": "extensionMode Test (npm test): no skill sync, migration, coordinator or setup timer; the commands still register",
+      "events": [
+        {
+          "ev": "step",
+          "name": "activate"
+        },
+        {
+          "ev": "call",
+          "fn": "readPackDocsGates",
+          "args": [],
+          "returned": "<object>"
+        },
+        {
+          "ev": "call",
+          "fn": "registerSessionStateTracker",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "registerDebugAdapterTrackerFactory",
+          "type": "*"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
+          "ev": "call",
+          "fn": "registerToolchainPackRootInvalidation",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "subscribe",
+          "event": "extensions.onDidChange"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeConfiguration"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "call",
+          "fn": "new AgentConfigurationManager",
+          "args": [
+            "<context>",
+            60,
+            3001
+          ]
+        },
+        {
+          "ev": "call",
+          "fn": "createPackDocsHandlers",
+          "args": [
+            "<context>",
+            60
+          ],
+          "returned": "<object>"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "cmsis-csolution.getPackRootPath",
+          "args": []
+        },
+        {
+          "ev": "call",
+          "fn": "registerPackDocsCommands",
+          "args": [
+            "<context>",
+            "<handlers returned by createPackDocsHandlers>"
+          ]
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.listTargetDocs"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.indexTargetDocs"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openUserDocsFolder"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openPackDocsPanel"
+        },
+        {
+          "ev": "getExtension",
+          "id": "arm.cmsis-pack-docs"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeConfiguration"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.configure"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectSkills"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.resetPopupState"
+        },
+        {
+          "ev": "step",
+          "name": "configuration change: cmsis-developer-assistant.installedSkills"
+        },
+        {
+          "ev": "step",
+          "name": "setup timer fires"
+        },
+        {
+          "ev": "noTimer"
+        },
+        {
+          "ev": "step",
+          "name": "deactivate"
+        },
+        {
+          "ev": "step",
+          "name": "deactivate again"
+        }
+      ],
+      "result": {
+        "activation": {
+          "resolved": "<undefined>",
+          "settingsRead": [
+            {
+              "key": "cmsis-developer-assistant.buildInfo.enabled",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
+              "fallback": 10000
+            },
+            {
+              "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
+              "fallback": 30000
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.enabled",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.extractor",
+              "fallback": "auto"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
+              "fallback": 150
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
+              "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.userDocsDir",
+              "fallback": ""
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.workspaceDocDirs",
+              "fallback": [
+                ".agent-artifacts/docs",
+                "docs"
+              ]
+            },
+            {
+              "key": "cmsis-developer-assistant.serial.enabled",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.serverPort",
+              "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.telemetry.jsonlPath",
+              "fallback": ""
+            },
+            {
+              "key": "cmsis-developer-assistant.timeoutInSeconds",
+              "fallback": 60
+            }
+          ],
+          "commands": [
+            "cmsis-developer-assistant.listTargetDocs",
+            "cmsis-developer-assistant.indexTargetDocs",
+            "cmsis-developer-assistant.openUserDocsFolder",
+            "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.configure",
+            "cmsis-developer-assistant.selectSkills",
+            "cmsis-developer-assistant.resetPopupState"
+          ],
+          "registeredButNotContributed": [],
+          "contributedButNotRegistered": [],
+          "subscriptions": [
+            "debugAdapterTrackerFactory:*",
+            "event:debug.onDidTerminateDebugSession",
+            "<Object>",
+            "event:extensions.onDidChange",
+            "event:workspace.onDidChangeConfiguration",
+            "event:debug.onDidTerminateDebugSession",
+            "command:cmsis-developer-assistant.listTargetDocs",
+            "command:cmsis-developer-assistant.indexTargetDocs",
+            "command:cmsis-developer-assistant.openUserDocsFolder",
+            "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.openPackDocsPanel",
+            "event:workspace.onDidChangeConfiguration",
+            "event:workspace.onDidChangeWorkspaceFolders",
+            "command:cmsis-developer-assistant.configure",
+            "command:cmsis-developer-assistant.selectSkills",
+            "command:cmsis-developer-assistant.resetPopupState"
+          ],
+          "mcpServerDefinitionProviders": [],
+          "timers": [],
+          "tmpdir": {}
+        },
+        "deactivation": {
+          "resolved": "<undefined>",
+          "tmpdir": {},
+          "second": {
+            "resolved": "<undefined>"
+          }
+        }
+      },
+      "globalState": {},
+      "files": {
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
+      }
+    },
+    {
       "id": "extension/activate-absolute-telemetry",
       "about": "absolute telemetry path (trimmed) and the timer with the popup already answered, no agents",
       "events": [

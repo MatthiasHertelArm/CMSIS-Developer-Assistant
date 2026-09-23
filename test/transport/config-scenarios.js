@@ -896,7 +896,8 @@ function makeContext(w, def) {
         workspaceState: memento(new Map(), 'workspaceState'),
         secrets: { get: async () => undefined, store: async () => undefined, delete: async () => undefined, onDidChange: event('secrets.onDidChange') },
         asAbsolutePath: (rel) => path.join(extensionPath, rel),
-        extensionMode: 3,
+        // Production unless the scenario says otherwise: under the test runner (3) activation leaves the home alone.
+        extensionMode: def.extensionMode ?? 1,
     };
 }
 
@@ -2119,6 +2120,21 @@ function extensionScenarios() {
                 S.failStart = true;
                 const { ext, m } = loadExtension();
                 const out = { activation: await activateRecorded(h, ext, m) };
+                out.deactivation = await deactivateRecorded(ext);
+                return out;
+            },
+        },
+        {
+            id: 'extension/activate-under-test-runner', about: 'extensionMode Test (npm test): no skill sync, migration, coordinator or setup timer; the commands still register',
+            extensionMode: 3,
+            seed: agentSeeds({ cline: json({ mcpServers: { [LEGACY]: { type: 'streamableHttp', url: URL_3001 } } }) }),
+            settings: { global: { [SETTING('installedSkills')]: ['fx-alpha'] } },
+            run: async (h) => {
+                clearTmp();
+                const { ext, m } = loadExtension();
+                const out = { activation: await activateRecorded(h, ext, m) };
+                await configChange(['cmsis-developer-assistant.installedSkills']);
+                await fireTimer();
                 out.deactivation = await deactivateRecorded(ext);
                 return out;
             },
