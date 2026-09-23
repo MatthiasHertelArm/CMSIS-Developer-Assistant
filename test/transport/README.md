@@ -71,3 +71,43 @@ an evaluate of `-exec <cmd>` is an expression to it, so every `-exec break`,
 "Error: could not evaluate expression" and does nothing; GDB prints `$lr` as
 an int, so EXC_RETURN reads "-7". The header of the harness lists the other
 fidelity choices.
+
+## `config-scenarios.js`: configuration behaviour oracle
+
+```sh
+npm run compile
+node test/transport/config-scenarios.js              # compare with config-scenarios.snapshot.json
+node test/transport/config-scenarios.js --update     # re-record after a deliberate change
+node test/transport/config-scenarios.js --only launch/prompt   # print some scenarios, no compare
+node test/transport/config-scenarios.js --check-fence          # self-test of the sandbox
+```
+
+Records what `utils/agentConfigurationManager`, `utils/debugConfigurationManager`
+and `extension` do, driven only through their public entry points so the same
+script runs against a rewrite:
+
+- **Agents:** the eight agent config files written by the setup flow (full
+  contents) per platform and environment, over missing, foreign, legacy-key,
+  stale, JSONC/invalid and unwritable files. It also covers Codex TOML variants,
+  `migrateExistingConfigurations`, popup state, the skill scope and skill
+  pickers, `syncSkills` (installer calls, serialisation) and the monthly nudge.
+- **Launch configurations:** the synthesized configuration per file type, test
+  configurations, named entries from plain and JSONC `launch.json`, and the
+  configuration quick-pick.
+- **Extension:** `activate()`/`deactivate()` as router, worker and with a failed
+  start. It records the order of the major calls, the settings read with their
+  fallbacks, the registered commands and subscriptions, the MCP server
+  definition provider, the listeners, the commands and the 2 s setup timer.
+
+Every VS Code UI call is recorded with the answer the scenario scripts, in one
+ordered event log per scenario together with globalState and settings writes,
+skill-sync calls and file writes. Skills come from a small fixture catalog, not
+the shipped one, so a `skills:sync` does not move the snapshot.
+
+The `vscode` stub is extended inside this script only; `vscode-stub.js` is
+unchanged. Every path the code derives from `HOME`, `USERPROFILE`, `APPDATA`,
+`XDG_CONFIG_HOME`, `CODEX_HOME`, `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `TMPDIR`,
+`os.homedir()`, `os.tmpdir()`, `extensionPath` or `globalStorageUri` points into
+one fresh temporary directory, and this is checked before every scenario. A
+write fence on `fs` refuses and reports any write outside that directory. The
+MCP router binds an ephemeral 127.0.0.1 port, never 3001.
