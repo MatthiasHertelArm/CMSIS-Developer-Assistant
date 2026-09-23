@@ -1,73 +1,84 @@
-# DebugConfigurationManager
+# DebugConfigurationManager: launch configurations for `start_debugging`
 
-## Purpose
+`DebugConfigurationManager` (`src/utils/debugConfigurationManager.ts`)
+provides the launch configuration that `start_debugging` runs when the agent
+does not simply name an entry of `launch.json`. It offers the user a choice
+among the folder's `launch.json` entries, and it synthesizes a configuration
+from the source file's extension when asked to, or when a named entry cannot
+be used.
 
-Manages debug launch configurations - reading from `launch.json`, creating default configurations, and supporting test-specific debugging across multiple languages and test frameworks.
+## Scope
 
-## Motivation
+- A CMSIS session does not normally pass through here. `cmsis_action
+  load_and_debug` and `attach` run the CMSIS Solution extension's own
+  pipeline, and `start_debugging` with a `configurationName` starts that
+  `launch.json` entry by name through the executor.
+- This module serves the other cases: no configuration named, and general,
+  non-embedded debugging, where a guess from the file type is better than
+  nothing.
+- It reads `launch.json` only. The CMSIS build files (`*.cbuild-run.yml` and
+  friends) belong to `src/core/cmsisTarget.ts` and `src/core/buildInfo/`.
 
-Different languages and test frameworks require different debug configurations. Rather than forcing AI agents to understand these details, `DebugConfigurationManager` auto-detects the appropriate configuration based on file extension and test framework conventions.
+## Key ideas
 
-## Responsibility
+### `launch.json` as the editor sees it
 
-- Read and parse `.vscode/launch.json` configurations
-- Prompt users to select from available configurations
-- Create default configurations when none exist
-- Detect programming language from file extensions
-- Generate test-specific configurations for various frameworks
-- Validate workspace setup for debugging
+`launch.json` is opened through VS Code's document model, so edits that are
+not saved yet count, and parsed as JSONC with `jsonc-parser`, because
+generated files carry comments and trailing commas. A missing, unreadable or
+broken file reads as "no entries": `getDebugConfig()` then synthesizes a
+configuration, and the picker offers only the sentinel.
 
-## Key Concepts
+### The picker and the sentinel
 
-### Configuration Sources
+`promptForConfiguration(workDir)` shows a quick-pick with one item per
+`launch.json` entry (its name, or `(no name)`, with type and request) and,
+always last, the sentinel `Default Configuration`, which asks for a
+synthesized configuration. It resolves the chosen label; closing the picker
+rejects with a message the handler passes on to the agent. The handler
+compares the result with the same sentinel text.
 
-1. **User's launch.json**: Preferred if available
-2. **Default Configuration**: Auto-generated based on file extension
-3. **Test Configuration**: Special handling for unit test files
+### Named entries and synthesized configurations
 
-### Language Detection
+`getDebugConfig(workDir, sourceFile, launchName?, testName?)` returns the
+named entry, copied and renamed `CMSIS Developer Assistant Launch (<name>)`,
+when it exists. For the sentinel, an unknown name, or a missing or broken
+file, it synthesizes one:
 
-Maps file extensions to debug types:
-- `.py` → `python`
-- `.js/.ts/.jsx/.tsx` → `node` (pwa-node)
-- `.java` → `java`
-- `.cs` → `coreclr`
-- `.cpp/.cc/.c` → `cppdbg`
-- `.go` → `go`
-- `.rs` → `lldb`
-- `.php` → `php`
-- `.rb` → `ruby`
+- `detectLanguageFromFilePath()` maps the file extension to a VS Code debug
+  type (`python`, `node`, `java`, `coreclr`, `cppdbg`, `go`, `lldb`, `php`,
+  `ruby`); an unknown extension, or none, counts as Python.
+- One recipe per type builds a launch request for the file; types without a
+  recipe of their own get the Python one.
+- With a `testName`, a single test is run instead: Python through
+  `unittest` (the test class is looked up in the file), JavaScript and
+  TypeScript through Jest or Mocha depending on the file name, Java through
+  JUnit's `--tests`. .NET ignores the test name; other types run the file
+  and say in the configuration name that test filtering is not supported.
+- Every synthesized configuration runs in the source file's own directory
+  and carries a name that starts with `CMSIS Developer Assistant`, which is
+  what VS Code shows as the session name.
 
-### Test Framework Support
+### Safe to construct anywhere
 
-| Language | Frameworks |
-|----------|------------|
-| Python | unittest |
-| Node.js | Jest, Mocha (auto-detected) |
-| Java | JUnit |
-| .NET | xUnit, NUnit, MSTest |
+The module does nothing at load time and its constructor calls no `vscode`
+API, so the transport tests construct it under a minimal `vscode` stub.
+`src/index.ts` exports it as `ConfigurationManager`, its interface as
+`IConfigurationManager`.
 
-### User Prompt Flow
+## Where to look
 
-When starting debugging, users are prompted to:
-1. Select from existing launch.json configurations, OR
-2. Use "Default Configuration" (auto-detected)
+- `DebugConfigurationManager`: `getDebugConfig()`, `promptForConfiguration()`,
+  `detectLanguageFromFilePath()`, `getAvailableConfigurations()`,
+  `hasLaunchJson()`, `validateWorkspace()`, the static
+  `getAutoLaunchConfigName()`
+- Module functions: `launchEntries()`, `plainLaunch()`,
+  `singleTestLaunch()`, `unittestTarget()`
+- Caller: `handleStartDebugging()` in `src/debuggingHandler.ts`
 
-## Key Code Locations
+## Tests
 
-- Class definition: `src/utils/debugConfigurationManager.ts`
-- Interface: `IDebugConfigurationManager`
-- Default configs: `createDefaultDebugConfig()`
-- Test configs: `createTestDebugConfig()`
-- Language detection: `detectLanguageFromFilePath()`
-- User prompt: `promptForConfiguration()`
-
-## JSON Parsing
-
-Handles common launch.json quirks:
-- Strips comments (`//` and `/* */`)
-- Removes trailing commas before `}` or `]`
-
-## Python Test Name Formatting
-
-For Python tests, the manager auto-detects the class name from the test file to build the full test path (`module.ClassName.test_method`). This allows AI agents to specify just the test method name.
+- `test/transport/config-scenarios.js`: the synthesized configuration per
+  file type, test configurations, named entries from plain and JSONC
+  `launch.json`, and the quick-pick, compared with
+  `config-scenarios.snapshot.json`
