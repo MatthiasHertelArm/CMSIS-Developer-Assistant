@@ -22,6 +22,7 @@ import * as path from 'path';
  * Files still derived from microsoft/DebugMCP and therefore still carrying its
  * copyright line (issue #53). The list only shrinks: a rewrite removes the line
  * and its entry in the same change, and no other file may pick the line up.
+ * The two license files that remain wait for the license review (issue #54).
  */
 const DERIVED_FILES = [
     'LICENSE-MIT',
