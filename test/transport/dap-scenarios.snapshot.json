@@ -2153,13 +2153,14 @@
             "action": "build"
           },
           "isError": true,
-          "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2 after <n>s (job b-2).\nOpen the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, then re-run cmsis_action build. This is a terminal result — do not wait for an output file.",
+          "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2 after <n>s (job b-2).\nNo error lines: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run.\nget_build_diagnostics (setting cmsis-developer-assistant.buildInfo.enabled) reads a build log if the user captures one with cbuild --log.\nOpen the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, then re-run cmsis_action build. This is a terminal result — do not wait for an output file.",
           "traffic": [
             "command: cmsis-csolution.getSolutionFile",
             "command: cmsis-csolution.getActiveTargetSet",
             "command: cmsis-csolution.build",
             "task: start \"cbuild Blinky.csolution.yml\"",
-            "task: end \"cbuild Blinky.csolution.yml\" exitCode=2"
+            "task: end \"cbuild Blinky.csolution.yml\" exitCode=2",
+            "command: cmsis-csolution.getSolutionFile"
           ]
         }
       ]

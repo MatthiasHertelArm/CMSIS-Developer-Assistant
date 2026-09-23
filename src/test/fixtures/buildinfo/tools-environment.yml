@@ -1,0 +1,35 @@
+cmsis-tools-environment:
+  version: 1.0.0
+  generated-by: arm.cmsis-csolution version 1.70.1-63-20260910
+  solution: ../Blinky.csolution.yml
+  environment:
+    path:
+      - /Users/dev/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-darwin-arm64/tools/pyocd
+      - /Users/dev/.vscode/extensions/arm.cmsis-csolution-1.70.1-63-20260910/tools/cmsis-toolbox/bin
+      - /Users/dev/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-darwin-arm64/tools/gdb/bin
+    variables: {}
+  tools:
+    - name: pyOCD
+      version: 0.45.1
+      origin: built-in
+      provider:
+        type: vscode-extension
+        id: arm.vscode-cmsis-debugger
+      directory: /Users/dev/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-darwin-arm64/tools/pyocd
+      manual: https://pyocd.io/docs/
+    - name: CMSIS-Toolbox
+      version: 2.14.1-64-ge745dc0
+      origin: built-in
+      provider:
+        type: vscode-extension
+        id: arm.cmsis-csolution
+      directory: /Users/dev/.vscode/extensions/arm.cmsis-csolution-1.70.1-63-20260910/tools/cmsis-toolbox/bin
+      manual: https://open-cmsis-pack.github.io/cmsis-toolbox/
+    - name: Arm GNU GDB
+      version: 15.2.1
+      origin: built-in
+      provider:
+        type: vscode-extension
+        id: arm.vscode-cmsis-debugger
+      directory: /Users/dev/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-darwin-arm64/tools/gdb/bin
+      manual: https://developer.arm.com/Tools%20and%20Software/GNU%20Toolchain

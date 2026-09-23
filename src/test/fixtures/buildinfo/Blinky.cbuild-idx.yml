@@ -1,0 +1,29 @@
+build-idx:
+  generated-by: csolution version 2.14.1+p88-g94cb0c5e
+  target: MPS3
+  description: Blinky example
+  cdefault: cdefault.yml
+  csolution: Blinky.csolution.yml
+  cbuild-run: build/GCC/outdir/Blinky+MPS3.cbuild-run.yml
+  tmpdir: tmp/MPS3/default
+  cprojects:
+    - cproject: Blinky/Blinky.cproject.yml
+  cbuilds:
+    - cbuild: build/MPS3/GCC/Debug/Blinky/outdir/Blinky.Debug+MPS3.cbuild.yml
+      project: Blinky
+      configuration: .Debug+MPS3
+      messages:
+        errors:
+          - "component 'Compiler:CORE' not found in included packs\n  did you mean 'CMSIS-Compiler:CORE'?"
+          - "component 'Compiler:STDOUT:Custom' not found in included packs\n  did you mean 'CMSIS-Compiler:STDOUT:Custom'?"
+        warnings:
+          - "Blinky.csolution.yml - solution created for unknown tool: ARM::V2M_MPS3_SSE_300_BSP@1.5.0"
+          - "'compiler' setting in cdefault.yml will be deprecated in CMSIS-Toolbox 3.0.0"
+          - no compiler registered. Add path to compiler 'bin' directory with environment variable <name>_TOOLCHAIN_<major>_<minor>_<patch>. <name> is one of AC6, GCC, IAR, CLANG
+          - customization of intermediate directory 'intdir' is ignored by the cbuild2cmake backend
+        info:
+          - Blinky.cbuild-pack.yml - file is already up-to-date
+          - Blinky+MPS3.cbuild-run.yml - file generated successfully
+          - Blinky.Debug+MPS3.cbuild.yml - file is already up-to-date
+      packs-unused:
+        - pack: ARM::CMSIS-Compiler@2.0.0

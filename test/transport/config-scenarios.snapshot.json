@@ -8366,6 +8366,12 @@
             "default": 30000
           },
           {
+            "key": "cmsis-developer-assistant.build.diagnosticRerun",
+            "type": "boolean",
+            "default": true,
+            "scope": "window"
+          },
+          {
             "key": "cmsis-developer-assistant.telemetry.jsonlPath",
             "type": "string",
             "default": ""

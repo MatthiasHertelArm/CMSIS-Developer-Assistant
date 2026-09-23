@@ -212,7 +212,8 @@ window's CMSIS job tracker (next section):
   answered with status `running`; `TASK_FAILED` is kept for a session that
   is gone.
 - `status` launches nothing and needs no solution: it waits for the job in
-  flight, or lists the recent results and the live CMSIS tasks.
+  flight, or lists the recent results and the live CMSIS tasks, with the
+  error lines of a failed build once they are in.
 - `stop_run` waits until the CMSIS tasks it stops have ended, terminates
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
   alive after 10 s. `detach` returns at once.
@@ -272,6 +273,35 @@ A call has one deadline (#12): the solution checks and a target switch come
 out of it, and a job still going when it passes is answered with status
 `running` and the job in `data`. The texts live in `src/handler/jobText.ts`.
 
+### Why a build failed
+
+The CMSIS Solution extension runs cbuild in a pseudoterminal no other
+extension can read and keeps no log, so a failed build job knows only its
+exit code. `src/cmsisBuildDiagnosis.ts` completes such a job's result
+(#15). The tracker calls its `onDidFinishJob` listener before it wakes the
+job's waiters, and `completeWith` makes them wait for the work as well: the
+job carries a pending `diagnosis` until it is done.
+
+- **Stage A** reads the errors and warnings csolution recorded in the
+  solution's `*.cbuild-idx.yml`, when the build wrote that file. Errors
+  there (a missing pack or component, a schema error) are the answer.
+- **Stage B** runs cbuild once more with `--log`: the failed task's
+  arguments without the steps that download packs, update RTE files or
+  clean, `--skip-convert` after a fresh index, and the environment CMSIS
+  Solution recorded in `.cmsis/tools-environment.yml`. Its log is parsed
+  with the parser of `get_build_diagnostics`. The re-run starts only while
+  no other build or setup runs, is killed when one starts or after 120 s,
+  and can be switched off (`build.diagnosticRerun`). It is interim, until
+  CMSIS Solution offers a build log of its own (#21).
+
+The `diagnosis` holds the errors and warnings with file and line, which
+`onDidDiagnoseJob` announces for the problem journal (#48), and the short
+block `renderBuildFailure` makes for the result. When it arrives within the
+call's deadline the failing call shows it; otherwise the call says the lines
+are coming, and `status` waits for them. The pure parts — the readers of the
+two YAML files, the re-run's command line and environment — are in
+`src/core/buildFailure.ts`.
+
 ## The host seam
 
 Everything else the handler needs comes from a `HandlerHost`
@@ -309,7 +339,9 @@ by #56.
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
-| `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check; the window's instance |
+| `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
+| `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build: csolution's index, the diagnostic re-run of cbuild and its guards (#15) |
+| `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
 | `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
 | `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, probe guard, pyOCD lookup |
 | `src/core/flashController.ts` | `resolvePyocd()`, the pyOCD process and its output |
@@ -322,6 +354,10 @@ by #56.
   classifier, the job state machine, the guard matrix and the tracker,
   replayed over task sequences derived from CMSIS Solution 1.70.1
   (`src/test/fixtures/cmsisTasks/`)
+- `src/test/buildFailure.test.ts`, `src/test/cmsisBuildDiagnosis.test.ts`:
+  the two YAML readers on generated files (`src/test/fixtures/buildinfo/`),
+  the re-run's command line and the result block, and the diagnosis over
+  fake task events with a fake cbuild and a hand-moved clock
 - `test/transport/dap-scenarios.js`: 33 scripted `gdbtarget` sessions
   through the real server; every reply and the adapter traffic are compared
   with `dap-scenarios.snapshot.json`

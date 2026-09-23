@@ -37,6 +37,14 @@
  *     starting a second one;
  *   - settled jobs are kept 10 minutes, in memory only.
  *
+ * A failed build's result is completed after the job settled (#15): an
+ * `onDidFinishJob` listener hands its work to `completeWith`, the job
+ * carries a pending `diagnosis` meanwhile, and `waitFor` waits for it as it
+ * waits for the job. The window's tracker gets that listener from
+ * `src/cmsisBuildDiagnosis.ts`; it reads the failed task's definition
+ * (`definitionOf`) and stops its re-run when a build starts
+ * (`onDidStartExecution`).
+ *
  * The class reads its events from a `TaskEventSource` and time from a
  * `TrackerClock`; tests hand it fakes.
  */
@@ -44,6 +52,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { attachBuildDiagnosis, vscodeDiagnosisHost } from './cmsisBuildDiagnosis';
 import {
     armJob,
     classifyByLabelLoosely,
@@ -52,9 +61,11 @@ import {
     isSettled,
     Job,
     JobAction,
+    JobDiagnosis,
     JobEvent,
     JobState,
     nextTimeCheck,
+    PENDING_DIAGNOSIS,
     ProbeOwner,
     reduceJob,
     settleJob,
@@ -63,12 +74,15 @@ import {
 } from './core/cmsisTasks';
 import { logger } from './utils/logger';
 
+/** A task's definition: `type`, and for a build the fields cbuild's command line is made from. */
+export type TaskDefinitionLike = { readonly type?: string; readonly setup?: unknown } & Readonly<Record<string, unknown>>;
+
 /** The part of a `vscode.TaskExecution` the tracker reads. */
 export interface ExecutionLike {
     readonly task: {
         readonly name: string;
         readonly source: string;
-        readonly definition?: { readonly type?: string; readonly setup?: unknown };
+        readonly definition?: TaskDefinitionLike;
     };
     terminate(): void;
 }
@@ -192,6 +206,12 @@ export class CmsisJobTracker {
     private readonly checks = new Map<string, () => void>();
     private readonly endWatchers = new Set<() => void>();
     private readonly finishListeners = new Set<(job: Job) => void>();
+    private readonly diagnosisListeners = new Set<(job: Job) => void>();
+    private readonly startListeners = new Set<(execution: LiveExecution) => void>();
+    /** Work that completes a settled job's result (#15), by job id. */
+    private readonly followUps = new Map<string, Promise<void>>();
+    /** The task definition of each CMSIS execution seen, by key, while a job or the live list refers to it. */
+    private readonly definitions = new Map<number, TaskDefinitionLike>();
     private readonly subscriptions: Array<{ dispose(): unknown }> = [];
     private readonly labelCache = new Map<string, { stamp: number; labels: ReadonlySet<string> }>();
     private flashes: Array<{ id: number; startedAt: number }> = [];
@@ -279,13 +299,14 @@ export class CmsisJobTracker {
     }
 
     /**
-     * Resolves with the job once it settles, or with the job as it is when
+     * Resolves with the job once it settled and the work that completes its
+     * result (`completeWith`) is done, or with the job as it is when
      * `deadline` (the tracker's clock) passes first. Never rejects.
      */
     waitFor(id: string, deadline: number): Promise<Job | undefined> {
         const job = this.jobs.get(id);
         const remaining = deadline - this.clock.now();
-        if (!job || isSettled(job.state) || remaining <= 0) {
+        if (!job || this.isFinal(job) || remaining <= 0) {
             return Promise.resolve(job);
         }
         return new Promise((resolve) => {
@@ -341,10 +362,67 @@ export class CmsisJobTracker {
         return [...latest.values()].sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0));
     }
 
-    /** Called with each job that settles; the future home of #15's error lines and #48's journal. */
+    /**
+     * Called with each job that settles, before its waiters are woken, so
+     * that a listener can still `completeWith` it; the home of #48's journal.
+     */
     onDidFinishJob(listener: (job: Job) => void): { dispose(): void } {
         this.finishListeners.add(listener);
         return { dispose: () => this.finishListeners.delete(listener) };
+    }
+
+    /**
+     * Make `work` part of the result of settled job `id` (#15): the job
+     * carries a pending `diagnosis` until `work` resolves with the final one,
+     * and `waitFor` waits for it. A rejected `work` becomes a diagnosis that
+     * says so. Meant for `onDidFinishJob` listeners; once per job.
+     */
+    completeWith(id: string, work: Promise<JobDiagnosis>): void {
+        const job = this.jobs.get(id);
+        if (!job || !isSettled(job.state) || this.followUps.has(id)) {
+            return;
+        }
+        this.jobs.set(id, { ...job, diagnosis: PENDING_DIAGNOSIS });
+        const settled = work.then((diagnosis) => diagnosis, (caught: unknown) => failedDiagnosis(caught)).then((diagnosis) => {
+            this.followUps.delete(id);
+            const current = this.jobs.get(id);
+            if (!current) {
+                return;
+            }
+            const completed: Job = { ...current, diagnosis };
+            this.jobs.set(id, completed);
+            this.wake(id, completed);
+            for (const listener of [...this.diagnosisListeners]) {
+                try {
+                    listener(completed);
+                } catch (caught) {
+                    logger.error(`CMSIS job tracker: a diagnosis listener failed on job ${id}`, caught);
+                }
+            }
+        });
+        this.followUps.set(id, settled);
+    }
+
+    /** True while work handed to `completeWith` for job `id` goes on. */
+    isCompleting(id: string): boolean {
+        return this.followUps.has(id);
+    }
+
+    /** Called with a job once the work handed to `completeWith` has put its final `diagnosis` on it (#15, for #48's journal). */
+    onDidDiagnoseJob(listener: (job: Job) => void): { dispose(): void } {
+        this.diagnosisListeners.add(listener);
+        return { dispose: () => this.diagnosisListeners.delete(listener) };
+    }
+
+    /** The definition of the task an execution the tracker saw ran, by its key; kept while a job or the live list refers to it. */
+    definitionOf(key: number): TaskDefinitionLike | undefined {
+        return this.definitions.get(key);
+    }
+
+    /** Called with each CMSIS execution when the tracker first sees it start. */
+    onDidStartExecution(listener: (execution: LiveExecution) => void): { dispose(): void } {
+        this.startListeners.add(listener);
+        return { dispose: () => this.startListeners.delete(listener) };
     }
 
     // ── executions and the probe ──
@@ -593,6 +671,10 @@ export class CmsisJobTracker {
         if (!entry) {
             entry = { key: this.nextKey++, execution, name: facts.name, kind, startedAt: now, seeded };
             this.live.set(entry.key, entry);
+            const definition = execution.task?.definition;
+            if (definition && typeof definition === 'object') {
+                this.definitions.set(entry.key, { ...definition });
+            }
         }
         this.remember(execution, entry.key);
         if (type === 'processStart' && entry.processStartedAt === undefined) {
@@ -602,6 +684,19 @@ export class CmsisJobTracker {
         this.dispatch(event);
         if (first && !this.isBound(entry.key)) {
             this.adopt(kind, event);
+        }
+        if (first) {
+            this.announceStart(entry);
+        }
+    }
+
+    private announceStart(entry: LiveExecution): void {
+        for (const listener of [...this.startListeners]) {
+            try {
+                listener(entry);
+            } catch (caught) {
+                logger.error(`CMSIS job tracker: a start listener failed on '${entry.name}'`, caught);
+            }
         }
     }
 
@@ -674,11 +769,8 @@ export class CmsisJobTracker {
         }
     }
 
+    /** The listeners first, since one may `completeWith` the job; its waiters then wait for that work. */
     private finished(job: Job): void {
-        for (const wake of [...(this.waiters.get(job.id) ?? [])]) {
-            wake(job);
-        }
-        this.waiters.delete(job.id);
         for (const listener of [...this.finishListeners]) {
             try {
                 listener(job);
@@ -686,19 +778,45 @@ export class CmsisJobTracker {
                 logger.error(`CMSIS job tracker: a listener failed on job ${job.id}`, caught);
             }
         }
+        if (!this.followUps.has(job.id)) {
+            this.wake(job.id, this.jobs.get(job.id) ?? job);
+        }
+    }
+
+    private wake(id: string, job: Job): void {
+        for (const wake of [...(this.waiters.get(id) ?? [])]) {
+            wake(job);
+        }
+        this.waiters.delete(id);
+    }
+
+    /** Settled, and nothing handed to `completeWith` is still going. */
+    private isFinal(job: Job): boolean {
+        return isSettled(job.state) && !this.followUps.has(job.id);
     }
 
     private newId(action: JobAction): string {
         return `${ID_PREFIX[action]}-${++this.jobCount}`;
     }
 
-    /** Drop settled jobs older than the retention, with anything still waiting on them. */
+    /** Drop settled jobs older than the retention, with anything still waiting on them, and definitions no one refers to. */
     private prune(): void {
         const cutoff = this.clock.now() - JOB_RETENTION_MS;
         for (const [id, job] of this.jobs) {
-            if (isSettled(job.state) && (job.settledAt ?? 0) < cutoff) {
+            if (isSettled(job.state) && (job.settledAt ?? 0) < cutoff && !this.followUps.has(id)) {
                 this.jobs.delete(id);
                 this.waiters.delete(id);
+            }
+        }
+        const referred = new Set<number>(this.live.keys());
+        for (const job of this.jobs.values()) {
+            for (const execution of job.executions) {
+                referred.add(execution.key);
+            }
+        }
+        for (const key of [...this.definitions.keys()]) {
+            if (!referred.has(key)) {
+                this.definitions.delete(key);
             }
         }
     }
@@ -716,6 +834,16 @@ export class CmsisJobTracker {
             });
         });
     }
+}
+
+/** What a job's result says when the work that was to complete it failed. */
+function failedDiagnosis(caught: unknown): JobDiagnosis {
+    const reason = caught instanceof Error ? caught.message : String(caught);
+    return {
+        state: 'done', source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0,
+        note: `collecting the error lines failed: ${reason}`,
+        text: `No error lines: collecting them failed (${reason}).`,
+    };
 }
 
 // ── The window's tracker ────────────────────────────────────────────────────
@@ -746,10 +874,14 @@ function vscodeTaskSource(): TaskEventSource {
 }
 
 let windowTracker: CmsisJobTracker | undefined;
+let windowDiagnosis: { dispose(): void } | undefined;
 
-/** This window's tracker, created on first use. */
+/** This window's tracker, created on first use, with the error lines of failed builds (#15). */
 export function windowJobTracker(): CmsisJobTracker {
-    windowTracker ??= new CmsisJobTracker(vscodeTaskSource(), SYSTEM_CLOCK, (message) => logger.info(message));
+    if (!windowTracker) {
+        windowTracker = new CmsisJobTracker(vscodeTaskSource(), SYSTEM_CLOCK, (message) => logger.info(message));
+        windowDiagnosis = attachBuildDiagnosis(windowTracker, vscodeDiagnosisHost(SYSTEM_CLOCK));
+    }
     return windowTracker;
 }
 
@@ -762,10 +894,12 @@ export function registerCmsisJobTracker(context: vscode.ExtensionContext): void 
     const tracker = windowJobTracker();
     context.subscriptions.push({
         dispose: () => {
-            tracker.dispose();
             if (windowTracker === tracker) {
+                windowDiagnosis?.dispose();
+                windowDiagnosis = undefined;
                 windowTracker = undefined;
             }
+            tracker.dispose();
         },
     });
     logger.info('CMSIS job tracker registered (task events of this window)');

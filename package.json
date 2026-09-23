@@ -165,6 +165,12 @@
           "minimum": 1000,
           "description": "Overall timeout (in milliseconds) for a single read_memory / read_core_registers tool call. Caps the total time spent talking to the hardware, even across many word-level fallback reads."
         },
+        "cmsis-developer-assistant.build.diagnosticRerun": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "After a failed CMSIS build, run `cbuild` once more with `--log` — without downloading packs, updating RTE files or cleaning — so that the `cmsis_action build` result can show the compiler, linker and ninja error lines with file and line. The CMSIS Solution extension keeps no build log of its own. The re-run is incremental, stops after 120 s or when another build starts, and writes `out/cmsis-developer-assistant/build-diagnostic.log` next to the solution. Off: the result still shows the errors csolution records in the solution's `cbuild-idx.yml`. Applies to the next failed build."
+        },
         "cmsis-developer-assistant.telemetry.jsonlPath": {
           "type": "string",
           "default": "",

@@ -186,7 +186,63 @@ export interface Job {
     readonly identity?: number;
     /** Remarks for the result, e.g. why the job was settled from outside. */
     readonly notes: readonly string[];
+    /** Why a failed build failed (#15), attached after the job settled; see `JobDiagnosis`. */
+    readonly diagnosis?: JobDiagnosis;
 }
+
+/**
+ * One message of a failed build (#15), as a compiler, the linker, CMake,
+ * ninja or csolution printed it. `file` is as the tool wrote it (usually
+ * absolute); the journal of #48 takes these as problems of source `build`.
+ */
+export interface BuildMessage {
+    severity: 'error' | 'warning';
+    file?: string;
+    line?: number;
+    column?: number;
+    /** The tool's code or flag: `L6218E`, `-Wunused-variable`, or `csolution` for a cbuild-family line. */
+    code?: string;
+    message: string;
+    /** The build context (`.Debug+MPS3`) of a csolution message. */
+    context?: string;
+}
+
+/**
+ * What the extension found out about a failed build (#15), attached to its
+ * job once the job settled (`CmsisJobTracker.completeWith`):
+ *
+ *   - `pending` while the csolution index is read and the diagnostic re-run
+ *     of cbuild goes on; the job's result then says the lines are coming;
+ *   - `done` with the error and warning lines, where they came from, and the
+ *     text the `cmsis_action` result shows.
+ *
+ * `errors` and `warnings` are the structured form: every message with file,
+ * line, column and text, at most `MAX_BUILD_MESSAGES` of each; the counts
+ * are the full ones.
+ */
+export interface JobDiagnosis {
+    state: 'pending' | 'done';
+    /** `csolution`: a fresh cbuild-idx.yml; `rerun`: cbuild re-run with --log; `none`: neither produced lines. */
+    source: 'csolution' | 'rerun' | 'none';
+    errors: readonly BuildMessage[];
+    warnings: readonly BuildMessage[];
+    errorCount: number;
+    warningCount: number;
+    /** The re-run's log file, absolute. */
+    logFile?: string;
+    /** Why there was no re-run, or what limits its lines. */
+    note?: string;
+    /** The block the job's result shows: at most 10 message lines and 3 000 characters. */
+    text: string;
+}
+
+/** The structured lists of a diagnosis keep at most this many messages each. */
+export const MAX_BUILD_MESSAGES = 200;
+
+/** A failed build's diagnosis while its lines are being collected. */
+export const PENDING_DIAGNOSIS: JobDiagnosis = Object.freeze({
+    state: 'pending', source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '',
+});
 
 /** An execution as a start event names it. */
 interface Sighting {
