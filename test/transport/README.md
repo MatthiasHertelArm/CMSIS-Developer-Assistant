@@ -111,3 +111,18 @@ unchanged. Every path the code derives from `HOME`, `USERPROFILE`, `APPDATA`,
 one fresh temporary directory, and this is checked before every scenario. A
 write fence on `fs` refuses and reports any write outside that directory. The
 MCP router binds an ephemeral 127.0.0.1 port, never 3001.
+
+## `executor-cases.js`: executor characterization
+
+```sh
+npm run compile
+node test/transport/executor-cases.js
+```
+
+Runs the characterization cases of
+[docs/provenance/specs/debuggingExecutor.md](../../docs/provenance/specs/debuggingExecutor.md)
+against the compiled executor with scripted fake debug sessions: the DAP
+requests and their arguments, the UI fallbacks, timeouts, reset verification
+and the GDB memory-read ladder. About 40 s, mostly deliberate timeouts; no
+window, network or probe. It complements `dap-scenarios.js`, which reaches the
+executor only through the handler.
