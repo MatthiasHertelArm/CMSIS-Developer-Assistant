@@ -183,7 +183,7 @@ Deterministic reads of the current target's build output — no debug session ne
 - `cmsis-developer-assistant://docs/debug_instructions` — general debugging workflow guide.
 - `cmsis-developer-assistant://docs/cmsis-embedded-guide` — Cortex-M debugging knowledge: fault decode recipes, memory map, key system registers, RTOS tips.
 - `cmsis-developer-assistant://docs/troubleshooting/embedded` — embedded-specific troubleshooting.
-- `cmsis-developer-assistant://docs/troubleshooting/<language>` — troubleshooting for other languages (`python`, `java`, `csharp`, …).
+- `cmsis-developer-assistant://docs/troubleshooting/<language>` — troubleshooting for `python` and `cpp` (C and C++).
 
 ### Behavior the agent can rely on
 

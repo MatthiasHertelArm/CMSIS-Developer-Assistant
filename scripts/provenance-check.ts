@@ -61,13 +61,6 @@ const GATE_EXEMPT: Record<string, string> = {
     'CHANGES-VS-UPSTREAM.md': 'the provenance record itself (issue #53, phase 5)',
     'NOTICE': 'license review pending (issue #54)',
     'LICENSE-MIT': 'license review pending (issue #54)',
-    'docs/agent-resources/troubleshooting/cpp.md': 'language guides: decision pending (issue #53, decision 4)',
-    'docs/agent-resources/troubleshooting/csharp.md': 'language guides: decision pending (issue #53, decision 4)',
-    'docs/agent-resources/troubleshooting/go.md': 'language guides: decision pending (issue #53, decision 4)',
-    'docs/agent-resources/troubleshooting/java.md': 'language guides: decision pending (issue #53, decision 4)',
-    'docs/agent-resources/troubleshooting/javascript.md': 'language guides: decision pending (issue #53, decision 4)',
-    'docs/agent-resources/troubleshooting/python.md': 'language guides: decision pending (issue #53, decision 4)',
-    'skills/cmsis-debug-live/references/troubleshooting/cpp.md': 'language guides: decision pending (issue #53, decision 4)',
 };
 /** The commit the rewrite started from; files created after it are gated too. */
 const REWRITE_BASE = '951530e';
