@@ -135,7 +135,7 @@ The MCP server offers these resources (`registerResources()` in
 | `cmsis-developer-assistant://docs/debug_instructions` | `docs/agent-resources/debug_instructions.md` | The debugging workflow; `get_debug_instructions` serves it by topic |
 | `cmsis-developer-assistant://docs/cmsis-embedded-guide` | `docs/agent-resources/cmsis-embedded-guide.md` | Cortex-M debugging knowledge |
 | `cmsis-developer-assistant://docs/troubleshooting/embedded` | `docs/agent-resources/troubleshooting/embedded.md` | Embedded troubleshooting tips |
-| `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `docs/agent-resources/troubleshooting/<lang>.md` | Tips per language, for `python`, `javascript`, `java` and `csharp` |
+| `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `docs/agent-resources/troubleshooting/<lang>.md` | Tips per language, for `python` and `cpp` (C and C++) |
 | `cmsis-developer-assistant://stats` | — | Tool-call statistics of the session and the server, JSON |
 
 `debug_instructions.md` is split into topics by

@@ -396,12 +396,10 @@ interface ShippedResource {
     file: string;
 }
 
-/** The language notes served as resources: id and display name. cpp.md and go.md ship too but are not served. */
+/** The language notes served as resources: id (the file name) and display name. */
 const LANGUAGE_NOTES: ReadonlyArray<readonly [string, string]> = [
     ['python', 'Python'],
-    ['javascript', 'JavaScript'],
-    ['java', 'Java'],
-    ['csharp', 'C#'],
+    ['cpp', 'C/C++'],
 ];
 
 const SHIPPED_RESOURCES: readonly ShippedResource[] = [
@@ -414,7 +412,7 @@ const SHIPPED_RESOURCES: readonly ShippedResource[] = [
     ...LANGUAGE_NOTES.map(([id, display]): ShippedResource => ({
         uri: `${SERVER_NAME}://docs/troubleshooting/${id}`,
         name: `${display} Troubleshooting Notes`,
-        description: `Advice for debugging ${id} programs`,
+        description: `Advice for debugging ${display} programs`,
         file: `agent-resources/troubleshooting/${id}.md`,
     })),
     {

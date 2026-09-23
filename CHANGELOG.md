@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - The root-cause part and the opening step list of the agent guide (`get_debug_instructions`).
   - `tsconfig.json`, with the same effective configuration.
   - A 39-line `.gitignore` in place of the inherited Visual Studio template, whose `[Bb]uild[Ll]og.*` pattern once swallowed `buildLog.ts`. What git tracks and ignores is unchanged, except that a root `.vscode/` folder is now ignored as a whole.
+- **The Python and C/C++ troubleshooting guides are written anew, and the C/C++ guide is now served.** It is available as `cmsis-developer-assistant://docs/troubleshooting/cpp`; before, it shipped but was never registered. It covers host programs and C/C++ firmware, and leaves target topics to the embedded guides. The resource descriptions now name the language, for example "Advice for debugging C/C++ programs".
 
 ### Added
 - Provenance tooling for #53:
@@ -36,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Removed
 - `dist/extension.js.map` and `dist/pdfWorker.js` are no longer tracked. `dist/` has been ignored since 2026-09-03, both files are build output, and the source map embedded the pre-rewrite sources.
 - `vsc-extension-quickstart.md`, the extension generator's template.
+- The JavaScript, Java, Go and C# troubleshooting guides, and the `troubleshooting/javascript`, `java` and `csharp` resources (`go.md` was never served). Those languages can still be debugged through the same tools.
 
 ## [2.3.10] - 2026-09-07
 

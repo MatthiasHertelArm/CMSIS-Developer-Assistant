@@ -159,7 +159,7 @@ compares them with the `allowed-tools` list of the `cmsis-debug-live` skill.
 | `cmsis-developer-assistant://docs/debug_instructions` | `docs/agent-resources/debug_instructions.md` |
 | `cmsis-developer-assistant://docs/cmsis-embedded-guide` | `docs/agent-resources/cmsis-embedded-guide.md` |
 | `cmsis-developer-assistant://docs/troubleshooting/embedded` | `docs/agent-resources/troubleshooting/embedded.md` |
-| `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `docs/agent-resources/troubleshooting/<lang>.md` for `python`, `javascript`, `java` and `csharp`; `cpp.md` and `go.md` ship but are not served |
+| `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `docs/agent-resources/troubleshooting/<lang>.md` for `python` and `cpp` (C and C++) |
 
 `ShippedDocs` reads a file on first use and keeps its text for the life of
 the server instance. It looks for `docs/` first next to the bundle's

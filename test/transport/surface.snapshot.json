@@ -1234,25 +1234,13 @@
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
           "name": "Python Troubleshooting Notes",
-          "description": "Advice for debugging python programs",
+          "description": "Advice for debugging Python programs",
           "mimeType": "text/markdown"
         },
         {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Troubleshooting Notes",
-          "description": "Advice for debugging javascript programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Troubleshooting Notes",
-          "description": "Advice for debugging java programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Troubleshooting Notes",
-          "description": "Advice for debugging csharp programs",
+          "uri": "cmsis-developer-assistant://docs/troubleshooting/cpp",
+          "name": "C/C++ Troubleshooting Notes",
+          "description": "Advice for debugging C/C++ programs",
           "mimeType": "text/markdown"
         },
         {
@@ -1275,20 +1263,12 @@
           "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 1171,
-          "sha256": "b4f83e51ee61f688781b3678ed7d56f4b03bbb6822c474b645ca227413d1a4df"
+          "bytes": 9521,
+          "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
-        "cmsis-developer-assistant://docs/troubleshooting/javascript": {
-          "bytes": 1441,
-          "sha256": "19135403491b6052875a9d2b9b7f44b4638a79c8e82c313cc93bdab53954ce46"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/java": {
-          "bytes": 1663,
-          "sha256": "fd96b72dba200c2de05bb942ce04677e11d93aab5d4a6f2f3a3c569248bfa2cb"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/csharp": {
-          "bytes": 3445,
-          "sha256": "51fc92c54985c0dc266715d2bf6c8b59bd5a37df36d0e9511ff42f2e9da6c7f8"
+        "cmsis-developer-assistant://docs/troubleshooting/cpp": {
+          "bytes": 11244,
+          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 5957,
@@ -2434,25 +2414,13 @@
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
           "name": "Python Troubleshooting Notes",
-          "description": "Advice for debugging python programs",
+          "description": "Advice for debugging Python programs",
           "mimeType": "text/markdown"
         },
         {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Troubleshooting Notes",
-          "description": "Advice for debugging javascript programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Troubleshooting Notes",
-          "description": "Advice for debugging java programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Troubleshooting Notes",
-          "description": "Advice for debugging csharp programs",
+          "uri": "cmsis-developer-assistant://docs/troubleshooting/cpp",
+          "name": "C/C++ Troubleshooting Notes",
+          "description": "Advice for debugging C/C++ programs",
           "mimeType": "text/markdown"
         },
         {
@@ -2475,20 +2443,12 @@
           "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 1171,
-          "sha256": "b4f83e51ee61f688781b3678ed7d56f4b03bbb6822c474b645ca227413d1a4df"
+          "bytes": 9521,
+          "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
-        "cmsis-developer-assistant://docs/troubleshooting/javascript": {
-          "bytes": 1441,
-          "sha256": "19135403491b6052875a9d2b9b7f44b4638a79c8e82c313cc93bdab53954ce46"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/java": {
-          "bytes": 1663,
-          "sha256": "fd96b72dba200c2de05bb942ce04677e11d93aab5d4a6f2f3a3c569248bfa2cb"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/csharp": {
-          "bytes": 3445,
-          "sha256": "51fc92c54985c0dc266715d2bf6c8b59bd5a37df36d0e9511ff42f2e9da6c7f8"
+        "cmsis-developer-assistant://docs/troubleshooting/cpp": {
+          "bytes": 11244,
+          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 5957,
@@ -4213,25 +4173,13 @@
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
           "name": "Python Troubleshooting Notes",
-          "description": "Advice for debugging python programs",
+          "description": "Advice for debugging Python programs",
           "mimeType": "text/markdown"
         },
         {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Troubleshooting Notes",
-          "description": "Advice for debugging javascript programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Troubleshooting Notes",
-          "description": "Advice for debugging java programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Troubleshooting Notes",
-          "description": "Advice for debugging csharp programs",
+          "uri": "cmsis-developer-assistant://docs/troubleshooting/cpp",
+          "name": "C/C++ Troubleshooting Notes",
+          "description": "Advice for debugging C/C++ programs",
           "mimeType": "text/markdown"
         },
         {
@@ -4254,20 +4202,12 @@
           "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 1171,
-          "sha256": "b4f83e51ee61f688781b3678ed7d56f4b03bbb6822c474b645ca227413d1a4df"
+          "bytes": 9521,
+          "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
-        "cmsis-developer-assistant://docs/troubleshooting/javascript": {
-          "bytes": 1441,
-          "sha256": "19135403491b6052875a9d2b9b7f44b4638a79c8e82c313cc93bdab53954ce46"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/java": {
-          "bytes": 1663,
-          "sha256": "fd96b72dba200c2de05bb942ce04677e11d93aab5d4a6f2f3a3c569248bfa2cb"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/csharp": {
-          "bytes": 3445,
-          "sha256": "51fc92c54985c0dc266715d2bf6c8b59bd5a37df36d0e9511ff42f2e9da6c7f8"
+        "cmsis-developer-assistant://docs/troubleshooting/cpp": {
+          "bytes": 11244,
+          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 5957,
@@ -5728,25 +5668,13 @@
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
           "name": "Python Troubleshooting Notes",
-          "description": "Advice for debugging python programs",
+          "description": "Advice for debugging Python programs",
           "mimeType": "text/markdown"
         },
         {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Troubleshooting Notes",
-          "description": "Advice for debugging javascript programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Troubleshooting Notes",
-          "description": "Advice for debugging java programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Troubleshooting Notes",
-          "description": "Advice for debugging csharp programs",
+          "uri": "cmsis-developer-assistant://docs/troubleshooting/cpp",
+          "name": "C/C++ Troubleshooting Notes",
+          "description": "Advice for debugging C/C++ programs",
           "mimeType": "text/markdown"
         },
         {
@@ -5769,20 +5697,12 @@
           "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 1171,
-          "sha256": "b4f83e51ee61f688781b3678ed7d56f4b03bbb6822c474b645ca227413d1a4df"
+          "bytes": 9521,
+          "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
-        "cmsis-developer-assistant://docs/troubleshooting/javascript": {
-          "bytes": 1441,
-          "sha256": "19135403491b6052875a9d2b9b7f44b4638a79c8e82c313cc93bdab53954ce46"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/java": {
-          "bytes": 1663,
-          "sha256": "fd96b72dba200c2de05bb942ce04677e11d93aab5d4a6f2f3a3c569248bfa2cb"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/csharp": {
-          "bytes": 3445,
-          "sha256": "51fc92c54985c0dc266715d2bf6c8b59bd5a37df36d0e9511ff42f2e9da6c7f8"
+        "cmsis-developer-assistant://docs/troubleshooting/cpp": {
+          "bytes": 11244,
+          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 5957,
@@ -7248,25 +7168,13 @@
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
           "name": "Python Troubleshooting Notes",
-          "description": "Advice for debugging python programs",
+          "description": "Advice for debugging Python programs",
           "mimeType": "text/markdown"
         },
         {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Troubleshooting Notes",
-          "description": "Advice for debugging javascript programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Troubleshooting Notes",
-          "description": "Advice for debugging java programs",
-          "mimeType": "text/markdown"
-        },
-        {
-          "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Troubleshooting Notes",
-          "description": "Advice for debugging csharp programs",
+          "uri": "cmsis-developer-assistant://docs/troubleshooting/cpp",
+          "name": "C/C++ Troubleshooting Notes",
+          "description": "Advice for debugging C/C++ programs",
           "mimeType": "text/markdown"
         },
         {
@@ -7289,20 +7197,12 @@
           "sha256": "21bad48fb084abb2e968315e05ae4faab54cb65cf93be63cede1e7ad849b5639"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 1171,
-          "sha256": "b4f83e51ee61f688781b3678ed7d56f4b03bbb6822c474b645ca227413d1a4df"
+          "bytes": 9521,
+          "sha256": "5f143b35a50160b3c9e374f85b31fb9b857f666a6283fc3fa5b20521f822264b"
         },
-        "cmsis-developer-assistant://docs/troubleshooting/javascript": {
-          "bytes": 1441,
-          "sha256": "19135403491b6052875a9d2b9b7f44b4638a79c8e82c313cc93bdab53954ce46"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/java": {
-          "bytes": 1663,
-          "sha256": "fd96b72dba200c2de05bb942ce04677e11d93aab5d4a6f2f3a3c569248bfa2cb"
-        },
-        "cmsis-developer-assistant://docs/troubleshooting/csharp": {
-          "bytes": 3445,
-          "sha256": "51fc92c54985c0dc266715d2bf6c8b59bd5a37df36d0e9511ff42f2e9da6c7f8"
+        "cmsis-developer-assistant://docs/troubleshooting/cpp": {
+          "bytes": 11244,
+          "sha256": "ff07e66d3236e2790bc083de2f14b75d4d266ae935d14d395c5fe14747cbbe9d"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 5957,
