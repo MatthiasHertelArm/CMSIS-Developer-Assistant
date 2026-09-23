@@ -150,9 +150,12 @@ async function main() {
         check(`tools/list includes ${expected}`, names.includes(expected));
     }
     // The tool list rides along on every agent turn, so its size is a
-    // per-turn cost. Budget for the single-window surface (42 tools); a
-    // regression must be attributable to one tool, hence the per-description cap.
-    const TOOLS_LIST_BUDGET_BYTES = 30_000; // 44 tools; raised from 28 000 for lookup_peripheral / lookup_register
+    // per-turn cost. Budget for the single-window surface: 45 tools measured
+    // 28 916 bytes in 2.5.0. Raised from 30 000 for the 2.5.1 additions
+    // (get_recent_problems, serial_capture); two-window-routing.js budgets the
+    // routed list, which is what agents see. A regression must be attributable
+    // to one tool, hence the per-description cap.
+    const TOOLS_LIST_BUDGET_BYTES = 32_000;
     const DESCRIPTION_CAP_CHARS = 700;
     const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
     check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
@@ -419,10 +422,11 @@ async function main() {
         `${ftools.length} tools`);
     check('the default list carries none of them', PACKDOCS_TOOLS.every((n) => !names.includes(n)));
     // Budget for the everything-on list; the default list keeps its own above.
-    // 55 tools, measured 41 204 bytes when the pack-docs tools landed: the ten
-    // tools cost ~11.8 kB, most of it the per-tool target/pack/device/board
-    // arguments. A regression must be attributable to one tool, hence the cap.
-    const TOOLS_LIST_ALL_BUDGET_BYTES = 42_000;
+    // 55 tools measured 40 644 bytes in 2.5.0: the ten documentation and
+    // build-artefact tools cost ~11.7 kB, most of it the per-tool
+    // target/pack/device/board arguments. Raised from 42 000 for the 2.5.1
+    // additions. A regression must be attributable to one tool, hence the cap.
+    const TOOLS_LIST_ALL_BUDGET_BYTES = 44_000;
     const ftoolsBytes = Buffer.byteLength(JSON.stringify(ftools));
     check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES} byte budget`,
         ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES, `${ftoolsBytes} bytes`);

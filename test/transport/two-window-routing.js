@@ -31,6 +31,7 @@
 //   7. With both windows debugging, a path-less call is refused as
 //      AMBIGUOUS_WINDOW and both windows come back as candidates (#11).
 //   8. Closing the router frees the port and a worker is promoted.
+//   9. The routed tools/list, what agents see, stays within its byte budget.
 
 const stub = require('./vscode-stub.js');
 
@@ -170,6 +171,18 @@ async function main() {
     check('both windows are in the registry', registered.length === 2, `${registered.length} entries`);
 
     const sid = await openSession(PORT);
+
+    // The routed list is what agents see: a router always routes, so it adds
+    // list_debug_windows and select_debug_window to the single-window list
+    // that session-lifecycle.js measures. It rides along on every agent turn.
+    // 47 tools measured 30 104 bytes in 2.5.0; the budget leaves room for the
+    // 2.5.1 additions (get_recent_problems, serial_capture, the window argument).
+    const ROUTED_TOOLS_LIST_BUDGET_BYTES = 34_000;
+    const routedList = await post(PORT, { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 90, method: 'tools/list', params: {} });
+    const routedTools = parseSse(routedList.body)?.result?.tools ?? [];
+    const routedBytes = Buffer.byteLength(JSON.stringify(routedTools));
+    check(`the routed tools/list stays under the ${ROUTED_TOOLS_LIST_BUDGET_BYTES} byte budget`,
+        routedTools.length > 30 && routedBytes <= ROUTED_TOOLS_LIST_BUDGET_BYTES, `${routedTools.length} tools, ${routedBytes} bytes`);
 
     const listing = await callTool(PORT, sid, 'list_debug_windows', {}, 2);
     check('list_debug_windows reports both windows',
