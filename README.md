@@ -277,13 +277,25 @@ The popup described in [Connecting an AI agent](#connecting-an-ai-agent) writes 
 }
 ```
 
-**Cline, Cursor, Roo Code** (MCP settings):
+**Cline, Roo Code** (MCP settings):
 
 ```json
 {
   "mcpServers": {
     "cmsis-developer-assistant": {
       "type": "streamableHttp",
+      "url": "http://localhost:3001/mcp"
+    }
+  }
+}
+```
+
+**Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in one project):
+
+```json
+{
+  "mcpServers": {
+    "cmsis-developer-assistant": {
       "url": "http://localhost:3001/mcp"
     }
   }

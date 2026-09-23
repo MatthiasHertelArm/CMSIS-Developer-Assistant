@@ -435,7 +435,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -501,11 +501,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -640,7 +640,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/appdata/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -706,10 +706,10 @@
         "appdata/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "appdata/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
@@ -845,7 +845,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/AppData/Roaming/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -911,11 +911,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/AppData/Roaming/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/AppData/Roaming/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -1050,7 +1050,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/xdg/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -1116,11 +1116,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "xdg/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "xdg/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "xdg/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "xdg/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "xdg/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -1255,7 +1255,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/.config/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -1323,8 +1323,8 @@
         "home/.config/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.config/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
@@ -1460,7 +1460,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/appdata/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -1526,10 +1526,10 @@
         "appdata/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "appdata/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
@@ -1666,7 +1666,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -1732,11 +1732,11 @@
         "codex-home/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "copilot-home/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -1872,7 +1872,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/AppData/Roaming/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -1938,11 +1938,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/AppData/Roaming/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/AppData/Roaming/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -2077,7 +2077,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -2143,11 +2143,11 @@
         "home/.claude.json": "{\n  \"numStartups\": 3,\n  \"projects\": {\n    \"/p\": {\n      \"allowedTools\": [],\n      \"history\": [\n        \"x\"\n      ]\n    }\n  },\n  \"mcpServers\": {\n    \"other\": {\n      \"type\": \"stdio\",\n      \"command\": \"x\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"userID\": \"abc\"\n}",
         "home/.codex/config.toml": "# Codex config\nmodel = \"o3\"\n\n[mcp_servers.other]\ncommand = \"npx\"\nargs = [\"-y\", \"other-mcp\"]\n\n[profiles.fast]\nmodel = \"o4-mini\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"a\": {\n      \"type\": \"http\",\n      \"url\": \"http://a/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"z\": {}\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"other\": {},\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"note\": \"servers were null\"\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"fs\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"@modelcontextprotocol/server-filesystem\",\n        \"/data\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  },\n  \"globalShortcut\": \"Ctrl+Space\"\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"other-server\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4000/mcp\",\n      \"disabled\": true\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"unrelated\": {\n    \"keep\": [\n      1,\n      2,\n      3\n    ]\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"foo\": 1,\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"other\": {},\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"foo\": 1,\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -2283,7 +2283,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -2349,11 +2349,11 @@
         "home/.claude.json": "{\n  \"numStartups\": 1,\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-debugmcp]\nurl = \"http://localhost:3001/sse\"\nstartup_timeout_sec = 30\n\n[mcp_servers.cmsis-debugmcp.env]\nX = \"1\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"sse\",\n      \"url\": \"http://localhost:3001/sse\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"autoApprove\": [\n        \"read_memory\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 60,\n      \"type\": \"sse\",\n      \"url\": \"http://localhost:3001/sse\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"sse\",\n      \"url\": \"http://localhost:3001/sse\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -2488,7 +2488,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -2554,11 +2554,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\n  url = \"http://localhost:3001/mcp\"\nstartup_timeout_sec = 10\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -2667,7 +2667,7 @@
         },
         {
           "ev": "error",
-          "message": "Cannot configure Cursor: <w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json exists but is not valid JSON. Please fix or remove the file and try again."
+          "message": "Cannot configure Cursor: <w>/home/.cursor/mcp.json exists but is not valid JSON. Please fix or remove the file and try again."
         },
         {
           "ev": "write",
@@ -2715,11 +2715,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "<unchanged seed>",
+        "home/.cursor/mcp.json": "<unchanged seed>",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": []\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "<unchanged seed>",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "<unchanged seed>",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "<unchanged seed>"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
       }
     },
     {
@@ -2846,7 +2846,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -2903,11 +2903,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex": "<unchanged seed>",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini": "<unchanged seed>",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -3289,7 +3289,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -3352,11 +3352,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:4555/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:4555/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -3772,7 +3772,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -3800,11 +3800,11 @@
         "home/.claude.json": "{\n  \"numStartups\": 1,\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-debugmcp.env]\nX = \"1\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"read_memory\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -3832,7 +3832,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -3855,11 +3855,11 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "<unchanged seed>",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
@@ -3883,7 +3883,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -3911,11 +3911,11 @@
         "home/.claude.json": "{\n  \"numStartups\": 2,\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "model = \"o3\"\n\n[mcp_servers.cmsis-debugmcp.env]\nX = \"1\"\n\n[mcp_servers.other]\nurl = \"http://other/mcp\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"autoApprove\": [\n        \"x\"\n      ]\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "<unchanged seed>",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"autoApprove\": [\n        \"a\"\n      ]\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"x\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"autoApprove\": [\n        \"a\"\n      ]\n    }\n  }\n}"
       }
     },
     {
@@ -4002,11 +4002,11 @@
       "globalState": {},
       "files": {
         "home/.copilot/mcp-config.json": "<unchanged seed>",
+        "home/.cursor/mcp.json": "<unchanged seed>",
         "home/.gemini/antigravity/mcp_config.json": "<unchanged seed>",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "<unchanged seed>",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "<unchanged seed>",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "<unchanged seed>"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
       }
     },
     {
@@ -4030,9 +4030,9 @@
       "globalState": {},
       "files": {
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "<unchanged seed>",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "<unchanged seed>"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
       }
     },
     {
@@ -4091,7 +4091,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -4114,11 +4114,124 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "<unchanged seed>",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:4555/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-cursor-old-location",
+      "about": "the entry an earlier release wrote where Cursor does not read moves to ~/.cursor/mcp.json; the old file goes",
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/.cursor/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp"
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 1 agent configuration(s)."
+        }
+      ],
+      "globalState": {},
+      "files": {
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+      },
+      "emptyDirs": [
+        "home/Library/Application Support/Cursor/User/globalStorage"
+      ],
+      "removedSeeds": [
+        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json"
+      ]
+    },
+    {
+      "id": "agents/migrate-cursor-old-location-merge",
+      "about": "legacy key in the old file, other servers in both: merged; the old file keeps what is not ours",
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/.cursor/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 1 agent configuration(s)."
+        }
+      ],
+      "globalState": {},
+      "files": {
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"mine\": {\n      \"command\": \"x\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"other\": {\n      \"url\": \"http://other/mcp\"\n    }\n  },\n  \"note\": 1\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-cursor-already-registered",
+      "about": "an entry the user put in ~/.cursor/mcp.json wins; the old one is dropped",
+      "events": [
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp"
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 1 agent configuration(s)."
+        }
+      ],
+      "globalState": {},
+      "files": {
+        "home/.cursor/mcp.json": "<unchanged seed>"
+      },
+      "emptyDirs": [
+        "home/Library/Application Support/Cursor/User/globalStorage"
+      ],
+      "removedSeeds": [
+        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json"
+      ]
+    },
+    {
+      "id": "agents/migrate-cursor-target-unparseable",
+      "about": "a JSONC ~/.cursor/mcp.json is not rewritten, and the old entry stays for a later run",
+      "events": [],
+      "globalState": {},
+      "files": {
+        "home/.cursor/mcp.json": "<unchanged seed>",
+        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "<unchanged seed>"
+      }
+    },
+    {
+      "id": "agents/migrate-cursor-old-file-without-entry",
+      "about": "an old file without our entry is left alone and nothing is created",
+      "events": [],
+      "globalState": {},
+      "files": {
+        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "<unchanged seed>"
       }
     },
     {
@@ -4942,7 +5055,7 @@
         },
         {
           "ev": "write",
-          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json",
+          "path": "<w>/home/.cursor/mcp.json",
           "atomic": true
         },
         {
@@ -4963,7 +5076,7 @@
         "cmsis-developer-assistant.popupShown.v3": true
       },
       "files": {
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
     {
