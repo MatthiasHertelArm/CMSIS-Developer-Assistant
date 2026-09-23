@@ -28,7 +28,7 @@
             "type": "object",
             "properties": {
               "topic": {
-                "description": "Section to return. Default: overview (~2 KB) with the topic list.",
+                "description": "Section to return. Default: overview (~5 KB) with the topic list.",
                 "type": "string",
                 "enum": [
                   "overview",
@@ -1623,7 +1623,7 @@
             "type": "object",
             "properties": {
               "topic": {
-                "description": "Section to return. Default: overview (~2 KB) with the topic list.",
+                "description": "Section to return. Default: overview (~5 KB) with the topic list.",
                 "type": "string",
                 "enum": [
                   "overview",
@@ -2658,7 +2658,7 @@
             "type": "object",
             "properties": {
               "topic": {
-                "description": "Section to return. Default: overview (~2 KB) with the topic list.",
+                "description": "Section to return. Default: overview (~5 KB) with the topic list.",
                 "type": "string",
                 "enum": [
                   "overview",
@@ -4762,7 +4762,7 @@
             "type": "object",
             "properties": {
               "topic": {
-                "description": "Section to return. Default: overview (~2 KB) with the topic list.",
+                "description": "Section to return. Default: overview (~5 KB) with the topic list.",
                 "type": "string",
                 "enum": [
                   "overview",
@@ -6511,7 +6511,7 @@
             "type": "object",
             "properties": {
               "topic": {
-                "description": "Section to return. Default: overview (~2 KB) with the topic list.",
+                "description": "Section to return. Default: overview (~5 KB) with the topic list.",
                 "type": "string",
                 "enum": [
                   "overview",

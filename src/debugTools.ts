@@ -488,7 +488,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('get_debug_instructions', {
         description: ABOUT.get_debug_instructions,
         inputSchema: {
-            topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~2 KB) with the topic list.'),
+            topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
         },
         annotations: LOOK_ONLY,
     }, async (args) => reply(guideSection(await docs.read(GUIDE_FILE), args.topic)));
