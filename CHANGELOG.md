@@ -21,6 +21,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - Unchecking a file and choosing **Remove** takes the rules out again: the file is back to its bytes, and a file created for the rules is deleted with its empty folders.
   - The files written are recorded. On activation, a recorded block whose rules are older than the extension's is updated in place and logged; a block is never added to a file then. Activation under the extension test runner skips this, like the skill sync.
   - The new setting `cmsis-developer-assistant.agentRules.install` is `ask` by default; `never` skips the step and leaves every rule file alone. The setup key moves to `popupShown.v4`, so the setup appears once more.
+- **The agent evaluations catch shell commands that bypass the MCP tools (#45, part of #50).**
+  - A scenario run fails when a shell tool runs `pyocd`, `arm-none-eabi-gdb`, `gdb-multiarch`, `JLinkExe`, `JLinkGDBServer…`, `openocd`, `cbuild`, `cpackget`, `pip install`, or `curl` against `localhost`. A scenario adds patterns with `forbidden.shell` and switches the default list off with `"defaultShellDenyList": false`.
+  - `forbidden.toolArgs` now applies to MCP and other non-shell tool calls only, so an MCP `flash` call whose arguments name a `cbuild-run.yml` is no bypass.
+  - Each run in the report lists its `bypasses`; each scenario gets a `bypassRate`, the share of judged runs with at least one.
+  - `--rules` writes the tool rules into the work copy's `AGENTS.md`, with the code of the setup step, and lets Copilot CLI read it, to compare runs with and without the rule file.
+  - The new scenario `flash-image-missing` makes `flash` fail through a fixture overlay and passes only when the agent stops and reports the failure.
 
 ### Changed
 - **Shipped texts no longer send agents to the shell (part of #45, part of #50).**

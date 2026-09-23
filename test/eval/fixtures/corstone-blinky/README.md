@@ -16,6 +16,8 @@ What was changed against the pack example:
   GDB port forwarded. `fvp_config.txt`: headless, UART0 to stdout.
 - `overlays/<scenario>/`: one planted bug per scenario, copied over the base by the
   runner. The base itself is bug-free; the agent never sees the overlay mechanism.
+  `overlays/flash-image-missing/` plants a cbuild-run file whose image does not exist,
+  so that `flash` fails; `.gitignore` lets that one cbuild-run file in.
 - The pack's `Makefile` is dropped.
 
 Two launch-config fixes are still needed after the CMSIS Solution extension generates

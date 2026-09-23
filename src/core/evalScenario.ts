@@ -17,9 +17,10 @@
 /**
  * The pure half of the agent evaluation runner (scripts/eval-scenario.ts):
  * scenario validation, aggregation of a Copilot CLI JSON event stream into
- * tool calls / turns / final answer, the verdict, and the MCP-config edit the
- * runner makes and undoes. No I/O, no vscode, so it is unit-tested; the
- * runner itself needs an authenticated agent CLI and a target and is not.
+ * tool calls / turns / final answer, the shell commands that bypass the MCP
+ * tools (#50), the verdict, and the MCP-config edit the runner makes and
+ * undoes. No I/O, no vscode, so it is unit-tested; the runner itself needs an
+ * authenticated agent CLI and a target and is not.
  */
 
 export interface ScenarioSpec {
@@ -33,10 +34,23 @@ export interface ScenarioSpec {
     expectedRootCause: string;
     /** Tools expected to appear at least once (advisory, reported not enforced). */
     expectedTools?: string[];
-    forbidden?: { toolArgs?: string; answer?: string };
+    forbidden?: {
+        /** Regex over the name and JSON arguments of every tool call that is not a shell command (MCP tools, skills). */
+        toolArgs?: string;
+        answer?: string;
+        /** Regex over the command of every shell-tool call, on top of the default deny list. */
+        shell?: string;
+        /** false: the default shell deny list does not apply to this scenario. */
+        defaultShellDenyList?: boolean;
+    };
     budgets: { maxToolCalls: number; maxTurns: number; maxWallMs: number };
     /** For the report reader, never shown to the agent. */
     rootCause?: string;
+}
+
+function isRegex(source: unknown): boolean {
+    if (typeof source !== 'string') { return false; }
+    try { new RegExp(source, 'i'); return true; } catch { return false; }
 }
 
 export function validateScenario(raw: unknown): { ok: true; spec: ScenarioSpec } | { ok: false; errors: string[] } {
@@ -47,7 +61,7 @@ export function validateScenario(raw: unknown): { ok: true; spec: ScenarioSpec }
     if (!str('prompt')) { errors.push('prompt: required'); }
     if (!str('fixture')) { errors.push('fixture: required'); }
     if (!str('expectedRootCause')) { errors.push('expectedRootCause: required regex'); }
-    else { try { new RegExp(o.expectedRootCause as string, 'i'); } catch { errors.push('expectedRootCause: not a valid regex'); } }
+    else if (!isRegex(o.expectedRootCause)) { errors.push('expectedRootCause: not a valid regex'); }
     const targets = o.targets;
     if (!Array.isArray(targets) || targets.length === 0 || !targets.every(t => t === 'fvp' || t === 'board')) { errors.push("targets: non-empty array of 'fvp' | 'board'"); }
     const b = o.budgets as Record<string, unknown> | undefined;
@@ -55,6 +69,17 @@ export function validateScenario(raw: unknown): { ok: true; spec: ScenarioSpec }
         if (!b || typeof b[k] !== 'number' || (b[k] as number) <= 0) { errors.push(`budgets.${k}: positive number`); }
     }
     if (o.expectedTools !== undefined && (!Array.isArray(o.expectedTools) || !o.expectedTools.every(t => typeof t === 'string'))) { errors.push('expectedTools: array of strings'); }
+    if (o.forbidden !== undefined) {
+        const f = o.forbidden as Record<string, unknown> | null;
+        if (!f || typeof f !== 'object' || Array.isArray(f)) {
+            errors.push('forbidden: object');
+        } else {
+            for (const k of ['toolArgs', 'answer', 'shell']) {
+                if (f[k] !== undefined && !isRegex(f[k])) { errors.push(`forbidden.${k}: not a valid regex`); }
+            }
+            if (f.defaultShellDenyList !== undefined && typeof f.defaultShellDenyList !== 'boolean') { errors.push('forbidden.defaultShellDenyList: boolean'); }
+        }
+    }
     return errors.length ? { ok: false, errors } : { ok: true, spec: o as unknown as ScenarioSpec };
 }
 
@@ -138,6 +163,80 @@ export function aggregateEvents(events: unknown[]): EvalAggregate {
     return { toolCalls, turns, finalAnswer, eventCount: events.length, unknownEventTypes: [...unknown].sort(), tokenUsage };
 }
 
+/**
+ * The shell commands every scenario fails on unless it opts out
+ * (`forbidden.defaultShellDenyList: false`): the board, the build and the
+ * packs through their own CLIs, installing pyOCD, and curl against the
+ * control server (#50, #45). Proposal 50's list with two corrections: `cbuild`
+ * followed by `-` is a file name (`app.cbuild-run.yml`), not the command, and
+ * curl may take options before the URL. Matched case-insensitively.
+ */
+export const DEFAULT_SHELL_DENY_LIST =
+    String.raw`\b(pyocd|arm-none-eabi-gdb|gdb-multiarch|JLink(Exe|GDBServer\w*)|openocd|cbuild(?!-)|cpackget|pip3? install)\b`
+    + String.raw`|\bcurl\b[^|;&\n]*\b(localhost|127\.0\.0\.1)`;
+
+/**
+ * The Copilot CLI tools that run shell commands, and the argument that holds
+ * the command. `bash` (macOS, Linux) and `powershell` (Windows) with `command`
+ * follow the hook input the Copilot CLI documentation shows (toolName "bash",
+ * toolArgs {"command": …}). `shell`, and the `write_*` tools that type into a
+ * running shell, are assumptions to check against a recorded run.
+ */
+const SHELL_TOOLS: ReadonlyMap<string, string> = new Map([
+    ['bash', 'command'],
+    ['powershell', 'command'],
+    ['shell', 'command'],
+    ['write_bash', 'input'],
+    ['write_powershell', 'input'],
+]);
+
+/** Longest command text a report keeps per bypass. */
+const COMMAND_CHARS = 200;
+
+/** The command of a shell-tool call; undefined for every other tool (MCP tools, skills, file edits). */
+export function shellCommandOf(call: ToolCallRecord): string | undefined {
+    const field = SHELL_TOOLS.get(call.name);
+    if (field === undefined) { return undefined; }
+    let args = call.args;
+    if (typeof args === 'string') {
+        try { args = JSON.parse(args); } catch { return args as string; }
+    }
+    const value = args && typeof args === 'object' ? (args as Record<string, unknown>)[field] : undefined;
+    return typeof value === 'string' ? value : JSON.stringify(args ?? '');
+}
+
+/** A shell command that did what an MCP tool is there for. */
+export interface ShellBypass {
+    tool: string;
+    /** The command, cut at 200 characters. */
+    command: string;
+    /** What caught it: the default deny list, or the scenario's `forbidden.shell`. */
+    rule: 'default' | 'scenario';
+}
+
+/** Every shell-tool call of the run that the deny list or `forbidden.shell` matches, in call order. */
+export function findBypasses(spec: ScenarioSpec, agg: EvalAggregate): ShellBypass[] {
+    const rules: Array<{ rule: ShellBypass['rule']; re: RegExp }> = [];
+    if (spec.forbidden?.defaultShellDenyList !== false) { rules.push({ rule: 'default', re: new RegExp(DEFAULT_SHELL_DENY_LIST, 'i') }); }
+    if (spec.forbidden?.shell) { rules.push({ rule: 'scenario', re: new RegExp(spec.forbidden.shell, 'i') }); }
+    const bypasses: ShellBypass[] = [];
+    for (const call of agg.toolCalls) {
+        const command = shellCommandOf(call);
+        const hit = command === undefined ? undefined : rules.find(({ re }) => re.test(command));
+        if (command !== undefined && hit) {
+            bypasses.push({ tool: call.name, command: command.length > COMMAND_CHARS ? `${command.slice(0, COMMAND_CHARS - 1)}…` : command, rule: hit.rule });
+        }
+    }
+    return bypasses;
+}
+
+/** The share of judged runs — infrastructure failures left out — with at least one bypass; `rate` is null without a judged run. */
+export function bypassRate(runs: ReadonlyArray<{ bypasses: number; infraError: boolean }>): { judged: number; withBypass: number; rate: number | null } {
+    const judged = runs.filter(run => !run.infraError);
+    const withBypass = judged.filter(run => run.bypasses > 0).length;
+    return { judged: judged.length, withBypass, rate: judged.length > 0 ? withBypass / judged.length : null };
+}
+
 export interface TelemetryTotals {
     calls: number;
     bytesOut: number;
@@ -182,9 +281,13 @@ export function judge(spec: ScenarioSpec, agg: EvalAggregate, wallMs: number, in
         reasons.push(`${wallMs} ms > budget ${spec.budgets.maxWallMs} ms`);
     }
     if (spec.forbidden?.toolArgs) {
+        // Shell commands are judged below: an MCP flash call whose arguments name app.cbuild-run.yml is no bypass.
         const re = new RegExp(spec.forbidden.toolArgs, 'i');
-        const hit = agg.toolCalls.find(c => re.test(c.name) || re.test(JSON.stringify(c.args ?? '')));
+        const hit = agg.toolCalls.find(c => shellCommandOf(c) === undefined && (re.test(c.name) || re.test(JSON.stringify(c.args ?? ''))));
         if (hit) { reasons.push(`forbidden tool use: ${hit.name}`); }
+    }
+    for (const bypass of findBypasses(spec, agg)) {
+        reasons.push(`shell bypass (${bypass.rule === 'default' ? 'default deny list' : 'forbidden.shell'}): ${bypass.tool}: ${bypass.command}`);
     }
     if (spec.forbidden?.answer && new RegExp(spec.forbidden.answer, 'i').test(agg.finalAnswer)) {
         reasons.push('final answer matches the forbidden pattern');

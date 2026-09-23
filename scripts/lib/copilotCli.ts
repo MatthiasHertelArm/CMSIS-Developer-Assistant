@@ -27,15 +27,30 @@ import * as childProcess from 'node:child_process';
 /** Output kept from one process; beyond it the spawn fails with ENOBUFS. */
 const OUTPUT_CAP_BYTES = 64 * 1024 * 1024;
 
+/** Keeps AGENTS.md and the other custom instruction files out of a run. */
+const NO_CUSTOM_INSTRUCTIONS = '--no-custom-instructions';
+
 /**
  * Flags of a non-interactive run, after `-C <dir> -p <prompt>`: JSON lines
  * out, every tool allowed without asking, no AGENTS.md or other custom
- * instructions, nothing remote, no log output.
+ * instructions (unless the run asks for them), nothing remote, no log output.
  */
 const ONE_SHOT_FLAGS: readonly string[] = [
-    '--output-format', 'json', '--allow-all-tools', '--no-custom-instructions',
+    '--output-format', 'json', '--allow-all-tools', NO_CUSTOM_INSTRUCTIONS,
     '--no-remote', '--no-remote-export', '--log-level', 'none',
 ];
+
+/** How a scripted run differs from the default. */
+export interface BatchRunOptions {
+    /**
+     * Read the custom instruction files — the work directory's AGENTS.md
+     * above all, and the user's own under $COPILOT_HOME — by leaving out
+     * `--no-custom-instructions`.
+     */
+    customInstructions?: boolean;
+    /** More arguments, after the fixed ones. */
+    extra?: string[];
+}
 
 /** PowerShell switches for a lookup without a profile and without prompts. */
 const QUIET_POWERSHELL = ['-NoProfile', '-NonInteractive'];
@@ -95,7 +110,8 @@ export function parseEvents<T = unknown>(output: string): T[] {
     return events;
 }
 
-/** The arguments of a scripted run of one prompt in `workDir`; `extra` goes last. */
-export function copilotBatchArgs(workDir: string, prompt: string, extra: string[] = []): string[] {
-    return ['-C', workDir, '-p', prompt, ...ONE_SHOT_FLAGS, ...extra];
+/** The arguments of a scripted run of one prompt in `workDir`; `options.extra` goes last. */
+export function copilotBatchArgs(workDir: string, prompt: string, options: BatchRunOptions = {}): string[] {
+    const flags = options.customInstructions === true ? ONE_SHOT_FLAGS.filter(flag => flag !== NO_CUSTOM_INSTRUCTIONS) : ONE_SHOT_FLAGS;
+    return ['-C', workDir, '-p', prompt, ...flags, ...(options.extra ?? [])];
 }

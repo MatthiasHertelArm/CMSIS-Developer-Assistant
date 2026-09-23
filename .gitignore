@@ -25,6 +25,8 @@ test/eval/fixtures/corstone-blinky/*.cbuild-idx.yml
 test/eval/fixtures/corstone-blinky/*.cbuild-pack.yml
 test/eval/fixtures/corstone-blinky/**/*.cbuild.yml
 test/eval/fixtures/corstone-blinky/**/*.cbuild-run.yml
+# ...except the one an overlay plants on purpose (scenario flash-image-missing)
+!test/eval/fixtures/corstone-blinky/overlays/**/*.cbuild-run.yml
 
 # Python bytecode left by the generators in scripts/core-svd/
 __pycache__/
