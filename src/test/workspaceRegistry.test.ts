@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+    DefaultTarget,
     RegistryDirContext,
     WindowRegistration,
     WorkspaceRegistry,
@@ -360,6 +361,72 @@ suite('Workspace registry', () => {
             assert.strictEqual(registry.isLive(original), true);
             plant('w', { controlPort: 49_999 });
             assert.strictEqual(registry.isLive(original), false);
+        });
+    });
+
+    suite('the default target (#16)', () => {
+        const ALPHA = 700_001;
+        const BETA = 700_002;
+        const DEFAULT_FILE = 'default-target.json';
+
+        /** A registry that takes only the fake pids planted here for live. */
+        const view = (): WorkspaceRegistry => new WorkspaceRegistry(process.pid, dir, (pid) => pid === ALPHA || pid === BETA || pid === process.pid);
+
+        test('it is saved 0600 beside the window files, read back with the fields this version knows, and cleared', async () => {
+            const registry = view();
+            await registry.writeDefaultTarget({ pid: ALPHA, workspaceFolder: '/proj/alpha', name: 'alpha', setAt: 5 });
+            if (POSIX) {
+                assert.strictEqual((fs.statSync(inDir(DEFAULT_FILE)).mode & 0o777).toString(8), '600');
+            }
+            assert.deepStrictEqual(registry.readDefaultTarget(), { pid: ALPHA, workspaceFolder: '/proj/alpha', name: 'alpha', setAt: 5 });
+            fs.writeFileSync(inDir(DEFAULT_FILE), JSON.stringify({ pid: BETA, setAt: 6, chosenBy: 'a later version', workspaceFolder: '' }));
+            assert.deepStrictEqual(registry.readDefaultTarget(), { pid: BETA, setAt: 6 });
+            await registry.clearDefaultTarget();
+            assert.ok(!exists(DEFAULT_FILE));
+            assert.strictEqual(registry.readDefaultTarget(), undefined);
+            await registry.clearDefaultTarget();
+        });
+
+        test('a file that holds no default target reads as none', () => {
+            const registry = view();
+            for (const text of ['{"pid": 7', '[]', '{"pid": "7", "setAt": 1}', '{"pid": 7}', '{"pid": -7, "setAt": 1}', '{"pid": 7.5, "setAt": 1}']) {
+                fs.writeFileSync(inDir(DEFAULT_FILE), text);
+                assert.strictEqual(registry.readDefaultTarget(), undefined, text);
+            }
+        });
+
+        test('the file is no window: list() passes it by and leaves it alone', async () => {
+            const registry = view();
+            publish(registry);
+            await registry.writeDefaultTarget({ pid: process.pid, setAt: 1 });
+            assert.deepStrictEqual(registry.list().map((w) => w.pid), [process.pid]);
+            assert.ok(exists(DEFAULT_FILE));
+        });
+
+        test('its window is found by pid, or after a reload by its folder, never by a reused pid or a shared folder', () => {
+            const registry = view();
+            plant('alpha', { pid: ALPHA, workspaceFolders: [inDir('alpha'), inDir('shared')] });
+            plant('beta', { pid: BETA, workspaceFolders: [inDir('beta/'), inDir('shared')] });
+            const found = (target: DefaultTarget): string | undefined => registry.findDefaultTarget(target)?.name;
+            assert.strictEqual(found({ pid: ALPHA, workspaceFolder: inDir('alpha'), setAt: 1 }), 'alpha');
+            assert.strictEqual(found({ pid: 4, workspaceFolder: inDir('beta'), setAt: 1 }), 'beta', 'the reloaded window has a new pid');
+            assert.strictEqual(found({ pid: ALPHA, workspaceFolder: inDir('beta'), setAt: 1 }), 'beta', 'a pid that now names another window');
+            assert.strictEqual(found({ pid: 4, workspaceFolder: inDir('shared'), setAt: 1 }), undefined, 'two windows have the folder open');
+            assert.strictEqual(found({ pid: BETA, setAt: 1 }), 'beta', 'a window without a folder is found by its pid');
+            assert.strictEqual(found({ pid: 4, setAt: 1 }), undefined);
+            assert.strictEqual(found({ pid: 4, workspaceFolder: inDir('closed'), setAt: 1 }), undefined);
+        });
+
+        test('a directory this user must not trust is neither read nor written for it', async function () {
+            if (!POSIX) {
+                this.skip();
+            }
+            fs.writeFileSync(inDir(DEFAULT_FILE), JSON.stringify({ pid: ALPHA, setAt: 1 }));
+            const registry = new WorkspaceRegistry(process.pid, dir, undefined, { uid: STRANGER_UID });
+            assert.strictEqual(registry.readDefaultTarget(), undefined, 'a planted default steers nothing');
+            await assert.rejects(registry.writeDefaultTarget({ pid: BETA, setAt: 2 }), /belongs to another user/);
+            await registry.clearDefaultTarget();
+            assert.ok(exists(DEFAULT_FILE), 'nothing in the refused directory is removed');
         });
     });
 

@@ -26,6 +26,7 @@ import { WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
 import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
 import { logger } from './utils/logger';
+import { WindowStatus } from './windowStatus';
 
 /** Refresh well inside the registry's 60 s staleness window. */
 const HEARTBEAT_MS = 20_000;
@@ -85,6 +86,9 @@ async function defaultSerialTeardown(): Promise<void> {
  * one stable URL that reaches every window. Every window — router included —
  * runs a ControlServer, because the router still has to be able to execute work
  * in *itself* through the same path as anywhere else.
+ *
+ * Once started, the window also shows its role in the status bar, and the
+ * item's click chooses the default target window (#16).
  */
 export class WindowCoordinator {
     private readonly registry: WorkspaceRegistry;
@@ -93,6 +97,7 @@ export class WindowCoordinator {
 
     private controlServer: ControlServer | undefined;
     private mcpServer: DebugMCPServer | undefined;
+    private status: WindowStatus | undefined;
     private heartbeat: ReturnType<typeof setInterval> | undefined;
     private promotionTimer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
@@ -111,7 +116,7 @@ export class WindowCoordinator {
         return this.mcpServer !== undefined;
     }
 
-    /** What this window does in the routing, as its registry entry says it. */
+    /** What this window does in the routing, as the registry and the status bar say it. */
     public role(): WindowRole {
         return this.isRouter() ? 'router' : 'worker';
     }
@@ -132,7 +137,11 @@ export class WindowCoordinator {
         await this.controlServer.start();
 
         this.publish();
-        this.heartbeat = setInterval(() => this.registry.heartbeat(), HEARTBEAT_MS);
+        this.heartbeat = setInterval(() => {
+            this.registry.heartbeat();
+            // Another window may have chosen a new default target since.
+            this.status?.reloadDefault();
+        }, HEARTBEAT_MS);
 
         // Debug-session state is the routing signal for every tool that has no
         // file path, so republish the moment it changes rather than waiting for
@@ -144,6 +153,20 @@ export class WindowCoordinator {
         );
 
         await this.tryBecomeRouter();
+        this.showStatus();
+    }
+
+    /**
+     * The Select Target Window command of this window: the quick pick that
+     * saves the default target. Before `start()` there is nothing to choose
+     * from, and the user is told so.
+     */
+    public async selectTargetWindow(): Promise<void> {
+        if (this.status === undefined) {
+            void vscode.window.showInformationMessage(`${PRODUCT}: this window has not joined the window registry, so there is no target window to choose.`);
+            return;
+        }
+        await this.status.chooseTarget();
     }
 
     /** Attempt the router port; on failure stay a worker and keep watching. */
@@ -175,8 +198,9 @@ export class WindowCoordinator {
             }
             throw error;
         }
-        // The role is part of the registry entry.
+        // The role is part of the registry entry and of the status bar.
         this.publish();
+        this.status?.render();
     }
 
     /**
@@ -198,6 +222,27 @@ export class WindowCoordinator {
         if (this.promotionTimer) {
             clearInterval(this.promotionTimer);
             this.promotionTimer = undefined;
+        }
+    }
+
+    /**
+     * Put this window's item into the status bar and feed it the ops the
+     * control server runs. A status bar that cannot be shown costs the
+     * window nothing else: the failure is logged and routing goes on.
+     */
+    private showStatus(): void {
+        if (this.disposed || this.status !== undefined || this.controlServer === undefined) { return; }
+        try {
+            const status = new WindowStatus({
+                registry: this.registry,
+                role: () => this.role(),
+                endpoint: () => `${this.getEndpoint()}/mcp`,
+                sessions: () => this.mcpServer?.describeSessions(),
+            });
+            this.status = status;
+            this.controlServer.onOp((op, phase) => status.noteOp(op, phase));
+        } catch (error) {
+            logger.warn('The window status bar item could not be shown', error);
         }
     }
 
@@ -265,6 +310,9 @@ export class WindowCoordinator {
             clearInterval(this.heartbeat);
             this.heartbeat = undefined;
         }
+        this.controlServer?.onOp(undefined);
+        this.status?.dispose();
+        this.status = undefined;
         // Unregister before stopping the servers so no other window can pick
         // this entry up and try to forward into a closing extension host.
         this.registry.unregister();

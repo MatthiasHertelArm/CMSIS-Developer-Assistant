@@ -41,6 +41,7 @@ import type { MeasuredMcpServer } from './core/measuredMcpServer';
 import type { SerialOpName } from './core/opTable';
 import { ToolMetrics, formatBytes, type ToolSample } from './core/toolMetrics';
 import type { ToolText } from './core/toolResult';
+import type { SessionTarget, SessionView } from './core/windowStatus';
 import type { HardwareTimeouts } from './debuggingExecutor';
 import { ShippedDocs, buildSessionServer, loadToolRules } from './debugTools';
 import type { PackDocsDispatch } from './packDocsDispatch';
@@ -112,15 +113,22 @@ const SSE_RETIRED = 'The legacy SSE endpoint /sse has been retired.';
 const SSE_SUCCESSOR = 'Connect over Streamable HTTP instead: POST /mcp.';
 const START_FAILED = 'Could not start the CMSIS Developer Assistant MCP server';
 
-/** One MCP session: its transport and server, kept together until the transport closes. */
+/** One MCP session: its transport, server and handlers, kept together until the transport closes. */
 interface McpSession {
     transport: StreamableHTTPServerTransport;
     server: MeasuredMcpServer;
+    handlers: SessionHandlers;
     /** True once the SDK assigned the session id and the session joined the map. */
     adopted: boolean;
 }
 
 const mintSessionId = (): string => randomUUID();
+
+/** A routing handler's `describeTarget()`, recognised by shape so that this module does not import the router. */
+function targetOf(handler: IDebuggingHandler): SessionTarget | undefined {
+    const describe: unknown = (handler as { describeTarget?: unknown }).describeTarget;
+    return typeof describe === 'function' ? (describe as () => SessionTarget | undefined).call(handler) : undefined;
+}
 
 /** Refuse Host and Origin values that are not local, before the body is even read. */
 function loopbackOnly(req: Request, res: Response, next: NextFunction): void {
@@ -312,6 +320,19 @@ export class DebugMCPServer {
         return this.boundPort ?? this.port;
     }
 
+    /**
+     * The open MCP sessions: their id, the client that opened each, and for a
+     * session that routes between windows the window its path-less calls go
+     * to and why. The router window's status bar lists them (#16).
+     */
+    describeSessions(): SessionView[] {
+        return [...this.sessions.entries()].map(([id, session]) => ({
+            id,
+            client: session.server.server.getClientVersion()?.name,
+            target: targetOf(session.handlers.debug),
+        }));
+    }
+
     private buildApp(): Express {
         const app: Express = express();
         app.use(loopbackOnly);
@@ -368,9 +389,11 @@ export class DebugMCPServer {
     /** A transport and server for a new session; it joins the map once the SDK assigns its id. */
     private openSession(): McpSession {
         const ring = new ToolMetrics(SESSION_SAMPLES, (sample) => this.observe(sample));
+        // Made here rather than inside the build, so that the session keeps them for describeSessions().
+        const handlers = this.handlersFor();
         const server = buildSessionServer({
             options: this.options,
-            handlers: this.handlersFor,
+            handlers: () => handlers,
             ring,
             serverTotals: this.instanceTotals,
             docs: this.docs,
@@ -378,6 +401,7 @@ export class DebugMCPServer {
         });
         const session: McpSession = {
             server,
+            handlers,
             adopted: false,
             transport: new StreamableHTTPServerTransport({
                 sessionIdGenerator: mintSessionId,

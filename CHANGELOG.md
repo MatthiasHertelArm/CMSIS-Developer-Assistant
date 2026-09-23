@@ -17,6 +17,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - The routed `tools/list` grows by about 500 bytes; the single-window list is unchanged.
   - Each registry entry carries the window's `role` (`router` or `worker`). `list_debug_windows` marks the router, and the candidates of `AMBIGUOUS_WINDOW` carry `role`. With several idle windows its hint names `cmsis_action load_and_debug` with `window`.
   - Windows of 2.5.0 read the new field without harm; their own entries have no role.
+- **With several VS Code windows open, the user sees and chooses the window agents drive (#16).**
+  - Before, two windows of which none was debugging made every tool call without a file path fail with a tie that only the agent could settle, and nothing showed which window was the router.
+  - Every window shows a status-bar item: `CDA router` or `CDA worker`, `· default` on the default target, and a spinner while an agent call runs in it. Its tooltip names the MCP endpoint, the default target and the last agent call; in the router window it also lists every agent session with the window it drives and why. The status bar's context menu hides it.
+  - The new command **CMSIS Developer Assistant: Select Target Window**, also the item's click, chooses the default target among the open windows, or **Automatic**. The choice is saved as `default-target.json` (mode 0600) in the window registry directory, where every router reads it; a reloaded window is found again by its folder.
+  - The router takes the default target after the session's own target and before the one window with a debug session. A new choice drops the target every session had reached, so it applies from their next call; a pin from `select_debug_window` stays.
+  - `list_debug_windows` marks the default target, `select_debug_window` says when its pin overrides one, and the candidates of `AMBIGUOUS_WINDOW` carry `isDefault`. Its hint names the status bar, and a default target whose window is not open.
+  - A router of 2.5.0 ignores the default target, and windows of every version pass the new file by.
 - `npm run skills:sync -- --offline` regenerates the routers, the catalog, `cmsis-help` and the rule blocks without a network fetch, and leaves the vendored skills and the lock alone.
 - `src/utils/markerBlock.ts` inserts, replaces, extracts and removes text between marker comments without touching the rest of a file, line endings included. The step that writes the rules into agents' rule files uses it too.
 - **The setup offers to add the tool rules to your agents' rule files, with your consent (#45, part of #50).**

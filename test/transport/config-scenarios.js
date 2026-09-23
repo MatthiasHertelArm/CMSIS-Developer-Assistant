@@ -574,6 +574,22 @@ function documentText(uri) {
     return '<unknown document>';
 }
 
+/**
+ * A status-bar item that records being made, shown and disposed. What it
+ * shows at `show()` is recorded too; later text and tooltip changes are
+ * not, since the tooltip carries times.
+ */
+function createStatusBarItem(id, alignment, priority) {
+    emit({ ev: 'createStatusBarItem', id, alignment, priority });
+    const item = {
+        label: `statusBarItem:${id}`, id, alignment, priority, name: undefined, text: '', tooltip: undefined, command: undefined,
+        show() { emit({ ev: 'statusBarItem.show', id, name: item.name, command: item.command, text: item.text }); },
+        hide() { emit({ ev: 'statusBarItem.hide', id }); },
+        dispose() { emit({ ev: 'statusBarItem.dispose', id }); },
+    };
+    return item;
+}
+
 // --- the API object ------------------------------------------------------------
 
 const api = {
@@ -581,6 +597,7 @@ const api = {
     Uri: { file: fileUri, parse: parseUri, joinPath },
     QuickPickItemKind,
     ConfigurationTarget,
+    StatusBarAlignment: { Left: 1, Right: 2 },
     ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
     ViewColumn: { Active: -1, Beside: -2, One: 1 },
     Disposable: class Disposable {
@@ -598,6 +615,7 @@ const api = {
         showErrorMessage: messageFn('error'),
         showQuickPick,
         createQuickPick,
+        createStatusBarItem,
         showInputBox: async (options) => { emit({ ev: 'showInputBox', options: explicit(options) }); return undefined; },
         showOpenDialog: async (options) => { emit({ ev: 'showOpenDialog', options: explicit(options) }); return undefined; },
         withProgress: async (_options, task) => task({ report() {} }, { isCancellationRequested: false, onCancellationRequested: () => disposable('cancel') }),

@@ -23,17 +23,19 @@ owns the workspace or the board the call is about.
   (the MCP server definition in `src/extension.ts`), so in-editor and
   external agents agree on which window owns a board.
 - Every window publishes its role in its registry entry (`role`, since
-  2.5.1); `list_debug_windows` marks the router.
+  2.5.1) and shows it in the status bar (see
+  [Window selection for people](#window-selection-for-people)).
 
 ## The pieces
 
 | File | Responsibility |
 | ---- | -------------- |
-| `src/windowCoordinator.ts` | `WindowCoordinator`: starts the control server, publishes the window, tries to become router (`tryBecomeRouter()`), polls for promotion, and gives each MCP session a new `RoutingDebuggingHandler` (`sessionHandlers()`) |
-| `src/utils/workspaceRegistry.ts` | `WorkspaceRegistry`: the machine-wide list of windows, one JSON file per window |
+| `src/windowCoordinator.ts` | `WindowCoordinator`: starts the control server, publishes the window, tries to become router (`tryBecomeRouter()`), polls for promotion, gives each MCP session a new `RoutingDebuggingHandler` (`sessionHandlers()`), and owns the window's status-bar item |
+| `src/utils/workspaceRegistry.ts` | `WorkspaceRegistry`: the machine-wide list of windows, one JSON file per window, and the default target |
 | `src/routingDebuggingHandler.ts` | `RoutingDebuggingHandler`: picks the target window for a call and forwards it; answers `list_debug_windows` and `select_debug_window` |
 | `src/controlServer.ts` | `ControlServer`: receives a forwarded call and runs it against this window's handlers |
 | `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends; `targetHintOf()` |
+| `src/windowStatus.ts`, `src/core/windowStatus.ts` | the status-bar item and Select Target Window: the wiring, and the pure rendering |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
 
 ## The registry
@@ -52,6 +54,12 @@ still be writing a younger one. Windows of different extension versions read
 each other's files, so the format stays stable and readers ignore fields they
 do not know. The first field, `_note`, is for whoever opens the file: it
 says the file is internal and names the tools agents use instead.
+
+Beside the window files lies `default-target.json`, written 0600 by
+Select Target Window: `{pid, workspaceFolder, name, setAt}`. Readers of every
+version pass it by, since its name does not start with `window-`. Whoever
+can write it steers path-less agent calls, so it is read only from a
+directory this user trusts, like the window files.
 
 A token in the registry is enough to flash or erase that window's board, so
 only its user may read the registry (#19):
@@ -97,21 +105,32 @@ that applies decides:
    path inside its workspace, for the rest of the MCP session.
 4. **Cache.** The window this MCP session reached last, while it is still
    registered on the same control port.
-5. **The only debugging window.** The one window with an active debug
+5. **Default target.** The window the user chose with Select Target Window,
+   found by its pid, or by its folder once a reload gave it a new pid.
+6. **The only debugging window.** The one window with an active debug
    session.
-6. **The only window.** The one registered window.
+7. **The only window.** The one registered window.
+
+The default target comes after the cache so that a path the agent named
+keeps its window within the session. For a click in the status bar to take
+effect at once all the same, every session remembers the `setAt` of the
+default it last saw (`followDefault()`): a new one drops the session's cache,
+never its pin. Removing the default leaves each session where it is.
 
 Otherwise the call is refused with the list of windows and the ways to pick
 one — when two windows are debugging, reading memory from the wrong board
 would look exactly like a firmware bug, so the router never guesses. The
 refusal is `AMBIGUOUS_WINDOW`, and its `data.candidates` lists every
 registered window (`pid`, `name`, `workspaceFolders`, `hasActiveSession`,
-and `role` for windows that publish one). An empty registry and a pinned
-window that is gone are `WINDOW_UNREACHABLE`; a path inside no workspace, a
-`window` argument that matches nothing (with the same candidates in
-`data`), and a `select_debug_window` without a selector or without a match
-are `INVALID_ARGUMENT`. `list_debug_windows` shows every registered window
-and marks the router, the current target and the pin.
+`isDefault`, and `role` for windows that publish one); its hint names
+`select_debug_window` and the status bar, and a default target whose window
+is not open. An empty registry and a pinned window that is gone are
+`WINDOW_UNREACHABLE`; a path inside no workspace, a `window` argument that
+matches nothing (with the same candidates in `data`), and a
+`select_debug_window` without a selector or without a match are
+`INVALID_ARGUMENT`. `list_debug_windows` shows every registered window, marks
+the router, the current target, the pin and the default target, and the
+reply of `select_debug_window` says when the pin overrides a default.
 
 ## Forwarding
 
@@ -187,22 +206,65 @@ unknown op, a method the window lacks and absent documentation handlers are
 text. Agents never see the token: `describeWindow()` leaves port and token
 out of every listing.
 
+## Window selection for people
+
+Agents have `list_debug_windows`, `select_debug_window` and the `window`
+argument; the user has the status bar (#16). Without it, two idle windows
+were a tie that only the agent could settle, and nothing showed which window
+was the router or which window an agent was driving.
+
+- **The item.** Every started window shows one status-bar item,
+  `cmsis-developer-assistant.window`, named "CMSIS Developer Assistant" so the
+  status bar's own menu can hide it: `$(plug) CDA router` or
+  `$(plug) CDA worker`, `· default` on the default target, and a spinner while
+  an agent call runs in the window. Its tooltip gives the MCP endpoint, the
+  default target, the calls running and the last one; in the router window
+  also every open MCP session with the window it drives and the rung that
+  chose it. The item shows with a single window too: it confirms the server
+  runs.
+- **Its sources.** `ControlServer.onOp()` tells the window when an op starts
+  and ends; every call arrives that way, the router's own included. The
+  router asks its `DebugMCPServer` for `describeSessions()`, which reads each
+  session's `RoutingDebuggingHandler.describeTarget()` from memory. The
+  default target is read again on the 20 s heartbeat, and at once in the
+  window where the user chose it, so other windows show a new choice within
+  20 s while routing follows it on the next call. A 5 s tick keeps the times
+  in the tooltip current.
+- **The command.** `cmsis-developer-assistant.selectTargetWindow`, the item's
+  click, offers the registered windows (name, folders, role, debug session,
+  solution) and **Automatic**; the choice is written to `default-target.json`
+  (see [The registry](#the-registry)), Automatic removes the file. The
+  command is registered in every window, and says so when no coordinator
+  runs (the test runner).
+- **Where to look.** `renderWindowStatus()`, `targetChoices()` and
+  `toolNameOf()` in `src/core/windowStatus.ts` are pure; `WindowStatus` in
+  `src/windowStatus.ts` holds the item, the tick and the quick pick; the
+  coordinator creates it at the end of `start()` and re-renders it when the
+  window becomes router.
+
+The default target is honoured by routers of 2.5.1 and later; a router of
+2.5.0 in a window that was not reloaded ignores the file.
+
 ## Shutdown
 
-`WindowCoordinator.dispose()` first removes the window from the registry, so
-no other window forwards into a closing extension host, then stops the MCP
-server and the control server, then releases the window's serial ports,
-giving that step at most two seconds.
+`WindowCoordinator.dispose()` first disposes the status-bar item and removes
+the window from the registry, so no other window forwards into a closing
+extension host, then stops the MCP server and the control server, then
+releases the window's serial ports, giving that step at most two seconds.
 
 ## Tests
 
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
   round trip; typed outcomes — a worker error with its code and the target
   kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the
-  gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`;
-  the `window` argument and the candidates' `role` (#16)
+  gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`; the
+  default target, the `window` argument, the candidates' `isDefault` and
+  `role`, and the op hook (#16)
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
-  matching; the directory name, modes, and refused directories
+  matching; the directory name, modes, and refused directories; the default
+  target file and how its window is found again
+- `src/test/windowStatus.test.ts`: the item's text and tooltip in every state,
+  the Select Target Window entries, and a tool name for every op
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'
   `mode` option and the loopback checks
 - `src/test/windowCoordinator.test.ts`: the serial teardown on dispose
@@ -210,5 +272,6 @@ giving that step at most two seconds.
 - `test/transport/two-window-routing.js`: two coordinators against one
   registry — one router, one worker, the same advertised endpoint, pinning,
   republishing on session start, `AMBIGUOUS_WINDOW` with two candidates when
-  both debug, promotion when the router closes; roles, `window` on exactly
-  the listed tools, `cmsis_action {window}` by pid and by path
+  both debug, promotion when the router closes; roles and status-bar items,
+  `window` on exactly the listed tools, `cmsis_action {window}`, a default
+  chosen through the quick pick resolving the tie of two idle windows

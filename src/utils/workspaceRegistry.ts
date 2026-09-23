@@ -31,12 +31,16 @@
  * the uid (`resolveRegistryDir`); a directory that is a symbolic link or
  * belongs to someone else is not used at all (`ensureRegistryDir`), and the
  * window then works on its own.
+ *
+ * Beside the window files the directory holds `default-target.json`: the
+ * window the user chose with Select Target Window (#16) for agent calls
+ * that nothing else aims. Readers of older versions skip it by its name.
  */
 
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { isTempPath, writeFileAtomicSync } from './atomicFile';
+import { isTempPath, writeFileAtomic, writeFileAtomicSync } from './atomicFile';
 import { logger } from './logger';
 
 /** What a window does: serve MCP and forward every call (router), or run what is forwarded to it (worker). */
@@ -67,10 +71,26 @@ export interface WindowRegistration {
 /**
  * Why the router picked a window, strongest first: the call's `window`
  * argument, its file path, the session's pin, the window it reached before,
- * the one debugging window, the one window. It shows up in the routing log
- * line.
+ * the default target, the one debugging window, the one window. It shows up
+ * in the routing log line and in the router's status bar.
  */
-export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'active-session' | 'only-window';
+export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'default' | 'active-session' | 'only-window';
+
+/**
+ * The window the user chose with Select Target Window (#16), for the agent
+ * calls that nothing else aims. Found again by pid, or by its folder after a
+ * reload gave the window a new pid.
+ */
+export interface DefaultTarget {
+    /** Extension-host process of the chosen window. */
+    pid: number;
+    /** Its first workspace folder; none for a window without a folder. */
+    workspaceFolder?: string;
+    /** Its name when it was chosen, for texts that mention it while it is closed. */
+    name?: string;
+    /** When it was chosen, milliseconds since the epoch; a new value makes the router sessions drop their cached targets. */
+    setAt: number;
+}
 
 /** Answers whether a process with this pid still exists. */
 export type LivenessCheck = (pid: number) => boolean;
@@ -79,6 +99,8 @@ export type LivenessCheck = (pid: number) => boolean;
 const STALE_AFTER_MS = 60_000;
 const FILE_PREFIX = 'window-';
 const FILE_SUFFIX = '.json';
+/** Not a window file: the name does not start with FILE_PREFIX, so every version's `list()` passes it by. */
+const DEFAULT_TARGET_FILE = 'default-target.json';
 /** Signal 0 delivers nothing; it only asks the kernel whether the pid exists. */
 const EXISTENCE_PROBE = 0;
 /** The directory name of every version so far; kept wherever the temp directory is private to the user. */
@@ -265,8 +287,40 @@ function liesWithin(target: string, folder: string): boolean {
     return target.startsWith(`${folder}${path.sep}`) || target.startsWith(`${folder}/`);
 }
 
+/** True when the window has `folder` itself open; any window when no folder is asked for. */
+function holdsFolder(entry: WindowRegistration, folder: string | undefined): boolean {
+    if (folder === undefined) {
+        return true;
+    }
+    const wanted = comparable(folder);
+    return foldersOf(entry).some((open) => comparable(open) === wanted);
+}
+
+/**
+ * The default target a parsed file holds: its known fields, checked one by
+ * one; undefined when the pid or the time is missing or of the wrong type.
+ */
+function defaultTargetOf(parsed: unknown): DefaultTarget | undefined {
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return undefined;
+    }
+    const { pid, workspaceFolder, name, setAt } = parsed as Record<string, unknown>;
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0 || typeof setAt !== 'number' || !Number.isFinite(setAt)) {
+        return undefined;
+    }
+    const target: DefaultTarget = { pid, setAt };
+    if (typeof workspaceFolder === 'string' && workspaceFolder.length > 0) {
+        target.workspaceFolder = workspaceFolder;
+    }
+    if (typeof name === 'string') {
+        target.name = name;
+    }
+    return target;
+}
+
 export class WorkspaceRegistry {
     private readonly ownFile: string;
+    private readonly defaultFile: string;
     private readonly owner: RegistryOwner;
     private readonly onRefused: ((message: string) => void) | undefined;
     /** What this window last asked to publish; the heartbeat rewrites it. */
@@ -281,8 +335,14 @@ export class WorkspaceRegistry {
         options: RegistryOptions = {},
     ) {
         this.ownFile = path.join(registryDir, `${FILE_PREFIX}${pid}${FILE_SUFFIX}`);
+        this.defaultFile = path.join(registryDir, DEFAULT_TARGET_FILE);
         this.owner = { platform: options.platform ?? process.platform, uid: options.uid ?? process.getuid?.() };
         this.onRefused = options.onRefused;
+    }
+
+    /** The pid this window registers under: the identity of its entry. */
+    ownPid(): number {
+        return this.pid;
     }
 
     /** Publish (or republish) this window. Logs instead of throwing. */
@@ -387,6 +447,71 @@ export class WorkspaceRegistry {
     isLive(entry: WindowRegistration): boolean {
         const current = this.findByPid(entry.pid);
         return current !== undefined && current.controlPort === entry.controlPort;
+    }
+
+    /**
+     * The default target the user chose, or undefined: none chosen, a file
+     * that does not hold one, or a directory this user must not trust (#19),
+     * since whoever writes the file steers path-less agent calls. Fields this
+     * version does not know are ignored.
+     */
+    readDefaultTarget(): DefaultTarget | undefined {
+        if (this.readRefusal() !== undefined) {
+            return undefined;
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(fs.readFileSync(this.defaultFile, 'utf8'));
+        } catch {
+            // None chosen, or a write in flight: either way no default for this call.
+            return undefined;
+        }
+        return defaultTargetOf(parsed);
+    }
+
+    /**
+     * Save the default target, 0600, in the registry directory once it is fit
+     * for it. Rejects with the reason when the directory is refused or the
+     * write fails.
+     */
+    async writeDefaultTarget(target: DefaultTarget): Promise<void> {
+        const refusal = ensureRegistryDir(this.registryDir, this.owner);
+        if (refusal !== undefined) {
+            throw new Error(`${this.registryDir} ${refusal}`);
+        }
+        await writeFileAtomic(this.defaultFile, JSON.stringify(target), { mode: FILE_MODE });
+    }
+
+    /** Forget the default target; none saved is fine. A refused directory is left alone. */
+    async clearDefaultTarget(): Promise<void> {
+        if (this.readRefusal() !== undefined) {
+            return;
+        }
+        try {
+            await fs.promises.unlink(this.defaultFile);
+        } catch (error) {
+            if (errnoCode(error) !== 'ENOENT') {
+                throw error;
+            }
+        }
+    }
+
+    /**
+     * The open window the default target names: the window with its pid while
+     * that window still has the chosen folder open (a pid the system reused
+     * for another window does not count), else — after a reload gave the
+     * window a new pid — the one window with that folder open.
+     */
+    findDefaultTarget(target: DefaultTarget, windows: readonly WindowRegistration[] = this.list()): WindowRegistration | undefined {
+        const byPid = windows.find((candidate) => candidate.pid === target.pid);
+        if (byPid !== undefined && holdsFolder(byPid, target.workspaceFolder)) {
+            return byPid;
+        }
+        if (target.workspaceFolder === undefined) {
+            return undefined;
+        }
+        const holders = windows.filter((candidate) => holdsFolder(candidate, target.workspaceFolder));
+        return holders.length === 1 ? holders[0] : undefined;
     }
 
     /** Write this window's file, 0600, into a directory fit for it; logs instead of throwing. */

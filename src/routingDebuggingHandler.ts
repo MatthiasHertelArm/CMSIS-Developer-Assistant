@@ -21,9 +21,11 @@
  * the board, and two sessions can drive two boards at once.
  *
  * The target comes from a fixed ladder — the call's `window` argument, its
- * path, the pin, the session's established target, the sole window with a
- * debug session, the sole window — and a tie is refused with a listing,
- * never guessed. The two routing tools, `list_debug_windows` and
+ * path, the pin, the session's established target, the default target the
+ * user chose in VS Code, the sole window with a debug session, the sole
+ * window — and a tie is refused with a listing, never guessed. A newly
+ * chosen default drops the established target of every session, never a
+ * pin (#16). The two routing tools, `list_debug_windows` and
  * `select_debug_window`, are answered here.
  *
  * The worker's outcome comes back typed (#11): its result as it is, its
@@ -56,7 +58,9 @@ import {
     toToolError,
     upgradeLegacyText,
 } from './core/toolResult';
+import type { SessionTarget } from './core/windowStatus';
 import {
+    DefaultTarget,
     describeWindow,
     ResolutionReason,
     WindowRegistration,
@@ -76,6 +80,9 @@ const SELECT_NEEDS_ARGUMENT = 'Pass either pid or workspaceFolder.';
 const SELECT_HINT = 'Call list_debug_windows to see the options.';
 const LISTING_FOOTER = 'Pin one for this session with select_debug_window({ pid }) when the automatic choice is wrong, '
     + 'or pass window to a tool that takes it.';
+/** How an agent asks the user to choose: the status-bar item's click opens Select Target Window. */
+const ASK_THE_USER = 'or ask the user to pick one: click "CDA" in the VS Code status bar → Select Target Window.';
+const DEFAULT_MARK = 'default target (set in VS Code)';
 const UNREACHABLE_HINT = 'It may have been closed. Call list_debug_windows to see what is still open.';
 const BUSY_HINT = 'The call may still be running there. Call get_session_status to see the state of that window, then retry.';
 
@@ -95,12 +102,13 @@ interface Resolved {
 class ChannelFailure extends Error {}
 
 /** A window as `AMBIGUOUS_WINDOW` and a `window` argument that matches nothing list it in `data.candidates`. */
-function candidateOf(w: WindowRegistration): JsonObject {
+function candidateOf(w: WindowRegistration, defaultPid: number | undefined): JsonObject {
     const candidate: JsonObject = {
         pid: w.pid,
         name: w.name,
         workspaceFolders: Array.isArray(w.workspaceFolders) ? [...w.workspaceFolders] : [],
         hasActiveSession: w.hasActiveSession === true,
+        isDefault: w.pid === defaultPid,
     };
     // Windows of 2.5.0 and earlier publish no role.
     if (w.role === 'router' || w.role === 'worker') {
@@ -145,8 +153,12 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
     /** The window this session last reached; reused while it stays registered on the same port. */
     private target: WindowRegistration | undefined;
+    /** The rung that chose `target`, for the status bar; a reuse keeps it. */
+    private targetReason: ResolutionReason | undefined;
     /** Set by `select_debug_window`; only a later selection replaces it. */
     private pinnedPid: number | undefined;
+    /** `setAt` of the default target this session last saw; a new one drops `target`. */
+    private defaultSetAt: number | undefined;
 
     /**
      * @param defaultToolMs the tool timeout a call gets without its own `timeoutMs`.
@@ -167,26 +179,34 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         return this.relay(op, args);
     }
 
-    /** The `list_debug_windows` text. Changes nothing. */
+    /**
+     * The `list_debug_windows` text, marking this session's target, its pin
+     * and the default target. Changes nothing, except that a newly chosen
+     * default drops the session's target, as it would on the next call.
+     */
     listDebugWindows(): string {
+        const chosen = this.followDefault();
         const windows = this.registry.list();
         if (windows.length === 0) {
             return NO_WINDOW_LISTING;
         }
-        const rows = windows.map((w) => `• ${describeWindow(w)}${this.markers(w)}`);
+        const defaultPid = chosen === undefined ? undefined : this.registry.findDefaultTarget(chosen, windows)?.pid;
+        const rows = windows.map((w) => `• ${describeWindow(w)}${this.markers(w, defaultPid)}`);
         return `Registered VS Code windows:\n${rows.join('\n')}\n\n${LISTING_FOOTER}`;
     }
 
     /**
      * The `select_debug_window` text; on a match the window is pinned for this
-     * session. A call without a selector, or one that matches no window, is
-     * refused with `INVALID_ARGUMENT`.
+     * session, over the default target, which the text names when one is set.
+     * A call without a selector, or one that matches no window, is refused
+     * with `INVALID_ARGUMENT`.
      */
     selectDebugWindow(args: { pid?: number; workspaceFolder?: string }): string {
         const { pid, workspaceFolder } = args;
         if (pid === undefined && !workspaceFolder) {
             throw new ToolError('INVALID_ARGUMENT', SELECT_NEEDS_ARGUMENT, SELECT_HINT);
         }
+        const chosenDefault = this.followDefault();
         const chosen = pid !== undefined
             ? this.registry.findByPid(pid)
             : this.registry.findByWorkspaceFolder(workspaceFolder as string);
@@ -199,19 +219,42 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             throw new ToolError('INVALID_ARGUMENT', `No registered window matches ${wanted}.`, known);
         }
         this.pinnedPid = chosen.pid;
-        this.target = chosen;
-        return `This session is now pinned to: ${describeWindow(chosen)}\n`
+        this.settle(chosen, 'pinned');
+        const pinned = `This session is now pinned to: ${describeWindow(chosen)}\n`
             + 'Every subsequent tool call runs in that window until you pin another.';
+        const preferred = chosenDefault === undefined ? undefined : this.registry.findDefaultTarget(chosenDefault);
+        if (preferred === undefined) {
+            return pinned;
+        }
+        return preferred.pid === chosen.pid
+            ? `${pinned}\nIt is also the default target the user set in VS Code.`
+            : `${pinned}\nThe user set pid=${preferred.pid} (${preferred.name}) as the default target in VS Code; `
+                + 'this pin overrides it for this session.';
     }
 
-    /** ` ← current target, pinned` (whichever apply) for a listing row. */
-    private markers(w: WindowRegistration): string {
+    /**
+     * Where this session's path-less calls go and the rung that chose the
+     * window, for the router's status bar (#16); undefined before the first
+     * call and after the window went away. Reads nothing from disk.
+     */
+    describeTarget(): SessionTarget | undefined {
+        if (this.target === undefined || this.targetReason === undefined) {
+            return undefined;
+        }
+        return { pid: this.target.pid, name: this.target.name, reason: this.targetReason };
+    }
+
+    /** ` ← current target, pinned, default target (set in VS Code)` (whichever apply) for a listing row. */
+    private markers(w: WindowRegistration, defaultPid: number | undefined): string {
         const marks: string[] = [];
         if (this.target !== undefined && this.target.pid === w.pid) {
             marks.push('current target');
         }
         if (this.pinnedPid === w.pid) {
             marks.push('pinned');
+        }
+        if (defaultPid === w.pid) {
+            marks.push(DEFAULT_MARK);
         }
         return marks.length > 0 ? `  ← ${marks.join(', ')}` : '';
     }
@@ -233,7 +276,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
                 throw toToolError(failure);
             }
             if (this.target !== undefined && this.target.pid === entry.pid) {
-                this.target = undefined;
+                this.forget();
             }
             throw new ToolError('WINDOW_UNREACHABLE',
                 `Could not reach the VS Code window handling this session (pid=${entry.pid}): ${failure.message}`, UNREACHABLE_HINT);
@@ -242,20 +285,18 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
     /** The resolution ladder; the first rung that applies decides, and a miss throws. */
     private resolveTarget(hint: TargetHint | undefined): Resolved {
+        const chosenDefault = this.followDefault();
         if (hint !== undefined && hint.source === 'window') {
             // Named for this call, and like a path it re-aims the session's later path-less calls.
-            const named = this.namedWindow(hint);
-            this.target = named;
-            return { entry: named, reason: 'window-arg' };
+            return this.settle(this.namedWindow(hint, chosenDefault), 'window-arg');
         }
         if (hint !== undefined) {
             // A named file must never run in another window, cached or pinned.
             const owner = this.registry.findByPath(hint.path);
             if (!owner) {
-                throw this.unroutable(hint.path);
+                throw this.unroutable(hint.path, chosenDefault);
             }
-            this.target = owner;
-            return { entry: owner, reason: 'path' };
+            return this.settle(owner, 'path');
         }
         if (this.pinnedPid !== undefined) {
             const pinned = this.registry.findByPid(this.pinnedPid);
@@ -264,28 +305,57 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
                     `The window pinned with select_debug_window (pid=${this.pinnedPid}) is gone.`,
                     'Pin another with select_debug_window, or call list_debug_windows to see what is open.');
             }
-            this.target = pinned;
-            return { entry: pinned, reason: 'pinned' };
+            return this.settle(pinned, 'pinned');
         }
         if (this.target !== undefined && this.registry.isLive(this.target)) {
             return { entry: this.target, reason: 'cached' };
         }
-        this.target = undefined;
+        this.forget();
+        const preferred = chosenDefault === undefined ? undefined : this.registry.findDefaultTarget(chosenDefault);
+        if (preferred) {
+            return this.settle(preferred, 'default');
+        }
         const debugging = this.registry.findSoleActiveSession();
         if (debugging) {
-            this.target = debugging;
-            return { entry: debugging, reason: 'active-session' };
+            return this.settle(debugging, 'active-session');
         }
         const only = this.registry.findSoleWindow();
         if (only) {
-            this.target = only;
-            return { entry: only, reason: 'only-window' };
+            return this.settle(only, 'only-window');
         }
-        throw this.unroutable(undefined);
+        throw this.unroutable(undefined, chosenDefault);
+    }
+
+    /** Make `entry` this session's target, chosen for `reason`. */
+    private settle(entry: WindowRegistration, reason: ResolutionReason): Resolved {
+        this.target = entry;
+        this.targetReason = reason;
+        return { entry, reason };
+    }
+
+    /** Forget this session's target; the pin stays. */
+    private forget(): void {
+        this.target = undefined;
+        this.targetReason = undefined;
+    }
+
+    /**
+     * Read the default target and, when it was chosen since this session last
+     * looked, drop the session's target: a click in the status bar moves
+     * path-less calls at once. The pin stays, and a default that was removed
+     * leaves the session where it is.
+     */
+    private followDefault(): DefaultTarget | undefined {
+        const chosen = this.registry.readDefaultTarget();
+        if (chosen !== undefined && chosen.setAt !== this.defaultSetAt) {
+            this.defaultSetAt = chosen.setAt;
+            this.forget();
+        }
+        return chosen;
     }
 
     /** The window a `window` argument names; one that matches nothing is refused with the candidates. */
-    private namedWindow(hint: TargetHint & { source: 'window' }): WindowRegistration {
+    private namedWindow(hint: TargetHint & { source: 'window' }, chosenDefault: DefaultTarget | undefined): WindowRegistration {
         const found = 'pid' in hint ? this.registry.findByPid(hint.pid) : this.registry.findByPath(hint.path);
         if (found) {
             return found;
@@ -295,17 +365,19 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             throw new ToolError('WINDOW_UNREACHABLE', NO_WINDOW_ERROR, NO_WINDOW_HINT);
         }
         const given = 'pid' in hint ? String(hint.pid) : hint.path;
+        const defaultPid = chosenDefault === undefined ? undefined : this.registry.findDefaultTarget(chosenDefault, windows)?.pid;
         throw new ToolError('INVALID_ARGUMENT', `The window argument "${given}" matches no open VS Code window.`,
             `Pass the pid of one of these, or a path inside its workspace:\n${bulletList(windows)}`,
-            { candidates: windows.map(candidateOf) });
+            { candidates: windows.map((w) => candidateOf(w, defaultPid)) });
     }
 
     /**
      * Why no window could take the call, from a fresh look at the registry:
      * no window at all, a path outside every workspace, or a tie, which lists
-     * every registered window as a candidate.
+     * every registered window as a candidate and names a default target
+     * whose window is not open.
      */
-    private unroutable(hint: string | undefined): ToolError {
+    private unroutable(hint: string | undefined, chosenDefault: DefaultTarget | undefined): ToolError {
         const windows = this.registry.list();
         if (windows.length === 0) {
             return new ToolError('WINDOW_UNREACHABLE', NO_WINDOW_ERROR, NO_WINDOW_HINT);
@@ -315,18 +387,22 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             return new ToolError('INVALID_ARGUMENT', `No open VS Code window has "${hint}" inside its workspace.`,
                 `Open the folder containing it, or pass a path that is inside one of these:\n${listing}`);
         }
-        const candidates = { candidates: windows.map(candidateOf) };
+        const preferred = chosenDefault === undefined ? undefined : this.registry.findDefaultTarget(chosenDefault, windows);
+        const candidates = { candidates: windows.map((w) => candidateOf(w, preferred?.pid)) };
+        const closedDefault = chosenDefault !== undefined && preferred === undefined
+            ? `The default target the user set in VS Code (${chosenDefault.name ?? `pid ${chosenDefault.pid}`}) is not open.\n`
+            : '';
         const debugging = windows.filter((w) => w.hasActiveSession).length;
         if (debugging > 1) {
             return new ToolError('AMBIGUOUS_WINDOW',
                 `${debugging} VS Code windows have an active debug session, so there is no unambiguous target for this call.`,
-                `Pick one with select_debug_window:\n${listing}`, candidates);
+                `${closedDefault}Pin one with select_debug_window, ${ASK_THE_USER}\n${listing}`, candidates);
         }
         return new ToolError('AMBIGUOUS_WINDOW',
             `${windows.length} VS Code windows are registered and none has an active debug session, `
                 + 'so there is no unambiguous target for this call.',
-            `Start a session in one with cmsis_action load_and_debug and window set to its pid, `
-                + `or pin one with select_debug_window:\n${listing}`, candidates);
+            `${closedDefault}Start a session in one with cmsis_action load_and_debug and window set to its pid, `
+                + `pin one with select_debug_window, ${ASK_THE_USER}\n${listing}`, candidates);
     }
 
     /**

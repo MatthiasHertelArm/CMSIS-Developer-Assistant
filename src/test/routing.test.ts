@@ -27,7 +27,7 @@ import { RoutingDebuggingHandler } from '../routingDebuggingHandler';
 import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
 import { ErrorCode, ToolError, ToolText, errorDetail, textOf, toToolError } from '../core/toolResult';
 import { closeHttpServer } from '../utils/closeHttpServer';
-import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
+import { DefaultTarget, WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
 
 const TOKEN_HEADER = 'x-cmsis-developer-assistant-token';
 const FIRST_FAKE_PID = 500_001;
@@ -260,11 +260,14 @@ suite('Multi-window routing', () => {
             const a = await openWindow('boardA', { workspaceFolders: [folder('a')], hasActiveSession: true });
             const b = await openWindow('boardB', { workspaceFolders: [folder('b')], hasActiveSession: true });
             const tie = await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleReadMemory({ address: '0x0', length: 4 }),
-                /2 VS Code windows have an active debug session/, /select_debug_window/);
+                /2 VS Code windows have an active debug session/, /select_debug_window/, /click "CDA" in the VS Code status bar → Select Target Window/);
             const detail = errorDetail(tie);
             assert.ok(detail.includes(folder('a')) && detail.includes(folder('b')), detail);
+            // Windows of 2.5.0 publish no role, so their candidates carry none.
             assert.deepStrictEqual(tie.data, {
-                candidates: [a, b].map((w) => ({ pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: true })),
+                candidates: [a, b].map((w) => ({
+                    pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: true, isDefault: false,
+                })),
             });
         });
 
@@ -324,21 +327,74 @@ suite('Multi-window routing', () => {
         });
     });
 
-    suite('the window argument (#16)', () => {
+    suite('window selection for people (#16)', () => {
         const READ = { address: '0x0', length: 4 };
+        /** Each choice gets its own time, as two clicks would. */
+        let clock: number;
+        setup(() => { clock = 1_000; });
 
-        /** Two idle windows, each with its folder: a tie for a path-less call. */
+        const registryView = (): WorkspaceRegistry => new WorkspaceRegistry(process.pid, dir, (pid) => livePids.has(pid));
+
+        /** Save `w` as the default target, as Select Target Window does. */
+        async function chooseDefault(w: FakeWindow, overrides: Partial<DefaultTarget> = {}): Promise<void> {
+            await registryView().writeDefaultTarget({ pid: w.pid, workspaceFolder: w.entry.workspaceFolders[0], name: w.label, setAt: ++clock, ...overrides });
+        }
+
+        /** Two idle windows, each with its folder: the tie a default target resolves. */
         async function twoIdleWindows(): Promise<[FakeWindow, FakeWindow]> {
             const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
             const beta = await openWindow('beta', { workspaceFolders: [folder('beta')] });
             return [alpha, beta];
         }
 
+        test('the default target resolves the tie of two idle windows', async () => {
+            const [, beta] = await twoIdleWindows();
+            const router = newRouter();
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory(READ));
+            await chooseDefault(beta);
+            assertAnsweredBy(await router.handleReadMemory(READ), 'beta');
+            assert.deepStrictEqual(router.describeTarget(), { pid: beta.pid, name: 'beta', reason: 'default' });
+        });
+
+        test('a default whose pid is gone is found again by its folder, as after a window reload', async () => {
+            const [, beta] = await twoIdleWindows();
+            await chooseDefault(beta, { pid: FIRST_FAKE_PID - 1 });
+            assertAnsweredBy(await newRouter().handleReadMemory(READ), 'beta');
+        });
+
+        test('the default comes after the session\'s own target, and a new choice drops that target but never a pin', async () => {
+            const [alpha, beta] = await twoIdleWindows();
+            const cached = newRouter();
+            const pinned = newRouter();
+            assertAnsweredBy(await cached.handleAddBreakpoint({ fileFullPath: path.join(folder('alpha'), 'main.c'), line: 3 }), 'alpha');
+            pinned.selectDebugWindow({ pid: alpha.pid });
+            await chooseDefault(beta);
+            assertAnsweredBy(await cached.handleReadMemory(READ), 'beta');
+            assertAnsweredBy(await pinned.handleReadMemory(READ), 'alpha');
+            // Once seen, the choice no longer moves the session: a path and the cache hold again.
+            assertAnsweredBy(await cached.handleAddBreakpoint({ fileFullPath: path.join(folder('alpha'), 'main.c'), line: 4 }), 'alpha');
+            assertAnsweredBy(await cached.handleReadMemory(READ), 'alpha');
+            // The same window chosen again is a new choice.
+            await chooseDefault(beta);
+            assertAnsweredBy(await cached.handleReadMemory(READ), 'beta');
+        });
+
+        test('removing the default leaves each session where it is', async () => {
+            const [, beta] = await twoIdleWindows();
+            const router = newRouter();
+            await chooseDefault(beta);
+            assertAnsweredBy(await router.handleReadMemory(READ), 'beta');
+            await registryView().clearDefaultTarget();
+            assertAnsweredBy(await router.handleReadMemory(READ), 'beta');
+            await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleReadMemory(READ));
+        });
+
         test('a window argument by pid or by path routes the call and re-aims the later path-less calls', async () => {
             const [alpha] = await twoIdleWindows();
             const router = newRouter();
             assertAnsweredBy(await router.handleCmsisCommand({ action: 'status', window: String(alpha.pid) }), 'alpha');
             assertAnsweredBy(await router.handleReadMemory(READ), 'alpha');
+            assert.deepStrictEqual(router.describeTarget(), { pid: alpha.pid, name: 'alpha', reason: 'window-arg' });
             assertAnsweredBy(await router.handleFlash({ window: path.join(folder('beta'), 'out') }), 'beta');
             assertAnsweredBy(await router.handleGetSessionStatus(), 'beta');
         });
@@ -359,35 +415,59 @@ suite('Multi-window routing', () => {
 
         test('a window argument that matches nothing is INVALID_ARGUMENT with the candidates, and the session keeps its target', async () => {
             const [alpha, beta] = await twoIdleWindows();
+            await chooseDefault(beta);
             const router = newRouter();
             assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('alpha'), 'main.c'), line: 3 }), 'alpha');
             const miss = await refusedAs('INVALID_ARGUMENT', router.handleFlash({ window: '4' }),
                 /^The window argument "4" matches no open VS Code window\./, /Pass the pid of one of these, or a path inside its workspace:\n {2}• pid=/);
             assert.deepStrictEqual(miss.data, {
-                candidates: [alpha, beta].map((w) => ({ pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false })),
+                candidates: [alpha, beta].map((w) => ({
+                    pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false, isDefault: w === beta,
+                })),
             });
             await refusedAs('INVALID_ARGUMENT', router.handleFlash({ window: '/not/in/any/workspace' }),
                 /^The window argument "\/not\/in\/any\/workspace" matches no open VS Code window\./);
             assertAnsweredBy(await router.handleReadMemory(READ), 'alpha');
         });
 
-        test('the candidates of a tie carry the role their windows publish, and its hint names the window argument', async () => {
+        test('the tie names a default whose window is not open, and its candidates carry isDefault and role', async () => {
             const a = await openWindow('boardA', { workspaceFolders: [folder('a')], role: 'router' });
             const b = await openWindow('boardB', { workspaceFolders: [folder('b')], role: 'worker' });
+            await registryView().writeDefaultTarget({ pid: FIRST_FAKE_PID - 1, workspaceFolder: folder('closed'), name: 'closed-board', setAt: ++clock });
             const tie = await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleReadMemory(READ),
-                /none has an active debug session/, /cmsis_action load_and_debug and window set to its pid/);
+                /none has an active debug session/,
+                /The default target the user set in VS Code \(closed-board\) is not open\./,
+                /cmsis_action load_and_debug and window set to its pid/,
+                /click "CDA" in the VS Code status bar → Select Target Window/);
             const candidate = (w: FakeWindow, role: string): object => ({
-                pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false, role,
+                pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false, isDefault: false, role,
             });
             assert.deepStrictEqual(tie.data, { candidates: [candidate(a, 'router'), candidate(b, 'worker')] });
         });
 
-        test('the listing marks the router window', async () => {
+        test('the listing marks the default target and the router; a pin names the default it overrides', async () => {
             const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')], role: 'router' });
-            await openWindow('beta', { workspaceFolders: [folder('beta')], role: 'worker' });
-            const rows = newRouter().listDebugWindows().split('\n');
+            const beta = await openWindow('beta', { workspaceFolders: [folder('beta')], role: 'worker' });
+            await chooseDefault(beta);
+            const router = newRouter();
+            const rows = router.listDebugWindows().split('\n');
+            assert.match(rows.find((row) => row.includes(folder('beta'))) ?? '', /← default target \(set in VS Code\)$/);
             assert.match(rows.find((row) => row.includes(folder('alpha'))) ?? '', new RegExp(`^• pid=${alpha.pid} \\| .* \\| router$`));
-            assert.ok(!(rows.find((row) => row.includes(folder('beta'))) ?? '').includes('router'));
+            assert.match(router.selectDebugWindow({ pid: alpha.pid }),
+                new RegExp(`\\nThe user set pid=${beta.pid} \\(beta\\) as the default target in VS Code; this pin overrides it for this session\\.$`));
+            assert.match(router.selectDebugWindow({ pid: beta.pid }), /\nIt is also the default target the user set in VS Code\.$/);
+            assert.deepStrictEqual(router.describeTarget(), { pid: beta.pid, name: 'beta', reason: 'pinned' });
+        });
+
+        test('a session describes no target before its first call, nor after its window became unreachable', async () => {
+            const gone = await openWindow('gone');
+            const router = newRouter();
+            assert.strictEqual(router.describeTarget(), undefined);
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'gone');
+            assert.deepStrictEqual(router.describeTarget(), { pid: gone.pid, name: 'gone', reason: 'only-window' });
+            await gone.close();
+            await refusedAs('WINDOW_UNREACHABLE', router.handleGetSessionStatus());
+            assert.strictEqual(router.describeTarget(), undefined);
         });
     });
 
@@ -462,6 +542,26 @@ suite('Multi-window routing', () => {
                 });
                 assertTurnedAway(answer, 404, 'GET /');
             });
+        });
+
+        test('the op hook hears every op start and end, a failed one too, and a listener that throws is only logged (#16)', async () => {
+            const failing = {
+                ...echoing<IDebuggingHandler>('solo', 'debug', DEBUG_OPS),
+                handleReadMemory: () => Promise.reject(new ToolError('TARGET_RUNNING', 'running')),
+            } as IDebuggingHandler;
+            const control = new ControlServer(failing, 'tok');
+            const port = await control.start();
+            running.push(() => control.stop());
+            const heard: string[] = [];
+            control.onOp((op, phase) => heard.push(`${op} ${phase}`));
+            await rawPost(port, 'tok', ['{"op":"handleGetThreads","args":{}}']);
+            await rawPost(port, 'tok', ['{"op":"handleReadMemory","args":{}}']);
+            await rawPost(port, 'tok', ['{"op":"handleNotAnOp","args":{}}']);
+            assert.deepStrictEqual(heard, ['handleGetThreads start', 'handleGetThreads end', 'handleReadMemory start', 'handleReadMemory end']);
+            control.onOp(() => { throw new Error('the listener broke'); });
+            const answered = await rawPost(port, 'tok', ['{"op":"handleGetThreads","args":{}}']);
+            assert.strictEqual(answered.status, 200);
+            assert.strictEqual(JSON.parse(answered.body).result, echo('solo', 'debug', 'handleGetThreads', {}));
         });
 
         test('an op outside the table is refused, not dispatched', async () => {
