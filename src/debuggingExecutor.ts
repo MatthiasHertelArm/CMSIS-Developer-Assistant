@@ -34,6 +34,11 @@
  *   workbench commands: a request GDB refuses comes back to the caller
  *   instead of repeating itself as a toast (#13), and raw GDB commands use
  *   the adapter's `>` prefix (#56).
+ * - A memory read that fails keeps the cause of each strategy it tried. On
+ *   the CMSIS Debugger each public read then reads DHCSR once and fails as
+ *   `PROBE_WEDGED` when the debug port does not answer, or as
+ *   `INVALID_ARGUMENT` when only the address cannot be read (#3,
+ *   src/executor/gdbMemory.ts). Nothing is retried or reconnected.
  *
  * The contract types live in src/executor/contract.ts and are re-exported
  * here. The snapshot, the GDB command and word read, the reset and the
@@ -56,21 +61,27 @@ import {
 } from './utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
-import { Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, ReadMemoryBody, ScopesBody, sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody } from './executor/common';
+import {
+    Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, NO_SESSION_TEXT, ReadMemoryBody, ScopesBody,
+    sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
+} from './executor/common';
 import {
     AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome,
     RestartOutcome, SessionStatus,
 } from './executor/contract';
 import { GdbReply, runGdbCommand } from './executor/gdbCommand';
-import { nthWordAddress, readWordThroughGdb, withHexPrefix } from './executor/gdbMemory';
+import {
+    attemptsOf, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
+} from './executor/gdbMemory';
+import type { DebugPortProbe, ReadAttempt } from './core/probeWedge';
 import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession } from './executor/sessionReports';
 import { captureDebugState } from './executor/snapshot';
 import { performReset, programCounterFrom } from './executor/targetReset';
 
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
 export type {
-    BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, GdbLogpoint, GdbReply, HardwareTimeouts, IDebuggingExecutor, ResetOutcome,
-    RestartOutcome, SessionState, SessionStatus,
+    BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, GdbLogpoint, GdbReply, HardwareTimeouts, IDebuggingExecutor,
+    ResetOutcome, RestartOutcome, SessionState, SessionStatus,
 } from './executor/contract';
 
 /** The version the MCP server, the server definition and the HTTP user agent report. Equals package.json. */
@@ -562,8 +573,22 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     async readMemory(address: string, length: number, overrideMs?: number): Promise<Buffer> {
         const session = sessionOrThrow();
         const start = withHexPrefix(address);
+        try {
+            return await this.readMemoryOnce(session, start, length, overrideMs);
+        } catch (err) {
+            throw await explainReadFailure(session, start, err, this.budgets.request(overrideMs));
+        }
+    }
+
+    /**
+     * `readMemory` without the DHCSR read: the operation fence around DAP
+     * `readMemory`, then the GDB ladder word by word. A failure carries the
+     * cause of every strategy.
+     */
+    private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<Buffer> {
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readMemory', this.budgets.operation(overrideMs), async () => {
+            const attempts: ReadAttempt[] = [];
             try {
                 const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
                     { memoryReference: start, count: length }, budgetMs);
@@ -571,12 +596,18 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                     // Returned as it came, even when shorter than asked (KB9).
                     return Buffer.from(reply.data, 'base64');
                 }
+                attempts.push({ strategy: 'DAP readMemory', cause: 'no data in the reply' });
             } catch (err) {
                 if (err instanceof HardwareTimeoutError) {
                     throw err;
                 }
+                attempts.push({ strategy: 'DAP readMemory', cause: messageOf(err) });
             }
-            return this.readWordsThroughGdb(session, start, length, budgetMs);
+            try {
+                return await this.readWordsThroughGdb(session, start, length, budgetMs);
+            } catch (err) {
+                throw withEarlierAttempts(err, attempts);
+            }
         });
     }
 
@@ -604,19 +635,34 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         const at = withHexPrefix(address);
         const budgetMs = this.budgets.request(overrideMs);
         try {
+            return await this.readWordOnce(session, at, budgetMs);
+        } catch (err) {
+            throw await explainReadFailure(session, at, err, budgetMs);
+        }
+    }
+
+    /** `readMemoryWord` without the DHCSR read. No overall fence: each request has its own deadline. */
+    private async readWordOnce(session: vscode.DebugSession, at: string, budgetMs: number): Promise<number> {
+        const attempts: ReadAttempt[] = [];
+        try {
             const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
                 { memoryReference: at, count: 4 }, budgetMs);
             const bytes = reply?.data ? Buffer.from(reply.data, 'base64') : undefined;
             if (bytes && bytes.length >= 4) {
                 return bytes.readUInt32LE(0);
             }
+            attempts.push({ strategy: 'DAP readMemory', cause: bytes ? `short reply (${bytes.length} of 4 bytes)` : 'no data in the reply' });
         } catch (err) {
             if (err instanceof HardwareTimeoutError) {
                 throw err;
             }
+            attempts.push({ strategy: 'DAP readMemory', cause: messageOf(err) });
         }
-        // No overall fence here: each request has its own deadline.
-        return this.wordThroughGdb(session, at, budgetMs);
+        try {
+            return await this.wordThroughGdb(session, at, budgetMs);
+        } catch (err) {
+            throw withEarlierAttempts(err, attempts);
+        }
     }
 
     async writeMemoryWord(address: string, value: number, overrideMs?: number): Promise<void> {
@@ -715,28 +761,48 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     /**
      * CFSR, HFSR, DFSR, MMFAR, BFAR and AFSR: one 24-byte read, else one word
-     * at a time. No session check of its own; the reads fail without one.
+     * at a time. A failure is explained once, after both ways failed, with
+     * the causes of both.
      */
     async readFaultRegisters(overrideMs?: number): Promise<FaultRegisters> {
+        const session = sessionOrThrow();
         const budgetMs = this.budgets.request(overrideMs);
-        return withTimeout('readFaultRegisters', this.budgets.operation(overrideMs), async () => {
-            try {
-                // The request budget is the nested read's override, fence included (KB10).
-                const block = await this.readMemory(FAULT_REGISTER_BLOCK.address, FAULT_REGISTER_BLOCK.bytes, budgetMs);
-                if (block.length >= FAULT_REGISTER_BLOCK.bytes) {
-                    return faultRegistersFromBlock(block);
+        try {
+            return await withTimeout('readFaultRegisters', this.budgets.operation(overrideMs), async () => {
+                let blockAttempts: ReadAttempt[] = [];
+                try {
+                    // The request budget is the nested read's override, fence included (KB10).
+                    const block = await this.readMemoryOnce(session, FAULT_REGISTER_BLOCK.address, FAULT_REGISTER_BLOCK.bytes, budgetMs);
+                    if (block.length >= FAULT_REGISTER_BLOCK.bytes) {
+                        return faultRegistersFromBlock(block);
+                    }
+                } catch (err) {
+                    if (err instanceof HardwareTimeoutError) {
+                        throw err;
+                    }
+                    blockAttempts = attemptsOf(err, 'block read');
                 }
-            } catch (err) {
-                if (err instanceof HardwareTimeoutError) {
-                    throw err;
+                const registers = {} as FaultRegisters;
+                for (const name of FAULT_REGISTER_ORDER) {
+                    try {
+                        registers[name] = await this.readWordOnce(session, FAULT_REGISTER_ADDRESSES[name], this.budgets.request(budgetMs));
+                    } catch (err) {
+                        throw withEarlierAttempts(err, blockAttempts);
+                    }
                 }
-            }
-            const registers = {} as FaultRegisters;
-            for (const name of FAULT_REGISTER_ORDER) {
-                registers[name] = await this.readMemoryWord(FAULT_REGISTER_ADDRESSES[name], budgetMs);
-            }
-            return registers;
-        });
+                return registers;
+            });
+        } catch (err) {
+            throw await explainReadFailure(session, FAULT_REGISTER_BLOCK.address, err, budgetMs);
+        }
+    }
+
+    async probeDebugPort(overrideMs?: number): Promise<DebugPortProbe> {
+        const session = resolveActiveSession();
+        if (!session) {
+            return { readable: false, timedOut: false, cause: NO_SESSION_TEXT };
+        }
+        return probeDebugPort(session, this.budgets.request(overrideMs));
     }
 
     async getFaultInfo(overrideMs?: number): Promise<string> {

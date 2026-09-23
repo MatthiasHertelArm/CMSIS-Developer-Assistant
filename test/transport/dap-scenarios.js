@@ -55,6 +55,9 @@
 //     so EXC_RETURN 0xfffffff9 reads "-7"), sp/msp/psp are `void *`, pc is a
 //     code pointer "0x80002fe <main+22>", an unknown `$name` is `void`;
 //   - an inaccessible -data-read-memory-bytes fails "Unable to read memory.";
+//     a wedged probe (`wedged`) makes every address inaccessible, DHCSR
+//     included, while threads, stack and registers still answer from GDB's
+//     caches;
 //     GDB MI and CLI commands on a running all-stop remote target fail with
 //     GDB's "Cannot execute this command while the target is running." text
 //     (the breakpoint table can still be listed);
@@ -531,7 +534,8 @@ class FakeTarget {
         return { value: String(v | 0), type: 'int' };
     }
 
-    readable(addr) { return READABLE.some(([lo, hi]) => addr >= lo && addr < hi); }
+    /** A wedged probe (#3): GDB still answers from its caches, but no memory read reaches the target. */
+    readable(addr) { return !this.spec.wedged && READABLE.some(([lo, hi]) => addr >= lo && addr < hi); }
     byteAt(addr) { return ((this.words.get((addr - (addr & 3)) >>> 0) ?? 0) >>> ((addr & 3) * 8)) & 0xff; }
     readBytes(addr, count) {
         const out = [];
@@ -1190,6 +1194,35 @@ const SCENARIOS = [
         ],
     },
     {
+        name: 'fault-lockup',
+        description: 'The same fault, with the core in lockup (DHCSR.S_LOCKUP): get_fault_info and diagnose_fault say so (#3).',
+        session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: { ...FAULT_WORDS, 0xe000edf0: 0x000b0003 } },
+        calls: [
+            { tool: 'get_fault_info' },
+            { tool: 'diagnose_fault' },
+        ],
+    },
+    {
+        name: 'probe-wedged',
+        description: 'Halted in HardFault, then the probe wedges (#3): GDB answers threads, stack and registers from its caches, but every memory read '
+            + 'fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy\'s cause and the hint of a launch session.',
+        session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, wedged: true },
+        calls: [
+            { tool: 'get_session_status' },
+            { tool: 'get_fault_info' },
+            { tool: 'diagnose_fault' },
+            { tool: 'read_memory', args: { address: '0x20017fa8', length: 32 } },
+        ],
+    },
+    {
+        name: 'probe-wedged-attach',
+        description: 'The same wedge in a pyOCD attach session: the hint reconnects with cmsis_action detach and attach (#3).',
+        session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, wedged: true, config: 'pyocd-attach' },
+        calls: [
+            { tool: 'get_fault_info' },
+        ],
+    },
+    {
         name: 'execution-steps',
         description: 'Step into led_toggle, over, out, over, continue to the breakpoint; then wait_for_stop and pause_execution on the stopped target.',
         session: {
@@ -1442,6 +1475,15 @@ const SCENARIOS = [
             { tool: 'read_memory', args: { address: '0x20000000', length: 16, timeoutMs: 1000 }, settleMs: 6500 },
             { tool: 'pause_execution' },
             { tool: 'stop_debugging' },
+        ],
+    },
+    {
+        name: 'unresponsive-gate',
+        description: 'Session halted, then every DAP request hangs; a fault read with a long enough limit meets the state gate, which answers '
+            + 'PROBE_WEDGED with the hint of a launch session (#3).',
+        session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, hangAfterStart: true },
+        calls: [
+            { tool: 'get_fault_info', args: { timeoutMs: 15000 } },
         ],
     },
     {

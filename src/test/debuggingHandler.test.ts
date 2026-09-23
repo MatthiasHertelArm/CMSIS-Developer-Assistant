@@ -20,12 +20,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
-import type { BreakpointBinding, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
+import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
 import type { IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
 import type { StopWaitResult } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
+import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail } from '../core/toolResult';
 import type { HandlerHost } from '../handler/host';
@@ -99,6 +100,10 @@ class ScriptedExecutor {
     };
     logpoints: GdbLogpoint[] = [];
     restartOutcome: Awaited<ReturnType<IDebuggingExecutor['restart']>> = { via: 'workbench' };
+    /** What the DHCSR read finds (#3): a halted core, not locked up. */
+    debugPort: DebugPortProbe = { readable: true, dhcsr: 0x00030003 };
+    /** The session `getActiveSession` returns; its `configuration.request` picks the reconnect hint. */
+    activeSession: { configuration: { request: string } } | undefined = { configuration: { request: 'launch' } };
 
     note(name: string, ...args: unknown[]): void {
         this.calls.push([name, ...args]);
@@ -122,6 +127,11 @@ class ScriptedExecutor {
     }
 
     hasDebugSession: IDebuggingExecutor['hasDebugSession'] = () => this.session;
+    getActiveSession: IDebuggingExecutor['getActiveSession'] = () => this.activeSession as unknown as vscode.DebugSession | undefined;
+    probeDebugPort: IDebuggingExecutor['probeDebugPort'] = async (ms) => {
+        this.note('probeDebugPort', ms);
+        return this.debugPort;
+    };
     hasActiveSession: IDebuggingExecutor['hasActiveSession'] = async () => {
         this.note('hasActiveSession');
         return this.stopped;
@@ -637,13 +647,14 @@ suite('DebuggingHandler', () => {
                 stopped: 'Session reports stopped — please retry the operation.',
             };
             const codes: Record<StatusShape['state'], ErrorCode> = {
-                'no-session': 'NO_SESSION', initializing: 'NO_SESSION', running: 'TARGET_RUNNING', unresponsive: 'TIMEOUT', stopped: 'INTERNAL',
+                'no-session': 'NO_SESSION', initializing: 'NO_SESSION', running: 'TARGET_RUNNING', unresponsive: 'PROBE_WEDGED', stopped: 'INTERNAL',
             };
             for (const [state, hint] of Object.entries(hints) as Array<[StatusShape['state'], string]>) {
                 const x = new ScriptedExecutor();
                 x.stopped = false;
                 x.sessionStatus = status(state);
-                const fullHint = `${hint} Use get_session_status for a definitive, never-failing classification.`;
+                const reconnect = state === 'unresponsive' ? ` ${wedgeHint('launch')}` : '';
+                const fullHint = `${hint}${reconnect} Use get_session_status for a definitive, never-failing classification.`;
                 const read = await refusalOf(handlerFor(x).handleReadMemory({ address: 'zz', length: 4 }), codes[state]);
                 assert.strictEqual(read.message, `Cannot read memory: session state is '${state}'.`);
                 assert.strictEqual(read.hint, fullHint);
@@ -652,6 +663,21 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(step.message, `Cannot step into: session state is '${state}'.`, 'the gate refusal is not wrapped');
                 assert.strictEqual(step.hint, fullHint);
             }
+        });
+
+        test('an unresponsive probe is PROBE_WEDGED, and the hint reconnects the way the session allows (#3)', async () => {
+            const x = new ScriptedExecutor();
+            x.stopped = false;
+            x.sessionStatus = status('unresponsive');
+            x.activeSession = { configuration: { request: 'attach' } };
+            const attached = await refusalOf(handlerFor(x).handleGetFaultInfo(), 'PROBE_WEDGED');
+            assert.ok(attached.hint?.includes('cmsis_action detach, then cmsis_action attach — reconnects without a reset; then get_fault_info.'),
+                attached.hint);
+            x.activeSession = { configuration: { request: 'launch' } };
+            const launched = await refusalOf(handlerFor(x).handleDiagnoseFault(), 'PROBE_WEDGED');
+            assert.ok(launched.hint?.includes('ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, '
+                + 'pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info.'), launched.hint);
+            assert.ok(!launched.hint?.includes('cmsis_action detach, then'), launched.hint);
         });
     });
 
@@ -1404,6 +1430,46 @@ suite('DebuggingHandler', () => {
             const noStack = await textAnswer(handlerFor(y).handleDiagnoseFault({ levels: 5, timeoutMs: 4000 }));
             assert.ok(noStack.includes('Skipped (timeout or read failure): call stack —'), noStack);
             assert.deepStrictEqual(y.argsOf('getCallStack'), [[undefined, 5, 4000]]);
+        });
+
+        test('a wedged probe is the answer of get_fault_info and diagnose_fault, not a partial diagnosis (#3)', async () => {
+            const wedged = new ToolError('PROBE_WEDGED', 'Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: E01).',
+                wedgeHint('launch'));
+            const x = new ScriptedExecutor();
+            x.getFaultInfo = async () => {
+                throw wedged;
+            };
+            x.readFaultRegisters = async () => {
+                throw wedged;
+            };
+            assert.strictEqual((await refusalOf(handlerFor(x).handleGetFaultInfo(), 'PROBE_WEDGED')).message, wedged.message);
+            const diagnosed = await refusalOf(handlerFor(x).handleDiagnoseFault(), 'PROBE_WEDGED');
+            assert.strictEqual(diagnosed.hint, wedgeHint('launch'));
+            assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [], 'nothing is read after the wedge');
+
+            const y = new ScriptedExecutor();
+            y.registers = { sp: '0x20001000', lr: '0xfffffff9', pc: '0x080001a4', msp: '0x20001000', psp: '0x0' };
+            y.readExceptionFrame = async () => {
+                throw wedged;
+            };
+            assert.strictEqual((await refusalOf(handlerFor(y).handleDiagnoseFault(), 'PROBE_WEDGED')).message, wedged.message,
+                'a wedge in the frame read ends the call as well');
+            y.readExceptionFrame = async () => {
+                throw new ToolError('INVALID_ARGUMENT', 'Cannot read 0x20001000 — the debug port answers, the address is not readable in this state: x');
+            };
+            assert.ok((await textAnswer(handlerFor(y).handleDiagnoseFault())).includes('Skipped (timeout or read failure): exception frame'),
+                'an unreadable frame still degrades to a note');
+        });
+
+        test('a core in lockup says so in get_fault_info and diagnose_fault (#3)', async () => {
+            const x = new ScriptedExecutor();
+            x.debugPort = { readable: true, dhcsr: 0x000b0003 };
+            assert.strictEqual(await textAnswer(handlerFor(x).handleGetFaultInfo()), `fault text\n${LOCKUP_NOTE}\n`);
+            const diagnosis = await textAnswer(handlerFor(x).handleDiagnoseFault());
+            assert.ok(diagnosis.includes(`\nLockup: ${LOCKUP_NOTE}\n`), diagnosis);
+            x.debugPort = { readable: false, timedOut: true, cause: 'timed out' };
+            assert.strictEqual(await textAnswer(handlerFor(x).handleGetFaultInfo()), 'fault text', 'an unreadable DHCSR adds nothing');
+            assert.strictEqual(x.argsOf('probeDebugPort').length, 3);
         });
 
         test('an EXC_RETURN in LR reads the stacked frame', async () => {

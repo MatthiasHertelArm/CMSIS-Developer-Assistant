@@ -74,11 +74,12 @@ whether a session exists, answers its `threads` probe and is stopped
 (`hasActiveSession()`). If not, it throws the `Refusal` that
 `stoppedTargetRefusal()` (`src/handler/sessionText.ts`) builds for the
 current state: `NO_SESSION` for `no-session` and `initializing`,
-`TARGET_RUNNING` for `running`, `TIMEOUT` for `unresponsive`, each with the
-next action for that state as its hint: `cmsis_action load_and_debug` (or
-`start_debugging` outside CMSIS projects) without a session, and
-`pause_execution`, or a breakpoint and `wait_for_stop`, while the target
-runs (#20). The SVD lookups are not gated, and
+`TARGET_RUNNING` for `running`, `PROBE_WEDGED` for `unresponsive` (#3), each
+with the next action for that state as its hint: `cmsis_action
+load_and_debug` (or `start_debugging` outside CMSIS projects) without a
+session; `pause_execution`, or a breakpoint and `wait_for_stop`, while the
+target runs (#20); and for `unresponsive` the way to reconnect for the
+session's `request`, as for a failed read. The SVD lookups are not gated, and
 the breakpoint tools do not refuse a running target (see below). `get_session_status` never fails: it reports the state, the
 session's identity, the probe round trip and a hint for each state
 (`renderSessionStatus()`).
@@ -190,7 +191,11 @@ target runs.
   exception frame chosen by `EXC_RETURN`, the top of the call stack and the
   SVD's view of the faulting address into one report with ranked hypotheses
   (`src/core/faultTriage.ts`). Each read after the fault registers turns into
-  a note when it fails, instead of failing the call.
+  a note when it fails, instead of failing the call — except a wedged probe:
+  `get_fault_info` and `diagnose_fault` answer the executor's `PROBE_WEDGED`
+  itself rather than a diagnosis built on registers that were not read (#3).
+  Both read DHCSR once more (`probeDebugPort()`) and add a lockup note when
+  `S_LOCKUP` is set.
 - `lookup_peripheral` and `lookup_register` answer from the device SVD
   (`src/core/svdParser.ts`, `src/core/svdLookup.ts`) without a session.
 
@@ -335,7 +340,7 @@ by #56.
 | `src/core/toolResult.ts` | `ToolText`, `ToolReply`, `ToolError`, `ErrorCode`, `classifyError()`, `wrapError()` |
 | `src/handler/host.ts` | `HandlerHost`, `VSCODE_HOST` |
 | `src/handler/gdbText.ts` | GDB reply classification and refusals, the MI results of `-dprintf-insert` and `-break-list`, a logpoint's GDB location, logpoint message to `dprintf` |
-| `src/handler/sessionText.ts` | state refusals with their codes, the `get_session_status` text, call-stack and thread listings, recent adapter lines |
+| `src/handler/sessionText.ts` | state refusals with their codes (`PROBE_WEDGED` and its reconnect hint for `unresponsive`), the `get_session_status` text, call-stack and thread listings, recent adapter lines |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
@@ -358,7 +363,7 @@ by #56.
   the two YAML readers on generated files (`src/test/fixtures/buildinfo/`),
   the re-run's command line and the result block, and the diagnosis over
   fake task events with a fake cbuild and a hand-moved clock
-- `test/transport/dap-scenarios.js`: 33 scripted `gdbtarget` sessions
+- `test/transport/dap-scenarios.js`: 37 scripted `gdbtarget` sessions
   through the real server; every reply and the adapter traffic are compared
   with `dap-scenarios.snapshot.json`
 - `src/test/gdbText.test.ts`: GDB reply classification, MI results, logpoint

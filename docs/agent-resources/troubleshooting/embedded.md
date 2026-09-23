@@ -8,7 +8,7 @@ Whenever a tool call hangs, errors out, or returns an unexpected state, run this
 2. `check_target_connection` — is the probe / GDB server actually responsive?
 3. `get_fault_info` — did the target crash?
 
-The session-status output includes a hint for each state. If state is `running` and you needed `stopped`, call `pause_execution`. If state is `unresponsive`, call `restart_debugging` or stop and start again.
+The session-status output includes a hint for each state. If state is `running` and you needed `stopped`, call `pause_execution`. If state is `unresponsive`, reads answer `PROBE_WEDGED`: see [Reads Fail With PROBE_WEDGED](#reads-fail-with-probe_wedged) before you restart anything.
 
 ## Common Issues
 
@@ -44,7 +44,15 @@ The session-status output includes a hint for each state. If state is `running` 
 - The server caps every call to 60 s (`cmsis_action` and `flash`: 600 s); if you hit the cap, the response includes a structured "handler-level cap" message — the underlying request was abandoned, not actually stuck
 - A `cmsis_action` whose task is still going answers with status `running` and a job id; that is no hang — call `cmsis_action {action:'status'}` for the result and do not start the action again
 - Causes: probe disconnect, target reset in mid-flight, GDB server crash
-- Run the first-line diagnostic sweep above; `restart_debugging` if probe is wedged
+- Run the first-line diagnostic sweep above; a wedged probe answers `PROBE_WEDGED` (next section)
+
+### Reads Fail With PROBE_WEDGED
+
+- The debug port stopped answering: the failed read and a read of DHCSR (0xE000EDF0), which works on every Cortex-M while the port does, both failed. The message keeps each read strategy's cause.
+- Do not retry the read, and do not start a GDB server yourself; follow the hint of the error
+- Attach session (`cmsis_action attach`): `cmsis_action detach`, then `cmsis_action attach` reconnects without a reset; then `get_fault_info`
+- Launch session (`cmsis_action load_and_debug`): it owns the GDB server. `restart_debugging` and `load_and_debug` re-flash and reset. To keep the fault state, the user restarts the server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`.
+- `INVALID_ARGUMENT` "the debug port answers" is different: only that address is unreadable (peripheral clock off, MPU or TrustZone, nothing mapped)
 
 ### `reset` Says the Target Did NOT Reset
 
