@@ -17,7 +17,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "These tools drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected output and other \"it does not work on the board\" reports. For runtime investigations, invoke the \"cmsis-debug-live\" Agent Skill first: it provides the target-awareness checklist, the session-status gate, breakpoint strategy, step-and-inspect workflow, fault decode and root-cause guidance needed to use these tools effectively instead of guessing or adding temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -52,7 +52,7 @@
         },
         {
           "name": "start_debugging",
-          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Invoke the \"cmsis-debug-live\" skill first. For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
+          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Before using this tool, invoke the skill \"cmsis-debug-live\". For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -63,10 +63,10 @@
               },
               "workingDirectory": {
                 "type": "string",
-                "description": "Working directory for the debug session"
+                "description": "Directory the debug session runs in"
               },
               "testName": {
-                "description": "Only when debugging a single test; empty for the whole file.",
+                "description": "Name of one test to run on its own; leave out to run the whole file",
                 "type": "string"
               },
               "configurationName": {
@@ -90,7 +90,7 @@
         },
         {
           "name": "stop_debugging",
-          "description": "Stop the current debug session",
+          "description": "Terminate the active debug session.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -101,7 +101,7 @@
         },
         {
           "name": "step_over",
-          "description": "Execute the current line of code without diving into it.",
+          "description": "Run one source line; functions it calls are not entered.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -120,7 +120,7 @@
         },
         {
           "name": "step_into",
-          "description": "Dive into the current line of code.",
+          "description": "Enter the function that the current line calls.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -139,7 +139,7 @@
         },
         {
           "name": "step_out",
-          "description": "Step out of the current function",
+          "description": "Run until the current function returns to its caller.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -177,7 +177,7 @@
         },
         {
           "name": "continue_execution",
-          "description": "Resume program execution until the next breakpoint is hit or the program completes.",
+          "description": "Let the target run again; it stops at the next breakpoint it reaches or when the program ends.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -219,7 +219,7 @@
         },
         {
           "name": "restart_debugging",
-          "description": "Restart the debug session from the beginning with the same configuration.",
+          "description": "Start the debug session over, reusing its launch configuration.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -282,10 +282,10 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
-                "description": "Line number (1-based). Preferred.",
+                "description": "Source line, numbered from 1; preferred over lineContent",
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991
@@ -316,13 +316,13 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991,
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               },
               "logMessage": {
                 "type": "string",
@@ -345,18 +345,18 @@
         },
         {
           "name": "remove_breakpoint",
-          "description": "Remove a breakpoint that is no longer needed.",
+          "description": "Delete one breakpoint, identified by its file and line.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "number",
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               }
             },
             "required": [
@@ -370,7 +370,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.",
+          "description": "Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -381,7 +381,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "View all currently set breakpoints across all files.",
+          "description": "Show the breakpoints that are set, in every file.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -392,13 +392,13 @@
         },
         {
           "name": "list_variable_names",
-          "description": "List the names and types of variables visible at the current execution point, without reading their values. Use this to discover what exists, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
+          "description": "Show which variables exist where the target is stopped, with their types but not their values. Discover first, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -424,13 +424,13 @@
         },
         {
           "name": "get_variables_values",
-          "description": "Inspect variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
+          "description": "Read variable values where the target is stopped and compare the data the program actually holds with what you expect it to hold — the quickest way to find the value that is wrong. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -461,14 +461,14 @@
         },
         {
           "name": "evaluate_expression",
-          "description": "Powerful runtime expression evaluator: Test hypotheses, check computed values, call methods, or inspect object properties in the live debug context. Goes beyond simple variable inspection - evaluate any valid expression in the target language.",
+          "description": "Evaluate any expression written in the debugged program's language against the live target — to test a hypothesis, compute a value, call a function or read a struct member. It reaches further than reading a single variable.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "expression": {
                 "type": "string",
-                "description": "Expression to evaluate in the current programming language context"
+                "description": "What to evaluate, written in the language of the program being debugged"
               },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
@@ -852,7 +852,7 @@
                 "description": "DAP frame id, as returned by get_call_stack."
               },
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -1227,32 +1227,32 @@
         },
         {
           "uri": "cmsis-developer-assistant://docs/debug_instructions",
-          "name": "Debugging Instructions Guide",
-          "description": "Step-by-step instructions for debugging with CMSIS Developer Assistant",
+          "name": "Full Debugging Guide",
+          "description": "The complete, ordered debugging procedure for CMSIS Developer Assistant",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
-          "name": "Python Debugging Tips",
-          "description": "Debugging tips specific to python",
+          "name": "Python Troubleshooting Notes",
+          "description": "Advice for debugging python programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Debugging Tips",
-          "description": "Debugging tips specific to javascript",
+          "name": "JavaScript Troubleshooting Notes",
+          "description": "Advice for debugging javascript programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Debugging Tips",
-          "description": "Debugging tips specific to java",
+          "name": "Java Troubleshooting Notes",
+          "description": "Advice for debugging java programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Debugging Tips",
-          "description": "Debugging tips specific to csharp",
+          "name": "C# Troubleshooting Notes",
+          "description": "Advice for debugging csharp programs",
           "mimeType": "text/markdown"
         },
         {
@@ -1464,7 +1464,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "These tools drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected output and other \"it does not work on the board\" reports. For runtime investigations, invoke the \"cmsis-debug-live\" Agent Skill first: it provides the target-awareness checklist, the session-status gate, breakpoint strategy, step-and-inspect workflow, fault decode and root-cause guidance needed to use these tools effectively instead of guessing or adding temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -1499,7 +1499,7 @@
         },
         {
           "name": "start_debugging",
-          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Invoke the \"cmsis-debug-live\" skill first. For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
+          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Before using this tool, invoke the skill \"cmsis-debug-live\". For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1510,10 +1510,10 @@
               },
               "workingDirectory": {
                 "type": "string",
-                "description": "Working directory for the debug session"
+                "description": "Directory the debug session runs in"
               },
               "testName": {
-                "description": "Only when debugging a single test; empty for the whole file.",
+                "description": "Name of one test to run on its own; leave out to run the whole file",
                 "type": "string"
               },
               "configurationName": {
@@ -1537,7 +1537,7 @@
         },
         {
           "name": "stop_debugging",
-          "description": "Stop the current debug session",
+          "description": "Terminate the active debug session.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1548,7 +1548,7 @@
         },
         {
           "name": "step_over",
-          "description": "Execute the current line of code without diving into it.",
+          "description": "Run one source line; functions it calls are not entered.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1567,7 +1567,7 @@
         },
         {
           "name": "step_into",
-          "description": "Dive into the current line of code.",
+          "description": "Enter the function that the current line calls.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1586,7 +1586,7 @@
         },
         {
           "name": "step_out",
-          "description": "Step out of the current function",
+          "description": "Run until the current function returns to its caller.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1624,7 +1624,7 @@
         },
         {
           "name": "continue_execution",
-          "description": "Resume program execution until the next breakpoint is hit or the program completes.",
+          "description": "Let the target run again; it stops at the next breakpoint it reaches or when the program ends.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1666,7 +1666,7 @@
         },
         {
           "name": "restart_debugging",
-          "description": "Restart the debug session from the beginning with the same configuration.",
+          "description": "Start the debug session over, reusing its launch configuration.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1729,10 +1729,10 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
-                "description": "Line number (1-based). Preferred.",
+                "description": "Source line, numbered from 1; preferred over lineContent",
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991
@@ -1763,13 +1763,13 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991,
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               },
               "logMessage": {
                 "type": "string",
@@ -1792,18 +1792,18 @@
         },
         {
           "name": "remove_breakpoint",
-          "description": "Remove a breakpoint that is no longer needed.",
+          "description": "Delete one breakpoint, identified by its file and line.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "number",
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               }
             },
             "required": [
@@ -1817,7 +1817,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.",
+          "description": "Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1828,7 +1828,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "View all currently set breakpoints across all files.",
+          "description": "Show the breakpoints that are set, in every file.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1839,13 +1839,13 @@
         },
         {
           "name": "list_variable_names",
-          "description": "List the names and types of variables visible at the current execution point, without reading their values. Use this to discover what exists, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
+          "description": "Show which variables exist where the target is stopped, with their types but not their values. Discover first, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -1871,13 +1871,13 @@
         },
         {
           "name": "get_variables_values",
-          "description": "Inspect variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
+          "description": "Read variable values where the target is stopped and compare the data the program actually holds with what you expect it to hold — the quickest way to find the value that is wrong. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -1908,14 +1908,14 @@
         },
         {
           "name": "evaluate_expression",
-          "description": "Powerful runtime expression evaluator: Test hypotheses, check computed values, call methods, or inspect object properties in the live debug context. Goes beyond simple variable inspection - evaluate any valid expression in the target language.",
+          "description": "Evaluate any expression written in the debugged program's language against the live target — to test a hypothesis, compute a value, call a function or read a struct member. It reaches further than reading a single variable.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "expression": {
                 "type": "string",
-                "description": "Expression to evaluate in the current programming language context"
+                "description": "What to evaluate, written in the language of the program being debugged"
               },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
@@ -2299,7 +2299,7 @@
                 "description": "DAP frame id, as returned by get_call_stack."
               },
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -2427,32 +2427,32 @@
         },
         {
           "uri": "cmsis-developer-assistant://docs/debug_instructions",
-          "name": "Debugging Instructions Guide",
-          "description": "Step-by-step instructions for debugging with CMSIS Developer Assistant",
+          "name": "Full Debugging Guide",
+          "description": "The complete, ordered debugging procedure for CMSIS Developer Assistant",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
-          "name": "Python Debugging Tips",
-          "description": "Debugging tips specific to python",
+          "name": "Python Troubleshooting Notes",
+          "description": "Advice for debugging python programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Debugging Tips",
-          "description": "Debugging tips specific to javascript",
+          "name": "JavaScript Troubleshooting Notes",
+          "description": "Advice for debugging javascript programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Debugging Tips",
-          "description": "Debugging tips specific to java",
+          "name": "Java Troubleshooting Notes",
+          "description": "Advice for debugging java programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Debugging Tips",
-          "description": "Debugging tips specific to csharp",
+          "name": "C# Troubleshooting Notes",
+          "description": "Advice for debugging csharp programs",
           "mimeType": "text/markdown"
         },
         {
@@ -2517,7 +2517,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "These tools drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected output and other \"it does not work on the board\" reports. For runtime investigations, invoke the \"cmsis-debug-live\" Agent Skill first: it provides the target-awareness checklist, the session-status gate, breakpoint strategy, step-and-inspect workflow, fault decode and root-cause guidance needed to use these tools effectively instead of guessing or adding temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer from the manuals the target's packs ship or link, page-cited; they accept timeoutMs up to <n>s because indexing a manual on first use can take minutes. Use them before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for a web-linked one) and instead of reading a PDF into your context: a document the user provides belongs in the workspace docs/ folder or the \"Import Document for Current Target\" command, then search it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same way: for any part number call list_target_docs first, then search_target_docs; if the datasheet is not listed, find its PDF URL on the web and fetch_doc { url } — never read the PDF yourself. The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) read the ELF, linker map and build log of the current target."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer from the manuals the target's packs ship or link, page-cited; they accept timeoutMs up to <n>s because indexing a manual on first use can take minutes. Use them before asking the user for a datasheet or reference manual (list_target_docs, then fetch_doc for a web-linked one) and instead of reading a PDF into your context: a document the user provides belongs in the workspace docs/ folder or the \"Import Document for Current Target\" command, then search it. Third-party parts on the board (sensors, ADCs, codecs, radios) are documented the same way: for any part number call list_target_docs first, then search_target_docs; if the datasheet is not listed, find its PDF URL on the web and fetch_doc { url } — never read the PDF yourself. The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) read the ELF, linker map and build log of the current target."
       },
       "tools": [
         {
@@ -2552,7 +2552,7 @@
         },
         {
           "name": "start_debugging",
-          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Invoke the \"cmsis-debug-live\" skill first. For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
+          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Before using this tool, invoke the skill \"cmsis-debug-live\". For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2563,10 +2563,10 @@
               },
               "workingDirectory": {
                 "type": "string",
-                "description": "Working directory for the debug session"
+                "description": "Directory the debug session runs in"
               },
               "testName": {
-                "description": "Only when debugging a single test; empty for the whole file.",
+                "description": "Name of one test to run on its own; leave out to run the whole file",
                 "type": "string"
               },
               "configurationName": {
@@ -2590,7 +2590,7 @@
         },
         {
           "name": "stop_debugging",
-          "description": "Stop the current debug session",
+          "description": "Terminate the active debug session.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -2601,7 +2601,7 @@
         },
         {
           "name": "step_over",
-          "description": "Execute the current line of code without diving into it.",
+          "description": "Run one source line; functions it calls are not entered.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2620,7 +2620,7 @@
         },
         {
           "name": "step_into",
-          "description": "Dive into the current line of code.",
+          "description": "Enter the function that the current line calls.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2639,7 +2639,7 @@
         },
         {
           "name": "step_out",
-          "description": "Step out of the current function",
+          "description": "Run until the current function returns to its caller.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2677,7 +2677,7 @@
         },
         {
           "name": "continue_execution",
-          "description": "Resume program execution until the next breakpoint is hit or the program completes.",
+          "description": "Let the target run again; it stops at the next breakpoint it reaches or when the program ends.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2719,7 +2719,7 @@
         },
         {
           "name": "restart_debugging",
-          "description": "Restart the debug session from the beginning with the same configuration.",
+          "description": "Start the debug session over, reusing its launch configuration.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2782,10 +2782,10 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
-                "description": "Line number (1-based). Preferred.",
+                "description": "Source line, numbered from 1; preferred over lineContent",
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991
@@ -2816,13 +2816,13 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991,
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               },
               "logMessage": {
                 "type": "string",
@@ -2845,18 +2845,18 @@
         },
         {
           "name": "remove_breakpoint",
-          "description": "Remove a breakpoint that is no longer needed.",
+          "description": "Delete one breakpoint, identified by its file and line.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "number",
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               }
             },
             "required": [
@@ -2870,7 +2870,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.",
+          "description": "Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -2881,7 +2881,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "View all currently set breakpoints across all files.",
+          "description": "Show the breakpoints that are set, in every file.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -2892,13 +2892,13 @@
         },
         {
           "name": "list_variable_names",
-          "description": "List the names and types of variables visible at the current execution point, without reading their values. Use this to discover what exists, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
+          "description": "Show which variables exist where the target is stopped, with their types but not their values. Discover first, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -2924,13 +2924,13 @@
         },
         {
           "name": "get_variables_values",
-          "description": "Inspect variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
+          "description": "Read variable values where the target is stopped and compare the data the program actually holds with what you expect it to hold — the quickest way to find the value that is wrong. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -2961,14 +2961,14 @@
         },
         {
           "name": "evaluate_expression",
-          "description": "Powerful runtime expression evaluator: Test hypotheses, check computed values, call methods, or inspect object properties in the live debug context. Goes beyond simple variable inspection - evaluate any valid expression in the target language.",
+          "description": "Evaluate any expression written in the debugged program's language against the live target — to test a hypothesis, compute a value, call a function or read a struct member. It reaches further than reading a single variable.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "expression": {
                 "type": "string",
-                "description": "Expression to evaluate in the current programming language context"
+                "description": "What to evaluate, written in the language of the program being debugged"
               },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
@@ -3352,7 +3352,7 @@
                 "description": "DAP frame id, as returned by get_call_stack."
               },
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -4206,32 +4206,32 @@
         },
         {
           "uri": "cmsis-developer-assistant://docs/debug_instructions",
-          "name": "Debugging Instructions Guide",
-          "description": "Step-by-step instructions for debugging with CMSIS Developer Assistant",
+          "name": "Full Debugging Guide",
+          "description": "The complete, ordered debugging procedure for CMSIS Developer Assistant",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
-          "name": "Python Debugging Tips",
-          "description": "Debugging tips specific to python",
+          "name": "Python Troubleshooting Notes",
+          "description": "Advice for debugging python programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Debugging Tips",
-          "description": "Debugging tips specific to javascript",
+          "name": "JavaScript Troubleshooting Notes",
+          "description": "Advice for debugging javascript programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Debugging Tips",
-          "description": "Debugging tips specific to java",
+          "name": "Java Troubleshooting Notes",
+          "description": "Advice for debugging java programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Debugging Tips",
-          "description": "Debugging tips specific to csharp",
+          "name": "C# Troubleshooting Notes",
+          "description": "Advice for debugging csharp programs",
           "mimeType": "text/markdown"
         },
         {
@@ -4473,7 +4473,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "These tools drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected output and other \"it does not work on the board\" reports. For runtime investigations, invoke the \"cmsis-debug-live\" Agent Skill first: it provides the target-awareness checklist, the session-status gate, breakpoint strategy, step-and-inspect workflow, fault decode and root-cause guidance needed to use these tools effectively instead of guessing or adding temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -4508,7 +4508,7 @@
         },
         {
           "name": "start_debugging",
-          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Invoke the \"cmsis-debug-live\" skill first. For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
+          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Before using this tool, invoke the skill \"cmsis-debug-live\". For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4519,10 +4519,10 @@
               },
               "workingDirectory": {
                 "type": "string",
-                "description": "Working directory for the debug session"
+                "description": "Directory the debug session runs in"
               },
               "testName": {
-                "description": "Only when debugging a single test; empty for the whole file.",
+                "description": "Name of one test to run on its own; leave out to run the whole file",
                 "type": "string"
               },
               "configurationName": {
@@ -4546,7 +4546,7 @@
         },
         {
           "name": "stop_debugging",
-          "description": "Stop the current debug session",
+          "description": "Terminate the active debug session.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -4557,7 +4557,7 @@
         },
         {
           "name": "step_over",
-          "description": "Execute the current line of code without diving into it.",
+          "description": "Run one source line; functions it calls are not entered.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4576,7 +4576,7 @@
         },
         {
           "name": "step_into",
-          "description": "Dive into the current line of code.",
+          "description": "Enter the function that the current line calls.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4595,7 +4595,7 @@
         },
         {
           "name": "step_out",
-          "description": "Step out of the current function",
+          "description": "Run until the current function returns to its caller.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4633,7 +4633,7 @@
         },
         {
           "name": "continue_execution",
-          "description": "Resume program execution until the next breakpoint is hit or the program completes.",
+          "description": "Let the target run again; it stops at the next breakpoint it reaches or when the program ends.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4675,7 +4675,7 @@
         },
         {
           "name": "restart_debugging",
-          "description": "Restart the debug session from the beginning with the same configuration.",
+          "description": "Start the debug session over, reusing its launch configuration.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4738,10 +4738,10 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
-                "description": "Line number (1-based). Preferred.",
+                "description": "Source line, numbered from 1; preferred over lineContent",
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991
@@ -4772,13 +4772,13 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991,
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               },
               "logMessage": {
                 "type": "string",
@@ -4801,18 +4801,18 @@
         },
         {
           "name": "remove_breakpoint",
-          "description": "Remove a breakpoint that is no longer needed.",
+          "description": "Delete one breakpoint, identified by its file and line.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "number",
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               }
             },
             "required": [
@@ -4826,7 +4826,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.",
+          "description": "Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -4837,7 +4837,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "View all currently set breakpoints across all files.",
+          "description": "Show the breakpoints that are set, in every file.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -4848,13 +4848,13 @@
         },
         {
           "name": "list_variable_names",
-          "description": "List the names and types of variables visible at the current execution point, without reading their values. Use this to discover what exists, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
+          "description": "Show which variables exist where the target is stopped, with their types but not their values. Discover first, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -4880,13 +4880,13 @@
         },
         {
           "name": "get_variables_values",
-          "description": "Inspect variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
+          "description": "Read variable values where the target is stopped and compare the data the program actually holds with what you expect it to hold — the quickest way to find the value that is wrong. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -4917,14 +4917,14 @@
         },
         {
           "name": "evaluate_expression",
-          "description": "Powerful runtime expression evaluator: Test hypotheses, check computed values, call methods, or inspect object properties in the live debug context. Goes beyond simple variable inspection - evaluate any valid expression in the target language.",
+          "description": "Evaluate any expression written in the debugged program's language against the live target — to test a hypothesis, compute a value, call a function or read a struct member. It reaches further than reading a single variable.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "expression": {
                 "type": "string",
-                "description": "Expression to evaluate in the current programming language context"
+                "description": "What to evaluate, written in the language of the program being debugged"
               },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
@@ -5308,7 +5308,7 @@
                 "description": "DAP frame id, as returned by get_call_stack."
               },
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -5721,32 +5721,32 @@
         },
         {
           "uri": "cmsis-developer-assistant://docs/debug_instructions",
-          "name": "Debugging Instructions Guide",
-          "description": "Step-by-step instructions for debugging with CMSIS Developer Assistant",
+          "name": "Full Debugging Guide",
+          "description": "The complete, ordered debugging procedure for CMSIS Developer Assistant",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
-          "name": "Python Debugging Tips",
-          "description": "Debugging tips specific to python",
+          "name": "Python Troubleshooting Notes",
+          "description": "Advice for debugging python programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Debugging Tips",
-          "description": "Debugging tips specific to javascript",
+          "name": "JavaScript Troubleshooting Notes",
+          "description": "Advice for debugging javascript programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Debugging Tips",
-          "description": "Debugging tips specific to java",
+          "name": "Java Troubleshooting Notes",
+          "description": "Advice for debugging java programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Debugging Tips",
-          "description": "Debugging tips specific to csharp",
+          "name": "C# Troubleshooting Notes",
+          "description": "Advice for debugging csharp programs",
           "mimeType": "text/markdown"
         },
         {
@@ -5993,7 +5993,7 @@
           "name": "cmsis-developer-assistant",
           "version": "<version>"
         },
-        "instructions": "These tools drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate runtime bugs, faults, crashes, hangs, failing tests, wrong/null values, unexpected output and other \"it does not work on the board\" reports. For runtime investigations, invoke the \"cmsis-debug-live\" Agent Skill first: it provides the target-awareness checklist, the session-status gate, breakpoint strategy, step-and-inspect workflow, fault decode and root-cause guidance needed to use these tools effectively instead of guessing or adding temporary printf/UART logging. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
+        "instructions": "With these tools you debug firmware live on an Arm Cortex-M board through the CMSIS Debugger, chasing problems that only show at run time: faults, crashes, hangs, failing tests, variables with wrong or null values, unexpected output, or a board that simply does not behave. Before anything else in such an investigation, invoke the Agent Skill \"cmsis-debug-live\". It brings the target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead. Tools that accept timeoutMs use it as a one-call override of the default, capped at <n>s; set it when you can estimate the work. Page-cited documentation tools (search over the target's pack manuals, datasheets, errata and third-party part datasheets) are available behind the setting cmsis-developer-assistant.packDocs.enabled; suggest enabling it rather than asking the user for a document or reading a PDF yourself."
       },
       "tools": [
         {
@@ -6028,7 +6028,7 @@
         },
         {
           "name": "start_debugging",
-          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Invoke the \"cmsis-debug-live\" skill first. For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
+          "description": "Start a debug session through the VS Code debug pipeline (launch.json). Before using this tool, invoke the skill \"cmsis-debug-live\". For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the flash step and suits non-CMSIS projects or attaching to an already-flashed target. Refuses while a session is active.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6039,10 +6039,10 @@
               },
               "workingDirectory": {
                 "type": "string",
-                "description": "Working directory for the debug session"
+                "description": "Directory the debug session runs in"
               },
               "testName": {
-                "description": "Only when debugging a single test; empty for the whole file.",
+                "description": "Name of one test to run on its own; leave out to run the whole file",
                 "type": "string"
               },
               "configurationName": {
@@ -6066,7 +6066,7 @@
         },
         {
           "name": "stop_debugging",
-          "description": "Stop the current debug session",
+          "description": "Terminate the active debug session.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -6077,7 +6077,7 @@
         },
         {
           "name": "step_over",
-          "description": "Execute the current line of code without diving into it.",
+          "description": "Run one source line; functions it calls are not entered.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6096,7 +6096,7 @@
         },
         {
           "name": "step_into",
-          "description": "Dive into the current line of code.",
+          "description": "Enter the function that the current line calls.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6115,7 +6115,7 @@
         },
         {
           "name": "step_out",
-          "description": "Step out of the current function",
+          "description": "Run until the current function returns to its caller.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6153,7 +6153,7 @@
         },
         {
           "name": "continue_execution",
-          "description": "Resume program execution until the next breakpoint is hit or the program completes.",
+          "description": "Let the target run again; it stops at the next breakpoint it reaches or when the program ends.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6195,7 +6195,7 @@
         },
         {
           "name": "restart_debugging",
-          "description": "Restart the debug session from the beginning with the same configuration.",
+          "description": "Start the debug session over, reusing its launch configuration.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6258,10 +6258,10 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
-                "description": "Line number (1-based). Preferred.",
+                "description": "Source line, numbered from 1; preferred over lineContent",
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991
@@ -6292,13 +6292,13 @@
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991,
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               },
               "logMessage": {
                 "type": "string",
@@ -6321,18 +6321,18 @@
         },
         {
           "name": "remove_breakpoint",
-          "description": "Remove a breakpoint that is no longer needed.",
+          "description": "Delete one breakpoint, identified by its file and line.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "fileFullPath": {
                 "type": "string",
-                "description": "Full path to the file"
+                "description": "Absolute path of the source file"
               },
               "line": {
                 "type": "number",
-                "description": "Line number (1-based)"
+                "description": "Source line, numbered from 1"
               }
             },
             "required": [
@@ -6346,7 +6346,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Clear all breakpoints at once. Use this after verifying the root cause to clean up before moving on to the next task.",
+          "description": "Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -6357,7 +6357,7 @@
         },
         {
           "name": "list_breakpoints",
-          "description": "View all currently set breakpoints across all files.",
+          "description": "Show the breakpoints that are set, in every file.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -6368,13 +6368,13 @@
         },
         {
           "name": "list_variable_names",
-          "description": "List the names and types of variables visible at the current execution point, without reading their values. Use this to discover what exists, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
+          "description": "Show which variables exist where the target is stopped, with their types but not their values. Discover first, then pull only what you need with get_variables_values — on a slow probe that is the difference between one round trip and thirty.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -6400,13 +6400,13 @@
         },
         {
           "name": "get_variables_values",
-          "description": "Inspect variable values at the current execution point. This is your window into program state - see what data looks like at runtime, verify assumptions, identify unexpected values, and understand why code behaves as it does. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
+          "description": "Read variable values where the target is stopped and compare the data the program actually holds with what you expect it to hold — the quickest way to find the value that is wrong. Omit variableNames to dump the whole scope (capped at 40 variables per scope and 200 chars per value); pass variableNames to read exactly what you need, uncapped.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -6437,14 +6437,14 @@
         },
         {
           "name": "evaluate_expression",
-          "description": "Powerful runtime expression evaluator: Test hypotheses, check computed values, call methods, or inspect object properties in the live debug context. Goes beyond simple variable inspection - evaluate any valid expression in the target language.",
+          "description": "Evaluate any expression written in the debugged program's language against the live target — to test a hypothesis, compute a value, call a function or read a struct member. It reaches further than reading a single variable.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "expression": {
                 "type": "string",
-                "description": "Expression to evaluate in the current programming language context"
+                "description": "What to evaluate, written in the language of the program being debugged"
               },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
@@ -6828,7 +6828,7 @@
                 "description": "DAP frame id, as returned by get_call_stack."
               },
               "scope": {
-                "description": "Variable scope: 'local', 'global', or 'all'",
+                "description": "Which variables to cover: 'local', 'global' or 'all'",
                 "type": "string",
                 "enum": [
                   "local",
@@ -7241,32 +7241,32 @@
         },
         {
           "uri": "cmsis-developer-assistant://docs/debug_instructions",
-          "name": "Debugging Instructions Guide",
-          "description": "Step-by-step instructions for debugging with CMSIS Developer Assistant",
+          "name": "Full Debugging Guide",
+          "description": "The complete, ordered debugging procedure for CMSIS Developer Assistant",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/python",
-          "name": "Python Debugging Tips",
-          "description": "Debugging tips specific to python",
+          "name": "Python Troubleshooting Notes",
+          "description": "Advice for debugging python programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/javascript",
-          "name": "JavaScript Debugging Tips",
-          "description": "Debugging tips specific to javascript",
+          "name": "JavaScript Troubleshooting Notes",
+          "description": "Advice for debugging javascript programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/java",
-          "name": "Java Debugging Tips",
-          "description": "Debugging tips specific to java",
+          "name": "Java Troubleshooting Notes",
+          "description": "Advice for debugging java programs",
           "mimeType": "text/markdown"
         },
         {
           "uri": "cmsis-developer-assistant://docs/troubleshooting/csharp",
-          "name": "C# Debugging Tips",
-          "description": "Debugging tips specific to csharp",
+          "name": "C# Troubleshooting Notes",
+          "description": "Advice for debugging csharp programs",
           "mimeType": "text/markdown"
         },
         {

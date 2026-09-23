@@ -53,3 +53,6 @@ Known bugs are preserved on purpose, so that each rewrite is reviewable as behav
 | `src/debuggingHandler.ts` | 148 | 3 | [debuggingHandler.md](specs/debuggingHandler.md) |
 | `src/handler/*.ts` (seven new modules) | – | 0–2 | [debuggingHandler.md](specs/debuggingHandler.md) |
 | `src/test/debuggingHandler.test.ts` | 5 | 4 | [debuggingHandler.md](specs/debuggingHandler.md) |
+| `src/debugMCPServer.ts` | 111 | 2 | [debugMCPServer.md](specs/debugMCPServer.md) |
+| `src/debugTools.ts` (new: tool registration) | – | 0 | [debugMCPServer.md](specs/debugMCPServer.md) |
+| `src/test/debugSkillGuidance.test.ts` | 7 | 1 | [debugMCPServer.md](specs/debugMCPServer.md) |

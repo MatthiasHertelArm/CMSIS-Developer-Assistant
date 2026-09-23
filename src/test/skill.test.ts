@@ -39,7 +39,7 @@ suite('Bundled agent skill', () => {
      * registered from their own files.
      */
     const registeredTools = (): string[] => {
-        const files = ['debugMCPServer.ts', 'packDocsTools.ts', 'buildInfoTools.ts'];
+        const files = ['debugMCPServer.ts', 'debugTools.ts', 'packDocsTools.ts', 'buildInfoTools.ts'];
         return files.flatMap((file) => {
             const source = fs.readFileSync(path.join(repoRoot, 'src', file), 'utf8');
             return [...source.matchAll(/registerTool\('([a-z0-9_]+)'/g)].map(m => m[1]);
