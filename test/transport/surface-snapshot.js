@@ -108,6 +108,16 @@ function normalise(text, ctx) {
         .replace(/\b127\.0\.0\.1:\d+/g, '127.0.0.1:<port>');
 }
 
+/**
+ * get_session_status ends with this session's tool statistics. Their byte sizes
+ * sum the raw replies (temporary paths included, before normalisation), so they
+ * are masked; the counts of calls, timeouts and errors stay.
+ */
+function maskStatsTrailer(text) {
+    return text.replace(/\n\nTool stats \(this session\):[\s\S]*$/,
+        (trailer) => trailer.replace(/\b\d+(?:\.\d+)? (?:kB|B)\b/g, '<size>'));
+}
+
 async function withTimeout(promise, ms) {
     let timer;
     const t = new Promise((resolve) => { timer = setTimeout(() => resolve({ timedOut: true }), ms); });
@@ -154,7 +164,7 @@ async function capture(label, server, ctx, { callTools }) {
                 ...(res.error ? { rpcError: normalise(res.error.message, ctx) } : {}),
                 ...(r.isError ? { isError: true } : {}),
                 ...(r.structuredContent ? { structuredContent: JSON.parse(normalise(JSON.stringify(r.structuredContent), ctx)) } : {}),
-                text: normalise(text.replace(/\n*Tool stats:[\s\S]*$/, '\nTool stats: <trailer>'), ctx),
+                text: normalise(maskStatsTrailer(text), ctx),
             };
         }
     }
