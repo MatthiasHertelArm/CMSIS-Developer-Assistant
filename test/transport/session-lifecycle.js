@@ -30,6 +30,9 @@
 //   8. Results are typed (#11): a failure without a session is isError with
 //      structuredContent.error_code, get_session_status is not, and no tool
 //      declares an outputSchema, so tools/list does not grow.
+//   9. CMSIS jobs (#47, #46, #12): cmsis_action status needs no solution and
+//      answers at once, and flash without a workspace explains itself without
+//      suggesting to install pyOCD.
 
 const stub = require('./vscode-stub.js');
 
@@ -259,6 +262,25 @@ async function main() {
     stub.workspace.workspaceFolders = [];
     fs.rmSync(solDir, { recursive: true, force: true });
 
+    // 4e. CMSIS jobs: status needs no solution and launches nothing; flash
+    //     without a workspace says why, and never tells the agent to install pyOCD.
+    const callTool = async (name, args, id) => {
+        const r = await request(port, 'POST', { 'mcp-session-id': sid }, {
+            jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args },
+        });
+        return parseSse(r.body)?.result ?? {};
+    };
+    const idle = await callTool('cmsis_action', { action: 'status' }, 30);
+    const idleText = idle.content?.[0]?.text ?? '';
+    check('cmsis_action status without a solution answers ok with "No CMSIS job in this window"',
+        idle.isError !== true && /^No CMSIS job in this window/.test(idleText), idleText.split('\n')[0]);
+    const noWorkspace = await callTool('flash', {}, 31);
+    const noWorkspaceText = noWorkspace.content?.[0]?.text ?? '';
+    check('flash without a workspace is a clear INVALID_ARGUMENT error without pip',
+        noWorkspace.isError === true && noWorkspace.structuredContent?.error_code === 'INVALID_ARGUMENT'
+            && /No workspace folder open/.test(noWorkspaceText) && !/pip/i.test(noWorkspaceText),
+        noWorkspaceText.split('\n')[0]);
+
     // 5. REGRESSION: three consecutive get_threads on one session must all return.
     for (let i = 1; i <= 3; i++) {
         const call = await Promise.race([
@@ -289,7 +311,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 11 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 13 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

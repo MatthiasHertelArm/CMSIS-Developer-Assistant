@@ -68,7 +68,8 @@ const WITHOUT_SKILLS =
     'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
 
 const TIMEOUT_OVERRIDE =
-    'Tools that accept timeoutMs use it as a one-call override of the default, capped at 60 s; set it when you can estimate the work.';
+    'Tools that accept timeoutMs use it as a one-call override of the default, capped at 60 s (cmsis_action and flash: 600 s); '
+    + 'set it when you can estimate the work.';
 
 /** How to read an outcome (#11); it rides in the initialize result, so tools/list does not grow. */
 const READING_RESULTS =
@@ -289,17 +290,15 @@ const ABOUT = {
     cmsis_action: say(
         'The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, ' +
         'like the panel buttons; every result names the target it ran on.',
-        'build / load / erase / load_and_run wait for the task and end with ✅ or ❌ plus the exit code — read that line, do not ' +
-        'poll for files.',
-        'load_and_debug (flash + debug, the Debug button) and attach (no programming) return with the session state; detach and ' +
-        'stop_run are immediate.',
-        'Long builds: get_debug_instructions topic build.',
+        'build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code.',
+        'A task still running at the wait returns status running: call action status, never start it again.',
+        'load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +
         'the exit code with pyOCD\'s error lines.',
-        'Refuses while a debug session is active: stop_debugging → flash → cmsis_action attach.',
-        'The cbuild-run file is auto-resolved when omitted; needs pyocd on PATH.',
+        'Refuses while a debug session or CMSIS Run task holds the probe.',
+        'The cbuild-run file is auto-resolved when omitted; uses the CMSIS Debugger\'s bundled pyOCD.',
     ),
     get_session_status: say(
         'Report the debug-session state: no-session, initializing, running, stopped or unresponsive, with the right next action ' +
@@ -322,6 +321,8 @@ const ABOUT = {
 // ── Shared parameters and result shape ──────────────────────────────────────
 
 const TIMEOUT_DESC = 'Per-call timeout in ms, max 60000 (see server instructions).';
+/** cmsis_action and flash wait for a job that may take minutes (#12). */
+const LONG_TIMEOUT_DESC = 'Wait in ms, default 60000, max 600000.';
 const SOURCE_PATH_DESC = 'Absolute path of the source file';
 const SOURCE_LINE_DESC = 'Source line, numbered from 1';
 const SVD_FILE_DESC = 'Explicit .svd path; default: session, cbuild-run.yml, workspace';
@@ -727,12 +728,12 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'load', 'erase', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run'])
+            action: z.enum(['build', 'load', 'erase', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run', 'status'])
                 .describe('Which CMSIS Solution action to invoke'),
             target: z.string().optional().describe('Target-type or type@set from the csolution (e.g. "MPS3", "HP@debug"). ' +
                 'Switched and verified when it differs from the active one; omit to use the panel selection.'),
-            timeoutMs: z.number().int().min(100).max(60_000).optional()
-                .describe(`${TIMEOUT_DESC} For load_and_debug / attach: the session-readiness wait.`),
+            timeoutMs: z.number().int().min(100).max(600_000).optional()
+                .describe(`${LONG_TIMEOUT_DESC} For load_and_debug / attach: the session-readiness wait.`),
         },
     }, (args) => debug.handleCmsisCommand(args).then(reply));
     mcp.registerTool('flash', {
@@ -740,7 +741,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         inputSchema: {
             cbuildRunFile: z.string().optional()
                 .describe('Path to the .cbuild-run.yml to program. Omit to auto-resolve from launch.json / out/.'),
-            timeoutMs: z.number().int().min(1_000).max(60_000).optional().describe(`${TIMEOUT_DESC} Flash defaults to 60 s.`),
+            timeoutMs: z.number().int().min(1_000).max(600_000).optional().describe(LONG_TIMEOUT_DESC),
         },
         annotations: ALTERS_TARGET,
     }, (args) => debug.handleFlash(args).then(reply));

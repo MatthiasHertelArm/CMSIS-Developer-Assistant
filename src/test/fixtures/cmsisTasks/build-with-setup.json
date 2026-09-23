@@ -1,0 +1,84 @@
+{
+  "derivedFrom": "Derived from the installed CMSIS Solution 1.70.1 (arm.cmsis-csolution-1.70.1-63-20260910): dist/extension.js (BuildTaskProviderImpl.createTask, cbuildArgsFromTaskDefinition, CmsisCommands.runCmsisTask, stopCmsisTask) and templates/debug/*.adapter.json. No live spike was run: the event order is VS Code's for the task shape (CustomExecution, shell task, dependsOn sequence); times are illustrative milliseconds from the call.",
+  "description": "cmsis_action build right after a target switch: the re-activated solution requests cbuild setup (setup: true), the build command terminates it (stopActiveSetupTaskIfRunning) and starts the build. The setup is noted, never the result.",
+  "action": "build",
+  "tasks": {
+    "setup": {
+      "name": "cbuild setup Blinky.csolution.yml --active NUCLEO-F401RE --schema --packs --skip-convert",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "setup": true,
+        "solution": "Blinky.csolution.yml",
+        "active": "NUCLEO-F401RE",
+        "downloadPacks": true
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    },
+    "build": {
+      "name": "cbuild Blinky.csolution.yml --active NUCLEO-F401RE --schema --packs",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "solution": "Blinky.csolution.yml",
+        "active": "NUCLEO-F401RE",
+        "downloadPacks": true
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 10,
+      "event": "onDidStartTask",
+      "task": "setup"
+    },
+    {
+      "at": 12,
+      "event": "onDidStartTaskProcess",
+      "task": "setup"
+    },
+    {
+      "at": 400,
+      "event": "onDidEndTaskProcess",
+      "task": "setup"
+    },
+    {
+      "at": 401,
+      "event": "onDidEndTask",
+      "task": "setup"
+    },
+    {
+      "at": 450,
+      "event": "onDidStartTask",
+      "task": "build"
+    },
+    {
+      "at": 455,
+      "event": "onDidStartTaskProcess",
+      "task": "build"
+    },
+    {
+      "at": 60000,
+      "event": "onDidEndTaskProcess",
+      "task": "build",
+      "exitCode": 0
+    },
+    {
+      "at": 60010,
+      "event": "onDidEndTask",
+      "task": "build"
+    }
+  ],
+  "expect": {
+    "state": "ok",
+    "decidedBy": "build",
+    "bystanders": [
+      "setup"
+    ]
+  }
+}

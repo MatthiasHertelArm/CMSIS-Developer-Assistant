@@ -1,0 +1,54 @@
+{
+  "derivedFrom": "Derived from the installed CMSIS Solution 1.70.1 (arm.cmsis-csolution-1.70.1-63-20260910): dist/extension.js (BuildTaskProviderImpl.createTask, cbuildArgsFromTaskDefinition, CmsisCommands.runCmsisTask, stopCmsisTask) and templates/debug/*.adapter.json. No live spike was run: the event order is VS Code's for the task shape (CustomExecution, shell task, dependsOn sequence); times are illustrative milliseconds from the call.",
+  "description": "cmsis_action build: the build command returns the TaskExecution of a cbuild CustomExecution task, which exits 0.",
+  "action": "build",
+  "tasks": {
+    "build": {
+      "name": "cbuild Blinky.csolution.yml --active NUCLEO-F401RE --schema --packs",
+      "source": "cmsis-csolution.build",
+      "definition": {
+        "type": "cmsis-csolution.build",
+        "solution": "Blinky.csolution.yml",
+        "active": "NUCLEO-F401RE",
+        "downloadPacks": true
+      },
+      "execution": "CustomExecution (pseudoterminal)"
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 30,
+      "event": "onDidStartTask",
+      "task": "build"
+    },
+    {
+      "at": 31,
+      "event": "commandReturned",
+      "task": "build"
+    },
+    {
+      "at": 35,
+      "event": "onDidStartTaskProcess",
+      "task": "build"
+    },
+    {
+      "at": 42000,
+      "event": "onDidEndTaskProcess",
+      "task": "build",
+      "exitCode": 0
+    },
+    {
+      "at": 42010,
+      "event": "onDidEndTask",
+      "task": "build"
+    }
+  ],
+  "expect": {
+    "state": "ok",
+    "decidedBy": "build"
+  }
+}

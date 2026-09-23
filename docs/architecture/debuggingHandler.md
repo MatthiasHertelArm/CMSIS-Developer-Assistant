@@ -42,14 +42,17 @@ cannot be left out of the routing (see [windowRouting.md](windowRouting.md)).
 
 The first two groups run inside `fenced()` (`src/handler/fence.ts`); its
 `onCap` argument says which answer the cap gives. The limit is the call's
-`timeoutMs`, at most 60 s, or 30 s when none is given. The timer starts
-before the work; when it fires, the work keeps running, since a DAP request
-cannot be withdrawn, and whatever it produces later, a rejection included, is
-dropped.
+`timeoutMs`, at most 60 s, or 30 s when none is given. `cmsis_action` and
+`flash` may wait up to 600 s (#12); they default to 60 s and count one
+deadline from the call, so they answer before their fence, which stays as a
+backstop with advice of its own. The timer starts before the work; when it
+fires, the work keeps running, since a DAP request cannot be withdrawn, and
+whatever it produces later, a rejection included, is dropped.
 
 Refusals reject too: a second `start_debugging` while a session exists, or
-`flash` under a live session, is `PROBE_BUSY` with `stop_debugging` in the
-hint. `pause_execution` on a halted target is an answer, since there is
+`flash` while a session or a CMSIS task holds the probe, is `PROBE_BUSY`
+with the step that frees the probe in the hint. `pause_execution` on a
+halted target is an answer, since there is
 nothing to do; it is neither fenced nor wrapped, so its refusals keep their
 own text and code (`TIMEOUT` for an unresponsive probe, `NO_SESSION` while
 the session starts or after it ended). `get_session_status` and
@@ -150,21 +153,29 @@ contains the text.
 `src/handler/cmsisAction.ts` runs `cmsis_action`. Each action maps to a
 command of the CMSIS Solution extension (`cmsis-csolution.build`,
 `cmsis-csolution.cmsisLoadAndDebug` and so on). Those commands return before
-their work is done, so the outcome is observed separately:
+their work is done, so the outcome is observed separately, through the
+window's CMSIS job tracker (next section):
 
-- `build`, `load`, `erase` and `load_and_run` wait for the cbuild or flash
-  task to end (`vscode.tasks` process events) and report its exit code: a
-  ✅ line, or a ❌ line rejected as `TASK_FAILED`. A task that has not ended
-  when the wait runs out is answered with status `running`.
-- `load_and_debug` and `attach` wait for a live session, then probe its
-  threads twice (`probeSchedule()`), so a session with no target behind it is
-  reported as such (`TASK_FAILED`); a session that is not up yet within the
-  wait is answered with status `running`.
-- `detach` and `stop_run` return at once.
+- `build`, `load`, `erase` and `load_and_run` arm a job, issue the command
+  and wait for the job: a ✅ line with the task, its exit code, how long it
+  ran and the job id, or a ❌ line rejected as `TASK_FAILED`.
+- `load_and_debug` waits for its pre-launch `CMSIS Load` when the launch
+  configuration has one (a failed Load is the answer, before any session
+  probe); then it and `attach` wait for a live session and probe its threads
+  twice (`probeSchedule()`). A session object without threads yet is
+  answered with status `running`; `TASK_FAILED` is kept for a session that
+  is gone.
+- `status` launches nothing and needs no solution: it waits for the job in
+  flight, or lists the recent results and the live CMSIS tasks.
+- `stop_run` waits until the CMSIS tasks it stops have ended, terminates
+  leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
+  alive after 10 s. `detach` returns at once.
 
-A session that is already live is refused with `PROBE_BUSY`, a window
-without an active solution with `CMSIS_NO_SOLUTION`, an unknown target or
-action with `INVALID_ARGUMENT`.
+Before any command: a debug session refuses `load_and_debug` and `attach`,
+the probe guard refuses what another owner blocks (`PROBE_BUSY`), a window
+without an active solution is `CMSIS_NO_SOLUTION`, an unknown target or
+action `INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does
+not have (`load` on an Arm Debugger adapter, for example).
 
 When `target` names a target-type or target-set that is not active, the
 selection is written into the solution folder's `.vscode/cmsis.json`, the
@@ -174,19 +185,56 @@ switch is refused under a live debug session.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else `cmsis.cbuildRunFile` from `launch.json`, else the only
-match under `out/` — refuses under a live debug session, and runs
-`pyocd load --cbuild-run` through `src/core/flashController.ts`. A refusal
-is `PROBE_BUSY`, a file that cannot be chosen `INVALID_ARGUMENT`, a missing
-or failing pyOCD `TASK_FAILED`, and a run killed at its budget is answered
-with status `timeout`.
+match under `out/` — refuses while a session or a CMSIS task holds the probe,
+and runs `pyocd load --cbuild-run` through `src/core/flashController.ts`
+with the pyOCD the CMSIS tasks use: the CMSIS Debugger extension's bundled
+one, else the one the solution's `.cmsis/tools-environment.yml` names, else
+one on PATH (`resolvePyocd()`). A refusal is `PROBE_BUSY`, a file that
+cannot be chosen `INVALID_ARGUMENT`, no runnable pyOCD `TOOL_DISABLED`, a
+failing run `TASK_FAILED`, and a run killed at its budget is answered with
+status `timeout`.
+
+## CMSIS jobs
+
+The CMSIS Solution extension runs builds as its own task type and the
+panel's Load, Run, Load+Run and Erase as tasks it writes into `tasks.json`.
+`src/core/cmsisTasks.ts` knows those shapes: `classifyCmsisTask()` names a
+task's kind by the rules the extension itself applies (the build type, the
+Arm Debugger's flash task, exact labels from `tasks.json`), `reduceJob()`
+folds task events into a job's state (`armed`, `started`, then `ok`,
+`failed`, `cancelled`, `running-ok` or `not-started`), and `guardProbe()` is
+the matrix of which action may touch the probe beside which owner.
+
+`CmsisJobTracker` (`src/cmsisJobTracker.ts`) is one per window, shared by
+its debugging handlers and created at activation, so that tasks started from
+the panel are seen too. It keeps the live CMSIS executions and the jobs:
+
+- a job is armed before its command goes out; executions alive at that
+  moment never complete it, and it binds the first execution of each kind it
+  expects that starts afterwards — for a build, the execution the command
+  returns. Other CMSIS executions are noted, never the result, so a
+  `cbuild setup` after a target switch cannot answer for a build;
+- `load_and_run` counts as done once Load ended 0 and CMSIS Run, which
+  hosts the GDB server and never ends, stayed up for 2 s;
+- nothing expected starting within 10 s of the command is `not-started`;
+- a build, load or erase started elsewhere is adopted as a job of its own,
+  so that a repeated call attaches to it instead of starting another;
+- settled jobs are kept for 10 minutes, in memory only; `get_session_status`
+  shows one line from them and the live tasks.
+
+A call has one deadline (#12): the solution checks and a target switch come
+out of it, and a job still going when it passes is answered with status
+`running` and the job in `data`. The texts live in `src/handler/jobText.ts`.
 
 ## The host seam
 
 Everything else the handler needs comes from a `HandlerHost`
-(`src/handler/host.ts`): clock, timers, VS Code's focused frame, task process
-events, workspace folders and file search. `VSCODE_HOST` looks each of them
-up in VS Code at the moment of the call. Unit tests override `host()` with a
-scaled clock, so a 60 s fence or an 8 s session wait takes milliseconds.
+(`src/handler/host.ts`): clock, timers, VS Code's focused frame, the
+window's CMSIS job tracker, workspace folders, file search, and where `flash`
+looks for pyOCD. `VSCODE_HOST` looks each of them up in VS Code at the
+moment of the call. Unit tests override `host()` with a scaled clock, so a
+60 s fence or an 8 s session wait takes milliseconds, and with a tracker
+over fake task events.
 
 ## Known deviations
 
@@ -195,7 +243,9 @@ rewrite could be reviewed as behaviour-neutral. Comments in the code mark
 each with its number (`KB3`, `KB6`, …); the list is in the *Known bugs to
 preserve* section of `docs/provenance/specs/debuggingHandler.md`. Each is
 fixed in a change of its own; KB1, failures answered as ordinary text, is
-fixed by the typed results of #11.
+fixed by the typed results of #11, and KB2, KB4 and KB5 — the 60 s cap, the
+missing probe guards and the task matching of `cmsis_action` — by the CMSIS
+jobs of #12, #46 and #47.
 
 ## Where to look
 
@@ -208,13 +258,21 @@ fixed by the typed results of #11.
 | `src/handler/gdbText.ts` | GDB reply classification, logpoint message to `dprintf` |
 | `src/handler/sessionText.ts` | state refusals with their codes, the `get_session_status` text, call-stack and thread listings, recent adapter lines |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
-| `src/handler/cmsisAction.ts` | `cmsis_action`: commands, target switch, task and session waits |
-| `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, pyOCD |
+| `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
+| `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
+| `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check; the window's instance |
+| `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
+| `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, probe guard, pyOCD lookup |
+| `src/core/flashController.ts` | `resolvePyocd()`, the pyOCD process and its output |
 
 ## Tests
 
 - `src/test/debuggingHandler.test.ts`: the handler against a scripted
-  executor and host
+  executor and host, CMSIS jobs over fake task events included
+- `src/test/cmsisTasks.test.ts`, `src/test/cmsisJobTracker.test.ts`: the
+  classifier, the job state machine, the guard matrix and the tracker,
+  replayed over task sequences derived from CMSIS Solution 1.70.1
+  (`src/test/fixtures/cmsisTasks/`)
 - `test/transport/dap-scenarios.js`: 28 scripted `gdbtarget` sessions
   through the real server; every reply and the adapter traffic are compared
   with `dap-scenarios.snapshot.json`

@@ -62,9 +62,11 @@ simply forwards to itself.
 Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts` and
 `src/core/serialMonitorBridge.ts` (the `serial_*` tools);
 `src/utils/sessionStateTracker.ts` (which session is active, stop events);
-`src/core/` in general (SVD parsing, fault decoding and triage, CMSIS target
-selection, tool metrics, topic slicing of the agent guide), where most
-modules do not import `vscode` at all.
+`src/cmsisJobTracker.ts` (the window's CMSIS tasks, the `cmsis_action` jobs
+and what holds the probe); `src/core/` in general (SVD parsing, fault
+decoding and triage, CMSIS target selection and task classification, tool
+metrics, topic slicing of the agent guide), where most modules do not import
+`vscode` at all.
 
 ## Entry points
 

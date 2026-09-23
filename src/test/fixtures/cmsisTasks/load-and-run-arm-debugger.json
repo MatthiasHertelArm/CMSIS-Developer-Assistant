@@ -1,0 +1,47 @@
+{
+  "derivedFrom": "Derived from the installed CMSIS Solution 1.70.1 (arm.cmsis-csolution-1.70.1-63-20260910): dist/extension.js (BuildTaskProviderImpl.createTask, cbuildArgsFromTaskDefinition, CmsisCommands.runCmsisTask, stopCmsisTask) and templates/debug/*.adapter.json. No live spike was run: the event order is VS Code's for the task shape (CustomExecution, shell task, dependsOn sequence); times are illustrative milliseconds from the call.",
+  "description": "cmsis_action load_and_run (CMSIS-DAP-Arm-Debugger template): one task of type arm-debugger.flash named 'CMSIS Load+Run' with a process of its own; its exit decides.",
+  "action": "load_and_run",
+  "tasks": {
+    "loadRun": {
+      "name": "CMSIS Load+Run",
+      "source": "Workspace",
+      "definition": {
+        "type": "arm-debugger.flash",
+        "connectionType": "CMSIS-DAP"
+      },
+      "execution": "CustomExecution of the Arm Debugger extension"
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 200,
+      "event": "onDidStartTask",
+      "task": "loadRun"
+    },
+    {
+      "at": 210,
+      "event": "onDidStartTaskProcess",
+      "task": "loadRun"
+    },
+    {
+      "at": 15210,
+      "event": "onDidEndTaskProcess",
+      "task": "loadRun",
+      "exitCode": 0
+    },
+    {
+      "at": 15220,
+      "event": "onDidEndTask",
+      "task": "loadRun"
+    }
+  ],
+  "expect": {
+    "state": "ok",
+    "decidedBy": "loadRun"
+  }
+}

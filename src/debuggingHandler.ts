@@ -28,7 +28,8 @@
  * How a call ends (#11, vocabulary in `src/core/toolResult.ts`):
  *   - with a text, or a `ToolReply` whose status is `timeout` (a wait ran out:
  *     `wait_for_stop`, a step or continue, pause, the fence cap of `reset`,
- *     `cmsis_action` and `flash`) or `running` (a CMSIS action goes on);
+ *     `cmsis_action` and `flash`) or `running` (a CMSIS job goes on; the
+ *     window's job tracker in `src/cmsisJobTracker.ts` follows it);
  *   - with a rejected `ToolError`: refusals such as "a session is already
  *     active" (`PROBE_BUSY`), the state gate (`NO_SESSION`, `TARGET_RUNNING`,
  *     …), failed tasks (`TASK_FAILED`), and the fence cap of the reads
@@ -67,11 +68,12 @@ import {
     renderVariableNames,
     selectVariables,
 } from './core/variableView';
-import { actionTimeoutMs, activeTargetName, CmsisAction, runCmsisAction } from './handler/cmsisAction';
-import { CapOutcome, failureText, fenced } from './handler/fence';
-import { flashTimeoutMs, runFlash } from './handler/flashTool';
+import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, runCmsisAction } from './handler/cmsisAction';
+import { CapOutcome, failureText, fenced, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
+import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
 import { classifyGdbReply, DprintfCall, echoedBreakpointNumber, GdbReplyKind, removalEchoed, translateLogMessage } from './handler/gdbText';
 import { HandlerHost, VSCODE_HOST } from './handler/host';
+import { sessionTaskLine } from './handler/jobText';
 import { recentAdapterTraffic, renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
 import { normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
 
@@ -291,8 +293,14 @@ export class DebuggingHandler
     // ── shared machinery ──
 
     /** `onCap` is `reply` for tools that wait for something, `error` for reads (#11, decision 3). */
-    private fence(label: string, timeoutMs: number | undefined, onCap: CapOutcome, body: () => Promise<ToolText>): Answer {
-        return fenced(label, timeoutMs, this.host(), body, onCap);
+    private fence(
+        label: string,
+        timeoutMs: number | undefined,
+        onCap: CapOutcome,
+        body: () => Promise<ToolText>,
+        options?: FenceOptions,
+    ): Answer {
+        return fenced(label, timeoutMs, this.host(), body, onCap, options);
     }
 
     /** Throws the state-specific refusal, a `ToolError` with the state's code and hint, unless the target is stopped. */
@@ -552,9 +560,23 @@ export class DebuggingHandler
         });
     }
 
+    /** The session, plus one line on this window's CMSIS tasks when there is anything to say (#46). */
     async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
-        return renderSessionStatus(status, this.dbg.getDiagnostics());
+        return renderSessionStatus(status, this.dbg.getDiagnostics(), this.cmsisTaskLines());
+    }
+
+    /** The CMSIS task line of `get_session_status`; never throws, since that tool must not. */
+    private cmsisTaskLines(): string[] {
+        try {
+            const host = this.host();
+            const jobs = host.cmsisJobs();
+            const line = sessionTaskLine(jobs.recent(), jobs.liveExecutions(), host.now());
+            return line ? [line] : [];
+        } catch (caught) {
+            logger.warn('The CMSIS task line of get_session_status could not be built', caught);
+            return [];
+        }
     }
 
     async handleCheckTargetConnection(): Answer {
@@ -1121,18 +1143,21 @@ export class DebuggingHandler
 
     // ── CMSIS Solution and pyOCD ──
 
+    /** One deadline for the whole call, up to 600 s (#12); the fence behind it is a backstop. */
     handleCmsisCommand(args: CmsisRequest): Answer {
-        const effectiveMs = actionTimeoutMs(args.action, args.timeoutMs);
-        return this.fence('cmsis_action', effectiveMs, 'reply', () => runCmsisAction({
+        const waitMs = actionTimeoutMs(args.action, args.timeoutMs);
+        return this.fence('cmsis_action', waitMs, 'reply', () => runCmsisAction({
             executor: this.dbg,
             host: this.host(),
             awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
             renderFullState: (state) => this.fullState(state),
-        }, args.action, args.target, effectiveMs));
+        }, args.action, args.target, waitMs), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
     }
 
     handleFlash(args: FlashRequest): Answer {
-        return this.fence('flash', flashTimeoutMs(args.timeoutMs), 'reply', () => runFlash(this.dbg, this.host(), args));
+        const waitMs = flashTimeoutMs(args.timeoutMs);
+        return this.fence('flash', waitMs, 'reply', () => runFlash(this.dbg, this.host(), args, waitMs),
+            { capMs: LONG_LIMIT_CAP_MS, advice: FLASH_FENCE_ADVICE });
     }
 }
 

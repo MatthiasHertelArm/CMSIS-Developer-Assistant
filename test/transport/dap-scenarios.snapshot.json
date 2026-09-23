@@ -1641,7 +1641,7 @@
           "args": {
             "action": "build"
           },
-          "text": "✅ CMSIS 'build' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml' exited 0). The firmware is built — use cmsis_action load or load_and_debug to flash it.",
+          "text": "✅ CMSIS 'build' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml' exited 0 after <n>s, job b-1). The firmware is built — use cmsis_action load or load_and_debug to flash it.",
           "traffic": [
             "command: cmsis-csolution.getSolutionFile",
             "command: cmsis-csolution.getActiveTargetSet",
@@ -1656,7 +1656,7 @@
             "action": "build"
           },
           "isError": true,
-          "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2.\nOpen the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, then re-run cmsis_action build. This is a terminal result — do not wait for an output file.",
+          "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2 after <n>s (job b-2).\nOpen the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, then re-run cmsis_action build. This is a terminal result — do not wait for an output file.",
           "traffic": [
             "command: cmsis-csolution.getSolutionFile",
             "command: cmsis-csolution.getActiveTargetSet",

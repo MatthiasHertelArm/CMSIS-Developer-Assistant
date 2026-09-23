@@ -1,0 +1,46 @@
+{
+  "derivedFrom": "Derived from the installed CMSIS Solution 1.70.1 (arm.cmsis-csolution-1.70.1-63-20260910): dist/extension.js (BuildTaskProviderImpl.createTask, cbuildArgsFromTaskDefinition, CmsisCommands.runCmsisTask, stopCmsisTask) and templates/debug/*.adapter.json. No live spike was run: the event order is VS Code's for the task shape (CustomExecution, shell task, dependsOn sequence); times are illustrative milliseconds from the call.",
+  "description": "cmsis_action load_and_debug (pyOCD template): the launch configuration's preLaunchTask 'CMSIS Load' runs before the debug session starts; the job settles when it exits.",
+  "action": "load_and_debug",
+  "tasks": {
+    "load": {
+      "name": "CMSIS Load",
+      "source": "Workspace",
+      "definition": {
+        "type": "shell"
+      },
+      "execution": "ShellExecution: pyocd load --probe cmsisdap: --cbuild-run <cbuild-run>"
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 300,
+      "event": "onDidStartTask",
+      "task": "load"
+    },
+    {
+      "at": 310,
+      "event": "onDidStartTaskProcess",
+      "task": "load"
+    },
+    {
+      "at": 9310,
+      "event": "onDidEndTaskProcess",
+      "task": "load",
+      "exitCode": 0
+    },
+    {
+      "at": 9320,
+      "event": "onDidEndTask",
+      "task": "load"
+    }
+  ],
+  "expect": {
+    "state": "ok",
+    "decidedBy": "load"
+  }
+}

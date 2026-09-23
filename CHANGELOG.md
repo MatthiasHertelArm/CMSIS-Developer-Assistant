@@ -39,6 +39,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - The router now tells a failed call from a lost connection, and keeps its target window after a handler error or a worker timeout.
   - The control channel between windows carries typed results. It uses envelope version 2, negotiated by a request header, and windows on 2.3.10 still interoperate.
 
+- **`cmsis_action` follows the CMSIS task it started, and refuses when the probe is busy (#47, #46, #12).**
+  - Build and flash tasks are tracked as jobs, bound to the task execution they started. Load+Run counts as done when Load exited 0 and CMSIS Run has stayed up for 2 s.
+  - A task still running when the wait ends returns status `running`. `cmsis_action {action: "status"}` reports the jobs and live CMSIS tasks of the window, and a repeated `build` attaches to the one in flight instead of starting a second.
+  - `timeoutMs` for `cmsis_action` and `flash` goes up to 600 s. The default wait stays 60 s, because some clients cut longer calls.
+  - load, erase, load_and_run, load_and_debug and `flash` refuse with `PROBE_BUSY` while a debug session or a CMSIS Run task holds the probe. `attach` to a running Run task stays allowed. `stop_run` waits until the CMSIS tasks have ended and terminates leftovers itself.
+  - Previously, task names such as "CMSIS Load" did not match the case-sensitive filter, and the end of any task counted as the end of the action.
+  - A missing task label fails at once with `INVALID_ARGUMENT`. `get_session_status` names the CMSIS jobs and tasks. A `load_and_debug` whose session has no threads yet is `running`, not "did not survive".
+- **`flash` uses the CMSIS Debugger's bundled pyOCD,** then the one in `.cmsis/tools-environment.yml`, then PATH. It no longer advises `pip install pyocd` (part of #45).
+
 ### Added
 - Provenance tooling for #53:
   - `src/test/provenance.test.ts` keeps any file from gaining the Microsoft copyright line.

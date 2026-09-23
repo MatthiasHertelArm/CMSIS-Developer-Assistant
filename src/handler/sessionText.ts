@@ -100,8 +100,8 @@ export function recentAdapterTraffic(): string {
     return `\nRecent adapter traffic (last ${lines.length} lines):\n  ${lines.join('\n  ')}`;
 }
 
-/** The `get_session_status` text. */
-export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnostics): string {
+/** The `get_session_status` text; `extraLines` (the CMSIS task line) go before the closing hint. */
+export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnostics, extraLines: readonly string[] = []): string {
     const lines = [`State: ${status.state}`];
     if (status.sessionName) {
         lines.push(`Session: ${status.sessionName}`);
@@ -121,6 +121,7 @@ export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnost
     const focused = diagnostics.hasVscodeActiveSession ? 'set' : 'undefined';
     lines.push(`Diagnostics: serverVersion=${diagnostics.serverVersion}, `
         + `liveSessionsInThisWindow=${diagnostics.liveSessionCount}${names}, vscodeActiveDebugSession=${focused}`);
+    lines.push(...extraLines);
     lines.push(statusHint(status.state, diagnostics.liveSessionCount));
     return lines.join('\n');
 }

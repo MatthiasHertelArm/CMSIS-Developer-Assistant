@@ -19,6 +19,19 @@
 const Module = require('module');
 const path = require('path');
 
+/** An event with real listeners: tests may fire it; `vscode.Event` shape. */
+function emitter() {
+    const listeners = new Set();
+    return {
+        event: (fn) => { listeners.add(fn); return { dispose() { listeners.delete(fn); } }; },
+        fire: (e) => { for (const l of [...listeners]) { l(e); } },
+    };
+}
+
+const taskEvents = {
+    start: emitter(), processStart: emitter(), processEnd: emitter(), end: emitter(),
+};
+
 const stub = {
     Uri: { file: (p) => ({ fsPath: p, toString: () => `file://${p}` }) },
     Position: class { constructor(line, ch) { this.line = line; this.character = ch; } },
@@ -60,6 +73,18 @@ const stub = {
         registerCommand: () => ({ dispose() {} }),
     },
     EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} },
+    // No task runs here: the four task events (fired through `taskEvents`),
+    // no executions, and no task VS Code could list or run.
+    tasks: {
+        taskExecutions: [],
+        onDidStartTask: taskEvents.start.event,
+        onDidStartTaskProcess: taskEvents.processStart.event,
+        onDidEndTaskProcess: taskEvents.processEnd.event,
+        onDidEndTask: taskEvents.end.event,
+        fetchTasks: async () => [],
+        executeTask: async () => { throw new Error('tasks are not stubbed'); },
+    },
+    taskEvents,
 };
 
 const origResolve = Module._resolveFilename;
