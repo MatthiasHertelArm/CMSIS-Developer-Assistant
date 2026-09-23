@@ -32,21 +32,50 @@ owns the workspace or the board the call is about.
 | `src/routingDebuggingHandler.ts` | `RoutingDebuggingHandler`: picks the target window for a call and forwards it; answers `list_debug_windows` and `select_debug_window` |
 | `src/controlServer.ts` | `ControlServer`: receives a forwarded call and runs it against this window's handlers |
 | `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends |
+| `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
 
 ## The registry
 
-Each window keeps `window-<pid>.json` in
-`<os.tmpdir()>/cmsis-developer-assistant-registry`: the control port and
-token, the workspace folders, the window name, whether a debug session is
-active and with which configuration, and the CMSIS solution path when the
-CMSIS Solution extension reports one. The file is written atomically,
-refreshed every 20 s, and rewritten at once when a debug session starts or
-ends or the folders change — the session state is what routes every call that
-names no file. Readers drop the files of processes that no longer exist and
-of other windows not refreshed for 60 s; unreadable files and leftover
-temporary files go once they are a minute old, since a peer may still be
-writing a younger one. Windows of different extension versions read each
-other's files, so the format stays stable.
+Each window keeps `window-<pid>.json` in a directory under `os.tmpdir()`: the
+control port and token, the workspace folders, the window name, whether a
+debug session is active and with which configuration, and the CMSIS solution
+path when the CMSIS Solution extension reports one. The file is written
+atomically, refreshed every 20 s, and rewritten at once when a debug session
+starts or ends or the folders change — the session state is what routes every
+call that names no file. Readers drop the files of processes that no longer
+exist and of other windows not refreshed for 60 s; unreadable files and
+leftover temporary files go once they are a minute old, since a peer may
+still be writing a younger one. Windows of different extension versions read
+each other's files, so the format stays stable and readers ignore fields they
+do not know. The first field, `_note`, is for whoever opens the file: it
+says the file is internal and names the tools agents use instead.
+
+A token in the registry is enough to flash or erase that window's board, so
+only its user may read the registry (#19):
+
+- **Where.** `resolveRegistryDir()` keeps the name
+  `cmsis-developer-assistant-registry` where the temp directory is private to
+  the user (macOS `$TMPDIR`, Windows `%TEMP%`, a folder in the home
+  directory), so windows of 2.5.0 and earlier stay visible there. Where every
+  user may write to the temp directory (Linux `/tmp`, macOS without
+  `TMPDIR`), it appends the uid, so another user cannot take the one name all
+  windows of this user look for. `os.tmpdir()` is the same in every extension
+  host of the user, so all windows agree.
+- **Modes.** `ensureRegistryDir()`, called by `register()` and `heartbeat()`,
+  creates the directory 0700 and narrows an existing one of this user that
+  others may enter (0755 before 2.5.1). The files are written 0600
+  (`writeFileAtomicSync(…, { mode })`), and the heartbeat replaces an older
+  0644 file within 20 s. Windows has no modes; the ACL of `%TEMP%` applies.
+- **Refusal.** A directory that is a symbolic link, not a directory, or owned
+  by another user is not written and not read. The window logs an error,
+  shows one warning (`onRefused`), and `list()` returns only its own entry,
+  so its tool calls still reach it while the other windows stay out of
+  reach. Each heartbeat looks again and registers once the directory is fit.
+- **Not solved here.** A process of the same user can read the files; that
+  case is for agents to leave alone (the tool contract), not for file modes.
+  The token is not rotated: a router caches a window's entry, token
+  included, and checks only pid and port, so a new token would turn its next
+  forward into a 403.
 
 ## Choosing the target window
 
@@ -123,17 +152,31 @@ counters) need no new version.
 
 ## The control server
 
-`ControlServer` listens on an ephemeral port on `127.0.0.1` and accepts only
-`POST /op` with the right token (404 and 403 otherwise). It checks the op
-name against the op table before looking up any method, then dispatches it
-to the debugging handler, the serial handler, or the documentation or
-build-artefact handler, and answers `{result}` with 200 or `{error}` with
-500, in the envelope the request asked for (see above). An unknown op, a
-method the window lacks and absent documentation handlers are
+`ControlServer` listens on an ephemeral port on `127.0.0.1`. The ops include
+flashing and erasing the target, so a request passes three checks, in this
+order, before its body is read:
+
+1. `POST /op`, else 404.
+2. A loopback `Host` (`isLoopbackHostHeader()`) and no `Origin` header at
+   all, else 403. The router sends `Host: 127.0.0.1:<port>` and never an
+   `Origin`; a browser page always sends one, so this keeps DNS-rebinding
+   pages out even though they cannot read a token.
+3. The window's token, compared with `crypto.timingSafeEqual` after a length
+   check on the bytes, else 403. A header sent twice never matches, and
+   nothing in the comparison can throw.
+
+The 403 and 404 bodies are JSON that names `list_debug_windows` and
+`select_debug_window`, for an agent that found the port by itself. Routers
+read only the status of a 403 or 404, so the body changes nothing for them.
+
+The server then checks the op name against the op table before looking up
+any method, dispatches it to the debugging handler, the serial handler, or
+the documentation or build-artefact handler, and answers `{result}` with 200
+or `{error}` with 500, in the envelope the request asked for (see above). An
+unknown op, a method the window lacks and absent documentation handlers are
 `TOOL_DISABLED`. The trace line of each op logs the size of the result's
-text. The token is the only gate, and the ops include flashing and erasing
-the target, so agents never see it: `describeWindow()` leaves port and
-token out of every listing.
+text. Agents never see the token: `describeWindow()` leaves port and token
+out of every listing.
 
 ## Shutdown
 
@@ -146,9 +189,12 @@ giving that step at most two seconds.
 
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
   round trip; typed outcomes — a worker error with its code and the target
-  kept, a dead port, a silent window, 2.3.10 replies, both envelopes
+  kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the
+  gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
-  matching
+  matching; the directory name, modes, and refused directories
+- `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'
+  `mode` option and the loopback checks
 - `src/test/windowCoordinator.test.ts`: the serial teardown on dispose
 - `src/test/opTable.test.ts`: the op table
 - `test/transport/two-window-routing.js`: two coordinators against one

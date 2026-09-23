@@ -45,9 +45,10 @@ Three constraints shape the code:
 
 - `loopbackOnly` answers 403 to a `Host` header that does not name this
   machine and to an `Origin` that is not local (`isLoopbackHostHeader()`,
-  `isLoopbackOrigin()`), before the body is read. Together they keep a web
-  page that resolves its own host name to 127.0.0.1 (DNS rebinding) away
-  from the tools.
+  `isLoopbackOrigin()` from `src/utils/loopback.ts`, which the control
+  server of each window uses too), before the body is read. Together they
+  keep a web page that resolves its own host name to 127.0.0.1 (DNS
+  rebinding) away from the tools.
 - A body above 1 MB is refused with 413 before MCP code sees it.
 - A request that names no open session gets a JSON-RPC error with `id: null`
   and status 400, for `GET` and `DELETE` too: a 404 on either makes Cursor
@@ -222,7 +223,8 @@ whole guide is served and a warning is logged.
 
 ## Tests
 
-- `src/test/debugMCPServer.test.ts`: the `Host` and `Origin` guards
+- `src/test/loopback.test.ts`: the `Host` and `Origin` checks;
+  `src/test/debugMCPServer.test.ts`: that the server still exports them
 - `src/test/measuredMcpServer.test.ts`: every outcome as a client receives
   it, and the metrics outcome
 - `src/test/toolResult.test.ts`: classification, wrapping, the reading of

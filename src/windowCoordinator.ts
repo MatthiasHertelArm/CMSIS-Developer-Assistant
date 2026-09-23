@@ -30,6 +30,9 @@ import { logger } from './utils/logger';
 /** Refresh well inside the registry's 60 s staleness window. */
 const HEARTBEAT_MS = 20_000;
 
+/** Prefix of the notifications this window shows. */
+const PRODUCT = 'CMSIS Developer Assistant';
+
 /** How often a worker re-tries the router port after the router disappears. */
 const PROMOTION_POLL_MS = 10_000;
 
@@ -95,7 +98,9 @@ export class WindowCoordinator {
     private disposed = false;
 
     constructor(private readonly options: CoordinatorOptions) {
-        this.registry = options.registry ?? new WorkspaceRegistry();
+        this.registry = options.registry ?? new WorkspaceRegistry(undefined, undefined, undefined, {
+            onRefused: (message) => void vscode.window.showWarningMessage(`${PRODUCT}: ${message}`),
+        });
         const executor = new DebuggingExecutor(options.hardwareTimeouts);
         const configManager = new ConfigurationManager();
         this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds);

@@ -47,6 +47,7 @@ import type { PackDocsDispatch } from './packDocsDispatch';
 import { serialHandler } from './serialHandler';
 import { closeHttpServer } from './utils/closeHttpServer';
 import { logger } from './utils/logger';
+import { isLoopbackHostHeader, isLoopbackOrigin } from './utils/loopback';
 
 /** Runs one serial op for a session: on this window's handler, or forwarded by the router. */
 export type SerialDispatch = (op: SerialOpName, args?: unknown) => Promise<ToolText>;
@@ -92,31 +93,8 @@ export class PortInUseError extends Error {
     }
 }
 
-/** Host names a local client can use, as they read once any port is removed. */
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
-
-/**
- * True for a Host header that names this machine. With the Origin check
- * below it keeps a web page whose own host name resolves to 127.0.0.1 (DNS
- * rebinding) away from the tools.
- */
-export function isLoopbackHostHeader(host: unknown): boolean {
-    if (typeof host !== 'string' || host.length === 0) {
-        return false;
-    }
-    // A bracketed IPv6 literal keeps its brackets; anything else loses a trailing :port.
-    const hostname = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.replace(/:\d+$/, '');
-    return LOOPBACK_HOSTS.has(hostname.toLowerCase());
-}
-
-/** True for an Origin on this machine; `null`, empty and unparsable origins are refused. */
-export function isLoopbackOrigin(origin: string): boolean {
-    try {
-        return LOOPBACK_HOSTS.has(new URL(origin).hostname.toLowerCase());
-    } catch {
-        return false;
-    }
-}
+/** The loopback checks live in utils/loopback.ts, shared with the control server; importable from here as before. */
+export { isLoopbackHostHeader, isLoopbackOrigin };
 
 const LOOPBACK_V4 = '127.0.0.1';
 const MCP_ROUTE = '/mcp';

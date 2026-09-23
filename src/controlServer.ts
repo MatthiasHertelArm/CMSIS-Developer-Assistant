@@ -29,10 +29,15 @@
  * typed: the `ToolText` as it is, a failure as `{message, code, hint, data}`.
  * Any other router gets the 2.3.10 shapes, strings only.
  *
- * The only gate is the per-window token the window publishes in the
- * registry, and the ops include flashing and erasing the target.
+ * The ops include flashing and erasing the target, so a request passes
+ * three checks before its body is read (#19): `POST /op` (else 404); a
+ * loopback `Host` and no `Origin` at all, since the router never sends one
+ * and a browser always does (else 403); and the per-window token the window
+ * publishes in the registry, compared in constant time (else 403). The 403
+ * and 404 bodies point whoever probes the port at the MCP tools instead.
  */
 
+import { timingSafeEqual } from 'crypto';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
 import type { IDebuggingHandler } from './debuggingHandler';
@@ -50,6 +55,7 @@ import {
 import { JsonObject, ToolError, ToolText, errorDetail, isToolReply, textOf, toToolError } from './core/toolResult';
 import { closeHttpServer } from './utils/closeHttpServer';
 import { logger } from './utils/logger';
+import { isLoopbackHostHeader } from './utils/loopback';
 
 /** Loopback only: nothing off this machine may reach the endpoint. */
 const LOOPBACK_ONLY = '127.0.0.1';
@@ -57,6 +63,10 @@ const OP_ENDPOINT = '/op';
 /** Node lower-cases incoming header names; the sender may use any case. */
 const TOKEN_HEADER = 'x-cmsis-developer-assistant-token';
 const JSON_REPLY: http.OutgoingHttpHeaders = { 'Content-Type': 'application/json' };
+/** The body of every 403 and 404: this port is not for agents, and here is what is. */
+const NOT_FOR_AGENTS = {
+    error: 'internal endpoint of the CMSIS Developer Assistant; agents use the MCP tools list_debug_windows and select_debug_window',
+};
 
 /** What one request asks for, once its body is parsed. */
 interface OpRequest {
@@ -130,6 +140,25 @@ function replyBare(reply: http.ServerResponse, status: number): void {
     reply.writeHead(status).end();
 }
 
+/**
+ * True when the request carries exactly the window's token. A header sent
+ * twice arrives joined or as an array and never matches; bytes are compared
+ * only at equal length, since `timingSafeEqual` throws otherwise.
+ */
+function carriesToken(presented: string | string[] | undefined, token: string): boolean {
+    if (typeof presented !== 'string') {
+        return false;
+    }
+    const given = Buffer.from(presented, 'utf8');
+    const expected = Buffer.from(token, 'utf8');
+    return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+/** The router's requests name 127.0.0.1 and never carry an `Origin`; a browser's always do. */
+function comesFromRouter(incoming: http.IncomingMessage): boolean {
+    return isLoopbackHostHeader(incoming.headers.host) && incoming.headers.origin === undefined;
+}
+
 function replyJson(reply: http.ServerResponse, status: number, payload: object, typed = false): void {
     const headers = typed ? { ...JSON_REPLY, [CONTROL_ENVELOPE_HEADER]: String(CONTROL_ENVELOPE_VERSION) } : JSON_REPLY;
     reply.writeHead(status, headers).end(JSON.stringify(payload), 'utf8');
@@ -181,12 +210,11 @@ export class ControlServer {
 
     private accept(incoming: http.IncomingMessage, reply: http.ServerResponse): void {
         if (incoming.method !== 'POST' || incoming.url !== OP_ENDPOINT) {
-            replyBare(reply, 404);
+            replyJson(reply, 404, NOT_FOR_AGENTS);
             return;
         }
-        // Plain equality; a repeated header arrives joined and so never matches.
-        if (incoming.headers[TOKEN_HEADER] !== this.token) {
-            replyBare(reply, 403);
+        if (!comesFromRouter(incoming) || !carriesToken(incoming.headers[TOKEN_HEADER], this.token)) {
+            replyJson(reply, 403, NOT_FOR_AGENTS);
             return;
         }
 

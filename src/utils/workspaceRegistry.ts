@@ -21,9 +21,16 @@
  * the router window reads them all to decide where a tool call runs.
  *
  * The file format is shared by every installed version of the extension, so
- * windows of different versions can find each other: keep it stable. Readers
- * tidy up as they go, dropping entries of processes that are gone and entries
- * that stopped being refreshed.
+ * windows of different versions can find each other: keep it stable, and
+ * ignore fields you do not know. Readers tidy up as they go, dropping entries
+ * of processes that are gone and entries that stopped being refreshed.
+ *
+ * The files carry each window's control token, so only this user may read
+ * them (#19): the directory is 0700 and the files 0600. Where the temp
+ * directory is shared by all users (Linux /tmp) the directory name carries
+ * the uid (`resolveRegistryDir`); a directory that is a symbolic link or
+ * belongs to someone else is not used at all (`ensureRegistryDir`), and the
+ * window then works on its own.
  */
 
 import * as fs from 'fs';
@@ -48,6 +55,8 @@ export interface WindowRegistration {
     hasActiveSession?: boolean;
     activeConfigurationName?: string;
     cmsisProject?: string;
+    /** First in the file, for whoever opens it: it says the file is internal. Readers ignore it. */
+    _note?: string;
 }
 
 /** Why the router picked a window; it shows up in the routing log line. */
@@ -62,13 +71,126 @@ const FILE_PREFIX = 'window-';
 const FILE_SUFFIX = '.json';
 /** Signal 0 delivers nothing; it only asks the kernel whether the pid exists. */
 const EXISTENCE_PROBE = 0;
+/** The directory name of every version so far; kept wherever the temp directory is private to the user. */
+const REGISTRY_DIR_NAME = 'cmsis-developer-assistant-registry';
+/** Only this user may list, enter or change the directory, and read or write the files. */
+const DIRECTORY_MODE = 0o700;
+const FILE_MODE = 0o600;
+/** Any permission for group or others. */
+const GROUP_OTHER_BITS = 0o077;
+/** Write permission for others: a temp directory every user shares. */
+const OTHERS_WRITE = 0o002;
+/** For whoever opens a window file, a person or an agent reading the disk. */
+const ENTRY_NOTE = 'Internal to the CMSIS Developer Assistant. Agents: use the MCP tools list_debug_windows and select_debug_window.';
+
+/** What `resolveRegistryDir` looks at, injected so every case can be tested on any machine. */
+export interface RegistryDirContext {
+    platform: NodeJS.Platform;
+    /** `os.tmpdir()`. */
+    tmpdir: string;
+    /** `process.getuid()`; undefined on Windows. */
+    uid: number | undefined;
+    /** `fs.statSync`, which follows links: macOS /tmp is a link to /private/tmp. */
+    stat: (target: string) => { mode: number };
+}
+
+/** Who judges a registry directory; a test poses as another user with another uid. */
+export interface RegistryOwner {
+    platform: NodeJS.Platform;
+    uid: number | undefined;
+}
+
+/** What a `WorkspaceRegistry` needs beyond pid, directory and liveness check. */
+export interface RegistryOptions extends Partial<RegistryOwner> {
+    /**
+     * Called once with the message when the directory is refused, so the
+     * window can show it; the refusal is logged as an error either way.
+     */
+    onRefused?: (message: string) => void;
+}
+
+/**
+ * The registry directory for this user. In a temp directory that every user
+ * may write to (Linux /tmp, or macOS with TMPDIR unset) the name carries the
+ * uid, so another user cannot take the one name all windows of this user look
+ * for. Everywhere else — the per-user temp directories of macOS and Windows,
+ * a folder in the home directory — it keeps the name 2.5.0 and earlier use,
+ * so windows of those versions and of this one still find each other.
+ */
+export function resolveRegistryDir(context: RegistryDirContext): string {
+    const shared = path.join(context.tmpdir, REGISTRY_DIR_NAME);
+    if (context.platform === 'win32' || context.uid === undefined) {
+        return shared;
+    }
+    let mode: number;
+    try {
+        mode = context.stat(context.tmpdir).mode;
+    } catch {
+        return shared;
+    }
+    return (mode & OTHERS_WRITE) !== 0 ? `${shared}-${context.uid}` : shared;
+}
 
 function defaultRegistryDir(): string {
-    return path.join(os.tmpdir(), 'cmsis-developer-assistant-registry');
+    return resolveRegistryDir({ platform: process.platform, tmpdir: os.tmpdir(), uid: process.getuid?.(), stat: fs.statSync });
 }
 
 function errnoCode(error: unknown): string | undefined {
     return (error as NodeJS.ErrnoException | undefined)?.code;
+}
+
+/**
+ * Why a directory entry must not hold the registry, worded to follow its
+ * path; undefined when it may. Ownership is not checked on Windows, where
+ * the ACL of %TEMP% keeps other users out.
+ */
+function unfitReason(stats: fs.Stats, owner: RegistryOwner): string | undefined {
+    if (stats.isSymbolicLink()) {
+        return 'is a symbolic link';
+    }
+    if (!stats.isDirectory()) {
+        return 'is not a directory';
+    }
+    if (owner.platform !== 'win32' && owner.uid !== undefined && stats.uid !== owner.uid) {
+        return 'belongs to another user';
+    }
+    return undefined;
+}
+
+/** `lstat` of the path, or undefined when nothing is there. */
+function lstatIfPresent(target: string): fs.Stats | undefined {
+    try {
+        return fs.lstatSync(target);
+    } catch (error) {
+        if (errnoCode(error) === 'ENOENT') {
+            return undefined;
+        }
+        throw error;
+    }
+}
+
+/**
+ * Make `dir` ready for this user's registry, or say why it cannot be. A
+ * missing directory is created 0700. An existing one must be a directory,
+ * not a symbolic link, and on POSIX belong to this user; one that others may
+ * still enter (2.5.0 left it 0755) is narrowed to 0700.
+ * @returns undefined when the directory is fit, else the reason it is not.
+ */
+export function ensureRegistryDir(dir: string, owner: RegistryOwner): string | undefined {
+    if (lstatIfPresent(dir) === undefined) {
+        fs.mkdirSync(dir, { recursive: true, mode: DIRECTORY_MODE });
+    }
+    // Looked at again after the mkdir: whatever stands there now is what gets judged.
+    const stats = fs.lstatSync(dir);
+    const reason = unfitReason(stats, owner);
+    if (reason === undefined && owner.platform !== 'win32' && (stats.mode & GROUP_OTHER_BITS) !== 0) {
+        try {
+            fs.chmodSync(dir, DIRECTORY_MODE);
+        } catch (error) {
+            logger.warn(`Could not narrow ${dir} to mode 0700; the window files in it stay 0600`, error);
+        }
+    }
+    return reason;
 }
 
 /**
@@ -135,26 +257,28 @@ function liesWithin(target: string, folder: string): boolean {
 
 export class WorkspaceRegistry {
     private readonly ownFile: string;
-    /** What this window last published; the heartbeat rewrites it. */
+    private readonly owner: RegistryOwner;
+    private readonly onRefused: ((message: string) => void) | undefined;
+    /** What this window last asked to publish; the heartbeat rewrites it. */
     private published: WindowRegistration | undefined;
+    /** The refusal last reported, so a heartbeat does not repeat it every 20 s. */
+    private reportedRefusal: string | undefined;
 
     constructor(
         private readonly pid: number = process.pid,
         private readonly registryDir: string = defaultRegistryDir(),
         private readonly isAlive: LivenessCheck = isProcessAlive,
+        options: RegistryOptions = {},
     ) {
         this.ownFile = path.join(registryDir, `${FILE_PREFIX}${pid}${FILE_SUFFIX}`);
+        this.owner = { platform: options.platform ?? process.platform, uid: options.uid ?? process.getuid?.() };
+        this.onRefused = options.onRefused;
     }
 
     /** Publish (or republish) this window. Logs instead of throwing. */
-    register(reg: Omit<WindowRegistration, 'pid' | 'updatedAt'>): void {
-        const next: WindowRegistration = { ...reg, pid: this.pid, updatedAt: Date.now() };
-        try {
-            this.writeOwnFile(next);
-            this.published = next;
-        } catch (error) {
-            logger.error('Could not write this window into the CMSIS Developer Assistant window registry', error);
-        }
+    register(reg: Omit<WindowRegistration, 'pid' | 'updatedAt' | '_note'>): void {
+        this.published = { _note: ENTRY_NOTE, ...reg, pid: this.pid, updatedAt: Date.now() };
+        this.writeOwnFile(this.published, 'Could not write this window into the CMSIS Developer Assistant window registry');
     }
 
     /**
@@ -166,26 +290,28 @@ export class WorkspaceRegistry {
         if (!current) {
             return;
         }
-        try {
-            fs.mkdirSync(this.registryDir, { recursive: true });
-            current.updatedAt = Date.now();
-            writeFileAtomicSync(this.ownFile, JSON.stringify(current));
-        } catch (error) {
-            logger.error('Failed to refresh CMSIS Developer Assistant registry entry', error);
-        }
+        current.updatedAt = Date.now();
+        this.writeOwnFile(current, 'Failed to refresh CMSIS Developer Assistant registry entry');
     }
 
     /** Withdraw this window. Never throws. */
     unregister(): void {
         this.published = undefined;
-        discard(this.ownFile);
+        if (this.readRefusal() === undefined) {
+            discard(this.ownFile);
+        }
     }
 
     /**
      * Every live registration, in directory order, pruning dead, stale and
-     * broken files on the way.
+     * broken files on the way. A directory this user must not trust is not
+     * read at all: the window then sees only itself, so its own tool calls
+     * still run while the other windows stay out of reach.
      */
     list(): WindowRegistration[] {
+        if (this.readRefusal() !== undefined) {
+            return this.published ? [this.published] : [];
+        }
         let names: string[];
         try {
             names = fs.readdirSync(this.registryDir);
@@ -253,9 +379,46 @@ export class WorkspaceRegistry {
         return current !== undefined && current.controlPort === entry.controlPort;
     }
 
-    private writeOwnFile(entry: WindowRegistration): void {
-        fs.mkdirSync(this.registryDir, { recursive: true });
-        writeFileAtomicSync(this.ownFile, JSON.stringify(entry));
+    /** Write this window's file, 0600, into a directory fit for it; logs instead of throwing. */
+    private writeOwnFile(entry: WindowRegistration, failure: string): void {
+        try {
+            const refusal = ensureRegistryDir(this.registryDir, this.owner);
+            if (refusal !== undefined) {
+                this.refuse(refusal);
+                return;
+            }
+            this.reportedRefusal = undefined;
+            writeFileAtomicSync(this.ownFile, JSON.stringify(entry), { mode: FILE_MODE });
+        } catch (error) {
+            logger.error(failure, error);
+        }
+    }
+
+    /** Log a refused directory as an error and hand it to `onRefused`, once per distinct refusal. */
+    private refuse(reason: string): void {
+        const message = `Multi-window routing is off in this window: ${this.registryDir} ${reason}. `
+            + 'Remove it, or ask its owner to; the window registers again at its next refresh.';
+        if (message === this.reportedRefusal) {
+            return;
+        }
+        this.reportedRefusal = message;
+        logger.error(message);
+        try {
+            this.onRefused?.(message);
+        } catch (error) {
+            logger.warn('Could not show the registry warning', error);
+        }
+    }
+
+    /** Why the directory must not be read, or undefined when it may (a missing one included). */
+    private readRefusal(): string | undefined {
+        try {
+            const stats = lstatIfPresent(this.registryDir);
+            return stats === undefined ? undefined : unfitReason(stats, this.owner);
+        } catch {
+            // Not even lstat works here; the readdir that follows fails the same way and finds nothing.
+            return undefined;
+        }
     }
 
     /** One directory entry through the pruning rules: the registration, or undefined. */
