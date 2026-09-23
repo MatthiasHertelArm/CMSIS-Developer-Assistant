@@ -33,6 +33,9 @@
 //   9. CMSIS jobs (#47, #46, #12): cmsis_action status needs no solution and
 //      answers at once, and flash without a workspace explains itself without
 //      suggesting to install pyOCD.
+//  10. The tool contract (#50): the instructions start with the tool rules,
+//      the first get_session_status of a session repeats them in one line and
+//      the second does not, and tools/list keeps its size to the byte.
 
 const stub = require('./vscode-stub.js');
 
@@ -121,6 +124,8 @@ async function main() {
     const instructions = parseSse(init.body)?.result?.instructions ?? '';
     check('the default instructions point at the documentation setting instead of leaving agents to ask for PDFs',
         /packDocs\.enabled/.test(instructions) && /rather than asking the user for a document/.test(instructions));
+    check('the instructions start with the tool rules', instructions.startsWith('## CMSIS Developer Assistant tool rules\n'),
+        instructions.split('\n')[0]);
     check('POST initialize mints an mcp-session-id', typeof sid === 'string' && sid.length > 0, `sid=${sid}`);
 
     await request(port, 'POST', { 'mcp-session-id': sid }, {
@@ -159,6 +164,9 @@ async function main() {
     const DESCRIPTION_CAP_CHARS = 700;
     const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
     check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
+    // The tool contract (#50) rides in the instructions and the first
+    // get_session_status, never in a tool description; the check after the
+    // reminder below compares the list before and after it.
     const longest = tools.map((t) => ({ name: t.name, len: (t.description ?? '').length })).sort((a, b) => b.len - a.len)[0];
     check(`no tool description exceeds ${DESCRIPTION_CAP_CHARS} chars`, longest.len <= DESCRIPTION_CAP_CHARS, `${longest.name} ${longest.len}`);
     const serialCount = names.filter((n) => n.startsWith('serial_')).length;
@@ -186,8 +194,10 @@ async function main() {
         jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_debug_instructions', arguments: {} },
     });
     const overviewText = parseSse(overviewCall.body)?.result?.content?.[0]?.text ?? '';
-    check('get_debug_instructions defaults to the overview with the topic list',
-        /## Topics/.test(overviewText) && overviewText.length < 3500 && overviewText.length < topicText.length * 2,
+    // The overview leads with the tool rules (#50, under 1 600 bytes) before its own 3 500.
+    check('get_debug_instructions defaults to the overview with the topic list, the tool rules first',
+        /## Topics/.test(overviewText) && overviewText.length < 5100 && overviewText.length < topicText.length * 2
+            && /^# .*\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n/.test(overviewText),
         `${overviewText.length} chars`);
 
     // 4c. The SVD lookups need no session; with no workspace (this stub) they
@@ -321,6 +331,22 @@ async function main() {
     const statusResult = parseSse(status.body)?.result ?? {};
     check('get_session_status is not an error result', statusResult.isError !== true && statusResult.structuredContent === undefined,
         JSON.stringify({ isError: statusResult.isError, structuredContent: statusResult.structuredContent }));
+
+    // 6b. The tool rules come back once per session, in the first status only (#50).
+    const REMINDER = 'Tool rules: board, build, serial and documentation work goes through these tools, not the shell '
+        + '(see the server instructions).';
+    check('the first get_session_status of the session repeats the tool rules before its stats',
+        statusText.includes(`\n\n${REMINDER}\n\nTool stats (this session):`), statusText.split('\n').slice(-4).join(' | '));
+    const again = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
+    });
+    const againText = parseSse(again.body)?.result?.content?.[0]?.text ?? '';
+    check('the second get_session_status does not repeat them', /^State: /.test(againText) && !againText.includes('Tool rules:'),
+        againText.split('\n').slice(-3).join(' | '));
+    const relist = await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 25, method: 'tools/list', params: {} });
+    const relistTools = parseSse(relist.body)?.result?.tools ?? [];
+    check('tools/list is byte-identical after the reminder was given', JSON.stringify(relistTools) === JSON.stringify(tools),
+        `${Buffer.byteLength(JSON.stringify(relistTools))} bytes`);
 
     // 6a. Typed failures (#11): without a session a read and a step are error
     //     results with the NO_SESSION code, the code in front of the text and

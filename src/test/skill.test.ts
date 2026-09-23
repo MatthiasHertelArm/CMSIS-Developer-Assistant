@@ -17,6 +17,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { registeredTools } from './registeredTools';
 
 /**
  * The bundled Agent Skill names every tool it is allowed to call. That list is
@@ -32,19 +33,6 @@ suite('Bundled agent skill', () => {
     const skillMd = path.join(skillDir, 'SKILL.md');
 
     const readSkill = () => fs.readFileSync(skillMd, 'utf8');
-
-    /**
-     * Tool names the MCP server actually registers: the core surface in
-     * debugMCPServer.ts plus the gated documentation / build-artefact groups
-     * registered from their own files.
-     */
-    const registeredTools = (): string[] => {
-        const files = ['debugMCPServer.ts', 'debugTools.ts', 'packDocsTools.ts', 'buildInfoTools.ts'];
-        return files.flatMap((file) => {
-            const source = fs.readFileSync(path.join(repoRoot, 'src', file), 'utf8');
-            return [...source.matchAll(/registerTool\('([a-z0-9_]+)'/g)].map(m => m[1]);
-        });
-    };
 
     /** The `allowed-tools:` block of the YAML frontmatter. */
     const allowedTools = (): string[] => {
@@ -72,7 +60,7 @@ suite('Bundled agent skill', () => {
     });
 
     test('every allowed tool is one the server registers', () => {
-        const registered = new Set(registeredTools());
+        const registered = new Set(registeredTools(repoRoot));
         const unknown = allowedTools().filter(t => !registered.has(t));
         assert.deepStrictEqual(unknown, [],
             'the skill names tools that do not exist — agents will call them and fail');
@@ -80,7 +68,7 @@ suite('Bundled agent skill', () => {
 
     test('every registered tool is offered to the skill', () => {
         const allowed = new Set(allowedTools());
-        const missing = registeredTools().filter(t => !allowed.has(t));
+        const missing = registeredTools(repoRoot).filter(t => !allowed.has(t));
         assert.deepStrictEqual(missing, [],
             'a tool was added without being made available to the skill');
     });

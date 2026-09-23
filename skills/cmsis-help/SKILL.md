@@ -5,6 +5,24 @@ description: "List what the CMSIS Developer Assistant offers and which part fits
 
 # CMSIS Developer Assistant — what you can ask for
 
+<!-- cmsis-developer-assistant:rules:begin -->
+## CMSIS Developer Assistant tool rules
+
+Only the user can lift a rule, by asking for the specific command.
+
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Serial I/O only through the `serial_*` tools, not `screen`, `cat /dev/tty*` or a serial script.
+- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
+- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- A running target rejects reads and steps: call `pause_execution` first.
+- If a tool fails twice, call `get_session_status`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+<!-- cmsis-developer-assistant:rules:end -->
+
+## How to use this list
+
 Answer the user from the lists below: which CMSIS slash commands, VS Code commands,
 MCP tools and settings exist, and which one fits the task at hand. This skill does no
 work of its own and runs no tools — it points at the skill or tool that does. A
@@ -92,6 +110,26 @@ For the debugging workflow call `get_debug_instructions` (or read the
 invoke `/cmsis-debug-live` first. The *Agent Tools* section of the extension README lists
 every tool and parameter.
 
+<!-- cmsis-developer-assistant:shell-to-tool:begin -->
+## Shell commands and the tools that replace them
+
+| Instead of | Use |
+|---|---|
+| `pyocd load`, `pyocd flash` | `flash`, or `cmsis_action load` |
+| `pyocd reset`, `monitor reset` | `reset`, which verifies that the target did reset |
+| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`, or `cmsis_action attach` for firmware started with `cmsis_action load_and_run` |
+| `pyocd commander`, `gdb -ex "x/…"` | `read_memory`, `read_core_registers`, `evaluate_expression` |
+| `pyocd list`, `JLinkExe` to check the probe | `check_target_connection`, `get_session_status` |
+| `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |
+| `cbuild …` | `cmsis_action build` |
+| `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
+| `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
+| a grep over the build log | `get_build_diagnostics` |
+| `screen /dev/tty…`, `cat /dev/tty…`, a pyserial script | `serial_open`, `serial_read`, `serial_write`; `serial_subscribe_monitor` while the Serial Monitor holds the port |
+| `curl localhost:<port>` with the registry token | `list_debug_windows`, `select_debug_window` |
+| reading a PDF, a web search for a register | `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs`, `lookup_register` |
+<!-- cmsis-developer-assistant:shell-to-tool:end -->
+
 ## Settings
 
 VS Code settings under `cmsis-developer-assistant.*` (Settings → Extensions → CMSIS Developer Assistant):
@@ -101,8 +139,9 @@ VS Code settings under `cmsis-developer-assistant.*` (Settings → Extensions �
 | `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills (entry points or individual skills) to install. As a User setting they go into your personal skills directories (every workspace), as a Workspace or Folder setting into that project's `.agents/skills` only; `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally. |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept. |
 | `cmsis-developer-assistant.aiSkills.promptOnDetect` | `true` | Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected. |
-| `cmsis-developer-assistant.packDocs.enabled` | `false` | Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; needs pdftotext (poppler); window reload. |
+| `cmsis-developer-assistant.packDocs.enabled` | `false` | Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; PDFs are indexed with the bundled pdf.js, nothing to install; window reload. |
 | `cmsis-developer-assistant.buildInfo.enabled` | `false` | Experimental. Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. Off by default; window reload. |
 
-_Generated by `npm run skills:sync` from skills/catalog.json, package.json and
-scripts/skills.config.json; edit those, not this file._
+*Generated by `npm run skills:sync` from skills/catalog.json, package.json,
+scripts/skills.config.json and docs/agent-resources/tool-contract.md; edit those, not
+this file.*

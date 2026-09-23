@@ -18,14 +18,20 @@
 
 /**
  * Vendor the Agent Skills of Open-CMSIS-Pack/cmsis-skills into `skills/` and
- * regenerate `skills/catalog.json` plus the per-category router skills.
+ * regenerate `skills/catalog.json`, the per-category router skills and the
+ * cmsis-help skill, and copy the tool contract
+ * (docs/agent-resources/tool-contract.md) into the files that carry it.
  *
- *   npm run skills:sync              # re-vendor at the SHA pinned in skills/cmsis-skills.lock.json
- *   npm run skills:sync -- --update  # resolve the lock's `ref` (main) to its current SHA first
+ *   npm run skills:sync               # re-vendor at the SHA pinned in skills/cmsis-skills.lock.json
+ *   npm run skills:sync -- --update   # resolve the lock's `ref` (main) to its current SHA first
+ *   npm run skills:sync -- --offline  # no fetch: regenerate from the vendored skills and the committed catalog
  *
  * Upstream publishes no tags or releases, so the pin is a commit SHA. The
  * fetch is a shallow git fetch of that one commit — no extra dependencies,
- * and CI never runs this; the vendored result is committed.
+ * and CI never runs this; the vendored result is committed. `--offline`
+ * leaves `skills/cmsis-skills/` and the lock alone and needs no network: it is
+ * the way to apply an edit of scripts/skills.config.json, package.json or the
+ * tool contract.
  *
  * Idempotent: running twice at the same SHA produces no diff (nothing
  * timestamped lands in generated files except the lock's `fetchedAt`, which
@@ -38,6 +44,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
+import { CONTRACT_COPIES, TOOL_CONTRACT_DOC, ToolContract, applyToolContract, parseToolContract } from '../src/core/toolContract.js';
 import {
     SKILL_CATEGORY_ORDER,
     SkillCatalog,
@@ -92,6 +99,13 @@ interface UpstreamSkill {
     markdown: string;
 }
 
+/** What a router lists of a member skill: a fetched upstream skill or its catalog entry. */
+interface RouterMember {
+    name: string;
+    description: string;
+    shortDescription?: string;
+}
+
 const MAX_DESCRIPTION_LENGTH = 1024;
 const SETTING_ID = 'cmsis-developer-assistant.installedSkills';
 const COMMAND_TITLE = 'CMSIS Developer Assistant: Select Agent Skills';
@@ -105,6 +119,7 @@ const catalogPath = path.join(skillsDir, 'catalog.json');
 const configPath = path.join(scriptDir, 'skills.config.json');
 
 const update = process.argv.includes('--update');
+const offline = process.argv.includes('--offline');
 
 function git(args: string[], cwd: string): string {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
@@ -196,7 +211,7 @@ function collectUpstreamSkills(sourceRoot: string): UpstreamSkill[] {
     return skills.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-function routerMarkdown(category: CategoryConfig, members: UpstreamSkill[], allDescriptions: Map<string, string>): string {
+function routerMarkdown(category: CategoryConfig, members: RouterMember[], allDescriptions: Map<string, string>): string {
     const rows = members.map(member => {
         const what = member.shortDescription ?? firstSentence(member.description);
         return `| ${what.replace(/\|/g, '\\|')} | \`$${member.name}\` |`;
@@ -266,9 +281,193 @@ function firstSentence(text: string): string {
     return (match ? match[1] : text).trim();
 }
 
-function main(): void {
+/** The config checks that do not depend on where the upstream skills come from. */
+function validateConfig(config: SkillsConfig): void {
+    for (const category of config.categories) {
+        if (category.description.length > MAX_DESCRIPTION_LENGTH) {
+            fail(`router ${category.router} description is ${category.description.length} chars; the Agent Skills limit is ${MAX_DESCRIPTION_LENGTH}`);
+        }
+    }
+    if (config.help.description.length > MAX_DESCRIPTION_LENGTH) {
+        fail(`${HELP_SKILL_NAME} description is ${config.help.description.length} chars; the Agent Skills limit is ${MAX_DESCRIPTION_LENGTH}`);
+    }
+    if (!config.bundled.some(bundled => bundled.name === HELP_SKILL_NAME && bundled.generated)) {
+        fail(`scripts/skills.config.json must list ${HELP_SKILL_NAME} under "bundled" with "generated": true`);
+    }
+}
+
+/** Names of the bundled and router skills, which no upstream skill may take. */
+function reservedNames(config: SkillsConfig): Set<string> {
+    return new Set<string>([
+        ...config.bundled.map(b => b.name),
+        ...config.categories.map(c => c.router),
+    ]);
+}
+
+/** Install directories are flat: upstream names must be unique and must not collide with ours. */
+function validateUpstreamNames(names: readonly string[], reserved: ReadonlySet<string>): void {
+    const seen = new Set<string>();
+    for (const name of names) {
+        if (seen.has(name)) {
+            fail(`duplicate upstream skill name "${name}" — install directories are flat`);
+        }
+        if (reserved.has(name)) {
+            fail(`upstream skill "${name}" collides with a bundled or router skill name`);
+        }
+        seen.add(name);
+    }
+}
+
+function readToolContract(): ToolContract {
+    const file = path.join(repoRoot, 'docs', TOOL_CONTRACT_DOC);
+    try {
+        return parseToolContract(fs.readFileSync(file, 'utf8'));
+    } catch (problem) {
+        fail(`${path.relative(repoRoot, file)}: ${problem instanceof Error ? problem.message : String(problem)}`);
+    }
+}
+
+/**
+ * Everything generated from the upstream entries, the config, package.json
+ * and the tool contract: the routers, the catalog, the cmsis-help skill and
+ * the contract blocks. The same for a fresh fetch and for `--offline`.
+ */
+function writeGenerated(
+    config: SkillsConfig,
+    source: SkillCatalog['source'],
+    upstreamEntries: SkillCatalogEntry[],
+    contract: ToolContract,
+): void {
+    // --- routers ------------------------------------------------------------
+    // A router comes from a `categories` entry of the config; a category with
+    // skills but no entry gets none, and the catalog test then asks for one.
+    const configured = new Set(config.categories.map(category => category.id));
+    for (const category of SKILL_CATEGORY_ORDER) {
+        const count = upstreamEntries.filter(entry => entry.category === category).length;
+        if (count > 0 && !configured.has(category)) {
+            console.warn(`  category ${category} has ${count} upstream skill(s) but no router in scripts/skills.config.json; add one`);
+        }
+    }
+    const allDescriptions = new Map(upstreamEntries.map(entry => [entry.name, entry.description]));
+    const routerEntries: SkillCatalogEntry[] = [];
+    for (const category of config.categories) {
+        const members = upstreamEntries.filter(entry => entry.category === category.id);
+        const routerDir = path.join(skillsDir, category.router);
+        if (members.length === 0) {
+            fs.rmSync(routerDir, { recursive: true, force: true });
+            console.warn(`  category ${category.id} has no upstream skills; router ${category.router} not generated`);
+            continue;
+        }
+        fs.rmSync(routerDir, { recursive: true, force: true });
+        fs.mkdirSync(path.join(routerDir, 'agents'), { recursive: true });
+        fs.writeFileSync(path.join(routerDir, 'SKILL.md'), routerMarkdown(category, members, allDescriptions), 'utf8');
+        fs.writeFileSync(path.join(routerDir, 'agents', 'openai.yaml'), routerOpenAiYaml(category), 'utf8');
+        routerEntries.push({
+            name: category.router,
+            description: category.description,
+            category: category.id,
+            kind: 'router',
+            source: 'generated',
+            path: `skills/${category.router}`,
+            displayName: category.displayName,
+            shortDescription: category.shortDescription,
+            dependsOn: members.map(member => member.name),
+        });
+    }
+
+    // --- bundled -----------------------------------------------------------
+    const bundledEntries: SkillCatalogEntry[] = config.bundled.map(bundled => {
+        if (bundled.generated) {
+            // Written below from the finished catalog; its description is the config's.
+            return helpCatalogEntry(config.help);
+        }
+        const skillFile = path.join(skillsDir, bundled.name, 'SKILL.md');
+        const frontmatter = parseSkillFrontmatter(fs.readFileSync(skillFile, 'utf8'));
+        if (!frontmatter || frontmatter.name !== bundled.name) {
+            fail(`bundled skill ${bundled.name} has no valid frontmatter`);
+        }
+        return {
+            name: bundled.name,
+            description: frontmatter.description,
+            category: bundled.category,
+            kind: 'skill',
+            source: 'bundled',
+            path: `skills/${bundled.name}`,
+            dependsOn: [],
+        };
+    });
+
+    // --- catalog -----------------------------------------------------------
+    const all = [...routerEntries, ...bundledEntries, ...upstreamEntries];
+    all.sort((a, b) => {
+        const categoryDelta = SKILL_CATEGORY_ORDER.indexOf(a.category) - SKILL_CATEGORY_ORDER.indexOf(b.category);
+        if (categoryDelta !== 0) {
+            return categoryDelta;
+        }
+        if (a.kind !== b.kind) {
+            return a.kind === 'router' ? -1 : 1;
+        }
+        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+    });
+
+    const catalog: SkillCatalog = { schemaVersion: 1, source, skills: all };
+
+    // --- help skill ----------------------------------------------------------
+    // Rendered from the finished catalog plus package.json, so the list of
+    // slash commands, VS Code commands and settings cannot drift from what
+    // ships; src/test/skillCatalog.test.ts re-renders it and compares.
+    const helpDir = path.join(skillsDir, HELP_SKILL_NAME);
+    const contributions = readPackageContributions(readJson<unknown>(path.join(repoRoot, 'package.json')));
+    fs.rmSync(helpDir, { recursive: true, force: true });
+    fs.mkdirSync(path.join(helpDir, 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(helpDir, 'SKILL.md'), renderHelpSkillMarkdown(catalog, contributions, config.help, contract), 'utf8');
+    fs.writeFileSync(path.join(helpDir, 'agents', 'openai.yaml'), renderHelpOpenAiYaml(config.help), 'utf8');
+
+    writeJson(catalogPath, catalog);
+
+    // --- tool contract -------------------------------------------------------
+    // The blocks between the markers are replaced; the rest of each file is
+    // hand-written and stays as it is. src/test/toolContract.test.ts compares.
+    for (const copy of CONTRACT_COPIES) {
+        const file = path.join(repoRoot, copy.file);
+        const before = fs.readFileSync(file, 'utf8');
+        let after: string;
+        try {
+            after = applyToolContract(before, copy, contract);
+        } catch (problem) {
+            fail(problem instanceof Error ? problem.message : String(problem));
+        }
+        if (after !== before) {
+            fs.writeFileSync(file, after, 'utf8');
+            console.log(`Tool contract written into ${copy.file}`);
+        }
+    }
+
+    console.log(`Catalog: ${routerEntries.length} routers, ${bundledEntries.length} bundled (incl. ${HELP_SKILL_NAME}), ${upstreamEntries.length} upstream skills`);
+}
+
+/** `--offline`: the upstream skills as the committed catalog lists them; nothing is fetched, vendored or locked. */
+function syncOffline(config: SkillsConfig, contract: ToolContract): void {
+    if (update) {
+        fail('--offline cannot move the pin; run --update on its own');
+    }
+    const catalog = readJson<SkillCatalog>(catalogPath);
+    const upstreamEntries = catalog.skills.filter(entry => entry.source === 'cmsis-skills');
+    if (upstreamEntries.length === 0) {
+        fail('skills/catalog.json lists no upstream skills; run without --offline once');
+    }
+    validateUpstreamNames(upstreamEntries.map(entry => entry.name), reservedNames(config));
+    for (const entry of upstreamEntries) {
+        if (!fs.existsSync(path.join(repoRoot, entry.path, 'SKILL.md'))) {
+            fail(`${entry.path}/SKILL.md is missing; the vendored skills and the catalog disagree — run without --offline`);
+        }
+    }
+    writeGenerated(config, catalog.source, upstreamEntries, contract);
+    console.log(`Offline: nothing fetched; skills/cmsis-skills and the lock (sha ${catalog.source.sha.slice(0, 12)}) are unchanged`);
+}
+
+function syncFromUpstream(config: SkillsConfig, contract: ToolContract): void {
     const lock = readJson<SkillLock>(lockPath);
-    const config = readJson<SkillsConfig>(configPath);
 
     let sha = lock.sha;
     if (update || !sha) {
@@ -292,31 +491,8 @@ function main(): void {
         }
 
         // --- validate names ---------------------------------------------------
-        const reserved = new Set<string>([
-            ...config.bundled.map(b => b.name),
-            ...config.categories.map(c => c.router),
-        ]);
-        const seen = new Set<string>();
-        for (const skill of upstream) {
-            if (seen.has(skill.name)) {
-                fail(`duplicate upstream skill name "${skill.name}" — install directories are flat`);
-            }
-            if (reserved.has(skill.name)) {
-                fail(`upstream skill "${skill.name}" collides with a bundled or router skill name`);
-            }
-            seen.add(skill.name);
-        }
-        for (const category of config.categories) {
-            if (category.description.length > MAX_DESCRIPTION_LENGTH) {
-                fail(`router ${category.router} description is ${category.description.length} chars; the Agent Skills limit is ${MAX_DESCRIPTION_LENGTH}`);
-            }
-        }
-        if (config.help.description.length > MAX_DESCRIPTION_LENGTH) {
-            fail(`${HELP_SKILL_NAME} description is ${config.help.description.length} chars; the Agent Skills limit is ${MAX_DESCRIPTION_LENGTH}`);
-        }
-        if (!config.bundled.some(bundled => bundled.name === HELP_SKILL_NAME && bundled.generated)) {
-            fail(`scripts/skills.config.json must list ${HELP_SKILL_NAME} under "bundled" with "generated": true`);
-        }
+        const reserved = reservedNames(config);
+        validateUpstreamNames(upstream.map(skill => skill.name), reserved);
 
         // --- vendor --------------------------------------------------------------
         fs.rmSync(vendorDir, { recursive: true, force: true });
@@ -333,7 +509,7 @@ function main(): void {
         console.log(`Vendored ${upstream.length} skills into ${path.relative(repoRoot, vendorDir)}`);
 
         // --- references -------------------------------------------------------
-        const knownNames = new Set<string>([...seen, ...reserved]);
+        const knownNames = new Set<string>([...upstream.map(skill => skill.name), ...reserved]);
         const dependsOn = new Map<string, string[]>();
         const unresolved = new Map<string, string[]>();
         for (const skill of upstream) {
@@ -351,66 +527,6 @@ function main(): void {
             fail('unresolved $skill references — upstream renamed or removed a skill; check the lines above');
         }
 
-        // --- routers ------------------------------------------------------------
-        // A router comes from a `categories` entry of the config; a category with
-        // skills but no entry gets none, and the catalog test then asks for one.
-        const configured = new Set(config.categories.map(category => category.id));
-        for (const category of SKILL_CATEGORY_ORDER) {
-            const count = upstream.filter(skill => skill.category === category).length;
-            if (count > 0 && !configured.has(category)) {
-                console.warn(`  category ${category} has ${count} upstream skill(s) but no router in scripts/skills.config.json; add one`);
-            }
-        }
-        const allDescriptions = new Map(upstream.map(skill => [skill.name, skill.description]));
-        const routerEntries: SkillCatalogEntry[] = [];
-        for (const category of config.categories) {
-            const members = upstream.filter(skill => skill.category === category.id);
-            const routerDir = path.join(skillsDir, category.router);
-            if (members.length === 0) {
-                fs.rmSync(routerDir, { recursive: true, force: true });
-                console.warn(`  category ${category.id} has no upstream skills; router ${category.router} not generated`);
-                continue;
-            }
-            fs.rmSync(routerDir, { recursive: true, force: true });
-            fs.mkdirSync(path.join(routerDir, 'agents'), { recursive: true });
-            fs.writeFileSync(path.join(routerDir, 'SKILL.md'), routerMarkdown(category, members, allDescriptions), 'utf8');
-            fs.writeFileSync(path.join(routerDir, 'agents', 'openai.yaml'), routerOpenAiYaml(category), 'utf8');
-            routerEntries.push({
-                name: category.router,
-                description: category.description,
-                category: category.id,
-                kind: 'router',
-                source: 'generated',
-                path: `skills/${category.router}`,
-                displayName: category.displayName,
-                shortDescription: category.shortDescription,
-                dependsOn: members.map(member => member.name),
-            });
-        }
-
-        // --- bundled -----------------------------------------------------------
-        const bundledEntries: SkillCatalogEntry[] = config.bundled.map(bundled => {
-            if (bundled.generated) {
-                // Written below from the finished catalog; its description is the config's.
-                return helpCatalogEntry(config.help);
-            }
-            const skillFile = path.join(skillsDir, bundled.name, 'SKILL.md');
-            const frontmatter = parseSkillFrontmatter(fs.readFileSync(skillFile, 'utf8'));
-            if (!frontmatter || frontmatter.name !== bundled.name) {
-                fail(`bundled skill ${bundled.name} has no valid frontmatter`);
-            }
-            return {
-                name: bundled.name,
-                description: frontmatter.description,
-                category: bundled.category,
-                kind: 'skill',
-                source: 'bundled',
-                path: `skills/${bundled.name}`,
-                dependsOn: [],
-            };
-        });
-
-        // --- catalog -----------------------------------------------------------
         const upstreamEntries: SkillCatalogEntry[] = upstream.map(skill => ({
             name: skill.name,
             description: skill.description,
@@ -423,36 +539,7 @@ function main(): void {
             dependsOn: dependsOn.get(skill.name) ?? [],
         }));
 
-        const all = [...routerEntries, ...bundledEntries, ...upstreamEntries];
-        all.sort((a, b) => {
-            const categoryDelta = SKILL_CATEGORY_ORDER.indexOf(a.category) - SKILL_CATEGORY_ORDER.indexOf(b.category);
-            if (categoryDelta !== 0) {
-                return categoryDelta;
-            }
-            if (a.kind !== b.kind) {
-                return a.kind === 'router' ? -1 : 1;
-            }
-            return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-        });
-
-        const catalog: SkillCatalog = {
-            schemaVersion: 1,
-            source: { repository: lock.repository, sha, sourcePath: lock.sourcePath },
-            skills: all,
-        };
-
-        // --- help skill ----------------------------------------------------------
-        // Rendered from the finished catalog plus package.json, so the list of
-        // slash commands, VS Code commands and settings cannot drift from what
-        // ships; src/test/skillCatalog.test.ts re-renders it and compares.
-        const helpDir = path.join(skillsDir, HELP_SKILL_NAME);
-        const contributions = readPackageContributions(readJson<unknown>(path.join(repoRoot, 'package.json')));
-        fs.rmSync(helpDir, { recursive: true, force: true });
-        fs.mkdirSync(path.join(helpDir, 'agents'), { recursive: true });
-        fs.writeFileSync(path.join(helpDir, 'SKILL.md'), renderHelpSkillMarkdown(catalog, contributions, config.help), 'utf8');
-        fs.writeFileSync(path.join(helpDir, 'agents', 'openai.yaml'), renderHelpOpenAiYaml(config.help), 'utf8');
-
-        writeJson(catalogPath, catalog);
+        writeGenerated(config, { repository: lock.repository, sha, sourcePath: lock.sourcePath }, upstreamEntries, contract);
 
         // --- lock ---------------------------------------------------------------
         const contentHash = hashTree(vendorDir);
@@ -466,10 +553,20 @@ function main(): void {
         };
         writeJson(lockPath, newLock);
 
-        console.log(`Catalog: ${routerEntries.length} routers, ${bundledEntries.length} bundled (incl. ${HELP_SKILL_NAME}), ${upstreamEntries.length} upstream skills`);
         console.log(`Lock: sha ${sha.slice(0, 12)}, contentHash ${contentHash.slice(0, 12)}`);
     } finally {
         fs.rmSync(scratch, { recursive: true, force: true });
+    }
+}
+
+function main(): void {
+    const config = readJson<SkillsConfig>(configPath);
+    validateConfig(config);
+    const contract = readToolContract();
+    if (offline) {
+        syncOffline(config, contract);
+    } else {
+        syncFromUpstream(config, contract);
     }
 }
 

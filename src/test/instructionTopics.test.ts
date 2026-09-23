@@ -18,6 +18,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { TOPICS, listTopics, parseTopics, sliceTopic } from '../core/instructionTopics';
+import { RULES_BLOCK } from '../core/toolContract';
+import { removeBlock } from '../utils/markerBlock';
 
 /**
  * get_debug_instructions serves the guide by topic so a Copilot-Chat-style
@@ -102,7 +104,9 @@ suite('Instruction topics', () => {
 
         test('the overview stays small and keeps the debugger-first rule', () => {
             const overview = sliceTopic(doc);
-            assert.ok(Buffer.byteLength(overview) <= 3200, `overview is ${Buffer.byteLength(overview)} bytes`);
+            // The tool rules lead the overview; toolContract.test.ts holds them under 1 600 bytes.
+            const ownText = removeBlock(overview, RULES_BLOCK);
+            assert.ok(Buffer.byteLength(ownText) <= 3200, `overview without the tool rules is ${Buffer.byteLength(ownText)} bytes`);
             assert.match(overview, /^## .*DEBUGGER FIRST/m);
             assert.match(overview, /printf/);
             assert.ok(Buffer.byteLength(overview) < Buffer.byteLength(doc) / 4, 'overview must be a fraction of the guide');

@@ -14,8 +14,8 @@ The session-status output includes a hint for each state. If state is `running` 
 
 ### Debug Session Won't Start
 
-- Verify the GDB server (pyOCD or J-Link) is installed and on PATH
-- Check that the debug probe is connected and detected (`pyocd list` or `JLinkExe`)
+- The GDB server comes from the CMSIS Debugger extension; `cmsis_action load_and_debug` starts it.
+- Check the probe with `check_target_connection` (or `get_session_status`); do not run `pyocd list` or `JLinkExe` yourself.
 - Ensure the correct device is selected in the launch configuration
 - Check if another debug session is already using the probe — if so, `cmsis_action load_and_debug` will refuse with a structured message naming the existing session
 - For CMSIS projects: `launch.json` should have a `gdbtarget` entry produced by the **Manage Solution → Debugger** dialog. If missing, ask the user to (re)generate it there.

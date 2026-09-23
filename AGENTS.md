@@ -49,7 +49,7 @@ simply forwards to itself.
 
 | Component | Code | Job | Design notes |
 | --------- | ---- | --- | ------------ |
-| `DebugMCPServer` | `src/debugMCPServer.ts`, `src/debugTools.ts` | The loopback MCP endpoint: sessions, transport, measurement; the instructions, tools and resources each session offers | [docs/architecture/debugMCPServer.md](docs/architecture/debugMCPServer.md) |
+| `DebugMCPServer` | `src/debugMCPServer.ts`, `src/debugTools.ts`, `src/core/serverInstructions.ts` | The loopback MCP endpoint: sessions, transport, measurement; the instructions (tool rules first), tools and resources each session offers | [docs/architecture/debugMCPServer.md](docs/architecture/debugMCPServer.md) |
 | `DebuggingHandler` | `src/debuggingHandler.ts`, `src/handler/` | One `handle*` method per debugging tool: state gates, waits for the stop, the texts agents read, `cmsis_action`, `flash` | [docs/architecture/debuggingHandler.md](docs/architecture/debuggingHandler.md) |
 | `DebuggingExecutor` | `src/debuggingExecutor.ts`, `src/executor/` | The one caller of VS Code's debug API and of DAP requests, each under a deadline | [docs/architecture/debuggingExecutor.md](docs/architecture/debuggingExecutor.md) |
 | `DebugState` | `src/debugState.ts` | Value object for location, stack and breakpoints, rendered in a full and a compact form | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
@@ -94,7 +94,8 @@ metrics, topic slicing of the agent guide), where most modules do not import
 | `npm run test:transport` | Compile, then `test/transport/session-lifecycle.js` and `test/transport/two-window-routing.js` over real sockets |
 | `npm run test:surface` | Compile, then compare everything an agent can see without hardware — the initialize result, `tools/list`, the resources and each tool's reply without a session — with `test/transport/surface.snapshot.json`. Pass `-- --update` only for an intended change. The snapshot depends on the host, so this is a local check, not a CI job |
 | `npm run provenance:check` | Per file, the lines shared with microsoft/DebugMCP (clones it once, so it needs network the first time). With `-- --gate` it fails when a gated file — any path DebugMCP ever had, or any file added since the rewrite began, unless it still carries the Microsoft line or is on the script's exemption list — contains more than five lines found anywhere in DebugMCP's history. `-- --lines <file>` prints DebugMCP text; do not use it while writing independent code |
-| `npm run skills:sync` | Vendor the cmsis-skills skills again at the pinned commit and regenerate `skills/catalog.json`, the router skills and `skills/cmsis-help`; `-- --update` moves the pin to upstream `main` |
+| `npm run skills:sync` | Vendor the cmsis-skills skills again at the pinned commit and regenerate `skills/catalog.json`, the router skills, `skills/cmsis-help` and the tool-contract blocks; `-- --update` moves the pin to upstream `main` |
+| `npm run skills:sync -- --offline` | The same regeneration without a fetch: from the vendored skills and the committed catalog, lock untouched. Run it after editing `scripts/skills.config.json`, the commands or settings in `package.json`, or `docs/agent-resources/tool-contract.md` |
 
 Behaviour oracles, run with `node` after `npm run compile`:
 `test/transport/dap-scenarios.js` (tool replies and adapter traffic over
@@ -139,6 +140,20 @@ The MCP server offers these resources (`registerResources()` in
 | `cmsis-developer-assistant://docs/troubleshooting/embedded` | `docs/agent-resources/troubleshooting/embedded.md` | Embedded troubleshooting tips |
 | `cmsis-developer-assistant://docs/troubleshooting/<lang>` | `docs/agent-resources/troubleshooting/<lang>.md` | Tips per language, for `python` and `cpp` (C and C++) |
 | `cmsis-developer-assistant://stats` | — | Tool-call statistics of the session and the server, JSON |
+
+`docs/agent-resources/tool-contract.md` is not a resource of its own. It
+holds the tool rules (#50), which keep agents on the MCP tools instead of
+pyOCD, GDB, cbuild or a serial terminal in the shell, and a table of shell
+commands with the tools that replace them. The server starts its
+`instructions` with the rules, and the first `get_session_status` of a session
+repeats them in one line. `npm run skills:sync -- --offline` copies both
+blocks between `<!-- cmsis-developer-assistant:<block>:begin -->` and `…:end -->`
+markers into the bundled skills, `cmsis-help` and `debug_instructions.md`
+(`src/core/toolContract.ts`). Edit the contract, never a copy;
+`src/test/toolContract.test.ts` compares them and holds the rules to ten lines
+and 1 600 bytes. Tool descriptions never repeat the contract: `tools/list`
+rides along on every turn, and `test/transport/session-lifecycle.js` pins its
+size.
 
 `debug_instructions.md` is split into topics by
 `<!-- topic: name | blurb -->` … `<!-- /topic -->` comments, which

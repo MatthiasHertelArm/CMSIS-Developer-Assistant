@@ -120,18 +120,43 @@ session and registers its tools and resources.
 ### Identity and instructions
 
 The server reports the name `cmsis-developer-assistant` and the version
-`SERVER_VERSION` from `src/debuggingExecutor.ts`. `composeInstructions()`
-assembles the `instructions` of the initialize result from fixed sentences:
-what the tools are for, to invoke the `cmsis-debug-live` Agent Skill first and
-what it brings, `get_debug_instructions` for harnesses that load no skills,
-the 60 s cap on `timeoutMs` (600 s for `cmsis_action` and `flash`), how to read a result (`isError` and the
-`[CODE]` prefix; `timeout` and `running` are not failures), and one sentence
-each for the documentation and build-artefact groups. The sentence on
-results lives here rather than in the tool descriptions, so `tools/list`,
-which the client sends along every turn, does not grow. While the
-documentation group is off, its sentence points to the setting instead; the
-build-artefact sentence appears only while that group is on.
-`src/test/debugSkillGuidance.test.ts` pins the phrases agents rely on.
+`SERVER_VERSION` from `src/debuggingExecutor.ts`. The `instructions` of the
+initialize result come from `buildServerInstructions()` in
+`src/core/serverInstructions.ts`, and they start with the tool rules (#50):
+the rules block of `docs/agent-resources/tool-contract.md`, which keeps agents
+from running pyOCD, GDB, cbuild or a serial terminal in the shell and tells
+them what to do when a tool fails. Many clients keep the instructions in the
+system prompt for the whole session, and a client that shortens them keeps
+the beginning, so the rules lead. `DebugMCPServer` reads them once, when it
+is built (`loadToolRules()` through `ShippedDocs.readNow()`); without the
+file, or without its rules block, every session gets the instructions
+without the rules, and a warning says why.
+
+After the rules, `composeInstructions()` adds fixed sentences: what the tools
+are for, to invoke the `cmsis-debug-live` Agent Skill first and what it
+brings, `get_debug_instructions` for harnesses that load no skills, the 60 s
+cap on `timeoutMs` (600 s for `cmsis_action` and `flash`), how to read a
+result (`isError` and the `[CODE]` prefix; `timeout` and `running` are not
+failures), and one sentence each for the documentation and build-artefact
+groups. While the documentation group is off, its sentence points to the
+setting instead; the build-artefact sentence appears only while that group
+is on. `src/test/debugSkillGuidance.test.ts` pins the phrases agents rely on.
+
+The first `get_session_status` of a session repeats the rules in one line
+(`TOOL_RULES_REMINDER`), between the status and the call statistics: by then
+the instructions may lie far back in the conversation, or have been
+compacted away. A flag in the closure of that registration keeps it to one
+reply per session; the state lives where the session is built, in the router
+window, so no worker takes part.
+
+Neither the rules, nor the sentence on results, nor the reminder is in a tool
+description: `tools/list` goes along with every turn, and
+`test/transport/session-lifecycle.js` pins its size. The rules also reach the
+bundled skills and the agent guide, together with the table of shell commands
+and the tools that replace them: `npm run skills:sync -- --offline` copies both
+blocks between marker comments (`src/core/toolContract.ts`,
+`src/utils/markerBlock.ts`; see `skills/README.md`), and
+`src/test/toolContract.test.ts` compares every copy with the source.
 
 ### Tools
 
@@ -198,7 +223,9 @@ text of the handler's outcome.
 the server instance. It looks for `docs/` first next to the bundle's
 directory (`dist/`), then two levels above the tsc output (`out/src/`), so
 both layouts work. A file that cannot be read is answered with a note that
-names the paths tried, and is tried again on the next request.
+names the paths tried, and is tried again on the next request. `readNow()`
+reads the same way but at once, for what a session needs before its first
+request: the tool contract, which is not a resource of its own.
 
 `get_debug_instructions` does not return the guide whole. `sliceTopic()` in
 `src/core/instructionTopics.ts` cuts it at its
@@ -213,8 +240,12 @@ whole guide is served and a warning is logged.
   `loopbackOnly`, `listenOnLoopback`, `jsonlSink`, `singleWindowHandlers`,
   `PortInUseError`, `SessionHandlers`, `DebugMCPServerOptions`,
   `localSerialDispatch`
-- `src/debugTools.ts`: `buildSessionServer`, `composeInstructions`, `ABOUT`,
+- `src/debugTools.ts`: `buildSessionServer`, `loadToolRules`, `ABOUT`,
   `registerTools`, `registerResources`, `ShippedDocs`, `SHIPPED_RESOURCES`
+- `src/core/serverInstructions.ts`: `buildServerInstructions`,
+  `composeInstructions`, `TOOL_RULES_REMINDER`
+- `src/core/toolContract.ts` and `src/utils/markerBlock.ts`: the tool
+  contract's blocks, their copies and the marker comments around them
 - `src/core/measuredMcpServer.ts` (`toCallToolResult`) and
   `src/core/toolMetrics.ts`: the MCP result and measurement
 - `src/core/toolResult.ts`: `ToolText`, `ToolReply`, `ToolError`, the error
@@ -233,11 +264,16 @@ whole guide is served and a warning is logged.
   2.3.10 texts
 - `src/test/debugSkillGuidance.test.ts`: instructions, tool descriptions and
   the guide send agents to the live debugger first
+- `src/test/toolContract.test.ts`: the rules' size, the tools the contract
+  names, every copy against the source, the rules first in the instructions,
+  the reminder once per session; `src/test/markerBlock.test.ts`: the marker
+  comments
 - `src/test/instructionTopics.test.ts`: marker grammar and the shipped
   guide's topics
 - `test/transport/session-lifecycle.js`: sessions over real HTTP — session
   ids, the 400 answers, three consecutive `get_threads`, the 413 limit,
-  topics, statistics, typed errors without a session, no `outputSchema`
+  topics, statistics, typed errors without a session, no `outputSchema`,
+  the tool rules first and once in a status, the pinned `tools/list` size
 - `test/transport/surface-snapshot.js` (`npm run test:surface`): initialize
   result, tool list, resources and every tool's reply without a session,
   compared with `test/transport/surface.snapshot.json`

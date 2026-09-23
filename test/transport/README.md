@@ -27,6 +27,11 @@ Each exits non-zero if any check failed.
   call. The fix was per-request servers; moving to per-*session* servers (needed
   for the SSE stream and for routing) must not bring the hang back.
 - `DELETE /mcp` tears the session down, and a `GET` after it is rejected.
+- The tool contract (#50): the `instructions` start with the tool rules, the
+  first `get_session_status` of a session repeats them in one line and the
+  second does not, and `tools/list` keeps its pinned size to the byte — the
+  contract never goes into a tool description. A deliberate change to a
+  description or schema updates `TOOLS_LIST_BYTES` in the same commit.
 
 Belongs here rather than in `src/test/` because it needs a real listening
 socket, which the `vscode-test` Electron harness does not give us.

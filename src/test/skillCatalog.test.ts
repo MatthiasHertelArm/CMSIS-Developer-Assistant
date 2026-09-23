@@ -17,6 +17,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TOOL_CONTRACT_DOC, ToolContract, parseToolContract } from '../core/toolContract';
 import {
     SKILL_CATEGORY_LABELS,
     SKILL_CATEGORY_ORDER,
@@ -215,10 +216,11 @@ suite('Agent skill catalog', () => {
         const contributions = () =>
             readPackageContributions(JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')));
         const shipped = (): string => fs.readFileSync(path.join(helpDir, 'SKILL.md'), 'utf8');
+        const contract = (): ToolContract => parseToolContract(fs.readFileSync(path.join(repoRoot, 'docs', TOOL_CONTRACT_DOC), 'utf8'));
 
         test('the shipped SKILL.md and openai.yaml are exactly what the generator renders now', () => {
-            assert.strictEqual(shipped(), renderHelpSkillMarkdown(catalog(), contributions(), config()),
-                `skills/${HELP_SKILL_NAME}/SKILL.md is stale — run \`npm run skills:sync\``);
+            assert.strictEqual(shipped(), renderHelpSkillMarkdown(catalog(), contributions(), config(), contract()),
+                `skills/${HELP_SKILL_NAME}/SKILL.md is stale — run \`npm run skills:sync -- --offline\``);
             assert.strictEqual(fs.readFileSync(path.join(helpDir, 'agents', 'openai.yaml'), 'utf8'), renderHelpOpenAiYaml(config()));
         });
 
@@ -261,9 +263,9 @@ suite('Agent skill catalog', () => {
             assert.deepStrictEqual(Object.keys(config().commands).sort(), ids,
                 'scripts/skills.config.json help.commands must list exactly the palette commands');
             const broken = { ...config(), commands: { ...config().commands, 'cmsis-developer-assistant.ghost': 'x' } };
-            assert.throws(() => renderHelpSkillMarkdown(catalog(), contributions(), broken), /ghost/);
+            assert.throws(() => renderHelpSkillMarkdown(catalog(), contributions(), broken, contract()), /ghost/);
             const missing = { ...config(), settings: { ...config().settings, 'noSuchSetting': 'x' } };
-            assert.throws(() => renderHelpSkillMarkdown(catalog(), contributions(), missing), /noSuchSetting/);
+            assert.throws(() => renderHelpSkillMarkdown(catalog(), contributions(), missing, contract()), /noSuchSetting/);
         });
     });
 
@@ -389,7 +391,8 @@ suite('Agent skill catalog', () => {
             assert.strictEqual(categories.indexOf('ethos-u'), categories.indexOf('pack') + 1);
             const help = renderHelpSkillMarkdown(grown,
                 readPackageContributions(JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))),
-                JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'skills.config.json'), 'utf8')).help);
+                JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'skills.config.json'), 'utf8')).help,
+                parseToolContract(fs.readFileSync(path.join(repoRoot, 'docs', TOOL_CONTRACT_DOC), 'utf8')));
             assert.ok(help.includes('### Ethos-U NPU (`/cmsis-npu`)\n\n- `$npu-skill` — Decode an NPU command stream.'), help);
         });
     });
