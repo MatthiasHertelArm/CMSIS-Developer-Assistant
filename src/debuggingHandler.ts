@@ -54,7 +54,7 @@
 import * as vscode from 'vscode';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
 import type { BreakpointBinding, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
-import type { IDebugConfigurationManager } from './utils/debugConfigurationManager';
+import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { logger } from './utils/logger';
 import { REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
 import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/sessionStateTracker';
@@ -80,7 +80,7 @@ import {
     selectVariables,
 } from './core/variableView';
 import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, runCmsisAction } from './handler/cmsisAction';
-import { CapOutcome, failureText, fenced, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
+import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
 import {
     breakpointTableFromMiReply, classifyGdbReply, DprintfCall, DprintfPlacement, dprintfFromMiReply, gdbRefusal, gdbSourceLocation, GdbTableEntry,
@@ -92,6 +92,7 @@ import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from '.
 import { renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
 import { normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
+import { secondsText } from './core/windowHealth';
 import { syncProblemsPanel } from './windowProblems';
 
 export type { CmsisAction } from './handler/cmsisAction';
@@ -185,6 +186,10 @@ const STOP_SETTLE_MS = 300;
 const CHANGE_PAUSE_MS = 5_000;
 /** How long a new breakpoint waits for the adapter to report whether it bound (#13 proposal: 2 s). */
 const BINDING_WAIT_MS = 2_000;
+/** How long `stop_debugging` waits for VS Code to end the session before it answers (#14). */
+const STOP_WAIT_MS = 10_000;
+/** The most configuration names the hint of a closed picker lists. */
+const PICKER_NAMES_LISTED = 10;
 /** Registers `diagnose_fault` reads (`control` is read but not used). */
 const TRIAGE_REGISTERS = ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim'];
 
@@ -193,6 +198,11 @@ const NO_ACTIVE_SESSION = 'No active debug session.';
 const START_FIRST = 'Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.';
 const NOTHING_TO_STOP = 'Nothing to stop — no debug session is active.';
 const SESSION_STOPPED = 'The debug session has been stopped.';
+/** A stop that VS Code did not confirm in time (#14). */
+const STOP_UNCONFIRMED = `Stop requested, but the debug session did not end within ${STOP_WAIT_MS / 1000} s and is still listed. `
+    + 'Call get_session_status to see whether it ends; stop_debugging may be called again.';
+/** A configuration picker nobody answered (#14). */
+const PICKER_UNANSWERED = 'without configurationName, start_debugging asks the user in a picker in that VS Code window, and nobody chose.';
 const NOTHING_TO_RESTART = 'Nothing to restart — no debug session is active';
 const SESSION_RESTARTED = 'The debug session has been restarted.';
 const NO_FOCUSED_FRAME = 'There is no active stack frame.';
@@ -282,6 +292,18 @@ function waitLimitMs(configuredSeconds: number, overrideMs: number | undefined):
 /** The last path segment, separated by `/` or `\`. */
 function lastSegment(fsPath: string): string {
     return fsPath.replace(/^.*[\\/]/, '');
+}
+
+/** The hint of a picker nobody answered: the configurations the agent can name instead (#14). */
+function configurationHint(offered: readonly string[]): string {
+    const derived = `'${SYNTHESISED_CONFIGURATION}' with fileFullPath to derive one from the file type`;
+    const cmsis = 'For a CMSIS solution, cmsis_action load_and_debug starts the session instead.';
+    if (offered.length === 0) {
+        return `.vscode/launch.json lists no configuration: pass configurationName ${derived}. ${cmsis}`;
+    }
+    const listed = offered.slice(0, PICKER_NAMES_LISTED).map((name) => `'${name}'`).join(', ');
+    const more = offered.length > PICKER_NAMES_LISTED ? ` and ${offered.length - PICKER_NAMES_LISTED} more` : '';
+    return `Pass configurationName: one of ${listed}${more} (from .vscode/launch.json), or ${derived}. ${cmsis}`;
 }
 
 function sourceLocationOf(bp: vscode.Breakpoint): vscode.Location | undefined {
@@ -605,7 +627,7 @@ export class DebuggingHandler
                     + 'or proceed directly with inspection tools (get_variables_values, read_memory, …).');
         }
         try {
-            const chosen = args.configurationName ?? await this.launchConfigs.promptForConfiguration(args.workingDirectory);
+            const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
                 if (!(await this.dbg.startDebuggingByName(args.workingDirectory, chosen))) {
                     throw new Error(`Failed to start debug session with configuration '${chosen}'.`);
@@ -641,15 +663,68 @@ export class DebuggingHandler
         }
     }
 
+    /**
+     * The configuration picker, for as long as the call's `timeoutMs` says:
+     * 30 s without, 60 s at most (#14). It waits for a person in a window the
+     * agent cannot see; when nobody chooses in time it closes, and the call
+     * fails with `INVALID_ARGUMENT` naming the configurations to pass.
+     */
+    private async chooseConfiguration(args: StartRequest): Promise<string | undefined> {
+        const limitMs = fenceLimitMs(args.timeoutMs);
+        const deadline = new vscode.CancellationTokenSource();
+        const disarm = this.host().startTimer(limitMs, () => deadline.cancel());
+        try {
+            return await this.launchConfigs.promptForConfiguration(args.workingDirectory, deadline.token);
+        } catch (caught) {
+            if (caught instanceof PickerCancelled) {
+                throw new ToolError('INVALID_ARGUMENT', `No debug configuration was chosen within ${secondsText(limitMs)}: ${PICKER_UNANSWERED}`,
+                    configurationHint(caught.offered));
+            }
+            throw caught;
+        } finally {
+            disarm();
+            deadline.dispose();
+        }
+    }
+
+    /**
+     * Stop the session and wait at most 10 s for VS Code to end it (#14). A
+     * stop that does not settle in time, while the session is still listed,
+     * answers with status `timeout`; one whose session is gone by then is a
+     * success.
+     */
     async handleStopDebugging(): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
                 return NOTHING_TO_STOP;
             }
-            await this.dbg.stopDebugging();
+            const settled = await this.settlesWithin(this.dbg.stopDebugging(), STOP_WAIT_MS);
+            if (!settled && this.dbg.hasDebugSession()) {
+                logger.warn(`stop_debugging: the session did not end within ${STOP_WAIT_MS} ms`);
+                return { text: STOP_UNCONFIRMED, status: 'timeout' };
+            }
             return `${SESSION_STOPPED}\n\n${ROOT_CAUSE_CHECK}`;
         } catch (caught) {
             throw wrapError('Could not stop the debug session', caught);
+        }
+    }
+
+    /**
+     * True when `work` settles within `limitMs` on the host's clock, false
+     * when it does not; its rejection in time is thrown, a later one dropped.
+     */
+    private async settlesWithin(work: Promise<unknown>, limitMs: number): Promise<boolean> {
+        let disarm: () => void = () => undefined;
+        const expiry = new Promise<boolean>((settle) => {
+            disarm = this.host().startTimer(limitMs, () => settle(false));
+        });
+        const done = work.then(() => true);
+        // A second observer: once the timer has won, the race no longer waits for the work.
+        done.catch(() => undefined);
+        try {
+            return await Promise.race([done, expiry]);
+        } finally {
+            disarm();
         }
     }
 

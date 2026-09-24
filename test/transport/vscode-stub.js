@@ -35,6 +35,23 @@ const taskEvents = {
 /** Every status-bar item made through the stub, in creation order; tests read their text and tooltip. */
 const statusBarItems = [];
 
+/** `vscode.CancellationTokenSource`: a token whose listeners hear `cancel()` once. */
+class CancellationTokenSource {
+    constructor() {
+        const listeners = new Set();
+        this.token = {
+            isCancellationRequested: false,
+            onCancellationRequested: (fn) => { listeners.add(fn); return { dispose() { listeners.delete(fn); } }; },
+        };
+        this.cancel = () => {
+            if (this.token.isCancellationRequested) { return; }
+            this.token.isCancellationRequested = true;
+            for (const l of [...listeners]) { l(); }
+        };
+        this.dispose = () => listeners.clear();
+    }
+}
+
 /** A status-bar item that only keeps what is assigned to it. */
 function createStatusBarItem(id, alignment, priority) {
     const item = {
@@ -79,6 +96,7 @@ const stub = {
     StatusBarAlignment: { Left: 1, Right: 2 },
     // A theme colour keeps only its id, which tests read back.
     ThemeColor: class { constructor(id) { this.id = id; } },
+    CancellationTokenSource,
     statusBarItems,
     pickAnswer: undefined,
     workspace: { getConfiguration: () => ({ get: (_k, d) => d }), workspaceFolders: [],

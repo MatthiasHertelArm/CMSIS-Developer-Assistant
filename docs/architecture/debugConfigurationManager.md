@@ -31,12 +31,21 @@ configuration, and the picker offers only the sentinel.
 
 ### The picker and the sentinel
 
-`promptForConfiguration(workDir)` shows a quick-pick with one item per
-`launch.json` entry (its name, or `(no name)`, with type and request) and,
-always last, the sentinel `Default Configuration`, which asks for a
+`promptForConfiguration(workDir, cancel?)` shows a quick-pick with one item
+per `launch.json` entry (its name, or `(no name)`, with type and request)
+and, always last, the sentinel `Default Configuration`, which asks for a
 synthesized configuration. It resolves the chosen label; closing the picker
 rejects with a message the handler passes on to the agent. The handler
 compares the result with the same sentinel text.
+
+The picker waits for a person in the window that runs the call, which the
+agent may not see. The handler therefore passes a cancellation token that
+fires when its limit runs out (#14). The token goes to VS Code, which closes
+the picker, and the wait also races the token itself, so it ends even if
+the picker stays open. A picker closed by the token rejects with
+`PickerCancelled`, which carries the names of the entries it offered: the
+handler turns them into the hint of its `INVALID_ARGUMENT`. That case is
+logged as a warning; other failures remain errors.
 
 ### Named entries and synthesized configurations
 
@@ -71,9 +80,9 @@ API, so the transport tests construct it under a minimal `vscode` stub.
 - `DebugConfigurationManager`: `getDebugConfig()`, `promptForConfiguration()`,
   `detectLanguageFromFilePath()`, `getAvailableConfigurations()`,
   `hasLaunchJson()`, `validateWorkspace()`, the static
-  `getAutoLaunchConfigName()`
-- Module functions: `launchEntries()`, `plainLaunch()`,
-  `singleTestLaunch()`, `unittestTarget()`
+  `getAutoLaunchConfigName()`; `PickerCancelled`
+- Module functions: `launchEntries()`, `pickUnlessCancelled()`,
+  `plainLaunch()`, `singleTestLaunch()`, `unittestTarget()`
 - Caller: `handleStartDebugging()` in `src/debuggingHandler.ts`
 
 ## Tests
@@ -82,3 +91,5 @@ API, so the transport tests construct it under a minimal `vscode` stub.
   file type, test configurations, named entries from plain and JSONC
   `launch.json`, and the quick-pick, compared with
   `config-scenarios.snapshot.json`
+- `src/test/debugConfigurationManager.test.ts`: the quick-pick closed by its
+  cancellation token, in the extension test host

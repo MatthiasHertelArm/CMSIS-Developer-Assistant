@@ -96,8 +96,8 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 
 | Tool | Description |
 |------|-------------|
-| `start_debugging` | Starts a debug session from a named `launch.json` configuration, or from a source file for languages with auto-generated configurations. Refuses if a session is already active. |
-| `stop_debugging`, `restart_debugging` | Stops the current session, or restarts it and waits until it is ready again. |
+| `start_debugging` | Starts a debug session from a named `launch.json` configuration, or from a source file for languages with auto-generated configurations. Refuses if a session is already active. Without a configuration name it asks you in a picker, and gives up after 30 s (at most 60 s) with the names the agent can pass. |
+| `stop_debugging`, `restart_debugging` | Stops the current session, waiting at most 10 s for VS Code to end it, or restarts it and waits until it is ready again. |
 | `pause_execution` | Halts a running target without ending the session. |
 | `continue_execution`, `step_over`, `step_into`, `step_out` | Resume or step. If the target does not stop within the deadline, the tool pauses it and reports where the firmware actually was. |
 | `wait_for_stop` | Blocks until the target stops next (breakpoint, fault, step, pause) and returns the stop reason, or a structured timeout. Replaces blind waiting after a `continue_execution`. |

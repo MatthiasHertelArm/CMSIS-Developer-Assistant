@@ -11145,7 +11145,8 @@
         {
           "call": "exports",
           "result": [
-            "DebugConfigurationManager"
+            "DebugConfigurationManager",
+            "PickerCancelled"
           ]
         }
       ],
