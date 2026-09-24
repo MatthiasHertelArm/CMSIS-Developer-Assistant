@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Build results no longer send the agent to cbuild in a shell (part of #15).**
   - `get_build_diagnostics` without a log, the no-lines footer of a failed build, the `get_build_diagnostics` description, and the "build first" hints of the build-artefact and documentation tools told the agent to capture a log with `cbuild … --log`. A tester's agent did so, against the tool rules. They now point to `cmsis_action build`, whose diagnostic re-run writes the log `get_build_diagnostics` reads, and say "do not run cbuild yourself".
   - After a failed build without error lines, the hint names `get_recent_problems` for what the Problems panel shows, or asking the user, instead of a terminal the agent cannot open.
+- **`evaluate_expression` on a struct, an array or a pointer shows its fields.**
+  - It answered `Result: {...}`, and the agent then read the fields one call at a time.
+  - Below the `Evaluated:`, `Result:` and `Type:` lines, `Fields:` lists each child as `name: value (type)`, one level deep; the new optional `depth` (1–3) opens nested structs, indented. At most 32 children per level, the rest counted; values over 200 characters are cut; at most 16 `variables` requests per call.
+  - Fields are redacted like variables: by their own name and value, with the notice when one is withheld. A withheld field, and every field of an expression that is itself a credential name, is never opened. GDB commands (`-exec …`, `>…`) have no fields.
+  - `depth` adds 109 bytes to `tools/list` (31 286 of 32 000 in one window).
 
 ### Fixed
 - **`cmsis_action build` no longer reports ✅ for a build that failed to compile (part of #15).**

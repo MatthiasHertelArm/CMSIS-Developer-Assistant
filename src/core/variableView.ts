@@ -15,7 +15,9 @@
  */
 
 /**
- * Selection and rendering of DAP variables.
+ * Selection and rendering of DAP variables, and the fields shown under a
+ * structured `evaluate_expression` result (fetched through an injected
+ * `variables` call).
  *
  * Pure — no vscode import — so the matching and formatting rules are
  * unit-testable outside the extension host. The DAP shapes are modelled
@@ -47,6 +49,15 @@ export interface DapVariable {
     /** The canonical evaluatable name. Absent on many gdbtarget responses. */
     evaluateName?: string;
     variablesReference?: number;
+}
+
+/** A `variables` entry with the two fields every adapter sends: a name and a value. */
+export function isDapVariable(value: unknown): value is DapVariable {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const entry = value as { name?: unknown; value?: unknown };
+    return typeof entry.name === 'string' && typeof entry.value === 'string';
 }
 
 export interface DapScope {
@@ -213,4 +224,120 @@ export function formatMissingNames(missing: string[]): string {
     return `\n⚠️ Not found in the requested scope(s): ${missing.join(', ')}. ` +
         'Call list_variable_names to see what is actually in scope, or use evaluate_expression ' +
         'for globals and struct members that are not top-level locals.\n';
+}
+
+// ── The fields of an evaluated structure ────────────────────────────────────
+
+/** Caps on the fields `evaluate_expression` shows under a structured result. */
+export interface FieldLimits {
+    /** Children shown per level; the rest are counted. */
+    maxChildren: number;
+    /** A longer value is cut. */
+    maxValueChars: number;
+    /** `variables` requests one expansion may send, the first level included. */
+    maxRequests: number;
+}
+
+export const DEFAULT_FIELD_LIMITS: FieldLimits = { maxChildren: 32, maxValueChars: 200, maxRequests: 16 };
+
+/** A child as `evaluate_expression` shows it, with its own children when it was expanded. */
+export interface FieldNode {
+    name: string;
+    value: string;
+    type?: string;
+    redacted: boolean;
+    children?: FieldLevel;
+}
+
+/** One level of children: those shown, how many more there were, or why none could be read. */
+export interface FieldLevel {
+    shown: FieldNode[];
+    hidden: number;
+    error?: string;
+}
+
+/** What the expansion needs from outside: the adapter and the redaction policy. */
+export interface FieldSource {
+    /** The DAP `variables` answer for a reference. */
+    children(variablesReference: number): Promise<DapVariable[]>;
+    /** The verdict on one child by its name and value; absent when redaction is off. */
+    redact?: (name: string, value: string) => { value: string; redacted: boolean };
+    /** A name whose children must not be shown at all (a credential name); absent when redaction is off. */
+    withholdChildren?: (name: string) => boolean;
+}
+
+function errorMessage(caught: unknown): string {
+    return caught instanceof Error ? caught.message : String(caught);
+}
+
+/**
+ * The children of `variablesReference`, `depth` levels deep (1 is the
+ * direct children). Each level shows at most `maxChildren` and counts the
+ * rest; a child is expanded further only while requests are left, when it
+ * was not redacted and its name is not a credential name. A level that
+ * cannot be read says why instead of failing the call.
+ */
+export async function expandFields(
+    source: FieldSource,
+    variablesReference: number,
+    depth: number,
+    limits: FieldLimits = DEFAULT_FIELD_LIMITS,
+): Promise<FieldLevel> {
+    const budget = { requests: limits.maxRequests };
+    const level = async (reference: number, remaining: number): Promise<FieldLevel> => {
+        budget.requests -= 1;
+        let listed: DapVariable[];
+        try {
+            listed = await source.children(reference);
+        } catch (caught) {
+            return { shown: [], hidden: 0, error: errorMessage(caught) };
+        }
+        const { shown, hidden } = truncateList(listed, limits.maxChildren);
+        const nodes: FieldNode[] = [];
+        for (const child of shown) {
+            const raw = String(child.value ?? '');
+            const verdict = source.redact ? source.redact(child.name, raw) : { value: raw, redacted: false };
+            const node: FieldNode = { name: child.name, value: verdict.value, type: child.type, redacted: verdict.redacted };
+            const expandable = remaining > 1 && (child.variablesReference ?? 0) > 0 && !verdict.redacted
+                && !(source.withholdChildren?.(child.name) ?? false);
+            if (expandable && budget.requests > 0) {
+                node.children = await level(child.variablesReference as number, remaining - 1);
+            }
+            nodes.push(node);
+        }
+        return { shown: nodes, hidden };
+    };
+    return level(variablesReference, Math.max(1, depth));
+}
+
+/** Whether any child in the tree was withheld. */
+export function anyFieldRedacted(level: FieldLevel): boolean {
+    return level.shown.some((node) => node.redacted || (node.children !== undefined && anyFieldRedacted(node.children)));
+}
+
+/**
+ * The `Fields:` block under an evaluated result: one line per child,
+ * `name: value (type)`, indented two spaces per level; a cut level ends with
+ * how many more there are, a level that could not be read with why.
+ */
+export function renderFields(level: FieldLevel, maxValueChars: number = DEFAULT_FIELD_LIMITS.maxValueChars): string {
+    const lines: string[] = ['Fields:'];
+    const walk = (current: FieldLevel, indent: string): void => {
+        if (current.error !== undefined) {
+            lines.push(`${indent}(could not be read: ${current.error})`);
+            return;
+        }
+        for (const node of current.shown) {
+            const value = node.redacted ? node.value : clipValue(node.value, maxValueChars);
+            lines.push(`${indent}${node.name}: ${value}${node.type ? ` (${node.type})` : ''}`);
+            if (node.children) {
+                walk(node.children, `${indent}  `);
+            }
+        }
+        if (current.hidden > 0) {
+            lines.push(`${indent}… ${current.hidden} more — evaluate a field or element by name to read it`);
+        }
+    };
+    walk(level, '  ');
+    return lines.join('\n');
 }

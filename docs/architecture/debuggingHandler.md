@@ -195,6 +195,14 @@ target runs.
   a `TARGET_RUNNING` refusal whose hint is `wait_for_stop` or
   `pause_execution`. `src/core/variableView.ts` renders them, with caps unless the
   agent names the variables it wants.
+- An expression whose value has children — a struct, an array, a pointer —
+  lists them under its `Result:` as `Fields:`, one level unless the call
+  asks for `depth` 2 or 3. An agent that gets only `{...}` reads the fields
+  one call at a time, so one `variables` request per level saves many round
+  trips. `expandFields()` in `src/core/variableView.ts` fetches them through
+  the executor, at most 32 per level and 16 requests in all, cuts long
+  values, and redacts each field by its name and value; a withheld field, or
+  one whose name is a credential name, is never opened.
 - Variable and expression values that look like credentials are withheld
   while `redactSecrets` is on (read on every call; `src/utils/secretRedaction.ts`).
   Raw target reads — memory, core registers, peripherals, fault status — and

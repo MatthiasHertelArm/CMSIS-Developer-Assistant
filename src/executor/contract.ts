@@ -29,6 +29,7 @@ import * as vscode from 'vscode';
 import { FaultRegisters } from '../core/faultDecoder';
 import type { DebugPortProbe } from '../core/probeWedge';
 import { ResetMethod, ResetOutcomeView } from '../core/resetAssist';
+import type { DapVariable } from '../core/variableView';
 import { DebugState, StackFrame } from '../debugState';
 import type { GdbLogpoint, StopWaitResult } from '../utils/sessionStateTracker';
 import type { GdbReply } from './gdbCommand';
@@ -221,6 +222,11 @@ export interface ProgramInspection {
      * Debugger session, and its text comes back as the `result`.
      */
     evaluateExpression(expression: string, frameId: number, overrideMs?: number): Promise<any>;
+    /**
+     * The children of a structured value: one DAP `variables` request for
+     * the `variablesReference` an evaluate reply or a variable carried.
+     */
+    getVariableChildren(variablesReference: number, overrideMs?: number): Promise<DapVariable[]>;
 }
 
 /**

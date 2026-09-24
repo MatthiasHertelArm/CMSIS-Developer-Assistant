@@ -470,6 +470,12 @@
                 "type": "string",
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
+              "depth": {
+                "description": "Levels of struct fields shown (default 1)",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3
+              },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
                 "type": "integer",
@@ -1365,8 +1371,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44453,
-          "sha256": "b57e12d02e34621b115beb2d551e221130a5c176d3e41e815e1b2c990798a4ab"
+          "bytes": 44636,
+          "sha256": "adc870437d98ccb303341bec36d05330495c4aa4b2df28ae9528bdba29f680cd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -2189,6 +2195,12 @@
                 "type": "string",
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
+              "depth": {
+                "description": "Levels of struct fields shown (default 1)",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3
+              },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
                 "type": "integer",
@@ -2787,8 +2799,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44453,
-          "sha256": "b57e12d02e34621b115beb2d551e221130a5c176d3e41e815e1b2c990798a4ab"
+          "bytes": 44636,
+          "sha256": "adc870437d98ccb303341bec36d05330495c4aa4b2df28ae9528bdba29f680cd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -3277,6 +3289,12 @@
               "expression": {
                 "type": "string",
                 "description": "What to evaluate, written in the language of the program being debugged"
+              },
+              "depth": {
+                "description": "Levels of struct fields shown (default 1)",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3
               },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
@@ -4652,8 +4670,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44453,
-          "sha256": "b57e12d02e34621b115beb2d551e221130a5c176d3e41e815e1b2c990798a4ab"
+          "bytes": 44636,
+          "sha256": "adc870437d98ccb303341bec36d05330495c4aa4b2df28ae9528bdba29f680cd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -5509,6 +5527,12 @@
               "expression": {
                 "type": "string",
                 "description": "What to evaluate, written in the language of the program being debugged"
+              },
+              "depth": {
+                "description": "Levels of struct fields shown (default 1)",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3
               },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
@@ -6459,8 +6483,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44453,
-          "sha256": "b57e12d02e34621b115beb2d551e221130a5c176d3e41e815e1b2c990798a4ab"
+          "bytes": 44636,
+          "sha256": "adc870437d98ccb303341bec36d05330495c4aa4b2df28ae9528bdba29f680cd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -7403,6 +7427,12 @@
                 "type": "string",
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
+              "depth": {
+                "description": "Levels of struct fields shown (default 1)",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3
+              },
               "timeoutMs": {
                 "description": "Per-call timeout in ms, max 60000 (see server instructions).",
                 "type": "integer",
@@ -8352,8 +8382,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44453,
-          "sha256": "b57e12d02e34621b115beb2d551e221130a5c176d3e41e815e1b2c990798a4ab"
+          "bytes": 44636,
+          "sha256": "adc870437d98ccb303341bec36d05330495c4aa4b2df28ae9528bdba29f680cd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,

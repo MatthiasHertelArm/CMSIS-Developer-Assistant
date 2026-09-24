@@ -320,9 +320,15 @@ const REG_OVERRIDES = {
 const REGISTER_ORDER = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12',
     'sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'primask', 'basepri', 'faultmask', 'control'];
 
-/** Symbols GDB can evaluate: [value, type, children?]. */
+/** Symbols GDB can evaluate: [value, type, children?]; a child is [name, value, type, children?]. */
 const GLOBALS = {
     SystemCoreClock: ['84000000', 'uint32_t'],
+    sensor: ['{...}', 'sensor_t', [
+        ['id', "3 '\\003'", 'uint8_t'],
+        ['cal', '{...}', 'cal_t', [['offset', '-12', 'int16_t'], ['gain', '1.25', 'float']]],
+        ['samples', '{...}', 'uint16_t [40]', Array.from({ length: 40 }, (_, i) => [`[${i}]`, String(i * 10), 'uint16_t'])],
+        ['token', '"tk-7f3a9c21"', 'char [12]', [...'tk-7f3a9c21'].map((c, i) => [`[${i}]`, `${c.charCodeAt(0)} '${c}'`, 'char'])],
+    ]],
     counter: ['42', 'volatile uint32_t'],
     'counter * 2': ['84', 'unsigned long'],
 };
@@ -418,6 +424,17 @@ class FakeTarget {
         this.resetAt = null;
         this.miToken = 0;
         this.valueHistory = 0;
+        /** Children behind the variablesReference of an evaluate result, as GDB's varobjs: reference → children. */
+        this.varobjChildren = new Map();
+        this.nextVarobj = 5000;
+    }
+
+    /** A variablesReference for `kids`, as the adapter hands out one per varobj with children. */
+    varobjReference(kids) {
+        if (!kids || kids.length === 0) { return 0; }
+        const reference = this.nextVarobj++;
+        this.varobjChildren.set(reference, kids);
+        return reference;
     }
 
     attachTracker() {
@@ -873,6 +890,10 @@ class FakeTarget {
     }
 
     children(ref) {
+        const varobj = this.varobjChildren.get(ref);
+        if (varobj) {
+            return varobj.map(([name, value, type, kids]) => ({ name, evaluateName: name, value, type, variablesReference: this.varobjReference(kids) }));
+        }
         const level = ref % 100;
         const index = Math.floor((ref - 3000) / 100);
         const fn = LOCATIONS[this.at]?.[level]?.fn;
@@ -903,8 +924,7 @@ class FakeTarget {
         if (!v) { return notEvaluated; }
         let result = v.value;
         if (fmt && fmt[1] === 'x' && /^-?\d+$/.test(v.value)) { result = hex(Number(v.value)); }
-        const kids = v.children?.length ?? 0;
-        return { result, type: v.type, variablesReference: kids ? 3900 : 0 };
+        return { result, type: v.type, variablesReference: this.varobjReference(v.children) };
     }
 }
 
@@ -1107,7 +1127,7 @@ const SCENARIOS = [
     },
     {
         name: 'evaluate',
-        description: 'Halted in main: symbols, arithmetic, format suffix, struct, secret-named pointer and array, unknown symbol, and the GDB passthrough both ways: -exec is sent as the adapter\'s > and > as it is; the text GDB printed as stdout output comes back as the result.',
+        description: 'Halted in main: symbols, arithmetic, format suffix, struct with its fields, secret-named pointer and array (no fields), unknown symbol, a nested struct one and two levels deep (an array cut at 32 elements, a credential-named field withheld), and the GDB passthrough both ways: -exec is sent as the adapter\'s > and > as it is; the text GDB printed as stdout output comes back as the result.',
         session: { initial: { at: 'main31', reason: 'breakpoint' } },
         calls: [
             { tool: 'evaluate_expression', args: { expression: 'SystemCoreClock' } },
@@ -1120,6 +1140,8 @@ const SCENARIOS = [
             { tool: 'evaluate_expression', args: { expression: '-exec info registers' } },
             { tool: 'evaluate_expression', args: { expression: '>info registers' } },
             { tool: 'evaluate_expression', args: { expression: '$pc' } },
+            { tool: 'evaluate_expression', args: { expression: 'sensor' } },
+            { tool: 'evaluate_expression', args: { expression: 'sensor', depth: 2 } },
         ],
     },
     {

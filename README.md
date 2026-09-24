@@ -117,7 +117,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 |------|-------------|
 | `list_variable_names` | Names and types of the variables in scope, without reading their values. |
 | `get_variables_values` | Values of local, global, or all variables of the active frame, or of up to 50 named variables. |
-| `evaluate_expression` | Evaluates an expression in the current frame. |
+| `evaluate_expression` | Evaluates an expression in the current frame. A struct, array or pointer shows its fields below the result, one level deep, or up to three with `depth`. |
 | `get_call_stack`, `get_threads` | Full call stack with frame IDs, and the thread list. With RTOS-aware GDB servers (pyOCD `--rtos`, J-Link plugin) the threads are the FreeRTOS, RTX, or ThreadX tasks. |
 | `get_frame_variables` | Variables of an explicit frame without changing the active editor frame. |
 

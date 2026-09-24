@@ -53,6 +53,7 @@ import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, F
 import { CMSIS_DEBUGGER_TYPE, gdbRequestRefusal, miQuoted, passthroughCommand } from './core/gdbDialect';
 import { readPeripheralViaMemory, tryReadPeripheralViaExtension } from './core/peripheralReader';
 import { ResetMethod } from './core/resetAssist';
+import { type DapVariable, isDapVariable } from './core/variableView';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import {
@@ -547,6 +548,17 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     getVariablesForFrame(frameId: number, scope?: 'local' | 'global' | 'all', overrideMs?: number): Promise<any> {
         return this.getVariables(frameId, scope, overrideMs);
+    }
+
+    async getVariableChildren(variablesReference: number, overrideMs?: number): Promise<DapVariable[]> {
+        try {
+            const session = sessionOrThrow();
+            const content = await customRequestWithTimeout<VariablesBody | undefined>(session, 'variables',
+                { variablesReference }, this.budgets.request(overrideMs));
+            return (content?.variables ?? []).filter(isDapVariable);
+        } catch (err) {
+            throw wrapError('Reading the fields failed', err);
+        }
     }
 
     async evaluateExpression(expression: string, frameId: number, overrideMs?: number): Promise<any> {
