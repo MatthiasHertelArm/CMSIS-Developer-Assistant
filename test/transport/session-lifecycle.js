@@ -19,7 +19,10 @@
 // Drives the real server over HTTP with a stubbed `vscode` module, covering:
 //   1. POST initialize mints an mcp-session-id
 //   2. GET /mcp with that id opens a live text/event-stream
-//   3. GET /mcp with a missing / unknown id is rejected with 400 (not 404)
+//   3. A request with a missing id is rejected with 400; POST, GET and
+//      DELETE with an unknown id get 404 and JSON-RPC -32001 "Session not
+//      found", as the SDK's own transport answers, which tells a client to
+//      initialize again (#14)
 //   4. DELETE /mcp tears the session down
 //   5. REGRESSION: three consecutive get_threads calls on one session all
 //      return — the bug the old per-request model was built to fix.
@@ -47,7 +50,7 @@
 //      serial_open holds a mock port for the session, and DELETE releases it
 //      through the local serial handler. A session without a request for the
 //      idle time and without an open GET stream expires (injected clock): a
-//      later request with its id is refused with a 4xx, and its port is
+//      later request with its id gets 404, and its port is
 //      released. Mock ports only: the serial controller's port factory is
 //      swapped for serialport's SerialPortMock.
 
@@ -168,11 +171,30 @@ async function main() {
         stream.status === 200 && String(stream.headers['content-type']).includes('text/event-stream'),
         `status=${stream.status} content-type=${stream.headers['content-type']}`);
 
-    // 3. GET without / with an unknown session id is a 400, never a bare 404
+    // 3. Without a session id: 400. With an unknown one: the SDK's JSON 404
+    //    and -32001, on POST, GET and DELETE alike, never Express's HTML 404 (#14).
     const noSid = await openStream(port, undefined);
     check('GET /mcp without a session id is rejected with 400', noSid.status === 400, `status=${noSid.status}`);
-    const badSid = await openStream(port, 'not-a-real-session');
-    check('GET /mcp with an unknown session id is rejected with 400', badSid.status === 400, `status=${badSid.status}`);
+    const noSidPost = await request(port, 'POST', {}, { jsonrpc: '2.0', id: 90, method: 'tools/list', params: {} });
+    check('POST /mcp without a session id that is not an initialize request is rejected with 400 and -32000',
+        noSidPost.status === 400 && JSON.parse(noSidPost.body).error?.code === -32000, `status=${noSidPost.status} ${noSidPost.body}`);
+    const unknownSession = { 'mcp-session-id': 'not-a-real-session' };
+    const sessionNotFound = (reply) => reply.status === 404 && /application\/json/.test(String(reply.headers['content-type']))
+        && JSON.stringify(JSON.parse(reply.body)) === JSON.stringify({ jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null });
+    const unknownGet = await request(port, 'GET', unknownSession);
+    check('GET /mcp with an unknown session id gets 404 and -32001 "Session not found"', sessionNotFound(unknownGet),
+        `status=${unknownGet.status} ${unknownGet.body}`);
+    const unknownPost = await request(port, 'POST', unknownSession, { jsonrpc: '2.0', id: 91, method: 'tools/list', params: {} });
+    check('POST /mcp with an unknown session id gets 404 and -32001', sessionNotFound(unknownPost), `status=${unknownPost.status} ${unknownPost.body}`);
+    const unknownInit = await request(port, 'POST', unknownSession, {
+        jsonrpc: '2.0', id: 92, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    check('an initialize request that carries an unknown session id gets 404 too', sessionNotFound(unknownInit),
+        `status=${unknownInit.status} ${unknownInit.body}`);
+    const unknownDelete = await request(port, 'DELETE', unknownSession);
+    check('DELETE /mcp with an unknown session id gets 404 and -32001', sessionNotFound(unknownDelete),
+        `status=${unknownDelete.status} ${unknownDelete.body}`);
 
     // 4. tools/list works on the session
     const list = await request(port, 'POST', { 'mcp-session-id': sid }, {
@@ -487,7 +509,7 @@ async function main() {
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });
     check('DELETE /mcp accepts a valid session', del.status === 200 || del.status === 204, `status=${del.status}`);
     const afterDelete = await openStream(port, sid);
-    check('GET /mcp after DELETE is rejected', afterDelete.status === 400, `status=${afterDelete.status}`);
+    check('GET /mcp after DELETE is rejected with 404: the session is unknown now', afterDelete.status === 404, `status=${afterDelete.status}`);
     await new Promise((resolve) => setTimeout(resolve, 50));
     const releasedByDelete = serialController.status();
     check('DELETE releases the serial port the session held, through the local serial handler (#49)',
@@ -528,8 +550,8 @@ async function main() {
         swept === 1 && held.status === 200, `ended ${swept}, stream ${held.status}`);
     const expiredPost = await request(eport, 'POST', { 'mcp-session-id': idleSid }, { jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} });
     const expiredGet = await openStream(eport, idleSid);
-    check('a request with the expired session id is refused with a 4xx',
-        expiredPost.status >= 400 && expiredPost.status < 500 && expiredGet.status >= 400 && expiredGet.status < 500,
+    check('a request with the expired session id gets 404, so the client starts over (#14)',
+        expiredPost.status === 404 && expiredGet.status === 404,
         `POST ${expiredPost.status}, GET ${expiredGet.status}`);
     await new Promise((resolve) => setTimeout(resolve, 50));
     const releasedByExpiry = serialController.status();
@@ -544,7 +566,7 @@ async function main() {
     clock += 61_000;
     const later = expiring.sweepIdleSessions();
     const streamGone = await request(eport, 'POST', { 'mcp-session-id': streamingSid }, { jsonrpc: '2.0', id: 6, method: 'tools/list', params: {} });
-    check('once its stream closed, that session expires too', later === 2 && streamGone.status >= 400 && streamGone.status < 500,
+    check('once its stream closed, that session expires too', later === 2 && streamGone.status === 404,
         `ended ${later}, status ${streamGone.status}`);
     await expiring.stop();
 

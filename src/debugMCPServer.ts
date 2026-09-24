@@ -24,6 +24,12 @@
  * closed while a request is in flight; a server shared across requests is
  * what once made the third `get_threads` call of a session hang.
  *
+ * A request that names a session this server does not know gets 404 with
+ * JSON-RPC -32001, as the SDK's own transport answers (#14): the answer that
+ * tells a client to initialize a new session, for example after another
+ * window took over the port. A request that names none and is not an
+ * initialize request gets 400.
+ *
  * This module reads no settings and does not import `vscode`: port,
  * timeouts, handler factory and options arrive through the constructor, so
  * the transport harness runs the real server outside VS Code.
@@ -135,8 +141,11 @@ const BODY_LIMIT = '1mb';
 const SESSION_SAMPLES = 200;
 const INSTANCE_SAMPLES = 500;
 
-const NO_SESSION_FOR_POST = 'No open MCP session matches this request, and it is not an initialize request.';
-const NO_SESSION = 'This request needs the mcp-session-id of an open MCP session; it is missing or unknown.';
+const NO_SESSION_FOR_POST = 'This request names no MCP session, and it is not an initialize request.';
+const NO_SESSION = 'This request needs the mcp-session-id of an open MCP session; it names none.';
+/** The SDK transport's answer to a session id it does not know, and its JSON-RPC code (#14). */
+const SESSION_NOT_FOUND = 'Session not found';
+const SESSION_NOT_FOUND_CODE = -32001;
 const REQUEST_FAILED = 'The MCP server failed while handling this request.';
 const SSE_RETIRED = 'The legacy SSE endpoint /sse has been retired.';
 const SSE_SUCCESSOR = 'Connect over Streamable HTTP instead: POST /mcp.';
@@ -409,8 +418,9 @@ export class DebugMCPServer {
         app.use(express.json({ limit: BODY_LIMIT }));
         app.post(MCP_ROUTE, (req: Request, res: Response) => this.acceptPost(req, res));
         // GET opens a session's SSE stream and DELETE ends the session. Both
-        // exist from the start: a 404 on either makes Cursor mark the server as
-        // failed. A missing or unknown session gets 400 (the SDK would say 404).
+        // routes exist from the start: Express's HTML 404 for a route it does
+        // not have makes Cursor mark the server as failed. A missing session
+        // id gets 400; an unknown one the SDK's JSON 404 (#14).
         app.get(MCP_ROUTE, (req: Request, res: Response) => this.acceptSessionRequest(req, res));
         app.delete(MCP_ROUTE, (req: Request, res: Response) => this.acceptSessionRequest(req, res));
         app.get('/sse', (_req: Request, res: Response) => {
@@ -429,8 +439,12 @@ export class DebugMCPServer {
                 await live.transport.handleRequest(req, res, req.body);
                 return;
             }
-            // An initialize carrying a stale id is refused too, like any unknown id.
-            if (claimed !== undefined || !isInitializeRequest(req.body)) {
+            // An unknown id, on an initialize request too: the client starts over without it.
+            if (claimed !== undefined) {
+                refuse(res, 404, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND);
+                return;
+            }
+            if (!isInitializeRequest(req.body)) {
                 refuse(res, 400, -32000, NO_SESSION_FOR_POST);
                 return;
             }
@@ -449,9 +463,13 @@ export class DebugMCPServer {
 
     private async acceptSessionRequest(req: Request, res: Response): Promise<void> {
         const claimed = claimedSession(req);
-        const live = claimed === undefined ? undefined : this.sessions.get(claimed);
-        if (live === undefined) {
+        if (claimed === undefined) {
             refuse(res, 400, -32000, NO_SESSION);
+            return;
+        }
+        const live = this.sessions.get(claimed);
+        if (live === undefined) {
+            refuse(res, 404, SESSION_NOT_FOUND_CODE, SESSION_NOT_FOUND);
             return;
         }
         this.seen(live, res);

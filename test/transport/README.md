@@ -16,9 +16,13 @@ Each exits non-zero if any check failed.
 
 - `POST /mcp` with an `initialize` request mints an `mcp-session-id`.
 - `GET /mcp` carrying that id returns a live `text/event-stream`.
-- `GET /mcp` with a missing or unknown id is rejected with **400**, not a bare
-  404. This is the regression that made Cursor's MCP client tombstone the
-  connection as "errored" while POST tool calls kept working.
+- `GET /mcp` with a missing id is rejected with **400**, and so is a `POST`
+  without one that is not an initialize request. A route that answered
+  Express's bare HTML 404 is the regression that made Cursor's MCP client
+  tombstone the connection as "errored" while POST tool calls kept working.
+- `POST`, `GET` and `DELETE` with an **unknown** id get the SDK transport's
+  JSON 404 with `-32001` "Session not found" (#14), an initialize request
+  with a stale id too: the answer that tells a client to initialize again.
 - `tools/list` returns the full tool surface.
 - **Three consecutive `get_threads` calls on one session all return.** This is
   the load-bearing check. The server originally shared one `McpServer` across
@@ -26,7 +30,8 @@ Each exits non-zero if any check failed.
   transport and its response went nowhere — `get_threads` hung after the third
   call. The fix was per-request servers; moving to per-*session* servers (needed
   for the SSE stream and for routing) must not bring the hang back.
-- `DELETE /mcp` tears the session down, and a `GET` after it is rejected.
+- `DELETE /mcp` tears the session down, and a `GET` after it is rejected
+  with 404.
 - The tool contract (#50): the `instructions` start with the tool rules, the
   first `get_session_status` of a session repeats them in one line and the
   second does not, and `tools/list` keeps its pinned size to the byte — the
@@ -84,7 +89,9 @@ same code path the extension uses — and drives the router over MCP:
   shortened margins (`timings`), a worker whose handler never answers
   returns `WORKER_TIMEOUT` inside the router's 3 s budget, shows its user one
   warning (the stub's `showWarningMessage` is replaced to catch it) and
-  turns its status-bar item to the warning background.
+  turns its status-bar item to the warning background. After failover the
+  new router answers the old router's session id with 404 and `-32001`, and
+  a new session works.
 
 Note: requests use `agent: false`. `server.close()` stops new connections but
 leaves keep-alive sockets open, so a pooled socket to the disposed router would
