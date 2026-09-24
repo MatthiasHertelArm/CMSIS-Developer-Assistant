@@ -504,24 +504,24 @@ export class ControlServer {
         return journaled;
     }
 
-    /** `work`, unless the fence fires first: then a `WORKER_TIMEOUT` rejection, and `work` runs on. */
+    /**
+     * `work`, unless the fence fires first: then a `WORKER_TIMEOUT` rejection,
+     * and `work` runs on. Work that settles in time takes its fence down.
+     */
     private fence(work: Promise<ToolText>, run: BusyRun, fenceMs: number, call: CallContext | undefined): Promise<ToolText> {
-        let timer: ReturnType<typeof setTimeout> | undefined;
         const expiry = new Promise<never>((_answered, fail) => {
-            timer = setTimeout(() => {
-                if (timer !== undefined) {
-                    this.fenceTimers.delete(timer);
-                }
+            const armed = setTimeout(() => {
+                this.fenceTimers.delete(armed);
                 fail(this.expire(run, fenceMs, call));
             }, fenceMs);
-            this.fenceTimers.add(timer);
+            this.fenceTimers.add(armed);
+            const disarm = (): void => {
+                clearTimeout(armed);
+                this.fenceTimers.delete(armed);
+            };
+            work.then(disarm, disarm);
         });
-        return Promise.race([work, expiry]).finally(() => {
-            if (timer !== undefined) {
-                clearTimeout(timer);
-                this.fenceTimers.delete(timer);
-            }
-        });
+        return Promise.race([work, expiry]);
     }
 
     /** The fence fired: mark the run, journal it in this window, and say so in the `WORKER_TIMEOUT` the router gets. */
@@ -550,9 +550,9 @@ export class ControlServer {
     /** The `health` reply: this window is alive, and what it is doing. */
     private health(): ToolReply {
         const facts = this.facts();
-        const now = Date.now();
+        const answeredAt = Date.now();
         const busy: JsonObject[] = this.busy.list().map((run) => ({
-            op: run.op, ageS: Math.round((now - run.startedAt) / 1000), fenced: run.fenced,
+            op: run.op, ageS: Math.round((answeredAt - run.startedAt) / 1000), fenced: run.fenced,
         }));
         const data: JsonObject = { pid: facts.pid, uptimeS: Math.round(process.uptime()), busy };
         if (facts.version !== undefined) {
