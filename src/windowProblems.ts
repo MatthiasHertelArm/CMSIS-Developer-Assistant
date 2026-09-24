@@ -288,6 +288,11 @@ export function attachJobJournal(
         }
     });
     const diagnosed = tracker.onDidDiagnoseJob((job) => {
+        // A build whose task exited 0 looked fine when it finished; its check found it failed (CMSIS Solution reports 0 for a failed build).
+        const failedOnCheck = job.diagnosis?.check === 'failed' ? failedJobProblem(job) : undefined;
+        if (failedOnCheck) {
+            journal.append({ ...failedOnCheck, message: `${failedOnCheck.message}, but the build failed` });
+        }
         for (const problem of buildMessageProblems(job, roots())) {
             journal.append(problem);
         }
