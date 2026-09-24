@@ -85,7 +85,7 @@ export type {
 } from './executor/contract';
 
 /** The version the MCP server, the server definition and the HTTP user agent report. Equals package.json. */
-export const SERVER_VERSION = '2.5.0';
+export const SERVER_VERSION = '2.5.1';
 
 type Motion = 'stepOver' | 'stepInto' | 'stepOut' | 'continue' | 'pause';
 
