@@ -77,6 +77,8 @@ const stub = {
               // Tests install `pickAnswer(items, options)`; without one the pick is dismissed.
               showQuickPick: async (items, options) => (stub.pickAnswer ? stub.pickAnswer(await items, options) : undefined) },
     StatusBarAlignment: { Left: 1, Right: 2 },
+    // A theme colour keeps only its id, which tests read back.
+    ThemeColor: class { constructor(id) { this.id = id; } },
     statusBarItems,
     pickAnswer: undefined,
     workspace: { getConfiguration: () => ({ get: (_k, d) => d }), workspaceFolders: [],

@@ -41,6 +41,10 @@
 //      sessions; Automatic clears it; the promoted window shows its new role.
 //  11. The problem journal is per window (#48): get_recent_problems and the
 //      count in get_session_status come from the window the session targets.
+//  12. The control channel's fences (#14): a worker whose handler never
+//      answers returns WORKER_TIMEOUT inside the router's budget (a small
+//      timeoutInSeconds and shortened margins), tells its user once, and
+//      shows the call past its fence in its status bar.
 
 const stub = require('./vscode-stub.js');
 
@@ -167,9 +171,12 @@ async function main() {
     const context = { subscriptions: [] };
 
     // Each coordinator gets its own registry instance (own pid + temp dir),
-    // which is what two real windows look like.
+    // which is what two real windows look like. A tool timeout of 1 s and a
+    // forward margin of 2 s make a forward's budget 3 s, and the worker's
+    // fence 1 s inside it (#14): the check of the fence waits 2 s, not 190.
     const makeCoordinator = (win) => new WindowCoordinator({
-        port: PORT, timeoutInSeconds: 30, hardwareTimeouts: {}, registry: win.registry, journal: win.journal,
+        port: PORT, timeoutInSeconds: 1, hardwareTimeouts: {}, registry: win.registry, journal: win.journal,
+        timings: { forwardMarginMs: 2_000, fenceMarginMs: 1_000 },
     });
 
     const c1 = makeCoordinator(alpha);
@@ -358,11 +365,39 @@ async function main() {
             && (tied.candidates ?? []).every((c) => c.hasActiveSession === true),
         JSON.stringify(tied));
 
-    // Router failover: close the router, the survivor must take the port.
+    // Router failover below: close the router, the survivor must take the port.
     const router = c1.isRouter() ? c1 : c2;
     const worker = c1.isRouter() ? c2 : c1;
     const workerItem = c1.isRouter() ? betaItem : alphaItem;
     const workerWindow = c1.isRouter() ? beta : alpha;
+
+    // #14: a worker whose handler never answers, as when a picker waits for a
+    // person nobody is. Its fence answers WORKER_TIMEOUT inside the router's
+    // 3 s budget; the call runs on there, so the worker tells its user and
+    // its status bar item turns to the warning background.
+    worker.localHandler.handleGetDeviceInfo = () => new Promise(() => { /* waits for a picker nobody answers */ });
+    const warnings = [];
+    const showWarning = stub.window.showWarningMessage;
+    stub.window.showWarningMessage = (message, ...items) => { warnings.push({ message, items }); return Promise.resolve(undefined); };
+    const hangSid = await openSession(PORT);
+    await callTool(PORT, hangSid, 'select_debug_window', { pid: workerWindow.pid }, 60);
+    const hangBegan = Date.now();
+    const hung = await callToolResult(PORT, hangSid, 'get_device_info', {}, 61);
+    const hungMs = Date.now() - hangBegan;
+    const hungText = hung.content?.[0]?.text ?? '';
+    check('a worker whose handler never answers returns WORKER_TIMEOUT inside the budget',
+        hung.isError === true && hung.structuredContent?.error_code === 'WORKER_TIMEOUT' && hungMs >= 1_800 && hungMs < 3_000
+            && /^\[WORKER_TIMEOUT\] 'get_device_info' did not finish within 2 s in window pid \d+( \(.+\))?; it is still running there\.\n/.test(hungText),
+        `${hungMs} ms: ${hungText.replace(/\n/g, ' | ')}`);
+    const again = await callToolResult(PORT, hangSid, 'get_device_info', {}, 62);
+    check('the user is told once, with the log a click away; the status bar shows the call past its fence',
+        again.structuredContent?.error_code === 'WORKER_TIMEOUT' && warnings.length === 1
+            && /: an agent's get_device_info has been waiting 2 s in this window; the agent was told it timed out\./.test(warnings[0].message)
+            && warnings[0].items.join() === 'Show Log'
+            && workerItem.backgroundColor?.id === 'statusBarItem.warningBackground'
+            && /get_device_info for \d+ s \(the agent was told it timed out/.test(workerItem.tooltip ?? ''),
+        `${warnings.map((w) => w.message).join(' | ')} / ${workerItem.backgroundColor?.id}`);
+    stub.window.showWarningMessage = showWarning;
     await router.dispose();
     check('the router released the port', !router.isRouter());
     check('the closed window\'s status bar item is gone', routerItem.disposed === true);

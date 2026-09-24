@@ -20,10 +20,10 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
-import { ControlServer } from '../controlServer';
+import { ControlServer, ControlServerOptions } from '../controlServer';
 import type { IDebuggingHandler } from '../debuggingHandler';
 import type { PackDocsHandlers } from '../packDocsDispatch';
-import { RoutingDebuggingHandler } from '../routingDebuggingHandler';
+import { RoutingDebuggingHandler, RoutingOptions } from '../routingDebuggingHandler';
 import { runInCallContext } from '../core/callContext';
 import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
 import { newErrorsNote, newErrorsStatusLine } from '../core/problemFeed';
@@ -37,6 +37,8 @@ const FIRST_FAKE_PID = 500_001;
 /** The router's per-call default, as the extension sets it for a 30 s timeout. */
 const TOOL_MS = 30_000;
 const JSON_TYPE: http.OutgoingHttpHeaders = { 'Content-Type': 'application/json' };
+/** A reply header that marks the typed envelope (#11). */
+const TYPED_JSON: http.OutgoingHttpHeaders = { ...JSON_TYPE, [CONTROL_ENVELOPE_HEADER]: '2' };
 
 type Role = 'debug' | 'docs' | 'build';
 
@@ -202,6 +204,7 @@ suite('Multi-window routing', () => {
         overrides: Partial<WindowRegistration> = {},
         withPackDocs = true,
         ops: OpOverrides = {},
+        serverOptions: ControlServerOptions = {},
     ): Promise<FakeWindow> {
         const token = `token-${label}`;
         const journal = new ProblemJournal();
@@ -209,10 +212,36 @@ suite('Multi-window routing', () => {
             { ...echoing<IDebuggingHandler>(label, 'debug', DEBUG_OPS), ...ops } as IDebuggingHandler,
             token,
             withPackDocs ? echoingPackDocs(label) : undefined,
-            journal);
+            journal,
+            serverOptions);
         const port = await control.start();
         running.push(() => control.stop());
         return enrol(label, port, token, overrides, () => control.stop(), journal);
+    }
+
+    /**
+     * A bare HTTP server posing as a window that reads each request's op and
+     * lets `answer` reply, or not; it keeps the ops in the order they came.
+     */
+    async function openScripted(
+        label: string,
+        answer: (op: string, reply: http.ServerResponse) => void,
+        overrides: Partial<WindowRegistration> = {},
+    ): Promise<{ window: FakeWindow; ops: string[] }> {
+        const ops: string[] = [];
+        const fake = http.createServer((incoming, reply) => {
+            const parts: Buffer[] = [];
+            incoming.on('data', (piece: Buffer) => parts.push(piece));
+            incoming.on('end', () => {
+                const op = String((JSON.parse(Buffer.concat(parts).toString('utf8')) as { op?: unknown }).op);
+                ops.push(op);
+                answer(op, reply);
+            });
+        });
+        await new Promise<void>((ready) => fake.listen(0, '127.0.0.1', ready));
+        running.push(() => closeHttpServer(fake));
+        const window = enrol(label, (fake.address() as AddressInfo).port, `token-${label}`, overrides, () => closeHttpServer(fake));
+        return { window, ops };
     }
 
     /** A bare HTTP server posing as a window; `respond` writes the whole answer, or none. */
@@ -231,11 +260,9 @@ suite('Multi-window routing', () => {
     }
 
     /** A router for a new session, seeing only the fake windows as alive. */
-    function newRouter(answerWithinMs?: number): RoutingDebuggingHandler {
+    function newRouter(options: RoutingOptions = {}): RoutingDebuggingHandler {
         const registry = new WorkspaceRegistry(process.pid, dir, (pid) => livePids.has(pid));
-        return answerWithinMs === undefined
-            ? new RoutingDebuggingHandler(registry, TOOL_MS)
-            : new RoutingDebuggingHandler(registry, TOOL_MS, () => answerWithinMs);
+        return new RoutingDebuggingHandler(registry, TOOL_MS, options);
     }
 
     function assertAnsweredBy(result: ToolText, label: string): void {
@@ -712,12 +739,19 @@ suite('Multi-window routing', () => {
             await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory({ address: '0x0', length: 4 }));
         });
 
-        test('a worker that never answers gives WORKER_TIMEOUT and keeps the target', async () => {
+        test('a worker that answers health but never the op gives WORKER_TIMEOUT when the budget ends, and keeps the target', async () => {
             await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
-            await openStandIn(() => { /* never answers */ }, 'silent', { workspaceFolders: [folder('silent')] });
-            const router = newRouter(200);
+            // A worker of 2.5.0 has no fence: it answers health with 500 and the op never.
+            await openScripted('silent', (op, reply) => {
+                if (op === 'health') {
+                    reply.writeHead(500, JSON_TYPE).end(JSON.stringify({ error: 'Control op health refused: not a known operation' }));
+                }
+            }, { workspaceFolders: [folder('silent')] });
+            const router = newRouter({ budgetMs: () => 300, watchdogEveryMs: 100, healthTimeoutMs: 50 });
+            const began = Date.now();
             await refusedAs('WORKER_TIMEOUT', router.handleAddBreakpoint({ fileFullPath: path.join(folder('silent'), 'main.c'), line: 3 }),
-                /sent no response within/);
+                /sent no response within 0\.3 s — it may be busy or wedged/);
+            assert.ok(Date.now() - began >= 280, 'a window that answers health keeps its whole budget');
             // Still the target: a path-less call goes there again instead of being refused as a tie.
             await refusedAs('WORKER_TIMEOUT', router.handleReadMemory({ address: '0x0', length: 4 }));
         });
@@ -854,13 +888,16 @@ suite('Multi-window routing', () => {
 
         const power = { source: 'gdb-server', origin: 'CMSIS Debugger: pyOCD', severity: 'error', message: 'Failed to power up DAP' } as const;
 
-        test('the envelope carries the call id and the MCP session id of the call, and nothing without a call', async () => {
+        test('the envelope carries the call id and the MCP session id of the call, and nothing without a call; always the budget (#14)', async () => {
             const { bodies } = await openRecorder('recorder', { result: 'ok' });
             const router = newRouter();
             await runInCallContext({ callId: 'abcd1234-7', sessionId: 'abcd1234-5678-90ef' }, () => router.handleGetThreads({}));
             await router.handleGetThreads({});
-            assert.deepStrictEqual(bodies[0], { op: 'handleGetThreads', args: {}, callId: 'abcd1234-7', sessionId: 'abcd1234-5678-90ef' });
-            assert.deepStrictEqual(bodies[1], { op: 'handleGetThreads', args: {} });
+            // The first call to a window asks its health first; that request carries no call.
+            assert.deepStrictEqual(bodies[0], { op: 'health', args: {} });
+            const forwarded = bodies.slice(1);
+            assert.deepStrictEqual(forwarded[0], { op: 'handleGetThreads', args: {}, callId: 'abcd1234-7', sessionId: 'abcd1234-5678-90ef', budgetMs: 45_000 });
+            assert.deepStrictEqual(forwarded[1], { op: 'handleGetThreads', args: {}, budgetMs: 45_000 });
         });
 
         test('a worker answers with its journal counters; a router without the envelope gets none', async () => {
@@ -995,8 +1032,9 @@ suite('Multi-window routing', () => {
             });
             const silent = await openRecorder('silent');
             const gone = await openRecorder('gone', typedOk);
-            // The silent window takes its forwarded call to WORKER_TIMEOUT within 200 ms; the session end has its own 2 s.
-            const router = newRouter(200);
+            // The silent window fails its health check within 200 ms and takes a forwarded call to
+            // WORKER_TIMEOUT within 200 ms; the session end has its own 2 s.
+            const router = newRouter({ budgetMs: () => 200, healthTimeoutMs: 200 });
             for (const w of [refusing, silent, gone]) {
                 await router.serialOp('handleStatus', { window: String(w.window.pid) }).catch(() => undefined);
             }
@@ -1027,6 +1065,199 @@ suite('Multi-window routing', () => {
             assert.strictEqual(JSON.parse(refused.body).error.code, 'INVALID_ARGUMENT');
             assert.deepStrictEqual(heard, [], 'the status bar hears of no agent call');
             assert.strictEqual(journal.size, 0);
+        });
+    });
+
+    suite('fences and health checks (#14)', () => {
+        const READ = { address: '0x0', length: 4 };
+        const HEALTH = '{"op":"health","args":{}}';
+        const FENCE_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
+        /** An op that never settles. */
+        const never = (): Promise<ToolText> => new Promise<ToolText>(() => { /* waits for a person nobody is */ });
+        /** Fences 300 ms inside the budget, and what the window says about itself. */
+        const quickFence: ControlServerOptions = { fenceMarginMs: 300, minFenceMs: 10, facts: () => ({ pid: 4711, name: 'CDA-Testdrive' }) };
+
+        /** The data of a window's typed `health` reply. */
+        async function healthOf(port: number, token: string): Promise<JsonObject> {
+            const raw = await rawPost(port, token, [HEALTH], 0, { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.strictEqual(raw.status, 200, raw.body);
+            return (JSON.parse(raw.body) as { result: { data: JsonObject } }).result.data;
+        }
+
+        /** A control server of its own, stopped at teardown. */
+        async function startControl(handler: Partial<IDebuggingHandler>, journal: ProblemJournal, options: ControlServerOptions = {}): Promise<{ control: ControlServer; port: number }> {
+            const control = new ControlServer({ ...echoing<IDebuggingHandler>('solo', 'debug', DEBUG_OPS), ...handler } as IDebuggingHandler,
+                'tok', undefined, journal, options);
+            const port = await control.start();
+            running.push(() => control.stop());
+            return { control, port };
+        }
+
+        test('a handler that never answers: WORKER_TIMEOUT within the fence the budget sets, the target kept, the op busy and fenced', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const beta = await openWindow('beta', { workspaceFolders: [folder('beta')] }, true, { handleReadMemory: never }, quickFence);
+            const router = newRouter({ budgetMs: () => 800 });
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 3 }), 'beta');
+            const began = Date.now();
+            const timedOut = await refusedAs('WORKER_TIMEOUT', router.handleReadMemory(READ));
+            const tookMs = Date.now() - began;
+            assert.ok(tookMs >= 450 && tookMs < 780, `the worker answered after ${tookMs} ms, its fence is 500 ms and the budget 800 ms`);
+            assert.strictEqual(timedOut.message, '\'read_memory\' did not finish within 0.5 s in window pid 4711 (CDA-Testdrive); it is still running there.');
+            assert.strictEqual(timedOut.hint, FENCE_HINT);
+            // Busy, not gone: the path-less call goes to beta again instead of being refused as a tie.
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'beta');
+            const data = await healthOf(beta.port, beta.token);
+            assert.deepStrictEqual((data.busy as JsonObject[]).map((run) => [run.op, run.fenced]), [['handleReadMemory', true]]);
+            // The worker journals it; the record does not ride along with the failure it restates.
+            const records = beta.journal.query({ minSeverity: 'warning' }).records;
+            assert.deepStrictEqual(records.map((record) => [record.source, record.severity, record.code, record.message]),
+                [['extension', 'warning', 'WORKER_TIMEOUT', timedOut.message]]);
+            assert.strictEqual(timedOut.data?.problems, undefined);
+        });
+
+        test('a fenced op that settles later leaves the busy table, is heard ending only then, and answers once', async () => {
+            let settle: (text: string) => void = () => undefined;
+            const late = (): Promise<ToolText> => new Promise<ToolText>((resolve) => { settle = resolve; });
+            const { control, port } = await startControl({ handleGetThreads: late }, new ProblemJournal(), quickFence);
+            const heard: string[] = [];
+            control.onOp((op, phase) => heard.push(`${op} ${phase}`));
+            const fenced = await rawPost(port, 'tok', [JSON.stringify({ op: 'handleGetThreads', args: {}, budgetMs: 350 })], 0,
+                { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.strictEqual(fenced.status, 500);
+            assert.strictEqual((JSON.parse(fenced.body) as { error: JsonObject }).error.code, 'WORKER_TIMEOUT');
+            assert.deepStrictEqual(heard, ['handleGetThreads start', 'handleGetThreads fenced'], 'still running after its fence');
+            assert.deepStrictEqual(control.busyOps().map((run) => [run.op, run.fenced]), [['handleGetThreads', true]]);
+            settle('too late');
+            await pause(20);
+            assert.deepStrictEqual(heard, ['handleGetThreads start', 'handleGetThreads fenced', 'handleGetThreads end']);
+            assert.deepStrictEqual(control.busyOps(), []);
+            assert.deepStrictEqual((await healthOf(port, 'tok')).busy, []);
+            // The late result went nowhere: the next call is answered as usual.
+            const next = await rawPost(port, 'tok', ['{"op":"handleGetSessionStatus","args":{}}']);
+            assert.deepStrictEqual(JSON.parse(next.body), { result: echo('solo', 'debug', 'handleGetSessionStatus', {}) });
+        });
+
+        test('without a budget in the envelope (a router of 2.5.0) the window\'s own timeout sets the fence', async () => {
+            const { port } = await startControl({ handleGetThreads: never }, new ProblemJournal(),
+                { ...quickFence, defaultBudgetMs: (op) => (op === 'handleGetThreads' ? 400 : 60_000) });
+            const began = Date.now();
+            const reply = await rawPost(port, 'tok', ['{"op":"handleGetThreads","args":{}}']);
+            const tookMs = Date.now() - began;
+            assert.ok(tookMs >= 90 && tookMs < 400, `answered after ${tookMs} ms, the fence is 100 ms`);
+            // A 2.5.0 router reads the old shape: one string, the hint on its second line.
+            assert.deepStrictEqual(JSON.parse(reply.body),
+                { error: `'get_threads' did not finish within 0.1 s in window pid 4711 (CDA-Testdrive); it is still running there.\n${FENCE_HINT}` });
+        });
+
+        test('health is answered at once while an op hangs, outside the op hook and the journal, with the window\'s facts', async () => {
+            const journal = new ProblemJournal();
+            const { control, port } = await startControl({ handleReadMemory: never }, journal, {
+                facts: () => ({ pid: 4711, name: 'w', role: 'worker', version: '9.9.9', lagMs: { p99: 3, max: 40 } }),
+            });
+            const heard: string[] = [];
+            control.onOp((op, phase) => heard.push(`${op} ${phase}`));
+            void rawPost(port, 'tok', ['{"op":"handleReadMemory","args":{}}']).catch(() => undefined);
+            await pause(20);
+            const began = Date.now();
+            const data = await healthOf(port, 'tok');
+            assert.ok(Date.now() - began < 500, 'not queued behind the hanging op');
+            assert.strictEqual(typeof data.uptimeS, 'number');
+            assert.deepStrictEqual({ ...data, uptimeS: 0, busy: (data.busy as JsonObject[]).map((run) => ({ ...run, ageS: 0 })) }, {
+                pid: 4711, uptimeS: 0, version: '9.9.9', role: 'worker', lagMs: { p99: 3, max: 40 },
+                busy: [{ op: 'handleReadMemory', ageS: 0, fenced: false }],
+            });
+            assert.deepStrictEqual(heard, ['handleReadMemory start'], 'health is not an agent call');
+            assert.strictEqual(journal.callsInFlight(), 1, 'only the hanging op is registered');
+            // A router of 2.3.10 gets the text.
+            const old = await rawPost(port, 'tok', [HEALTH]);
+            assert.match(String((JSON.parse(old.body) as { result: unknown }).result), /^Window pid 4711 is alive; 1 op\(s\) running\.$/);
+        });
+
+        test('receiving a request may take 10 s, its headers 5 s', async () => {
+            const { control } = await startControl({}, new ProblemJournal());
+            assert.deepStrictEqual(control.receiveLimits(), { requestMs: 10_000, headersMs: 5_000 });
+        });
+
+        test('a blocked window, which accepts and never answers: the health check before the call fails, WINDOW_UNREACHABLE, target dropped', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const blocked = await openStandIn(() => { /* its extension host is blocked */ }, 'blocked', {
+                workspaceFolders: [folder('blocked')], name: 'CDA-Testdrive',
+            });
+            const router = newRouter({ healthTimeoutMs: 100 });
+            const began = Date.now();
+            const refused = await refusedAs('WINDOW_UNREACHABLE',
+                router.handleAddBreakpoint({ fileFullPath: path.join(folder('blocked'), 'main.c'), line: 3 }));
+            assert.ok(Date.now() - began < 1_000, 'within the health timeout, not the budget');
+            assert.strictEqual(refused.message, `The VS Code window pid ${blocked.pid} (CDA-Testdrive) did not answer a health check within 0.1 s — `
+                + 'its extension host is blocked, or the window closed.');
+            assert.strictEqual(refused.hint, 'Call list_debug_windows; if it persists, reload that window.');
+            // The target is dropped: two idle windows are a tie again.
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory(READ));
+        });
+
+        test('a window that stops answering health while a call runs is given up after two missed checks', async () => {
+            let answersHealth = true;
+            const { window } = await openScripted('stalling', (op, reply) => {
+                if (op !== 'health') {
+                    // The op never answers, and from now on neither does health.
+                    answersHealth = false;
+                } else if (answersHealth) {
+                    reply.writeHead(200, TYPED_JSON).end(JSON.stringify({ result: { text: 'alive', status: 'ok' } }));
+                }
+            }, { workspaceFolders: [folder('stalling')] });
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const router = newRouter({ budgetMs: () => 5_000, healthTimeoutMs: 50, watchdogEveryMs: 60 });
+            const began = Date.now();
+            const refused = await refusedAs('WINDOW_UNREACHABLE', router.handleAddBreakpoint({ fileFullPath: path.join(folder('stalling'), 'main.c'), line: 3 }));
+            const tookMs = Date.now() - began;
+            assert.ok(tookMs < 1_000, `given up after ${tookMs} ms, well inside the 5 s budget`);
+            assert.strictEqual(refused.message, `The VS Code window pid ${window.pid} (stalling) missed 2 health checks in a row `
+                + 'while \'add_breakpoint\' ran there — its extension host is blocked, or the window closed.');
+            assert.match(refused.hint ?? '', /^Call list_debug_windows; if it persists, reload that window\. The call may still finish there/);
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory(READ), /no unambiguous target/);
+        });
+
+        test('a budget that ends after a missed health check is WINDOW_UNREACHABLE and drops the target', async () => {
+            let answersHealth = true;
+            await openScripted('fading', (op, reply) => {
+                if (op !== 'health') {
+                    answersHealth = false;
+                } else if (answersHealth) {
+                    reply.writeHead(200, TYPED_JSON).end(JSON.stringify({ result: { text: 'alive', status: 'ok' } }));
+                }
+            }, { workspaceFolders: [folder('fading')] });
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            // One check misses at 230 ms; the budget ends at 330 ms, before the second could miss at 430 ms.
+            const router = newRouter({ budgetMs: () => 330, healthTimeoutMs: 30, watchdogEveryMs: 200 });
+            await refusedAs('WINDOW_UNREACHABLE', router.handleAddBreakpoint({ fileFullPath: path.join(folder('fading'), 'main.c'), line: 3 }),
+                /sent no response within 0\.3 s and missed its last health check while 'add_breakpoint' ran there/);
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory(READ));
+        });
+
+        test('a 2.5.0 window answers health with 500, which counts as alive', async () => {
+            const { ops } = await openScripted('old-worker', (op, reply) => {
+                if (op === 'health') {
+                    reply.writeHead(500, JSON_TYPE).end(JSON.stringify({ error: 'Control op health refused: not a known operation' }));
+                } else {
+                    reply.writeHead(200, JSON_TYPE).end(JSON.stringify({ result: 'ok' }));
+                }
+            });
+            assert.strictEqual(await newRouter().handleGetThreads({}), 'ok');
+            assert.deepStrictEqual(ops, ['health', 'handleGetThreads']);
+        });
+
+        test('a window is asked for its health only after it has been quiet, and every window only once in that time', async () => {
+            const { ops } = await openScripted('recorded', (op, reply) => {
+                reply.writeHead(200, TYPED_JSON).end(JSON.stringify(op === 'health'
+                    ? { result: { text: 'alive', status: 'ok' } } : { result: 'ok', journalSeq: 0, journalErrors: 0 }));
+            });
+            const heard = new Map<number, number>();
+            await newRouter({ heard }).handleGetThreads({});
+            await newRouter({ heard }).handleGetThreads({});
+            assert.deepStrictEqual(ops, ['health', 'handleGetThreads', 'handleGetThreads'], 'the second session shares what the first heard');
+            await pause(10);
+            await newRouter({ heard, quietMs: 5 }).handleGetThreads({});
+            assert.deepStrictEqual(ops.slice(3), ['health', 'handleGetThreads'], 'quiet for longer than quietMs');
         });
     });
 });

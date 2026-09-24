@@ -80,6 +80,11 @@ same code path the extension uses — and drives the router over MCP:
 - The problem journal is per window (#48): `get_recent_problems` and the
   count of new errors in `get_session_status` come from the window the
   session is pinned to, never from the router or the other window.
+- The control channel's fences (#14): with a tool timeout of 1 s and
+  shortened margins (`timings`), a worker whose handler never answers
+  returns `WORKER_TIMEOUT` inside the router's 3 s budget, shows its user one
+  warning (the stub's `showWarningMessage` is replaced to catch it) and
+  turns its status-bar item to the warning background.
 
 Note: requests use `agent: false`. `server.close()` stops new connections but
 leaves keep-alive sockets open, so a pooled socket to the disposed router would

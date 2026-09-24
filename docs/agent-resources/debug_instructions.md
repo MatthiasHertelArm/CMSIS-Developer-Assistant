@@ -63,6 +63,11 @@ The MCP server runs in one window (the router) and forwards each call to the win
 
 When **no rule decides** — two windows debugging at once, or several idle ones — it refuses to guess and names them all (`AMBIGUOUS_WINDOW`): reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and the default target, and `select_debug_window({ pid })` to pin one for the rest of the session, or ask the user to pick one: a click on "CDA" in the VS Code status bar opens **Select Target Window**.
 
+When the target window is **slow or stuck**, the error code says which:
+
+- `WORKER_TIMEOUT`: the window is alive, but the call did not finish in time and still runs there. Often a picker or dialog in that window waits for the user. Call `get_session_status`, and ask the user to look at that window before you repeat the call.
+- `WINDOW_UNREACHABLE`: the window did not answer at all; its extension host is blocked, or it closed. Call `list_debug_windows`. If the window is still listed, ask the user to reload it.
+
 ## 🧹 Clean up
 
 Once the root cause is identified and verified, call `clear_all_breakpoints` before concluding — a clean slate for the next task, and free FPB comparators for it.

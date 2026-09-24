@@ -21,14 +21,17 @@
  * module keeps the state it is computed from and puts it on screen.
  *
  * The state has three sources. The control server's op hook says when an
- * agent call starts and ends in this window. The router's MCP server lists
- * its sessions and their target windows. The default target is read from the
- * registry directory on the coordinator's heartbeat, and at once in the
- * window where the user chose it. A five-second tick keeps the times in the
- * tooltip current; nothing is assigned to the item unless it changed.
+ * agent call starts, outlives its fence (#14) and ends in this window. The
+ * router's MCP server lists its sessions and their target windows. The
+ * default target is read from the registry directory on the coordinator's
+ * heartbeat, and at once in the window where the user chose it. A
+ * five-second tick keeps the times in the tooltip current; nothing is
+ * assigned to the item unless it changed, and the warning background is
+ * made only while a call is past its fence.
  */
 
 import * as vscode from 'vscode';
+import type { OpPhase } from './controlServer';
 import type { OpName } from './core/opTable';
 import {
     DefaultTargetView,
@@ -55,6 +58,11 @@ const STATUS_PRIORITY = 100;
 /** How often the times in the tooltip are brought up to date. */
 const TICK_MS = 5_000;
 const PICK_TITLE = 'Select Target Window';
+/** The theme colour of the item while a call is past its fence (#14). */
+const WARNING_BACKGROUND = 'statusBarItem.warningBackground';
+
+/** A running call as this item tracks it: the ticket the control server gave its run, when it named one. */
+type TrackedCall = RunningCall & { ticket?: number };
 
 /** What the item reads from its window's coordinator. */
 export interface WindowStatusSource {
@@ -70,7 +78,7 @@ export interface WindowStatusSource {
 export class WindowStatus {
     private readonly item: vscode.StatusBarItem;
     private readonly ticker: ReturnType<typeof setInterval>;
-    private readonly running: RunningCall[] = [];
+    private readonly running: TrackedCall[] = [];
     private lastCall: { tool: string; at: number } | undefined;
     private chosen: DefaultTargetView | undefined;
     private shown: WindowStatusView | undefined;
@@ -87,14 +95,22 @@ export class WindowStatus {
         this.ticker.unref();
     }
 
-    /** The control server's op hook: an agent call starts or ends in this window. */
-    noteOp(op: OpName, phase: 'start' | 'end'): void {
+    /**
+     * The control server's op hook: an agent call starts in this window,
+     * outlives its fence, or ends. `ticket` tells two runs of one tool apart;
+     * without it the oldest run of the tool is meant.
+     */
+    noteOp(op: OpName, phase: OpPhase, ticket?: number): void {
         const tool = toolNameOf(op);
         const now = Date.now();
+        const at = this.running.findIndex((call) => call.tool === tool && (ticket === undefined || call.ticket === ticket));
         if (phase === 'start') {
-            this.running.push({ tool, since: now });
+            this.running.push(ticket === undefined ? { tool, since: now } : { tool, since: now, ticket });
+        } else if (phase === 'fenced') {
+            if (at >= 0) {
+                this.running[at].fenced = true;
+            }
         } else {
-            const at = this.running.findIndex((call) => call.tool === tool);
             if (at >= 0) {
                 this.running.splice(at, 1);
             }
@@ -126,6 +142,9 @@ export class WindowStatus {
         }
         if (this.shown?.tooltip !== view.tooltip) {
             this.item.tooltip = view.tooltip;
+        }
+        if ((this.shown?.warning ?? false) !== view.warning) {
+            this.item.backgroundColor = view.warning ? new vscode.ThemeColor(WARNING_BACKGROUND) : undefined;
         }
         this.shown = view;
     }

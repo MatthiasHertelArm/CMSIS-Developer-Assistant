@@ -300,6 +300,8 @@ When none of these decides, for example with two windows debugging or two idle o
 
 Every window shows an item in the status bar: **CDA router** or **CDA worker**, with **· default** on the default target and a spinner while an agent call runs in it. Its tooltip names the MCP endpoint, the default target and the last agent call; in the router window it also lists the agent sessions with the window each one drives and why. A click on the item opens **Select Target Window**, which saves your choice for every window. It survives a reload of the chosen window, since the window is found again by its folder. Hide the item from the status bar's context menu (**CMSIS Developer Assistant**) if you do not need it.
 
+A call that hangs in a window ends in time. When a call does not finish, for example because a picker or dialog in that window waits for you, the window tells the agent `WORKER_TIMEOUT` shortly before the router would give up. The call keeps running there: the window shows a warning, and its status-bar item turns to the warning background until the call ends. A window whose extension host is blocked, or that was closed, fails a health check within seconds, and the agent gets `WINDOW_UNREACHABLE` instead of waiting minutes.
+
 ### Manual agent registration
 
 The popup described in [Connecting an AI agent](#connecting-an-ai-agent) writes these entries for you. If you prefer to do it by hand, the server is reachable at `http://localhost:3001/mcp` (replace the port if you changed `serverPort`).

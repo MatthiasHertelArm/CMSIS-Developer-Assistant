@@ -24,7 +24,10 @@
  * The item names the window's role, marks the default target and spins while
  * an agent call runs in the window. The tooltip adds the MCP endpoint, the
  * default target, the calls running and the last one, and in the router
- * window every open agent session with the window it drives and why.
+ * window every open agent session with the window it drives and why. While
+ * a call runs on past its fence — the agent was told it timed out, often
+ * because a picker or dialog waits for the user — the item asks for the
+ * warning background (#14).
  */
 
 import * as path from 'path';
@@ -58,6 +61,8 @@ export interface DefaultTargetView {
 export interface RunningCall {
     tool: string;
     since: number;
+    /** True once its fence answered the agent `WORKER_TIMEOUT` while it runs on (#14). */
+    fenced?: boolean;
 }
 
 /** Everything one rendering of the status-bar item reads. */
@@ -83,6 +88,8 @@ export interface WindowStatusState {
 export interface WindowStatusView {
     text: string;
     tooltip: string;
+    /** True while a call runs on past its fence: the item takes the warning background. */
+    warning: boolean;
 }
 
 /** One entry of Select Target Window; the one without a window clears the default. */
@@ -165,11 +172,14 @@ export function defaultTargetText(chosen: DefaultTargetView | undefined, ownPid:
     return chosen.pid === ownPid ? 'this window' : `${chosen.name} (pid ${chosen.pid})`;
 }
 
+/** What a call past its fence adds to its entry in the tooltip. */
+const FENCED_NOTE = ' (the agent was told it timed out; a picker or dialog here may be waiting for you)';
+
 /** The lines on the agent calls of this window: those running, then the last that ended. */
 function callLines(state: WindowStatusState): string[] {
     const lines: string[] = [];
     if (state.running.length > 0) {
-        const calls = state.running.map((call) => `${call.tool} for ${durationText(state.now - call.since)}`);
+        const calls = state.running.map((call) => `${call.tool} for ${durationText(state.now - call.since)}${call.fenced ? FENCED_NOTE : ''}`);
         lines.push(`Running here: ${calls.join(', ')}`);
     }
     const last = state.lastCall;
@@ -192,7 +202,8 @@ function sessionLine(session: SessionView, ownPid: number): string {
 /**
  * The item's text and tooltip. The text is `$(plug) CDA router` or
  * `$(plug) CDA worker`, then ` · default` when this window is the default
- * target and a spinner while an agent call runs here.
+ * target and a spinner while an agent call runs here. `warning` is set while
+ * a running call is past its fence.
  */
 export function renderWindowStatus(state: WindowStatusState): WindowStatusView {
     const isDefault = state.defaultTarget?.pid === state.pid;
@@ -212,7 +223,7 @@ export function renderWindowStatus(state: WindowStatusState): WindowStatusView {
         lines.push(...state.sessions.slice(earlier).map((session) => sessionLine(session, state.pid)));
     }
     lines.push('', CLICK_LINE);
-    return { text, tooltip: lines.join('\n') };
+    return { text, tooltip: lines.join('\n'), warning: state.running.some((call) => call.fenced === true) };
 }
 
 /** The second line of a window's entry: this window, role, debug session, solution and pid. */
