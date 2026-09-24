@@ -22,7 +22,7 @@ import * as path from 'path';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
 import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
-import type { IDebugConfigurationManager } from '../utils/debugConfigurationManager';
+import { PickerCancelled, type IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
 import type { StopWaitResult } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
@@ -718,6 +718,65 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('startDebugging'), []);
         });
 
+        /** A picker nobody answers: it rejects as the real one does once its token fires. */
+        const unanswered = (offered: string[], seen: Array<vscode.CancellationToken | undefined> = []): Partial<IDebugConfigurationManager> => ({
+            promptForConfiguration: (_folder: string, cancel?: vscode.CancellationToken) => new Promise<string | undefined>((_chosen, closed) => {
+                seen.push(cancel);
+                cancel?.onCancellationRequested(() => closed(new PickerCancelled(offered)));
+            }),
+        });
+
+        test('a picker nobody answers is closed after 30 s: INVALID_ARGUMENT naming the configurations to pass (#14)', async () => {
+            const x = new ScriptedExecutor();
+            x.session = false;
+            const timers: number[] = [];
+            const seen: Array<vscode.CancellationToken | undefined> = [];
+            const refused = await refusalOf(handlerFor(x, fastClock(1000, timers), 5, unanswered(['CMSIS Debugger: pyOCD', 'Attach'], seen))
+                .handleStartDebugging({ workingDirectory: '/w', fileFullPath: '/w/main.c' }), 'INVALID_ARGUMENT');
+            assert.deepStrictEqual(timers, [30_000]);
+            assert.strictEqual(seen[0]?.isCancellationRequested, true, 'the picker got the token, and it fired');
+            assert.strictEqual(refused.message, 'Error starting debug session: No debug configuration was chosen within 30 s: '
+                + 'without configurationName, start_debugging asks the user in a picker in that VS Code window, and nobody chose.');
+            assert.strictEqual(refused.hint, 'Pass configurationName: one of \'CMSIS Debugger: pyOCD\', \'Attach\' (from .vscode/launch.json), '
+                + 'or \'Default Configuration\' with fileFullPath to derive one from the file type. '
+                + 'For a CMSIS solution, cmsis_action load_and_debug starts the session instead.');
+            assert.deepStrictEqual(x.argsOf('startDebugging'), []);
+            assert.deepStrictEqual(x.argsOf('startDebuggingByName'), []);
+        });
+
+        test('the picker waits for timeoutMs, at most 60 s; without launch.json entries the hint names the derived configuration (#14)', async () => {
+            const waits: number[][] = [];
+            for (const timeoutMs of [5_000, 600_000]) {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const timers: number[] = [];
+                const refused = await refusalOf(handlerFor(x, fastClock(1000, timers), 5, unanswered([]))
+                    .handleStartDebugging({ workingDirectory: '/w', fileFullPath: '/w/main.c', timeoutMs }), 'INVALID_ARGUMENT');
+                waits.push(timers);
+                assert.strictEqual(refused.hint, '.vscode/launch.json lists no configuration: pass configurationName \'Default Configuration\' '
+                    + 'with fileFullPath to derive one from the file type. For a CMSIS solution, cmsis_action load_and_debug starts the session instead.');
+            }
+            assert.deepStrictEqual(waits, [[5_000], [60_000]]);
+        });
+
+        test('a choice made in time starts that configuration, and the picker\'s timer is disarmed', async () => {
+            const x = new ScriptedExecutor();
+            x.session = false;
+            x.sessionStatus = status('stopped');
+            let disarmed = 0;
+            const clock = fastClock(1000);
+            const reply = await textAnswer(handlerFor(x, {
+                ...clock,
+                startTimer: (ms, fire) => {
+                    const cancel = clock.startTimer(ms, fire);
+                    return () => { disarmed++; cancel(); };
+                },
+            }, 5, { promptForConfiguration: async () => 'CMSIS Debugger: pyOCD' })
+                .handleStartDebugging({ workingDirectory: '/w' }));
+            assert.ok(reply.startsWith('Debug session started successfully for: CMSIS Debugger: pyOCD'), reply);
+            assert.ok(disarmed >= 1, 'the picker\'s deadline is cleared once it answered');
+        });
+
         test('a named configuration starts by name and shows the full state; motion then diffs the breakpoints', async () => {
             const x = new ScriptedExecutor();
             x.session = false;
@@ -781,6 +840,31 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('stopDebugging'), [[]]);
             assert.ok(reply.startsWith('The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**'), reply);
             assert.ok(reply.includes('1. Set breakpoints at the places worth investigating with `add_breakpoint`.'), reply);
+        });
+
+        test('a stop that never settles answers status timeout after 10 s while the session is still listed (#14)', async () => {
+            const stuck = new ScriptedExecutor();
+            stuck.stopDebugging = () => new Promise<void>(() => { /* VS Code never confirms */ });
+            const timers: number[] = [];
+            const text = await replyAnswer(handlerFor(stuck, fastClock(1000, timers)).handleStopDebugging(), 'timeout');
+            assert.deepStrictEqual(timers, [10_000]);
+            assert.strictEqual(text, 'Stop requested, but the debug session did not end within 10 s and is still listed. '
+                + 'Call get_session_status to see whether it ends; stop_debugging may be called again.');
+
+            // Gone by the time the fence fires: the stop took, although VS Code never said so.
+            const quiet = new ScriptedExecutor();
+            quiet.stopDebugging = () => {
+                quiet.session = false;
+                return new Promise<void>(() => { /* never confirms */ });
+            };
+            const stopped = await textAnswer(handlerFor(quiet, fastClock(1000)).handleStopDebugging());
+            assert.ok(stopped.startsWith('The debug session has been stopped.'), stopped);
+
+            // A stop that fails in time is still wrapped with its cause.
+            const refused = new ScriptedExecutor();
+            refused.stopDebugging = () => Promise.reject(new Error('adapter gone'));
+            assert.strictEqual(await rejectionOf(handlerFor(refused, fastClock(1000)).handleStopDebugging()),
+                'Could not stop the debug session: adapter gone');
         });
 
         test('restart needs a session and waits for it to come back', async () => {

@@ -25,6 +25,11 @@
  * is synthesized from the source file's extension: a heuristic for general,
  * non-embedded debugging.
  *
+ * The quick-pick waits for a person in a window the agent cannot see, so the
+ * handler bounds it with a cancellation token (#14). When the token fires,
+ * the picker closes and rejects with `PickerCancelled`, which names the
+ * configurations it offered so that the agent can pass one by name.
+ *
  * `launch.json` is read through the VS Code document model, so edits that are
  * not saved yet count, and parsed as JSONC: generated files carry comments
  * and trailing commas. No YAML is read here; the `*.cbuild-run.yml` files
@@ -57,6 +62,18 @@ const AUTO_ITEM_NOTE = 'Beta: derive the settings from the file type automatical
 const AUTO_ITEM_DETAIL = `${NAME_PREFIX} guesses the debugger and its settings from the source file's extension. The guess can be wrong for some projects.`;
 /** The rejection when the picker is closed without a choice; the handler passes it on to the agent. */
 const PICK_ABANDONED = 'The user closed the configuration picker without choosing a debug configuration';
+
+/**
+ * The configuration picker was closed by its cancellation token, not by the
+ * user (#14): nobody chose in time. `offered` holds the names of the
+ * `launch.json` entries it showed, for the agent's next call.
+ */
+export class PickerCancelled extends Error {
+    constructor(readonly offered: readonly string[]) {
+        super('The configuration picker was closed before anybody chose a debug configuration');
+        this.name = 'PickerCancelled';
+    }
+}
 
 /** Lower-cased source extension → the VS Code debug type used for it. */
 const DEBUG_TYPES: ReadonlyMap<string, string> = new Map([
@@ -103,6 +120,40 @@ async function launchEntries(file: vscode.Uri): Promise<LaunchEntry[]> {
     const tree = parseJsonc(doc.getText()) as { configurations?: unknown } | null | undefined;
     const list = tree?.configurations;
     return Array.isArray(list) ? list as LaunchEntry[] : [];
+}
+
+/**
+ * The quick-pick, closed when `cancel` fires. Resolves undefined when it is
+ * closed without a choice, by the user or by `cancel`. VS Code closes the
+ * picker on the token; the race ends the wait even where it would not.
+ */
+async function pickUnlessCancelled(
+    items: vscode.QuickPickItem[],
+    options: vscode.QuickPickOptions,
+    cancel: vscode.CancellationToken | undefined,
+): Promise<vscode.QuickPickItem | undefined> {
+    if (cancel === undefined) {
+        return vscode.window.showQuickPick(items, options);
+    }
+    if (cancel.isCancellationRequested) {
+        return undefined;
+    }
+    let listening: vscode.Disposable | undefined;
+    const cancelled = new Promise<undefined>((closed) => {
+        listening = cancel.onCancellationRequested(() => closed(undefined));
+    });
+    const shown = Promise.resolve(vscode.window.showQuickPick(items, options, cancel)).catch((failure: unknown) => {
+        // A token that fires as the picker opens makes VS Code reject rather than resolve.
+        if (cancel.isCancellationRequested) {
+            return undefined;
+        }
+        throw failure;
+    });
+    try {
+        return await Promise.race([shown, cancelled]);
+    } finally {
+        listening?.dispose();
+    }
 }
 
 /** A launch request named `<prefix> <title>`; `type`, `request` and `name` come first. */
@@ -205,7 +256,8 @@ async function singleTestLaunch(debugType: string, source: string, test: string)
 
 export interface IDebugConfigurationManager {
     getDebugConfig(workDir: string, sourceFile: string, launchName?: string, testName?: string): Promise<vscode.DebugConfiguration>;
-    promptForConfiguration(workDir: string): Promise<string | undefined>;
+    /** `cancel` closes the picker; it then rejects with `PickerCancelled` (#14). */
+    promptForConfiguration(workDir: string, cancel?: vscode.CancellationToken): Promise<string | undefined>;
     detectLanguageFromFilePath(sourceFile: string): string;
 }
 
@@ -240,9 +292,10 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
     /**
      * Let the user choose among the folder's `launch.json` entries and the
      * sentinel, which is always offered last. Resolves the chosen label;
-     * rejects when the picker is closed without a choice.
+     * rejects when the picker is closed without a choice, and with
+     * `PickerCancelled` when `cancel` closed it (#14).
      */
-    async promptForConfiguration(workDir: string): Promise<string | undefined> {
+    async promptForConfiguration(workDir: string, cancel?: vscode.CancellationToken): Promise<string | undefined> {
         try {
             // Built before the read's own error handling on purpose: a failure here reaches the caller.
             const file = launchFileIn(vscode.Uri.file(workDir));
@@ -256,13 +309,21 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
                 detail: entry.request ? `Request kind: ${entry.request}` : '',
             }));
             items.push({ label: AUTO_CONFIG_NAME, description: AUTO_ITEM_NOTE, detail: AUTO_ITEM_DETAIL });
-            const picked = await vscode.window.showQuickPick(items, { placeHolder: PICKER_PROMPT, title: PICKER_TITLE });
+            const picked = await pickUnlessCancelled(items, { placeHolder: PICKER_PROMPT, title: PICKER_TITLE }, cancel);
             if (!picked) {
+                if (cancel?.isCancellationRequested) {
+                    throw new PickerCancelled(entries.map((entry) => entry.name).filter((name): name is string => typeof name === 'string' && name.length > 0));
+                }
                 throw new Error(PICK_ABANDONED);
             }
             return picked.label;
         } catch (failure) {
-            logger.error('Choosing a debug configuration failed', failure);
+            if (failure instanceof PickerCancelled) {
+                // Expected: the agent is told, with the configurations to name.
+                logger.warn(`${failure.message} (${workDir})`);
+            } else {
+                logger.error('Choosing a debug configuration failed', failure);
+            }
             throw failure;
         }
     }

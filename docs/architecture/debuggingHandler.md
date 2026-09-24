@@ -38,7 +38,7 @@ cannot be left out of the routing (see [windowRouting.md](windowRouting.md)).
 | ----- | ------- | -------- |
 | Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads | rejected with the body's `ToolError`; a plain error gets a code from `classifyError()` | rejected with `TIMEOUT`: a read that returned nothing has failed |
 | `reset`, `wait_for_stop`, `cmsis_action`, `flash` | as above | answered with status `timeout` and the notice that the call did not complete within its limit |
-| Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint; a `Refusal` passes as it is | bounded by the executor's request deadlines and by the stop and session waits below |
+| Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint; a `Refusal` passes as it is | bounded by the executor's request deadlines and by the stop and session waits below; the configuration picker of `start_debugging` fails with `INVALID_ARGUMENT` after its limit, and `stop_debugging` answers with status `timeout` after 10 s (#14). What stays unbounded here, the window's fence answers (see [windowRouting.md](windowRouting.md#fences-and-health-checks)) |
 
 The cause reads as its message: a plain `Error` loses the `Error: ` its
 string form would put in front, while a named class such as
@@ -118,12 +118,22 @@ start or a `cmsis_action` attach, shows everything. See
 executor. Without one it lets the user choose through
 `promptForConfiguration()`, and the entry `Default Configuration` gets a
 configuration synthesized from the source file (see
-[debugConfigurationManager.md](debugConfigurationManager.md)). It then polls
+[debugConfigurationManager.md](debugConfigurationManager.md)). The picker
+waits for a person in a window the agent may not see, so
+`chooseConfiguration()` bounds it (#14): a cancellation token fires after
+the call's `timeoutMs`, 30 s without one and 60 s at most, on the host's
+clock. The picker then closes and rejects with `PickerCancelled`, and the
+call fails with `INVALID_ARGUMENT`, its hint naming the `launch.json`
+entries to pass as `configurationName`. It then polls
 the session state with exponential backoff (`awaitLiveSession()`) until the
 target runs or stops, and answers with the full state; a failed start
 carries what the adapter and the GDB server reported during the call, as
-problem records (see [The problem journal](#the-problem-journal)). `handleStopDebugging()` adds a
-short root-cause check to its reply: a reminder to explain the bug, not only
+problem records (see [The problem journal](#the-problem-journal)).
+`handleStopDebugging()` waits at most 10 s for VS Code to end the session
+(`settlesWithin()`, #14): a stop that has not settled by then, while the
+session is still listed, answers with status `timeout` and points to
+`get_session_status`. Its success reply adds a
+short root-cause check: a reminder to explain the bug, not only
 where it showed, before the investigation is closed. `handleRestart()`
 pauses a running CMSIS Debugger target first, so the adapter lets go of a
 halted core, and then has the executor stop the session and start its
@@ -437,7 +447,10 @@ by #56.
 ## Tests
 
 - `src/test/debuggingHandler.test.ts`: the handler against a scripted
-  executor and host, CMSIS jobs over fake task events included
+  executor and host, CMSIS jobs over fake task events included; a picker
+  nobody answers and a stop that never settles (#14)
+- `src/test/debugConfigurationManager.test.ts`: the configuration picker
+  against VS Code's own quick pick, closed by its cancellation token
 - `src/test/cmsisTasks.test.ts`, `src/test/cmsisJobTracker.test.ts`: the
   classifier, the job state machine, the guard matrix and the tracker,
   replayed over task sequences derived from CMSIS Solution 1.70.1
