@@ -30,6 +30,9 @@
  *   an entry stores them and as `list_debug_windows` shows them.
  * - `RouterWatch` and `portSilent`: whether the window that holds the MCP
  *   port has stopped running, judged by a worker whose promotion failed.
+ * - `probeLoopback`: one request on a connection of its own, waiting only
+ *   for the first sign of an answer; the router's health check and
+ *   `portSilent` both use it.
  *
  * Pure: Node only, no vscode.
  */
@@ -255,35 +258,46 @@ export class RouterWatch {
     }
 }
 
+/** What `probeLoopback` found: an answer of any status, none in time, or a connection that failed. */
+export type ProbeOutcome = { kind: 'answered' } | { kind: 'silent' } | { kind: 'failed'; reason: string };
+
+/**
+ * Send one request to a port on 127.0.0.1, on a connection of its own (a
+ * pooled one the peer just closed would read as a failure), and wait at
+ * most `timeoutMs` for the first sign of an answer. Any status counts; the
+ * body is read and dropped. A request still unanswered then is destroyed.
+ */
+export function probeLoopback(request: http.RequestOptions, body: Buffer | undefined, timeoutMs: number): Promise<ProbeOutcome> {
+    return new Promise<ProbeOutcome>((found) => {
+        let open = true;
+        const conclude = (outcome: ProbeOutcome): void => {
+            if (open) {
+                open = false;
+                clearTimeout(deadline);
+                found(outcome);
+            }
+        };
+        const probe = http.request({ ...request, host: '127.0.0.1', agent: false }, (answer) => {
+            answer.on('error', () => undefined);
+            answer.resume();
+            conclude({ kind: 'answered' });
+        });
+        const deadline = setTimeout(() => {
+            conclude({ kind: 'silent' });
+            probe.destroy();
+        }, timeoutMs);
+        probe.on('error', (fault: Error) => conclude({ kind: 'failed', reason: fault.message }));
+        probe.end(body);
+    });
+}
+
 /**
  * True when `GET /mcp` on the router port gets no answer within `timeoutMs`:
  * the port is bound, but the server behind it does not run. Any answer, a
  * refused connection and any other failure are not silence.
  */
-export function portSilent(port: number, timeoutMs: number): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        let settled = false;
-        const settle = (silent: boolean): void => {
-            if (!settled) {
-                settled = true;
-                clearTimeout(timer);
-                resolve(silent);
-            }
-        };
-        const request = http.request({
-            host: '127.0.0.1', port, path: '/mcp', method: 'GET', agent: false,
-            headers: { Accept: 'application/json, text/event-stream' },
-        }, (reply) => {
-            reply.on('error', () => undefined);
-            reply.resume();
-            settle(false);
-        });
-        timer = setTimeout(() => {
-            settle(true);
-            request.destroy();
-        }, timeoutMs);
-        request.on('error', () => settle(false));
-        request.end();
-    });
+export async function portSilent(port: number, timeoutMs: number): Promise<boolean> {
+    const outcome = await probeLoopback({ port, path: '/mcp', method: 'GET', headers: { Accept: 'application/json, text/event-stream' } },
+        undefined, timeoutMs);
+    return outcome.kind === 'silent';
 }

@@ -85,7 +85,7 @@ import {
     toToolError,
     upgradeLegacyText,
 } from './core/toolResult';
-import { secondsText } from './core/windowHealth';
+import { probeLoopback, secondsText } from './core/windowHealth';
 import { toolNameOf, type SessionTarget } from './core/windowStatus';
 import {
     DefaultTarget,
@@ -194,45 +194,22 @@ function silentDuringCall(entry: WindowRegistration, op: string, why: string): C
 /**
  * Ask a window `health`, on a connection of its own. Any answer within
  * `timeoutMs` counts as alive, a 500 of a 2.5.0 window included: it shows
- * that the window's event loop runs. The body is read and dropped.
+ * that the window's event loop runs.
  */
-function probeHealth(entry: WindowRegistration, timeoutMs: number): Promise<HealthProbe> {
+async function probeHealth(entry: WindowRegistration, timeoutMs: number): Promise<HealthProbe> {
     const body = Buffer.from(JSON.stringify({ op: HEALTH_OP, args: {} }), 'utf8');
-    return new Promise<HealthProbe>((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        let settled = false;
-        const settle = (probe: HealthProbe): void => {
-            if (!settled) {
-                settled = true;
-                clearTimeout(timer);
-                resolve(probe);
-            }
-        };
-        const outgoing = http.request({
-            host: '127.0.0.1',
-            port: entry.controlPort,
-            path: '/op',
-            method: 'POST',
-            // A fresh connection: a pooled one the window just closed would read as a failure.
-            agent: false,
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': body.length,
-                [TOKEN_HEADER]: entry.controlToken,
-                [CONTROL_ENVELOPE_HEADER]: String(CONTROL_ENVELOPE_VERSION),
-            },
-        }, (incoming) => {
-            incoming.on('error', () => undefined);
-            incoming.resume();
-            settle({ kind: 'alive' });
-        });
-        timer = setTimeout(() => {
-            settle({ kind: 'silent' });
-            outgoing.destroy();
-        }, timeoutMs);
-        outgoing.on('error', (fault: Error) => settle({ kind: 'failed', reason: fault.message }));
-        outgoing.end(body);
-    });
+    const outcome = await probeLoopback({
+        port: entry.controlPort,
+        path: '/op',
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': body.length,
+            [TOKEN_HEADER]: entry.controlToken,
+            [CONTROL_ENVELOPE_HEADER]: String(CONTROL_ENVELOPE_VERSION),
+        },
+    }, body, timeoutMs);
+    return outcome.kind === 'answered' ? { kind: 'alive' } : outcome;
 }
 
 /** A window as `AMBIGUOUS_WINDOW` and a `window` argument that matches nothing list it in `data.candidates`. */

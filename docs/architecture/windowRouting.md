@@ -38,7 +38,7 @@ owns the workspace or the board the call is about.
 | `src/routingDebuggingHandler.ts` | `RoutingDebuggingHandler`: picks the target window for a call and forwards it; answers `list_debug_windows` and `select_debug_window` |
 | `src/controlServer.ts` | `ControlServer`: receives a forwarded call and runs it against this window's handlers |
 | `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends, the internal ops, the channel's timings and budgets; `targetHintOf()` |
-| `src/core/windowHealth.ts` | what a window knows about its own health: the busy table, the event-loop lag, the notice gate |
+| `src/core/windowHealth.ts` | what a window knows about its own health: the busy table, the event-loop lag, the notice gate; the router watch, and `probeLoopback()`, the one-request probe behind the health check and the port check |
 | `src/windowStatus.ts`, `src/core/windowStatus.ts` | the status-bar item and Select Target Window: the wiring, and the pure rendering |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
 
