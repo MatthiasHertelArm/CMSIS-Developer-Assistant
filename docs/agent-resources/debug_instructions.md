@@ -225,7 +225,7 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 ❌ Leaving six breakpoints bound on a Cortex-M4 → ✅ stay within the comparator budget, `clear_all_breakpoints` between phases.
 <!-- /topic -->
 
-<!-- topic: inspection | Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction -->
+<!-- topic: inspection | Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output -->
 ## ⏱️ Execution control: wait_for_stop, reset, cycle timing
 
 **Never sleep blind waiting for a stop.** After `continue_execution` returned while the target was still running (timeout), or after issuing execution through `evaluate_expression` (`-exec continue`), call `wait_for_stop` — it blocks on the raw DAP `stopped` event and returns the stop reason + state, or a structured timeout. It returns immediately if the target is already stopped, and it issues no execution commands itself.
@@ -266,6 +266,13 @@ This is tuned for firmware and should rarely get in your way:
 
 - **Numeric scalars are never withheld** — a `uint8_t auth`, a `token` counter, or `0xDEADBEEF` stays readable whatever it is called.
 - **Raw target reads are never redacted**: `read_memory`, `read_core_registers`, `read_peripheral_register`, `get_fault_info`, and GDB commands through `evaluate_expression` (`-exec …` or `>…`). Real SVDs name registers `KEY`, `KR`, `KEYR` and `UNLOCK` — the watchdog and flash unlock registers — and those are exactly what you need when the watchdog is resetting you.
+
+## 📟 When the firmware prints
+
+- To see what the board prints, call `serial_capture` with `durationMs`, and `until` when you know what to wait for: one call opens the port, reads, and closes it again.
+- For the output around a reset: `serial_open`, `reset`, `serial_read {waitMs}`, `serial_close`.
+- Close a port as soon as you have read it: while you hold it, the user's Serial Monitor cannot open it. It is released after 300 s without a serial call and when your MCP session ends; `serial_read` then says why.
+- `PORT_HELD` means another program has the port. When it is the Serial Monitor, read its session with `serial_subscribe_monitor`.
 <!-- /topic -->
 
 <!-- topic: faults | Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes -->

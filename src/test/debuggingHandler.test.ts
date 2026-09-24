@@ -33,7 +33,10 @@ import { ProblemInput, ProblemJournal } from '../core/problemJournal';
 import type { HandlerHost } from '../handler/host';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
+import { runInCallContext } from '../core/callContext';
+import { SerialPortMock } from 'serialport';
 import { FakeExecution, FakeTasks, FixtureTask, workspaceTasks } from './cmsisTaskFixtures';
+import { MockSerial, mockSerial } from './serialFixtures';
 
 /**
  * The debugging handler against a scripted executor. The handler's host is
@@ -1603,6 +1606,28 @@ suite('DebuggingHandler', () => {
                 + 'Hint: no debug session is running in the VS Code window this call was routed to.'), empty);
         });
 
+        test('session status names the serial port this window holds, for the asking session, and why it was released (#49)', async () => {
+            SerialPortMock.binding.reset();
+            SerialPortMock.binding.createPort('COM7');
+            const serial = mockSerial();
+            const x = new ScriptedExecutor();
+            x.sessionStatus = { state: 'no-session', sessionName: null, sessionType: null, configurationName: null, dapResponsive: false, dapProbeMs: null };
+            const handler = handlerFor(x, { ownedSerial: () => serial.controller });
+            const serialLine = async (sessionId?: string): Promise<string | undefined> => {
+                const text = await textAnswer(sessionId === undefined ? handler.handleGetSessionStatus()
+                    : runInCallContext({ callId: 'x-1', sessionId }, () => handler.handleGetSessionStatus()));
+                return text.split('\n').find((line) => line.startsWith('Serial: '));
+            };
+            assert.strictEqual(await serialLine(), undefined, 'no port, no line');
+            await serial.controller.open({ path: 'COM7' }, { owner: 'aaaaaaaa-1111', rule: 'idle', idleSeconds: 300 });
+            serial.time.advanceSeconds(42);
+            assert.strictEqual(await serialLine('aaaaaaaa-1111'), 'Serial: COM7 open (this session, idle 42 s of 300 s)');
+            assert.strictEqual(await serialLine('bbbbbbbb-2222'), 'Serial: COM7 open (another MCP session (aaaaaaaa), idle 42 s of 300 s)');
+            serial.time.advanceSeconds(258);
+            assert.strictEqual(await serialLine('aaaaaaaa-1111'), 'Serial: COM7 released at 10:47:07 after 300 s without a serial call');
+            SerialPortMock.binding.reset();
+        });
+
         test('device info adds the active CMSIS target', async () => {
             const x = new ScriptedExecutor();
             let answer: () => unknown = () => 'HP@debug';
@@ -1987,6 +2012,33 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(loads, 0);
             });
 
+            test('load_and_run notes a serial port the window holds; build does not (#49)', async () => {
+                SerialPortMock.binding.reset();
+                SerialPortMock.binding.createPort('/dev/cu.usbmodem1102');
+                const serial: MockSerial = mockSerial();
+                await serial.controller.open({ path: '/dev/cu.usbmodem1102' }, { owner: 'aaaaaaaa-1111', rule: 'manual' });
+                const w = jobWorld(20, { ownedSerial: () => serial.controller });
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisLoadAndRun': () => {
+                        const load = w.tasks.execution(shellTask('CMSIS Load'));
+                        setTimeout(() => {
+                            w.tasks.start(w.tasks.execution(shellTask('CMSIS Load+Run')), false);
+                            w.tasks.start(load);
+                            w.tasks.finish(load, 0);
+                            w.tasks.start(w.tasks.execution(shellTask('CMSIS Run')));
+                        }, 5);
+                    },
+                    'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true),
+                });
+                const loaded = await textAnswer(w.handler.handleCmsisCommand({ action: 'load_and_run' }));
+                assert.ok(loaded.endsWith('\n/dev/cu.usbmodem1102 is open in this window; if the probe\'s VCP re-enumerates during programming, reopen it.'),
+                    loaded);
+                const built = await textAnswer(w.handler.handleCmsisCommand({ action: 'build' }));
+                assert.ok(!built.includes('usbmodem'), built);
+                await serial.controller.close();
+                SerialPortMock.binding.reset();
+            });
+
             test('load_and_run: flashed and CMSIS Run stays up; a failed Load answers with its code', async () => {
                 const w = jobWorld();
                 solutionOn('HE', {
@@ -2303,6 +2355,36 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun })),
                     `✅ Flash succeeded — programmed 4096 bytes at 52 kB/s (pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --cbuild-run ${cbuildRun}\`). `
                     + 'Use cmsis_action attach or load_and_debug to start a debug session.');
+            });
+
+            test('flash notes a serial port the window holds, and one that went away while it programmed (#49)', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const extensionPath = path.join(dir, 'arm.vscode-cmsis-debugger-1.8.0-darwin-arm64');
+                const bin = path.join(extensionPath, 'tools', 'pyocd', 'pyocd');
+                fs.mkdirSync(path.dirname(bin), { recursive: true });
+                fs.writeFileSync(bin, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.45.1; exit 0; fi\n'
+                    + 'sleep 0.3\necho "programmed 4096 bytes (16 pages) at 52.00 kB/s"\n');
+                fs.chmodSync(bin, 0o755);
+                SerialPortMock.binding.reset();
+                SerialPortMock.binding.createPort('COM7');
+                const serial = mockSerial();
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const handler = handlerFor(x, { ...flashHost(extensionPath), ownedSerial: () => serial.controller });
+
+                assert.ok(!(await textAnswer(handler.handleFlash({ cbuildRunFile: cbuildRun }))).includes('COM7'), 'no port, no note');
+                await serial.controller.open({ path: 'COM7' }, { owner: 'aaaaaaaa-1111', rule: 'idle', idleSeconds: 300 });
+                const held = await textAnswer(handler.handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.ok(held.endsWith('\nCOM7 is open in this window; if the probe\'s VCP re-enumerates during programming, reopen it.'), held);
+                const programming = handler.handleFlash({ cbuildRunFile: cbuildRun });
+                await delay(100);
+                serial.controller.releaseForUser();
+                const gone = await textAnswer(programming);
+                assert.ok(gone.endsWith('\nCOM7 released at 10:42:07 by the user in VS Code, during programming. '
+                    + 'Ask the user before you reopen it with serial_open.'), gone);
+                SerialPortMock.binding.reset();
             });
 
             test('a bundled pyOCD that does not run is reported, and tools-environment.yml is the next place looked', async function () {

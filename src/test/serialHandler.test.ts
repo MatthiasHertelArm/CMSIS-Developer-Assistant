@@ -21,9 +21,11 @@ import type { ProblemInput } from '../core/problemJournal';
 import { CAPTURE_HALF_BYTES, CaptureRecord, captureDurationMs, untilPattern } from '../core/serialCapture';
 import { PORT_HELD_HINT, SerialController } from '../core/serialController';
 import { SerialMonitorBridge } from '../core/serialMonitorBridge';
+import { programmingNote, renderSerialHold, serialSessionLine } from '../core/serialText';
 import { ToolError, ToolReply, ToolText, textOf } from '../core/toolResult';
 import { SerialHandler } from '../serialHandler';
-import { FakeSerialMonitor, ManualTime, MockSerial, PATH_FIXTURES, ScriptedPort, fakeSerialMonitor, mockSerial } from './serialFixtures';
+import { SerialStatus, releaseSerialPort } from '../serialStatus';
+import { FakeSerialMonitor, ManualTime, MockSerial, PATH_FIXTURES, ScriptedPort, T0, fakeSerialMonitor, mockSerial } from './serialFixtures';
 
 const SESSION_A = 'aaaaaaaa-1111-4111-8111-111111111111';
 const SESSION_B = 'bbbbbbbb-2222-4222-8222-222222222222';
@@ -336,5 +338,112 @@ suite('serial_capture (#49)', () => {
             assert.deepStrictEqual([50, 100, 3_000.4, 60_000, 90_000, Number.NaN, undefined].map(captureDurationMs),
                 [100, 100, 3_000, 60_000, 60_000, 100, 100]);
         });
+    });
+});
+
+/**
+ * What agents and people are told about a held port (#49): the line of
+ * get_session_status, the note of the programming tools, and the status-bar
+ * item with its Release command.
+ */
+suite('the human handle and what agents are told (#49)', () => {
+    setup(() => SerialPortMock.binding.reset());
+    teardown(() => SerialPortMock.binding.reset());
+
+    /** A mock controller holding COM7 under `rule` with an idle limit of 300 s, for session A or, with `null`, for no session. */
+    async function holding(rule: 'idle' | 'debug-session-end' | 'manual', owner: string | null = SESSION_A): Promise<MockSerial> {
+        SerialPortMock.binding.createPort('COM7');
+        const serial = mockSerial();
+        await serial.controller.open({ path: 'COM7', baudRate: 921600 }, { owner: owner ?? undefined, rule, idleSeconds: 300 });
+        return serial;
+    }
+
+    test('get_session_status: the held port with its holder and state, or why it was released, or nothing', async () => {
+        const idle = await holding('idle');
+        assert.strictEqual(serialSessionLine(idle.controller, SESSION_B), 'Serial: COM7 open (another MCP session (aaaaaaaa), idle 0 s of 300 s)');
+        idle.time.advanceSeconds(42);
+        assert.strictEqual(serialSessionLine(idle.controller, SESSION_A), 'Serial: COM7 open (this session, idle 42 s of 300 s)');
+        idle.controller.sessionEnded(SESSION_A);
+        assert.strictEqual(serialSessionLine(idle.controller, SESSION_A),
+            'Serial: COM7 released at 10:42:49: the MCP session that opened it ended');
+        await idle.controller.close();
+        SerialPortMock.binding.reset();
+        const lines: Array<string | undefined> = [];
+        for (const rule of ['debug-session-end', 'manual'] as const) {
+            const serial = await holding(rule, null);
+            lines.push(serialSessionLine(serial.controller, SESSION_A));
+            await serial.controller.close();
+            assert.strictEqual(serialSessionLine(serial.controller, SESSION_A), undefined, 'closed on purpose: nothing to say');
+            SerialPortMock.binding.reset();
+        }
+        assert.deepStrictEqual(lines, [
+            'Serial: COM7 open (an unknown session, released when the debug session ends)',
+            'Serial: COM7 open (an unknown session, released only by serial_close)',
+        ]);
+    });
+
+    test('flash and cmsis_action: a note while the port is held, the reason when it went during programming', async () => {
+        const serial = await holding('idle');
+        assert.strictEqual(programmingNote('COM7', serial.controller),
+            'COM7 is open in this window; if the probe\'s VCP re-enumerates during programming, reopen it.');
+        serial.ports[0]._disconnected(new Error('EIO'));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        assert.strictEqual(programmingNote('COM7', serial.controller),
+            'COM7 disconnected at 10:42:07, during programming. Reopen it with serial_open.');
+        assert.strictEqual(programmingNote('COM8', serial.controller), undefined, 'another port: nothing to say');
+        await serial.controller.open({ path: 'COM7' });
+        await serial.controller.close();
+        assert.strictEqual(programmingNote('COM7', serial.controller), undefined, 'closed on purpose: nothing to say');
+    });
+
+    test('the status-bar item: text and tooltip per rule', async () => {
+        const serial = await holding('idle');
+        serial.time.advanceSeconds(120);
+        const hold = serial.controller.hold();
+        assert.ok(hold);
+        assert.deepStrictEqual(renderSerialHold(hold, T0 + 120_000), {
+            text: '$(plug) Serial: COM7 (agent)',
+            tooltip: [
+                'CMSIS Developer Assistant: an agent holds COM7.',
+                '921600 baud, open since 10:42:07 (2 min)',
+                'Owner: MCP session aaaaaaaa',
+                'Released: after 300 s without a serial call (in 3 min), or when the agent\'s session ends',
+                '',
+                'Click to release it for the Serial Monitor or a terminal.',
+            ].join('\n'),
+        });
+        await serial.controller.close();
+        SerialPortMock.binding.reset();
+        const released: string[] = [];
+        for (const rule of ['debug-session-end', 'manual'] as const) {
+            const other = await holding(rule, null);
+            const view = renderSerialHold(other.controller.hold()!, T0);
+            released.push(view.tooltip.split('\n').slice(2, 4).join(' | '));
+            await other.controller.close();
+            SerialPortMock.binding.reset();
+        }
+        assert.deepStrictEqual(released, [
+            'Owner: an unknown session | Released: when the debug session in this window ends, or when the agent\'s session ends',
+            'Owner: an unknown session | Released: only when the agent closes it (releaseOn manual)',
+        ]);
+    });
+
+    test('the item shows while a port is held and hides when it goes; Release Serial Port releases it for the user', async () => {
+        SerialPortMock.binding.createPort('COM7');
+        const serial = mockSerial();
+        const item = new SerialStatus(serial.controller, () => serial.time.now());
+        try {
+            assert.strictEqual(item.view(), undefined);
+            await serial.controller.open({ path: 'COM7' }, { owner: SESSION_A, rule: 'manual' });
+            assert.strictEqual(item.view()?.text, '$(plug) Serial: COM7 (agent)');
+            assert.strictEqual(releaseSerialPort(serial.controller), 'COM7');
+            assert.strictEqual(item.view(), undefined);
+            assert.strictEqual(serial.controller.status().lastRelease?.reason, 'user');
+            assert.deepStrictEqual(serial.journaled.map((problem) => [problem.severity, problem.message]),
+                [['warning', 'COM7 released at 10:42:07 by the user in VS Code']]);
+            assert.strictEqual(releaseSerialPort(serial.controller), undefined, 'nothing held: nothing released');
+        } finally {
+            item.dispose();
+        }
     });
 });

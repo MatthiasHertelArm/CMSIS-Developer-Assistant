@@ -11260,6 +11260,11 @@
             "category": "CMSIS Developer Assistant"
           },
           {
+            "command": "cmsis-developer-assistant.releaseSerialPort",
+            "title": "Release Serial Port",
+            "category": "CMSIS Developer Assistant"
+          },
+          {
             "command": "cmsis-developer-assistant.listTargetDocs",
             "title": "List Target Documentation",
             "category": "CMSIS Developer Assistant"
@@ -11724,6 +11729,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.selectTargetWindow"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.releaseSerialPort"
         },
         {
           "ev": "setTimeout",
@@ -12671,7 +12680,8 @@
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
             "cmsis-developer-assistant.resetPopupState",
-            "cmsis-developer-assistant.selectTargetWindow"
+            "cmsis-developer-assistant.selectTargetWindow",
+            "cmsis-developer-assistant.releaseSerialPort"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -12699,7 +12709,9 @@
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
             "command:cmsis-developer-assistant.resetPopupState",
-            "command:cmsis-developer-assistant.selectTargetWindow"
+            "command:cmsis-developer-assistant.selectTargetWindow",
+            "<SerialStatus>",
+            "command:cmsis-developer-assistant.releaseSerialPort"
           ],
           "mcpServerDefinitionProviders": [
             {
@@ -13071,6 +13083,10 @@
           "id": "cmsis-developer-assistant.selectTargetWindow"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.releaseSerialPort"
+        },
+        {
           "ev": "setTimeout",
           "ms": 2000
         },
@@ -13218,7 +13234,8 @@
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
             "cmsis-developer-assistant.resetPopupState",
-            "cmsis-developer-assistant.selectTargetWindow"
+            "cmsis-developer-assistant.selectTargetWindow",
+            "cmsis-developer-assistant.releaseSerialPort"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -13246,7 +13263,9 @@
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
             "command:cmsis-developer-assistant.resetPopupState",
-            "command:cmsis-developer-assistant.selectTargetWindow"
+            "command:cmsis-developer-assistant.selectTargetWindow",
+            "<SerialStatus>",
+            "command:cmsis-developer-assistant.releaseSerialPort"
           ],
           "mcpServerDefinitionProviders": [
             {
@@ -13561,6 +13580,10 @@
           "id": "cmsis-developer-assistant.selectTargetWindow"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.releaseSerialPort"
+        },
+        {
           "ev": "setTimeout",
           "ms": 2000
         },
@@ -13665,7 +13688,8 @@
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
             "cmsis-developer-assistant.resetPopupState",
-            "cmsis-developer-assistant.selectTargetWindow"
+            "cmsis-developer-assistant.selectTargetWindow",
+            "cmsis-developer-assistant.releaseSerialPort"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -13689,7 +13713,9 @@
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
             "command:cmsis-developer-assistant.resetPopupState",
-            "command:cmsis-developer-assistant.selectTargetWindow"
+            "command:cmsis-developer-assistant.selectTargetWindow",
+            "<SerialStatus>",
+            "command:cmsis-developer-assistant.releaseSerialPort"
           ],
           "mcpServerDefinitionProviders": [],
           "timers": [
@@ -13856,6 +13882,10 @@
           "id": "cmsis-developer-assistant.selectTargetWindow"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.releaseSerialPort"
+        },
+        {
           "ev": "step",
           "name": "configuration change: cmsis-developer-assistant.installedSkills"
         },
@@ -13949,7 +13979,8 @@
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
             "cmsis-developer-assistant.resetPopupState",
-            "cmsis-developer-assistant.selectTargetWindow"
+            "cmsis-developer-assistant.selectTargetWindow",
+            "cmsis-developer-assistant.releaseSerialPort"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -13973,7 +14004,9 @@
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
             "command:cmsis-developer-assistant.resetPopupState",
-            "command:cmsis-developer-assistant.selectTargetWindow"
+            "command:cmsis-developer-assistant.selectTargetWindow",
+            "<SerialStatus>",
+            "command:cmsis-developer-assistant.releaseSerialPort"
           ],
           "mcpServerDefinitionProviders": [],
           "timers": [],
@@ -14277,6 +14310,10 @@
           "id": "cmsis-developer-assistant.selectTargetWindow"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.releaseSerialPort"
+        },
+        {
           "ev": "setTimeout",
           "ms": 2000
         },
@@ -14409,7 +14446,8 @@
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.selectSkills",
             "cmsis-developer-assistant.resetPopupState",
-            "cmsis-developer-assistant.selectTargetWindow"
+            "cmsis-developer-assistant.selectTargetWindow",
+            "cmsis-developer-assistant.releaseSerialPort"
           ],
           "registeredButNotContributed": [],
           "contributedButNotRegistered": [],
@@ -14437,7 +14475,9 @@
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.selectSkills",
             "command:cmsis-developer-assistant.resetPopupState",
-            "command:cmsis-developer-assistant.selectTargetWindow"
+            "command:cmsis-developer-assistant.selectTargetWindow",
+            "<SerialStatus>",
+            "command:cmsis-developer-assistant.releaseSerialPort"
           ],
           "mcpServerDefinitionProviders": [
             {

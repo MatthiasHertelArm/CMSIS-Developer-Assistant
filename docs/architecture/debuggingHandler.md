@@ -247,6 +247,14 @@ cannot be chosen `INVALID_ARGUMENT`, no runnable pyOCD `TOOL_DISABLED`, a
 failing run `TASK_FAILED`, and a run killed at its budget is answered with
 status `timeout`.
 
+Programming can make the probe's virtual COM port re-enumerate, which closes
+a serial port the window holds. So `flash` and the programming actions of
+`cmsis_action` (`load`, `erase`, `load_and_run`) add one line to a result
+when the window held a port as they started (`noteHeldSerialPort()`): that
+it is open and may need reopening, or why it went during programming (#49).
+They do not release the port first: nothing ties a COM port to the probe
+being programmed, and a second board's UART would go too.
+
 ## CMSIS jobs
 
 The CMSIS Solution extension runs builds as its own task type and the
@@ -379,8 +387,10 @@ once when errors arrived that the agent has not seen, and
 
 Everything else the handler needs comes from a `HandlerHost`
 (`src/handler/host.ts`): clock, timers, VS Code's focused frame, the
-window's CMSIS job tracker, workspace folders, file search, and where `flash`
-looks for pyOCD. `VSCODE_HOST` looks each of them up in VS Code at the
+window's CMSIS job tracker, its owned serial port, workspace folders, file
+search, and where `flash` looks for pyOCD. `get_session_status` adds a line
+on the serial port from it (#49): the port held, for whom and how long idle,
+or why it was released, seen from the MCP session that asks. `VSCODE_HOST` looks each of them up in VS Code at the
 moment of the call. Unit tests override `host()` with a scaled clock, so a
 60 s fence or an 8 s session wait takes milliseconds, and with a tracker
 over fake task events.
