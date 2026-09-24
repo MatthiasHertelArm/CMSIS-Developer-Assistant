@@ -96,4 +96,11 @@ suite('Op table', () => {
         assert.strictEqual(forwardTimeoutMs('handleLookupSymbol', {}, TOOL_MS), 45_000,
             'build-artefact ops have no floor');
     });
+
+    test('a serial wait the call names is waited for in full, whatever the default (#49)', () => {
+        assert.strictEqual(forwardTimeoutMs('handleCapture', { path: 'COM7', durationMs: 60_000 }, 10_000), 75_000);
+        assert.strictEqual(forwardTimeoutMs('handleRead', { waitMs: 50_000 }, 10_000), 65_000);
+        assert.strictEqual(forwardTimeoutMs('handleCapture', { durationMs: 1_000 }, TOOL_MS), 45_000, 'a short one keeps the default');
+        assert.strictEqual(forwardTimeoutMs('handleRead', { waitMs: -5, durationMs: 'long' }, TOOL_MS), 45_000);
+    });
 });

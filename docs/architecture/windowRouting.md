@@ -93,8 +93,8 @@ only its user may read the registry (#19):
 `RoutingDebuggingHandler.resolveTarget()` walks a fixed ladder; the first rung
 that applies decides:
 
-1. **Window argument.** `cmsis_action`, `flash`, `reset` and `serial_open`
-   take `window` in a routed session (#16): all digits is a process id,
+1. **Window argument.** `cmsis_action`, `flash`, `reset`, `serial_open` and
+   `serial_capture` take `window` in a routed session (#16): all digits is a process id,
    anything else a path inside the window's workspace (`targetHintOf()`). Like
    a path, it re-aims the session: the calls after it go to the same window,
    unless the session is pinned.

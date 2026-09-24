@@ -16,15 +16,33 @@
 
 import * as vscode from 'vscode';
 import { currentCallContext } from './core/callContext';
+import { CaptureRecord, CaptureStop, captureDurationMs, renderCapture, untilPattern } from './core/serialCapture';
 import { describeRelease, reopenAdvice, SerialController, serialController, SerialOpenOptions, SerialStatus } from './core/serialController';
 import { DEFAULT_IDLE_CLOSE_SECONDS, idleSecondsOf, ReleaseRule, releaseRuleOf } from './core/serialLease';
 import { SerialMonitorBridge, serialMonitorBridge } from './core/serialMonitorBridge';
-import { holdClause, ruleSentence } from './core/serialText';
+import { holdClause, holderWords, ruleSentence } from './core/serialText';
+import { ToolError, ToolText } from './core/toolResult';
+import { logger } from './utils/logger';
 
 /** What `serial_open` takes: the port's options and, since #49, its release rule. */
 export interface SerialOpenRequest extends SerialOpenOptions {
     releaseOn?: ReleaseRule;
 }
+
+/** What `serial_capture` takes (#49). */
+export interface CaptureRequest {
+    path: string;
+    baudRate?: number;
+    /** 100 to 60 000 ms. */
+    durationMs: number;
+    /** A regex; the capture stops at its first match. */
+    until?: string;
+    /** UTF-8 text sent once the port is open. */
+    write?: string;
+}
+
+/** The hint of a capture refused because this window holds a port already. */
+const SLOT_HELD_HINT = 'serial_read {waitMs} reads the open port; serial_close it to use serial_capture.';
 
 /** What the handler reads besides its controller; each defaults to the window's own. */
 export interface SerialHandlerOptions {
@@ -87,7 +105,8 @@ function closedText(status: SerialStatus): string {
  * `serial.idleCloseSeconds` at that moment. `serial_read`, `serial_write`,
  * `serial_status` and `serial_clear_buffer` are serial calls: they restart
  * the idle time, and a call that waits holds the port meanwhile. When an MCP
- * session ends, `sessionEnded` releases what it held here.
+ * session ends, `sessionEnded` releases what it held here. `serial_capture`
+ * holds the port only for its one read and closes it again.
  */
 export class SerialHandler {
     private readonly bridge: SerialMonitorBridge;
@@ -136,6 +155,61 @@ export class SerialHandler {
         return `Owned serial port opened: ${s.path} @ ${s.baudRate} baud. ${ruleSentence(rule, idleSeconds)} ` +
             `Note: if MS Serial Monitor is also holding this port the OS will reject one of you. ` +
             `Use serial_read / serial_write / serial_close for this owned connection.`;
+    }
+
+    /**
+     * `serial_capture`: open `path` in this window's port slot for the calling
+     * session, send `write`, read until `until` matches or `durationMs` ends,
+     * then close the port, also when the read fails. A regex that does not
+     * compile is refused before the port is touched, and a slot that is taken
+     * is `PORT_HELD`. The target is not reset.
+     */
+    async handleCapture(args: CaptureRequest): Promise<ToolText> {
+        const until = untilPattern(args.until);
+        const durationMs = captureDurationMs(args.durationMs);
+        if (this.owned.isOpen()) {
+            const hold = this.owned.hold();
+            const who = hold ? ` (held by ${holderWords(hold.owner, callingSession())})` : '';
+            throw new ToolError('PORT_HELD',
+                `${this.owned.status().path} is open in this window${who}, so serial_capture cannot take the port.`, SLOT_HELD_HINT);
+        }
+        const generation = await this.owned.open({ path: args.path, baudRate: args.baudRate },
+            { owner: callingSession(), rule: 'idle', idleSeconds: 0, capture: true });
+        const opened = Date.now();
+        const record = new CaptureRecord();
+        // Set inside the read loop's closure, so it is typed as the union rather than narrowed to its first value.
+        let stop = 'deadline' as CaptureStop;
+        let written = 0;
+        try {
+            await this.owned.during(async () => {
+                if (args.write !== undefined && args.write.length > 0) {
+                    written = await this.owned.write(args.write, 'utf8');
+                }
+                for (let left = durationMs; left > 0; left = opened + durationMs - Date.now()) {
+                    const chunk = await this.owned.read({ waitMs: left });
+                    if (chunk.length > 0) {
+                        record.append(chunk);
+                        if (until?.test(record.searchText(chunk.length))) {
+                            stop = 'match';
+                            return;
+                        }
+                    } else if (!this.owned.holds(generation)) {
+                        stop = 'closed';
+                        return;
+                    }
+                }
+            });
+        } finally {
+            if (this.owned.holds(generation)) {
+                await this.owned.close(generation).catch((problem: unknown) => logger.debug('Closing the port of a capture failed', problem));
+                this.owned.clearBuffer();
+            }
+        }
+        const release = this.owned.status().lastRelease;
+        return renderCapture({
+            path: args.path, record, elapsedMs: Date.now() - opened, stop, until, written,
+            ...(stop === 'closed' && release ? { closedBecause: describeRelease(release) } : {}),
+        });
     }
 
     async handleClose(): Promise<string> {

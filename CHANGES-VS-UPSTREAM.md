@@ -136,7 +136,8 @@ All paths are relative to the extension root (`DebugMCP/`).
 **Serial:**
 
 - `serial_list_ports()` — MS Serial Monitor API → `serialport` fallback
-- `serial_open(path, baudRate?, dataBits?, parity?, stopBits?, rtscts?)` — OWNED port
+- `serial_capture(path, durationMs, baudRate?, until?, write?)` — one call: open, read until the regex matches or the deadline, close (#49)
+- `serial_open(path, baudRate?, dataBits?, parity?, stopBits?, rtscts?, releaseOn?)` — OWNED port, released after idle time or when the session ends (#49)
 - `serial_close()` / `serial_status()` / `serial_clear_buffer(from?)` / `serial_write(data, encoding?, appendNewline?)` / `serial_read(maxBytes?, waitMs?, consume?, format?, from?)`
 - `serial_subscribe_monitor()` / `serial_unsubscribe_monitor()` — BRIDGE
 - `serial_open_monitor()` — focus the panel for the user

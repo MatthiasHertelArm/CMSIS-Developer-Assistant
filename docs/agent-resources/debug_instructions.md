@@ -59,7 +59,7 @@ Every tool call is measured; `get_session_status` ends with the session's tool-c
 
 The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one, otherwise from the window this session pinned or used last, then from the default target the user chose in VS Code, then from the window that has an active debug session.
 
-`cmsis_action`, `flash`, `reset` and `serial_open` also take `window` — a pid, or a path inside that window's workspace. It aims that call, and the session's later calls without a path follow it to the same window: `cmsis_action({ action: 'load_and_debug', window: '4711' })`, then `read_memory` reads that board.
+`cmsis_action`, `flash`, `reset`, `serial_open` and `serial_capture` also take `window` — a pid, or a path inside that window's workspace. It aims that call, and the session's later calls without a path follow it to the same window: `cmsis_action({ action: 'load_and_debug', window: '4711' })`, then `read_memory` reads that board.
 
 When **no rule decides** — two windows debugging at once, or several idle ones — it refuses to guess and names them all (`AMBIGUOUS_WINDOW`): reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and the default target, and `select_debug_window({ pid })` to pin one for the rest of the session, or ask the user to pick one: a click on "CDA" in the VS Code status bar opens **Select Target Window**.
 
@@ -160,7 +160,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |
-| `screen /dev/tty…`, `cat /dev/tty…`, a pyserial script | `serial_open`, `serial_read`, `serial_write`; `serial_subscribe_monitor` while the Serial Monitor holds the port |
+| `screen /dev/tty…`, `cat /dev/tty…`, a pyserial script | `serial_capture` for one read; `serial_open`, `serial_read`, `serial_write`; `serial_subscribe_monitor` while the Serial Monitor holds the port |
 | `curl localhost:<port>` with the registry token | `list_debug_windows`, `select_debug_window` |
 | reading a PDF, a web search for a register | `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs`, `lookup_register` |
 <!-- cmsis-developer-assistant:shell-to-tool:end -->

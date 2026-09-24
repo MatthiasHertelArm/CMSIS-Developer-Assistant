@@ -61,6 +61,7 @@ const ARGS = {
     cmsis_action: { action: 'stop_run' },
     flash: { cbuildRunFile: '/nonexistent/x.cbuild-run.yml' },
     serial_open: { path: '/nonexistent/tty.none', baudRate: 115200 },
+    serial_capture: { path: '/nonexistent/tty.none', durationMs: 100 },
     serial_write: { data: 'x' },
     select_debug_window: { pid: 1 },
     lookup_peripheral: { name: 'SCB' },
