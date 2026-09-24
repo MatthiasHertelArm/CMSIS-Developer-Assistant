@@ -121,7 +121,7 @@ checks a built package.
 | `cmsis-developer-assistant.dapRequestTimeoutMs` | 10000 | Deadline of one DAP request |
 | `cmsis-developer-assistant.memoryReadTimeoutMs` | 30000 | Deadline of a read that takes several requests (memory, registers, peripherals) |
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withhold variable and expression values that look like credentials; raw target reads are never redacted |
-| `cmsis-developer-assistant.build.diagnosticRerun` | `true` | After a failed build, re-run cbuild once with `--log` (no pack download, RTE update or clean; 120 s cap) so the `cmsis_action` result shows the error lines; off leaves only the csolution messages of `cbuild-idx.yml`. Scope `window` |
+| `cmsis-developer-assistant.build.diagnosticRerun` | `true` | After a failed build, and after one that exited 0 without rewriting its image (CMSIS Solution reports 0 for failed builds too), re-run cbuild once with `--log` (no pack download, RTE update or clean; 120 s cap) so the `cmsis_action` result shows the error lines; off leaves only the csolution messages of `cbuild-idx.yml`. Scope `window` |
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the eleven `serial_*` tools |
 | `cmsis-developer-assistant.serial.idleCloseSeconds` | 300 | Release a serial port an agent opened after this many seconds without a serial tool call; 0 is off. Scope `window` |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off |

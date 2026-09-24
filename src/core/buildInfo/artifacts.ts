@@ -283,7 +283,7 @@ export interface BuildContextArgs {
     target?: string;
 }
 
-/** The cbuild hint for "nothing built yet". */
+/** The hint for "nothing built yet": the build tool, never a cbuild command line to run in a shell. */
 export function buildHint(workspaceFolders: string[]): string {
     let solution: string | undefined;
     for (const ws of workspaceFolders) {
@@ -292,7 +292,7 @@ export function buildHint(workspaceFolders: string[]): string {
             if (solution) { break; }
         } catch { /* unreadable folder */ }
     }
-    return `Build first: \`cbuild ${solution ?? '<name>.csolution.yml'} --packs --update-rte\` (or the CMSIS Solution view's Build button); ` +
+    return `Build first: cmsis_action build (the Build button of the CMSIS Solution view) builds ${solution ?? 'the active solution'}; ` +
         'the build writes out/<solution>+<target>.cbuild-run.yml and the images.';
 }
 

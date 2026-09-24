@@ -80,7 +80,7 @@ export function registerBuildInfoTools(mcpServer: McpServer, dispatch: PackDocsD
 
     mcpServer.registerTool('get_build_diagnostics', {
         description: 'Errors and warnings of the newest build log (GCC/Clang/armclang/armlink/CMake/ninja/cbuild) with file:line, and the final build status. ' +
-            'Logs come from cbuild --log or a tee; pass file for one saved elsewhere.',
+            'Logs come from the diagnostic re-run of cmsis_action build; pass file for one saved elsewhere.',
         annotations: readOnly,
         inputSchema: {
             file: z.string().optional().describe('Log file to read instead of the newest found'),

@@ -15,13 +15,23 @@
  */
 
 /**
- * The error lines of a failed CMSIS build (#15).
+ * The error lines of a failed CMSIS build (#15), and the check of a build
+ * that exited 0.
  *
  * When a build job of the window's CMSIS job tracker settles as failed with
  * an exit code other than 0, `attachBuildDiagnosis` hands the tracker the
  * work that completes the job's result (`CmsisJobTracker.completeWith`). The
  * failing `cmsis_action build` call shows the lines if they arrive within its
  * deadline; `cmsis_action {action:'status'}` shows them afterwards.
+ *
+ * A build that exited 0 is checked the same way before it counts as a
+ * success: CMSIS Solution 1.70.1 closes its build task with 0 whatever cbuild
+ * returned (its `BuildRunner` ignores the exit code the toolbox manager
+ * hands back, and the pseudoterminal then closes with 0). Errors in a fresh
+ * cbuild-idx.yml make it a failure; images all written since the build
+ * started confirm it; otherwise stage B below decides — its re-run fails
+ * where the build failed and succeeds when there was nothing to rebuild —
+ * and when it cannot run, the result says the build is not confirmed.
  *
  *   1. Stage A reads the `messages` of the solution's `*.cbuild-idx.yml`
  *      (in the solution directory, or under CMSIS Solution's `--output`
@@ -71,18 +81,22 @@ import {
     DIAGNOSTIC_RERUN_CAP_MS,
     diagnosticEnvironment,
     IDX_FRESHNESS_SLACK_MS,
+    idxBuildFiles,
     idxFileName,
     IdxMessages,
     idxMessages,
     messagesFromLog,
+    primaryOutputs,
     readToolsEnvironment,
     RerunOutcome,
     RerunSkip,
     rerunSkipText,
 } from './core/buildFailure';
+import { parseCbuildRunOutputs, parseCbuildYml } from './core/buildInfo/artifacts';
 import { BuildLogSummary, parseBuildLog, readBuildLog } from './core/buildInfo/buildLog';
 import { renderBuildFailure } from './core/buildInfo/render';
-import { BuildMessage, Job, JobDiagnosis, JobExecution, MAX_BUILD_MESSAGES } from './core/cmsisTasks';
+import { BuildCheck, BuildMessage, Job, JobDiagnosis, JobExecution, MAX_BUILD_MESSAGES } from './core/cmsisTasks';
+import { formatDuration } from './handler/jobText';
 import { logger } from './utils/logger';
 import { withTimeout } from './utils/timeout';
 import { effectiveToolchainPackRoot } from './utils/toolchainPackRoot';
@@ -224,6 +238,92 @@ function withoutLines(skip: RerunSkip, csolutionWarnings: BuildMessage[], idxFil
     };
 }
 
+/** An image a build should have written, and when it was written last (undefined: missing). */
+interface ImageStamp {
+    file: string;
+    mtimeMs?: number;
+}
+
+/** The modification time of a file, or undefined when it is not there. */
+function mtimeOf(file: string): number | undefined {
+    try {
+        const stat = fs.statSync(file);
+        return stat.isFile() ? stat.mtimeMs : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** The primary outputs of a cbuild.yml, or of a cbuild-run.yml; none when it cannot be read. */
+function outputsOf(file: string, kind: 'cbuild' | 'cbuild-run'): string[] {
+    try {
+        const text = fs.readFileSync(file, 'utf8');
+        return primaryOutputs(kind === 'cbuild' ? parseCbuildYml(text, file).outputs : parseCbuildRunOutputs(text, file).outputs);
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * The images the build of `solution` writes: the primary outputs of each
+ * context the solution's cbuild-idx.yml names (under `--output` first, then
+ * next to the solution), else those of the cbuild-run.yml it names, else
+ * those of `out/<solution>+<active>.cbuild-run.yml`. The index need not be
+ * fresh: csolution leaves files it would not change alone.
+ */
+function expectedImages(solution: string, output: string | undefined, active: string | undefined): string[] {
+    const name = idxFileName(solution);
+    const base = path.dirname(solution);
+    for (const index of [...(output ? [path.join(output, name)] : []), path.join(base, name)]) {
+        let text: string;
+        try {
+            text = fs.readFileSync(index, 'utf8');
+        } catch {
+            continue;
+        }
+        const named = idxBuildFiles(text);
+        const directory = path.dirname(index);
+        const images = named.cbuilds.flatMap((file) => outputsOf(path.resolve(directory, file), 'cbuild'));
+        if (images.length === 0 && named.cbuildRun) {
+            images.push(...outputsOf(path.resolve(directory, named.cbuildRun), 'cbuild-run'));
+        }
+        if (images.length > 0) {
+            return [...new Set(images)];
+        }
+    }
+    if (!active) {
+        return [];
+    }
+    const stem = path.basename(solution).replace(/\.csolution\.ya?ml$/i, '');
+    return outputsOf(path.join(output ?? path.join(base, 'out'), `${stem}+${active}.cbuild-run.yml`), 'cbuild-run');
+}
+
+/** A file as the check's text shows it: relative to the solution directory when inside it. */
+function shown(file: string, solutionDir: string): string {
+    const relative = path.relative(solutionDir, file);
+    return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? relative.replace(/\\/g, '/') : file;
+}
+
+/** What the check found about the images: the first one not rewritten, and how old it is. */
+function staleText(stale: readonly ImageStamp[], startedAt: number, solutionDir: string): string {
+    if (stale.length === 0) {
+        return 'The build names no image to look at';
+    }
+    const first = stale[0];
+    const more = stale.length > 1 ? ` (and ${stale.length - 1} more)` : '';
+    return first.mtimeMs === undefined
+        ? `The image ${shown(first.file, solutionDir)}${more} is missing`
+        : `The image ${shown(first.file, solutionDir)}${more} was not rewritten: it is from ${formatDuration(startedAt - first.mtimeMs)} before the build started`;
+}
+
+/** The diagnosis of a build that exited 0: what its check found, and the sentence the result adds. */
+function checked(check: BuildCheck, text: string, note?: string): JobDiagnosis {
+    return {
+        state: 'done', check, source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0,
+        ...(note ? { note } : {}), text,
+    };
+}
+
 /** The job's diagnosis from a report: the structured lists, the counts and the text the result shows. */
 export function diagnosisOf(report: BuildFailureReport, solutionDir: string | undefined): JobDiagnosis {
     const warnings = [...report.warnings, ...report.csolutionWarnings];
@@ -254,13 +354,31 @@ export class BuildDiagnosisRunner {
 
     constructor(private readonly tracker: CmsisJobTracker, private readonly host: DiagnosisHost) {}
 
-    /** An `onDidFinishJob` listener: a build that failed with an exit code other than 0 gets its diagnosis. */
+    /**
+     * An `onDidFinishJob` listener: a build that failed with an exit code
+     * other than 0 gets its diagnosis, and one that exited 0 (not a clean)
+     * gets its check, since CMSIS Solution reports 0 for failed builds too.
+     */
     onFinished(job: Job): void {
         const decided = job.executions.find((execution) => execution.key === job.decidedBy);
-        if (job.action !== 'build' || job.state !== 'failed' || !decided || decided.exitCode === undefined || decided.exitCode === 0) {
+        if (job.action !== 'build' || !decided || decided.exitCode === undefined) {
             return;
         }
-        this.tracker.completeWith(job.id, this.diagnose(decided));
+        if (job.state === 'failed' && decided.exitCode !== 0) {
+            this.tracker.completeWith(job.id, this.diagnose(decided));
+        } else if (job.state === 'ok' && decided.exitCode === 0 && this.tracker.definitionOf(decided.key)?.clean !== true) {
+            this.tracker.completeWith(job.id, this.check(decided));
+        }
+    }
+
+    /** The check of the build `decided` ran, which exited 0; never rejects. */
+    async check(decided: JobExecution): Promise<JobDiagnosis> {
+        try {
+            return await this.checkResult(decided);
+        } catch (caught) {
+            logger.warn('Build check: looking at the result failed', caught);
+            return checked('unverified', `Exit 0 is not confirmed: checking the result failed (${messageOf(caught)}).`);
+        }
     }
 
     /** The diagnosis of the build `decided` ran; never rejects. */
@@ -304,6 +422,60 @@ export class BuildDiagnosisRunner {
         const csolutionWarnings = index?.messages.warnings ?? [];
         const report = await this.rerun(definition, decided, { solution, output, cwd, index: index?.file }, csolutionWarnings);
         return diagnosisOf(report, solutionDir);
+    }
+
+    /**
+     * Did a build that exited 0 build? Errors in a fresh cbuild-idx.yml say
+     * no. Images all written since the build started say yes. Otherwise the
+     * diagnostic re-run decides: it fails where the build failed, and
+     * succeeds at once when there was nothing to rebuild.
+     */
+    private async checkResult(decided: JobExecution): Promise<JobDiagnosis> {
+        const definition: TaskDefinitionLike = this.tracker.definitionOf(decided.key) ?? {};
+        const cwd = this.host.workingDirectory();
+        const solution = await this.solutionOf(definition, cwd);
+        if (!solution) {
+            return checked('unverified', 'Exit 0 is not confirmed: the solution file of the build is not known, so its result could not be checked.');
+        }
+        const solutionDir = path.dirname(solution);
+        const setting = this.host.outputDirectorySetting();
+        const output = setting ? path.join(solutionDir, setting) : undefined;
+
+        const index = freshIndex(solution, output, decided.startedAt);
+        if (index && index.messages.errors.length > 0) {
+            const { errors, warnings } = index.messages;
+            return {
+                ...diagnosisOf({
+                    source: 'csolution', errors, warnings, errorCount: errors.length, warningCount: warnings.length,
+                    failedSteps: [], csolutionWarnings: [], idxFile: index.file,
+                }, solutionDir),
+                check: 'failed',
+            };
+        }
+        const active = typeof definition.active === 'string' && !holdsVariable(definition.active)
+            ? definition.active
+            : await this.host.activeTarget();
+        const images: ImageStamp[] = expectedImages(solution, output, active).map((file) => ({ file, mtimeMs: mtimeOf(file) }));
+        const stale = images.filter((image) => image.mtimeMs === undefined || image.mtimeMs + IDX_FRESHNESS_SLACK_MS < decided.startedAt);
+        if (images.length > 0 && stale.length === 0) {
+            return checked('rebuilt', '');
+        }
+        const why = staleText(stale, decided.startedAt, solutionDir);
+        const csolutionWarnings = index?.messages.warnings ?? [];
+        const report = await this.rerun(definition, decided, { solution, output, cwd, index: index?.file }, csolutionWarnings);
+        const rerun = report.rerun;
+        if (report.source === 'none' || !rerun) {
+            return checked('unverified', `${why}, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. `
+                + `It could not be checked: ${report.skipped ?? 'there was nothing to run'}.`, report.skipped);
+        }
+        if (report.errorCount > 0 || report.failedSteps.length > 0 || (rerun.exitCode !== null && rerun.exitCode !== 0)) {
+            return { ...diagnosisOf(report, solutionDir), check: 'failed' };
+        }
+        if (rerun.exitCode === 0) {
+            return checked('up-to-date', `${why}; a check re-run of cbuild succeeded (exit 0), so the build is up to date.`);
+        }
+        return checked('unverified', `${why}, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. `
+            + `The check re-run of cbuild was stopped after ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s before it printed an error line.`);
     }
 
     /** The solution file: the definition's, resolved against the working directory, else the active one. */

@@ -106,7 +106,7 @@ export class BuildInfoHandler {
             }
             const built = ctx.images.some(i => i.elf.exists);
             if (!built && ctx.images.length) { return `${renderNoBuild(ctx, this.root())}${logInfo ? `\nNewest build log: ${logInfo.file} — ${logInfo.ok === false ? 'FAILED' : 'see get_build_diagnostics'}` : ''}`; }
-            return renderArtifacts({ ctx, elfs, log: logInfo, logNote: `searched ${this.host.settings().logGlobs.join(', ')}; capture one with cbuild … --log out/build.log`, root: this.root() });
+            return renderArtifacts({ ctx, elfs, log: logInfo, logNote: `searched ${this.host.settings().logGlobs.join(', ')}; cmsis_action build writes one when a build fails`, root: this.root() });
         });
     }
 

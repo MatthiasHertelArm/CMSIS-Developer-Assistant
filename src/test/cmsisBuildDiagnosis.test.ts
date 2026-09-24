@@ -182,6 +182,77 @@ async function diagnosed(w: World, id: string): Promise<Job> {
     return w.tracker.job(id) as Job;
 }
 
+/** A build job whose task starts and exits 0, which CMSIS Solution 1.70.1 reports for failed builds too; the check starts from its end. */
+function passBuild(w: World, definition: Record<string, unknown> = {}): { job: Job; execution: FakeExecution } {
+    const job = w.tracker.begin('build', 'MPS3');
+    w.tracker.issued(job.id);
+    const execution = w.tasks.start(w.tasks.execution(buildTask(w, definition)));
+    w.clock.advance(w.clock.now() + 3_000);
+    w.tasks.finish(execution, 0);
+    return { job, execution };
+}
+
+/**
+ * What CMSIS-Toolbox 2.14 leaves after a build of Blinky for MPS3: the index,
+ * which names the context's cbuild.yml, that cbuild.yml with its outputs, and
+ * the image, `ageMs` older than the build's start (0: written by the build),
+ * or none. Returns the image's path.
+ */
+function builtLayout(w: World, image: { ageMs: number } | 'none' = { ageMs: 0 }): string {
+    const debug = path.join(w.dir, 'out', 'Blinky', 'MPS3', 'Debug');
+    fs.mkdirSync(debug, { recursive: true });
+    fs.writeFileSync(path.join(w.dir, 'Blinky.cbuild-idx.yml'), [
+        'build-idx:',
+        '  generated-by: csolution version 2.14.1',
+        '  csolution: Blinky.csolution.yml',
+        '  cbuild-run: out/Blinky+MPS3.cbuild-run.yml',
+        '  cbuilds:',
+        '    - cbuild: out/Blinky/MPS3/Debug/Blinky.Debug+MPS3.cbuild.yml',
+        '      project: Blinky',
+        '      configuration: .Debug+MPS3',
+        '      messages:',
+        '        info:',
+        '          - Blinky.Debug+MPS3.cbuild.yml - file is already up-to-date',
+        '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(debug, 'Blinky.Debug+MPS3.cbuild.yml'), [
+        'build:',
+        '  context: Blinky.Debug+MPS3',
+        '  compiler: AC6',
+        '  output-dirs:',
+        '    intdir: ../../../../tmp',
+        '    outdir: .',
+        '  output:',
+        '    - type: elf',
+        '      file: Blinky.axf',
+        '    - type: hex',
+        '      file: Blinky.hex',
+        '    - type: map',
+        '      file: Blinky.axf.map',
+        '',
+    ].join('\n'));
+    const file = path.join(debug, 'Blinky.axf');
+    if (image !== 'none') {
+        fs.writeFileSync(file, 'ELF');
+        if (image.ageMs > 0) {
+            const at = new Date(w.clock.now() - image.ageMs);
+            fs.utimesSync(file, at, at);
+        }
+    }
+    return file;
+}
+
+/** The error `jobResult` throws for a job, or a failure of the test when it returns. */
+function resultError(job: Job, now: number): ToolError {
+    try {
+        jobResult(job, { tag: ' on MPS3', now });
+    } catch (caught) {
+        assert.ok(caught instanceof ToolError, String(caught));
+        return caught;
+    }
+    return assert.fail('jobResult did not throw');
+}
+
 suite('build diagnosis (#15)', () => {
     let current: World | undefined;
     teardown(() => {
@@ -272,7 +343,7 @@ suite('build diagnosis (#15)', () => {
         assert.strictEqual(done.diagnosis?.source, 'none');
         assert.strictEqual(done.diagnosis?.text, 'No error lines: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), '
             + 'so cbuild was not re-run.\n'
-            + 'get_build_diagnostics (setting cmsis-developer-assistant.buildInfo.enabled) reads a build log if the user captures one with cbuild --log.');
+            + 'cmsis_action build re-runs cbuild with --log itself when it can.');
     });
 
     test('no cbuild where the environment file says, the setting off, a clean: no re-run, each said', async () => {
@@ -307,7 +378,7 @@ suite('build diagnosis (#15)', () => {
         const done = await diagnosed(w, job.id);
         assert.strictEqual(done.diagnosis?.text, 'No error lines: the diagnostic re-run of cbuild was stopped because another build started; '
             + 'that build\'s result replaces this one.\n'
-            + 'get_build_diagnostics (setting cmsis-developer-assistant.buildInfo.enabled) reads a build log if the user captures one with cbuild --log.');
+            + 'cmsis_action build re-runs cbuild with --log itself when it can.');
     });
 
     test('the re-run is killed at 120 s; what its log had by then is shown', async () => {
@@ -363,17 +434,140 @@ suite('build diagnosis (#15)', () => {
         assert.match((await diagnosed(w, second.job.id)).diagnosis?.text ?? '', /^No error lines: the diagnostic re-run of cbuild could not start \(spawn EACCES\)\./);
     });
 
-    test('a definition naming the solution through a variable asks CMSIS Solution for it; a successful build is never diagnosed', async () => {
+    test('a definition naming the solution through a variable asks CMSIS Solution for it', async () => {
         const w = make();
-        const ok = w.tracker.begin('build', 'MPS3');
-        w.tasks.finish(w.tasks.start(w.tasks.execution(buildTask(w))), 0);
-        assert.strictEqual(w.tracker.job(ok.id)?.diagnosis, undefined);
-
         const { job } = failBuild(w, 2, { solution: '${command:cmsis-csolution.getSolutionFile}', active: '${command:cmsis-csolution.getActiveTargetSet}' });
         await until(() => w.children.length === 1, 'cbuild was spawned');
         assert.deepStrictEqual(w.children[0].args.slice(0, 5), [w.solution, '--target', 'all', '--active', 'MPS3']);
         w.children[0].finish(0, 'Build summary: 1 succeeded, 0 failed - Time Elapsed: 00:00:01\n');
         assert.match((await diagnosed(w, job.id)).diagnosis?.text ?? '', /^A diagnostic re-run of cbuild with --log succeeded \(exit 0\)/);
+    });
+
+    suite('a build that exited 0 is checked before it counts as a success', () => {
+        test('an image written since the build started confirms it without a re-run', async () => {
+            const w = make();
+            builtLayout(w);
+            const { job } = passBuild(w);
+            assert.strictEqual(w.tracker.job(job.id)?.diagnosis?.state, 'pending', 'the success waits for the check');
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.state, 'ok');
+            assert.strictEqual(done.diagnosis?.check, 'rebuilt');
+            assert.strictEqual(w.children.length, 0, 'nothing was re-run');
+            assert.match(jobResult(done, { tag: ' on MPS3', now: w.clock.now() }) as string,
+                /^✅ CMSIS 'build' succeeded on MPS3 \(task 'cbuild Blinky\.csolution\.yml --active MPS3 --packs' exited 0 after 3 s, job b-1\)\. The firmware is built/);
+        });
+
+        test('an image older than the build: the check re-run fails where the build failed, and the job fails with the error lines', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            const args = w.children[0].args;
+            assert.ok(!args.includes('--packs'), 'no pack download');
+            assert.strictEqual(args[args.length - 1], '--skip-convert', 'the index is fresh, so csolution is not run again');
+            w.children[0].finish(1, GCC_LOG);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.state, 'failed', 'exit 0 with errors is a failed job');
+            assert.strictEqual(done.diagnosis?.check, 'failed');
+            assert.strictEqual(done.diagnosis?.errorCount, 2);
+            const failure = resultError(done, w.clock.now());
+            assert.strictEqual(failure.code, 'TASK_FAILED');
+            assert.match(failure.message, /^❌ CMSIS 'build' FAILED on MPS3 — task '.*' exited 0 after 3 s, but the build failed \(CMSIS Solution reports exit 0 for a failed build too\) \(job b-1\)\.\n2 errors \(from a diagnostic re-run of cbuild with --log;/);
+            assert.strictEqual(failure.hint, 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.');
+            assert.strictEqual((failure.data?.diagnosis as Record<string, unknown>).check, 'failed');
+            const idle = idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now());
+            assert.match(idle, /build on MPS3 ❌ build errors \(exit 0\) [\d.]+ s ago \(job b-1, /);
+            assert.match(idle, /\nBuild job b-1 failed: 2 errors \(from a diagnostic re-run/);
+        });
+
+        test('an image older than the build and a check re-run that succeeds: up to date, a success', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            w.children[0].finish(0, 'Build summary: 1 succeeded, 0 failed - Time Elapsed: 00:00:01\n');
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.state, 'ok');
+            assert.strictEqual(done.diagnosis?.check, 'up-to-date');
+            assert.strictEqual(jobResult(done, { tag: ' on MPS3', now: w.clock.now() }),
+                '✅ CMSIS \'build\' succeeded on MPS3 (task \'cbuild Blinky.csolution.yml --active MPS3 --packs\' exited 0 after 3 s, job b-1). '
+                + 'The image out/Blinky/MPS3/Debug/Blinky.axf was not rewritten: it is from 60 min before the build started; '
+                + 'a check re-run of cbuild succeeded (exit 0), so the build is up to date. '
+                + 'The firmware is built — use cmsis_action load or load_and_debug to flash it.');
+        });
+
+        test('errors in a fresh cbuild-idx.yml fail it without a re-run', async () => {
+            const w = make();
+            fs.writeFileSync(path.join(w.dir, 'Blinky.cbuild-idx.yml'), IDX);
+            const { job } = passBuild(w);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(w.children.length, 0);
+            assert.strictEqual(done.state, 'failed');
+            assert.deepStrictEqual([done.diagnosis?.check, done.diagnosis?.source, done.diagnosis?.errorCount], ['failed', 'csolution', 2]);
+            assert.match(resultError(done, w.clock.now()).message, /exited 0 after 3 s, but the build failed .*\n2 errors from csolution/);
+        });
+
+        test('a missing image and no way to re-run cbuild: exit 0 is reported, but not as a confirmed success', async () => {
+            const w = make({ environment: false });
+            builtLayout(w, 'none');
+            const { job } = passBuild(w);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.state, 'ok');
+            assert.strictEqual(done.diagnosis?.check, 'unverified');
+            const reply = jobResult(done, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof reply !== 'string');
+            assert.strictEqual(reply.status, 'ok');
+            assert.strictEqual(reply.text, '⚠️ CMSIS \'build\' on MPS3: task \'cbuild Blinky.csolution.yml --active MPS3 --packs\' exited 0 after 3 s (job b-1), '
+                + 'but that does not confirm the build. The image out/Blinky/MPS3/Debug/Blinky.axf is missing, and CMSIS Solution reports exit 0 '
+                + 'for a failed build too, so this build may have failed. It could not be checked: .cmsis/tools-environment.yml is missing '
+                + '(CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run. '
+                + 'Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself.');
+            assert.strictEqual(((reply.data as Record<string, unknown>).diagnosis as Record<string, unknown>).check, 'unverified');
+            const idle = idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now());
+            assert.match(idle, /build on MPS3 ⚠️ exit 0, not confirmed [\d.]+ s ago/);
+            assert.match(idle, /\nBuild job b-1 exited 0, but that does not confirm it: The image /);
+        });
+
+        test('a check still going when the call\'s wait ends answers running; status gives the result', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const job = w.tracker.begin('build', 'MPS3');
+            const waiting = w.tracker.waitFor(job.id, w.clock.now() + 10_000);
+            const execution = w.tasks.start(w.tasks.execution(buildTask(w)));
+            w.clock.advance(w.clock.now() + 3_000);
+            w.tasks.finish(execution, 0);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            w.clock.advance(w.clock.now() + 7_000);
+            const early = await waiting as Job;
+            assert.deepStrictEqual([early.state, early.diagnosis?.state], ['ok', 'pending']);
+            const reply = jobResult(early, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof reply !== 'string');
+            assert.strictEqual(reply.status, 'running');
+            assert.match(reply.text, /^CMSIS 'build' on MPS3: task '.*' exited 0 after 3 s \(job b-1\); its result is still being checked .*Call cmsis_action \{action:'status'\} for the result — do not start another build\.$/);
+            assert.match(idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now()),
+                /build on MPS3 exit 0, being checked .*\nThe result of build job b-1 \(exit 0\) is still being checked/);
+            const status = w.tracker.waitFor(job.id, w.clock.now() + 60_000);
+            w.children[0].finish(2, GCC_LOG);
+            assert.strictEqual((await status)?.state, 'failed');
+        });
+
+        test('a build that starts meanwhile stops the check re-run: not confirmed, and why', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            w.tasks.start(w.tasks.execution({ name: 'cbuild other.csolution.yml', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build' } }));
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.diagnosis?.check, 'unverified');
+            assert.match(done.diagnosis?.text ?? '', /It could not be checked: the diagnostic re-run of cbuild was stopped because another build started/);
+        });
+
+        test('a clean that exited 0 is not checked', () => {
+            const w = make();
+            const { job } = passBuild(w, { clean: true });
+            assert.strictEqual(w.tracker.job(job.id)?.diagnosis, undefined);
+            assert.strictEqual(w.tracker.isCompleting(job.id), false);
+        });
     });
 
     suite('the lines reach the waiting call, or status afterwards', () => {

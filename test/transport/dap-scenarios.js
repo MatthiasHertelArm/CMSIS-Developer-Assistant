@@ -1504,10 +1504,19 @@ const SCENARIOS = [
     },
     {
         name: 'cmsis-build',
-        description: 'No session: cmsis_action build waits for the cbuild task and reports its exit code (0, then 2).',
+        description: 'No session: cmsis_action build waits for the cbuild task and reports its exit code, after checking a build that exited 0 '
+            + '(CMSIS Solution reports 0 for failed builds too): 0 with the image written, 2, then 0 with the image missing and no way to re-run cbuild.',
         commands: {
             'cmsis-csolution.build': (sc) => {
-                const exitCode = (sc.builds = (sc.builds ?? 0) + 1) === 1 ? 0 : 2;
+                const build = (sc.builds = (sc.builds ?? 0) + 1);
+                const exitCode = build === 2 ? 2 : 0;
+                const image = path.join(sc.env.project, 'out', 'Blinky', 'NUCLEO-F401RE', 'Debug', 'Blinky.elf');
+                if (build === 1) {
+                    fs.writeFileSync(image, 'ELF');
+                } else if (build === 3) {
+                    // The image of build 1 goes again, so that later scenarios see the workspace as before.
+                    fs.rmSync(image, { force: true });
+                }
                 const task = { name: 'cbuild Blinky.csolution.yml', source: 'CMSIS Solution', definition: { type: 'cmsis-csolution.build' } };
                 setTimeout(() => {
                     sc.record(`task: start ${JSON.stringify(task.name)}`);
@@ -1520,6 +1529,7 @@ const SCENARIOS = [
             },
         },
         calls: [
+            { tool: 'cmsis_action', args: { action: 'build' } },
             { tool: 'cmsis_action', args: { action: 'build' } },
             { tool: 'cmsis_action', args: { action: 'build' } },
         ],

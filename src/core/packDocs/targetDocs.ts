@@ -106,7 +106,7 @@ export async function resolveTarget(host: PackDocsHost, args: TargetArgs): Promi
     }
     if (!files.length) {
         return {
-            error: 'No *.cbuild-run.yml found in the workspace. Build the solution (cbuild) so the target is ' +
+            error: 'No *.cbuild-run.yml found in the workspace. Build the solution (cmsis_action build) so the target is ' +
                 'known, or pass pack (Vendor::Name@version) and device explicitly.',
         };
     }

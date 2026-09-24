@@ -4,6 +4,20 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Build results no longer send the agent to cbuild in a shell (part of #15).**
+  - `get_build_diagnostics` without a log, the no-lines footer of a failed build, the `get_build_diagnostics` description, and the "build first" hints of the build-artefact and documentation tools told the agent to capture a log with `cbuild … --log`. A tester's agent did so, against the tool rules. They now point to `cmsis_action build`, whose diagnostic re-run writes the log `get_build_diagnostics` reads, and say "do not run cbuild yourself".
+  - After a failed build without error lines, the hint names `get_recent_problems` for what the Problems panel shows, or asking the user, instead of a terminal the agent cannot open.
+
+### Fixed
+- **`cmsis_action build` no longer reports ✅ for a build that failed to compile (part of #15).**
+  - CMSIS Solution 1.70.1 closes its build task with exit code 0 whatever cbuild returned: its build runner drops the exit code, and the task's pseudoterminal then closes with 0. A tester got "✅ CMSIS 'build' succeeded … exited 0 after 3 s" four times while cbuild failed with `call to undeclared function '__disable_irq'`, and the image stayed 37 minutes old. The job tracker bound the right execution; the 0 came from CMSIS Solution.
+  - A build whose task exits 0 is now checked before it answers. Errors in a fresh `cbuild-idx.yml` fail it. Images all written since the build started confirm it. Otherwise the diagnostic re-run of #15 decides: a build that fails there answers `TASK_FAILED` with its error lines ("exited 0 after 3 s, but the build failed"), and one that succeeds is reported as up to date.
+  - When an image was not rewritten and the re-run cannot run (setting off, no `.cmsis/tools-environment.yml`, another build running), the result is a ⚠️ warning that exit 0 does not confirm the build, with the reason, instead of ✅. `status` and `get_session_status` show `❌ build errors (exit 0)` or `⚠️ exit 0, not confirmed`; `data.diagnosis.check` carries `rebuilt`, `up-to-date`, `failed` or `unverified`.
+  - A check still going when the call's wait ends answers with status `running`; `cmsis_action {action:'status'}` gives the result.
+
 ## [2.5.1] - 2026-09-24
 
 ### Added

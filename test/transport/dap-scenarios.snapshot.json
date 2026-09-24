@@ -2297,7 +2297,7 @@
     },
     {
       "name": "cmsis-build",
-      "description": "No session: cmsis_action build waits for the cbuild task and reports its exit code (0, then 2).",
+      "description": "No session: cmsis_action build waits for the cbuild task and reports its exit code, after checking a build that exited 0 (CMSIS Solution reports 0 for failed builds too): 0 with the image written, 2, then 0 with the image missing and no way to re-run cbuild.",
       "calls": [
         {
           "tool": "cmsis_action",
@@ -2310,7 +2310,9 @@
             "command: cmsis-csolution.getActiveTargetSet",
             "command: cmsis-csolution.build",
             "task: start \"cbuild Blinky.csolution.yml\"",
-            "task: end \"cbuild Blinky.csolution.yml\" exitCode=0"
+            "task: end \"cbuild Blinky.csolution.yml\" exitCode=0",
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet"
           ]
         },
         {
@@ -2319,7 +2321,7 @@
             "action": "build"
           },
           "isError": true,
-          "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2 after <n>s (job b-2).\nNo error lines: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run.\nget_build_diagnostics (setting cmsis-developer-assistant.buildInfo.enabled) reads a build log if the user captures one with cbuild --log.\nOpen the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, then re-run cmsis_action build. This is a terminal result — do not wait for an output file.",
+          "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2 after <n>s (job b-2).\nNo error lines: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run.\ncmsis_action build re-runs cbuild with --log itself when it can.\nget_recent_problems lists what the Problems panel shows; otherwise ask the user for the errors in the cbuild terminal — do not run cbuild yourself. Fix them, then cmsis_action build again. This is a terminal result — do not wait for an output file.",
           "traffic": [
             "command: cmsis-csolution.getSolutionFile",
             "command: cmsis-csolution.getActiveTargetSet",
@@ -2327,6 +2329,22 @@
             "task: start \"cbuild Blinky.csolution.yml\"",
             "task: end \"cbuild Blinky.csolution.yml\" exitCode=2",
             "command: cmsis-csolution.getSolutionFile"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "build"
+          },
+          "text": "⚠️ CMSIS 'build' on NUCLEO-F401RE: task 'cbuild Blinky.csolution.yml' exited 0 after <n>s (job b-3), but that does not confirm the build. The image out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf is missing, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. It could not be checked: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run. Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself.\n\nNote: 1 new error in this window since you last looked — get_recent_problems {sinceSeq: <seq>}",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.build",
+            "task: start \"cbuild Blinky.csolution.yml\"",
+            "task: end \"cbuild Blinky.csolution.yml\" exitCode=0",
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet"
           ]
         }
       ]
