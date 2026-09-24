@@ -15,7 +15,20 @@
  */
 
 import * as assert from 'assert';
-import { BusyTable, LagMonitor, NoticeGate, secondsText } from '../core/windowHealth';
+import * as http from 'http';
+import type { AddressInfo } from 'net';
+import * as net from 'net';
+import {
+    BusyTable,
+    LagMonitor,
+    NoticeGate,
+    RouterWatch,
+    busyCallsOf,
+    busyText,
+    lagText,
+    portSilent,
+    secondsText,
+} from '../core/windowHealth';
 
 /**
  * What a window knows about its own health (#14): the busy table, the
@@ -73,5 +86,76 @@ suite('Window health', () => {
         } finally {
             lag.dispose();
         }
+    });
+
+    test('the registry lists the calls busy for 10 s by tool, and names them with their age', () => {
+        const busy = new BusyTable(() => 1_000);
+        const build = busy.begin('handleCmsisCommand');
+        busy.begin('handleReadMemory');
+        busy.fence(build);
+        assert.deepStrictEqual(busyCallsOf(busy.list(), 10_999), undefined, 'none has run 10 s yet');
+        const calls = busyCallsOf(busy.list(), 241_000);
+        assert.deepStrictEqual(calls, [{ tool: 'cmsis_action', since: 1_000, fenced: true }, { tool: 'read_memory', since: 1_000 }]);
+        assert.strictEqual(busyText(calls, 241_000), 'busy: cmsis_action 240 s (timed out), read_memory 240 s');
+        assert.strictEqual(busyText(undefined, 0), '');
+        assert.strictEqual(busyText([], 0), '');
+    });
+
+    test('the lag is named above 1 s only', () => {
+        assert.strictEqual(lagText({ p99: 40, max: 4_200 }), 'event-loop lag 4.2 s');
+        assert.strictEqual(lagText({ p99: 40, max: 1_000 }), '');
+        assert.strictEqual(lagText(undefined), '');
+        assert.strictEqual(lagText({ max: 'slow' }), '');
+    });
+
+    suite('the watch on the router window', () => {
+        const stale = { pid: 4711, name: 'CDA-Testdrive', updatedAt: 0 };
+
+        test('a stale router entry and a silent port: one warning per episode, and a port that answers ends the episode', () => {
+            const watch = new RouterWatch();
+            assert.deepStrictEqual(watch.observe({ now: 75_000, staleRouter: stale, routerListed: false, silent: true }),
+                { kind: 'named', pid: 4711, name: 'CDA-Testdrive', silentMs: 75_000 });
+            assert.strictEqual(watch.observe({ now: 85_000, staleRouter: stale, routerListed: false, silent: true }), undefined);
+            assert.strictEqual(watch.observe({ now: 95_000, staleRouter: stale, routerListed: false, silent: false }), undefined);
+            assert.strictEqual(watch.observe({ now: 105_000, staleRouter: stale, routerListed: false, silent: true })?.kind, 'named',
+                'a new episode');
+        });
+
+        test('a stale router entry whose port answers raises none', () => {
+            assert.strictEqual(new RouterWatch().observe({ now: 75_000, staleRouter: stale, routerListed: false, silent: false }), undefined);
+        });
+
+        test('without any router entry the port must stay silent for a minute; with a fresh one it never warns', () => {
+            const watch = new RouterWatch();
+            assert.strictEqual(watch.observe({ now: 0, routerListed: false, silent: true }), undefined);
+            assert.strictEqual(watch.observe({ now: 59_999, routerListed: false, silent: true }), undefined);
+            assert.deepStrictEqual(watch.observe({ now: 60_000, routerListed: false, silent: true }), { kind: 'port', silentMs: 60_000 });
+            const listed = new RouterWatch();
+            assert.strictEqual(listed.observe({ now: 0, routerListed: true, silent: true }), undefined);
+            assert.strictEqual(listed.observe({ now: 120_000, routerListed: true, silent: true }), undefined);
+        });
+
+        test('a port is silent when it accepts and never answers; an answer or a refused connection is not silence', async () => {
+            // It never reads either, so it would not notice the probe hang up: its sockets are destroyed at the end.
+            const accepted: net.Socket[] = [];
+            const held = net.createServer((socket) => { accepted.push(socket); });
+            const answering = http.createServer((_incoming, reply) => { reply.writeHead(400).end(); });
+            await new Promise<void>((ready) => held.listen(0, '127.0.0.1', ready));
+            await new Promise<void>((ready) => answering.listen(0, '127.0.0.1', ready));
+            const heldPort = (held.address() as AddressInfo).port;
+            const answeringPort = (answering.address() as AddressInfo).port;
+            try {
+                const began = Date.now();
+                assert.strictEqual(await portSilent(heldPort, 100), true);
+                assert.ok(Date.now() - began < 1_000);
+                assert.strictEqual(await portSilent(answeringPort, 1_000), false);
+            } finally {
+                answering.closeAllConnections();
+                await new Promise<void>((closed) => answering.close(() => closed()));
+                accepted.forEach((socket) => socket.destroy());
+                await new Promise<void>((closed) => held.close(() => closed()));
+            }
+            assert.strictEqual(await portSilent(answeringPort, 1_000), false, 'nothing listens there any more');
+        });
     });
 });

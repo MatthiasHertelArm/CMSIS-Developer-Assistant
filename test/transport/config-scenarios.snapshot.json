@@ -12744,6 +12744,7 @@
               "name": "(no workspace)",
               "hasActiveSession": false,
               "role": "router",
+              "version": "<SERVER_VERSION>",
               "pid": "<pid>",
               "updatedAt": "<time>"
             }
@@ -13300,6 +13301,7 @@
               "name": "fixture-workspace",
               "hasActiveSession": false,
               "role": "worker",
+              "version": "<SERVER_VERSION>",
               "pid": "<pid>",
               "updatedAt": "<time>"
             }
@@ -14510,6 +14512,7 @@
               "name": "(no workspace)",
               "hasActiveSession": false,
               "role": "router",
+              "version": "<SERVER_VERSION>",
               "pid": "<pid>",
               "updatedAt": "<time>"
             }

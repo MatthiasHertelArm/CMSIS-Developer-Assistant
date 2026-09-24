@@ -22,12 +22,12 @@ import { DebuggingExecutor, ConfigurationManager, DebuggingHandler } from '.';
 import { HardwareTimeouts, SERVER_VERSION } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
 import type { PackDocsHandlers } from './packDocsDispatch';
-import { WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
+import { BusyCall, EventLoopLag, WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
 import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs } from './core/opTable';
 import { problemJournal, type ProblemJournal } from './core/problemJournal';
 import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
-import { LagMonitor, NoticeGate, secondsText } from './core/windowHealth';
+import { LagMonitor, NoticeGate, RouterWarning, RouterWatch, busyCallsOf, portSilent, secondsText } from './core/windowHealth';
 import { toolNameOf } from './core/windowStatus';
 import { logger } from './utils/logger';
 import { notifyWarning } from './utils/notify';
@@ -47,6 +47,9 @@ const FENCE_NOTICE_EVERY_MS = 10 * 60_000;
 
 /** The notices' button that opens the output channel. */
 const SHOW_LOG = 'Show Log';
+
+/** The registry name of a window without a workspace. */
+const NO_WORKSPACE = '(no workspace)';
 
 /** Shows a warning with buttons and resolves with the one chosen: `notifyWarning`, or a test's stand-in. */
 export type WarningNotifier = (message: string, ...items: string[]) => Thenable<string | undefined> | undefined;
@@ -97,6 +100,8 @@ export interface CoordinatorOptions {
     timings?: Partial<ChannelTimings>;
     /** How this window shows its warnings; `notifyWarning` by default, which journals them too. */
     notify?: WarningNotifier;
+    /** The clock of the notices and of the stuck-router watch; `Date.now` by default. */
+    clock?: () => number;
 }
 
 const SERIAL_TEARDOWN_MS = 2_000;
@@ -122,7 +127,13 @@ async function defaultSerialTeardown(): Promise<void> {
  * fences each op inside the budget the router names, and the coordinator
  * tells the user, at most once per tool in ten minutes, when a call outlived
  * its fence here; the routers of this window share one record of when each
- * window last answered, and ask a quiet one for its health first.
+ * window last answered, and ask a quiet one for its health first. The
+ * heartbeat publishes the calls busy here for more than 10 s and the
+ * event-loop lag of the last 20 s. A worker whose bid for the port fails
+ * checks whether the router stopped running — a stale router entry whose
+ * process lives, and a port that does not answer `GET /mcp` — and then warns
+ * its user once per episode: no API lets one window take the port or reload
+ * another.
  */
 export class WindowCoordinator {
     private readonly registry: WorkspaceRegistry;
@@ -135,17 +146,23 @@ export class WindowCoordinator {
     private readonly heard = new Map<number, number>();
     /** One notice per tool in ten minutes when a call outlives its fence (#14). */
     private readonly fenceNotices = new NoticeGate(FENCE_NOTICE_EVERY_MS);
+    /** Whether the window that holds the port stopped running; one warning per episode (#14). */
+    private readonly routerWatch = new RouterWatch();
+    private readonly clock: () => number;
 
     private controlServer: ControlServer | undefined;
     private mcpServer: DebugMCPServer | undefined;
     private status: WindowStatus | undefined;
     private lag: LagMonitor | undefined;
+    /** The event-loop lag of the last heartbeat interval, as the registry entry carries it. */
+    private lastLag: EventLoopLag | undefined;
     private heartbeat: ReturnType<typeof setInterval> | undefined;
     private promotionTimer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
 
     constructor(private readonly options: CoordinatorOptions) {
         this.notify = options.notify ?? notifyWarning;
+        this.clock = options.clock ?? Date.now;
         this.registry = options.registry ?? new WorkspaceRegistry(undefined, undefined, undefined, {
             onRefused: (message) => void this.notify(`${PRODUCT}: ${message}`),
         });
@@ -190,13 +207,7 @@ export class WindowCoordinator {
         await this.controlServer.start();
 
         this.publish();
-        this.heartbeat = setInterval(() => {
-            this.registry.heartbeat();
-            // The lag the health reply shows is that since the last heartbeat.
-            this.lag?.reset();
-            // Another window may have chosen a new default target since.
-            this.status?.reloadDefault();
-        }, HEARTBEAT_MS);
+        this.heartbeat = setInterval(() => this.beat(), HEARTBEAT_MS);
 
         // Debug-session state is the routing signal for every tool that has no
         // file path, so republish the moment it changes rather than waiting for
@@ -241,6 +252,7 @@ export class WindowCoordinator {
             await server.start();
             this.mcpServer = server;
             this.stopPromotionPolling();
+            this.routerWatch.end();
             logger.info(`This window is the CMSIS Developer Assistant router on ${this.getEndpoint()}`);
         } catch (error) {
             // Whatever start() managed to set up is released (a no-op when
@@ -269,8 +281,20 @@ export class WindowCoordinator {
     private startPromotionPolling(): void {
         if (this.promotionTimer || this.disposed) { return; }
         this.promotionTimer = setInterval(() => {
-            this.tryBecomeRouter().catch((err) => logger.warn(`Router promotion attempt failed: ${err}`));
+            this.pollPromotion().catch((err) => logger.warn(`Router promotion attempt failed: ${err}`));
         }, PROMOTION_POLL_MS);
+    }
+
+    /**
+     * One promotion poll: bid for the port and, when another window keeps
+     * it, check whether that window still runs (#14). Public so that a test
+     * runs a poll without waiting ten seconds.
+     */
+    public async pollPromotion(): Promise<void> {
+        await this.tryBecomeRouter();
+        if (!this.isRouter()) {
+            await this.watchRouter();
+        }
     }
 
     private stopPromotionPolling(): void {
@@ -278,6 +302,62 @@ export class WindowCoordinator {
             clearInterval(this.promotionTimer);
             this.promotionTimer = undefined;
         }
+    }
+
+    /**
+     * After a failed bid for the port: has the window that holds it stopped
+     * running (#14)? A healthy router of 2.5.1 says so in its fresh entry, and
+     * nothing is asked. Otherwise the port is asked `GET /mcp`, and
+     * `RouterWatch` decides from a stale router entry, or from a port silent
+     * for a minute with no router listed at all (2.5.0 writes no role).
+     */
+    private async watchRouter(): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
+        const now = this.clock();
+        const stale = this.registry.findStaleRouter(now);
+        const ownPid = this.registry.ownPid();
+        const listed = this.registry.list().some((entry) => entry.role === 'router' && entry.pid !== ownPid);
+        if (stale === undefined && listed) {
+            this.routerWatch.end();
+            return;
+        }
+        const silent = await portSilent(this.options.port, this.timings.routerProbeMs);
+        const staleRouter = stale === undefined ? undefined : { pid: stale.pid, name: stale.name, updatedAt: stale.updatedAt };
+        const warning = this.routerWatch.observe({ now: this.clock(), staleRouter, routerListed: listed, silent });
+        if (warning !== undefined && !this.disposed) {
+            this.warnStuckRouter(warning);
+        }
+    }
+
+    /** The warning that the window holding the port stopped running, with the way out. */
+    private warnStuckRouter(warning: RouterWarning): void {
+        const named = warning.kind === 'named'
+            ? `the router window (pid ${warning.pid}${warning.name && warning.name !== NO_WORKSPACE ? `, ${warning.name}` : ''})`
+            : `the window serving port ${this.options.port}`;
+        const message = `${PRODUCT}: ${named} has not responded for ${secondsText(warning.silentMs)}, so agents cannot reach any window. `
+            + 'Reload or close that window; another window takes over automatically.';
+        logger.warn(message);
+        this.warn(message);
+    }
+
+    /**
+     * The 20 s heartbeat: the registry entry is written again with the lag of
+     * the interval that ends and the calls busy here for 10 s (#14), a new
+     * lag interval begins, and the default target is read again: another
+     * window may have chosen one.
+     */
+    private beat(): void {
+        this.lastLag = this.lag?.read();
+        this.lag?.reset();
+        this.registry.heartbeat({ busy: this.busyCalls(), lagMs: this.lastLag });
+        this.status?.reloadDefault();
+    }
+
+    /** The calls busy here for more than 10 s, as the registry entry lists them; undefined when none is. */
+    private busyCalls(): BusyCall[] | undefined {
+        return busyCallsOf(this.controlServer?.busyOps() ?? [], this.clock());
     }
 
     /**
@@ -318,7 +398,7 @@ export class WindowCoordinator {
      */
     private noticeFence(op: OpName, ranMs: number): void {
         const tool = toolNameOf(op);
-        if (this.disposed || !this.fenceNotices.allow(tool, Date.now())) {
+        if (this.disposed || !this.fenceNotices.allow(tool, this.clock())) {
             return;
         }
         const message = `${PRODUCT}: an agent's ${tool} has been waiting ${secondsText(ranMs)} in this window; `
@@ -395,11 +475,15 @@ export class WindowCoordinator {
             controlPort: this.controlServer.getPort(),
             controlToken: this.controlToken,
             workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath),
-            name: vscode.workspace.name ?? '(no workspace)',
+            name: vscode.workspace.name ?? NO_WORKSPACE,
             hasActiveSession: !!session,
             activeConfigurationName: session?.configuration?.name,
             cmsisProject: this.cmsisProjectPath(),
             role: this.role(),
+            version: SERVER_VERSION,
+            // Both from the heartbeat: none before the first one.
+            lagMs: this.lastLag,
+            busy: this.busyCalls(),
         });
     }
 

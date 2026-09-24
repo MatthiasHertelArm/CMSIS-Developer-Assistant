@@ -26,11 +26,18 @@
  *   here, afterwards, as a delay of seconds.
  * - `NoticeGate`: at most one notice per key in a time window, so a picker
  *   nobody answers does not raise a toast per call.
+ * - The registry's view: the calls busy for more than 10 s and the lag, as
+ *   an entry stores them and as `list_debug_windows` shows them.
+ * - `RouterWatch` and `portSilent`: whether the window that holds the MCP
+ *   port has stopped running, judged by a worker whose promotion failed.
  *
  * Pure: Node only, no vscode.
  */
 
+import * as http from 'http';
 import { monitorEventLoopDelay, type IntervalHistogram } from 'perf_hooks';
+import type { BusyCall } from '../utils/workspaceRegistry';
+import { toolNameOf } from './windowStatus';
 
 /** One op running in this window. */
 export interface BusyRun {
@@ -143,4 +150,140 @@ export class NoticeGate {
 export function secondsText(ms: number): string {
     const tenths = Math.round(Math.max(0, ms) / 100);
     return tenths < 100 ? `${tenths / 10} s` : `${Math.round(tenths / 10)} s`;
+}
+
+// ── The registry's view ─────────────────────────────────────────────────────
+
+/** A call is listed in the registry once it has run this long. */
+export const BUSY_LISTED_AFTER_MS = 10_000;
+/** `list_debug_windows` names the event-loop lag above this. */
+const LAG_SHOWN_ABOVE_MS = 1_000;
+
+/** The runs a registry entry lists: those older than `BUSY_LISTED_AFTER_MS`, by tool; undefined when none is. */
+export function busyCallsOf(runs: readonly BusyRun[], now: number): BusyCall[] | undefined {
+    const calls = runs
+        .filter((run) => now - run.startedAt >= BUSY_LISTED_AFTER_MS)
+        .map((run): BusyCall => (run.fenced ? { tool: toolNameOf(run.op), since: run.startedAt, fenced: true } : { tool: toolNameOf(run.op), since: run.startedAt }));
+    return calls.length > 0 ? calls : undefined;
+}
+
+/** True for a busy call as a registry file of any version may hold it. */
+function isBusyCall(value: unknown): value is BusyCall {
+    const { tool, since } = (value ?? {}) as Record<string, unknown>;
+    return typeof tool === 'string' && tool.length > 0 && typeof since === 'number' && Number.isFinite(since);
+}
+
+/**
+ * `busy: cmsis_action 240 s, start_debugging 200 s (timed out)` for the calls
+ * an entry lists, aged at `now`; empty when it lists none.
+ */
+export function busyText(busy: unknown, now: number): string {
+    if (!Array.isArray(busy)) {
+        return '';
+    }
+    const calls = busy.filter(isBusyCall)
+        .map((call) => `${call.tool} ${Math.round(Math.max(0, now - call.since) / 1000)} s${call.fenced === true ? ' (timed out)' : ''}`);
+    return calls.length > 0 ? `busy: ${calls.join(', ')}` : '';
+}
+
+/** `event-loop lag 4.2 s` when an entry's largest delay passed 1 s; empty otherwise. */
+export function lagText(lag: unknown): string {
+    const max: unknown = typeof lag === 'object' && lag !== null ? (lag as { max?: unknown }).max : undefined;
+    return typeof max === 'number' && max > LAG_SHOWN_ABOVE_MS ? `event-loop lag ${(max / 1000).toFixed(1)} s` : '';
+}
+
+// ── A router that stopped running ───────────────────────────────────────────
+
+/** How long the port may stay silent, with no router entry at all, before a worker warns (#14). */
+export const ROUTER_SILENCE_MS = 60_000;
+
+/** What a failed promotion poll found out about the window that holds the port. */
+export interface RouterFinding {
+    now: number;
+    /** A router entry not refreshed for 60 s whose process lives (`findStaleRouter`). */
+    staleRouter?: { pid: number; name?: string; updatedAt: number };
+    /** True when a fresh entry says it is the router. */
+    routerListed: boolean;
+    /** True when `GET /mcp` on the port got no answer in time. */
+    silent: boolean;
+}
+
+/**
+ * The warning to show: the router named by its stale entry, or, when no
+ * window says it is the router (one of 2.5.0 writes no role), the port.
+ */
+export type RouterWarning =
+    | { kind: 'named'; pid: number; name?: string; silentMs: number }
+    | { kind: 'port'; silentMs: number };
+
+/**
+ * Decides, poll by poll, when the window that holds the MCP port has
+ * stopped running, and warns once per episode. An episode ends when the
+ * port answers again, or this window takes it (`end`).
+ */
+export class RouterWatch {
+    private silentSince: number | undefined;
+    private warned = false;
+
+    /** One poll's finding; the warning to show, when this episode has not had one. */
+    observe(finding: RouterFinding): RouterWarning | undefined {
+        if (!finding.silent) {
+            this.end();
+            return undefined;
+        }
+        this.silentSince ??= finding.now;
+        if (this.warned) {
+            return undefined;
+        }
+        const stale = finding.staleRouter;
+        if (stale !== undefined) {
+            this.warned = true;
+            return { kind: 'named', pid: stale.pid, ...(stale.name ? { name: stale.name } : {}), silentMs: finding.now - stale.updatedAt };
+        }
+        const silentMs = finding.now - this.silentSince;
+        if (!finding.routerListed && silentMs >= ROUTER_SILENCE_MS) {
+            this.warned = true;
+            return { kind: 'port', silentMs };
+        }
+        return undefined;
+    }
+
+    /** The port answered, or this window took it: the next silence is a new episode. */
+    end(): void {
+        this.silentSince = undefined;
+        this.warned = false;
+    }
+}
+
+/**
+ * True when `GET /mcp` on the router port gets no answer within `timeoutMs`:
+ * the port is bound, but the server behind it does not run. Any answer, a
+ * refused connection and any other failure are not silence.
+ */
+export function portSilent(port: number, timeoutMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let settled = false;
+        const settle = (silent: boolean): void => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(silent);
+            }
+        };
+        const request = http.request({
+            host: '127.0.0.1', port, path: '/mcp', method: 'GET', agent: false,
+            headers: { Accept: 'application/json, text/event-stream' },
+        }, (reply) => {
+            reply.on('error', () => undefined);
+            reply.resume();
+            settle(false);
+        });
+        timer = setTimeout(() => {
+            settle(true);
+            request.destroy();
+        }, timeoutMs);
+        request.on('error', () => settle(false));
+        request.end();
+    });
 }

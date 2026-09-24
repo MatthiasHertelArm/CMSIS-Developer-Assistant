@@ -881,6 +881,8 @@ function dumpWorld(w, seeds) {
 /** Everything under the code's TMPDIR (the window registry), with per-run values masked. */
 function dumpTmp() {
     const { files } = readTree(TMP);
+    // The release a window writes into its entry (#14); masked like the MCP definition's, so a version bump changes nothing here.
+    const { SERVER_VERSION } = load('debuggingExecutor.js');
     const out = {};
     for (const [rel, text] of files) {
         try {
@@ -890,6 +892,7 @@ function dumpTmp() {
                 if ('controlPort' in j) { j.controlPort = '<port>'; }
                 if ('controlToken' in j) { j.controlToken = '<token>'; }
                 if ('updatedAt' in j) { j.updatedAt = '<time>'; }
+                if (j.version === SERVER_VERSION) { j.version = '<SERVER_VERSION>'; }
             }
             out[rel] = j;
         } catch {
