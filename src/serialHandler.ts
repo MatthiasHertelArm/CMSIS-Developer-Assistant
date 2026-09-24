@@ -15,10 +15,44 @@
  */
 
 import * as vscode from 'vscode';
-import { describeRelease, SerialController, serialController, SerialOpenOptions, SerialStatus } from './core/serialController';
-import { serialMonitorBridge } from './core/serialMonitorBridge';
+import { currentCallContext } from './core/callContext';
+import { describeRelease, reopenAdvice, SerialController, serialController, SerialOpenOptions, SerialStatus } from './core/serialController';
+import { DEFAULT_IDLE_CLOSE_SECONDS, idleSecondsOf, ReleaseRule, releaseRuleOf } from './core/serialLease';
+import { SerialMonitorBridge, serialMonitorBridge } from './core/serialMonitorBridge';
+import { holdClause, ruleSentence } from './core/serialText';
 
-/** Why the owned port is closed, when it closed by itself; undefined when it is open or was closed on purpose. */
+/** What `serial_open` takes: the port's options and, since #49, its release rule. */
+export interface SerialOpenRequest extends SerialOpenOptions {
+    releaseOn?: ReleaseRule;
+}
+
+/** What the handler reads besides its controller; each defaults to the window's own. */
+export interface SerialHandlerOptions {
+    /** `serial.idleCloseSeconds` at the moment of an open; the VS Code setting by default. */
+    idleCloseSeconds?: () => number;
+    /** The Serial Monitor bridge. */
+    bridge?: SerialMonitorBridge;
+}
+
+/** `serial.idleCloseSeconds` as it is now: window scope, read at each open, so a change needs no reload (#49). */
+function idleCloseSetting(): number {
+    const configured: unknown = vscode.workspace.getConfiguration('cmsis-developer-assistant')
+        .get<unknown>('serial.idleCloseSeconds', DEFAULT_IDLE_CLOSE_SECONDS);
+    return idleSecondsOf(configured);
+}
+
+/** The MCP session of the call being served (#48's call context); none outside a tool call. */
+function callingSession(): string | undefined {
+    return currentCallContext()?.sessionId;
+}
+
+/** The port options of a `serial_open` request, without its rule. */
+function portOptions(args: SerialOpenRequest): SerialOpenOptions {
+    const { path, baudRate, dataBits, parity, stopBits, rtscts } = args;
+    return { path, baudRate, dataBits, parity, stopBits, rtscts };
+}
+
+/** Why the owned port is closed, when it closed by itself or a rule released it; undefined when it is open or was closed on purpose. */
 function releaseNote(status: SerialStatus): string | undefined {
     return !status.open && status.lastRelease ? describeRelease(status.lastRelease) : undefined;
 }
@@ -47,17 +81,29 @@ function closedText(status: SerialStatus): string {
  * The agent picks: `serial_open` (own port) vs `serial_subscribe_monitor`
  * (tap user's UI session). The owned port is the `serialController`
  * singleton unless a test hands in its own controller.
+ *
+ * Release rules (#49): `serial_open` and `serial_subscribe_monitor` record the
+ * MCP session of the call as the holder, and the idle limit from the setting
+ * `serial.idleCloseSeconds` at that moment. `serial_read`, `serial_write`,
+ * `serial_status` and `serial_clear_buffer` are serial calls: they restart
+ * the idle time, and a call that waits holds the port meanwhile. When an MCP
+ * session ends, `sessionEnded` releases what it held here.
  */
 export class SerialHandler {
+    private readonly bridge: SerialMonitorBridge;
+    private readonly idleCloseSeconds: () => number;
 
-    constructor(private readonly owned: SerialController = serialController) {}
+    constructor(private readonly owned: SerialController = serialController, options: SerialHandlerOptions = {}) {
+        this.bridge = options.bridge ?? serialMonitorBridge;
+        this.idleCloseSeconds = options.idleCloseSeconds ?? idleCloseSetting;
+    }
 
     // ── Backend-agnostic helpers ────────────────────────────────────
 
     async handleListPorts(): Promise<string> {
         // Prefer the MS Serial Monitor API for listing — it tends to give
         // friendlier names — falling back to our serialport when not available.
-        const fromBridge = await serialMonitorBridge.listPorts();
+        const fromBridge = await this.bridge.listPorts();
         if (fromBridge && fromBridge.length > 0) {
             const lines = [`Available serial ports (${fromBridge.length}, via Serial Monitor API):`];
             for (const p of fromBridge) {
@@ -81,10 +127,13 @@ export class SerialHandler {
 
     // ── Owned-port backend (serialport) ─────────────────────────────
 
-    async handleOpen(args: SerialOpenOptions): Promise<string> {
-        await this.owned.open(args);
+    /** `serial_open`: the port is held for the calling MCP session under `releaseOn` (default `idle`). */
+    async handleOpen(args: SerialOpenRequest): Promise<string> {
+        const rule = releaseRuleOf(args.releaseOn);
+        const idleSeconds = this.idleCloseSeconds();
+        await this.owned.open(portOptions(args), { owner: callingSession(), rule, idleSeconds });
         const s = this.owned.status();
-        return `Owned serial port opened: ${s.path} @ ${s.baudRate} baud. ` +
+        return `Owned serial port opened: ${s.path} @ ${s.baudRate} baud. ${ruleSentence(rule, idleSeconds)} ` +
             `Note: if MS Serial Monitor is also holding this port the OS will reject one of you. ` +
             `Use serial_read / serial_write / serial_close for this owned connection.`;
     }
@@ -100,10 +149,14 @@ export class SerialHandler {
     }
 
     async handleStatus(): Promise<string> {
+        this.owned.touch();
+        this.bridge.touch();
         const s = this.owned.status();
-        const bridge = await serialMonitorBridge.status();
+        const hold = this.owned.hold();
+        const bridge = await this.bridge.status();
         const lines: string[] = [];
-        lines.push(`Owned serial: ${s.open ? `OPEN on ${s.path} @ ${s.baudRate} baud, ${s.bufferedBytes} byte(s) buffered (since ${s.openedAt})` : closedText(s)}`);
+        const held = hold ? `; ${holdClause(hold, callingSession())}` : '';
+        lines.push(`Owned serial: ${s.open ? `OPEN on ${s.path} @ ${s.baudRate} baud, ${s.bufferedBytes} byte(s) buffered (since ${s.openedAt})${held}` : closedText(s)}`);
         lines.push(`Serial Monitor bridge: extension ${bridge.extensionInstalled ? 'installed' : 'NOT INSTALLED'}` +
             `, ${bridge.activated ? 'activated' : 'inactive'}` +
             `, data-subscription ${bridge.dataSubscriptionAvailable ? 'AVAILABLE' : 'unavailable in this build'}` +
@@ -118,20 +171,28 @@ export class SerialHandler {
         let payload = args.data;
         const encoding = args.encoding ?? 'utf8';
         if (args.appendNewline && encoding === 'utf8') { payload = payload + '\n'; }
-        const n = await this.owned.write(payload, encoding);
+        const n = await this.owned.during(() => this.owned.write(payload, encoding));
         return `Wrote ${n} byte(s) to owned serial port.`;
     }
 
     async handleRead(args: { maxBytes?: number; waitMs?: number; consume?: boolean; format?: 'utf8' | 'hex' | 'both'; from?: 'owned' | 'monitor' }): Promise<string> {
         const format = args.format ?? 'utf8';
         const from = args.from ?? 'owned';
-        const data = from === 'monitor'
-            ? await serialMonitorBridge.read({ maxBytes: args.maxBytes, waitMs: args.waitMs, consume: args.consume })
-            : await this.owned.read({ maxBytes: args.maxBytes, waitMs: args.waitMs, consume: args.consume });
+        const options = { maxBytes: args.maxBytes, waitMs: args.waitMs, consume: args.consume };
+        let data: Buffer;
+        if (from === 'monitor') {
+            this.bridge.touch();
+            data = await this.bridge.read(options);
+            this.bridge.touch();
+        } else {
+            data = await this.owned.during(() => this.owned.read(options));
+        }
 
-        // The owned port closed by itself: the bytes received before still come, with the reason.
-        const released = from === 'owned' ? releaseNote(this.owned.status()) : undefined;
-        const closedNote = released ? `The owned port is closed: ${released}. Reopen it with serial_open.` : undefined;
+        // The owned port closed by itself or was released: the bytes received before still come, with the reason.
+        const status = this.owned.status();
+        const released = from === 'owned' ? releaseNote(status) : undefined;
+        const closedNote = released && status.lastRelease
+            ? `The owned port is closed: ${released}. ${reopenAdvice(status.lastRelease)}` : undefined;
         if (data.length === 0) {
             return closedNote ? `Serial RX (${from}): <no data>\n${closedNote}` : `Serial RX (${from}): <no data>`;
         }
@@ -156,14 +217,21 @@ export class SerialHandler {
 
     async handleClearBuffer(args?: { from?: 'owned' | 'monitor' }): Promise<string> {
         const from = args?.from ?? 'owned';
-        const n = from === 'monitor' ? serialMonitorBridge.clearBuffer() : this.owned.clearBuffer();
+        let n: number;
+        if (from === 'monitor') {
+            this.bridge.touch();
+            n = this.bridge.clearBuffer();
+        } else {
+            this.owned.touch();
+            n = this.owned.clearBuffer();
+        }
         return `Cleared ${n} byte(s) from ${from} RX buffer.`;
     }
 
     // ── MS Serial Monitor bridge ────────────────────────────────────
 
     async handleSubscribeMonitor(): Promise<string> {
-        const r = await serialMonitorBridge.subscribeIfAvailable();
+        const r = await this.bridge.subscribeIfAvailable({ owner: callingSession(), idleSeconds: this.idleCloseSeconds() });
         if (r.ok) {
             return `Subscribed to MS Serial Monitor data via '${r.eventName}'. ` +
                 `Use serial_read with from='monitor' to consume buffered RX bytes. ` +
@@ -173,7 +241,7 @@ export class SerialHandler {
     }
 
     async handleUnsubscribeMonitor(): Promise<string> {
-        const was = serialMonitorBridge.unsubscribe();
+        const was = this.bridge.unsubscribe();
         return was ? 'Unsubscribed from Serial Monitor data.' : 'Was not subscribed.';
     }
 
@@ -192,6 +260,22 @@ export class SerialHandler {
             }
         }
         return `Could not focus the Serial Monitor panel. Tried: ${tried.join('; ')}.`;
+    }
+
+    // ── Session end (#49) ───────────────────────────────────────────
+
+    /**
+     * The MCP session `sessionId` ended: release the port it opened in this
+     * window, unless its rule is `manual`, and end the Serial Monitor
+     * subscription it made. Not a tool: the control server runs it for the
+     * internal op `sessionEnded`, and a server without a router calls it
+     * directly. Never throws.
+     */
+    async sessionEnded(sessionId: string): Promise<string> {
+        const port = this.owned.sessionEnded(sessionId);
+        const subscription = this.bridge.sessionEnded(sessionId);
+        const done = [...(port ? [`released ${port}`] : []), ...(subscription ? ['ended the Serial Monitor subscription'] : [])];
+        return `MCP session ${sessionId.slice(0, 8)} ended: ${done.length > 0 ? done.join(' and ') : 'it held no serial port in this window'}.`;
     }
 }
 

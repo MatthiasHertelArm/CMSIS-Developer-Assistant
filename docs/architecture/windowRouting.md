@@ -181,7 +181,7 @@ Two such additions carry the problem journal (#48). The request names the
 call it belongs to: `{op, args, callId, sessionId}`, from the call context
 `MeasuredMcpServer` set, and the control server runs the op inside the same
 context, so the target window's journal stamps its records with the id, and
-#49 can bind a serial port to the MCP session. A typed reply carries the
+`serial_open` records the MCP session as the holder of the port (#49). A typed reply carries the
 target window's journal counters, `journalSeq` (the newest record) and
 `journalErrors` (errors ever recorded), next to `result` or `error`. The
 session's `ProblemNotices` keep a baseline per window pid: the first answer
@@ -215,7 +215,17 @@ any method, dispatches it to the debugging handler, the serial handler, or
 the documentation or build-artefact handler, and answers `{result}` with 200
 or `{error}` with 500, in the envelope the request asked for (see above). An
 unknown op, a method the window lacks and absent documentation handlers are
-`TOOL_DISABLED`. The op runs through `runJournaled()`: registered in the
+`TOOL_DISABLED`.
+
+Before the op table come the internal ops (`INTERNAL_OPS`), which are no
+tools: the server answers them itself, outside the op hook of the status bar
+and the problem journal. `sessionEnded {sessionId}` (#49) is one: the router
+posts it, fire-and-forget with 2 s, to every window an MCP session forwarded
+to once the session ended (`RoutingDebuggingHandler.sessionEnded()`, which
+remembers those pids per session), and the window releases the serial port
+and the Serial Monitor subscription the session held there (see
+[serial.md](serial.md)). A window of an earlier version answers "not a known
+operation", which the router ignores. The op runs through `runJournaled()`: registered in the
 window's problem journal while it runs, and when it fails or its wait runs
 out, up to five records it produced ride along in `data.problems`. The
 trace line of each op logs the size of the result's text. Agents never see
@@ -277,7 +287,9 @@ releases the window's serial ports, giving that step at most two seconds.
   `role`, and the op hook (#16); the problem journal — the call id in the
   envelope, the counters in the reply, a worker failure with its problems,
   the note once per batch and after `get_recent_problems` none, no note from
-  a worker without counters
+  a worker without counters; the end of a session — `sessionEnded` only to
+  the windows it reached, once, an old or silent window passed by, and the
+  control server's own answer without the op hook
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
   matching; the directory name, modes, and refused directories; the default
   target file and how its window is found again

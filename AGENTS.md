@@ -60,8 +60,10 @@ simply forwards to itself.
 | `PackDocsHandler` / `BuildInfoHandler` | `src/packDocsHandler.ts`, `src/buildInfoHandler.ts`, `src/core/packDocs/`, `src/core/buildInfo/` | Documentation tools (pack PDFs, Arm documents, user and workspace documents, core SVDs) and build-artefact tools (ELF, map file, build log); off by default, routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
 | `skills/` | `skills/` | Bundled Agent Skills `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and the generated `cmsis-help`; the vendored Open-CMSIS-Pack/cmsis-skills skills; one router skill per category; `catalog.json` | [skills/README.md](skills/README.md) |
 
-Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts` and
-`src/core/serialMonitorBridge.ts` (the `serial_*` tools);
+Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts`,
+`src/core/serialMonitorBridge.ts` and `src/core/serialLease.ts` (the
+`serial_*` tools and when a held port is released;
+[docs/architecture/serial.md](docs/architecture/serial.md));
 `src/utils/sessionStateTracker.ts` (which session is active, stop events);
 `src/cmsisJobTracker.ts` (the window's CMSIS tasks, the `cmsis_action` jobs
 and what holds the probe); `src/cmsisBuildDiagnosis.ts` with
@@ -121,6 +123,7 @@ checks a built package.
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withhold variable and expression values that look like credentials; raw target reads are never redacted |
 | `cmsis-developer-assistant.build.diagnosticRerun` | `true` | After a failed build, re-run cbuild once with `--log` (no pack download, RTE update or clean; 120 s cap) so the `cmsis_action` result shows the error lines; off leaves only the csolution messages of `cbuild-idx.yml`. Scope `window` |
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the ten `serial_*` tools |
+| `cmsis-developer-assistant.serial.idleCloseSeconds` | 300 | Release a serial port an agent opened after this many seconds without a serial tool call; 0 is off. Scope `window` |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off |
 | `cmsis-developer-assistant.installedSkills` | `[]` | The AI Skills Pack skills from `skills/catalog.json` to install. Where the value is set decides where they go: the User value into the personal skills directories, a Workspace or Folder value into that folder's `.agents/skills` (plus `.claude/skills` when Claude Code is installed or the folder has a `.claude` directory), pack skills only. `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed for the user. Scope `resource` |
 | `cmsis-developer-assistant.aiSkills.enabled` | `true` | Install the AI Skills Pack at all; off removes the pack skills this extension installed and skips the skills step of the setup and the prompt. Scope `application` |
@@ -130,11 +133,12 @@ checks a built package.
 | `cmsis-developer-assistant.buildInfo.enabled` | `false` | Register the five build-artefact tools; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
 
 `installedSkills`, `aiSkills.enabled` and `agentRules.install` take effect at
-once, `redactSecrets` is read on every call and `build.diagnosticRerun` for
-every failed build. The port, the timeouts, the tool-group switches and the
-telemetry file are read at activation; after a change the window has to be
-reloaded, and the extension offers to do it when the port,
-`packDocs.enabled` or `buildInfo.enabled` changes.
+once, `redactSecrets` is read on every call, `build.diagnosticRerun` for
+every failed build and `serial.idleCloseSeconds` at each `serial_open`. The
+port, the timeouts, the tool-group switches and the telemetry file are read
+at activation; after a change the window has to be reloaded, and the
+extension offers to do it when the port, `packDocs.enabled` or
+`buildInfo.enabled` changes.
 
 ## Documents served to agents
 

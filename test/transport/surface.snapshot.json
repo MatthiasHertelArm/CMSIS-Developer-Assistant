@@ -906,7 +906,7 @@
         },
         {
           "name": "serial_open",
-          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control.",
+          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -970,6 +970,15 @@
               "rtscts": {
                 "description": "RTS/CTS hardware flow control (default false)",
                 "type": "boolean"
+              },
+              "releaseOn": {
+                "description": "'idle' (default); 'debug-session-end': when the debug session ends, not on idle; 'manual': only serial_close",
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "debug-session-end",
+                  "manual"
+                ]
               }
             },
             "required": [
@@ -1605,10 +1614,10 @@
           "isError": true,
           "structuredContent": {
             "status": "error",
-            "error_code": "INTERNAL",
+            "error_code": "PORT_CLOSED",
             "message": "No serial port open. Call serial_open first."
           },
-          "text": "[INTERNAL] No serial port open. Call serial_open first."
+          "text": "[PORT_CLOSED] No serial port open. Call serial_open first."
         },
         "serial_read": {
           "text": "Serial RX (owned): <no data>"
@@ -3653,7 +3662,7 @@
         },
         {
           "name": "serial_open",
-          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control.",
+          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -3717,6 +3726,15 @@
               "rtscts": {
                 "description": "RTS/CTS hardware flow control (default false)",
                 "type": "boolean"
+              },
+              "releaseOn": {
+                "description": "'idle' (default); 'debug-session-end': when the debug session ends, not on idle; 'manual': only serial_close",
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "debug-session-end",
+                  "manual"
+                ]
               }
             },
             "required": [
@@ -4831,10 +4849,10 @@
           "isError": true,
           "structuredContent": {
             "status": "error",
-            "error_code": "INTERNAL",
+            "error_code": "PORT_CLOSED",
             "message": "No serial port open. Call serial_open first."
           },
-          "text": "[INTERNAL] No serial port open. Call serial_open first."
+          "text": "[PORT_CLOSED] No serial port open. Call serial_open first."
         },
         "serial_read": {
           "text": "Serial RX (owned): <no data>"
@@ -5824,7 +5842,7 @@
         },
         {
           "name": "serial_open",
-          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control.",
+          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -5888,6 +5906,15 @@
               "rtscts": {
                 "description": "RTS/CTS hardware flow control (default false)",
                 "type": "boolean"
+              },
+              "releaseOn": {
+                "description": "'idle' (default); 'debug-session-end': when the debug session ends, not on idle; 'manual': only serial_close",
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "debug-session-end",
+                  "manual"
+                ]
               },
               "window": {
                 "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
@@ -7653,7 +7680,7 @@
         },
         {
           "name": "serial_open",
-          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control.",
+          "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -7717,6 +7744,15 @@
               "rtscts": {
                 "description": "RTS/CTS hardware flow control (default false)",
                 "type": "boolean"
+              },
+              "releaseOn": {
+                "description": "'idle' (default); 'debug-session-end': when the debug session ends, not on idle; 'manual': only serial_close",
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "debug-session-end",
+                  "manual"
+                ]
               },
               "window": {
                 "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
@@ -8411,10 +8447,10 @@
           "isError": true,
           "structuredContent": {
             "status": "error",
-            "error_code": "INTERNAL",
+            "error_code": "PORT_CLOSED",
             "message": "No serial port open. Call serial_open first."
           },
-          "text": "[INTERNAL] No serial port open. Call serial_open first."
+          "text": "[PORT_CLOSED] No serial port open. Call serial_open first."
         },
         "serial_read": {
           "text": "Serial RX (owned): <no data>"

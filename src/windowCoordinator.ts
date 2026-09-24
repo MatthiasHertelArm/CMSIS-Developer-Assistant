@@ -262,7 +262,8 @@ export class WindowCoordinator {
      * Always the routing handler, even in the router's own window. Routing to
      * yourself is one loopback hop and keeps a single code path — a "run it
      * locally if the target is me" shortcut would be a second path that only
-     * the router exercises, and so the one that rots.
+     * the router exercises, and so the one that rots. When the session ends,
+     * the router tells the windows it forwarded to (#49).
      */
     private sessionHandlers(): SessionHandlers {
         const router = new RoutingDebuggingHandler(this.registry, this.options.timeoutInSeconds * 1000);
@@ -270,6 +271,7 @@ export class WindowCoordinator {
             debug: router,
             serial: (op, args) => router.serialOp(op, args),
             packDocs: (op, args) => router.packDocsOp(op, args),
+            ended: (sessionId) => router.sessionEnded(sessionId),
         };
     }
 

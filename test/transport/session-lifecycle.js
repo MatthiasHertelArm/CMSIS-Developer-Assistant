@@ -42,6 +42,13 @@
 //      structuredContent.problems with its call id, and an error nobody saw
 //      is noted once, counted by get_session_status, and cleared by
 //      get_recent_problems.
+//  12. The end of a session releases its serial port (#49): serial_open
+//      holds a mock port for the session, and DELETE releases it through the
+//      local serial handler. A session without a request for the idle time
+//      and without an open GET stream expires (injected clock): a later
+//      request with its id is refused with a 4xx, and its port is released.
+//      Mock ports only: the serial controller's port factory is swapped for
+//      serialport's SerialPortMock.
 
 const stub = require('./vscode-stub.js');
 
@@ -78,6 +85,22 @@ function request(port, method, extraHeaders, body) {
         });
         req.on('error', reject);
         if (payload) { req.write(payload); }
+        req.end();
+    });
+}
+
+// A GET stream that stays open until `close()` is called: the session it belongs to must not expire meanwhile.
+function holdStream(port, sessionId) {
+    return new Promise((resolve, reject) => {
+        const req = http.request({
+            host: '127.0.0.1', port, path: '/mcp', method: 'GET',
+            headers: { 'Host': `127.0.0.1:${port}`, 'Accept': 'text/event-stream', 'mcp-session-id': sessionId },
+        }, (res) => {
+            res.on('data', () => undefined);
+            res.on('error', () => undefined);
+            resolve({ status: res.statusCode, close: () => new Promise((done) => { res.once('close', done); req.destroy(); }) });
+        });
+        req.on('error', (err) => { if (err.code !== 'ECONNRESET') { reject(err); } });
         req.end();
     });
 }
@@ -441,13 +464,81 @@ async function main() {
     check('after get_recent_problems the count line is gone', /^State: /.test(cleared) && !cleared.includes('Problems: '),
         cleared.split('\n').filter((line) => line.startsWith('Problems')).join(' | '));
 
+    // 6d. The session holds a serial port (#49): a mock port, opened through serial_open.
+    const { SerialPortMock } = require('serialport');
+    const { serialController } = require(path.join(OUT, 'core', 'serialController.js'));
+    serialController.createPort = (options) => new SerialPortMock(options);
+    SerialPortMock.binding.createPort('/dev/ttyMOCK49');
+    const serialOpened = await callTool('serial_open', { path: '/dev/ttyMOCK49' }, 50);
+    const heldBy = await callTool('serial_status', {}, 51);
+    check('serial_open holds the port for this session, released after 300 s without a serial call',
+        serialOpened.isError !== true && /held by this session, released after 300 s without a serial call/.test(heldBy.content?.[0]?.text ?? ''),
+        (heldBy.content?.[0]?.text ?? '').split('\n')[0]);
+
     // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });
     check('DELETE /mcp accepts a valid session', del.status === 200 || del.status === 204, `status=${del.status}`);
     const afterDelete = await openStream(port, sid);
     check('GET /mcp after DELETE is rejected', afterDelete.status === 400, `status=${afterDelete.status}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const releasedByDelete = serialController.status();
+    check('DELETE releases the serial port the session held, through the local serial handler (#49)',
+        !releasedByDelete.open && releasedByDelete.lastRelease?.reason === 'owner-gone' && releasedByDelete.lastRelease?.path === '/dev/ttyMOCK49',
+        JSON.stringify(releasedByDelete.lastRelease));
 
     await server.stop();
+
+    // 7a. Session expiry (#49), on a clock the harness moves: 60 s idle here instead of 30 min.
+    let clock = 1_000_000;
+    const expiring = new DebugMCPServer(0, 30, undefined, undefined,
+        { sessionExpiry: { idleMs: 60_000, sweepMs: 3_600_000, now: () => clock } });
+    await expiring.initialize();
+    await expiring.start();
+    const eport = expiring.getActualPort();
+    const openAt = async (p) => {
+        const r = await request(p, 'POST', {}, {
+            jsonrpc: '2.0', id: 1, method: 'initialize',
+            params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+        });
+        const id = r.headers['mcp-session-id'];
+        await request(p, 'POST', { 'mcp-session-id': id }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+        return id;
+    };
+    const idleSid = await openAt(eport);
+    const streamingSid = await openAt(eport);
+    const busySid = await openAt(eport);
+    SerialPortMock.binding.createPort('/dev/ttyMOCK50');
+    await request(eport, 'POST', { 'mcp-session-id': idleSid }, {
+        jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'serial_open', arguments: { path: '/dev/ttyMOCK50' } },
+    });
+    const held = await holdStream(eport, streamingSid);
+    clock += 50_000;
+    await request(eport, 'POST', { 'mcp-session-id': busySid }, { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} });
+    clock += 20_000;
+    const swept = expiring.sweepIdleSessions();
+    check('the sweep ends the session idle for the limit and spares one with an open GET stream and one used meanwhile',
+        swept === 1 && held.status === 200, `ended ${swept}, stream ${held.status}`);
+    const expiredPost = await request(eport, 'POST', { 'mcp-session-id': idleSid }, { jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} });
+    const expiredGet = await openStream(eport, idleSid);
+    check('a request with the expired session id is refused with a 4xx',
+        expiredPost.status >= 400 && expiredPost.status < 500 && expiredGet.status >= 400 && expiredGet.status < 500,
+        `POST ${expiredPost.status}, GET ${expiredGet.status}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const releasedByExpiry = serialController.status();
+    check('the expiry releases the serial port the session held',
+        !releasedByExpiry.open && releasedByExpiry.lastRelease?.reason === 'owner-gone' && releasedByExpiry.lastRelease?.path === '/dev/ttyMOCK50',
+        JSON.stringify(releasedByExpiry.lastRelease));
+    const spared = await request(eport, 'POST', { 'mcp-session-id': busySid }, { jsonrpc: '2.0', id: 5, method: 'tools/list', params: {} });
+    check('the session used meanwhile keeps working', spared.status === 200, `status=${spared.status}`);
+    await held.close();
+    // The server hears of the hang-up a moment after the client.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    clock += 61_000;
+    const later = expiring.sweepIdleSessions();
+    const streamGone = await request(eport, 'POST', { 'mcp-session-id': streamingSid }, { jsonrpc: '2.0', id: 6, method: 'tools/list', params: {} });
+    check('once its stream closed, that session expires too', later === 2 && streamGone.status >= 400 && streamGone.status < 500,
+        `ended ${later}, status ${streamGone.status}`);
+    await expiring.stop();
 
     // 8. Server options are accepted, kept for the instance's lifetime and
     //    readable back. Behaviour behind them (serial gating, telemetry) lands

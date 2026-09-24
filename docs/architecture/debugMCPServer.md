@@ -63,9 +63,23 @@ Three constraints shape the code:
 2. When the SDK assigns that id, `adopt()` enters the pair in the session map.
    A session that fails before this point is closed at once (`discard()`).
 3. Later requests carrying the id go straight to the session's transport
-   (`acceptSessionRequest()` for `GET` and `DELETE`).
-4. When the transport closes (client `DELETE`, or `stop()`), `release()`
-   removes the entry.
+   (`acceptSessionRequest()` for `GET` and `DELETE`). Each one marks the
+   session as used (`lastSeenAt`, when it arrives and when its answer is
+   done); a `GET` counts as an open stream until its connection closes.
+4. When the transport closes (client `DELETE`, expiry, or `stop()`),
+   `release()` removes the entry and tells the session's handlers
+   (`announceEnd()`, without waiting).
+5. Expiry (#49): many clients never send `DELETE`, they just go away. Every
+   minute `sweepIdleSessions()` closes the transport of each session that has
+   had no request for 30 minutes and holds no `GET` stream open; a request
+   with its id is then refused like any unknown id. Clock, idle time and sweep
+   interval come from the `sessionExpiry` option, which tests use.
+
+A session's end matters beyond the server: the serial ports it held stay
+held otherwise (see [serial.md](serial.md)). `SessionHandlers.ended` hears
+of it; the coordinator gives a routed session one that tells every window
+the session forwarded to. A session without it whose serial ops run locally
+(`localSerialDispatch`) tells the local serial handler instead.
 
 The handlers a session talks to (`SessionHandlers`: `debug`, `serial` and the
 optional `packDocs` dispatch) come from the factory given to the constructor,
@@ -86,10 +100,13 @@ calls go to; the router window's status bar shows them (#16).
   `listenOnLoopback()` waits for the `listening` event, because Express 5
   calls the listen callback on failure as well. `EADDRINUSE` becomes
   `PortInUseError`: another window serves MCP, and the caller becomes a worker.
+- `start()` also starts the sweep timer of the expiry, which never keeps
+  the process alive; `stop()` clears it.
 - `stop()` closes every session, then the HTTP server through
   `closeHttpServer()` (idle connections at once, busy ones after a grace
-  period). It is safe after a failed start. Serial ports are released by the
-  window coordinator, not here.
+  period). It is safe after a failed start. The window's own serial ports are
+  released by the window coordinator, not here; closing the sessions tells
+  the other windows, as any session end does.
 - `getActualPort()` reports the port actually bound, which tests use with a
   configured port of 0.
 
@@ -111,7 +128,8 @@ MCP session id and a count (`ebc40edd-20`), and runs the callback inside a
 call context with that id and the session id (`src/core/callContext.ts`,
 Node's `AsyncLocalStorage`). Whatever the call awaits sees it: the router
 copies both into the control envelope, and the problem journal stamps its
-records with the id (#48). #49 will bind a serial port to the session id.
+records with the id (#48). `serial_open` records the session id as the
+holder of the port (#49).
 
 The sample goes into the session's ring of 200 samples. The ring's callback,
 `observe()`, adds it to the totals of the server instance (500 samples),
@@ -267,9 +285,10 @@ whole guide is served and a warning is logged.
 ## Where to look
 
 - `src/debugMCPServer.ts`: `DebugMCPServer` (`start`, `stop`, `buildApp`,
-  `acceptPost`, `acceptSessionRequest`, `openSession`, `describeSessions`,
-  `observe`), `loopbackOnly`, `listenOnLoopback`, `jsonlSink`,
-  `singleWindowHandlers`, `PortInUseError`, `SessionHandlers`,
+  `acceptPost`, `acceptSessionRequest`, `openSession`, `release`,
+  `announceEnd`, `sweepIdleSessions`, `describeSessions`, `observe`),
+  `loopbackOnly`, `listenOnLoopback`, `jsonlSink`, `singleWindowHandlers`,
+  `PortInUseError`, `SessionHandlers`, `SessionExpiry`,
   `DebugMCPServerOptions`, `localSerialDispatch`
 - `src/debugTools.ts`: `buildSessionServer`, `loadToolRules`, `ABOUT`,
   `WINDOW_ARGUMENT_TOOLS`, `registerTools`, `registerResources`,
@@ -312,7 +331,9 @@ whole guide is served and a warning is logged.
   no `window` argument, the tool rules first and once in a status, the
   pinned `tools/list` size, and the problem journal without a router: an
   empty `get_recent_problems`, the problems of a failing call, the note and
-  the count of new errors
+  the count of new errors; the serial port of a session released by
+  `DELETE` and by expiry, and a session with an open stream or a recent
+  request spared by the sweep
 - `test/transport/surface-snapshot.js` (`npm run test:surface`): initialize
   result, tool list, resources and every tool's reply without a session,
   compared with `test/transport/surface.snapshot.json`

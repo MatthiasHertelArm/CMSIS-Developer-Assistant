@@ -40,6 +40,10 @@
  * those the session's `ProblemNotices` add the count line to
  * `get_session_status` and a one-time note about new errors to a successful
  * result, per window; a worker that sends no counters gets neither.
+ *
+ * The session remembers the windows it forwarded to. When it ends, the MCP
+ * server calls `sessionEnded`, which tells each of them with the internal op
+ * `sessionEnded`, so they release the serial ports the session held (#49).
  */
 
 import * as http from 'http';
@@ -64,6 +68,7 @@ import {
     ToolText,
     isErrorCode,
     isToolReply,
+    textOf,
     toToolError,
     upgradeLegacyText,
 } from './core/toolResult';
@@ -94,6 +99,8 @@ const ASK_THE_USER = 'or ask the user to pick one: click "CDA" in the VS Code st
 const DEFAULT_MARK = 'default target (set in VS Code)';
 const UNREACHABLE_HINT = 'It may have been closed. Call list_debug_windows to see what is still open.';
 const BUSY_HINT = 'The call may still be running there. Call get_session_status to see the state of that window, then retry.';
+/** How long a window may take to hear that a session ended; nobody waits for the answer. */
+const SESSION_END_TIMEOUT_MS = 2_000;
 
 /** One method per debugging op; the class gets them from the op table below. */
 type DebugForwarders = { [Op in DebugOpName]: (args?: unknown) => Promise<ToolText> };
@@ -176,6 +183,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     private defaultSetAt: number | undefined;
     /** What this session has seen of each window's problem journal (#48), by pid. */
     private readonly notices = new ProblemNotices();
+    /** The windows this session forwarded a call to, by pid: those told when it ends (#49). */
+    private readonly forwardedTo = new Set<number>();
 
     /**
      * @param defaultToolMs the tool timeout a call gets without its own `timeoutMs`.
@@ -250,6 +259,31 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     }
 
     /**
+     * The MCP session `sessionId`, which this handler served, ended (#49):
+     * tell every window it forwarded to, all at once, so each releases the
+     * serial port and the Serial Monitor subscription the session held there.
+     * Nobody waits for more than 2 s; a window that is gone, silent, or of a
+     * version without the op ("not a known operation") is passed by. Never
+     * rejects.
+     */
+    async sessionEnded(sessionId: string): Promise<void> {
+        const pids = [...this.forwardedTo];
+        this.forwardedTo.clear();
+        await Promise.all(pids.map(async (pid) => {
+            const entry = this.registry.findByPid(pid);
+            if (entry === undefined) {
+                return;
+            }
+            try {
+                const { outcome } = await this.post(entry, 'sessionEnded', { sessionId }, SESSION_END_TIMEOUT_MS);
+                logger.debug(`Session end told to pid=${pid}: ${outcome instanceof ToolError ? outcome.message : textOf(outcome)}`);
+            } catch (failure) {
+                logger.debug(`Session end not told to pid=${pid}`, failure);
+            }
+        }));
+    }
+
+    /**
      * Where this session's path-less calls go and the rung that chose the
      * window, for the router's status bar (#16); undefined before the first
      * call and after the window went away. Reads nothing from disk.
@@ -287,6 +321,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         const { entry, reason } = this.resolveTarget(targetHintOf(given));
         const sent = withoutWindow(given);
         logger.info(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
+        this.forwardedTo.add(entry.pid);
         let answer: WorkerAnswer;
         try {
             answer = await this.post(entry, op, sent);
@@ -433,14 +468,13 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
      * POST `{op, args}` to the window's control server — with the call's id
      * and MCP session id when the call has a context — asking for the typed
      * envelope, and resolve with what the window answered, its failure
-     * included. Rejects with `WORKER_TIMEOUT` when the window stays silent, and
-     * with a `ChannelFailure` when the channel itself fails.
+     * included. Rejects with `WORKER_TIMEOUT` when the window stays silent for
+     * `idleLimitMs`, and with a `ChannelFailure` when the channel itself fails.
      */
-    private post(entry: WindowRegistration, op: string, args: unknown): Promise<WorkerAnswer> {
+    private post(entry: WindowRegistration, op: string, args: unknown, idleLimitMs = this.answerWithinMs(op, args)): Promise<WorkerAnswer> {
         const call = currentCallContext();
         const envelope = call ? { op, args, callId: call.callId, ...(call.sessionId ? { sessionId: call.sessionId } : {}) } : { op, args };
         const body = Buffer.from(JSON.stringify(envelope), 'utf8');
-        const idleLimitMs = this.answerWithinMs(op, args);
         return new Promise<WorkerAnswer>((resolve, reject) => {
             const outgoing = http.request({
                 host: '127.0.0.1',

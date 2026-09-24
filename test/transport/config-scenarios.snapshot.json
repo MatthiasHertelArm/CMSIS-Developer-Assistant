@@ -11363,6 +11363,12 @@
             "default": true
           },
           {
+            "key": "cmsis-developer-assistant.serial.idleCloseSeconds",
+            "type": "number",
+            "default": 300,
+            "scope": "window"
+          },
+          {
             "key": "cmsis-developer-assistant.packDocs.enabled",
             "type": "boolean",
             "default": false

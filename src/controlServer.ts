@@ -45,6 +45,10 @@
  *
  * `onOp` hears when each op starts and settles; the window's status-bar item
  * shows from it that an agent call runs here (#16).
+ *
+ * The internal ops (`INTERNAL_OPS`) are no tools and are answered here, before
+ * the op table: `sessionEnded` (#49) releases the serial port an ended MCP
+ * session held in this window. They pass neither the op hook nor the journal.
  */
 
 import { timingSafeEqual } from 'crypto';
@@ -58,7 +62,9 @@ import {
     CONTROL_ENVELOPE_HEADER,
     CONTROL_ENVELOPE_VERSION,
     CONTROL_REQUEST_MAX_BYTES,
+    InternalOpName,
     OpName,
+    isInternalOp,
     isKnownOp,
     isPackDocsDocOp,
     isPackDocsOp,
@@ -330,6 +336,9 @@ export class ControlServer {
 
     /** Run one op against the handler that owns it, through the journal, and trace the outcome. */
     private async dispatch(op: string, opArgs: unknown, call: CallContext | undefined): Promise<JournaledOutcome> {
+        if (isInternalOp(op)) {
+            return { outcome: await this.runInternal(op, opArgs), counters: this.journal.counters() };
+        }
         // Before any property lookup: `constructor` or `__proto__` stop here.
         if (!isKnownOp(op)) {
             throw new ToolError('TOOL_DISABLED', `Control op ${op} refused: not a known operation`);
@@ -351,6 +360,21 @@ export class ControlServer {
             return journaled;
         } finally {
             this.tell(op, 'end');
+        }
+    }
+
+    /** An internal op, answered by this window itself; a request it cannot read is refused like a failed op. */
+    private async runInternal(op: InternalOpName, opArgs: unknown): Promise<ToolText> {
+        switch (op) {
+            case 'sessionEnded': {
+                const sessionId: unknown = (opArgs as { sessionId?: unknown } | null | undefined)?.sessionId;
+                if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > SESSION_ID_MAX_CHARS) {
+                    throw new ToolError('INVALID_ARGUMENT', 'sessionEnded needs the id of the MCP session that ended');
+                }
+                const answer = await serialHandler.sessionEnded(sessionId);
+                logger.info(`control op=${op}: ${answer}`);
+                return answer;
+            }
         }
     }
 
