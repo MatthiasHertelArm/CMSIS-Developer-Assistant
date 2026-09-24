@@ -146,6 +146,49 @@ suite('Workspace registry', () => {
             assert.ok(!exists(`window-${process.pid + 1}.json`), 'nothing to refresh, nothing written');
         });
 
+        test('a stale router entry whose process lives is skipped, not deleted, and findStaleRouter returns it; a stale worker entry is pruned as before (#14)', () => {
+            const ROUTER = 700_101;
+            const WORKER = 700_102;
+            const alive = new Set([process.pid, ROUTER, WORKER]);
+            const registry = new WorkspaceRegistry(process.pid, dir, (pid) => alive.has(pid));
+            publish(registry);
+            const lastBeat = Date.now() - BACKDATE_MS;
+            plant('router', { pid: ROUTER, role: 'router', name: 'CDA-Testdrive', updatedAt: lastBeat });
+            plant('worker', { pid: WORKER, role: 'worker', updatedAt: lastBeat });
+            assert.deepStrictEqual(registry.list().map((w) => w.pid), [process.pid]);
+            assert.ok(exists('window-router.json'), 'kept: it names the window that holds the port');
+            assert.ok(!exists('window-worker.json'), 'pruned as before');
+            assert.deepStrictEqual([registry.findStaleRouter()?.pid, registry.findStaleRouter()?.name], [ROUTER, 'CDA-Testdrive']);
+            assert.strictEqual(registry.findByPid(ROUTER), undefined, 'never a routing target');
+            // Once its process is gone, the dead-pid rule removes it.
+            alive.delete(ROUTER);
+            assert.strictEqual(registry.findStaleRouter(), undefined);
+            assert.ok(!exists('window-router.json'));
+        });
+
+        test('a fresh router entry is no stale router, and one silent for more than an hour is pruned (#14)', () => {
+            const ROUTER = 700_103;
+            const registry = new WorkspaceRegistry(process.pid, dir, (pid) => pid === ROUTER || pid === process.pid);
+            plant('fresh', { pid: ROUTER, role: 'router' });
+            assert.strictEqual(registry.findStaleRouter(), undefined);
+            assert.deepStrictEqual(registry.list().map((w) => w.role), ['router']);
+            plant('fresh', { pid: ROUTER, role: 'router', updatedAt: Date.now() - 61 * 60_000 });
+            assert.strictEqual(registry.findStaleRouter(), undefined, 'after an hour the pid more likely belongs to another process');
+            assert.ok(!exists('window-fresh.json'));
+        });
+
+        test('a heartbeat writes the busy calls and the lag it is given, and drops what it is given as undefined (#14)', () => {
+            const registry = open();
+            publish(registry, { version: '2.5.1' });
+            registry.heartbeat({ busy: [{ tool: 'cmsis_action', since: 5, fenced: true }], lagMs: { p99: 12, max: 4_200 } });
+            const beat = registry.list()[0];
+            assert.deepStrictEqual([beat.version, beat.busy, beat.lagMs], ['2.5.1', [{ tool: 'cmsis_action', since: 5, fenced: true }], { p99: 12, max: 4_200 }]);
+            registry.heartbeat({ busy: undefined, lagMs: { p99: 1, max: 3 } });
+            const next = JSON.parse(fs.readFileSync(inDir(`window-${process.pid}.json`), 'utf8')) as WindowRegistration;
+            assert.ok(!('busy' in next), 'no busy calls, no field');
+            assert.deepStrictEqual(next.lagMs, { p99: 1, max: 3 });
+        });
+
         test('a crashed writer\'s temp file is never listed and goes once it is old', () => {
             const stale = 'window-77.json.77.deadbeef.tmp';
             const fresh = 'window-78.json.78.cafebabe.tmp';
@@ -465,6 +508,20 @@ suite('Workspace registry', () => {
             assert.strictEqual(describeWindow({ ...base, role: 'router', hasActiveSession: true }), 'pid=4242 | /proj/blinky | router | debugging');
             assert.strictEqual(describeWindow({ ...base, role: 'worker' }), 'pid=4242 | /proj/blinky');
             assert.strictEqual(describeWindow(base), 'pid=4242 | /proj/blinky');
+        });
+
+        test('names the calls busy there and an event-loop lag above 1 s (#14)', () => {
+            const now = 1_700_000_000_000;
+            assert.strictEqual(describeWindow({
+                ...base, role: 'router', busy: [{ tool: 'cmsis_action', since: now - 240_000 }], lagMs: { p99: 40, max: 4_200 },
+            }, now), 'pid=4242 | /proj/blinky | router | busy: cmsis_action 240 s | event-loop lag 4.2 s');
+            assert.strictEqual(describeWindow({
+                ...base, busy: [{ tool: 'start_debugging', since: now - 200_000, fenced: true }, { tool: 'read_memory', since: now - 12_000 }],
+                lagMs: { p99: 3, max: 900 },
+            }, now), 'pid=4242 | /proj/blinky | busy: start_debugging 200 s (timed out), read_memory 12 s');
+            // Whatever a file of another version holds there is read safely.
+            const odd = { ...base, busy: [{ tool: 7 }, null, 'x'], lagMs: 'slow' } as unknown as WindowRegistration;
+            assert.strictEqual(describeWindow(odd, now), 'pid=4242 | /proj/blinky');
         });
     });
 });

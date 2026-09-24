@@ -65,7 +65,7 @@ When **no rule decides** — two windows debugging at once, or several idle ones
 
 When the target window is **slow or stuck**, the error code says which:
 
-- `WORKER_TIMEOUT`: the window is alive, but the call did not finish in time and still runs there. Often a picker or dialog in that window waits for the user. Call `get_session_status`, and ask the user to look at that window before you repeat the call.
+- `WORKER_TIMEOUT`: the window is alive, but the call did not finish in time and still runs there. Often a picker or dialog in that window waits for the user. Call `get_session_status`, and ask the user to look at that window before you repeat the call. `list_debug_windows` shows the calls busy in each window.
 - `WINDOW_UNREACHABLE`: the window did not answer at all; its extension host is blocked, or it closed. Call `list_debug_windows`. If the window is still listed, ask the user to reload it.
 
 ## 🧹 Clean up

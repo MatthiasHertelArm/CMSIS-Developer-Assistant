@@ -14,7 +14,8 @@ owns the workspace or the board the call is about.
   accepts the MCP sessions and forwards every tool call.
 - **Worker.** Every other window. It executes calls forwarded to it and
   retries the port every 10 s, so that one of the workers takes over when the
-  router window closes and the agents' URL keeps working.
+  router window closes and the agents' URL keeps working. When the router
+  window stops running without closing, the workers tell their users (#14).
 - Every window, the router included, runs a `ControlServer` and executes its
   own calls through it. Routing to itself costs one loopback hop and keeps a
   single code path; a local shortcut would be a second path that only the
@@ -45,16 +46,25 @@ Each window keeps `window-<pid>.json` in a directory under `os.tmpdir()`: the
 control port and token, the workspace folders, the window name, whether a
 debug session is active and with which configuration, the CMSIS solution
 path when the CMSIS Solution extension reports one, and its role (`router`
-or `worker`; windows of 2.5.0 and earlier write none). The file is written
-atomically, refreshed every 20 s, and rewritten at once when a debug session
-starts or ends or the folders change — the session state is what routes every
-call that names no file. Readers drop the files of processes that no longer
-exist and of other windows not refreshed for 60 s; unreadable files and
-leftover temporary files go once they are a minute old, since a peer may
-still be writing a younger one. Windows of different extension versions read
-each other's files, so the format stays stable and readers ignore fields they
-do not know. The first field, `_note`, is for whoever opens the file: it
-says the file is internal and names the tools agents use instead.
+or `worker`; windows of 2.5.0 and earlier write none). Since 2.5.1 it also
+holds the extension `version`, and from the first heartbeat on `lagMs`, the
+event-loop delay of the last 20 s, and `busy`, the agent calls running there
+for more than 10 s (#14). The file is written atomically, refreshed every
+20 s, and rewritten at once when a debug session starts or ends or the
+folders change — the session state is what routes every call that names no
+file. The heartbeat takes a patch, so it brings `busy` and `lagMs` up to
+date as it refreshes the time. Readers drop the files of processes that no
+longer exist and of other windows not refreshed for 60 s, with one
+exception: the router's entry stays, skipped, while its process lives (up to
+an hour), because it names the window that holds the MCP port when that
+window has stopped running (`findStaleRouter()`, see
+[A router that stopped running](#a-router-that-stopped-running)).
+Unreadable files and leftover temporary files go once they are a minute old,
+since a peer may still be writing a younger one. Windows of different
+extension versions read each other's files, so the format stays stable and
+readers ignore fields they do not know. The first field, `_note`, is for
+whoever opens the file: it says the file is internal and names the tools
+agents use instead.
 
 Beside the window files lies `default-target.json`, written 0600 by
 Select Target Window: `{pid, workspaceFolder, name, setAt}`. Readers of every
@@ -131,7 +141,10 @@ matches nothing (with the same candidates in `data`), and a
 `select_debug_window` without a selector or without a match are
 `INVALID_ARGUMENT`. `list_debug_windows` shows every registered window, marks
 the router, the current target, the pin and the default target, and the
-reply of `select_debug_window` says when the pin overrides a default.
+reply of `select_debug_window` says when the pin overrides a default. Its
+lines (`describeWindow()`) also name the calls busy in a window, with their
+age and whether they are past their fence, and an event-loop lag above 1 s:
+`pid=4711 | … | router | busy: cmsis_action 240 s | event-loop lag 4.2 s`.
 
 ## Forwarding
 
@@ -255,6 +268,31 @@ from both ends (#14):
 | `cmsis_action`, `flash`, documentation ops | 600 s (floor) | 595 s |
 | `read_memory { timeoutMs: 5000 }` | 20 s | 15 s (the handler's own cap answers at 5 s) |
 
+### A router that stopped running
+
+A router whose extension host is blocked keeps the MCP port bound, so no
+other window can take over, and every agent's call waits in vain. No
+extension can take a bound port or reload another window; what a worker can
+do is tell its user. Each promotion poll that fails to bind
+(`WindowCoordinator.pollPromotion()`, every 10 s) looks at two things:
+
+- **The registry.** A `role: 'router'` entry not refreshed for 60 s whose
+  process lives (`findStaleRouter()`). A router of 2.5.1 that runs keeps its
+  entry fresh, and then nothing else is asked.
+- **The port.** Whether `GET /mcp`, without a session, stays unanswered for
+  2 s (`portSilent()`). A running router of any version answers it with a
+  400 at once.
+
+`RouterWatch` in `src/core/windowHealth.ts` decides: a stale router entry
+and a silent port give one warning per episode, which names the window —
+"the router window (pid 4711, CDA-Testdrive) has not responded for 75 s, so
+agents cannot reach any window. Reload or close that window; another window
+takes over automatically." — with **Show Log**. A router of 2.5.0 writes no
+role; when no entry says it is the router and the port has stayed silent
+for a minute, the warning names "the window serving port 3001" instead. The
+episode ends when the port answers again or the window takes the port.
+Every worker window warns, since each one polls.
+
 ## The control server
 
 `ControlServer` listens on an ephemeral port on `127.0.0.1`. The ops include
@@ -366,15 +404,21 @@ releases the window's serial ports, giving that step at most two seconds.
   blocked window, a window that stops answering mid-call, a budget that ends
   after a missed check, a 500 as alive, the quiet rule
 - `src/test/windowHealth.test.ts`: the busy table, the notice gate, the
-  event-loop lag, seconds in messages
+  event-loop lag, seconds in messages; the busy calls and the lag as the
+  registry lists them; the router watch's episodes and the port probe
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
   matching; the directory name, modes, and refused directories; the default
-  target file and how its window is found again
+  target file and how its window is found again; a stale router entry
+  skipped but kept, a stale worker entry pruned, the heartbeat's patch, and
+  the busy calls and lag in `describeWindow()`
 - `src/test/windowStatus.test.ts`: the item's text and tooltip in every state,
   the Select Target Window entries, and a tool name for every op
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'
   `mode` option and the loopback checks
-- `src/test/windowCoordinator.test.ts`: the serial teardown on dispose
+- `src/test/windowCoordinator.test.ts`: the serial teardown on dispose; the
+  role and version the window publishes; the warning about a router that
+  stopped running, once per episode, none for a healthy router, and by
+  port for a router of 2.5.0 (injected notifier and clock)
 - `src/test/opTable.test.ts`: the op table and `targetHintOf()`
 - `test/transport/two-window-routing.js`: two coordinators against one
   registry — one router, one worker, the same advertised endpoint, pinning,

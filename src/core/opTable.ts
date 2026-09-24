@@ -214,6 +214,8 @@ export interface ChannelTimings {
     healthTimeoutMs: number;
     /** Router: how often a pending forward checks its window's health, the first time after this long. */
     watchdogEveryMs: number;
+    /** Worker: how long `GET /mcp` on the router port may stay unanswered before the router counts as stuck. */
+    routerProbeMs: number;
 }
 
 /** The timings the extension runs with. */
@@ -225,6 +227,7 @@ export const CHANNEL_TIMINGS: Readonly<ChannelTimings> = Object.freeze({
     quietMs: 30_000,
     healthTimeoutMs: 2_000,
     watchdogEveryMs: 15_000,
+    routerProbeMs: 2_000,
 });
 
 /** What `forwardTimeoutMs` adds to a tool timeout, and the floor of the slow ops. */

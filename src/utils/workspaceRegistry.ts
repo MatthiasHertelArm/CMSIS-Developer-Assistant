@@ -23,7 +23,14 @@
  * The file format is shared by every installed version of the extension, so
  * windows of different versions can find each other: keep it stable, and
  * ignore fields you do not know. Readers tidy up as they go, dropping entries
- * of processes that are gone and entries that stopped being refreshed.
+ * of processes that are gone and entries that stopped being refreshed. The
+ * one exception is the router's entry (#14): while its process lives it is
+ * only skipped, so that the other windows can tell that the window holding
+ * the MCP port has stopped running (`findStaleRouter`).
+ *
+ * Since 2.5.1 an entry also says what the window is doing: its role, the
+ * extension version, the event-loop delay of the last heartbeat interval and
+ * the agent calls running there for more than 10 s (#14).
  *
  * The files carry each window's control token, so only this user may read
  * them (#19): the directory is 0700 and the files 0600. Where the temp
@@ -40,11 +47,28 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { busyText, lagText } from '../core/windowHealth';
 import { isTempPath, writeFileAtomic, writeFileAtomicSync } from './atomicFile';
 import { logger } from './logger';
 
 /** What a window does: serve MCP and forward every call (router), or run what is forwarded to it (worker). */
 export type WindowRole = 'router' | 'worker';
+
+/** An agent call that had run in a window for more than 10 s at its last heartbeat (#14). */
+export interface BusyCall {
+    /** The tool, as agents know it. */
+    tool: string;
+    /** When the call started there, milliseconds since the epoch. */
+    since: number;
+    /** True once its fence answered the agent `WORKER_TIMEOUT`; it runs on. */
+    fenced?: boolean;
+}
+
+/** The event-loop delay of a window over its last heartbeat interval, milliseconds (#14). */
+export interface EventLoopLag {
+    p99: number;
+    max: number;
+}
 
 /** One window's registry file, as written by its owner. */
 export interface WindowRegistration {
@@ -64,9 +88,18 @@ export interface WindowRegistration {
     cmsisProject?: string;
     /** Written since 2.5.1; the entries of older windows have none. */
     role?: WindowRole;
+    /** The extension version; since 2.5.1. */
+    version?: string;
+    /** The event-loop delay of the last heartbeat interval; since 2.5.1, from the first heartbeat on. */
+    lagMs?: EventLoopLag;
+    /** The agent calls running here for more than 10 s at the last heartbeat; none when there are none. */
+    busy?: BusyCall[];
     /** First in the file, for whoever opens it: it says the file is internal. Readers ignore it. */
     _note?: string;
 }
+
+/** What a heartbeat brings up to date besides the time (#14); a field given as undefined is dropped. */
+export type HeartbeatPatch = Partial<Pick<WindowRegistration, 'busy' | 'lagMs'>>;
 
 /**
  * Why the router picked a window, strongest first: the call's `window`
@@ -97,6 +130,12 @@ export type LivenessCheck = (pid: number) => boolean;
 
 /** Refreshed every 20 s by the owner, so a minute of silence means it stopped. */
 const STALE_AFTER_MS = 60_000;
+/**
+ * A stale router entry whose pid still lives is kept this long (#14); after
+ * an hour the pid more likely belongs to another process than to a router
+ * window that stopped running.
+ */
+const STALE_ROUTER_KEPT_MS = 60 * 60_000;
 const FILE_PREFIX = 'window-';
 const FILE_SUFFIX = '.json';
 /** Not a window file: the name does not start with FILE_PREFIX, so every version's `list()` passes it by. */
@@ -269,6 +308,12 @@ function foldersOf(entry: WindowRegistration): string[] {
     return Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
 }
 
+/** A registry file that passed the pruning rules, and whether it is stale (only a router's can be). */
+interface Admitted {
+    entry: WindowRegistration;
+    stale: boolean;
+}
+
 /**
  * The form in which paths are compared: absolute, lower-case on Windows,
  * without trailing separators (so the root becomes the empty string).
@@ -352,14 +397,17 @@ export class WorkspaceRegistry {
     }
 
     /**
-     * Rewrite the last registration with a new timestamp. It never reads the
-     * file first, so an entry a peer removed by mistake comes back.
+     * Rewrite the last registration with a new timestamp and what `patch`
+     * brings up to date: the busy calls and the event-loop lag (#14). It
+     * never reads the file first, so an entry a peer removed by mistake
+     * comes back.
      */
-    heartbeat(): void {
+    heartbeat(patch: HeartbeatPatch = {}): void {
         const current = this.published;
         if (!current) {
             return;
         }
+        Object.assign(current, patch);
         current.updatedAt = Date.now();
         this.writeOwnFile(current, 'Failed to refresh CMSIS Developer Assistant registry entry');
     }
@@ -374,28 +422,24 @@ export class WorkspaceRegistry {
 
     /**
      * Every live registration, in directory order, pruning dead, stale and
-     * broken files on the way. A directory this user must not trust is not
-     * read at all: the window then sees only itself, so its own tool calls
-     * still run while the other windows stay out of reach.
+     * broken files on the way. A stale router entry whose process lives is
+     * skipped but kept, for `findStaleRouter` (#14). A directory this user
+     * must not trust is not read at all: the window then sees only itself, so
+     * its own tool calls still run while the other windows stay out of reach.
      */
     list(): WindowRegistration[] {
-        if (this.readRefusal() !== undefined) {
-            return this.published ? [this.published] : [];
-        }
-        let names: string[];
-        try {
-            names = fs.readdirSync(this.registryDir);
-        } catch {
-            return [];
-        }
-        const found: WindowRegistration[] = [];
-        for (const name of names) {
-            const entry = this.admit(name);
-            if (entry) {
-                found.push(entry);
-            }
-        }
-        return found;
+        return this.scan(Date.now()).filter((found) => !found.stale).map((found) => found.entry);
+    }
+
+    /**
+     * The entry of a router window that stopped refreshing it while its
+     * process lives (#14): its extension host is blocked, so it holds the MCP
+     * port and serves nothing. The newest such entry; none in a directory
+     * this user must not trust.
+     */
+    findStaleRouter(now: number = Date.now()): WindowRegistration | undefined {
+        const stale = this.scan(now).filter((found) => found.stale).map((found) => found.entry);
+        return stale.sort((a, b) => b.updatedAt - a.updatedAt)[0];
     }
 
     /** The window whose folder most deeply contains `targetPath`. */
@@ -556,8 +600,29 @@ export class WorkspaceRegistry {
         }
     }
 
-    /** One directory entry through the pruning rules: the registration, or undefined. */
-    private admit(name: string): WindowRegistration | undefined {
+    /** Every registration that passes the pruning rules, a kept stale router entry marked as such. */
+    private scan(now: number): Admitted[] {
+        if (this.readRefusal() !== undefined) {
+            return this.published ? [{ entry: this.published, stale: false }] : [];
+        }
+        let names: string[];
+        try {
+            names = fs.readdirSync(this.registryDir);
+        } catch {
+            return [];
+        }
+        const found: Admitted[] = [];
+        for (const name of names) {
+            const admitted = this.admit(name, now);
+            if (admitted) {
+                found.push(admitted);
+            }
+        }
+        return found;
+    }
+
+    /** One directory entry through the pruning rules: the registration and whether it is stale, or undefined. */
+    private admit(name: string, now: number): Admitted | undefined {
         const file = path.join(this.registryDir, name);
         // Checked before the name filter: `window-7.json.7.0badc0de.tmp` ends in `.tmp`.
         if (isTempPath(name)) {
@@ -582,20 +647,26 @@ export class WorkspaceRegistry {
             return undefined;
         }
         // The reader's own entry is never pruned for age, only other windows' ones.
-        if (owner !== this.pid && Date.now() - entry.updatedAt > STALE_AFTER_MS) {
-            discard(file);
-            return undefined;
+        const age = now - entry.updatedAt;
+        if (owner === this.pid || !(age > STALE_AFTER_MS)) {
+            return { entry, stale: false };
         }
-        return entry;
+        // A router that stopped refreshing still holds the MCP port: its entry names it (#14).
+        if (entry.role === 'router' && age <= STALE_ROUTER_KEPT_MS) {
+            return { entry, stale: true };
+        }
+        discard(file);
+        return undefined;
     }
 }
 
 /**
  * One line naming a window for agents: pid, folders, `router` for the window
- * that serves MCP, the debug session and the CMSIS solution, joined by
- * ` | `. Port and token never appear.
+ * that serves MCP, the debug session, the CMSIS solution, the calls busy
+ * there and a noticeable event-loop lag (#14), joined by ` | `. Port and
+ * token never appear. `now` dates the busy calls.
  */
-export function describeWindow(entry: WindowRegistration): string {
+export function describeWindow(entry: WindowRegistration, now: number = Date.now()): string {
     const folders = foldersOf(entry);
     const parts: string[] = [
         `pid=${entry.pid}`,
@@ -609,6 +680,14 @@ export function describeWindow(entry: WindowRegistration): string {
     }
     if (entry.cmsisProject) {
         parts.push(`cmsis=${entry.cmsisProject}`);
+    }
+    const busy = busyText(entry.busy, now);
+    if (busy.length > 0) {
+        parts.push(busy);
+    }
+    const lag = lagText(entry.lagMs);
+    if (lag.length > 0) {
+        parts.push(lag);
     }
     return parts.join(' | ');
 }
