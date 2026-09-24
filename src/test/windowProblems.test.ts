@@ -116,6 +116,21 @@ suite('Window problem sources', () => {
         assert.deepStrictEqual([finished.size, diagnosed.size], [0, 0]);
     });
 
+    test('a build that exited 0 but failed its check is journaled as TASK_FAILED when the check comes in', () => {
+        const diagnosed = new Set<(job: Job) => void>();
+        const tracker = {
+            onDidFinishJob: () => ({ dispose: () => undefined }),
+            onDidDiagnoseJob: (listener: (job: Job) => void) => { diagnosed.add(listener); return { dispose: () => diagnosed.delete(listener) }; },
+        } as unknown as CmsisJobTracker;
+        const journal = new ProblemJournal();
+        attachJobJournal(tracker, journal, () => [ROOT]);
+        const exitedZero = job({ state: 'failed', executions: [{ key: 1, name: 'cbuild blinky.csolution.yml', kind: 'build', startedAt: 1, exitCode: 0 }] });
+        diagnosed.forEach((listener) => listener({ ...exitedZero, diagnosis: { ...diagnosis([UNDECLARED], []), check: 'failed' } }));
+        const records = journal.query().records;
+        assert.deepStrictEqual(records.map((record) => [record.source, record.code]), [['build', 'TASK_FAILED'], ['build', 'BUILD_ERROR']]);
+        assert.match(records[0].message, /exited with code 0 .*but the build failed$/);
+    });
+
     suite('the Problems panel', () => {
         const uri = vscode.Uri.file(path.join(ROOT, 'blinky.csolution.yml'));
         const at = (line: number, message: string, severity = vscode.DiagnosticSeverity.Error, source?: string): vscode.Diagnostic => {
