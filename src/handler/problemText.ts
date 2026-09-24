@@ -16,18 +16,20 @@
 
 /**
  * The reply of `get_recent_problems` (#48): one line per record, oldest
- * first, then `nextSeq=`. The records stay in the text; `data` carries only
- * the cursor and the counts, so nothing reaches the agent twice. A reply
- * keeps within 8 kB by leaving out its oldest lines, which count as omitted.
+ * first, then `nextSeq=`. `data` carries the cursor, the counts and the same
+ * records as JSON (`records`): a client that shows the model
+ * `structuredContent` instead of the text must still see them. A reply keeps
+ * its text and its records within 8 kB each by leaving out the oldest
+ * records, which count as omitted.
  */
 
-import { formatProblemLine, type ProblemPage, type ProblemSeverity, type ProblemSource } from '../core/problemJournal';
-import type { ToolReply } from '../core/toolResult';
+import { formatProblemLine, problemJson, type ProblemPage, type ProblemRecord, type ProblemSeverity, type ProblemSource } from '../core/problemJournal';
+import type { JsonObject, ToolReply } from '../core/toolResult';
 
 /** Records a reply returns without `limit`, and at most. */
 export const PROBLEMS_DEFAULT_LIMIT = 20;
 export const PROBLEMS_MAX_LIMIT = 50;
-/** The largest reply text. */
+/** The largest reply text, and the largest JSON of its records. */
 export const PROBLEMS_REPLY_MAX_BYTES = 8 * 1024;
 
 /** What an empty reply says it did not find, by the lightest severity asked for. */
@@ -44,26 +46,33 @@ export interface ProblemsAsked {
     minSeverity: ProblemSeverity;
 }
 
-/** The newest lines of `page` that fit the byte budget, oldest first. */
-function linesWithin(page: ProblemPage, budget: number): string[] {
-    const kept: string[] = [];
-    let used = 0;
+/** The newest records of `page` whose lines and whose JSON each fit the byte budget, oldest first. */
+function recordsWithin(page: ProblemPage, budget: number): { lines: string[]; records: JsonObject[] } {
+    const lines: string[] = [];
+    const records: JsonObject[] = [];
+    let usedText = 0;
+    let usedJson = 0;
     for (let index = page.records.length - 1; index >= 0; index--) {
-        const line = formatProblemLine(page.records[index]);
-        const cost = Buffer.byteLength(line) + 1;
-        if (used + cost > budget) {
+        const record: ProblemRecord = page.records[index];
+        const line = formatProblemLine(record);
+        const json = problemJson(record);
+        const textCost = Buffer.byteLength(line) + 1;
+        const jsonCost = Buffer.byteLength(JSON.stringify(json)) + 1;
+        if (usedText + textCost > budget || usedJson + jsonCost > budget) {
             break;
         }
-        kept.unshift(line);
-        used += cost;
+        lines.unshift(line);
+        records.unshift(json);
+        usedText += textCost;
+        usedJson += jsonCost;
     }
-    return kept;
+    return { lines, records };
 }
 
 /** The reply to one `get_recent_problems` call. */
 export function renderProblemPage(page: ProblemPage, asked: ProblemsAsked): ToolReply {
     const trailerRoom = 200;
-    const lines = linesWithin(page, PROBLEMS_REPLY_MAX_BYTES - trailerRoom);
+    const { lines, records } = recordsWithin(page, PROBLEMS_REPLY_MAX_BYTES - trailerRoom);
     const omitted = page.omitted + (page.records.length - lines.length);
     let text: string;
     if (lines.length === 0 && omitted === 0) {
@@ -76,5 +85,5 @@ export function renderProblemPage(page: ProblemPage, asked: ProblemsAsked): Tool
             : [];
         text = [...left, ...lines, `nextSeq=${page.nextSeq}`].join('\n');
     }
-    return { text, status: 'ok', data: { nextSeq: page.nextSeq, returned: lines.length, omitted } };
+    return { text, status: 'ok', data: { nextSeq: page.nextSeq, returned: lines.length, omitted, records } };
 }

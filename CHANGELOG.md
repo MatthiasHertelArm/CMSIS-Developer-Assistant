@@ -17,6 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - A build whose task exits 0 is now checked before it answers. Errors in a fresh `cbuild-idx.yml` fail it. Images all written since the build started confirm it. Otherwise the diagnostic re-run of #15 decides: a build that fails there answers `TASK_FAILED` with its error lines ("exited 0 after 3 s, but the build failed"), and one that succeeds is reported as up to date.
   - When an image was not rewritten and the re-run cannot run (setting off, no `.cmsis/tools-environment.yml`, another build running), the result is a ⚠️ warning that exit 0 does not confirm the build, with the reason, instead of ✅. `status` and `get_session_status` show `❌ build errors (exit 0)` or `⚠️ exit 0, not confirmed`; `data.diagnosis.check` carries `rebuilt`, `up-to-date`, `failed` or `unverified`.
   - A check still going when the call's wait ends answers with status `running`; `cmsis_action {action:'status'}` gives the result.
+- **Every `structuredContent` carries the text of its result, so a client that shows the model that object instead of the text loses nothing (part of #11, #48).**
+  - Some MCP clients hand the model `structuredContent` and not `content`. An ok reply with data carried only `{status: 'ok', ...data}`, so `get_recent_problems` reached such an agent as `{"status":"ok","nextSeq":27,"returned":2,"omitted":0}`, without a single record.
+  - An ok reply with data now carries its text as `message`, as the timeout, running and error shapes already did.
+  - `get_recent_problems` also returns its records as JSON in `structuredContent.records`, the same records as its lines. The lines and the records each stay within 8 kB; what does not fit counts as omitted.
+  - The surface and DAP oracles fail any reply whose `structuredContent` leaves out a line of its text.
 
 ## [2.5.1] - 2026-09-24
 

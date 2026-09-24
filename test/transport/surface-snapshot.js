@@ -26,6 +26,11 @@
 //
 // A refactoring that is meant to change no behaviour must leave the snapshot
 // byte-identical. A deliberate change updates it in the same commit.
+//
+// Independent of the snapshot, every reply that has structuredContent must
+// carry all of its text there too (some MCP clients show the model that
+// object instead of the text); a reply that does not fails the run, with or
+// without --update.
 
 const stub = require('./vscode-stub.js');
 
@@ -36,6 +41,9 @@ const os = require('os');
 const path = require('path');
 
 const OUT = path.resolve(__dirname, '..', '..', 'out', 'src');
+const { linesMissingFromStructured } = require(path.join(OUT, 'core', 'measuredMcpServer.js'));
+/** Replies whose structuredContent leaves out part of their text: `shape tool: lines`. */
+const uncarried = [];
 const SNAPSHOT = path.join(__dirname, 'surface.snapshot.json');
 const CALL_TIMEOUT_MS = 90_000;
 // Pids no real process on a developer machine uses; only these count as live.
@@ -166,6 +174,8 @@ async function capture(label, server, ctx, { callTools }) {
             if (res.timedOut) { calls[tool.name] = { timedOut: true }; continue; }
             const r = res.result ?? {};
             const text = (r.content ?? []).map((c) => (c.type === 'text' ? c.text : `<${c.type}>`)).join('\n');
+            const missing = linesMissingFromStructured(r);
+            if (missing.length > 0) { uncarried.push(`${label} ${tool.name}: ${JSON.stringify(missing)}`); }
             calls[tool.name] = {
                 ...(res.error ? { rpcError: normalise(res.error.message, ctx) } : {}),
                 ...(r.isError ? { isError: true } : {}),
@@ -239,6 +249,10 @@ async function main() {
     await worker.stop();
     fs.rmSync(tmp, { recursive: true, force: true });
 
+    if (uncarried.length > 0) {
+        console.log(`STRUCTURED CONTENT WITHOUT THE TEXT in ${uncarried.length} replies:\n  ${uncarried.join('\n  ')}`);
+        process.exit(1);
+    }
     const actual = JSON.stringify({ format: 1, shapes }, null, 2) + '\n';
     if (update || !fs.existsSync(SNAPSHOT)) {
         fs.writeFileSync(SNAPSHOT, actual);

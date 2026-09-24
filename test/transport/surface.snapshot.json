@@ -1710,9 +1710,11 @@
         "get_recent_problems": {
           "structuredContent": {
             "status": "ok",
+            "message": "No errors recorded in this window (nextSeq=3).",
             "nextSeq": 3,
             "returned": 0,
-            "omitted": 0
+            "omitted": 0,
+            "records": []
           },
           "text": "No errors recorded in this window (nextSeq=3)."
         }
@@ -5025,9 +5027,11 @@
         "get_recent_problems": {
           "structuredContent": {
             "status": "ok",
+            "message": "No errors recorded in this window (nextSeq=5).",
             "nextSeq": 5,
             "returned": 0,
-            "omitted": 0
+            "omitted": 0,
+            "records": []
           },
           "text": "No errors recorded in this window (nextSeq=5)."
         }
@@ -8702,9 +8706,11 @@
         "get_recent_problems": {
           "structuredContent": {
             "status": "ok",
+            "message": "No errors recorded in this window (nextSeq=7).",
             "nextSeq": 7,
             "returned": 0,
-            "omitted": 0
+            "omitted": 0,
+            "records": []
           },
           "text": "No errors recorded in this window (nextSeq=7)."
         },

@@ -100,6 +100,10 @@ const path = require('path');
 
 const OUT = path.resolve(__dirname, '..', '..', 'out', 'src');
 const SNAPSHOT = path.join(__dirname, 'dap-scenarios.snapshot.json');
+/** Replies whose structuredContent leaves out part of their text (see surface-snapshot.js). */
+const uncarried = [];
+/** From the compiled code, loaded in main() after the stub is in place. */
+let linesMissingFromStructured;
 const CALL_TIMEOUT_MS = 90_000;
 
 // ── Stub extensions ────────────────────────────────────────────────────────
@@ -1852,6 +1856,8 @@ async function runScenario(def, index, env, ctx, DebugMCPServer) {
             const text = (r.content ?? []).map((c) => (c.type === 'text' ? c.text : `<${c.type}>`)).join('\n');
             if (res.error) { entry.rpcError = normalise(res.error.message, ctx); }
             if (r.isError) { entry.isError = true; }
+            const missing = linesMissingFromStructured(r);
+            if (missing.length > 0) { uncarried.push(`${def.name} ${call.tool}: ${JSON.stringify(missing)}`); }
             // The get_session_status trailer counts this session's calls and
             // bytes; it is metrics, not debugging behaviour, and would repeat
             // every earlier reply's size change.
@@ -1875,6 +1881,7 @@ async function main() {
     const started = Date.now();
 
     const { DebugMCPServer } = require(path.join(OUT, 'debugMCPServer.js'));
+    ({ linesMissingFromStructured } = require(path.join(OUT, 'core', 'measuredMcpServer.js')));
     const { registerSessionStateTracker } = require(path.join(OUT, 'utils', 'sessionStateTracker.js'));
     // What activate() does first: the DAP stopped/continued tracker.
     registerSessionStateTracker({ subscriptions: [] });
@@ -1896,6 +1903,10 @@ async function main() {
     }
     fs.rmSync(tmp, { recursive: true, force: true });
 
+    if (uncarried.length > 0) {
+        console.log(`STRUCTURED CONTENT WITHOUT THE TEXT in ${uncarried.length} replies:\n  ${uncarried.join('\n  ')}`);
+        process.exit(1);
+    }
     const requests = scenarios.reduce((n, s) => n + s.calls.reduce((m, c) =>
         m + [...c.traffic, ...(c.lateTraffic ?? [])].filter((l) => l.startsWith('dap: ')).length, 0), 0);
     const seconds = ((Date.now() - started) / 1000).toFixed(1);

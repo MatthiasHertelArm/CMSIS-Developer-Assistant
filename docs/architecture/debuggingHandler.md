@@ -409,7 +409,9 @@ once when errors arrived that the agent has not seen, and
   while errors lie beyond it, and one successful result per batch carries a
   note naming the call to make. `handleGetRecentProblems()` renders the
   journal from `sinceSeq` on (`src/handler/problemText.ts`): one line per
-  record, newest 20 (at most 50), within 8 kB.
+  record, newest 20 (at most 50), and the same records as JSON in
+  `data.records`, for clients that show the model `structuredContent`
+  instead of the text; the lines and the records each stay within 8 kB.
 
 ## The host seam
 

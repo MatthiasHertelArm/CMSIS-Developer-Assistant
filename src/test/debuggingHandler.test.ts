@@ -29,7 +29,7 @@ import { HardwareTimeoutError } from '../utils/timeout';
 import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from '../core/toolResult';
-import { ProblemInput, ProblemJournal } from '../core/problemJournal';
+import { ProblemInput, ProblemJournal, problemJson } from '../core/problemJournal';
 import type { HandlerHost } from '../handler/host';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
@@ -1741,7 +1741,7 @@ suite('DebuggingHandler', () => {
         const handlerOn = (journal: ProblemJournal): DebuggingHandler =>
             new DebuggingHandler(new ScriptedExecutor() as unknown as IDebuggingExecutor, {} as IDebugConfigurationManager, 5, journal);
 
-        test('warnings and errors of the handler\'s journal from sinceSeq on, the newest 20, with the cursor in data', async () => {
+        test('warnings and errors of the handler\'s journal from sinceSeq on, the newest 20, with the cursor and the records in data', async () => {
             const journal = journalWith(
                 { source: 'dap', origin: 'S', severity: 'info', message: 'banner' },
                 { source: 'gdb-server', origin: 'S', severity: 'error', code: 'DAP_POWER_UP_FAILED', message: 'Failed to power up DAP', hint: 'Check the power.' },
@@ -1751,7 +1751,7 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(reply, {
                 text: '#2 error gdb-server [DAP_POWER_UP_FAILED] Failed to power up DAP → Check the power.\n#3 warning serial COM7 disconnected at 10:42:07\nnextSeq=4',
                 status: 'ok',
-                data: { nextSeq: 4, returned: 2, omitted: 0 },
+                data: { nextSeq: 4, returned: 2, omitted: 0, records: journal.query({ minSeverity: 'warning' }).records.map(problemJson) },
             });
             const since = await handlerOn(journal).handleGetRecentProblems({ sinceSeq: 3, minSeverity: 'info', sources: ['serial'] });
             assert.strictEqual(textOf(since), '#3 warning serial COM7 disconnected at 10:42:07\nnextSeq=4');
@@ -1765,11 +1765,15 @@ suite('DebuggingHandler', () => {
             // A known source is left in, so the Problems panel of the test instance is not read.
             const loose = { sources: ['nonsense', 'build'], minSeverity: 'fatal', limit: 500, sinceSeq: -3 } as unknown as Parameters<DebuggingHandler['handleGetRecentProblems']>[0];
             const reply = await handlerOn(journal).handleGetRecentProblems(loose);
-            assert.deepStrictEqual(isToolReply(reply) ? reply.data : undefined, { nextSeq: 61, returned: 50, omitted: 10 });
+            const counts = (answer: ToolText): unknown => {
+                const data = isToolReply(answer) ? answer.data : undefined;
+                return data && { nextSeq: data.nextSeq, returned: data.returned, omitted: data.omitted, records: (data.records as unknown[]).length };
+            };
+            assert.deepStrictEqual(counts(reply), { nextSeq: 61, returned: 50, omitted: 10, records: 50 });
             const one = await handlerOn(journal).handleGetRecentProblems({ limit: 0, sources: ['build'] });
-            assert.deepStrictEqual(isToolReply(one) ? one.data : undefined, { nextSeq: 61, returned: 1, omitted: 59 });
+            assert.deepStrictEqual(counts(one), { nextSeq: 61, returned: 1, omitted: 59, records: 1 });
             const standard = await handlerOn(journal).handleGetRecentProblems({ sources: ['build'] });
-            assert.deepStrictEqual(isToolReply(standard) ? standard.data : undefined, { nextSeq: 61, returned: 20, omitted: 40 });
+            assert.deepStrictEqual(counts(standard), { nextSeq: 61, returned: 20, omitted: 40, records: 20 });
         });
     });
 
