@@ -338,7 +338,9 @@ export class DebugMCPServer {
     /**
      * Close every session, then the HTTP server (idle connections at once,
      * the rest after a grace period). Safe after a failed start or none.
-     * Serial ports are the coordinator's to release, not this server's.
+     * The window's own serial ports are the coordinator's to release; each
+     * closed session ends as on DELETE, so the windows it reached release
+     * what it held there (#49).
      */
     async stop(): Promise<void> {
         if (this.sweeper !== undefined) {

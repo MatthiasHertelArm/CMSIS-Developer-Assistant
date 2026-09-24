@@ -40,6 +40,14 @@ Each exits non-zero if any check failed.
   id, and lists them under its text; an error nobody saw is noted once on
   the next successful result, counted by `get_session_status`, and gone from
   both after `get_recent_problems`.
+- The end of a session releases its serial port (#49), on mock ports only
+  (the serial controller's port factory is swapped for serialport's
+  `SerialPortMock`): `serial_capture` reads until its regex matches and
+  leaves the port closed; a port `serial_open` held for the session is
+  released by `DELETE`, through the local serial handler; on an injected
+  clock the sweep ends a session idle for its limit, spares one with an open
+  GET stream and one used meanwhile, refuses the expired id with a 4xx and
+  releases its port. The serial group has eleven tools.
 
 Belongs here rather than in `src/test/` because it needs a real listening
 socket, which the `vscode-test` Electron harness does not give us.
