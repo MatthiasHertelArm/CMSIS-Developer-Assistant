@@ -1005,7 +1005,11 @@ suite('Multi-window routing', () => {
         test('serial_open carries the MCP session id in the envelope, so the window records the holder', async () => {
             const { bodies } = await openRecorder('solo', typedOk);
             await runInCallContext({ callId: 'feedface-1', sessionId: SESSION }, () => newRouter().serialOp('handleOpen', { path: 'COM7' }));
-            assert.deepStrictEqual(bodies, [{ op: 'handleOpen', args: { path: 'COM7' }, callId: 'feedface-1', sessionId: SESSION }]);
+            // A window the router has not heard from yet is asked for its health first (#14).
+            assert.deepStrictEqual(bodies, [
+                { op: 'health', args: {} },
+                { op: 'handleOpen', args: { path: 'COM7' }, callId: 'feedface-1', sessionId: SESSION, budgetMs: TOOL_MS + 15_000 },
+            ]);
         });
 
         test('sessionEnded goes to the windows the session forwarded to, and only to them, once', async () => {
@@ -1019,8 +1023,10 @@ suite('Multi-window routing', () => {
             const before = [alpha.bodies.length, beta.bodies.length, gamma.bodies.length];
             await router.sessionEnded(SESSION);
             const told = (bodies: JsonObject[], from: number): JsonObject[] => bodies.slice(from);
-            assert.deepStrictEqual(told(alpha.bodies, before[0]), [{ op: 'sessionEnded', args: { sessionId: SESSION } }]);
-            assert.deepStrictEqual(told(beta.bodies, before[1]), [{ op: 'sessionEnded', args: { sessionId: SESSION } }]);
+            // Nobody waits for the answer: the session end carries a budget of 2 s (#14).
+            const sessionEnd = { op: 'sessionEnded', args: { sessionId: SESSION }, budgetMs: 2_000 };
+            assert.deepStrictEqual(told(alpha.bodies, before[0]), [sessionEnd]);
+            assert.deepStrictEqual(told(beta.bodies, before[1]), [sessionEnd]);
             assert.deepStrictEqual(gamma.bodies, [], 'a window the session never reached is not told');
             await router.sessionEnded(SESSION);
             assert.deepStrictEqual([alpha.bodies.length, beta.bodies.length], [before[0] + 1, before[1] + 1], 'told once');
