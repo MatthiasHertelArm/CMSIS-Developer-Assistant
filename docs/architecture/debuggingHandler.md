@@ -395,6 +395,10 @@ once when errors arrived that the agent has not seen, and
   message at most once a minute), and the serial controller journals a port
   that cannot be opened or goes away. #49's releases and #14's worker fence
   journal through `problemJournal()` as well.
+- **The output channel.** `mirrorProblem()` in `src/windowProblems.ts`
+  writes each warning and error as a `[problem #N] …` line at debug level,
+  so the channel stays quiet unless the user sets it to Debug: the journal
+  is for the agent and for "Copy Recent Problems", not a second log.
 - **Codes.** `classifyProblem()` in `src/core/problemCodes.ts` recognises
   known lines and gives them a code, a weight and the next step as the hint.
   The codes are this repository's: `ErrorCode` (#11) and the journal's own
@@ -466,7 +470,7 @@ by #56.
 | `src/core/problemCodes.ts` | `ProblemCode`, `classifyProblem()` and its rows |
 | `src/core/problemFeed.ts` | `runJournaled()`, `ProblemNotices`, `journalLocally()`, the "Recent problems:" block |
 | `src/handler/problemText.ts` | the `get_recent_problems` reply |
-| `src/windowProblems.ts` | the output-channel mirror, the `logger.error` sink, "Copy Recent Problems", failed jobs and build lines, the Problems panel |
+| `src/windowProblems.ts` | the output-channel mirror (`mirrorProblem()`, debug level), the `logger.error` sink, "Copy Recent Problems", failed jobs and build lines, the Problems panel |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |

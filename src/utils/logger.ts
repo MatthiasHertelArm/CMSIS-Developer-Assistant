@@ -20,12 +20,16 @@
  * here reaches an MCP client.
  *
  * Two filters apply in sequence: this module drops entries below its own
- * minimum level (INFO unless `setLogLevel` changes it), and the channel then
- * applies the level the user picked for it in VS Code.
+ * minimum level (DEBUG unless `setLogLevel` changes it), and the channel then
+ * applies the level the user picked for it in VS Code (Info by default;
+ * "Set Log Level…" in the Output view). A debug entry the channel would drop
+ * is not even rendered. Only what the user can act on is a warning or an
+ * error; routine outcomes — an expected refusal, a fallback taken, a wait
+ * that ran out and was answered — are `info` or `debug`.
  *
  * The problem journal (#48) hooks in twice: every `error` entry also goes to
  * the sink `setErrorSink` installs, and `problem` writes the journal's own
- * `[problem #N]` lines, which never reach that sink.
+ * `[problem #N]` lines at debug level, which never reach that sink.
  */
 
 import * as vscode from 'vscode';
@@ -45,6 +49,9 @@ const OUTPUT_CHANNEL_NAME = 'CMSIS Developer Assistant';
 
 /** Put on the line after an error's message, in front of its stack. */
 const STACK_HEADING = 'Captured stack: ';
+
+/** `vscode.LogLevel.Debug`, as a number, so no enum is read where the API is stubbed. */
+const CHANNEL_LEVEL_DEBUG = 2;
 
 /** How much of PATH `logEnvironment` shows. */
 const PATH_PREVIEW_CHARS = 200;
@@ -80,7 +87,7 @@ export class Logger {
     private static shared: Logger | undefined;
 
     private readonly channel: vscode.LogOutputChannel;
-    private threshold: LogLevel = LogLevel.INFO;
+    private threshold: LogLevel = LogLevel.DEBUG;
     private errorSink: ErrorSink | undefined;
     /** True while the sink runs, so that an error it logs does not come back to it. */
     private sinking = false;
@@ -127,10 +134,14 @@ export class Logger {
         this.errorSink = sink;
     }
 
-    /** A line of the problem journal, at the channel level of its severity; it never reaches the error sink. */
-    problem(severity: 'error' | 'warning' | 'info', line: string): void {
-        const level = severity === 'error' ? LogLevel.ERROR : severity === 'warning' ? LogLevel.WARN : LogLevel.INFO;
-        this.write(level, line, undefined);
+    /**
+     * A line of the problem journal, at debug level whatever its severity:
+     * the journal is what agents and "Copy Recent Problems" read, and its
+     * mirror shows only when the channel's level is Debug. It never reaches
+     * the error sink.
+     */
+    problem(line: string): void {
+        this.write(LogLevel.DEBUG, line, undefined);
     }
 
     /** Change the minimum level; the confirmation passes the new filter like any entry. */
@@ -166,13 +177,19 @@ export class Logger {
         this.info('==== End of selected environment variables ====');
     }
 
+    /** Whether the channel's own level lets debug entries through; true where it has none (a stub). */
+    private channelShowsDebug(): boolean {
+        const level = (this.channel as { logLevel?: number }).logLevel;
+        return typeof level !== 'number' || level <= CHANNEL_LEVEL_DEBUG;
+    }
+
     /** Reveal the channel in the Output view, taking focus. */
     show(): void {
         this.channel.show();
     }
 
     private write(level: LogLevel, message: string, detail: unknown): void {
-        if (level < this.threshold) {
+        if (level < this.threshold || (level === LogLevel.DEBUG && !this.channelShowsDebug())) {
             return;
         }
         const entry = detail ? `${message}: ${renderDetail(detail)}` : message;

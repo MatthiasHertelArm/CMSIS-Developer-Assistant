@@ -281,7 +281,7 @@ export class WindowCoordinator {
     private startPromotionPolling(): void {
         if (this.promotionTimer || this.disposed) { return; }
         this.promotionTimer = setInterval(() => {
-            this.pollPromotion().catch((err) => logger.warn(`Router promotion attempt failed: ${err}`));
+            this.pollPromotion().catch((err) => logger.debug(`Router promotion attempt failed: ${err}`));
         }, PROMOTION_POLL_MS);
     }
 

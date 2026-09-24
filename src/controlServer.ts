@@ -410,7 +410,7 @@ export class ControlServer {
             received.push(piece);
         });
         incoming.on('error', (fault: Error) => {
-            logger.warn(`Control request aborted: ${fault.message}`);
+            logger.info(`Control request aborted: ${fault.message}`);
             if (!reply.headersSent) { replyBare(reply, 400); }
         });
         const typed = wantsTypedReply(incoming);
@@ -437,7 +437,7 @@ export class ControlServer {
         if (!isInternalOp(request.op)) {
             reply.once('close', () => {
                 if (!reply.writableEnded) {
-                    logger.warn(`control op=${request.op}: the router abandoned the call before it was answered; the op runs on`);
+                    logger.info(`control op=${request.op}: the router abandoned the call before it was answered; the op runs on`);
                 }
             });
         }
@@ -494,7 +494,7 @@ export class ControlServer {
         });
         const { outcome } = journaled;
         const ms = Date.now() - run.startedAt;
-        logger.info(outcome instanceof ToolError
+        logger.debug(outcome instanceof ToolError
             ? `control op=${op} ms=${ms} failed: ${outcome.message}`
             : `control op=${op} ms=${ms} out=${resultBytes(outcome)} B`);
         if (run.fenced) {
@@ -542,7 +542,7 @@ export class ControlServer {
     private settled(run: BusyRun): void {
         this.busy.end(run);
         if (run.fenced && run.fencedAt !== undefined) {
-            logger.warn(`control op=${run.op} finished ${secondsText(Date.now() - run.fencedAt)} after its fence; its result was discarded`);
+            logger.info(`control op=${run.op} finished ${secondsText(Date.now() - run.fencedAt)} after its fence; its result was discarded`);
         }
         this.tell(run, 'end');
     }

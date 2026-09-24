@@ -422,7 +422,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         const given = args === undefined ? {} : args;
         const { entry, reason } = this.resolveTarget(targetHintOf(given));
         const sent = withoutWindow(given);
-        logger.info(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
+        logger.debug(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
         this.forwardedTo.add(entry.pid);
         let answer: WorkerAnswer;
         try {
@@ -435,7 +435,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             if (this.target !== undefined && this.target.pid === entry.pid) {
                 this.forget();
             }
-            logger.warn(`Routing ${op} → pid=${entry.pid} failed: ${failure.message}`);
+            logger.info(`Routing ${op} → pid=${entry.pid} failed: ${failure.message}`);
             throw failure.reported ?? new ToolError('WINDOW_UNREACHABLE',
                 `Could not reach the VS Code window handling this session (pid=${entry.pid}): ${failure.message}`, UNREACHABLE_HINT);
         }

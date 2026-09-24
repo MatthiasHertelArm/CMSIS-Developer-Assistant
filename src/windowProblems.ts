@@ -18,7 +18,8 @@
  * The parts of the window's problem journal (#48) that need VS Code:
  *
  * - `registerProblemJournal`, at activation: every record at warning or above
- *   is mirrored into the output channel as `[problem #N] …`; `logger.error`
+ *   is mirrored into the output channel as `[problem #N] …`, at debug level
+ *   so that it shows only when the channel's level is Debug; `logger.error`
  *   entries are journaled (source `extension`, the same message at most once
  *   a minute); and the command "Copy Recent Problems" puts this window's last
  *   50 warnings and errors on the clipboard, for a bug report.
@@ -37,7 +38,7 @@
 import * as vscode from 'vscode';
 import type { CmsisJobTracker } from './cmsisJobTracker';
 import type { Job } from './core/cmsisTasks';
-import { formatProblemLine, problemJournal, type ProblemInput, type ProblemJournal } from './core/problemJournal';
+import { formatProblemLine, problemJournal, type ProblemInput, type ProblemJournal, type ProblemRecord } from './core/problemJournal';
 import { shortenPath } from './core/textBudget';
 import { logger, type ErrorSink } from './utils/logger';
 
@@ -117,16 +118,23 @@ async function copyRecentProblems(journal: ProblemJournal): Promise<void> {
 }
 
 /**
+ * One journal record in the output channel: a warning or an error as a
+ * debug-level `[problem #N] …` line, which shows only when the channel's
+ * level is Debug. Records of the logger's own errors are in the channel
+ * already, and `info` records are not mirrored.
+ */
+export function mirrorProblem(record: ProblemRecord): void {
+    if (record.severity !== 'info' && record.source !== 'extension') {
+        logger.problem(`[problem #${record.seq}] ${formatProblemLine(record, { seq: false, origin: true })}`);
+    }
+}
+
+/**
  * At activation: the output-channel mirror, the `logger.error` sink and the
  * copy command, all for `journal` (the window's).
  */
 export function registerProblemJournal(context: vscode.ExtensionContext, journal: ProblemJournal = problemJournal()): void {
-    const mirror = journal.onDidAppend((record) => {
-        // Records of the logger's own errors are in the channel already.
-        if (record.severity !== 'info' && record.source !== 'extension') {
-            logger.problem(record.severity, `[problem #${record.seq}] ${formatProblemLine(record, { seq: false, origin: true })}`);
-        }
-    });
+    const mirror = journal.onDidAppend(mirrorProblem);
     logger.setErrorSink(errorSink(journal, () => Date.now()));
     context.subscriptions.push(
         mirror,

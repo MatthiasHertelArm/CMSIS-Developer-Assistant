@@ -542,7 +542,7 @@ export class SerialController {
         const combined = Buffer.concat([this.buffer, chunk]);
         if (combined.length > MAX_BUFFER_BYTES) {
             this.buffer = combined.subarray(combined.length - MAX_BUFFER_BYTES);
-            logger.warn(`Serial RX buffer hit ${MAX_BUFFER_BYTES} byte cap — dropped oldest data`);
+            logger.debug(`Serial RX buffer hit ${MAX_BUFFER_BYTES} byte cap — dropped oldest data`);
         } else {
             this.buffer = combined;
         }

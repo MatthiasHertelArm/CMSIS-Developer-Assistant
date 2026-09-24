@@ -274,7 +274,7 @@ export class SerialMonitorBridge {
         const combined = Buffer.concat([this.buffer, chunk]);
         if (combined.length > MAX_BUFFER_BYTES) {
             this.buffer = combined.subarray(combined.length - MAX_BUFFER_BYTES);
-            logger.warn(`Serial Monitor bridge buffer hit ${MAX_BUFFER_BYTES} byte cap`);
+            logger.debug(`Serial Monitor bridge buffer hit ${MAX_BUFFER_BYTES} byte cap`);
         } else {
             this.buffer = combined;
         }

@@ -300,7 +300,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             // Built before the read's own error handling on purpose: a failure here reaches the caller.
             const file = launchFileIn(vscode.Uri.file(workDir));
             const entries = await launchEntries(file).catch((failure: unknown): LaunchEntry[] => {
-                logger.warn(`No configurations to offer from ${file.fsPath}`, failure);
+                logger.info(`No configurations to offer from ${file.fsPath}`, failure);
                 return [];
             });
             const items: vscode.QuickPickItem[] = entries.map((entry) => ({
@@ -320,7 +320,7 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
         } catch (failure) {
             if (failure instanceof PickerCancelled) {
                 // Expected: the agent is told, with the configurations to name.
-                logger.warn(`${failure.message} (${workDir})`);
+                logger.info(`${failure.message} (${workDir})`);
             } else {
                 logger.error('Choosing a debug configuration failed', failure);
             }
@@ -379,12 +379,12 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
             }
             const entry = entries.find((candidate) => candidate.name === launchName);
             if (!entry) {
-                logger.warn(`${workDir} has no launch configuration named "${launchName}"; synthesizing one`);
+                logger.info(`${workDir} has no launch configuration named "${launchName}"; synthesizing one`);
                 return undefined;
             }
             return { ...entry, name: `${NAME_PREFIX} Launch (${launchName})` } as vscode.DebugConfiguration;
         } catch (failure) {
-            logger.warn(`Could not read the launch configurations of ${workDir}; synthesizing one`, failure);
+            logger.info(`Could not read the launch configurations of ${workDir}; synthesizing one`, failure);
             return undefined;
         }
     }
