@@ -46,6 +46,7 @@ import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
 import { journalLocally } from './core/problemFeed';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal } from './core/problemJournal';
+import { RELEASE_RULES } from './core/serialLease';
 import { TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
 import { TOOL_CONTRACT_DOC, parseToolContract } from './core/toolContract';
 import type { ToolMetrics } from './core/toolMetrics';
@@ -205,6 +206,7 @@ const ABOUT = {
         'The MCP server holds the connection and buffers RX.',
         'Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty.',
         'Defaults: 115200 baud, 8N1, no flow control.',
+        'Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.',
     ),
     serial_close: 'Close the OWNED serial port (does not affect the MS Serial Monitor UI).',
     serial_status: say(
@@ -711,6 +713,8 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
                 parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
                 stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
                 rtscts: z.boolean().optional().describe('RTS/CTS hardware flow control (default false)'),
+                releaseOn: z.enum(RELEASE_RULES).optional()
+                    .describe('\'idle\' (default); \'debug-session-end\': when the debug session ends, not on idle; \'manual\': only serial_close'),
             },
         }, (args) => serial('handleOpen', args).then(reply));
         mcp.registerTool('serial_close', { description: ABOUT.serial_close }, () => serial('handleClose').then(reply));

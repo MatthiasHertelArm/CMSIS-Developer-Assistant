@@ -770,9 +770,13 @@ suite('Multi-window routing', () => {
             assert.deepStrictEqual([busy.message, busy.hint, busy.data], ['busy', 'Call stop_debugging first.', { owner: 'other' }]);
 
             // A code of a later version is not guessed at; its message and hint still arrive.
-            const unknown = await callAlone('newer-code', typed(500, { error: { message: 'port gone', code: 'PORT_CLOSED', hint: 'Open it again.' } }),
+            const unknown = await callAlone('newer-code', typed(500, { error: { message: 'port gone', code: 'PORT_VANISHED', hint: 'Open it again.' } }),
                 (router) => refusedAs('INTERNAL', router.handleGetThreads({})));
             assert.strictEqual(errorDetail(unknown), 'port gone\nOpen it again.');
+            // PORT_CLOSED is known since 2.5.1 (#49); a router of 2.5.0 reads it as INTERNAL, like the code above.
+            const closed = await callAlone('port-closed', typed(500, { error: { message: 'No serial port open.', code: 'PORT_CLOSED' } }),
+                (router) => refusedAs('PORT_CLOSED', router.serialOp('handleWrite', { data: 'x' })));
+            assert.strictEqual(closed.message, 'No serial port open.');
         });
 
         test('a failed channel is WINDOW_UNREACHABLE and drops the target; a 413 is INVALID_ARGUMENT and keeps it', async () => {
@@ -934,6 +938,95 @@ suite('Multi-window routing', () => {
             const router = newRouter();
             assert.strictEqual(await router.handleGetThreads({}), 'plain');
             assert.strictEqual(await router.handleGetThreads({}), 'plain');
+        });
+    });
+
+    suite('the end of an MCP session (#49)', () => {
+        const SESSION = 'feedface-0000-4000-8000-000000000049';
+
+        /** A stand-in that records each request body and answers it with `answer`, or never when `answer` is undefined. */
+        async function openRecorder(label: string, answer?: (reply: http.ServerResponse) => void): Promise<{ window: FakeWindow; bodies: JsonObject[] }> {
+            const bodies: JsonObject[] = [];
+            const fake = http.createServer((incoming, reply) => {
+                const parts: Buffer[] = [];
+                incoming.on('data', (piece: Buffer) => parts.push(piece));
+                incoming.on('end', () => {
+                    bodies.push(JSON.parse(Buffer.concat(parts).toString('utf8')) as JsonObject);
+                    answer?.(reply);
+                });
+            });
+            await new Promise<void>((ready) => fake.listen(0, '127.0.0.1', ready));
+            running.push(() => closeHttpServer(fake));
+            const window = enrol(label, (fake.address() as AddressInfo).port, `token-${label}`, {}, () => closeHttpServer(fake));
+            return { window, bodies };
+        }
+
+        const typedOk = (reply: http.ServerResponse): void => {
+            reply.writeHead(200, { ...JSON_TYPE, [CONTROL_ENVELOPE_HEADER]: '2' }).end(JSON.stringify({ result: 'ok' }));
+        };
+
+        test('serial_open carries the MCP session id in the envelope, so the window records the holder', async () => {
+            const { bodies } = await openRecorder('solo', typedOk);
+            await runInCallContext({ callId: 'feedface-1', sessionId: SESSION }, () => newRouter().serialOp('handleOpen', { path: 'COM7' }));
+            assert.deepStrictEqual(bodies, [{ op: 'handleOpen', args: { path: 'COM7' }, callId: 'feedface-1', sessionId: SESSION }]);
+        });
+
+        test('sessionEnded goes to the windows the session forwarded to, and only to them, once', async () => {
+            const alpha = await openRecorder('alpha', typedOk);
+            const beta = await openRecorder('beta', typedOk);
+            const gamma = await openRecorder('gamma', typedOk);
+            const router = newRouter();
+            await router.serialOp('handleOpen', { path: 'COM7', window: String(alpha.window.pid) });
+            await router.serialOp('handleStatus', {});
+            await router.handleFlash({ window: String(beta.window.pid) });
+            const before = [alpha.bodies.length, beta.bodies.length, gamma.bodies.length];
+            await router.sessionEnded(SESSION);
+            const told = (bodies: JsonObject[], from: number): JsonObject[] => bodies.slice(from);
+            assert.deepStrictEqual(told(alpha.bodies, before[0]), [{ op: 'sessionEnded', args: { sessionId: SESSION } }]);
+            assert.deepStrictEqual(told(beta.bodies, before[1]), [{ op: 'sessionEnded', args: { sessionId: SESSION } }]);
+            assert.deepStrictEqual(gamma.bodies, [], 'a window the session never reached is not told');
+            await router.sessionEnded(SESSION);
+            assert.deepStrictEqual([alpha.bodies.length, beta.bodies.length], [before[0] + 1, before[1] + 1], 'told once');
+        });
+
+        test('a window of an earlier version, a silent one and one that went away are passed by', async () => {
+            const refusing = await openRecorder('old', (reply) => {
+                reply.writeHead(500, JSON_TYPE).end(JSON.stringify({ error: 'Control op sessionEnded refused: not a known operation' }));
+            });
+            const silent = await openRecorder('silent');
+            const gone = await openRecorder('gone', typedOk);
+            // The silent window takes its forwarded call to WORKER_TIMEOUT within 200 ms; the session end has its own 2 s.
+            const router = newRouter(200);
+            for (const w of [refusing, silent, gone]) {
+                await router.serialOp('handleStatus', { window: String(w.window.pid) }).catch(() => undefined);
+            }
+            livePids.delete(gone.window.pid);
+            const started = Date.now();
+            await router.sessionEnded(SESSION);
+            const took = Date.now() - started;
+            assert.ok(took < 4_000, `the silent window held the session end for ${took} ms`);
+            assert.strictEqual(refusing.bodies.at(-1)?.op, 'sessionEnded');
+            assert.strictEqual(silent.bodies.at(-1)?.op, 'sessionEnded');
+            assert.notStrictEqual(gone.bodies.at(-1)?.op, 'sessionEnded');
+        });
+
+        test('the control server answers sessionEnded itself: no op hook, no journal, and a request without a session id is refused', async () => {
+            const journal = new ProblemJournal();
+            const control = new ControlServer(echoing<IDebuggingHandler>('solo', 'debug', DEBUG_OPS), 'tok', undefined, journal);
+            const port = await control.start();
+            running.push(() => control.stop());
+            const heard: string[] = [];
+            control.onOp((op, phase) => heard.push(`${op} ${phase}`));
+            const answered = await rawPost(port, 'tok', [JSON.stringify({ op: 'sessionEnded', args: { sessionId: SESSION } })], 0,
+                { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.strictEqual(answered.status, 200);
+            assert.deepStrictEqual(JSON.parse(answered.body),
+                { result: 'MCP session feedface ended: it held no serial port in this window.', journalSeq: 0, journalErrors: 0 });
+            const refused = await rawPost(port, 'tok', ['{"op":"sessionEnded","args":{}}'], 0, { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.strictEqual(refused.status, 500);
+            assert.strictEqual(JSON.parse(refused.body).error.code, 'INVALID_ARGUMENT');
+            assert.deepStrictEqual(heard, [], 'the status bar hears of no agent call');
+            assert.strictEqual(journal.size, 0);
         });
     });
 });

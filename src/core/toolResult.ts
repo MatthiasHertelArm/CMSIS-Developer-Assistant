@@ -34,16 +34,25 @@
  * Pure: no `vscode`, no MCP SDK.
  */
 
-/** Why a tool call failed, as agents and the metrics read it. */
+/**
+ * Why a tool call failed, as agents and the metrics read it. `PORT_HELD`: a
+ * serial port someone else holds; `PORT_CLOSED`: a write on a serial port that
+ * is not open, or was released (#49).
+ */
 export type ErrorCode =
     | 'NO_SESSION' | 'TARGET_RUNNING' | 'TIMEOUT' | 'AMBIGUOUS_WINDOW' | 'WINDOW_UNREACHABLE'
     | 'WORKER_TIMEOUT' | 'CMSIS_NO_SOLUTION' | 'TASK_FAILED' | 'PROBE_BUSY' | 'PROBE_WEDGED'
-    | 'PORT_HELD' | 'TOOL_DISABLED' | 'INVALID_ARGUMENT' | 'INTERNAL';
+    | 'PORT_HELD' | 'PORT_CLOSED' | 'TOOL_DISABLED' | 'INVALID_ARGUMENT' | 'INTERNAL';
 
+/**
+ * The codes this version knows. A window of an earlier version does not know
+ * the later ones (`PORT_CLOSED` came in 2.5.1) and reads them as `INTERNAL`,
+ * message and hint intact; so does this version with a code of a later one.
+ */
 const KNOWN_CODES: ReadonlySet<string> = new Set<ErrorCode>([
     'NO_SESSION', 'TARGET_RUNNING', 'TIMEOUT', 'AMBIGUOUS_WINDOW', 'WINDOW_UNREACHABLE',
     'WORKER_TIMEOUT', 'CMSIS_NO_SOLUTION', 'TASK_FAILED', 'PROBE_BUSY', 'PROBE_WEDGED',
-    'PORT_HELD', 'TOOL_DISABLED', 'INVALID_ARGUMENT', 'INTERNAL',
+    'PORT_HELD', 'PORT_CLOSED', 'TOOL_DISABLED', 'INVALID_ARGUMENT', 'INTERNAL',
 ]);
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };

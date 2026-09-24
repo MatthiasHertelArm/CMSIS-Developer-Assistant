@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-
-import * as vscode from 'vscode';
-import { logger } from '../utils/logger';
-
 /**
  * Bridge to the Microsoft Serial Monitor extension
  * (`ms-vscode.vscode-serial-monitor`).
@@ -39,7 +35,18 @@ import { logger } from '../utils/logger';
  * The bridge buffers received bytes the same way the standalone
  * `serialController` does, so `serial_read` (with `from: 'monitor'`) can
  * consume them uniformly regardless of which backend produced them.
+ *
+ * A subscription follows the release rules of an owned port (#49,
+ * src/core/serialLease.ts): it ends after `serial.idleCloseSeconds` without
+ * a serial call and when the MCP session that subscribed ends, and then
+ * drops its buffer. Each such end is journaled as info (source `serial`).
+ * Tests hand in the extension lookup and the timers.
  */
+
+import * as vscode from 'vscode';
+import { logger } from '../utils/logger';
+import { problemJournal, type ProblemInput } from './problemJournal';
+import { LeaseTimers, REAL_TIMERS, RuleRelease, SerialLease } from './serialLease';
 
 const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
 
@@ -60,17 +67,52 @@ export interface BridgeStatus {
     bufferedBytes: number;
 }
 
-class SerialMonitorBridge {
+/** The Serial Monitor extension as the bridge sees it: the part of `vscode.Extension` it uses. */
+export interface BridgeExtension {
+    readonly isActive: boolean;
+    readonly exports: unknown;
+    activate(): Thenable<unknown>;
+}
+
+/** Where the bridge finds the extension, its timers and its problem journal; each defaults to the real thing. */
+export interface SerialMonitorBridgeDeps {
+    lookup?: (id: string) => BridgeExtension | undefined;
+    timers?: LeaseTimers;
+    journal?: (problem: ProblemInput) => void;
+}
+
+/** Who subscribes and how long a subscription may sit idle (#49). */
+export interface SubscribeTerms {
+    /** The MCP session that subscribes. */
+    owner?: string;
+    /** The idle limit, 0 for none. */
+    idleSeconds?: number;
+}
+
+/** The origin of the bridge's problem records. */
+const BRIDGE_ORIGIN = 'Serial Monitor';
+
+export class SerialMonitorBridge {
     private extId = 'ms-vscode.vscode-serial-monitor';
     private api: any = null;
     private subscription: vscode.Disposable | null = null;
     private buffer: Buffer = Buffer.alloc(0);
     private dataEventName: string | null = null;
+    private lease: SerialLease | undefined;
+    private readonly lookup: (id: string) => BridgeExtension | undefined;
+    private readonly timers: LeaseTimers;
+    private readonly journal: (problem: ProblemInput) => void;
+
+    constructor(deps: SerialMonitorBridgeDeps = {}) {
+        this.lookup = deps.lookup ?? ((id) => vscode.extensions.getExtension(id));
+        this.timers = deps.timers ?? REAL_TIMERS;
+        this.journal = deps.journal ?? ((problem) => { problemJournal().append(problem); });
+    }
 
     /** Lazily activates the Microsoft Serial Monitor and grabs its exports. */
     private async getApi(): Promise<any> {
         if (this.api) { return this.api; }
-        const ext = vscode.extensions.getExtension(this.extId);
+        const ext = this.lookup(this.extId);
         if (!ext) { return null; }
         if (!ext.isActive) {
             try { await ext.activate(); }
@@ -101,7 +143,7 @@ class SerialMonitorBridge {
     }
 
     async status(): Promise<BridgeStatus> {
-        const ext = vscode.extensions.getExtension(this.extId);
+        const ext = this.lookup(this.extId);
         const installed = !!ext;
         const activated = !!ext?.isActive;
         let keys: string[] = [];
@@ -148,8 +190,14 @@ class SerialMonitorBridge {
         return null;
     }
 
-    async subscribeIfAvailable(): Promise<{ ok: true; eventName: string } | { ok: false; reason: string }> {
+    /**
+     * Subscribe to the Serial Monitor's data event when its API has one. The
+     * subscription is held for `terms.owner` and ends after `terms.idleSeconds`
+     * without a serial call (#49); a repeated call keeps the one that exists.
+     */
+    async subscribeIfAvailable(terms: SubscribeTerms = {}): Promise<{ ok: true; eventName: string } | { ok: false; reason: string }> {
         if (this.subscription) {
+            this.touch();
             return { ok: true, eventName: this.dataEventName ?? '<active>' };
         }
         const api = await this.getApi();
@@ -170,6 +218,8 @@ class SerialMonitorBridge {
             const event = api[eventName] as (cb: (arg: any) => void) => vscode.Disposable;
             this.subscription = event.call(api, (evt: any) => this.onData(evt));
             this.dataEventName = eventName;
+            this.lease = new SerialLease({ owner: terms.owner, rule: 'idle', idleSeconds: terms.idleSeconds ?? 0 }, this.timers,
+                () => { this.endByRule('idle'); });
             return { ok: true, eventName };
         } catch (err) {
             return { ok: false, reason: `Subscribing via ${eventName} threw: ${err}` };
@@ -177,9 +227,40 @@ class SerialMonitorBridge {
     }
 
     unsubscribe(): boolean {
+        this.lease?.end();
+        this.lease = undefined;
         if (!this.subscription) { return false; }
         try { this.subscription.dispose(); } catch { /* ignore */ }
         this.subscription = null;
+        return true;
+    }
+
+    /** A serial call used the subscription now: its idle time starts again (#49). */
+    touch(): void {
+        this.lease?.touch();
+    }
+
+    /** The MCP session `sessionId` ended: end the subscription it made, dropping the buffer. True when it did. */
+    sessionEnded(sessionId: string): boolean {
+        return this.lease?.endsWithSession(sessionId) === true && this.endByRule('owner-gone');
+    }
+
+    /** A rule ends the subscription: unsubscribe and drop the buffer, then log and journal why. */
+    private endByRule(reason: Extract<RuleRelease, 'idle' | 'owner-gone'>): boolean {
+        const idleSeconds = this.lease ? this.lease.idleMs / 1000 : 0;
+        if (!this.unsubscribe()) {
+            return false;
+        }
+        const dropped = this.clearBuffer();
+        const message = reason === 'idle'
+            ? `Serial Monitor subscription ended after ${idleSeconds} s without a serial call`
+            : 'Serial Monitor subscription ended: the MCP session that subscribed ended';
+        logger.info(`${message}; ${dropped} buffered byte(s) dropped`);
+        try {
+            this.journal({ source: 'serial', origin: BRIDGE_ORIGIN, severity: 'info', message, hint: 'Subscribe again with serial_subscribe_monitor.' });
+        } catch (caught) {
+            logger.debug('The end of the Serial Monitor subscription could not be journaled', caught);
+        }
         return true;
     }
 
@@ -243,4 +324,5 @@ class SerialMonitorBridge {
     }
 }
 
+/** The window's bridge. */
 export const serialMonitorBridge = new SerialMonitorBridge();

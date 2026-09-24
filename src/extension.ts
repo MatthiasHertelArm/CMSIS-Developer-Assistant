@@ -43,6 +43,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { registerCmsisJobTracker } from './cmsisJobTracker';
+import { serialController } from './core/serialController';
 import { clearSvdCache } from './core/svdParser';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { registerPackDocsCommands } from './packDocsCommands';
@@ -284,8 +285,12 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     registerSessionStateTracker(extensionContext);
     registerCmsisJobTracker(extensionContext);
     registerToolchainPackRootInvalidation(extensionContext);
-    // A new session may use another device, so the parsed SVD files are dropped when one ends.
-    extensionContext.subscriptions.push(vscode.debug.onDidTerminateDebugSession(() => clearSvdCache()));
+    // A new session may use another device, so the parsed SVD files are dropped when one ends,
+    // and a serial port opened with releaseOn 'debug-session-end' is released (#49).
+    extensionContext.subscriptions.push(vscode.debug.onDidTerminateDebugSession(() => {
+        clearSvdCache();
+        serialController.debugSessionEnded();
+    }));
 
     const hostsTests = hostedByTestRunner(extensionContext);
     const manager = new AgentConfigurationManager(extensionContext, active.timeoutInSeconds, active.serverPort);

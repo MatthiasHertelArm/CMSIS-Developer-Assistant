@@ -19,23 +19,30 @@
  * Serial Monitor UI extension. Buffers RX data so an MCP client can poll/read
  * it on demand. Use this when the user is NOT running an MS Serial Monitor
  * session for the same port (the OS only allows one reader per tty in the
- * default mode).
+ * default mode). One owned port per window.
  *
  * The state follows the port, not only `close()`: when the port closes by
  * itself (the adapter was unplugged) or fails after it closed, the controller
  * forgets it, keeps the received bytes readable, and remembers why as
  * `lastRelease`, which the serial tools name (#49). Tests build their own
- * controller over serialport's `SerialPortMock` and a fixed clock; the
- * extension uses the `serialController` singleton.
+ * controller over serialport's `SerialPortMock`, a fixed clock and hand-driven
+ * timers; the extension uses the `serialController` singleton.
  *
- * A port that cannot be opened, and one that goes away by itself, are
- * journaled as warnings in the window's problem journal (#48, source
- * `serial`), without any payload.
+ * A port is held under a lease (src/core/serialLease.ts, #49): the MCP session
+ * that opened it and the rule that lets it go — after the idle time, when its
+ * session ends, when a debug session ends — besides `close()`, the user's
+ * Release command and the window's teardown. Every such release and every
+ * unplug is journaled in the window's problem journal (#48, source `serial`),
+ * as a warning for an unplug and for the user's release and as info
+ * otherwise, without any payload. So is a port that cannot be opened;
+ * another program holding it is `PORT_HELD`.
  */
 
 import { SerialPort } from 'serialport';
 import { logger } from '../utils/logger';
-import { problemJournal, type ProblemInput } from './problemJournal';
+import { problemJournal, type ProblemInput, type ProblemSeverity } from './problemJournal';
+import { LeaseTimers, REAL_TIMERS, ReleaseRule, RuleRelease, SerialLease } from './serialLease';
+import { ToolError } from './toolResult';
 
 export interface SerialOpenOptions {
     path: string;
@@ -44,6 +51,18 @@ export interface SerialOpenOptions {
     parity?: 'none' | 'even' | 'odd' | 'mark' | 'space';
     stopBits?: 1 | 1.5 | 2;
     rtscts?: boolean;
+}
+
+/** Who holds the port and under which rule; `serial_open` records it, a direct caller may leave it out. */
+export interface HoldTerms {
+    /** The MCP session that opens the port. */
+    owner?: string;
+    /** `idle` when absent. */
+    rule?: ReleaseRule;
+    /** The idle limit, 0 for none; only the `idle` rule uses it. */
+    idleSeconds?: number;
+    /** True while `serial_capture` holds the port for its one read. */
+    capture?: boolean;
 }
 
 export interface SerialPortInfo {
@@ -56,13 +75,15 @@ export interface SerialPortInfo {
     vendorId?: string;
 }
 
-/** Why the owned port closed without `serial_close`: unplugged, or closed or failed on its own. */
+/** Why the owned port closed without `serial_close`: unplugged, closed or failed on its own, or let go by a rule (#49). */
 export interface SerialRelease {
     path: string;
     at: Date;
-    reason: 'disconnected' | 'closed-unexpectedly';
+    reason: 'disconnected' | 'closed-unexpectedly' | RuleRelease;
     /** The port's error message, when it gave one. */
     detail?: string;
+    /** For an idle release: the idle limit it ran out. */
+    idleSeconds?: number;
 }
 
 export interface SerialStatus {
@@ -73,6 +94,21 @@ export interface SerialStatus {
     openedAt: string | null;
     /** Kept from the port's own close until the next successful open. */
     lastRelease: SerialRelease | null;
+}
+
+/** The held port as the status bar, `serial_status` and `get_session_status` describe it. */
+export interface SerialHold {
+    path: string;
+    baudRate: number;
+    openedAt: Date;
+    owner: string | undefined;
+    rule: ReleaseRule;
+    /** The idle limit in seconds; 0 when idleness does not release this port. */
+    idleSeconds: number;
+    idleForMs: number;
+    /** Until the idle release; undefined when idleness does not release this port. */
+    idleReleaseInMs: number | undefined;
+    capture: boolean;
 }
 
 /** What the controller hands the port factory: the `serialport` options, never opened on construction. */
@@ -98,33 +134,81 @@ export interface OwnedPort {
     on(event: 'close', listener: (err?: Error | null) => void): unknown;
 }
 
-/** Where ports, timestamps and problem records go and come from; each defaults to the real thing. */
+/** Where ports, timestamps, timers and problem records go and come from; each defaults to the real thing. */
 export interface SerialControllerDeps {
     createPort?: (options: PortOptions) => OwnedPort;
     clock?: () => Date;
+    /** The idle timer's clock and timer; by default `clock` and Node's timers. */
+    timers?: LeaseTimers;
     /** Records a problem of the port; the window's problem journal by default. */
     journal?: (problem: ProblemInput) => void;
 }
 
 const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
 
+/**
+ * What the OS says when another program holds the port: Windows "Opening
+ * COM7: Access denied", POSIX `EBUSY` ("Resource busy", "Device or resource
+ * busy"), serialport's `flock` failure "Cannot lock port", and the mock
+ * binding's "Port is locked".
+ */
+const HELD_ELSEWHERE = /Access denied|\bEBUSY\b|resource busy|Cannot lock port|Port is locked/i;
+/** The next step when another program holds the port. */
+export const PORT_HELD_HINT = 'Another program holds it (the Serial Monitor, a terminal): close it there, '
+    + 'or read the Serial Monitor\'s session with serial_subscribe_monitor.';
+const OPEN_FAILED_HINT = 'serial_list_ports lists the ports; if another program holds this one, close it or use serial_subscribe_monitor.';
+const GONE_HINT = 'Reopen it with serial_open once the adapter is back; the bytes received before stay readable.';
+
+/** How each release is journaled: an unplug and the user's release are warnings, a rule doing its job is info. */
+const RELEASE_RECORDS: Readonly<Record<SerialRelease['reason'], { severity: ProblemSeverity; hint: string }>> = {
+    disconnected: { severity: 'warning', hint: GONE_HINT },
+    'closed-unexpectedly': { severity: 'warning', hint: GONE_HINT },
+    user: { severity: 'warning', hint: 'The user released it in VS Code; ask before you reopen it with serial_open.' },
+    idle: { severity: 'info', hint: 'No serial call used it; reopen it with serial_open, or read once with serial_capture.' },
+    'owner-gone': { severity: 'info', hint: 'The MCP session that opened it ended; reopen it with serial_open.' },
+    'debug-session-end': { severity: 'info', hint: 'It was opened with releaseOn debug-session-end; reopen it with serial_open.' },
+};
+
 /** serialport 13 closes an unplugged port with a `DisconnectedError`, marked `disconnected: true`. */
 function isDisconnect(err: Error | null | undefined): boolean {
     return (err as { disconnected?: unknown } | null | undefined)?.disconnected === true;
 }
 
+/** True when an open failed because another program holds the port. */
+export function isHeldElsewhere(message: string): boolean {
+    return HELD_ELSEWHERE.test(message);
+}
+
 /** `10:42:07`: local wall-clock time, as the user reads it next to the board. */
-function clockTime(at: Date): string {
+export function clockTime(at: Date): string {
     return at.toTimeString().slice(0, 8);
 }
 
-/** `COM7 disconnected at 10:42:07`, or `COM7 closed unexpectedly at 10:42:07 (reason)`. */
+/**
+ * `COM7 disconnected at 10:42:07`, `COM7 closed unexpectedly at 10:42:07 (reason)`,
+ * or `COM7 released at 10:47:07 …` with the rule that let it go.
+ */
 export function describeRelease(release: SerialRelease): string {
-    if (release.reason === 'disconnected') {
-        return `${release.path} disconnected at ${clockTime(release.at)}`;
+    const at = clockTime(release.at);
+    switch (release.reason) {
+        case 'disconnected':
+            return `${release.path} disconnected at ${at}`;
+        case 'closed-unexpectedly':
+            return `${release.path} closed unexpectedly at ${at}${release.detail ? ` (${release.detail})` : ''}`;
+        case 'idle':
+            return `${release.path} released at ${at} after ${release.idleSeconds ?? '?'} s without a serial call`;
+        case 'owner-gone':
+            return `${release.path} released at ${at}: the MCP session that opened it ended`;
+        case 'debug-session-end':
+            return `${release.path} released at ${at}: the debug session ended`;
+        case 'user':
+            return `${release.path} released at ${at} by the user in VS Code`;
     }
-    const why = release.detail ? ` (${release.detail})` : '';
-    return `${release.path} closed unexpectedly at ${clockTime(release.at)}${why}`;
+}
+
+/** What to do about a port a release took away: reopen it, but ask first when the user let it go. */
+export function reopenAdvice(release: SerialRelease): string {
+    return release.reason === 'user' ? 'Ask the user before you reopen it with serial_open.' : 'Reopen it with serial_open.';
 }
 
 export class SerialController {
@@ -134,13 +218,18 @@ export class SerialController {
     private currentPath: string | null = null;
     private currentBaud: number | null = null;
     private lastRelease: SerialRelease | null = null;
+    private lease: SerialLease | undefined;
+    private capturing = false;
+    private readonly listeners = new Set<() => void>();
     private readonly createPort: (options: PortOptions) => OwnedPort;
     private readonly clock: () => Date;
+    private readonly timers: LeaseTimers;
     private readonly journal: (problem: ProblemInput) => void;
 
     constructor(deps: SerialControllerDeps = {}) {
         this.createPort = deps.createPort ?? ((options) => new SerialPort(options));
         this.clock = deps.clock ?? (() => new Date());
+        this.timers = deps.timers ?? (deps.clock ? { ...REAL_TIMERS, now: () => this.clock().getTime() } : REAL_TIMERS);
         this.journal = deps.journal ?? ((problem) => { problemJournal().append(problem); });
     }
 
@@ -172,11 +261,39 @@ export class SerialController {
         };
     }
 
-    async open(opts: SerialOpenOptions): Promise<void> {
+    /** The held port with its lease; undefined while no port is open. Reading it touches nothing. */
+    hold(): SerialHold | undefined {
+        const lease = this.lease;
+        if (!this.isOpen() || !lease || this.currentPath === null || this.currentBaud === null || this.openedAt === null) {
+            return undefined;
+        }
+        return {
+            path: this.currentPath,
+            baudRate: this.currentBaud,
+            openedAt: this.openedAt,
+            owner: lease.owner,
+            rule: lease.rule,
+            idleSeconds: lease.idleMs / 1000,
+            idleForMs: lease.idleForMs(),
+            idleReleaseInMs: lease.idleReleaseInMs(),
+            capture: this.capturing,
+        };
+    }
+
+    /** Told whenever a port is opened, closed or released; the status bar item listens (#49). */
+    onDidChange(listener: () => void): { dispose(): void } {
+        this.listeners.add(listener);
+        return { dispose: () => { this.listeners.delete(listener); } };
+    }
+
+    /**
+     * Open the owned port under `terms`. A port already open is `PORT_HELD`,
+     * and so is a port another program holds; other failures pass as they are.
+     */
+    async open(opts: SerialOpenOptions, terms: HoldTerms = {}): Promise<void> {
         if (this.isOpen()) {
-            throw new Error(
-                `A serial port is already open on '${this.currentPath}'. Close it first with serial_close.`
-            );
+            throw new ToolError('PORT_HELD',
+                `A serial port is already open on '${this.currentPath}'. Close it first with serial_close.`);
         }
         const baudRate = opts.baudRate ?? 115200;
         const dataBits = opts.dataBits ?? 8;
@@ -203,15 +320,26 @@ export class SerialController {
                     this.currentBaud = baudRate;
                     this.buffer = Buffer.alloc(0);
                     this.lastRelease = null;
+                    this.capturing = terms.capture === true;
+                    this.lease = new SerialLease(
+                        { owner: terms.owner, rule: terms.rule ?? 'idle', idleSeconds: terms.idleSeconds ?? 0 },
+                        this.timers,
+                        () => { this.releaseByRule('idle'); });
                     resolve();
                 });
             });
         } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const held = isHeldElsewhere(message);
             // The tool reports the failure itself; the record is for whoever reads the journal later.
-            this.recordProblem(opts.path, err instanceof Error ? err.message : String(err),
-                'serial_list_ports lists the ports; if another program holds this one, close it or use serial_subscribe_monitor.');
+            this.recordProblem(opts.path, 'warning', message, held ? PORT_HELD_HINT : OPEN_FAILED_HINT, held);
+            if (held) {
+                throw new ToolError('PORT_HELD', `Cannot open ${opts.path}: another program holds it (${message}).`, PORT_HELD_HINT);
+            }
             throw err;
         }
+        logger.info(`Serial port '${opts.path}' opened at ${baudRate} baud${terms.owner ? ` for MCP session ${terms.owner.slice(0, 8)}` : ''}`);
+        this.changed();
     }
 
     async close(): Promise<void> {
@@ -222,17 +350,43 @@ export class SerialController {
         // fails (the adapter was unplugged): otherwise every later open()
         // refuses with "already open" and the only way out is a window reload.
         this.forgetPort();
+        this.changed();
         await new Promise<void>((resolve, reject) => {
             p.close((err) => err ? reject(err) : resolve());
         });
+    }
+
+    /** A serial call used the port now: the idle time starts again (#49). */
+    touch(): void {
+        this.lease?.touch();
+    }
+
+    /** Runs `work` as one serial call on the held port: no idle release meanwhile (#49). */
+    during<T>(work: () => Promise<T>): Promise<T> {
+        return this.lease ? this.lease.during(work) : work();
+    }
+
+    /** The MCP session `sessionId` ended: release the port it opened unless its rule is `manual`; the path released, if any. */
+    sessionEnded(sessionId: string): string | undefined {
+        return this.lease?.endsWithSession(sessionId) ? this.releaseByRule('owner-gone') : undefined;
+    }
+
+    /** A debug session in this window ended: release a port opened with `releaseOn: 'debug-session-end'`. */
+    debugSessionEnded(): string | undefined {
+        return this.lease?.endsWithDebugSession() ? this.releaseByRule('debug-session-end') : undefined;
+    }
+
+    /** The user's Release command: release whatever port is held, under any rule; the path released, if any. */
+    releaseForUser(): string | undefined {
+        return this.releaseByRule('user');
     }
 
     async write(data: string | Buffer, encoding: 'utf8' | 'hex' = 'utf8'): Promise<number> {
         // Held for the whole call: an unplug in between releases `this.port`, not this write's port.
         const port = this.port;
         if (!port || !port.isOpen) {
-            throw new Error(this.lastRelease
-                ? `No serial port open: ${describeRelease(this.lastRelease)}. Reopen it with serial_open.`
+            throw new ToolError('PORT_CLOSED', this.lastRelease
+                ? `No serial port open: ${describeRelease(this.lastRelease)}. ${reopenAdvice(this.lastRelease)}`
                 : 'No serial port open. Call serial_open first.');
         }
         const buf = Buffer.isBuffer(data) ? data
@@ -246,16 +400,22 @@ export class SerialController {
         return buf.length;
     }
 
+    /**
+     * Take buffered bytes. With `waitMs`, an empty buffer is awaited up to
+     * that long, and no longer than the port that was open when the read
+     * began stays open: bytes cannot arrive on a closed port.
+     */
     async read(opts: { maxBytes?: number; waitMs?: number; consume?: boolean } = {}): Promise<Buffer> {
         const maxBytes = opts.maxBytes ?? MAX_BUFFER_BYTES;
         const waitMs = opts.waitMs ?? 0;
         const consume = opts.consume !== false;
+        const watched = this.port;
 
-        if (this.buffer.length === 0 && waitMs > 0) {
+        if (this.buffer.length === 0 && waitMs > 0 && watched !== null) {
             await new Promise<void>((resolve) => {
                 const start = Date.now();
                 const tick = () => {
-                    if (this.buffer.length > 0 || Date.now() - start >= waitMs) { resolve(); }
+                    if (this.buffer.length > 0 || this.port !== watched || Date.now() - start >= waitMs) { resolve(); }
                     else { setTimeout(tick, 25); }
                 };
                 tick();
@@ -275,10 +435,45 @@ export class SerialController {
     }
 
     private forgetPort(): void {
+        this.lease?.end();
+        this.lease = undefined;
+        this.capturing = false;
         this.port = null;
         this.openedAt = null;
         this.currentPath = null;
         this.currentBaud = null;
+    }
+
+    /** Tell the listeners; one that throws is logged and costs the port nothing. */
+    private changed(): void {
+        for (const listener of [...this.listeners]) {
+            try {
+                listener();
+            } catch (caught) {
+                logger.debug('A serial status listener failed', caught);
+            }
+        }
+    }
+
+    /**
+     * A rule lets the held port go: remember why, journal it, close the port
+     * in the background. The received bytes stay readable. The path released,
+     * or undefined when no port was held.
+     */
+    private releaseByRule(reason: RuleRelease): string | undefined {
+        const p = this.port;
+        const path = this.currentPath;
+        if (p === null || path === null) {
+            return undefined;
+        }
+        const idleSeconds = reason === 'idle' && this.lease ? this.lease.idleMs / 1000 : undefined;
+        this.release(path, reason, undefined, idleSeconds);
+        p.close((err) => {
+            if (err) {
+                logger.debug(`Closing serial port '${path}' after its release failed: ${err.message}`);
+            }
+        });
+        return path;
     }
 
     /**
@@ -303,18 +498,30 @@ export class SerialController {
         this.release(this.currentPath ?? '?', isDisconnect(err) ? 'disconnected' : 'closed-unexpectedly', err.message);
     }
 
-    /** Forget the port and remember why; the received bytes stay readable. */
-    private release(path: string, reason: SerialRelease['reason'], detail: string | undefined): void {
+    /** Forget the port and remember why; the received bytes stay readable. One output-channel line and one record. */
+    private release(path: string, reason: SerialRelease['reason'], detail: string | undefined, idleSeconds?: number): void {
         this.forgetPort();
-        this.lastRelease = { path, at: this.clock(), reason, ...(detail && reason !== 'disconnected' ? { detail } : {}) };
-        logger.warn(`Serial port released: ${describeRelease(this.lastRelease)}`);
-        this.recordProblem(path, describeRelease(this.lastRelease), 'Reopen it with serial_open once the adapter is back; the bytes received before stay readable.');
+        this.lastRelease = {
+            path, at: this.clock(), reason,
+            ...(detail && reason === 'closed-unexpectedly' ? { detail } : {}),
+            ...(idleSeconds !== undefined ? { idleSeconds } : {}),
+        };
+        const described = describeRelease(this.lastRelease);
+        const { severity, hint } = RELEASE_RECORDS[reason];
+        // The journal mirrors warnings into the output channel itself (#48); info records it does not.
+        if (severity === 'info') {
+            logger.info(`Serial port released: ${described}`);
+        } else {
+            logger.debug(`Serial port released: ${described}`);
+        }
+        this.recordProblem(path, severity, described, hint, false);
+        this.changed();
     }
 
-    /** A warning of the port in the problem journal; a failing journal never fails the port. */
-    private recordProblem(path: string, message: string, hint: string): void {
+    /** A problem of the port in the problem journal; a failing journal never fails the port. */
+    private recordProblem(path: string, severity: ProblemSeverity, message: string, hint: string, held: boolean): void {
         try {
-            this.journal({ source: 'serial', origin: path, severity: 'warning', message, hint });
+            this.journal({ source: 'serial', origin: path, severity, message, hint, ...(held ? { code: 'PORT_HELD' as const } : {}) });
         } catch (caught) {
             logger.debug('A serial problem could not be journaled', caught);
         }

@@ -27,6 +27,12 @@
  * This module reads no settings and does not import `vscode`: port,
  * timeouts, handler factory and options arrive through the constructor, so
  * the transport harness runs the real server outside VS Code.
+ *
+ * A session ends when its client sends DELETE, or after 30 minutes without a
+ * request while it holds no GET stream open (#49); a sweep looks every
+ * minute. Either way the session's handlers hear of it (`ended`), so the
+ * serial ports it held are released: a router tells the windows it
+ * forwarded to, a server without a router tells its own serial handler.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -59,6 +65,22 @@ export interface SessionHandlers {
     serial: SerialDispatch;
     /** Documentation and build-artefact ops; a session without it is offered neither group. */
     packDocs?: PackDocsDispatch;
+    /**
+     * Told once, without being waited for, when the session ends (#49). Left
+     * out, a session whose serial ops run locally tells the local serial
+     * handler, and any other session tells nobody.
+     */
+    ended?: (sessionId: string) => Promise<void>;
+}
+
+/** When an idle MCP session ends (#49); tests shorten the times and bring their own clock. */
+export interface SessionExpiry {
+    /** A session without a request for this long, and with no GET stream open, ends. 30 min by default. */
+    idleMs?: number;
+    /** How often the sessions are looked at. 60 s by default. */
+    sweepMs?: number;
+    /** Milliseconds on the expiry's clock. */
+    now?: () => number;
 }
 
 /**
@@ -75,6 +97,8 @@ export interface DebugMCPServerOptions {
     buildInfoEnabled?: boolean;
     /** Append each tool-call sample to this file as one JSON line. */
     telemetry?: { jsonlPath?: string };
+    /** When sessions nobody uses end; the defaults suit the extension. */
+    sessionExpiry?: SessionExpiry;
 }
 
 /** Single-window serial dispatch: the op is the method of the same name on `serialHandler`. */
@@ -85,6 +109,11 @@ export const localSerialDispatch: SerialDispatch = (op, args) => {
     }
     return (method as (input?: unknown) => Promise<ToolText>).call(serialHandler, args);
 };
+
+/** The end of a session whose serial ops run in this window: its serial handler releases what the session held (#49). */
+async function localSessionEnded(sessionId: string): Promise<void> {
+    await serialHandler.sessionEnded(sessionId);
+}
 
 /** The configured port is bound already, normally by the window that serves MCP; the caller becomes a worker. */
 export class PortInUseError extends Error {
@@ -112,6 +141,9 @@ const REQUEST_FAILED = 'The MCP server failed while handling this request.';
 const SSE_RETIRED = 'The legacy SSE endpoint /sse has been retired.';
 const SSE_SUCCESSOR = 'Connect over Streamable HTTP instead: POST /mcp.';
 const START_FAILED = 'Could not start the CMSIS Developer Assistant MCP server';
+/** A session idle this long ends (#49), unless it holds a GET stream; the sweep looks this often. */
+const SESSION_IDLE_MS = 30 * 60_000;
+const SESSION_SWEEP_MS = 60_000;
 
 /** One MCP session: its transport, server and handlers, kept together until the transport closes. */
 interface McpSession {
@@ -120,6 +152,10 @@ interface McpSession {
     handlers: SessionHandlers;
     /** True once the SDK assigned the session id and the session joined the map. */
     adopted: boolean;
+    /** When a request of the session last arrived or finished, on the expiry's clock. */
+    lastSeenAt: number;
+    /** GET streams of the session open now; a session with one never expires. */
+    openStreams: number;
 }
 
 const mintSessionId = (): string => randomUUID();
@@ -230,6 +266,9 @@ export class DebugMCPServer {
     private readonly sessions = new Map<string, McpSession>();
     private listener: http.Server | undefined;
     private boundPort: number | undefined;
+    private sweeper: ReturnType<typeof setInterval> | undefined;
+    private readonly now: () => number;
+    private readonly sessionIdleMs: number;
 
     /**
      * @param timeoutInSeconds and `hardwareTimeouts` only configure the
@@ -247,6 +286,8 @@ export class DebugMCPServer {
         this.handlersFor = handlerFactory ?? singleWindowHandlers(timeoutInSeconds, hardwareTimeouts);
         const jsonl = this.options.telemetry?.jsonlPath;
         this.sink = typeof jsonl === 'string' && jsonl.length > 0 ? jsonlSink(jsonl) : undefined;
+        this.now = options.sessionExpiry?.now ?? Date.now;
+        this.sessionIdleMs = options.sessionExpiry?.idleMs ?? SESSION_IDLE_MS;
     }
 
     /** The options of this instance, frozen. */
@@ -281,6 +322,8 @@ export class DebugMCPServer {
                 throw new Error('the listening socket reports no port');
             }
             this.boundPort = where.port;
+            this.sweeper = setInterval(() => this.sweepIdleSessions(), this.options.sessionExpiry?.sweepMs ?? SESSION_SWEEP_MS);
+            this.sweeper.unref();
             logger.info(`MCP endpoint ready at http://${LOOPBACK_V4}:${where.port}${MCP_ROUTE}`);
         } catch (failure) {
             if ((failure as NodeJS.ErrnoException | undefined)?.code === 'EADDRINUSE') {
@@ -298,6 +341,10 @@ export class DebugMCPServer {
      * Serial ports are the coordinator's to release, not this server's.
      */
     async stop(): Promise<void> {
+        if (this.sweeper !== undefined) {
+            clearInterval(this.sweeper);
+            this.sweeper = undefined;
+        }
         for (const session of [...this.sessions.values()]) {
             try {
                 await session.transport.close();
@@ -318,6 +365,27 @@ export class DebugMCPServer {
     /** The bound port while listening (the OS's pick when 0 was configured), else the configured one. */
     getActualPort(): number {
         return this.boundPort ?? this.port;
+    }
+
+    /**
+     * End every session that has had no request for the idle time and holds
+     * no GET stream (#49). The sweep timer calls it every minute; tests call
+     * it after moving their clock. Closing the transport ends the session the
+     * way a DELETE does, and a later request with its id is refused. Returns
+     * how many sessions it ended.
+     */
+    sweepIdleSessions(): number {
+        const now = this.now();
+        let ended = 0;
+        for (const [id, session] of [...this.sessions.entries()]) {
+            if (session.openStreams > 0 || now - session.lastSeenAt < this.sessionIdleMs) {
+                continue;
+            }
+            ended += 1;
+            logger.info(`MCP session ${id} expired: no request for ${Math.round((now - session.lastSeenAt) / 60_000)} min`);
+            session.transport.close().catch((problem: unknown) => logger.warn(`MCP session ${id} did not close cleanly`, problem));
+        }
+        return ended;
     }
 
     /**
@@ -355,6 +423,7 @@ export class DebugMCPServer {
         try {
             const live = claimed === undefined ? undefined : this.sessions.get(claimed);
             if (live !== undefined) {
+                this.seen(live, res);
                 await live.transport.handleRequest(req, res, req.body);
                 return;
             }
@@ -383,7 +452,19 @@ export class DebugMCPServer {
             refuse(res, 400, -32000, NO_SESSION);
             return;
         }
+        this.seen(live, res);
+        if (req.method === 'GET') {
+            // An open stream keeps the session from expiring, however long nothing is asked.
+            live.openStreams += 1;
+            res.on('close', () => { live.openStreams -= 1; });
+        }
         await live.transport.handleRequest(req, res);
+    }
+
+    /** A request of `session` arrived: it counts as used now and again when the answer is done. */
+    private seen(session: McpSession, res: Response): void {
+        session.lastSeenAt = this.now();
+        res.on('close', () => { session.lastSeenAt = this.now(); });
     }
 
     /** A transport and server for a new session; it joins the map once the SDK assigns its id. */
@@ -403,6 +484,8 @@ export class DebugMCPServer {
             server,
             handlers,
             adopted: false,
+            lastSeenAt: this.now(),
+            openStreams: 0,
             transport: new StreamableHTTPServerTransport({
                 sessionIdGenerator: mintSessionId,
                 onsessioninitialized: (id) => this.adopt(session, id),
@@ -424,7 +507,18 @@ export class DebugMCPServer {
         if (id !== undefined && this.sessions.get(id) === session) {
             this.sessions.delete(id);
             logger.info(`MCP session ${id} closed`);
+            this.announceEnd(id, session.handlers);
         }
+    }
+
+    /** Tell the session's handlers that it ended (#49), without waiting; a failure is only logged. */
+    private announceEnd(id: string, handlers: SessionHandlers): void {
+        const ended = handlers.ended ?? (handlers.serial === localSerialDispatch ? localSessionEnded : undefined);
+        if (ended === undefined) {
+            return;
+        }
+        Promise.resolve().then(() => ended(id)).catch((problem: unknown) =>
+            logger.warn(`The end of MCP session ${id} could not be passed on`, problem));
     }
 
     /** One finished tool call of any session: into the instance totals, the JSONL file and the log. */

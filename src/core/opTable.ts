@@ -129,17 +129,30 @@ export const PACKDOCS_BUILD_OPS = [
 /** Both pack-docs groups: one dispatch, one routing path, two enable gates. */
 export const PACKDOCS_OPS = [...PACKDOCS_DOC_OPS, ...PACKDOCS_BUILD_OPS] as const;
 
+/**
+ * Ops between windows that are no tools: the control server answers them
+ * itself, before the op table is consulted, without the op hook of the status
+ * bar and without the problem journal. `sessionEnded {sessionId}` (#49): the
+ * router says that an MCP session ended, and the window releases the serial
+ * port and the Serial Monitor subscription that session held there. A window
+ * of an earlier version answers "not a known operation", which the router
+ * ignores.
+ */
+export const INTERNAL_OPS = ['sessionEnded'] as const;
+
 export type DebugOpName = typeof DEBUG_OPS[number];
 export type SerialOpName = typeof SERIAL_OPS[number];
 export type PackDocsDocOpName = typeof PACKDOCS_DOC_OPS[number];
 export type PackDocsBuildOpName = typeof PACKDOCS_BUILD_OPS[number];
 export type PackDocsOpName = PackDocsDocOpName | PackDocsBuildOpName;
 export type OpName = DebugOpName | SerialOpName | PackDocsOpName;
+export type InternalOpName = typeof INTERNAL_OPS[number];
 
 const DEBUG_OP_SET: ReadonlySet<string> = new Set(DEBUG_OPS);
 const SERIAL_OP_SET: ReadonlySet<string> = new Set(SERIAL_OPS);
 const PACKDOCS_DOC_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_DOC_OPS);
 const PACKDOCS_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_OPS);
+const INTERNAL_OP_SET: ReadonlySet<string> = new Set(INTERNAL_OPS);
 
 /** True when `op` is a name the control server is willing to dispatch. */
 export function isKnownOp(op: string): op is OpName {
@@ -157,6 +170,11 @@ export function isPackDocsOp(op: string): op is PackDocsOpName {
 /** True for the documentation half of the pack-docs ops (else build artefacts). */
 export function isPackDocsDocOp(op: string): op is PackDocsDocOpName {
     return PACKDOCS_DOC_OP_SET.has(op);
+}
+
+/** True for an op the control server answers itself (`INTERNAL_OPS`). */
+export function isInternalOp(op: string): op is InternalOpName {
+    return INTERNAL_OP_SET.has(op);
 }
 
 /**
@@ -245,15 +263,16 @@ export function targetHintOf(args: unknown): TargetHint | undefined {
 // longer exists on the handler trips `_Extra*` the same way. The failure lands
 // at build time instead of as an unroutable tool discovered on the bench.
 
+// The serial and pack-docs handlers also expose methods that are no tools:
+// the serial handler's `sessionEnded` (an internal op, #49), the commands and
+// the panel of the pack-docs handlers (refreshSettings, indexTarget, …). Only
+// their `handle*` methods are tool ops, so the coverage check is over those.
+type _HandleKeys<T> = Extract<keyof T, `handle${string}`>;
+
 type _MissingDebugOps = Exclude<keyof IDebuggingHandler, DebugOpName>;
 type _ExtraDebugOps = Exclude<DebugOpName, keyof IDebuggingHandler>;
-type _MissingSerialOps = Exclude<keyof SerialHandler, SerialOpName>;
-type _ExtraSerialOps = Exclude<SerialOpName, keyof SerialHandler>;
-
-// The pack-docs handlers also expose non-tool methods for the commands and
-// the panel (refreshSettings, indexTarget, …); only their `handle*` methods
-// are tool ops, so the coverage check is over those.
-type _HandleKeys<T> = Extract<keyof T, `handle${string}`>;
+type _MissingSerialOps = Exclude<_HandleKeys<SerialHandler>, SerialOpName>;
+type _ExtraSerialOps = Exclude<SerialOpName, _HandleKeys<SerialHandler>>;
 type _MissingPackDocsDocOps = Exclude<_HandleKeys<PackDocsHandler>, PackDocsDocOpName>;
 type _ExtraPackDocsDocOps = Exclude<PackDocsDocOpName, _HandleKeys<PackDocsHandler>>;
 type _MissingPackDocsBuildOps = Exclude<_HandleKeys<BuildInfoHandler>, PackDocsBuildOpName>;

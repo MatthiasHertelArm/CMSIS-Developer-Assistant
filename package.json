@@ -205,6 +205,13 @@
           "default": true,
           "markdownDescription": "Offer the `serial_*` tools (UART ports and the Serial Monitor) to AI agents. Off removes the ten serial tools from the MCP tool list, which every agent turn carries — worth it when your workflow never reads a UART. Read once at activation: changing it needs a window reload, and it applies to the next agent connection."
         },
+        "cmsis-developer-assistant.serial.idleCloseSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "scope": "window",
+          "markdownDescription": "Release a serial port an AI agent opened with `serial_open` after this many seconds without a serial tool call (`serial_read`, `serial_write`, `serial_status`, `serial_clear_buffer`), so the Serial Monitor or a terminal can open it again. Bytes the board sends do not count as use. `0` turns the idle release off; a port is still released when the agent's MCP session ends. Read at each `serial_open`: no reload needed."
+        },
         "cmsis-developer-assistant.packDocs.enabled": {
           "type": "boolean",
           "default": false,

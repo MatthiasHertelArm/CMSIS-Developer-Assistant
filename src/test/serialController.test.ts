@@ -15,11 +15,13 @@
  */
 
 import * as assert from 'assert';
-import { EventEmitter } from 'events';
 import { SerialPortMock } from 'serialport';
 import type { ProblemInput } from '../core/problemJournal';
-import { OwnedPort, PortOptions, SerialController, describeRelease, serialController } from '../core/serialController';
+import { PORT_HELD_HINT, PortOptions, SerialController, describeRelease, serialController } from '../core/serialController';
+import { ReleaseRule, SerialLease, idleSecondsOf, releaseRuleOf } from '../core/serialLease';
+import { ToolError } from '../core/toolResult';
 import { SerialHandler } from '../serialHandler';
+import { ManualTime, MockSerial, PATH_FIXTURES, ScriptedPort, T0, mockSerial } from './serialFixtures';
 
 /** Inject a fake port into the singleton (it has no port factory to swap). */
 function injectPort(close: (cb: (err?: Error | null) => void) => void): void {
@@ -51,26 +53,6 @@ suite('serialController close', () => {
         await serialController.close(); // idempotent
     });
 });
-
-/** A port that does what the test says; for the states the mock binding cannot reach. */
-class ScriptedPort extends EventEmitter implements OwnedPort {
-    isOpen = false;
-    open(callback: (err: Error | null) => void): void {
-        this.isOpen = true;
-        callback(null);
-    }
-    close(callback: (err: Error | null) => void): void {
-        this.isOpen = false;
-        callback(null);
-    }
-    write(_data: Buffer, callback: (err: Error | null | undefined) => void): boolean {
-        callback(null);
-        return true;
-    }
-    drain(callback: (err: Error | null) => void): void {
-        callback(null);
-    }
-}
 
 /**
  * The owned port's state follows the port (#49, WP-F): an unplugged adapter
@@ -210,5 +192,286 @@ suite('serialController follows the port (#49)', () => {
         assert.match(journaled[0].message, /nope/);
         assert.strictEqual(journaled[1].message, 'COM7 disconnected at 10:42:07');
         assert.ok(journaled.every((problem) => !problem.message.includes('secret') && typeof problem.hint === 'string'));
+    });
+});
+
+/** Open `path` on a mock controller, held by `owner` under `rule` with a 300 s idle limit. */
+async function holdPort(serial: MockSerial, path: string, owner: string | undefined, rule: ReleaseRule, idleSeconds = 300): Promise<void> {
+    SerialPortMock.binding.createPort(path);
+    await serial.controller.open({ path }, { owner, rule, idleSeconds });
+}
+
+/** `open`, the reason of the release, or `closed` after a close on purpose. */
+function outcomeOf(controller: SerialController): string {
+    const status = controller.status();
+    return status.open ? 'open' : status.lastRelease?.reason ?? 'closed';
+}
+
+/**
+ * The release rules (#49): a held port goes after the idle time, when the
+ * MCP session that opened it ends, when a debug session ends, or when the
+ * user releases it, as its rule says; the bytes stay readable and the tools
+ * say why. Mock ports and a hand-moved clock only.
+ */
+suite('serial release rules (#49)', () => {
+    setup(() => SerialPortMock.binding.reset());
+    teardown(() => SerialPortMock.binding.reset());
+
+    test('a rule or an idle limit a caller names is taken; anything else is the default', () => {
+        assert.deepStrictEqual(['idle', 'debug-session-end', 'manual', 'never', undefined, 7].map(releaseRuleOf),
+            ['idle', 'debug-session-end', 'manual', 'idle', 'idle', 'idle']);
+        assert.deepStrictEqual([300, 0, 12.7, -1, Number.NaN, '60', undefined].map(idleSecondsOf), [300, 0, 12, 300, 300, 300, 300]);
+    });
+
+    test('the lease: released after the idle limit without a call; a touch and a call in progress restart it', async () => {
+        const time = new ManualTime();
+        let released = 0;
+        const lease = new SerialLease({ owner: 'A', rule: 'idle', idleSeconds: 300 }, time, () => { released += 1; });
+        time.advanceSeconds(200);
+        lease.touch();
+        time.advanceSeconds(299);
+        assert.strictEqual(released, 0, 'touched at 200 s: not idle for 300 s yet');
+        assert.strictEqual(lease.idleReleaseInMs(), 1_000);
+        let finish: () => void = () => undefined;
+        const call = lease.during(() => new Promise<void>((resolve) => { finish = resolve; }));
+        time.advanceSeconds(1_000);
+        assert.strictEqual(released, 0, 'a call in progress holds the port');
+        assert.strictEqual(lease.idleForMs(), 0);
+        finish();
+        await call;
+        time.advanceSeconds(299);
+        assert.strictEqual(released, 0);
+        time.advanceSeconds(1);
+        assert.strictEqual(released, 1, 'released 300 s after the call ended');
+        time.advanceSeconds(3_600);
+        assert.strictEqual(released, 1, 'once');
+        assert.strictEqual(time.armed(), 0);
+    });
+
+    test('an idle limit of 0 and the rules other than idle arm no timer', () => {
+        const time = new ManualTime();
+        const terms: Array<[ReleaseRule, number]> = [['idle', 0], ['debug-session-end', 300], ['manual', 300]];
+        for (const [rule, idleSeconds] of terms) {
+            const lease = new SerialLease({ rule, idleSeconds }, time, () => assert.fail(`${rule} released for idleness`));
+            assert.strictEqual(lease.idleReleaseInMs(), undefined, rule);
+        }
+        assert.strictEqual(time.armed(), 0);
+        time.advanceSeconds(86_400);
+    });
+
+    test('an idle port is released, its bytes stay readable, and read, write and close say why', async () => {
+        const serial = mockSerial();
+        const handler = new SerialHandler(serial.controller, { idleCloseSeconds: () => 300 });
+        SerialPortMock.binding.createPort('COM7');
+        await handler.handleOpen({ path: 'COM7' });
+        serial.ports[0].port?.emitData(Buffer.from('boot ok\n'));
+        await serial.controller.read({ waitMs: 2_000, consume: false });
+
+        serial.time.advanceSeconds(299);
+        assert.ok(serial.controller.isOpen());
+        serial.time.advanceSeconds(1);
+        const status = serial.controller.status();
+        assert.deepStrictEqual([status.open, status.path, status.baudRate, status.openedAt, status.bufferedBytes], [false, null, null, null, 8]);
+        assert.deepStrictEqual(status.lastRelease, { path: 'COM7', at: new Date(T0 + 300_000), reason: 'idle', idleSeconds: 300 });
+        const why = 'COM7 released at 10:47:07 after 300 s without a serial call';
+        assert.strictEqual(await handler.handleRead({}),
+            `Serial RX (owned): 8 byte(s)\nThe owned port is closed: ${why}. Reopen it with serial_open.\n--- text ---\nboot ok\n`);
+        await assert.rejects(handler.handleWrite({ data: 'x' }), (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'PORT_CLOSED'
+                && failure.message === `No serial port open: ${why}. Reopen it with serial_open.`);
+        assert.strictEqual(await handler.handleClose(), `No owned serial port was open (${why}).`);
+        assert.ok((await handler.handleStatus()).startsWith(`Owned serial: closed (${why})\n`));
+    });
+
+    test('serial_read, serial_write, serial_status and serial_clear_buffer restart the idle time; bytes from the board do not', async () => {
+        const serial = mockSerial();
+        const handler = new SerialHandler(serial.controller, { idleCloseSeconds: () => 300 });
+        SerialPortMock.binding.createPort('/dev/ttyACM0');
+        await handler.handleOpen({ path: '/dev/ttyACM0' });
+        const calls: Array<() => Promise<unknown>> = [
+            () => handler.handleRead({}),
+            () => handler.handleWrite({ data: 'help', appendNewline: true }),
+            () => handler.handleStatus(),
+            () => handler.handleClearBuffer({}),
+        ];
+        for (const call of calls) {
+            serial.time.advanceSeconds(200);
+            await call();
+            assert.ok(serial.controller.isOpen(), 'each call came within 300 s of the one before');
+        }
+        serial.time.advanceSeconds(200);
+        serial.ports[0].port?.emitData(Buffer.from('tick\n'));
+        await serial.controller.read({ waitMs: 2_000, consume: false });
+        serial.time.advanceSeconds(99);
+        assert.ok(serial.controller.isOpen(), 'open 299 s after the last call');
+        serial.time.advanceSeconds(1);
+        assert.strictEqual(outcomeOf(serial.controller), 'idle', 'the bytes from the board did not count as use');
+    });
+
+    test('the releaseOn matrix: what each rule does on each event', async () => {
+        type Event = 'idle' | 'owner gone' | 'another session gone' | 'debug session end' | 'user' | 'serial_close';
+        const expected: Record<ReleaseRule, Record<Event, string>> = {
+            idle: {
+                idle: 'idle', 'owner gone': 'owner-gone', 'another session gone': 'open', 'debug session end': 'open',
+                user: 'user', serial_close: 'closed',
+            },
+            'debug-session-end': {
+                idle: 'open', 'owner gone': 'owner-gone', 'another session gone': 'open', 'debug session end': 'debug-session-end',
+                user: 'user', serial_close: 'closed',
+            },
+            manual: {
+                idle: 'open', 'owner gone': 'open', 'another session gone': 'open', 'debug session end': 'open',
+                user: 'user', serial_close: 'closed',
+            },
+        };
+        const happen: Record<Event, (serial: MockSerial) => Promise<unknown>> = {
+            idle: async (serial) => serial.time.advanceSeconds(3_600),
+            'owner gone': async (serial) => serial.controller.sessionEnded('session-A'),
+            'another session gone': async (serial) => serial.controller.sessionEnded('session-B'),
+            'debug session end': async (serial) => serial.controller.debugSessionEnded(),
+            user: async (serial) => serial.controller.releaseForUser(),
+            serial_close: (serial) => serial.controller.close(),
+        };
+        const seen: string[] = [];
+        for (const rule of Object.keys(expected) as ReleaseRule[]) {
+            for (const event of Object.keys(happen) as Event[]) {
+                SerialPortMock.binding.reset();
+                const serial = mockSerial();
+                await holdPort(serial, 'COM7', 'session-A', rule);
+                await happen[event](serial);
+                seen.push(`${rule}/${event}: ${outcomeOf(serial.controller)}`);
+                assert.strictEqual(outcomeOf(serial.controller), expected[rule][event], `${rule} on ${event}`);
+            }
+        }
+        assert.strictEqual(seen.length, 18);
+    });
+
+    test('the end of a session releases only the port that session opened, never a manual one nor one without an owner', async () => {
+        const windowA = mockSerial();
+        const windowB = mockSerial();
+        const windowC = mockSerial();
+        const windowD = mockSerial();
+        await holdPort(windowA, 'COM7', 'session-A', 'idle');
+        await holdPort(windowB, '/dev/ttyACM0', 'session-B', 'idle');
+        await holdPort(windowC, '/dev/cu.usbmodem1102', 'session-A', 'manual');
+        await holdPort(windowD, '/dev/tty.usbmodem1102', undefined, 'idle');
+        const released = [windowA, windowB, windowC, windowD].map((serial) => serial.controller.sessionEnded('session-A'));
+        assert.deepStrictEqual(released, ['COM7', undefined, undefined, undefined]);
+        assert.deepStrictEqual([windowA, windowB, windowC, windowD].map((serial) => outcomeOf(serial.controller)),
+            ['owner-gone', 'open', 'open', 'open']);
+        assert.strictEqual(describeRelease(windowA.controller.status().lastRelease!), 'COM7 released at 10:42:07: the MCP session that opened it ended');
+    });
+
+    test('each release is one journal record without payload: a warning for an unplug and the user, info for a rule', async () => {
+        const events: Array<[string, (serial: MockSerial) => unknown]> = [
+            ['idle', (serial) => serial.time.advanceSeconds(300)],
+            ['owner-gone', (serial) => serial.controller.sessionEnded('session-A')],
+            ['user', (serial) => serial.controller.releaseForUser()],
+        ];
+        const records: Array<[string, string, string | undefined]> = [];
+        for (const [label, release] of events) {
+            SerialPortMock.binding.reset();
+            const serial = mockSerial();
+            await holdPort(serial, 'COM7', 'session-A', 'idle');
+            serial.ports[0].port?.emitData(Buffer.from('secret payload'));
+            await serial.controller.read({ waitMs: 2_000, consume: false });
+            release(serial);
+            assert.strictEqual(serial.journaled.length, 1, label);
+            const [record] = serial.journaled;
+            assert.ok(!record.message.includes('secret') && typeof record.hint === 'string', label);
+            records.push([record.severity, record.message, record.code]);
+        }
+        assert.deepStrictEqual(records, [
+            ['info', 'COM7 released at 10:47:07 after 300 s without a serial call', undefined],
+            ['info', 'COM7 released at 10:42:07: the MCP session that opened it ended', undefined],
+            ['warning', 'COM7 released at 10:42:07 by the user in VS Code', undefined],
+        ]);
+        const debugEnd = mockSerial();
+        await holdPort(debugEnd, 'COM8', 'session-A', 'debug-session-end');
+        debugEnd.controller.debugSessionEnded();
+        assert.deepStrictEqual(debugEnd.journaled.map((record) => [record.severity, record.message]),
+            [['info', 'COM8 released at 10:42:07: the debug session ended']]);
+    });
+
+    test('after the user released a port, the tools say to ask before reopening it', async () => {
+        const serial = mockSerial();
+        const handler = new SerialHandler(serial.controller, { idleCloseSeconds: () => 300 });
+        await holdPort(serial, 'COM7', 'session-A', 'manual');
+        assert.strictEqual(serial.controller.releaseForUser(), 'COM7');
+        assert.strictEqual(serial.controller.releaseForUser(), undefined, 'nothing left to release');
+        assert.strictEqual(await handler.handleRead({}),
+            'Serial RX (owned): <no data>\nThe owned port is closed: COM7 released at 10:42:07 by the user in VS Code. '
+            + 'Ask the user before you reopen it with serial_open.');
+    });
+
+    test('a read that waits returns at once without a port, and as soon as the port it waits on goes away', async () => {
+        const serial = mockSerial();
+        let started = Date.now();
+        await serial.controller.read({ waitMs: 10_000 });
+        assert.ok(Date.now() - started < 1_000, 'no port: nothing can arrive');
+        await holdPort(serial, 'COM7', 'session-A', 'idle');
+        started = Date.now();
+        const waiting = serial.controller.read({ waitMs: 10_000 });
+        setTimeout(() => serial.controller.releaseForUser(), 50);
+        await waiting;
+        assert.ok(Date.now() - started < 2_000, `the read ended ${Date.now() - started} ms after it began`);
+    });
+
+    test('a write without a port is PORT_CLOSED', async () => {
+        await assert.rejects(mockSerial().controller.write('x'), (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'PORT_CLOSED' && failure.message === 'No serial port open. Call serial_open first.');
+    });
+
+    suite('PORT_HELD', () => {
+        /** What the OS answers an open when another program holds the port, per platform. */
+        const REFUSALS: Array<(path: string) => string> = [
+            (path) => `Opening ${path}: Access denied`,
+            (path) => `Error: Resource busy, cannot open ${path}`,
+            (path) => `Error: Device or resource busy, cannot open ${path}`,
+            () => 'Error Resource temporarily unavailable Cannot lock port',
+        ];
+
+        test('another program holding the port is PORT_HELD for every path spelling, journaled with the code', async () => {
+            for (const path of PATH_FIXTURES) {
+                for (const refusal of REFUSALS) {
+                    const journaled: ProblemInput[] = [];
+                    const controller = new SerialController({ createPort: () => new ScriptedPort(refusal(path)), journal: (problem) => journaled.push(problem) });
+                    await assert.rejects(controller.open({ path }), (failure: unknown) =>
+                        failure instanceof ToolError && failure.code === 'PORT_HELD'
+                            && failure.message === `Cannot open ${path}: another program holds it (${refusal(path)}).`
+                            && failure.hint === PORT_HELD_HINT, `${path}: ${refusal(path)}`);
+                    assert.deepStrictEqual(journaled.map((problem) => [problem.origin, problem.severity, problem.code]),
+                        [[path, 'warning', 'PORT_HELD']]);
+                    assert.strictEqual(controller.isOpen(), false);
+                }
+            }
+        });
+
+        test('a failure that is not about another holder passes unchanged', async () => {
+            const missing = 'Error: No such file or directory, cannot open /dev/ttyACM9';
+            const controller = new SerialController({ createPort: () => new ScriptedPort(missing), journal: () => undefined });
+            await assert.rejects(controller.open({ path: '/dev/ttyACM9' }), (failure: unknown) =>
+                !(failure instanceof ToolError) && failure instanceof Error && failure.message === missing);
+        });
+
+        test('a second opener of the same device, as the mock binding locks it, is PORT_HELD', async () => {
+            SerialPortMock.binding.createPort('COM7');
+            const other = new SerialPortMock({ path: 'COM7', baudRate: 115200, autoOpen: false });
+            await new Promise<void>((resolve, reject) => other.open((err) => err ? reject(err) : resolve()));
+            const serial = mockSerial();
+            await assert.rejects(serial.controller.open({ path: 'COM7' }), (failure: unknown) =>
+                failure instanceof ToolError && failure.code === 'PORT_HELD' && /Port is locked/.test(failure.message));
+            await new Promise<void>((resolve) => other.close(() => resolve()));
+        });
+
+        test('a port already open in this window is PORT_HELD', async () => {
+            const serial = mockSerial();
+            await holdPort(serial, 'COM7', 'session-A', 'idle');
+            SerialPortMock.binding.createPort('COM8');
+            await assert.rejects(serial.controller.open({ path: 'COM8' }), (failure: unknown) =>
+                failure instanceof ToolError && failure.code === 'PORT_HELD'
+                    && failure.message === 'A serial port is already open on \'COM7\'. Close it first with serial_close.');
+            assert.deepStrictEqual(serial.journaled, [], 'the agent\'s own port is no problem of the window');
+        });
     });
 });
