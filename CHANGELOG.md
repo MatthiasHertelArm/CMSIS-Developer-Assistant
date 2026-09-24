@@ -4,7 +4,7 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.5.1] - 2026-09-24
 
 ### Added
 - **One problem journal per VS Code window, so agents see what went wrong beyond the line a tool returned (part of #48).**
