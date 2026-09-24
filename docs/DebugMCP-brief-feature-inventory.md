@@ -75,6 +75,7 @@ Upstream has no concept of a GDB target server, hardware memory or registers, fa
 | `serial_open` · `close` · `read` · `write` · `status` · `clear_buffer` | Serial | OWNED backend: the server holds a `serialport` connection and buffers RX. |
 | `serial_subscribe_monitor` · `unsubscribe` · `read(monitor)` · `open_monitor` | Serial | BRIDGE backend: taps the MS Serial Monitor extension so the agent reads the user's live UART session — no port fight. |
 | `serial_list_ports` | Serial | Enumerate ports (friendly names via the monitor API, else `serialport`). |
+| `serial_capture` | Serial | One call: open the port, read until a regex matches or the deadline, close — at most 16 kB back (#49). |
 
 ### Always-on infrastructure (not called — load-bearing every step)
 

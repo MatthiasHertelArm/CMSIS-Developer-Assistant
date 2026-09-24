@@ -201,6 +201,12 @@ const ABOUT = {
         'List available serial ports.',
         'Tries the MS Serial Monitor API first (friendly names), falls back to the bundled serialport library.',
     ),
+    serial_capture: say(
+        'Capture serial output in one call: open the port, send write if given, read until the regex until matches or ' +
+        'durationMs ends, close.',
+        'Prefer it to serial_open + serial_read for "show me what the board prints".',
+        'Returns at most 16 kB: the first and last 8 kB.',
+    ),
     serial_open: say(
         'Open an OWNED serial port.',
         'The MCP server holds the connection and buffers RX.',
@@ -285,13 +291,15 @@ const SOURCE_LINE_DESC = 'Source line, numbered from 1';
 const SVD_FILE_DESC = 'Explicit .svd path; default: session, cbuild-run.yml, workspace';
 const PNAME_DESC = 'Processor name selecting the SVD in a multi-core cbuild-run';
 const WINDOW_DESC = 'Run in this window: its pid or a path inside its workspace (list_debug_windows).';
+const SERIAL_PATH_DESC = 'Device path, e.g. \'/dev/tty.usbmodemABCD\' on macOS or \'COM3\' on Windows';
+const BAUD_RATE_DESC = 'Baud rate (default 115200)';
 
 /**
  * The tools that take `window` in a session that routes between windows
  * (#16): those that start or own something. The others follow the session's
  * target, which `window` re-aims. A name added here gets the argument.
  */
-export const WINDOW_ARGUMENT_TOOLS: ReadonlySet<string> = new Set(['cmsis_action', 'flash', 'reset', 'serial_open']);
+export const WINDOW_ARGUMENT_TOOLS: ReadonlySet<string> = new Set(['cmsis_action', 'flash', 'reset', 'serial_open', 'serial_capture']);
 
 /** The one-call override of a handler's default timeout (see TIMEOUT_OVERRIDE). */
 const CALL_TIMEOUT = z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC);
@@ -704,11 +712,21 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     if (options.serialEnabled !== false) {
         mcp.registerTool('serial_list_ports', { description: ABOUT.serial_list_ports, annotations: LOOK_ONLY },
             () => serial('handleListPorts').then(reply));
+        mcp.registerTool('serial_capture', {
+            description: ABOUT.serial_capture,
+            inputSchema: {
+                path: z.string().describe(SERIAL_PATH_DESC),
+                baudRate: z.number().int().optional().describe(BAUD_RATE_DESC),
+                durationMs: z.number().int().min(100).max(60_000).describe('Longest capture in ms'),
+                until: z.string().optional().describe('Regex; the capture stops at its first match'),
+                write: z.string().optional().describe('Text sent after opening, e.g. "help\\n"'),
+            },
+        }, (args) => serial('handleCapture', args).then(reply));
         mcp.registerTool('serial_open', {
             description: ABOUT.serial_open,
             inputSchema: {
-                path: z.string().describe('Device path, e.g. \'/dev/tty.usbmodemABCD\' on macOS or \'COM3\' on Windows'),
-                baudRate: z.number().int().optional().describe('Baud rate (default 115200)'),
+                path: z.string().describe(SERIAL_PATH_DESC),
+                baudRate: z.number().int().optional().describe(BAUD_RATE_DESC),
                 dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).optional(),
                 parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).optional(),
                 stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),

@@ -57,7 +57,7 @@
       },
       {
         "name": "Serial ports",
-        "summary": "`serial_list_ports`, `serial_open`, `serial_read`, `serial_write`, `serial_close`, `serial_status`, `serial_clear_buffer`, and the Serial Monitor bridge `serial_subscribe_monitor` / `serial_unsubscribe_monitor` / `serial_open_monitor`."
+        "summary": "`serial_capture` (one call: open, read until a regex matches or a deadline, close), `serial_list_ports`, `serial_open`, `serial_read`, `serial_write`, `serial_close`, `serial_status`, `serial_clear_buffer`, and the Serial Monitor bridge `serial_subscribe_monitor` / `serial_unsubscribe_monitor` / `serial_open_monitor`."
       },
       {
         "name": "Session health and windows",

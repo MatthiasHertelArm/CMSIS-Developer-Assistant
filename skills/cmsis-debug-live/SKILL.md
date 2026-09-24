@@ -50,6 +50,7 @@ allowed-tools:
   - lookup_peripheral
   - lookup_register
   - serial_list_ports
+  - serial_capture
   - serial_open
   - serial_close
   - serial_status
@@ -96,7 +97,7 @@ Only the user can lift a rule, by asking for the specific command.
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |
-| `screen /dev/tty…`, `cat /dev/tty…`, a pyserial script | `serial_open`, `serial_read`, `serial_write`; `serial_subscribe_monitor` while the Serial Monitor holds the port |
+| `screen /dev/tty…`, `cat /dev/tty…`, a pyserial script | `serial_capture` for one read; `serial_open`, `serial_read`, `serial_write`; `serial_subscribe_monitor` while the Serial Monitor holds the port |
 | `curl localhost:<port>` with the registry token | `list_debug_windows`, `select_debug_window` |
 | reading a PDF, a web search for a register | `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs`, `lookup_register` |
 <!-- cmsis-developer-assistant:shell-to-tool:end -->
@@ -367,9 +368,9 @@ the target. It resolves from a file path when a tool has one, otherwise from the
 window your session pinned or used last, then from the default target the user
 chose in VS Code, then from the window that has an active debug session.
 
-`cmsis_action`, `flash`, `reset` and `serial_open` also take `window`: a pid, or
-a path inside that window's workspace. It aims that call, and your later calls
-without a path follow it to the same window.
+`cmsis_action`, `flash`, `reset`, `serial_open` and `serial_capture` also take
+`window`: a pid, or a path inside that window's workspace. It aims that call,
+and your later calls without a path follow it to the same window.
 
 When no rule decides — two windows debugging at once, or several idle ones — it
 refuses to guess and asks you to choose: reading the wrong board's memory looks

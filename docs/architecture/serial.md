@@ -66,6 +66,36 @@ teardown) and with the user's Release command.
   owner rules; its end unsubscribes and drops its buffer, since those bytes
   belong to the user's session.
 
+## One read in one call
+
+Most agent questions about a UART are "what does the board print?". With
+`serial_open`, `serial_read` and `serial_close` that is three calls and a
+port that stays held when the third is forgotten. `serial_capture` does it
+in one call and never leaves the port held (`SerialHandler.handleCapture()`,
+`src/core/serialCapture.ts`):
+
+- The regex `until` is compiled first: an invalid one is `INVALID_ARGUMENT`
+  before any port is touched, since opening a port can already reset a board
+  through DTR. A taken slot is `PORT_HELD`, with the hint to read the open
+  port with `serial_read {waitMs}` instead.
+- The port opens in the window's slot, for the calling session, so
+  `serial_status` shows the capture while it runs. `write` is sent, and the
+  capture reads until `until` matches, `durationMs` (100 ms to 60 s) runs
+  out, or the port goes away; the port is closed in `finally`, also when a
+  read throws. `open()` numbers each port, so the capture closes only its
+  own. The target is not reset: for start-up output the agent opens the
+  port, calls `reset`, then reads.
+- `CaptureRecord` keeps up to 1 MiB, then the first 8 kB and the newest
+  bytes. The regex is tried on each new chunk and the 8 kB before it, so a
+  long capture costs no more per chunk than a short one. The answer is at
+  most 16 kB of text: the first and the last 8 kB, cut at character
+  boundaries, with the count of the bytes between, why it stopped and how
+  long it took. A capture whose `until` never matched answers with status
+  `timeout`; `data` repeats the numbers.
+- The router gives a serial call at least the wait it names (`durationMs`,
+  or `waitMs` of `serial_read`), whatever the tool timeout
+  (`forwardTimeoutMs()`).
+
 ## When a session ends
 
 The MCP server ends a session on the client's `DELETE`, and after 30 minutes
@@ -105,7 +135,10 @@ session held, unless the port's rule is `manual`.
 - `src/core/serialMonitorBridge.ts`: `SerialMonitorBridge`, its
   subscription's lease
 - `src/core/serialText.ts`: what the tools say about a held port and its rule
-- `src/serialHandler.ts`: the tools, the setting, `sessionEnded()`
+- `src/core/serialCapture.ts`: `CaptureRecord`, `untilPattern()`,
+  `renderCapture()`
+- `src/serialHandler.ts`: the tools, the setting, `handleCapture()`,
+  `sessionEnded()`
 - `src/extension.ts`: a debug session's end reaches `debugSessionEnded()`
 - `src/windowCoordinator.ts`: teardown within 2 s
 
@@ -115,11 +148,15 @@ session held, unless the port's rule is `manual`.
   hand-moved clock, the `releaseOn` matrix, the end of a session, the journal
   records, `PORT_HELD` for every OS refusal and path spelling, `PORT_CLOSED`
 - `src/test/serialHandler.test.ts`: what `serial_open` and `serial_status`
-  say, the setting read at each open, `sessionEnded()`, the bridge's rules
+  say, the setting read at each open, `sessionEnded()`, the bridge's rules;
+  `serial_capture` closing the port on a match, at the deadline, on a read
+  that throws and on an unplug, its refusals (invalid regex, taken slot,
+  another program), the 16 kB answer and every path spelling
 - `src/test/serialFixtures.ts`: the hand-moved clock, the scripted port, the
   Serial Monitor with a data event, the path fixtures
 - `src/test/routing.test.ts`: the session id in the envelope, `sessionEnded`
   to the windows a session reached, an old window passed by, the control
   server's own answer
-- `test/transport/session-lifecycle.js`: `DELETE` and the expiry release a
-  mock port through the local serial handler
+- `test/transport/session-lifecycle.js`: `serial_capture` over MCP on a mock
+  port; `DELETE` and the expiry release a mock port through the local serial
+  handler

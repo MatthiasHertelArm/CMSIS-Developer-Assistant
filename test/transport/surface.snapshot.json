@@ -905,6 +905,47 @@
           }
         },
         {
+          "name": "serial_capture",
+          "description": "Capture serial output in one call: open the port, send write if given, read until the regex until matches or durationMs ends, close. Prefer it to serial_open + serial_read for \"show me what the board prints\". Returns at most 16 kB: the first and last 8 kB.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Device path, e.g. '/dev/tty.usbmodemABCD' on macOS or 'COM3' on Windows"
+              },
+              "baudRate": {
+                "description": "Baud rate (default 115200)",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "durationMs": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 60000,
+                "description": "Longest capture in ms"
+              },
+              "until": {
+                "description": "Regex; the capture stops at its first match",
+                "type": "string"
+              },
+              "write": {
+                "description": "Text sent after opening, e.g. \"help\\n\"",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "durationMs"
+            ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "serial_open",
           "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
@@ -1324,8 +1365,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 42451,
-          "sha256": "787b2156ae71e7fc60c7bb366dd5b36c85d83e5d2dd170a49e7ab38600db6918"
+          "bytes": 42500,
+          "sha256": "733216618013667f7c0f8d797008764831dde2d2021d518b066a76928f8905e2"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -1595,6 +1636,15 @@
           "isError": true,
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
         },
+        "serial_capture": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          },
+          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+        },
         "serial_open": {
           "isError": true,
           "structuredContent": {
@@ -1655,16 +1705,16 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {
             "status": "ok",
-            "nextSeq": 2,
+            "nextSeq": 3,
             "returned": 0,
             "omitted": 0
           },
-          "text": "No errors recorded in this window (nextSeq=2)."
+          "text": "No errors recorded in this window (nextSeq=3)."
         }
       }
     },
@@ -2735,8 +2785,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 42451,
-          "sha256": "787b2156ae71e7fc60c7bb366dd5b36c85d83e5d2dd170a49e7ab38600db6918"
+          "bytes": 42500,
+          "sha256": "733216618013667f7c0f8d797008764831dde2d2021d518b066a76928f8905e2"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -3661,6 +3711,47 @@
           }
         },
         {
+          "name": "serial_capture",
+          "description": "Capture serial output in one call: open the port, send write if given, read until the regex until matches or durationMs ends, close. Prefer it to serial_open + serial_read for \"show me what the board prints\". Returns at most 16 kB: the first and last 8 kB.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Device path, e.g. '/dev/tty.usbmodemABCD' on macOS or 'COM3' on Windows"
+              },
+              "baudRate": {
+                "description": "Baud rate (default 115200)",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "durationMs": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 60000,
+                "description": "Longest capture in ms"
+              },
+              "until": {
+                "description": "Regex; the capture stops at its first match",
+                "type": "string"
+              },
+              "write": {
+                "description": "Text sent after opening, e.g. \"help\\n\"",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "durationMs"
+            ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "serial_open",
           "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
@@ -4559,8 +4650,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 42451,
-          "sha256": "787b2156ae71e7fc60c7bb366dd5b36c85d83e5d2dd170a49e7ab38600db6918"
+          "bytes": 42500,
+          "sha256": "733216618013667f7c0f8d797008764831dde2d2021d518b066a76928f8905e2"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -4830,6 +4921,15 @@
           "isError": true,
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
         },
+        "serial_capture": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          },
+          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+        },
         "serial_open": {
           "isError": true,
           "structuredContent": {
@@ -4920,16 +5020,16 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 46 calls · <size> returned · <n>s in tools · 0 timeouts · 26 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 47 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {
             "status": "ok",
-            "nextSeq": 3,
+            "nextSeq": 5,
             "returned": 0,
             "omitted": 0
           },
-          "text": "No errors recorded in this window (nextSeq=3)."
+          "text": "No errors recorded in this window (nextSeq=5)."
         }
       }
     },
@@ -5841,6 +5941,51 @@
           }
         },
         {
+          "name": "serial_capture",
+          "description": "Capture serial output in one call: open the port, send write if given, read until the regex until matches or durationMs ends, close. Prefer it to serial_open + serial_read for \"show me what the board prints\". Returns at most 16 kB: the first and last 8 kB.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Device path, e.g. '/dev/tty.usbmodemABCD' on macOS or 'COM3' on Windows"
+              },
+              "baudRate": {
+                "description": "Baud rate (default 115200)",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "durationMs": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 60000,
+                "description": "Longest capture in ms"
+              },
+              "until": {
+                "description": "Regex; the capture stops at its first match",
+                "type": "string"
+              },
+              "write": {
+                "description": "Text sent after opening, e.g. \"help\\n\"",
+                "type": "string"
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "durationMs"
+            ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "serial_open",
           "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
@@ -6310,8 +6455,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 42451,
-          "sha256": "787b2156ae71e7fc60c7bb366dd5b36c85d83e5d2dd170a49e7ab38600db6918"
+          "bytes": 42500,
+          "sha256": "733216618013667f7c0f8d797008764831dde2d2021d518b066a76928f8905e2"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -6625,6 +6770,16 @@
         "get_frame_variables": {
           "isError": true,
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+        },
+        "serial_capture": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
         },
         "serial_open": {
           "isError": true,
@@ -7679,6 +7834,51 @@
           }
         },
         {
+          "name": "serial_capture",
+          "description": "Capture serial output in one call: open the port, send write if given, read until the regex until matches or durationMs ends, close. Prefer it to serial_open + serial_read for \"show me what the board prints\". Returns at most 16 kB: the first and last 8 kB.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Device path, e.g. '/dev/tty.usbmodemABCD' on macOS or 'COM3' on Windows"
+              },
+              "baudRate": {
+                "description": "Baud rate (default 115200)",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "durationMs": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 60000,
+                "description": "Longest capture in ms"
+              },
+              "until": {
+                "description": "Regex; the capture stops at its first match",
+                "type": "string"
+              },
+              "write": {
+                "description": "Text sent after opening, e.g. \"help\\n\"",
+                "type": "string"
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "durationMs"
+            ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
           "name": "serial_open",
           "description": "Open an OWNED serial port. The MCP server holds the connection and buffers RX. Use only when no MS Serial Monitor UI session is active on the same path — the OS allows one reader per tty. Defaults: 115200 baud, 8N1, no flow control. Released after 300 s without a serial call or when this session ends; prefer serial_capture for one-off reads.",
           "inputSchema": {
@@ -8148,8 +8348,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 42451,
-          "sha256": "787b2156ae71e7fc60c7bb366dd5b36c85d83e5d2dd170a49e7ab38600db6918"
+          "bytes": 42500,
+          "sha256": "733216618013667f7c0f8d797008764831dde2d2021d518b066a76928f8905e2"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -8428,6 +8628,15 @@
           "isError": true,
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
         },
+        "serial_capture": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "INTERNAL",
+            "message": "Error: No such file or directory, cannot open /nonexistent/tty.none"
+          },
+          "text": "[INTERNAL] Error: No such file or directory, cannot open /nonexistent/tty.none"
+        },
         "serial_open": {
           "isError": true,
           "structuredContent": {
@@ -8488,16 +8697,16 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 40 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · start_debugging <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · start_debugging <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {
             "status": "ok",
-            "nextSeq": 4,
+            "nextSeq": 7,
             "returned": 0,
             "omitted": 0
           },
-          "text": "No errors recorded in this window (nextSeq=4)."
+          "text": "No errors recorded in this window (nextSeq=7)."
         },
         "list_debug_windows": {
           "text": "Registered VS Code windows:\n• pid=<n> | <tmp>  ← current target\n\nPin one for this session with select_debug_window({ pid }) when the automatic choice is wrong, or pass window to a tool that takes it."

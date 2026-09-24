@@ -220,6 +220,8 @@ export class SerialController {
     private lastRelease: SerialRelease | null = null;
     private lease: SerialLease | undefined;
     private capturing = false;
+    /** Counts the successful opens: which port a caller opened, when it wants to close only that one. */
+    private generation = 0;
     private readonly listeners = new Set<() => void>();
     private readonly createPort: (options: PortOptions) => OwnedPort;
     private readonly clock: () => Date;
@@ -289,8 +291,9 @@ export class SerialController {
     /**
      * Open the owned port under `terms`. A port already open is `PORT_HELD`,
      * and so is a port another program holds; other failures pass as they are.
+     * Resolves with the port's generation, for `holds()` and `close()`.
      */
-    async open(opts: SerialOpenOptions, terms: HoldTerms = {}): Promise<void> {
+    async open(opts: SerialOpenOptions, terms: HoldTerms = {}): Promise<number> {
         if (this.isOpen()) {
             throw new ToolError('PORT_HELD',
                 `A serial port is already open on '${this.currentPath}'. Close it first with serial_close.`);
@@ -321,6 +324,7 @@ export class SerialController {
                     this.buffer = Buffer.alloc(0);
                     this.lastRelease = null;
                     this.capturing = terms.capture === true;
+                    this.generation += 1;
                     this.lease = new SerialLease(
                         { owner: terms.owner, rule: terms.rule ?? 'idle', idleSeconds: terms.idleSeconds ?? 0 },
                         this.timers,
@@ -340,10 +344,17 @@ export class SerialController {
         }
         logger.info(`Serial port '${opts.path}' opened at ${baudRate} baud${terms.owner ? ` for MCP session ${terms.owner.slice(0, 8)}` : ''}`);
         this.changed();
+        return this.generation;
     }
 
-    async close(): Promise<void> {
-        if (!this.port) { return; }
+    /** True while the port that `open()` numbered `generation` is the one held. */
+    holds(generation: number): boolean {
+        return this.isOpen() && this.generation === generation;
+    }
+
+    /** Close the held port; with `generation`, only when it is still that port. */
+    async close(generation?: number): Promise<void> {
+        if (!this.port || (generation !== undefined && generation !== this.generation)) { return; }
         const p = this.port;
         // Forgotten before the close, not after: the port's own 'close' event,
         // which comes first, then finds nothing to release. Also when closing

@@ -97,6 +97,7 @@ export const DEBUG_OPS = [
 /** Ops served by the serial handler singleton. */
 export const SERIAL_OPS = [
     'handleListPorts',
+    'handleCapture',
     'handleOpen',
     'handleClose',
     'handleStatus',
@@ -195,11 +196,15 @@ const SLOW_OPS: ReadonlySet<string> = new Set([
  * How long the router waits for a worker to answer.
  *
  * Always above the worker's own bound so the worker's error — which is specific
- * and actionable — wins over a generic router timeout.
+ * and actionable — wins over a generic router timeout. A serial call that
+ * waits the time it names (`serial_read {waitMs}`, `serial_capture
+ * {durationMs}`, each up to 60 s) gets at least that long (#49).
  */
 export function forwardTimeoutMs(op: string, args: unknown, defaultToolMs: number): number {
-    const requested = (args as { timeoutMs?: unknown } | undefined)?.timeoutMs;
-    const toolMs = typeof requested === 'number' && requested > 0 ? requested : defaultToolMs;
+    const given = (typeof args === 'object' && args !== null ? args : {}) as { timeoutMs?: unknown; waitMs?: unknown; durationMs?: unknown };
+    const positive = (value: unknown): value is number => typeof value === 'number' && value > 0;
+    const toolMs = Math.max(positive(given.timeoutMs) ? given.timeoutMs : defaultToolMs,
+        ...[given.waitMs, given.durationMs].filter(positive));
     const floor = SLOW_OPS.has(op) ? 10 * 60_000 : 0;
     return Math.max(toolMs + 15_000, floor);
 }

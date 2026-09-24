@@ -42,13 +42,14 @@
 //      structuredContent.problems with its call id, and an error nobody saw
 //      is noted once, counted by get_session_status, and cleared by
 //      get_recent_problems.
-//  12. The end of a session releases its serial port (#49): serial_open
-//      holds a mock port for the session, and DELETE releases it through the
-//      local serial handler. A session without a request for the idle time
-//      and without an open GET stream expires (injected clock): a later
-//      request with its id is refused with a 4xx, and its port is released.
-//      Mock ports only: the serial controller's port factory is swapped for
-//      serialport's SerialPortMock.
+//  12. The end of a session releases its serial port (#49): serial_capture
+//      reads a mock port until its regex matches and leaves it closed;
+//      serial_open holds a mock port for the session, and DELETE releases it
+//      through the local serial handler. A session without a request for the
+//      idle time and without an open GET stream expires (injected clock): a
+//      later request with its id is refused with a 4xx, and its port is
+//      released. Mock ports only: the serial controller's port factory is
+//      swapped for serialport's SerialPortMock.
 
 const stub = require('./vscode-stub.js');
 
@@ -199,7 +200,7 @@ async function main() {
     const longest = tools.map((t) => ({ name: t.name, len: (t.description ?? '').length })).sort((a, b) => b.len - a.len)[0];
     check(`no tool description exceeds ${DESCRIPTION_CAP_CHARS} chars`, longest.len <= DESCRIPTION_CAP_CHARS, `${longest.name} ${longest.len}`);
     const serialCount = names.filter((n) => n.startsWith('serial_')).length;
-    check('the serial tools are registered by default', serialCount === 10, `${serialCount} serial tools`);
+    check('the serial tools are registered by default', serialCount === 11, `${serialCount} serial tools`);
     // structuredContent rides without an outputSchema; declaring one would cost tools/list bytes on every turn.
     const withSchema = tools.filter((t) => t.outputSchema !== undefined).map((t) => t.name);
     check('no tool declares an outputSchema', withSchema.length === 0, withSchema.join(', '));
@@ -468,6 +469,13 @@ async function main() {
     const { SerialPortMock } = require('serialport');
     const { serialController } = require(path.join(OUT, 'core', 'serialController.js'));
     serialController.createPort = (options) => new SerialPortMock(options);
+    SerialPortMock.binding.createPort('/dev/ttyMOCK48', { echo: true });
+    const captured = await callTool('serial_capture', { path: '/dev/ttyMOCK48', write: 'hello\n', until: 'hello', durationMs: 5000 }, 49);
+    const capturedText = captured.content?.[0]?.text ?? '';
+    check('serial_capture reads until its regex matches and leaves the port closed',
+        captured.isError !== true && captured.structuredContent?.stop === 'match' && /\(matched \/hello\/\)\. Port closed\./.test(capturedText)
+            && !serialController.status().open,
+        capturedText.split('\n')[0]);
     SerialPortMock.binding.createPort('/dev/ttyMOCK49');
     const serialOpened = await callTool('serial_open', { path: '/dev/ttyMOCK49' }, 50);
     const heldBy = await callTool('serial_status', {}, 51);

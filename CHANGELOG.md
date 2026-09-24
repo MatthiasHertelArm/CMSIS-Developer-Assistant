@@ -55,6 +55,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - After a release, `serial_read` returns the bytes received before with the reason, such as "COM7 released at 10:47:07 after 300 s without a serial call", and `serial_write` fails with `PORT_CLOSED`. A Serial Monitor subscription follows the same rules and drops its buffer when it ends.
   - An MCP session ends when its client sends `DELETE`, and now also after 30 minutes without a request while it holds no GET stream open. The router then tells every window the session reached with the internal op `sessionEnded`; a window of 2.5.0 answers that it does not know the op, which is ignored.
   - Every release writes one line to the output channel and one record to the problem journal (source `serial`, never the payload): a warning for an unplug and for a release by the user, info for the idle, session and debug-session rules.
+- **`serial_capture { path, durationMs, baudRate?, until?, write? }` shows what the board prints in one call (part of #49).**
+  - It opens the port in the window's slot, sends `write`, reads until the regex `until` matches or `durationMs` (100 ms to 60 s) runs out, and closes the port again, also when a read fails or the port goes away. It never leaves a port held, and it does not reset the target.
+  - The answer is at most 16 kB: the first and the last 8 kB with "… N bytes omitted …" between, why it stopped ("matched /READY/", "deadline") and how long it took, such as "Captured 412 B from COM7 in 1.2 s (matched /READY/). Port closed." A capture whose `until` never matched answers with status `timeout`; `structuredContent` carries the numbers.
+  - An invalid regex is `INVALID_ARGUMENT` before any port is touched. `PORT_HELD` when the window holds a port already (the hint points to `serial_read {waitMs}`) or another program holds this one.
+  - In a routed session it takes `window`. The router waits at least `durationMs`, and now also the `waitMs` of `serial_read`, whatever the tool timeout.
+  - The tool adds about 1 kB to `tools/list`; the serial group has eleven tools. The `serial_open` description says to prefer `serial_capture` for one-off reads, and the tool rules' table names it for `cat /dev/tty…`.
 
 ### Changed
 - **Shipped texts no longer send agents to the shell (part of #45, part of #50).**

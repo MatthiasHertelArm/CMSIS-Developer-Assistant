@@ -89,7 +89,7 @@ export interface SessionExpiry {
  * change under it.
  */
 export interface DebugMCPServerOptions {
-    /** The ten serial tools; on unless false. */
+    /** The eleven serial tools; on unless false. */
     serialEnabled?: boolean;
     /** The five documentation tools, for sessions that have a pack-docs dispatch. */
     packDocsEnabled?: boolean;

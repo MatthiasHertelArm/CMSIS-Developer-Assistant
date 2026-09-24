@@ -203,11 +203,11 @@ itself (see [Results](#results)). `src/packDocsTools.ts` and
 | ----- | --------------- | ----------- |
 | Session, run control, breakpoints, variables, Cortex-M state, SVD lookups, stack and threads, `cmsis_action`, `flash`, `get_session_status`, `get_recent_problems` | always | the session's debugging handler |
 | `get_debug_instructions` | always | `ShippedDocs` and the topic slicer, no handler |
-| The ten `serial_*` tools | `serialEnabled` is not `false` | the `serial` dispatch, by op name |
+| The eleven `serial_*` tools | `serialEnabled` is not `false` | the `serial` dispatch, by op name |
 | Documentation (`registerPackDocsTools()`) | `packDocsEnabled`, and the session has a `packDocs` dispatch | `src/packDocsTools.ts`, then the dispatch |
 | Build artefacts (`registerBuildInfoTools()`) | `buildInfoEnabled`, and the session has a `packDocs` dispatch | `src/buildInfoTools.ts`, then the dispatch |
 | `list_debug_windows`, `select_debug_window` | the debugging handler is a window router | the router |
-| The `window` argument on the tools in `WINDOW_ARGUMENT_TOOLS` (`cmsis_action`, `flash`, `reset`, `serial_open`) | the debugging handler is a window router | the router, which reads it and never forwards it |
+| The `window` argument on the tools in `WINDOW_ARGUMENT_TOOLS` (`cmsis_action`, `flash`, `reset`, `serial_open`, `serial_capture`) | the debugging handler is a window router | the router, which reads it and never forwards it |
 
 A router is recognised by its two extra methods (`windowRoutingOf()`), so this
 module does not import the routing code. A router's calls are journaled in

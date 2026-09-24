@@ -203,7 +203,7 @@
         "cmsis-developer-assistant.serial.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Offer the `serial_*` tools (UART ports and the Serial Monitor) to AI agents. Off removes the ten serial tools from the MCP tool list, which every agent turn carries — worth it when your workflow never reads a UART. Read once at activation: changing it needs a window reload, and it applies to the next agent connection."
+          "markdownDescription": "Offer the `serial_*` tools (UART ports and the Serial Monitor) to AI agents. Off removes the eleven serial tools from the MCP tool list, which every agent turn carries — worth it when your workflow never reads a UART. Read once at activation: changing it needs a window reload, and it applies to the next agent connection."
         },
         "cmsis-developer-assistant.serial.idleCloseSeconds": {
           "type": "number",

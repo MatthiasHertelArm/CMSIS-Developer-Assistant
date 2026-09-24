@@ -18,9 +18,12 @@ import * as assert from 'assert';
 import { SerialPortMock } from 'serialport';
 import { runInCallContext } from '../core/callContext';
 import type { ProblemInput } from '../core/problemJournal';
+import { CAPTURE_HALF_BYTES, CaptureRecord, captureDurationMs, untilPattern } from '../core/serialCapture';
+import { PORT_HELD_HINT, SerialController } from '../core/serialController';
 import { SerialMonitorBridge } from '../core/serialMonitorBridge';
+import { ToolError, ToolReply, ToolText, textOf } from '../core/toolResult';
 import { SerialHandler } from '../serialHandler';
-import { FakeSerialMonitor, ManualTime, MockSerial, fakeSerialMonitor, mockSerial } from './serialFixtures';
+import { FakeSerialMonitor, ManualTime, MockSerial, PATH_FIXTURES, ScriptedPort, fakeSerialMonitor, mockSerial } from './serialFixtures';
 
 const SESSION_A = 'aaaaaaaa-1111-4111-8111-111111111111';
 const SESSION_B = 'bbbbbbbb-2222-4222-8222-222222222222';
@@ -174,6 +177,164 @@ suite('SerialHandler release rules (#49)', () => {
             assert.strictEqual(w.bridge.sessionEnded(SESSION_B), true);
             assert.strictEqual(await w.handler.handleRead({ from: 'monitor' }), 'Serial RX (monitor): <no data>');
             assert.strictEqual(w.bridgeJournal.at(-1)?.message, 'Serial Monitor subscription ended: the MCP session that subscribed ended');
+        });
+    });
+});
+
+/** The reply of a capture, which always carries a status. */
+function asReply(result: ToolText): ToolReply {
+    assert.ok(typeof result !== 'string', `a capture answers with a reply, not: ${textOf(result)}`);
+    return result;
+}
+
+/**
+ * `serial_capture` (#49): one call opens the port, reads until a match or the
+ * deadline, and closes it again in every case — a match, the deadline, a read
+ * that throws, a port that goes away — and refuses before touching a port
+ * when the regex is invalid or the slot is taken. Mock ports that echo what
+ * is written stand in for the board.
+ */
+suite('serial_capture (#49)', () => {
+    setup(() => SerialPortMock.binding.reset());
+    teardown(() => SerialPortMock.binding.reset());
+
+    /** A handler over mock ports whose device echoes what is written, like a board's shell. */
+    function echoing(path: string): { serial: MockSerial; handler: SerialHandler } {
+        SerialPortMock.binding.createPort(path, { echo: true });
+        const serial = mockSerial();
+        return { serial, handler: new SerialHandler(serial.controller, { idleCloseSeconds: () => 300 }) };
+    }
+
+    test('it stops at the first match of until and closes the port, for every path spelling', async () => {
+        for (const path of PATH_FIXTURES) {
+            const { serial, handler } = echoing(path);
+            const reply = asReply(await asSession(SESSION_A, () =>
+                handler.handleCapture({ path, write: 'version\nREADY\n', until: 'READY', durationMs: 10_000 })));
+            assert.strictEqual(reply.status, 'ok', path);
+            assert.match(reply.text, new RegExp(`^Captured 14 B from ${path.replace(/[\\.]/g, '\\$&')} in \\d+\\.\\d s after writing 14 B \\(matched /READY/\\)\\. Port closed\\.\\n--- text ---\\nversion\\nREADY\\n$`));
+            assert.deepStrictEqual({ ...reply.data, elapsedMs: 0 },
+                { path, bytes: 14, elapsedMs: 0, stop: 'match', omittedBytes: 0, written: 14 });
+            assert.ok((reply.data?.elapsedMs as number) < 5_000, 'stopped at the match, not at the deadline');
+            const status = serial.controller.status();
+            assert.deepStrictEqual([status.open, status.lastRelease, status.bufferedBytes], [false, null, 0], `${path} is free again`);
+        }
+    });
+
+    test('without a match it stops at the deadline: ok without until, timeout with it', async () => {
+        const { serial, handler } = echoing('COM7');
+        const quiet = asReply(await handler.handleCapture({ path: 'COM7', durationMs: 150 }));
+        assert.strictEqual(quiet.status, 'ok');
+        assert.match(quiet.text, /^Captured 0 B from COM7 in 0\.\d s \(deadline\)\. Port closed\.\nNothing arrived\. Check baudRate; /);
+        const missed = asReply(await handler.handleCapture({ path: 'COM7', durationMs: 150, until: '/ready/i', write: 'boot\n' }));
+        assert.strictEqual(missed.status, 'timeout');
+        assert.match(missed.text, /^Captured 5 B from COM7 in 0\.\d s after writing 5 B \(deadline; \/ready\/i not seen\)\. Port closed\.\n--- text ---\nboot\n$/);
+        assert.ok(!serial.controller.isOpen());
+    });
+
+    test('a read that throws still closes the port', async () => {
+        SerialPortMock.binding.createPort('/dev/ttyACM0');
+        const serial = mockSerial();
+        class FailingRead extends SerialController {
+            override read(): Promise<Buffer> {
+                return Promise.reject(new Error('EIO: read failed'));
+            }
+        }
+        const failing = new FailingRead({
+            createPort: (options) => new SerialPortMock(options), clock: () => serial.time.date(), timers: serial.time, journal: () => undefined,
+        });
+        const handler = new SerialHandler(failing, { idleCloseSeconds: () => 300 });
+        await assert.rejects(handler.handleCapture({ path: '/dev/ttyACM0', durationMs: 1_000 }), /EIO: read failed/);
+        assert.strictEqual(failing.isOpen(), false);
+        assert.strictEqual(failing.hold(), undefined);
+    });
+
+    test('an invalid until is INVALID_ARGUMENT before any port is touched', async () => {
+        const { serial, handler } = echoing('COM7');
+        await assert.rejects(handler.handleCapture({ path: 'COM7', until: '(unclosed', durationMs: 1_000 }), (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'INVALID_ARGUMENT' && /^until is not a valid regular expression: /.test(failure.message));
+        assert.deepStrictEqual(serial.ports, [], 'no port was even created: opening it could reset the board through DTR');
+    });
+
+    test('a port the window holds already is PORT_HELD, and that port is left alone', async () => {
+        const { serial, handler } = echoing('COM7');
+        SerialPortMock.binding.createPort('COM8');
+        await asSession(SESSION_A, () => handler.handleOpen({ path: 'COM7' }));
+        await assert.rejects(asSession(SESSION_B, () => handler.handleCapture({ path: 'COM8', durationMs: 1_000 })), (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'PORT_HELD'
+                && failure.message === 'COM7 is open in this window (held by another MCP session (aaaaaaaa)), so serial_capture cannot take the port.'
+                && failure.hint === 'serial_read {waitMs} reads the open port; serial_close it to use serial_capture.');
+        assert.strictEqual(serial.controller.hold()?.path, 'COM7');
+        assert.strictEqual(serial.ports.length, 1);
+    });
+
+    test('a port another program holds is PORT_HELD, and nothing stays open', async () => {
+        const controller = new SerialController({ createPort: () => new ScriptedPort('Opening COM7: Access denied'), journal: () => undefined });
+        const handler = new SerialHandler(controller, { idleCloseSeconds: () => 300 });
+        await assert.rejects(handler.handleCapture({ path: 'COM7', durationMs: 1_000 }), (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'PORT_HELD' && failure.hint === PORT_HELD_HINT);
+        assert.strictEqual(controller.isOpen(), false);
+    });
+
+    test('serial_status shows the capture while it runs; an unplug ends it with the reason', async () => {
+        const { serial, handler } = echoing('COM7');
+        const capture = asSession(SESSION_A, () => handler.handleCapture({ path: 'COM7', durationMs: 10_000 }));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const status = await asSession(SESSION_A, () => handler.handleStatus());
+        assert.match(status.split('\n')[0], /^Owned serial: OPEN on COM7 @ 115200 baud, .*; held by this session, serial_capture running$/);
+        serial.ports[0].port?.emitData(Buffer.from('partial'));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        serial.ports[0]._disconnected(new Error('EIO: i/o error, read'));
+        const reply = asReply(await capture);
+        assert.strictEqual(reply.status, 'ok');
+        assert.match(reply.text, /^Captured 7 B from COM7 in \d+\.\d s \(COM7 disconnected at 10:42:07\)\. Port closed\.\n--- text ---\npartial$/);
+        assert.ok((reply.data?.elapsedMs as number) < 5_000);
+        assert.strictEqual(reply.data?.stop, 'closed');
+    });
+
+    test('the answer keeps the first and the last 8 kB and counts the bytes between', async () => {
+        const { handler } = echoing('COM7');
+        const body = `BEGIN${'x'.repeat(40_000)}END`;
+        const reply = asReply(await handler.handleCapture({ path: 'COM7', write: body, until: 'END$', durationMs: 20_000 }));
+        const [first, marker, head, omitted, tail] = reply.text.split('\n');
+        assert.match(first, /^Captured 40008 B from COM7 .* \(matched \/END\$\/\)\. Port closed\. Showing the first and the last 8 kB\.$/);
+        assert.strictEqual(marker, '--- text ---');
+        assert.ok(head.startsWith('BEGIN') && head.length === CAPTURE_HALF_BYTES);
+        assert.strictEqual(omitted, `… ${40_008 - 2 * CAPTURE_HALF_BYTES} bytes omitted …`);
+        assert.ok(tail.endsWith('END') && tail.length === CAPTURE_HALF_BYTES);
+        assert.ok(Buffer.byteLength(reply.text) < 17_000, `${Buffer.byteLength(reply.text)} bytes`);
+        assert.strictEqual(reply.data?.omittedBytes, 40_008 - 2 * CAPTURE_HALF_BYTES);
+    });
+
+    suite('the capture record', () => {
+        test('the cut never splits a character', () => {
+            const record = new CaptureRecord();
+            const euro = '€';   // three bytes in UTF-8
+            record.append(Buffer.from(euro.repeat(10_000)));
+            const excerpt = record.excerpt();
+            assert.ok(!excerpt.head.includes('\uFFFD') && !(excerpt.tail ?? '').includes('\uFFFD'));
+            assert.strictEqual(Buffer.byteLength(excerpt.head) + excerpt.omitted + Buffer.byteLength(excerpt.tail ?? ''), 30_000);
+        });
+
+        test('a match is looked for in the newest bytes and the 8 kB before them, however long the capture', () => {
+            const record = new CaptureRecord();
+            record.append(Buffer.from('MARK'));
+            record.append(Buffer.from('y'.repeat(20_000)));
+            assert.ok(record.searchText(20_000).includes('MARK'), 'the 8 kB before the new bytes reach back to it');
+            assert.ok(!record.searchText(10).includes('MARK'), 'the window behind a small chunk does not');
+            record.append(Buffer.from('z'.repeat(2 * 1024 * 1024)));
+            assert.strictEqual(record.bytes, 4 + 20_000 + 2 * 1024 * 1024);
+            const excerpt = record.excerpt();
+            assert.ok(excerpt.head.startsWith('MARK') && (excerpt.tail ?? '').endsWith('z'));
+            assert.strictEqual(record.searchText(10).length, 8 * 1024 + 10);
+        });
+
+        test('until: a plain pattern or /source/flags; g and y are dropped; the length is kept in range', () => {
+            assert.strictEqual(untilPattern(undefined), undefined);
+            assert.strictEqual(untilPattern(''), undefined);
+            assert.strictEqual(String(untilPattern('READY')), '/READY/');
+            assert.strictEqual(String(untilPattern('/boot (ok|done)/gi')), '/boot (ok|done)/i');
+            assert.deepStrictEqual([50, 100, 3_000.4, 60_000, 90_000, Number.NaN, undefined].map(captureDurationMs),
+                [100, 100, 3_000, 60_000, 60_000, 100, 100]);
         });
     });
 });

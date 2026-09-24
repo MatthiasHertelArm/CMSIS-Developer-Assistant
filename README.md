@@ -140,6 +140,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 | Tool | Description |
 |------|-------------|
 | `serial_list_ports` | Lists the serial ports (via the Serial Monitor extension, falling back to the bundled `serialport` package). |
+| `serial_capture` | Shows what the board prints, in one call: opens the port, sends `write` if given, reads until the regex `until` matches or `durationMs` (up to 60 s) runs out, and closes the port again, also when something fails. Answers with at most 16 kB, the first and the last 8 kB, why it stopped and how long it took. Refused with `PORT_HELD` while the window holds a port or another program holds this one. It does not reset the target. |
 | `serial_open`, `serial_close`, `serial_write`, `serial_read`, `serial_status`, `serial_clear_buffer` | Owns a serial connection from the MCP server, one port per window. Use these when no Serial Monitor session holds the same port; if another program holds it, `serial_open` fails with `PORT_HELD`. When the adapter is unplugged the port is released: `serial_status`, `serial_read` and `serial_write` say so and when, and the bytes received before stay readable. |
 | `serial_open_monitor` | Opens the Serial Monitor panel for the user. |
 | `serial_subscribe_monitor`, `serial_unsubscribe_monitor` | Reads data through an open Serial Monitor session once the Serial Monitor extension exposes a data event in its API (see [Known Limitations](#known-limitations-and-workarounds)). |
@@ -180,7 +181,7 @@ Deterministic reads of the current target's build output — no debug session ne
 | `get_recent_problems` | The problem journal of the window the session drives: failed debug-adapter requests (including those of breakpoints set in the editor while the target runs), GDB-server errors, failed CMSIS tasks and build errors with file and line, Problems-panel errors, the extension's notifications, serial ports that went away. One line per record with number, severity, source, code and next step; `sinceSeq`, `sources`, `minSeverity` and `limit` narrow it. |
 | `check_target_connection` | Low-cost liveness check of the debug adapter and probe. |
 | `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot): a short overview with the topic list by default, or one section with `topic` (`session`, `build`, `breakpoints`, `inspection`, `faults`, `troubleshooting`). |
-| `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach, with the router and the default target marked, and pins one for this session. Relevant when more than one window is open; then `cmsis_action`, `flash`, `reset` and `serial_open` also take `window`, a pid or a path inside the window's workspace. |
+| `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach, with the router and the default target marked, and pins one for this session. Relevant when more than one window is open; then `cmsis_action`, `flash`, `reset`, `serial_open` and `serial_capture` also take `window`, a pid or a path inside the window's workspace. |
 
 ### MCP resources
 
@@ -271,7 +272,7 @@ The rules go between `<!-- cmsis-developer-assistant:rules:begin -->` and `<!-- 
 | `cmsis-developer-assistant.memoryReadTimeoutMs` | `30000` | Overall timeout for a single `read_memory` or `read_core_registers` call. |
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withholds variable and expression values that look like credentials. |
 | `cmsis-developer-assistant.build.diagnosticRerun` | `true` | After a failed CMSIS build, re-run `cbuild` once with `--log` (no pack download, no RTE update, no clean; incremental, at most 120 s, stopped when another build starts) so that the `cmsis_action build` result shows the error lines with file and line. The log goes to `out/cmsis-developer-assistant/build-diagnostic.log` next to the solution. Off: the result still shows what csolution recorded in `cbuild-idx.yml`. Window scope, applies to the next failed build. |
-| `cmsis-developer-assistant.serial.enabled` | `true` | Offer the `serial_*` tools to agents. Off drops the ten serial tools from the tool list every agent turn carries; needs a window reload. |
+| `cmsis-developer-assistant.serial.enabled` | `true` | Offer the `serial_*` tools to agents. Off drops the eleven serial tools from the tool list every agent turn carries; needs a window reload. |
 | `cmsis-developer-assistant.serial.idleCloseSeconds` | `300` | Release a serial port an agent opened after this many seconds without a serial tool call, so the Serial Monitor or a terminal can have it again; bytes from the board do not count as use. `0` turns the idle release off. Window scope, read at each `serial_open`. |
 | `cmsis-developer-assistant.packDocs.enabled` | `false` | **Experimental.** Offer the five documentation tools to agents; window reload. `packDocs.extractor` (`auto` = the bundled pdf.js; `pdftotext` for poppler's `-layout` text), `packDocs.pdftotextPath`, `packDocs.maxPdfMb` (150), `packDocs.includeUnlisted` (true), `packDocs.workspaceDocDirs` (`.agent-artifacts/docs`, `docs`) and `packDocs.userDocsDir` (empty → `~/.cmsis-pack-docs/user`) tune them and apply live. |
 | `cmsis-developer-assistant.buildInfo.enabled` | `false` | **Experimental.** Offer the five build-artefact tools to agents; window reload. `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` (`**/out/**/*.log`, `**/build*.log`) tune them. |
@@ -285,7 +286,7 @@ Several VS Code windows are supported. One window binds `serverPort` and becomes
 
 The target window of a call is chosen in this order:
 
-1. The `window` argument of `cmsis_action`, `flash`, `reset` or `serial_open`: a process id, or a path inside the window's workspace. The agent's later calls follow it.
+1. The `window` argument of `cmsis_action`, `flash`, `reset`, `serial_open` or `serial_capture`: a process id, or a path inside the window's workspace. The agent's later calls follow it.
 2. The file path the tool has (`add_breakpoint`, `start_debugging`).
 3. The window the agent pinned with `select_debug_window`.
 4. The window the agent's session used last.
