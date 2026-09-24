@@ -26,9 +26,10 @@ The session-status output includes a hint for each state. If state is `running` 
 - Some targets require a reset before the breakpoint is hit
 - Check if the program was loaded correctly: `initCommands` should include `"load"`
 
-### `continue_execution` Timed Out
+### `continue_execution` Returned `running`
 
-- The 🩹 Recovery section of the response tells you where the firmware actually was — read the PC and frame name first
+- No stop arrived within the wait, and the target keeps running: nothing was paused. Call `wait_for_stop` to wait longer, or `pause_execution` to halt it and read where the PC is
+- A step that does not stop in time is different: the step tools pause the target, and the 🩹 Recovery section of the response tells you where the firmware actually was — read the PC and frame name first
 - Common causes: the breakpoint wasn't hit (wrong line / inlined / optimized out), firmware is in a polling loop, or firmware sat in an ISR waiting for something that never arrived
 - Check the breakpoint with `list_breakpoints`: it shows whether the debugger bound each one. A breakpoint that is NOT verified never triggers, and the adapter's reason says why (no code on the line, a path the ELF does not know, no free comparator)
 

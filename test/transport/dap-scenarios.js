@@ -1273,11 +1273,14 @@ const SCENARIOS = [
     },
     {
         name: 'continue-timeout-recovery',
-        description: 'continue_execution with timeoutMs 600 and no breakpoint on the path: timeout, then the recovery pause stops in delay_ms and reports PC/LR.',
+        description: 'continue_execution with timeoutMs 600 and no breakpoint on the path: status running, the target is left running (no pause); '
+            + 'pause_execution stops it in delay_ms; a step_over that does not stop within 600 ms gets the recovery pause, which reports PC/LR.',
         session: { initial: { at: 'main31', reason: 'breakpoint' }, runningAt: 'delayLoop' },
         calls: [
             { tool: 'continue_execution', args: { timeoutMs: 600 } },
             { tool: 'get_session_status' },
+            { tool: 'pause_execution' },
+            { tool: 'step_over', args: { timeoutMs: 600 } },
         ],
     },
     {

@@ -250,8 +250,9 @@ method.
    which matters in an ISR or a tight loop. The answer says whether the
    debugger bound the breakpoint; one that is NOT verified never stops.
 2. **Run and wait.** `continue_execution`, then `wait_for_stop` when you want an
-   explicit bound. If the target never stops, the response tells you where the
-   PC actually is rather than leaving you guessing.
+   explicit bound. If no stop comes within the wait, `continue_execution`
+   answers `running` and leaves the target running; `pause_execution` halts
+   it and says where the PC is.
 3. **Look before you read.** `list_variable_names` shows what is in scope
    without reading values. On a slow probe that turns thirty reads into one.
 4. **Read what you need.** `get_variables_values` (optionally with
@@ -347,10 +348,11 @@ wrong-core-on-multicore.
 
 ## When it did not reach your breakpoint
 
-`continue_execution` that times out already pauses the target and reports where
-it actually is. Read that before adding more breakpoints — firmware sitting in a
-polling loop, an ISR, or a fault handler all look the same from the outside and
-the PC tells them apart immediately.
+A `continue_execution` whose wait runs out answers `running` and leaves the
+target running. Call `pause_execution` and read where the PC is before adding
+more breakpoints — firmware sitting in a polling loop, an ISR, or a fault
+handler all look the same from the outside and the PC tells them apart
+immediately.
 
 ## When the firmware prints
 
