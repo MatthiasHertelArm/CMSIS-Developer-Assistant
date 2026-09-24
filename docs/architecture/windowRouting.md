@@ -14,8 +14,10 @@ owns the workspace or the board the call is about.
   accepts the MCP sessions and forwards every tool call.
 - **Worker.** Every other window. It executes calls forwarded to it and
   retries the port every 10 s, so that one of the workers takes over when the
-  router window closes and the agents' URL keeps working. When the router
-  window stops running without closing, the workers tell their users (#14).
+  router window closes and the agents' URL keeps working. The new router
+  answers the clients' old session ids with 404, which tells a client to
+  open a new session (#14). When the router window stops running without
+  closing, the workers tell their users (#14).
 - Every window, the router included, runs a `ControlServer` and executes its
   own calls through it. Routing to itself costs one loopback hop and keeps a
   single code path; a local shortcut would be a second path that only the

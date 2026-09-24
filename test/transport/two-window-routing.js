@@ -44,7 +44,9 @@
 //  12. The control channel's fences (#14): a worker whose handler never
 //      answers returns WORKER_TIMEOUT inside the router's budget (a small
 //      timeoutInSeconds and shortened margins), tells its user once, and
-//      shows the call past its fence in its status bar.
+//      shows the call past its fence in its status bar. After failover the
+//      new router answers a session id of the old one with 404 and -32001,
+//      the answer that tells a client to initialize again.
 
 const stub = require('./vscode-stub.js');
 
@@ -411,9 +413,16 @@ async function main() {
         promotedEntry?.role === 'router' && workerItem.text.startsWith('$(plug) CDA router'),
         `${promotedEntry?.role} / ${workerItem.text}`);
 
+    // #14: the old router's session id means nothing to the new one; 404 tells the client to start over.
+    const stale = await post(PORT, { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 63, method: 'tools/list', params: {} });
+    const staleBody = (() => { try { return JSON.parse(stale.body); } catch { return {}; } })();
+    check('after failover a session id of the old router gets 404 and -32001 "Session not found"',
+        stale.status === 404 && staleBody.error?.code === -32001 && staleBody.error?.message === 'Session not found',
+        `status=${stale.status} ${stale.body}`);
+
     const sid3 = await openSession(PORT);
     const listing3 = await callTool(PORT, sid3, 'list_debug_windows', {}, 6);
-    check('the promoted router serves MCP', listing3.includes('Registered VS Code windows'), listing3.slice(0, 120));
+    check('the promoted router serves MCP, a new session included', listing3.includes('Registered VS Code windows'), listing3.slice(0, 120));
 
     await worker.dispose();
     fs.rmSync(REGISTRY_DIR, { recursive: true, force: true });

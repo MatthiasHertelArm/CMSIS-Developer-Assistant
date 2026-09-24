@@ -50,9 +50,18 @@ Three constraints shape the code:
   keep a web page that resolves its own host name to 127.0.0.1 (DNS
   rebinding) away from the tools.
 - A body above 1 MB is refused with 413 before MCP code sees it.
-- A request that names no open session gets a JSON-RPC error with `id: null`
-  and status 400, for `GET` and `DELETE` too: a 404 on either makes Cursor
-  mark the whole server as failed. A request whose handling throws gets 500.
+- A request that names no session, and is not an initialize request, gets a
+  JSON-RPC error with `id: null` and status 400. A request that names a
+  session this server does not know gets 404 with the JSON-RPC code -32001
+  and the message "Session not found", on `POST` (an initialize request
+  included), `GET` and `DELETE` alike (#14). That is what the SDK's own
+  transport answers and what the MCP specification prescribes: only a 404
+  tells a client to initialize a new session. It matters after a router
+  change, when the new router has never seen the clients' session ids;
+  before 2.5.1 they got 400 and stayed stuck until restarted. The routes
+  themselves always exist: Express's HTML 404 for a missing `GET` route is
+  what once made Cursor mark the whole server as failed. A request whose
+  handling throws gets 500.
 
 ## Session life cycle
 
@@ -86,7 +95,13 @@ optional `packDocs` dispatch) come from the factory given to the constructor,
 which is called once while the session is built; the session keeps them. In
 the extension the factory belongs to the `WindowCoordinator` and returns a new
 `RoutingDebuggingHandler` for every session (see
-[windowRouting.md](windowRouting.md)). Without a factory, as in the transport
+[windowRouting.md](windowRouting.md)). There each call is forwarded to the
+window that owns its target, under a budget the target window's own fence
+answers within, and after a health check when that window has been quiet;
+the sessions of one router share when each window last answered (#14, see
+[Fences and health checks](windowRouting.md#fences-and-health-checks)).
+Every window publishes its role, and the router's status bar lists the
+sessions. Without a factory, as in the transport
 tests, one `DebuggingHandler` with `localSerialDispatch` serves all sessions
 (`singleWindowHandlers()`). `describeSessions()` lists the open sessions with
 their client's name and, for a routing handler, the window its path-less
@@ -326,7 +341,8 @@ whole guide is served and a warning is logged.
 - `src/test/instructionTopics.test.ts`: marker grammar and the shipped
   guide's topics
 - `test/transport/session-lifecycle.js`: sessions over real HTTP — session
-  ids, the 400 answers, three consecutive `get_threads`, the 413 limit,
+  ids, the 400 answers without a session id and the 404 with -32001 for an
+  unknown one, three consecutive `get_threads`, the 413 limit,
   topics, statistics, typed errors without a session, no `outputSchema`,
   no `window` argument, the tool rules first and once in a status, the
   pinned `tools/list` size, and the problem journal without a router: an
@@ -338,4 +354,5 @@ whole guide is served and a warning is logged.
   result, tool list, resources and every tool's reply without a session,
   compared with `test/transport/surface.snapshot.json`
 - `test/transport/two-window-routing.js`: the server as router for two
-  windows, the routed `tools/list` with its budget and the `window` argument
+  windows, the routed `tools/list` with its budget and the `window` argument,
+  and after failover the old session id answered with 404
