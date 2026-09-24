@@ -467,12 +467,28 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(first, 'still waiting');
         });
 
-        test('a timeout pauses the target and says where it is, with status timeout', async () => {
+        test('a continue whose wait runs out leaves the target running: status running, no pause, the real wait', async () => {
+            const x = new ScriptedExecutor();
+            x.waiters.push({ kind: 'timeout' });
+            const reply = await replyAnswer(handlerFor(x, {}, 180).handleContinue({ timeoutMs: 500 }), 'running');
+            assert.deepStrictEqual(x.moves, ['arm', 'continue'], 'nothing is paused');
+            assert.deepStrictEqual(x.argsOf('pause'), []);
+            assert.strictEqual(reply, 'Target is running: no stop within 500 ms of \'continue_execution\', and it keeps running; '
+                + 'nothing was paused. Call wait_for_stop to wait for the next stop (a breakpoint, a fault), '
+                + 'or pause_execution to halt it and see where it is.');
+
+            const capped = new ScriptedExecutor();
+            capped.waiters.push({ kind: 'timeout' });
+            assert.ok((await replyAnswer(handlerFor(capped, {}, 180).handleContinue(), 'running')).includes('no stop within 60 s'),
+                'without timeoutMs the wait is the setting under the 60 s cap');
+        });
+
+        test('a step that does not stop pauses the target and says where it is, with status timeout', async () => {
             const x = new ScriptedExecutor();
             x.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
-            const reply = await replyAnswer(handlerFor(x).handleContinue(), 'timeout');
-            assert.deepStrictEqual(x.moves, ['arm', 'continue', 'arm', 'pause']);
-            assert.ok(reply.includes('\'continue_execution\' did not complete within 5s'), reply);
+            const reply = await replyAnswer(handlerFor(x).handleStepOver(), 'timeout');
+            assert.deepStrictEqual(x.moves, ['arm', 'stepOver', 'arm', 'pause']);
+            assert.ok(reply.includes('\'step_over\' did not complete within 5 s'), reply);
             assert.ok(reply.includes('Recovery attempt'), reply);
             assert.ok(reply.includes('Paused successfully. PC = 0x08000100, LR = 0x08000200 in main at main.c:42.'), reply);
             assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [[5000, ['pc', 'lr']]]);
@@ -521,23 +537,24 @@ suite('DebuggingHandler', () => {
             wedged.pause = async () => {
                 throw new Error('probe wedged');
             };
-            assert.ok((await replyAnswer(handlerFor(wedged).handleContinue(), 'timeout')).endsWith(
+            assert.ok((await replyAnswer(handlerFor(wedged).handleStepInto(), 'timeout')).endsWith(
                 'Pause failed: probe wedged. Probe / GDB server may be wedged — call check_target_connection.'));
 
             const withLine = new ScriptedExecutor();
             withLine.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
             withLine.state.currentLineContent = 'while (1) {';
-            const located = await replyAnswer(handlerFor(withLine).handleContinue(), 'timeout');
+            const located = await replyAnswer(handlerFor(withLine).handleStepOut(), 'timeout');
             assert.ok(located.includes('.\n  Current line: while (1) {\nThe breakpoint you expected was not hit'), located);
         });
 
-        test('the timeout text names the setting, not the wait (KB8)', async () => {
+        test('the timeout text names the real wait, not the setting', async () => {
             const x = new ScriptedExecutor();
             x.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
-            const reply = await replyAnswer(handlerFor(x, {}, 180).handleContinue({ timeoutMs: 5000 }), 'timeout');
+            const reply = await replyAnswer(handlerFor(x, {}, 180).handleStepOver({ timeoutMs: 5000 }), 'timeout');
             assert.deepStrictEqual(x.argsOf('armStopWaiter')[0], [5000]);
-            assert.deepStrictEqual(x.argsOf('continue'), [[5000]]);
-            assert.ok(reply.includes('within 180s'), reply);
+            assert.deepStrictEqual(x.argsOf('stepOver'), [[5000]]);
+            assert.ok(reply.includes('within 5 s.'), reply);
+            assert.ok(!reply.includes('180'), reply);
 
             const plain = new ScriptedExecutor();
             plain.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
@@ -883,7 +900,7 @@ suite('DebuggingHandler', () => {
             stuck.sessionStatus = status('initializing');
             assert.strictEqual(await rejectionOf(handlerFor(stuck, fastClock(200), 7).handleRestart()),
                 'Could not restart the debug session: Debug session restart issued but target did not become ready '
-                + 'within the 7s timeout. The probe or target may be unresponsive.');
+                + 'within 7 s. The probe or target may be unresponsive.');
         });
 
         test('restart pauses a running CMSIS Debugger target first and says how it restarted', async () => {

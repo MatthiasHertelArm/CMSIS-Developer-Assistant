@@ -22,6 +22,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - An ok reply with data now carries its text as `message`, as the timeout, running and error shapes already did.
   - `get_recent_problems` also returns its records as JSON in `structuredContent.records`, the same records as its lines. The lines and the records each stay within 8 kB; what does not fit counts as omitted.
   - The surface and DAP oracles fail any reply whose `structuredContent` leaves out a line of its text.
+- **`continue_execution` no longer halts the target when its wait runs out.**
+  - A continue that saw no stop within its wait went down the steps' recovery path, which paused the target to report where it was. An agent that continued to let the firmware run, with a short `timeoutMs`, found it halted afterwards.
+  - It now answers with status `running` and leaves the target running: "Target is running: no stop within 500 ms of 'continue_execution', and it keeps running; nothing was paused. Call wait_for_stop …, or pause_execution …".
+  - The steps keep their recovery pause and its report of PC, LR and source line.
+  - The timeout texts of the steps and of `restart_debugging` give the wait the call really had (`600 ms`, `60 s`), not the `timeoutInSeconds` setting ("within 180s" for a 500 ms wait).
+  - The guide, the troubleshooting pages, the `cmsis-debug-live` skill and the README describe the new behaviour.
 
 ## [2.5.1] - 2026-09-24
 

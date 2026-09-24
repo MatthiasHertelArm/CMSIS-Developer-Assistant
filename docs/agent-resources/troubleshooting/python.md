@@ -26,7 +26,7 @@ Notes for Python programs run under the Python Debugger extension (debugpy) and 
 
 ## When a breakpoint never hits
 
-The session ends, or `wait_for_stop` runs into its timeout; a `continue_execution` that times out pauses the program and reports the line it was on (its PC and LR fields mean nothing for Python). Work through the likely reasons:
+The session ends, or `wait_for_stop` runs into its timeout; a `continue_execution` whose wait runs out answers `running` and leaves the program running, and `pause_execution` shows the line it is on. Work through the likely reasons:
 
 - **The code ran before the breakpoint existed.** Module-level code runs once, at import. Add the breakpoint and call `restart_debugging`; breakpoints survive the restart.
 - **Another copy of the file runs.** A package installed into site-packages, not in editable mode, runs instead of the workspace source. `get_call_stack` shows the real paths at any stop, and evaluating `__import__('sys').modules['pkg.mod'].__file__` names the loaded file.

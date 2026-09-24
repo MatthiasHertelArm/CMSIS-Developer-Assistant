@@ -235,7 +235,7 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 <!-- topic: inspection | Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output -->
 ## ⏱️ Execution control: wait_for_stop, reset, cycle timing
 
-**Never sleep blind waiting for a stop.** After `continue_execution` returned while the target was still running (timeout), or after issuing execution through `evaluate_expression` (`-exec continue`), call `wait_for_stop` — it blocks on the raw DAP `stopped` event and returns the stop reason + state, or a structured timeout. It returns immediately if the target is already stopped, and it issues no execution commands itself.
+**Never sleep blind waiting for a stop.** After `continue_execution` returned while the target was still running (status `running`), or after issuing execution through `evaluate_expression` (`-exec continue`), call `wait_for_stop` — it blocks on the raw DAP `stopped` event and returns the stop reason + state, or a structured timeout. It returns immediately if the target is already stopped, and it issues no execution commands itself.
 
 **A motion tool that timed out has already paused the target** and reports where it actually is. Read that PC before adding more breakpoints — firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately.
 
@@ -351,7 +351,7 @@ Each case shows the explanation that stops too early, then the chain that reache
 
 ### When it did not reach your breakpoint
 
-`continue_execution` that times out already pauses the target and reports where it actually is — read that before adding more breakpoints. Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`; if that answers `PROBE_WEDGED`, the probe stopped answering, not the firmware — topic `faults` says how to reconnect without losing the fault state. If the breakpoint never bound, `list_breakpoints` shows it NOT verified with the adapter's reason: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
+A `continue_execution` whose wait runs out answers `running` and leaves the target running: call `pause_execution` and read where the PC is before adding more breakpoints (a step that does not stop pauses the target itself and reports where it is). Firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately. If the PC is in a fault handler, switch to `get_fault_info`; if that answers `PROBE_WEDGED`, the probe stopped answering, not the firmware — topic `faults` says how to reconnect without losing the fault state. If the breakpoint never bound, `list_breakpoints` shows it NOT verified with the adapter's reason: the line has no code (optimised away, wrong file), or the FPB comparators are exhausted.
 
 ### Not there yet
 

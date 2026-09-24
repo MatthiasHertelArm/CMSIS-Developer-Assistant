@@ -99,7 +99,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 | `start_debugging` | Starts a debug session from a named `launch.json` configuration, or from a source file for languages with auto-generated configurations. Refuses if a session is already active. Without a configuration name it asks you in a picker, and gives up after 30 s (at most 60 s) with the names the agent can pass. |
 | `stop_debugging`, `restart_debugging` | Stops the current session, waiting at most 10 s for VS Code to end it, or restarts it and waits until it is ready again. |
 | `pause_execution` | Halts a running target without ending the session. |
-| `continue_execution`, `step_over`, `step_into`, `step_out` | Resume or step. If the target does not stop within the deadline, the tool pauses it and reports where the firmware actually was. |
+| `continue_execution`, `step_over`, `step_into`, `step_out` | Resume or step. If a step does not stop within the deadline, the tool pauses the target and reports where the firmware actually was; a `continue_execution` whose wait runs out answers `running` and leaves the target running. |
 | `wait_for_stop` | Blocks until the target stops next (breakpoint, fault, step, pause) and returns the stop reason, or a structured timeout. Replaces blind waiting after a `continue_execution`. |
 | `reset` | Resets the target inside the live session (breakpoints survive) and verifies that the program counter is at the reset vector afterwards. Selects the method (`auto`, `system`, `core`, `hardware`) and reports honestly when the target did not reset. |
 
@@ -205,7 +205,7 @@ Deterministic reads of the current target's build output — no debug session ne
 
 - **No tool call hangs.** Every hardware-touching tool returns within 60 s at most (`cmsis_action` and `flash` within the wait they are given, at most 600 s); every request to the debug adapter has its own timeout and fails with a `HardwareTimeoutError` instead of blocking.
 - **Inspection tools report the real state.** If the target is running, the call returns a `TARGET_RUNNING` error whose hint names the recovery (`pause_execution`, or a breakpoint and `wait_for_stop`) instead of a misleading "no debug session".
-- **Motion tools explain overshoots.** When `continue_execution` or a step does not stop in time, the tool pauses the target and reports the program counter and active frame.
+- **Motion tools explain overshoots.** When a step does not stop in time, the tool pauses the target and reports the program counter and active frame. A `continue_execution` whose wait runs out leaves the target running and answers `running`, naming `wait_for_stop` and `pause_execution`.
 - **`reset` never claims a reset that did not happen.** The program counter is checked against the reset vector; an unverified reset is reported as such, together with the replies of the debug adapter.
 - **Calls never run against the wrong board.** With two windows debugging at once, routing fails with the list of candidates instead of guessing, because memory read from the wrong target looks exactly like a firmware bug.
 - **Credential-shaped values are withheld** from variable reads and `evaluate_expression` (configurable). Numeric scalars and raw target reads (memory, core and peripheral registers, GDB commands) are never withheld, so the firmware state stays readable.

@@ -255,18 +255,34 @@ interface MotionSpec {
     tool: string;
     gate: string;
     failure: string;
+    /**
+     * What a wait that runs out means: a step should have stopped, so the
+     * target is paused to find out where it went (`recover`); a continue is
+     * meant to run, so the target is left running (`keep-running`).
+     */
+    onWaitOut: 'recover' | 'keep-running';
     send(executor: IDebuggingExecutor, timeoutMs: number | undefined): Promise<void>;
 }
 
-const STEP_OVER: MotionSpec = { tool: 'step_over', gate: 'step over', failure: 'Step over failed', send: (x, ms) => x.stepOver(ms) };
-const STEP_INTO: MotionSpec = { tool: 'step_into', gate: 'step into', failure: 'Step into failed', send: (x, ms) => x.stepInto(ms) };
-const STEP_OUT: MotionSpec = { tool: 'step_out', gate: 'step out', failure: 'Step out failed', send: (x, ms) => x.stepOut(ms) };
-const CONTINUE: MotionSpec = { tool: 'continue_execution', gate: 'continue execution', failure: 'Continue failed', send: (x, ms) => x.continue(ms) };
+const STEP_OVER: MotionSpec = {
+    tool: 'step_over', gate: 'step over', failure: 'Step over failed', onWaitOut: 'recover', send: (x, ms) => x.stepOver(ms),
+};
+const STEP_INTO: MotionSpec = {
+    tool: 'step_into', gate: 'step into', failure: 'Step into failed', onWaitOut: 'recover', send: (x, ms) => x.stepInto(ms),
+};
+const STEP_OUT: MotionSpec = {
+    tool: 'step_out', gate: 'step out', failure: 'Step out failed', onWaitOut: 'recover', send: (x, ms) => x.stepOut(ms),
+};
+const CONTINUE: MotionSpec = {
+    tool: 'continue_execution', gate: 'continue execution', failure: 'Continue failed', onWaitOut: 'keep-running', send: (x, ms) => x.continue(ms),
+};
 
 /** How an execution request ended, with the state read afterwards. */
 interface StopOutcome {
     state: DebugState;
     timedOut: boolean;
+    /** How long the wait for the stop was allowed to take. */
+    waitedMs: number;
     ended: boolean;
     /** Only for a real stop; undefined after a timeout or the session's end. */
     reason?: string | null;
@@ -279,6 +295,11 @@ type RedactCallback = (name: string, value: string) => { value: string; redacted
 /** The `redactSecrets` setting, read on every call. */
 function redactionEnabled(): boolean {
     return vscode.workspace.getConfiguration('cmsis-developer-assistant').get<boolean>('redactSecrets', true);
+}
+
+/** A wait as the agent reads it: `600 ms`, `5 s`, `2.5 s`. */
+function durationText(ms: number): string {
+    return ms < 1000 ? `${ms} ms` : `${Number((ms / 1000).toFixed(1))} s`;
 }
 
 /** A positive override clamped to the cap, else the configured timeout under the same cap. */
@@ -503,16 +524,19 @@ export class DebuggingHandler
         return {
             state,
             timedOut: result.kind === 'timeout',
+            waitedMs: limitMs,
             ended: result.kind === 'ended',
             reason: result.kind === 'stopped' ? result.reason : undefined,
         };
     }
 
     /**
-     * A step or continue: gate, request, wait, and the recovery pause when
-     * nothing stopped, which answers with status `timeout`. A session that
-     * ends during the wait is a failure, `NO_SESSION`, as for pause and
-     * `wait_for_stop`; the gate's own refusal passes unwrapped.
+     * A step or continue: gate, request, wait. When nothing stopped, a step
+     * pauses the target to say where it went and answers with status
+     * `timeout`; a continue leaves the target running and answers with
+     * status `running`. A session that ends during the wait is a failure,
+     * `NO_SESSION`, as for pause and `wait_for_stop`; the gate's own refusal
+     * passes unwrapped.
      */
     private async move(spec: MotionSpec, args: TimeoutArg | undefined): Answer {
         let outcome: StopOutcome;
@@ -526,11 +550,19 @@ export class DebuggingHandler
             throw new ToolError('NO_SESSION', `Debug session ended during '${spec.tool}' — `
                 + 'the target may have run to completion, crashed, or lost its connection.', SESSION_ENDED_HINT);
         }
+        if (outcome.timedOut && spec.onWaitOut === 'keep-running') {
+            return {
+                text: `Target is running: no stop within ${durationText(outcome.waitedMs)} of '${spec.tool}', and it keeps running; `
+                    + 'nothing was paused. Call wait_for_stop to wait for the next stop (a breakpoint, a fault), '
+                    + 'or pause_execution to halt it and see where it is.',
+                status: 'running',
+            };
+        }
         const body = outcome.reason
             ? `Target stopped (reason: ${outcome.reason}).\n\n${this.compactState(outcome.state)}`
             : this.compactState(outcome.state);
         if (outcome.timedOut) {
-            const overrun = `\n\n⚠️ '${spec.tool}' did not complete within ${this.configuredSeconds}s. `
+            const overrun = `\n\n⚠️ '${spec.tool}' did not complete within ${durationText(outcome.waitedMs)}. `
                 + 'The target is still running or the probe is unresponsive. '
                 + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
             return { text: body + overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
@@ -539,7 +571,7 @@ export class DebuggingHandler
     }
 
     /**
-     * After a step or continue that did not stop: pause the target and say
+     * After a step that did not stop: pause the target and say
      * where it is. Reads the recovered state directly, so the breakpoint
      * diff of the compact state is not touched. Never throws.
      */
@@ -747,7 +779,7 @@ export class DebuggingHandler
             const logpoints = this.dbg.gdbLogpoints().length;
             const how = await this.dbg.restart();
             if (!(await this.awaitLiveSession())) {
-                throw new Error(`Debug session restart issued but target did not become ready within the ${this.configuredSeconds}s timeout. `
+                throw new Error(`Debug session restart issued but target did not become ready within ${durationText(waitLimitMs(this.configuredSeconds, undefined))}. `
                     + 'The probe or target may be unresponsive.');
             }
             if (how.via === 'relaunched') {

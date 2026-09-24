@@ -1042,7 +1042,7 @@
     },
     {
       "name": "continue-timeout-recovery",
-      "description": "continue_execution with timeoutMs 600 and no breakpoint on the path: timeout, then the recovery pause stops in delay_ms and reports PC/LR.",
+      "description": "continue_execution with timeoutMs 600 and no breakpoint on the path: status running, the target is left running (no pause); pause_execution stops it in delay_ms; a step_over that does not stop within 600 ms gets the recovery pause, which reports PC/LR.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -1053,10 +1053,41 @@
           "args": {
             "timeoutMs": 600
           },
-          "text": "{\n  \"sessionActive\": true,\n  \"frameName\": null,\n  \"fileFullPath\": null,\n  \"currentLine\": null,\n  \"currentLineContent\": null,\n  \"nextLines\": [],\n  \"frameId\": null,\n  \"threadId\": null,\n  \"stackTrace\": [],\n  \"breakpoints\": []\n}\n\n⚠️ 'continue_execution' did not complete within <n>s. The target is still running or the probe is unresponsive. Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.\nPaused successfully. PC = 0x8000256, LR = 0x08000307 in delay_ms at main.c:17.\n  Current line: for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\nThe breakpoint you expected was not hit — the firmware did not reach it. Verify the breakpoint location, check the call stack with get_call_stack, or step from here with step_over / continue_execution.",
+          "text": "Target is running: no stop within <n>ms of 'continue_execution', and it keeps running; nothing was paused. Call wait_for_stop to wait for the next stop (a breakpoint, a fault), or pause_execution to halt it and see where it is.",
           "traffic": [
             "dap: threads {}",
             "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: running\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {},
+          "text": "Target paused. {\n  \"sessionActive\": true,\n  \"frameName\": \"delay_ms\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 17,\n  \"currentLineContent\": \"for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\",\n  \"nextLines\": [\n    \"__asm volatile (\\\"nop\\\");\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"delay_ms:17\",\n    \"main:32\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "step_over",
+          "args": {
+            "timeoutMs": 600
+          },
+          "text": "{\n  \"sessionActive\": true,\n  \"frameName\": null,\n  \"fileFullPath\": null,\n  \"currentLine\": null,\n  \"currentLineContent\": null,\n  \"nextLines\": [],\n  \"frameId\": null,\n  \"threadId\": null,\n  \"stackTrace\": [],\n  \"breakpointsUnchanged\": 0\n}\n\n⚠️ 'step_over' did not complete within <n>ms. The target is still running or the probe is unresponsive. Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.\nPaused successfully. PC = 0x8000256, LR = 0x08000307 in delay_ms at main.c:17.\n  Current line: for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\nThe breakpoint you expected was not hit — the firmware did not reach it. Verify the breakpoint location, check the call stack with get_call_stack, or step from here with step_over / continue_execution.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: next {\"threadId\":1}",
             "event: continued {\"threadId\":1,\"allThreadsContinued\":true}",
             "dap: pause {\"threadId\":1}",
             "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
@@ -1064,14 +1095,6 @@
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000256 <delay_ms+14>\"",
             "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"134218503\""
-          ]
-        },
-        {
-          "tool": "get_session_status",
-          "args": {},
-          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): <trailer>",
-          "traffic": [
-            "dap: threads {}"
           ]
         }
       ]

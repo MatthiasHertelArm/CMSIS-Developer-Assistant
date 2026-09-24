@@ -94,11 +94,16 @@ waits for that event, the end of the session, or the limit: the call's
 VS Code's stack-item events never end a wait, because they also fire when
 the item is cleared on resume.
 
-When a step or continue has not stopped in time, `locateRunawayTarget()`
-pauses the target and reports where it is — PC, LR, function and source line
-— so the agent learns whether the firmware sits in a loop, an ISR or a fault
-handler before it sets more breakpoints; that answer has status `timeout`,
-as has a pause that sees no stop in time.
+What a wait that runs out means depends on the request (`MotionSpec.onWaitOut`).
+A step should have stopped, so `locateRunawayTarget()` pauses the target and
+reports where it is — PC, LR, function and source line — so the agent learns
+whether the firmware sits in a loop, an ISR or a fault handler before it sets
+more breakpoints; that answer has status `timeout`, as has a pause that sees
+no stop in time. A continue is meant to run: the target is left running, and
+the answer has status `running`, gives the wait it really had and names
+`wait_for_stop` and `pause_execution`. Halting a target the agent asked to
+run would change what it was waiting to observe. Every timeout text gives
+the wait the call had, not the `timeoutInSeconds` setting.
 `wait_for_stop` sends nothing: it waits for the next stop, or returns at
 once when the target is already halted. A wait that runs out answers with
 status `timeout`. A session that ends meanwhile rejects with `NO_SESSION`,
