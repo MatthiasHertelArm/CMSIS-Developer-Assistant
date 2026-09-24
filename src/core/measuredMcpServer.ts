@@ -69,14 +69,18 @@ function withDetail(base: JsonObject, data: JsonObject | undefined): JsonObject 
  *
  * - a string: that text alone; the absence of `isError` says it succeeded;
  * - a `ToolReply` with status `ok`: its text, plus `structuredContent`
- *   `{status: 'ok', ...data}` only when it has data;
+ *   `{status: 'ok', message, ...data}` only when it has data;
  * - a `ToolReply` that is `running` or `timeout`: its text, and
  *   `structuredContent` `{status, message, ...data}`; neither is a failure;
  * - a `ToolError`: `[CODE] message` and the hint on the next line, `isError`,
  *   and `structuredContent` `{status: 'error', error_code, message, hint, ...data}`.
  *
- * The problem records that ride along with a failure or a timeout (#48,
- * `data.problems`) are also listed under the text, as "Recent problems:".
+ * Every `structuredContent` carries the text as `message` (and a failure's
+ * hint as `hint`): some MCP clients hand the model
+ * `structuredContent` instead of `content`, so the object has to say
+ * everything the text says. The problem records that ride along with a
+ * failure or a timeout (#48, `data.problems`) are also listed under the
+ * text, as "Recent problems:".
  *
  * No tool declares an `outputSchema`, so `tools/list` does not grow; the SDK
  * passes `structuredContent` through without one.
@@ -98,9 +102,31 @@ export function toCallToolResult(outcome: ToolText | ToolError): CallToolResult 
     }
     const content: CallToolResult['content'] = [{ type: 'text', text: outcome.text + renderProblemsBlock(outcome.data?.problems) }];
     if (outcome.status === 'ok') {
-        return outcome.data === undefined ? { content } : { content, structuredContent: withDetail({ status: 'ok' }, outcome.data) };
+        return outcome.data === undefined
+            ? { content }
+            : { content, structuredContent: withDetail({ status: 'ok', message: outcome.text }, outcome.data) };
     }
     return { content, structuredContent: withDetail({ status: outcome.status, message: outcome.text }, outcome.data) };
+}
+
+/**
+ * The lines of a result's text that its `structuredContent` does not carry,
+ * none when it has no `structuredContent`. A line counts as carried when it
+ * is part of `message` or `hint`; the `[CODE]` prefix of a failure's first
+ * line is `error_code`, and the "Recent problems:" block is `problems`. The
+ * surface harness and the unit tests hold every result to an empty answer.
+ */
+export function linesMissingFromStructured(result: CallToolResult): string[] {
+    const structured = result.structuredContent;
+    if (structured === undefined || structured === null) {
+        return [];
+    }
+    const text = (result.content ?? []).map((item) => (item.type === 'text' ? item.text : '')).join('\n');
+    const said = [structured.message, structured.hint].filter((part): part is string => typeof part === 'string').join('\n');
+    const shown = text.replace(/\nRecent problems:\n[\s\S]*$/, '');
+    return shown.split('\n')
+        .map((line, index) => (index === 0 && result.isError === true ? line.replace(/^\[[A-Z_]+\] /, '') : line))
+        .filter((line) => line.trim() !== '' && !said.includes(line));
 }
 
 /**

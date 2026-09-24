@@ -20,7 +20,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { currentCallContext } from '../core/callContext';
-import { MeasuredMcpServer, toCallToolResult } from '../core/measuredMcpServer';
+import { MeasuredMcpServer, linesMissingFromStructured, toCallToolResult } from '../core/measuredMcpServer';
 import { ToolMetrics } from '../core/toolMetrics';
 import { JsonObject, ToolError, ToolText } from '../core/toolResult';
 
@@ -135,11 +135,20 @@ suite('MeasuredMcpServer results', () => {
         assert.strictEqual(lastOutcome(), 'ok');
     });
 
-    test('an ok reply carries structuredContent only when it has data', async () => {
-        assert.deepStrictEqual((await call('ok_with_data')).structuredContent, { status: 'ok', count: 2 });
+    test('an ok reply carries structuredContent, with its text as message, only when it has data', async () => {
+        assert.deepStrictEqual((await call('ok_with_data')).structuredContent, { status: 'ok', message: 'listed', count: 2 });
         const bare = await call('ok_without_data');
         assert.strictEqual(bare.structuredContent, undefined);
         assert.strictEqual(textOfResult(bare), 'listed');
+    });
+
+    test('every structuredContent carries the text: a client may show the model that object alone', async () => {
+        for (const name of Object.keys(outcomes)) {
+            const result = await call(name);
+            assert.deepStrictEqual(linesMissingFromStructured(result), [], name);
+        }
+        const hidden: CallToolResult = { content: [{ type: 'text', text: 'listed\n#3 error dap' }], structuredContent: { status: 'ok', message: 'listed' } };
+        assert.deepStrictEqual(linesMissingFromStructured(hidden), ['#3 error dap'], 'a line only the text has is found');
     });
 
     test('the metrics outcome comes from the status first, the wording only without one', async () => {

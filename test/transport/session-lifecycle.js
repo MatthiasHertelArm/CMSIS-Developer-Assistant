@@ -41,7 +41,7 @@
 //      the first get_session_status of a session repeats them in one line and
 //      the second does not, and tools/list keeps its size to the byte.
 //  11. The problem journal (#48): get_recent_problems is listed, an empty
-//      answer stays under 200 bytes, a failing call carries
+//      answer stays under 256 bytes, a failing call carries
 //      structuredContent.problems with its call id, and an error nobody saw
 //      is noted once, counted by get_session_status, and cleared by
 //      get_recent_problems.
@@ -431,8 +431,9 @@ async function main() {
     const empty = await callTool('get_recent_problems', { sinceSeq: cursor }, 41);
     const emptyText = empty.content?.[0]?.text ?? '';
     const emptyBytes = Buffer.byteLength(JSON.stringify(empty));
-    check('an empty get_recent_problems answer is under 200 bytes',
-        typeof cursor === 'number' && empty.isError !== true && emptyBytes < 200 && emptyText === `No warnings or errors since #${cursor} (nextSeq=${cursor}).`,
+    // The text rides twice, as content and as structuredContent.message.
+    check('an empty get_recent_problems answer is under 256 bytes',
+        typeof cursor === 'number' && empty.isError !== true && emptyBytes < 256 && emptyText === `No warnings or errors since #${cursor} (nextSeq=${cursor}).`,
         `${emptyBytes} B: ${emptyText}`);
 
     const problemDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-problems-'));

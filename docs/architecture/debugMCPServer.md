@@ -253,7 +253,7 @@ that turns this into an MCP result:
 | Outcome | Text | `isError` | `structuredContent` |
 | ------- | ---- | --------- | ------------------- |
 | string | the string | — | none |
-| reply `ok` | its text | — | `{status: 'ok', ...data}`, only with data |
+| reply `ok` | its text | — | `{status: 'ok', message, ...data}`, only with data |
 | reply `running` or `timeout` | its text | — | `{status, message, ...data}` |
 | `ToolError` | `[CODE] message`, the hint on the next line | `true` | `{status: 'error', error_code, message, hint, ...data}` |
 
@@ -262,9 +262,12 @@ result, which would carry the message alone, is never used for a handler's
 failure; schema errors are raised by the SDK before the callback runs and
 stay its own. No tool declares an `outputSchema`: the SDK passes
 `structuredContent` through without one, and the tool list stays as it is.
-A plain success carries no `structuredContent`, for clients that might read
-it instead of the text. `get_session_status` appends its statistics to the
-text of the handler's outcome.
+Some clients show the model `structuredContent` instead of the text, so
+every `structuredContent` carries the whole text as `message` (and the
+hint as `hint`), and a plain success carries none at all. The surface and
+DAP oracles fail any reply whose `structuredContent` leaves out a line of
+its text (`linesMissingFromStructured()`). `get_session_status` appends its
+statistics to the text of the handler's outcome.
 
 The problem records that ride along with a failure or a timeout
 (`data.problems`, #48) reach `structuredContent.problems` like any other

@@ -372,7 +372,7 @@ suite('Problem feed', () => {
 });
 
 suite('get_recent_problems reply', () => {
-    test('one line per record, then nextSeq; data carries the cursor and the counts', () => {
+    test('one line per record, then nextSeq; data carries the cursor, the counts and the records', () => {
         const journal = new ProblemJournal(handClock().now);
         journal.append(problem({ code: 'DAP_POWER_UP_FAILED', source: 'gdb-server', hint: 'Check the power.' }));
         journal.append(problem({ severity: 'warning', source: 'serial', origin: 'COM7', message: 'COM7 disconnected at 10:42:07' }));
@@ -381,11 +381,14 @@ suite('get_recent_problems reply', () => {
             text: '#1 error gdb-server [DAP_POWER_UP_FAILED] Failed to power up DAP → Check the power.\n'
                 + '#2 warning serial COM7 disconnected at 10:42:07\nnextSeq=3',
             status: 'ok',
-            data: { nextSeq: 3, returned: 2, omitted: 0 },
+            data: {
+                nextSeq: 3, returned: 2, omitted: 0,
+                records: journal.query({ minSeverity: 'warning' }).records.map(problemJson),
+            },
         });
         const cut = renderProblemPage(journal.query({ limit: 1 }), { minSeverity: 'info' });
         assert.ok(cut.text.startsWith('… 1 older record left out: raise limit (at most 50)'), cut.text);
-        assert.deepStrictEqual(cut.data, { nextSeq: 3, returned: 1, omitted: 1 });
+        assert.deepStrictEqual(cut.data, { nextSeq: 3, returned: 1, omitted: 1, records: [problemJson(journal.query().records[1])] });
     });
 
     test('an empty reply says what was asked for and stays under 200 bytes', () => {
@@ -407,5 +410,9 @@ suite('get_recent_problems reply', () => {
         const data = reply.data as JsonObject;
         assert.strictEqual((data.returned as number) + (data.omitted as number), 50);
         assert.ok(reply.text.includes('#50 error'), 'the newest line is kept');
+        const records = data.records as JsonObject[];
+        assert.strictEqual(records.length, data.returned, 'one record per line');
+        assert.ok(Buffer.byteLength(JSON.stringify(records)) <= PROBLEMS_REPLY_MAX_BYTES, `${Buffer.byteLength(JSON.stringify(records))} bytes of records`);
+        assert.strictEqual(records[records.length - 1].seq, 50, 'the newest record is kept');
     });
 });

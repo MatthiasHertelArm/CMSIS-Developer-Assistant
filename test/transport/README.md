@@ -40,7 +40,7 @@ Each exits non-zero if any check failed.
 - No tool of the single-window list takes the router's `window` argument
   (#16).
 - The problem journal (#48) on the server without a router:
-  `get_recent_problems` is listed and an empty answer stays under 200 bytes;
+  `get_recent_problems` is listed and an empty answer stays under 256 bytes;
   a failing call carries `structuredContent.problems`, stamped with its call
   id, and lists them under its text; an error nobody saw is noted once on
   the next successful result, counted by `get_session_status`, and gone from
@@ -110,7 +110,8 @@ records, per tool call, the reply and its traffic: DAP requests with the
 scripted answer, VS Code commands, breakpoint and start/stop API calls, the
 `setBreakpoints` VS Code sends for its breakpoint model with the adapter's
 answer, and the adapter events. The stub extensions live in the harness;
-`vscode-stub.js` is unchanged.
+`vscode-stub.js` is unchanged. Like `surface-snapshot.js`, it fails any reply
+whose `structuredContent` leaves out a line of its text.
 
 The scripted adapter answers as cdt-gdb-adapter does: an evaluate of
 `-exec <cmd>` is an expression to it and comes back as the result "Error:
