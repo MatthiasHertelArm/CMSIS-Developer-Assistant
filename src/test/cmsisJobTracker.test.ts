@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CmsisJobTracker, JOB_RETENTION_MS, LABEL_FETCH_MS } from '../cmsisJobTracker';
-import { executionIn, Job } from '../core/cmsisTasks';
+import { executionIn, Job, JobDiagnosis } from '../core/cmsisTasks';
 import { formatDuration, idleStatus, sessionTaskLine } from '../handler/jobText';
 import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 
@@ -216,6 +216,34 @@ suite('CmsisJobTracker', () => {
             subscription.dispose();
             tasks.finish(tasks.start(tasks.execution(BUILD)), 0);
             assert.deepStrictEqual(heard, [`${job.id}:ok`]);
+        });
+
+        test('a build that exited 0 waits for its check; a check that finds it failed makes it a failed job', async () => {
+            const { tasks, clock, tracker } = world();
+            const verdicts: Array<(diagnosis: JobDiagnosis) => void> = [];
+            tracker.onDidFinishJob((job) => tracker.completeWith(job.id, new Promise<JobDiagnosis>((resolve) => verdicts.push(resolve))));
+            const diagnosed: string[] = [];
+            tracker.onDidDiagnoseJob((job) => diagnosed.push(`${job.id}:${job.state}:${job.diagnosis?.check}`));
+            const done = (check: JobDiagnosis['check']): JobDiagnosis => ({
+                state: 'done', check, source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '',
+            });
+
+            const failing = tracker.begin('build', 'MPS3');
+            const waiting = tracker.waitFor(failing.id, clock.now() + 60_000);
+            tasks.finish(tasks.start(tasks.execution(BUILD)), 0);
+            assert.strictEqual(tracker.job(failing.id)?.state, 'ok', 'exit 0 settles the job');
+            assert.strictEqual(tracker.job(failing.id)?.diagnosis?.state, 'pending');
+            verdicts[0](done('failed'));
+            const failed = await waiting;
+            assert.deepStrictEqual([failed?.state, failed?.diagnosis?.check], ['failed', 'failed'], 'the waiter wakes with the failed job');
+            assert.strictEqual(tracker.last('build')?.state, 'failed');
+
+            const passing = tracker.begin('build', 'MPS3');
+            tasks.finish(tasks.start(tasks.execution(BUILD)), 0);
+            verdicts[1](done('rebuilt'));
+            const passed = await tracker.waitFor(passing.id, clock.now() + 60_000);
+            assert.deepStrictEqual([passed?.state, passed?.diagnosis?.check], ['ok', 'rebuilt']);
+            assert.deepStrictEqual(diagnosed, [`${failing.id}:failed:failed`, `${passing.id}:ok:rebuilt`]);
         });
 
         test('discard forgets an open job and wakes its waiters', async () => {

@@ -30,6 +30,10 @@
  *     recorded in `.cmsis/tools-environment.yml` (`readToolsEnvironment`,
  *     `diagnosticEnvironment`); its log is parsed by `parseBuildLog`.
  *
+ * The same stages check a build whose task exited 0, which CMSIS Solution
+ * reports for failed builds too; `idxBuildFiles` and `primaryOutputs` name
+ * the images whose age shows whether it rebuilt.
+ *
  * Both YAML files are generated, and are read line by line by a reader for
  * the subset of YAML they use (block mappings and sequences, plain and
  * quoted scalars); there is no YAML dependency.
@@ -50,9 +54,9 @@ export const DIAGNOSTIC_LOG_PATH = 'out/cmsis-developer-assistant/build-diagnost
 /** The diagnostic re-run is killed after this long. */
 export const DIAGNOSTIC_RERUN_CAP_MS = 120_000;
 /**
- * A cbuild-idx.yml modified up to this long before the job started still
- * counts as written by it: file systems with a coarse modification time
- * round it down.
+ * A cbuild-idx.yml or an image modified up to this long before the job
+ * started still counts as written by it: file systems with a coarse
+ * modification time round it down.
  */
 export const IDX_FRESHNESS_SLACK_MS = 2_000;
 
@@ -334,6 +338,44 @@ export function idxMessages(text: string): IdxMessages {
         take(cbuild?.messages, asText(cbuild?.configuration) ?? asText(cbuild?.project));
     }
     return found;
+}
+
+/** What a cbuild-idx.yml names, as written there (relative to the index): each context's cbuild.yml and the cbuild-run.yml. */
+export interface IdxBuildFiles {
+    cbuilds: string[];
+    cbuildRun?: string;
+}
+
+/** The cbuild.yml of each context and the cbuild-run.yml a `<solution>.cbuild-idx.yml` names. */
+export function idxBuildFiles(text: string): IdxBuildFiles {
+    const index = asMap(asMap(parseYamlSubset(text))?.['build-idx']);
+    const cbuilds: string[] = [];
+    for (const entry of asList(index?.cbuilds)) {
+        const file = asText(asMap(entry)?.cbuild)?.trim();
+        if (file) {
+            cbuilds.push(file);
+        }
+    }
+    const cbuildRun = asText(index?.['cbuild-run'])?.trim();
+    return { cbuilds, ...(cbuildRun ? { cbuildRun } : {}) };
+}
+
+/** Output types that show whether a context was rebuilt, in the order they are looked for. */
+const PRIMARY_OUTPUT_TYPES: readonly (readonly string[])[] = [['elf'], ['lib'], ['hex', 'bin']];
+
+/**
+ * The outputs of a context that show whether it was rebuilt: its ELF image,
+ * else its library, else its hex or bin file. Maps, compile databases and
+ * the like are left out: a build writes them whether it links or not.
+ */
+export function primaryOutputs(outputs: readonly { file: string; type: string }[]): string[] {
+    for (const types of PRIMARY_OUTPUT_TYPES) {
+        const found = outputs.filter((output) => types.includes(output.type)).map((output) => output.file);
+        if (found.length > 0) {
+            return found;
+        }
+    }
+    return [];
 }
 
 /** The index file csolution writes for `solution`: `Blinky.csolution.yml` → `Blinky.cbuild-idx.yml`. */

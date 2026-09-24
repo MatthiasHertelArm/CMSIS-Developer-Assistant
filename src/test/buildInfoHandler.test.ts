@@ -173,7 +173,7 @@ suite('BuildInfoHandler (end to end)', () => {
         const none = await resolveBuildContext(world.host, { target: 'nope' });
         assert.ok('error' in none && /No cbuild-run context or image matches target 'nope'/.test(none.error));
         const empty = await resolveBuildContext({ ...world.host, findFiles: async () => [] }, {});
-        assert.ok('error' in empty && /no build output yet\. Build first: `cbuild Blinky\.csolution\.yml --packs --update-rte`/.test(empty.error));
+        assert.ok('error' in empty && /no build output yet\. Build first: cmsis_action build \(the Build button of the CMSIS Solution view\) builds Blinky\.csolution\.yml;/.test(empty.error));
     });
 
     test('list_build_artifacts', async () => {
@@ -353,7 +353,7 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(textOf(await twoRoots.handleGetBuildDiagnostics({ file: path.join(other, 'build.log') })), /^Status: ok — Build summary: 1 succeeded, 0 failed/m);
         const noLogs = new BuildInfoHandler({ ...world.host, settings: () => ({ ...defaultBuildInfoSettings, logGlobs: ['**/nothing/*.log'] }) }, { timeoutMs: 5000 });
         const none = textOf(await noLogs.handleGetBuildDiagnostics({ target: 'NUCLEO' }));
-        assert.match(none, /^No build log found \(searched \*\*\/nothing\/\*\.log\)\. The CMSIS Solution extension runs cbuild in a terminal and keeps no log file\. Capture one with `cbuild <solution>\.csolution\.yml --packs --update-rte --log out\/build\.log`/m);
+        assert.match(none, /^No build log found \(searched \*\*\/nothing\/\*\.log\)\. The CMSIS Solution extension runs cbuild in a terminal and keeps no log file\. cmsis_action build shows the error lines of a failed build itself: it re-runs cbuild with --log into out\/cmsis-developer-assistant\/build-diagnostic\.log, which this tool then reads\. Pass file: <path> for a log the user saved elsewhere\. Do not run cbuild yourself\.$/m);
     });
 
     test('no build output yet, timeout fence, failure text', async () => {
@@ -363,7 +363,7 @@ suite('BuildInfoHandler (end to end)', () => {
         const host: BuildInfoHost = { ...world.host, workspaceFolders: () => [ws], findFiles: async (g) => walkGlob(ws, g) };
         const h = new BuildInfoHandler(host, { timeoutMs: 5000, workspaceRoot: () => ws });
         const listed = textOf(await h.handleListBuildArtifacts({}));
-        assert.match(listed, /^Build: target NUCLEO-F756ZG, device STMicroelectronics::STM32F756ZGTx, compiler AC6, board NUCLEO-F756ZG — from out\/Blinky\+NUCLEO-F756ZG\.cbuild-run\.yml\nNo build output yet: out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf missing\. Build the solution/);
+        assert.match(listed, /^Build: target NUCLEO-F756ZG, device STMicroelectronics::STM32F756ZGTx, compiler AC6, board NUCLEO-F756ZG — from out\/Blinky\+NUCLEO-F756ZG\.cbuild-run\.yml\nNo build output yet: out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf missing\. Build TFLiteRT_HelloWorld\.csolution\.yml with cmsis_action build \(the Build button of the CMSIS Solution view\) and call again\.$/);
         assert.match(textOf(await h.handleGetMemoryUsage({})), /^Build: .*\nNo build output yet/);
         const slow = new BuildInfoHandler({ ...host, findFiles: () => new Promise(resolve => setTimeout(() => resolve([]), 500)) }, { timeoutMs: 5000 });
         const late = await slow.handleListBuildArtifacts({ timeoutMs: 100 });

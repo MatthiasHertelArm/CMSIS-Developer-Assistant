@@ -37,10 +37,11 @@
  *     starting a second one;
  *   - settled jobs are kept 10 minutes, in memory only.
  *
- * A failed build's result is completed after the job settled (#15): an
- * `onDidFinishJob` listener hands its work to `completeWith`, the job
- * carries a pending `diagnosis` meanwhile, and `waitFor` waits for it as it
- * waits for the job. The window's tracker gets that listener from
+ * A build's result is completed after the job settled: an `onDidFinishJob`
+ * listener hands its work to `completeWith` — the error lines of a failed
+ * build (#15), or the check of a build that exited 0, which CMSIS Solution
+ * reports for failed builds too — the job carries a pending `diagnosis`
+ * meanwhile, and `waitFor` waits for it as it waits for the job. The window's tracker gets that listener from
  * `src/cmsisBuildDiagnosis.ts`; it reads the failed task's definition
  * (`definitionOf`) and stops its re-run when a build starts
  * (`onDidStartExecution`). `src/windowProblems.ts` journals failed jobs and
@@ -73,6 +74,7 @@ import {
     reduceJob,
     settleJob,
     TaskFacts,
+    withDiagnosis,
     WORKSPACE_SOURCE,
 } from './core/cmsisTasks';
 import { logger } from './utils/logger';
@@ -378,7 +380,9 @@ export class CmsisJobTracker {
      * Make `work` part of the result of settled job `id` (#15): the job
      * carries a pending `diagnosis` until `work` resolves with the final one,
      * and `waitFor` waits for it. A rejected `work` becomes a diagnosis that
-     * says so. Meant for `onDidFinishJob` listeners; once per job.
+     * says so. A build that exited 0 whose check says `failed` becomes a
+     * failed job (`withDiagnosis`). Meant for `onDidFinishJob` listeners;
+     * once per job.
      */
     completeWith(id: string, work: Promise<JobDiagnosis>): void {
         const job = this.jobs.get(id);
@@ -392,7 +396,7 @@ export class CmsisJobTracker {
             if (!current) {
                 return;
             }
-            const completed: Job = { ...current, diagnosis };
+            const completed = withDiagnosis(current, diagnosis);
             this.jobs.set(id, completed);
             this.wake(id, completed);
             for (const listener of [...this.diagnosisListeners]) {

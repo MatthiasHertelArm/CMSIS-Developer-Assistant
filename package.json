@@ -198,7 +198,7 @@
           "type": "boolean",
           "default": true,
           "scope": "window",
-          "markdownDescription": "After a failed CMSIS build, run `cbuild` once more with `--log` — without downloading packs, updating RTE files or cleaning — so that the `cmsis_action build` result can show the compiler, linker and ninja error lines with file and line. The CMSIS Solution extension keeps no build log of its own. The re-run is incremental, stops after 120 s or when another build starts, and writes `out/cmsis-developer-assistant/build-diagnostic.log` next to the solution. Off: the result still shows the errors csolution records in the solution's `cbuild-idx.yml`. Applies to the next failed build."
+          "markdownDescription": "After a failed CMSIS build, run `cbuild` once more with `--log` — without downloading packs, updating RTE files or cleaning — so that the `cmsis_action build` result can show the compiler, linker and ninja error lines with file and line. The CMSIS Solution extension keeps no build log of its own. The same re-run checks a build that exited 0 but did not rewrite its image, since CMSIS Solution reports exit 0 for failed builds too. The re-run is incremental, stops after 120 s or when another build starts, and writes `out/cmsis-developer-assistant/build-diagnostic.log` next to the solution. Off: the result still shows the errors csolution records in the solution's `cbuild-idx.yml`, and such a build is reported as not confirmed. Applies to the next build."
         },
         "cmsis-developer-assistant.telemetry.jsonlPath": {
           "type": "string",
@@ -311,7 +311,7 @@
             "**/out/**/*.log",
             "**/build*.log"
           ],
-          "markdownDescription": "Workspace globs searched for build logs by `get_build_diagnostics` (newest first). Capture one with `cbuild … --log out/build.log`.",
+          "markdownDescription": "Workspace globs searched for build logs by `get_build_diagnostics` (newest first). After a failed build, `cmsis_action build` writes one into `out/cmsis-developer-assistant/build-diagnostic.log`.",
           "tags": [
             "experimental"
           ]

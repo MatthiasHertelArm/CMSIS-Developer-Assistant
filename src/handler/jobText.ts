@@ -23,7 +23,10 @@
  * Every result names the task, its exit code, how long it ran and the job id,
  * so that a later `status` call can be matched to it. A failed build adds
  * the error lines of its diagnosis (#15, `src/cmsisBuildDiagnosis.ts`), or
- * says they are still being collected, and carries them in `data`.
+ * says they are still being collected, and carries them in `data`. A build
+ * that exited 0 is reported once its check is done (CMSIS Solution reports
+ * exit 0 for failed builds too): ✅, ❌ with the error lines, or ⚠️ when an
+ * image was not rewritten and the check could not decide.
  */
 
 import {
@@ -69,8 +72,8 @@ const AFTER_SUCCESS: Readonly<Record<JobAction, string>> = {
     load_and_debug: ' Its pre-launch Load is done; the debug session starts next — poll get_session_status.',
 };
 
-const BUILD_FAILED_HINT = 'Open the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, '
-    + 'then re-run cmsis_action build. This is a terminal result — do not wait for an output file.';
+const BUILD_FAILED_HINT = 'get_recent_problems lists what the Problems panel shows; otherwise ask the user for the errors in the cbuild terminal '
+    + '— do not run cbuild yourself. Fix them, then cmsis_action build again. This is a terminal result — do not wait for an output file.';
 
 /** After a failed build whose error lines the result shows. */
 const BUILD_ERRORS_HINT = 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.';
@@ -78,6 +81,9 @@ const BUILD_ERRORS_HINT = 'Fix the first error, then cmsis_action build again. T
 /** After a failed build whose error lines are still being collected. */
 const BUILD_LINES_PENDING_HINT = 'Call cmsis_action {action:\'status\'} for the error lines — do not start another build to see them. '
     + 'This is a terminal result — do not wait for an output file.';
+
+/** After a build that exited 0 but whose image the check could not confirm. */
+const BUILD_UNVERIFIED_NEXT = 'Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself.';
 
 /** Messages of a diagnosis that go into `data`, of each kind. */
 const DATA_MESSAGES = 10;
@@ -212,6 +218,7 @@ function messageData(message: BuildMessage): JsonObject {
 export function diagnosisData(diagnosis: JobDiagnosis): JsonObject {
     return {
         state: diagnosis.state,
+        check: diagnosis.check ?? null,
         source: diagnosis.source,
         errorCount: diagnosis.errorCount,
         warningCount: diagnosis.warningCount,
@@ -232,8 +239,10 @@ function diagnosisLines(diagnosis: JobDiagnosis): string {
 
 /** A failed build: its task line, and the lines of its diagnosis when there is one. */
 function failedBuild(job: Job, context: ResultContext, decided: JobExecution): ToolError {
-    const head = `${context.preface ?? ''}❌ CMSIS 'build' FAILED${context.tag} — task '${decided.name}' exited with code ${decided.exitCode} `
-        + `after ${ranFor(decided, context.now)} (job ${job.id}).${meanwhile(job)}`;
+    const exited = decided.exitCode === 0
+        ? `exited 0 after ${ranFor(decided, context.now)}, but the build failed (CMSIS Solution reports exit 0 for a failed build too)`
+        : `exited with code ${decided.exitCode} after ${ranFor(decided, context.now)}`;
+    const head = `${context.preface ?? ''}❌ CMSIS 'build' FAILED${context.tag} — task '${decided.name}' ${exited} (job ${job.id}).${meanwhile(job)}`;
     const diagnosis = job.diagnosis;
     if (!diagnosis) {
         return new ToolError('TASK_FAILED', head, BUILD_FAILED_HINT);
@@ -278,6 +287,36 @@ function failed(job: Job, context: ResultContext, decided: JobExecution): ToolEr
 }
 
 /**
+ * A build that exited 0 whose check is still going (status `running`), or
+ * whose image it could not confirm (⚠️, status ok); undefined when the check
+ * confirmed the build.
+ */
+function buildCheckResult(job: Job, context: ResultContext, task: JobExecution): ToolReply | undefined {
+    const diagnosis = job.diagnosis;
+    const ran = `task '${task.name}' exited 0 after ${ranFor(task, context.now)}`;
+    const data = (): JsonObject => ({ job: jobData(job, context.now), ...(diagnosis ? { diagnosis: diagnosisData(diagnosis) } : {}) });
+    if (diagnosis?.state === 'pending') {
+        return {
+            text: `${context.preface ?? ''}CMSIS 'build'${context.tag}: ${ran} (job ${job.id}); its result is still being checked `
+                + `(a diagnostic re-run of cbuild with --log when the image was not rewritten, at most ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s), `
+                + 'since CMSIS Solution reports exit 0 for a failed build too. Call cmsis_action {action:\'status\'} for the result — '
+                + `do not start another build.${meanwhile(job)}`,
+            status: 'running',
+            data: data(),
+        };
+    }
+    if (diagnosis?.check === 'unverified') {
+        return {
+            text: `${context.preface ?? ''}⚠️ CMSIS 'build'${context.tag}: ${ran} (job ${job.id}), but that does not confirm the build. `
+                + `${diagnosis.text} ${BUILD_UNVERIFIED_NEXT}${meanwhile(job)}`,
+            status: 'ok',
+            data: data(),
+        };
+    }
+    return undefined;
+}
+
+/**
  * The result of a job: a ✅ text when it settled well, a `running` reply
  * while it goes on, and a thrown `ToolError` when it failed, was cancelled
  * or never started. A load_and_debug job is only its pre-launch Load; the
@@ -293,8 +332,15 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
             return stillRunning(job, context);
         case 'ok': {
             const task = decided ?? currentTask(job);
+            if (job.action === 'build' && task && job.diagnosis) {
+                const checkedBuild = buildCheckResult(job, context, task);
+                if (checkedBuild) {
+                    return checkedBuild;
+                }
+            }
             const ran = task ? `task '${task.name}' exited 0 after ${ranFor(task, now)}, ` : '';
-            return `${preface}✅ CMSIS '${job.action}' succeeded${tag} (${ran}job ${job.id}).${AFTER_SUCCESS[job.action]}${meanwhile(job)}`;
+            const upToDate = job.diagnosis?.check === 'up-to-date' ? ` ${job.diagnosis.text}` : '';
+            return `${preface}✅ CMSIS '${job.action}' succeeded${tag} (${ran}job ${job.id}).${upToDate}${AFTER_SUCCESS[job.action]}${meanwhile(job)}`;
         }
         case 'running-ok': {
             const load = executionIn(job, 'load');
@@ -334,10 +380,17 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
 function verdictMark(job: Job): string {
     switch (job.state) {
         case 'ok':
+            if (job.diagnosis?.state === 'pending') {
+                return 'exit 0, being checked';
+            }
+            return job.diagnosis?.check === 'unverified' ? '⚠️ exit 0, not confirmed' : '✅';
         case 'running-ok':
             return '✅';
         case 'failed': {
             const decided = job.executions.find((execution) => execution.key === job.decidedBy);
+            if (decided?.exitCode === 0 && job.diagnosis?.check === 'failed') {
+                return '❌ build errors (exit 0)';
+            }
             return decided?.exitCode !== undefined ? `❌ exit ${decided.exitCode}` : '❌';
         }
         case 'cancelled':
@@ -373,10 +426,15 @@ export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[
         });
         lines.push(`No CMSIS job in flight in this window. Last results (10 min): ${results.join('; ')}.`);
         for (const job of recent) {
-            if (job.diagnosis?.state === 'done') {
-                lines.push(`Build job ${job.id} failed: ${job.diagnosis.text}`);
-            } else if (job.diagnosis?.state === 'pending') {
-                lines.push(`The error lines of build job ${job.id} are still being collected — cmsis_action {action:'status'} again shows them.`);
+            const diagnosis = job.diagnosis;
+            if (diagnosis?.state === 'pending') {
+                lines.push(job.state === 'ok'
+                    ? `The result of build job ${job.id} (exit 0) is still being checked — cmsis_action {action:'status'} again shows it.`
+                    : `The error lines of build job ${job.id} are still being collected — cmsis_action {action:'status'} again shows them.`);
+            } else if (diagnosis?.state === 'done' && job.state === 'failed') {
+                lines.push(`Build job ${job.id} failed: ${diagnosis.text}`);
+            } else if (diagnosis?.check === 'unverified') {
+                lines.push(`Build job ${job.id} exited 0, but that does not confirm it: ${diagnosis.text} ${BUILD_UNVERIFIED_NEXT}`);
             }
         }
     }

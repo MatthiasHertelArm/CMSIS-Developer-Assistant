@@ -208,11 +208,29 @@ export interface BuildMessage {
 }
 
 /**
- * What the extension found out about a failed build (#15), attached to its
- * job once the job settled (`CmsisJobTracker.completeWith`):
+ * What the check of a build that exited 0 found. CMSIS Solution (1.70.1)
+ * closes its build task with 0 even when cbuild failed, so exit 0 alone
+ * proves nothing:
  *
- *   - `pending` while the csolution index is read and the diagnostic re-run
- *     of cbuild goes on; the job's result then says the lines are coming;
+ *   - `rebuilt`: every image the build produces was written after it started;
+ *   - `up-to-date`: an image was not rewritten, and a check re-run of cbuild
+ *     succeeded, so there was nothing to rebuild;
+ *   - `failed`: csolution recorded errors, or the check re-run failed; the
+ *     job then counts as failed (`withDiagnosis`);
+ *   - `unverified`: an image was not rewritten and the check could not
+ *     decide (no re-run possible, or it was stopped).
+ */
+export type BuildCheck = 'rebuilt' | 'up-to-date' | 'failed' | 'unverified';
+
+/**
+ * What the extension found out about a build after its task ended, attached
+ * to its job once the job settled (`CmsisJobTracker.completeWith`): why a
+ * failed build failed (#15), or whether a build that exited 0 really built
+ * (`check`).
+ *
+ *   - `pending` while the csolution index is read, the images are looked at
+ *     and the diagnostic re-run of cbuild goes on; the job's result then
+ *     says the lines, or the check, are coming;
  *   - `done` with the error and warning lines, where they came from, and the
  *     text the `cmsis_action` result shows.
  *
@@ -222,6 +240,8 @@ export interface BuildMessage {
  */
 export interface JobDiagnosis {
     state: 'pending' | 'done';
+    /** Set for a build whose task exited 0: what the check of its result found. */
+    check?: BuildCheck;
     /** `csolution`: a fresh cbuild-idx.yml; `rerun`: cbuild re-run with --log; `none`: neither produced lines. */
     source: 'csolution' | 'rerun' | 'none';
     errors: readonly BuildMessage[];
@@ -239,10 +259,22 @@ export interface JobDiagnosis {
 /** The structured lists of a diagnosis keep at most this many messages each. */
 export const MAX_BUILD_MESSAGES = 200;
 
-/** A failed build's diagnosis while its lines are being collected. */
+/** A build's diagnosis while its lines are being collected or its result is being checked. */
 export const PENDING_DIAGNOSIS: JobDiagnosis = Object.freeze({
     state: 'pending', source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '',
 });
+
+/**
+ * The job with its final diagnosis. A build that exited 0 but whose check
+ * found it `failed` becomes a failed job: its result, `status` and
+ * `get_session_status` report the failure, not the exit code.
+ */
+export function withDiagnosis(job: Job, diagnosis: JobDiagnosis): Job {
+    if (diagnosis.check === 'failed' && job.state === 'ok') {
+        return { ...job, state: 'failed', diagnosis };
+    }
+    return { ...job, diagnosis };
+}
 
 /** An execution as a start event names it. */
 interface Sighting {

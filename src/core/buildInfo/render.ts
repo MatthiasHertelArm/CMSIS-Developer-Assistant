@@ -22,7 +22,7 @@
  */
 
 import * as path from 'path';
-import { DIAGNOSTIC_RERUN_CAP_MS } from '../buildFailure';
+import { DIAGNOSTIC_LOG_PATH, DIAGNOSTIC_RERUN_CAP_MS } from '../buildFailure';
 import type { BuildFailureReport } from '../buildFailure';
 import type { BuildMessage } from '../cmsisTasks';
 import { clipValue, formatBytes, truncateList } from '../packDocs/textBudget';
@@ -134,7 +134,7 @@ export function renderArtifacts(input: ArtifactsRenderInput): string {
 export function renderNoBuild(ctx: BuildContext, root?: string): string {
     const solution = ctx.run.solution ? path.basename(ctx.run.solution) : '<solution>.csolution.yml';
     return `${describeContext(ctx, root)}\nNo build output yet: ${ctx.images.map(i => rel(i.elf.path, root)).join(', ') || 'no image listed'} missing. ` +
-        `Build the solution (cbuild ${solution} --packs --update-rte, or the CMSIS Solution view) and call again.`;
+        `Build ${solution} with cmsis_action build (the Build button of the CMSIS Solution view) and call again.`;
 }
 
 export interface UsageRenderInput {
@@ -388,7 +388,7 @@ export function renderDiagnostics(input: DiagnosticsRenderInput): string {
         lines.push(`Other logs (newest first): ${input.candidates.slice(1, 6).map(c => rel(c, input.root)).join(', ')} — pass file to read one.`);
     }
     lines.push('');
-    lines.push('Next: open the file:line of the first error; after a fix, rebuild with `cbuild … --log <file>` and call again.');
+    lines.push('Next: open the file:line of the first error; after a fix, cmsis_action build again — it shows the new error lines itself.');
     return clipValue(lines.join('\n'), input.maxChars ?? DEFAULT_MAX_CHARS);
 }
 
@@ -503,7 +503,7 @@ export function renderBuildFailure(report: BuildFailureReport, options: BuildFai
     if (report.logFile) {
         footer.push(`Full log: ${shownPath(report.logFile, root)} (get_build_diagnostics reads it).`);
     } else if (report.source === 'none') {
-        footer.push('get_build_diagnostics (setting cmsis-developer-assistant.buildInfo.enabled) reads a build log if the user captures one with cbuild --log.');
+        footer.push('cmsis_action build re-runs cbuild with --log itself when it can.');
     }
     const shown: string[] = [];
     const room = (extra: string): boolean => [header, ...shown, extra, ...footer].join('\n').length <= maxChars;
@@ -522,8 +522,13 @@ export function renderBuildFailure(report: BuildFailureReport, options: BuildFai
     return text.length <= maxChars ? text : `${text.slice(0, maxChars - 1)}…`;
 }
 
+/**
+ * No log to read. Points at `cmsis_action build`, whose diagnostic re-run
+ * writes the log this tool reads, never at a cbuild command line: the tool
+ * rules keep cbuild out of the agent's shell.
+ */
 export function renderNoLog(globs: readonly string[], ctxLine?: string): string {
     return `${ctxLine ? `${ctxLine}\n` : ''}No build log found (searched ${globs.join(', ')}). The CMSIS Solution extension runs cbuild in a terminal and keeps no log file. ` +
-        'Capture one with `cbuild <solution>.csolution.yml --packs --update-rte --log out/build.log` (or `… 2>&1 | tee out/build.log`), ' +
-        'then call again, or pass file: <path> for a log saved elsewhere.';
+        `cmsis_action build shows the error lines of a failed build itself: it re-runs cbuild with --log into ${DIAGNOSTIC_LOG_PATH}, which this tool then reads. ` +
+        'Pass file: <path> for a log the user saved elsewhere. Do not run cbuild yourself.';
 }

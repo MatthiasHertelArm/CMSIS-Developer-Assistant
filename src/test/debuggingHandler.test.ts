@@ -1913,8 +1913,8 @@ suite('DebuggingHandler', () => {
                 solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 2, true) });
                 const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
                 assert.match(failed.message, /^❌ CMSIS 'build' FAILED on HE — task 'cbuild demo\.csolution\.yml --active HE' exited with code 2 after [\d.]+ s \(job b-2\)\.$/);
-                assert.strictEqual(failed.hint, 'Open the CMSIS/cbuild terminal or the Problems panel to read the compiler/linker errors, fix them in the source, '
-                    + 'then re-run cmsis_action build. This is a terminal result — do not wait for an output file.');
+                assert.strictEqual(failed.hint, 'get_recent_problems lists what the Problems panel shows; otherwise ask the user for the errors in the cbuild terminal '
+                    + '— do not run cbuild yourself. Fix them, then cmsis_action build again. This is a terminal result — do not wait for an output file.');
                 again();
                 solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, undefined, true) });
                 const cancelled = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
@@ -1955,6 +1955,36 @@ suite('DebuggingHandler', () => {
                 setTimeout(() => deliver(), 50);
                 const idle = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
                 assert.match(idle, /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE ❌ exit 2 [\d.]+ s ago \(job b-2, '.*'\)\.\nBuild job b-2 failed: 1 error \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0\):\n {2}main\.c:42:5 error: 'ledx' undeclared\nNo CMSIS task is running in this window\.$/);
+            });
+
+            test('a build that exited 0 is answered after its check: failed with the lines, or not confirmed (CMSIS Solution reports 0 for failed builds)', async () => {
+                const w = jobWorld();
+                const checks: JobDiagnosis[] = [
+                    {
+                        state: 'done', check: 'failed', source: 'rerun', errorCount: 1, warningCount: 0, errors: [{ severity: 'error', file: '/w/main.c', line: 3, message: 'boom' }],
+                        warnings: [], text: '1 error (from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0):\n  main.c:3 error: boom',
+                    },
+                    {
+                        state: 'done', check: 'unverified', source: 'none', errorCount: 0, warningCount: 0, errors: [], warnings: [],
+                        text: 'The image out/demo.axf is missing, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. It could not be checked: why.',
+                    },
+                ];
+                w.tracker.onDidFinishJob((job) => {
+                    const next = checks.shift();
+                    if (job.state === 'ok' && next) {
+                        w.tracker.completeWith(job.id, new Promise<JobDiagnosis>((resolve) => setTimeout(() => resolve(next), 20)));
+                    }
+                });
+                solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
+                assert.match(failed.message, /^❌ CMSIS 'build' FAILED on HE — task 'cbuild demo\.csolution\.yml --active HE' exited 0 after [\d.]+ s, but the build failed \(CMSIS Solution reports exit 0 for a failed build too\) \(job b-1\)\.\n1 error /);
+                assert.strictEqual(failed.hint, 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.');
+
+                again();
+                solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                const unconfirmed = await w.handler.handleCmsisCommand({ action: 'build' });
+                assert.ok(typeof unconfirmed === 'object' && unconfirmed.status === 'ok');
+                assert.match(unconfirmed.text, /^⚠️ CMSIS 'build' on HE: task '.*' exited 0 after [\d.]+ s \(job b-2\), but that does not confirm the build\. The image out\/demo\.axf is missing, .* It could not be checked: why\. Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself\.$/);
             });
 
             test('the build the command returns is the result, not another build that started first', async () => {

@@ -318,6 +318,24 @@ job carries a pending `diagnosis` until it is done.
   and can be switched off (`build.diagnosticRerun`). It is interim, until
   CMSIS Solution offers a build log of its own (#21).
 
+The same machinery checks a build whose task exited 0. CMSIS Solution
+1.70.1 cannot report a failed build: its build runner drops the exit code
+cbuild returned, and the task's pseudoterminal closes with 0 either way. So
+exit 0 is not a success until `BuildDiagnosisRunner.check` agrees:
+
+- errors in a fresh `*.cbuild-idx.yml` make it a failure;
+- the images the build writes — the primary outputs of each context the
+  index names, else those of the cbuild-run file — all written since the
+  build started confirm it;
+- otherwise stage B decides. The build is incremental, so the re-run fails
+  where the build failed and succeeds at once when there was nothing to
+  rebuild; an image that kept its old time is no failure by itself.
+
+The check's verdict is `diagnosis.check`: `rebuilt` and `up-to-date` are
+successes, `failed` turns the job into a failed one (`withDiagnosis` in
+`src/core/cmsisTasks.ts`), and `unverified` — an image not rewritten and no
+re-run possible — is answered as a warning, not as ✅.
+
 The `diagnosis` holds the errors and warnings with file and line, which
 `onDidDiagnoseJob` announces for the problem journal (#48), and the short
 block `renderBuildFailure` makes for the result. When it arrives within the
@@ -438,7 +456,7 @@ by #56.
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
-| `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build: csolution's index, the diagnostic re-run of cbuild and its guards (#15) |
+| `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0 |
 | `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
 | `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
 | `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, probe guard, pyOCD lookup |

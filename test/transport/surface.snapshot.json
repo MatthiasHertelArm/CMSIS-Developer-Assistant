@@ -1365,8 +1365,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 43952,
-          "sha256": "d4c98d9b081c8aed4f0b2b5d2bfd23fd25cd905567db94f12325f2e5ba76c6f7"
+          "bytes": 44336,
+          "sha256": "2c4c1ef69b6ce0f17f3bde71c8f0abbe18629dfe3f643770b2908f989ee93885"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -2785,8 +2785,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 43952,
-          "sha256": "d4c98d9b081c8aed4f0b2b5d2bfd23fd25cd905567db94f12325f2e5ba76c6f7"
+          "bytes": 44336,
+          "sha256": "2c4c1ef69b6ce0f17f3bde71c8f0abbe18629dfe3f643770b2908f989ee93885"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -4430,7 +4430,7 @@
         },
         {
           "name": "get_build_diagnostics",
-          "description": "Errors and warnings of the newest build log (GCC/Clang/armclang/armlink/CMake/ninja/cbuild) with file:line, and the final build status. Logs come from cbuild --log or a tee; pass file for one saved elsewhere.",
+          "description": "Errors and warnings of the newest build log (GCC/Clang/armclang/armlink/CMake/ninja/cbuild) with file:line, and the final build status. Logs come from the diagnostic re-run of cmsis_action build; pass file for one saved elsewhere.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4650,8 +4650,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 43952,
-          "sha256": "d4c98d9b081c8aed4f0b2b5d2bfd23fd25cd905567db94f12325f2e5ba76c6f7"
+          "bytes": 44336,
+          "sha256": "2c4c1ef69b6ce0f17f3bde71c8f0abbe18629dfe3f643770b2908f989ee93885"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -4970,7 +4970,7 @@
           "text": "Focused the Serial Monitor panel via 'workbench.view.extension.vscode-serial-monitor-tools'."
         },
         "list_target_docs": {
-          "text": "No *.cbuild-run.yml found in the workspace. Build the solution (cbuild) so the target is known, or pass pack (Vendor::Name@version) and device explicitly."
+          "text": "No *.cbuild-run.yml found in the workspace. Build the solution (cmsis_action build) so the target is known, or pass pack (Vendor::Name@version) and device explicitly."
         },
         "search_target_docs": {
           "isError": true,
@@ -4985,19 +4985,19 @@
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool read_doc_pages: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"doc\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pages\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
         },
         "list_build_artifacts": {
-          "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: `cbuild <name>.csolution.yml --packs --update-rte` (or the CMSIS Solution view's Build button); the build writes out/<solution>+<target>.cbuild-run.yml and the images."
+          "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: cmsis_action build (the Build button of the CMSIS Solution view) builds the active solution; the build writes out/<solution>+<target>.cbuild-run.yml and the images."
         },
         "get_memory_usage": {
-          "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: `cbuild <name>.csolution.yml --packs --update-rte` (or the CMSIS Solution view's Build button); the build writes out/<solution>+<target>.cbuild-run.yml and the images."
+          "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: cmsis_action build (the Build button of the CMSIS Solution view) builds the active solution; the build writes out/<solution>+<target>.cbuild-run.yml and the images."
         },
         "lookup_symbol": {
           "text": "Pass name (a symbol, e.g. HAL_Init or a substring) or address (hex, e.g. 0x08001234)."
         },
         "get_section_layout": {
-          "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: `cbuild <name>.csolution.yml --packs --update-rte` (or the CMSIS Solution view's Build button); the build writes out/<solution>+<target>.cbuild-run.yml and the images."
+          "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: cmsis_action build (the Build button of the CMSIS Solution view) builds the active solution; the build writes out/<solution>+<target>.cbuild-run.yml and the images."
         },
         "get_build_diagnostics": {
-          "text": "No build log found (searched **/out/**/*.log, **/build*.log). The CMSIS Solution extension runs cbuild in a terminal and keeps no log file. Capture one with `cbuild <solution>.csolution.yml --packs --update-rte --log out/build.log` (or `… 2>&1 | tee out/build.log`), then call again, or pass file: <path> for a log saved elsewhere."
+          "text": "No build log found (searched **/out/**/*.log, **/build*.log). The CMSIS Solution extension runs cbuild in a terminal and keeps no log file. cmsis_action build shows the error lines of a failed build itself: it re-runs cbuild with --log into out/cmsis-developer-assistant/build-diagnostic.log, which this tool then reads. Pass file: <path> for a log the user saved elsewhere. Do not run cbuild yourself."
         },
         "cmsis_action": {
           "isError": true,
@@ -6455,8 +6455,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 43952,
-          "sha256": "d4c98d9b081c8aed4f0b2b5d2bfd23fd25cd905567db94f12325f2e5ba76c6f7"
+          "bytes": 44336,
+          "sha256": "2c4c1ef69b6ce0f17f3bde71c8f0abbe18629dfe3f643770b2908f989ee93885"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,
@@ -8348,8 +8348,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 43952,
-          "sha256": "d4c98d9b081c8aed4f0b2b5d2bfd23fd25cd905567db94f12325f2e5ba76c6f7"
+          "bytes": 44336,
+          "sha256": "2c4c1ef69b6ce0f17f3bde71c8f0abbe18629dfe3f643770b2908f989ee93885"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9521,

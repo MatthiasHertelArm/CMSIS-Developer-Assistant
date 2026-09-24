@@ -22,10 +22,12 @@ import {
     cbuildDiagnosticArgs,
     cbuildExecutable,
     diagnosticEnvironment,
+    idxBuildFiles,
     idxFileName,
     idxMessages,
     messagesFromLog,
     parseYamlSubset,
+    primaryOutputs,
     readToolsEnvironment,
     rerunSkipText,
 } from '../core/buildFailure';
@@ -134,6 +136,22 @@ suite('build failure (#15)', () => {
         test('the index is named after the solution', () => {
             assert.strictEqual(idxFileName('/w/Blinky.csolution.yml'), 'Blinky.cbuild-idx.yml');
             assert.strictEqual(idxFileName('C:\\w\\Two.Parts.csolution.yaml'.replace(/\\/g, '/')), 'Two.Parts.cbuild-idx.yml');
+        });
+
+        test('the index names each context\'s cbuild.yml and the cbuild-run.yml, whose images show whether a build that exited 0 rebuilt', () => {
+            assert.deepStrictEqual(idxBuildFiles(fixture('Blinky.cbuild-idx.yml')), {
+                cbuilds: ['build/MPS3/GCC/Debug/Blinky/outdir/Blinky.Debug+MPS3.cbuild.yml'],
+                cbuildRun: 'build/GCC/outdir/Blinky+MPS3.cbuild-run.yml',
+            });
+            assert.deepStrictEqual(idxBuildFiles('build-idx:\n  csolution: x.csolution.yml\n'), { cbuilds: [] });
+            const outputs = [
+                { file: '/o/Blinky.axf.map', type: 'map' }, { file: '/o/Blinky.hex', type: 'hex' }, { file: '/o/Blinky.axf', type: 'elf' },
+                { file: '/o/compile_commands.json', type: 'comp-db' },
+            ];
+            assert.deepStrictEqual(primaryOutputs(outputs), ['/o/Blinky.axf'], 'the ELF image when there is one');
+            assert.deepStrictEqual(primaryOutputs([{ file: '/o/libx.a', type: 'lib' }, { file: '/o/x.map', type: 'map' }]), ['/o/libx.a']);
+            assert.deepStrictEqual(primaryOutputs([{ file: '/o/x.bin', type: 'bin' }, { file: '/o/x.hex', type: 'hex' }]), ['/o/x.bin', '/o/x.hex']);
+            assert.deepStrictEqual(primaryOutputs([{ file: '/o/x.map', type: 'map' }]), []);
         });
     });
 
@@ -256,7 +274,7 @@ suite('build failure (#15)', () => {
             assert.strictEqual(text, 'No error lines: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), '
                 + 'so cbuild was not re-run.\n'
                 + '  csolution warning: no compiler registered\n'
-                + 'get_build_diagnostics (setting cmsis-developer-assistant.buildInfo.enabled) reads a build log if the user captures one with cbuild --log.');
+                + 'cmsis_action build re-runs cbuild with --log itself when it can.');
         });
 
         test('a re-run that passes, one stopped at the cap, and one that printed nothing known', () => {
