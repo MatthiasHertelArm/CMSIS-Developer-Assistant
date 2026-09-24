@@ -17,7 +17,8 @@
 /**
  * What the debugging handler takes from its surroundings apart from the
  * executor: a clock, VS Code's focused stack frame, the window's CMSIS job
- * tracker, the workspace folders, and where `flash` looks for pyOCD.
+ * tracker, its owned serial port, the workspace folders, and where `flash`
+ * looks for pyOCD.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
@@ -28,6 +29,7 @@
 
 import * as vscode from 'vscode';
 import { CmsisJobTracker, windowJobTracker } from '../cmsisJobTracker';
+import { SerialController, serialController } from '../core/serialController';
 
 /** An installed extension, as the pyOCD lookup of `flash` needs it. */
 export interface InstalledExtension {
@@ -53,6 +55,8 @@ export interface HandlerHost {
     focusedFrameId(): number | undefined;
     /** The window's CMSIS job tracker: task executions, jobs, probe owners. */
     cmsisJobs(): CmsisJobTracker;
+    /** The window's owned serial port (#49): the line of `get_session_status`, the note of the programming tools. */
+    ownedSerial(): SerialController;
     /** The open workspace folders, in VS Code's order. */
     workspaceFolders(): readonly vscode.WorkspaceFolder[];
     /** `vscode.workspace.findFiles`. */
@@ -76,6 +80,7 @@ export const VSCODE_HOST: HandlerHost = {
         return item !== undefined && 'frameId' in item ? item.frameId : undefined;
     },
     cmsisJobs: () => windowJobTracker(),
+    ownedSerial: () => serialController,
     workspaceFolders: () => vscode.workspace.workspaceFolders ?? [],
     findFiles: (include, exclude, maxResults) => vscode.workspace.findFiles(include, exclude, maxResults),
     toolEnvironment: () => ({

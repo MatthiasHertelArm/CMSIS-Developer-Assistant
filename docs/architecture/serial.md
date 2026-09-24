@@ -115,6 +115,34 @@ the session's `ended` handler:
 `sessionEnded()` releases the owned port and ends the subscription the
 session held, unless the port's rule is `manual`.
 
+## Telling the user and the agent
+
+Nothing in VS Code said who held a port the Serial Monitor could not open.
+
+- **The status-bar item.** `SerialStatus` in `src/serialStatus.ts` shows
+  `$(plug) Serial: COM7 (agent)` while a port is held, next to and apart from
+  the window's role item (#16), and is hidden otherwise; it listens to the
+  controller's `onDidChange()`. Its tooltip gives the baud rate, since when,
+  the owner's short session id and when the port goes, with a 5 s tick for
+  the time left. The click runs **Release Serial Port**
+  (`cmsis-developer-assistant.releaseSerialPort`), which releases the port
+  under any rule with the reason `user` and confirms with a message. Every
+  window registers both at activation (`registerSerialHandle()`).
+- **`get_session_status`** adds a line from the handler's host: "Serial: COM7
+  open (this session, idle 42 s of 300 s)" or the reason of the last release.
+- **Programming.** `flash` and `cmsis_action load`, `erase` and
+  `load_and_run` add a line when the window held a port as they started: the
+  probe's virtual COM port may re-enumerate, which closes it. There is no
+  release before programming: nothing ties a COM port to the probe, and a
+  second board's UART would go too.
+- **The skill and the guide.** `cmsis-debug-live` and the `inspection` topic
+  of the guide say to prefer `serial_capture`, to read the output around a
+  reset with `serial_open`, `reset`, `serial_read {waitMs}` and
+  `serial_close`, and to close a port as soon as it is read.
+
+`src/core/serialText.ts` holds these texts: `serialSessionLine()`,
+`programmingNote()` and `renderSerialHold()`.
+
 ## Errors
 
 - `PORT_HELD`: the window's slot is taken, or the OS refuses the open because
@@ -134,12 +162,17 @@ session held, unless the port's rule is `manual`.
   `describeRelease()`, `reopenAdvice()`, `isHeldElsewhere()`
 - `src/core/serialMonitorBridge.ts`: `SerialMonitorBridge`, its
   subscription's lease
-- `src/core/serialText.ts`: what the tools say about a held port and its rule
+- `src/core/serialText.ts`: what the tools, `get_session_status`, the
+  programming tools and the status-bar item say about a held port
+- `src/serialStatus.ts`: `SerialStatus`, `releaseSerialPort()`,
+  `registerSerialHandle()`
 - `src/core/serialCapture.ts`: `CaptureRecord`, `untilPattern()`,
   `renderCapture()`
 - `src/serialHandler.ts`: the tools, the setting, `handleCapture()`,
   `sessionEnded()`
-- `src/extension.ts`: a debug session's end reaches `debugSessionEnded()`
+- `src/extension.ts`: a debug session's end reaches `debugSessionEnded()`;
+  the item and the command are registered
+- `src/debuggingHandler.ts`: `serialLines()`, `noteHeldSerialPort()`
 - `src/windowCoordinator.ts`: teardown within 2 s
 
 ## Tests
@@ -151,7 +184,10 @@ session held, unless the port's rule is `manual`.
   say, the setting read at each open, `sessionEnded()`, the bridge's rules;
   `serial_capture` closing the port on a match, at the deadline, on a read
   that throws and on an unplug, its refusals (invalid regex, taken slot,
-  another program), the 16 kB answer and every path spelling
+  another program), the 16 kB answer and every path spelling; the session
+  line, the programming note, the status-bar item and Release Serial Port
+- `src/test/debuggingHandler.test.ts`: the serial line of
+  `get_session_status`, the note of `flash` and `cmsis_action load_and_run`
 - `src/test/serialFixtures.ts`: the hand-moved clock, the scripted port, the
   Serial Monitor with a data event, the path fixtures
 - `src/test/routing.test.ts`: the session id in the envelope, `sessionEnded`

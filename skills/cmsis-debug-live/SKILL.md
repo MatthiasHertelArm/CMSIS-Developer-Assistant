@@ -359,6 +359,12 @@ the user has the MS Serial Monitor open on the same device, the OS will not give
 you the tty — use `serial_subscribe_monitor` instead, which taps the extension
 rather than the kernel.
 
+- To see what the board prints, prefer `serial_capture`: one call opens the
+  port, reads until your `until` regex matches or `durationMs` ends, and closes it.
+- For the output around a reset: `serial_open` → `reset` → `serial_read {waitMs}` → `serial_close`.
+- Close a port as soon as you have read it: while you hold it, the user's Serial
+  Monitor cannot open it (it is released after 300 s without a serial call anyway).
+
 ---
 
 ## Several VS Code windows open

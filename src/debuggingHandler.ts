@@ -59,12 +59,14 @@ import { logger } from './utils/logger';
 import { REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
 import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/sessionStateTracker';
 import { HardwareTimeoutError } from './utils/timeout';
+import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
 import { classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
 import { isLockedUp, LOCKUP_NOTE } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
+import { programmingNote, serialSessionLine } from './core/serialText';
 import { findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup, SvdDevice } from './core/svdParser';
 import { shortenPath } from './core/textBudget';
 import { Refusal, toToolError, ToolError, ToolText, wrapError } from './core/toolResult';
@@ -170,6 +172,8 @@ const SYNTHESISED_CONFIGURATION = 'Default Configuration';
 
 /** Waits for a session or a stop never exceed this, whatever the setting says. */
 const WAIT_CAP_MS = 60_000;
+/** The CMSIS actions that program or erase the target, which can make the probe's virtual COM port re-enumerate (#49). */
+const PROGRAMMING_ACTIONS: ReadonlySet<string> = new Set<CmsisAction>(['load', 'erase', 'load_and_run']);
 /** The recovery pause after a step or continue that did not stop. */
 const RECOVERY_PAUSE_MS = 5_000;
 /** `wait_for_stop` without `timeoutMs`, and the margin that lets its own text beat the fence. */
@@ -717,10 +721,13 @@ export class DebuggingHandler
         });
     }
 
-    /** The session, plus one line on this window's CMSIS tasks when there is anything to say (#46). */
+    /**
+     * The session, plus one line on this window's CMSIS tasks when there is
+     * anything to say (#46), and one on its serial port (#49).
+     */
     async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
-        return renderSessionStatus(status, this.dbg.getDiagnostics(), this.cmsisTaskLines());
+        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...this.cmsisTaskLines(), ...this.serialLines()]);
     }
 
     /**
@@ -741,6 +748,37 @@ export class DebuggingHandler
         const chosen = sources.length > 0 ? sources : undefined;
         const page = this.journal.query({ sinceSeq, sources: chosen, minSeverity, limit });
         return renderProblemPage(page, { sinceSeq, sources: chosen, minSeverity });
+    }
+
+    /**
+     * The serial line of `get_session_status`: the port this window holds,
+     * for whom and how long idle, or why it was released; seen from the MCP
+     * session that asks. Never throws, since that tool must not.
+     */
+    private serialLines(): string[] {
+        try {
+            const line = serialSessionLine(this.host().ownedSerial(), currentCallContext()?.sessionId);
+            return line ? [line] : [];
+        } catch (caught) {
+            logger.warn('The serial line of get_session_status could not be built', caught);
+            return [];
+        }
+    }
+
+    /**
+     * `work`'s answer with one more line when this window held a serial port
+     * as it started (#49): programming can make the probe's virtual COM port
+     * re-enumerate, which closes the port. A failure passes as it is.
+     */
+    private async noteHeldSerialPort(work: () => Answer): Answer {
+        const serial = this.host().ownedSerial();
+        const held = serial.hold()?.path;
+        const outcome = await work();
+        const note = held === undefined ? undefined : programmingNote(held, serial);
+        if (note === undefined) {
+            return outcome;
+        }
+        return typeof outcome === 'string' ? `${outcome}\n${note}` : { ...outcome, text: `${outcome.text}\n${note}` };
     }
 
     /** The CMSIS task line of `get_session_status`; never throws, since that tool must not. */
@@ -1528,21 +1566,27 @@ export class DebuggingHandler
 
     // ── CMSIS Solution and pyOCD ──
 
-    /** One deadline for the whole call, up to 600 s (#12); the fence behind it is a backstop. */
+    /**
+     * One deadline for the whole call, up to 600 s (#12); the fence behind it
+     * is a backstop. `load`, `erase` and `load_and_run` note a serial port
+     * this window holds (#49).
+     */
     handleCmsisCommand(args: CmsisRequest): Answer {
         const waitMs = actionTimeoutMs(args.action, args.timeoutMs);
-        return this.fence('cmsis_action', waitMs, 'reply', () => runCmsisAction({
+        const run = (): Answer => this.fence('cmsis_action', waitMs, 'reply', () => runCmsisAction({
             executor: this.dbg,
             host: this.host(),
             awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
             renderFullState: (state) => this.fullState(state),
         }, args.action, args.target, waitMs), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
+        return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();
     }
 
+    /** `flash`; it notes a serial port this window holds (#49). */
     handleFlash(args: FlashRequest): Answer {
         const waitMs = flashTimeoutMs(args.timeoutMs);
-        return this.fence('flash', waitMs, 'reply', () => runFlash(this.dbg, this.host(), args, waitMs),
-            { capMs: LONG_LIMIT_CAP_MS, advice: FLASH_FENCE_ADVICE });
+        return this.noteHeldSerialPort(() => this.fence('flash', waitMs, 'reply', () => runFlash(this.dbg, this.host(), args, waitMs),
+            { capMs: LONG_LIMIT_CAP_MS, advice: FLASH_FENCE_ADVICE }));
     }
 }
 

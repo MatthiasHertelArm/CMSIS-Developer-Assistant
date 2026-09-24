@@ -266,6 +266,9 @@ was the router or which window an agent was driving.
   `src/windowStatus.ts` holds the item, the tick and the quick pick; the
   coordinator creates it at the end of `start()` and re-renders it when the
   window becomes router.
+- **The serial item.** A second item, apart from this one, shows only while
+  an agent holds a serial port in the window, and its click releases the
+  port (#49, see [serial.md](serial.md)).
 
 The default target is honoured by routers of 2.5.1 and later; a router of
 2.5.0 in a window that was not reloaded ignores the file.

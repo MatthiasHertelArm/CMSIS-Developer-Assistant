@@ -24,10 +24,10 @@
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
  * for in-editor Copilot, agent-configuration migration, the update of the tool
  * rules recorded in agents' rule files, the settings and workspace-folder
- * listeners, the agent/skill commands, Select Target Window, and the
- * first-run setup or skills prompt two seconds later. `deactivate` shuts the
- * coordinator down so the window leaves the shared registry before the host
- * exits.
+ * listeners, the agent/skill commands, Select Target Window, the serial port's
+ * status-bar item and Release Serial Port (#49), and the first-run setup or
+ * skills prompt two seconds later. `deactivate` shuts the coordinator down so
+ * the window leaves the shared registry before the host exits.
  *
  * Under the extension test runner (`npm test`) the suites exercise the modules
  * themselves, and activation leaves the developer's machine alone: no skills
@@ -49,6 +49,7 @@ import { SERVER_VERSION } from './debuggingExecutor';
 import { registerPackDocsCommands } from './packDocsCommands';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { createPackDocsHandlers, readPackDocsGates } from './packDocsHost';
+import { registerSerialHandle } from './serialStatus';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { logger } from './utils/logger';
 import { notifyError, notifyWarning } from './utils/notify';
@@ -334,6 +335,7 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     );
     registerAgentCommands(extensionContext);
     registerWindowCommand(extensionContext);
+    registerSerialHandle(extensionContext);
 
     if (!hostsTests) {
         setTimeout(() => setupOrSkillsPrompt(manager), SETUP_DELAY_MS);

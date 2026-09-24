@@ -61,6 +61,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - An invalid regex is `INVALID_ARGUMENT` before any port is touched. `PORT_HELD` when the window holds a port already (the hint points to `serial_read {waitMs}`) or another program holds this one.
   - In a routed session it takes `window`. The router waits at least `durationMs`, and now also the `waitMs` of `serial_read`, whatever the tool timeout.
   - The tool adds about 1 kB to `tools/list`; the serial group has eleven tools. The `serial_open` description says to prefer `serial_capture` for one-off reads, and the tool rules' table names it for `cat /dev/tty…`.
+- **The user sees which serial port an agent holds and can take it back (#49).**
+  - While an agent holds a port, the status bar shows "Serial: COM7 (agent)", as an item of its own next to the window's role. Its tooltip gives the baud rate, since when, the agent's session, and when the port will be released.
+  - A click runs the new command **CMSIS Developer Assistant: Release Serial Port**, which releases the port whatever its `releaseOn` and confirms it. The agent's next `serial_read` says "released … by the user in VS Code" and to ask before reopening it; the release is a warning in the problem journal.
+  - `get_session_status` adds "Serial: COM7 open (this session, idle 42 s of 300 s)", or why the port was released.
+  - `flash` and `cmsis_action load`, `erase` and `load_and_run` add one line when the window holds a port: the probe's virtual COM port may re-enumerate while the target is programmed, so the agent may need to reopen it. They do not release it: nothing ties the port to the probe, and a second board's UART would go too.
+  - The `cmsis-debug-live` skill and the `inspection` topic of the guide say to prefer `serial_capture`, to read the output around a reset with `serial_open`, `reset`, `serial_read {waitMs}` and `serial_close`, and to close a port as soon as it is read.
 
 ### Changed
 - **Shipped texts no longer send agents to the shell (part of #45, part of #50).**
