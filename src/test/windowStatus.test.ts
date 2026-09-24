@@ -90,6 +90,20 @@ suite('Window status', () => {
             assert.ok(lines.includes('Running here: cmsis_action for 12 s, read_memory for 0 s'), view.tooltip);
             assert.ok(lines.includes('Last agent call here: get_session_status 4 s ago'), view.tooltip);
             assert.ok(tooltipLines({ lastCall: { tool: 'flash', at: NOW - 3 * 60_000 } }).includes('Last agent call here: flash 3 min ago'));
+            assert.strictEqual(view.warning, false);
+        });
+
+        test('a call past its fence asks for the warning background and says why in the tooltip (#14)', () => {
+            const view = renderWindowStatus(state({
+                role: 'worker',
+                sessions: undefined,
+                running: [{ tool: 'start_debugging', since: NOW - 200_000, fenced: true }, { tool: 'read_memory', since: NOW - 400 }],
+            }));
+            assert.strictEqual(view.warning, true);
+            assert.strictEqual(view.text, '$(plug) CDA worker $(sync~spin)');
+            assert.ok(view.tooltip.split('\n').includes('Running here: start_debugging for 3 min (the agent was told it timed out; '
+                + 'a picker or dialog here may be waiting for you), read_memory for 0 s'), view.tooltip);
+            assert.strictEqual(renderWindowStatus(state({ running: [{ tool: 'read_memory', since: NOW }] })).warning, false);
         });
 
         test('the router lists every session with the window it drives and why', () => {

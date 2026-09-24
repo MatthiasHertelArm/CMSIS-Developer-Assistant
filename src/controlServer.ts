@@ -43,12 +43,24 @@
  * publishes in the registry, compared in constant time (else 403). The 403
  * and 404 bodies point whoever probes the port at the MCP tools instead.
  *
- * `onOp` hears when each op starts and settles; the window's status-bar item
- * shows from it that an agent call runs here (#16).
+ * Every op runs inside a fence (#14): when it has not settled `fenceMarginMs`
+ * before the budget the router named (`budgetMs` in the envelope; a 2.5.0
+ * router names none, and the window's own timeout decides), the window
+ * answers `WORKER_TIMEOUT` and journals it. The op keeps running, since a
+ * DAP request or a picker cannot be withdrawn; it stays in the busy table
+ * until it settles, and its late result is logged and dropped. Receiving a
+ * request may take 10 s, its headers 5 s: requests come over loopback and
+ * hold at most 1 MiB.
  *
- * The internal ops (`INTERNAL_OPS`) are no tools and are answered here, before
- * the op table: `sessionEnded` (#49) releases the serial port an ended MCP
- * session held in this window. They pass neither the op hook nor the journal.
+ * The internal ops (`INTERNAL_OPS`) are no tools and are answered here, at
+ * once and before the op table, and pass neither the op hook nor the
+ * journal: `health` (#14) with the window's pid, version, role, uptime,
+ * event-loop lag and busy ops; `sessionEnded` (#49), which releases the
+ * serial port an ended MCP session held in this window.
+ *
+ * `onOp` hears when each op starts, outlives its fence and settles; the
+ * window's status-bar item shows from it that an agent call runs here (#16),
+ * and the coordinator tells the user about a fenced one.
  */
 
 import { timingSafeEqual } from 'crypto';
@@ -59,23 +71,29 @@ import type { PackDocsHandlers } from './packDocsDispatch';
 import { serialHandler } from './serialHandler';
 import type { CallContext } from './core/callContext';
 import {
+    CHANNEL_TIMINGS,
     CONTROL_ENVELOPE_HEADER,
     CONTROL_ENVELOPE_VERSION,
     CONTROL_REQUEST_MAX_BYTES,
     InternalOpName,
     OpName,
+    forwardTimeoutMs,
     isInternalOp,
     isKnownOp,
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
+    workerFenceMs,
 } from './core/opTable';
 import { JournaledOutcome, runJournaled } from './core/problemFeed';
 import { problemJournal, type JournalCounters, type ProblemJournal } from './core/problemJournal';
-import { JsonObject, ToolError, ToolText, errorDetail, isToolReply, textOf, toToolError } from './core/toolResult';
+import { JsonObject, ToolError, ToolReply, ToolText, errorDetail, isToolReply, textOf, toToolError } from './core/toolResult';
+import { BusyRun, BusyTable, secondsText, type LagFigures } from './core/windowHealth';
+import { toolNameOf } from './core/windowStatus';
 import { closeHttpServer } from './utils/closeHttpServer';
 import { logger } from './utils/logger';
 import { isLoopbackHostHeader } from './utils/loopback';
+import type { WindowRole } from './utils/workspaceRegistry';
 
 /** Loopback only: nothing off this machine may reach the endpoint. */
 const LOOPBACK_ONLY = '127.0.0.1';
@@ -88,16 +106,61 @@ const NOT_FOR_AGENTS = {
     error: 'internal endpoint of the CMSIS Developer Assistant; agents use the MCP tools list_debug_windows and select_debug_window',
 };
 
+/** Receiving one whole request, and its headers, may take this long (#14); Node's defaults are 300 s and 60 s. */
+const REQUEST_RECEIVE_MS = 10_000;
+const HEADERS_RECEIVE_MS = 5_000;
+/** A window's tool timeout when nothing says otherwise: the default of `timeoutInSeconds`. */
+const DEFAULT_TOOL_MS = 180_000;
+/** The origin of this extension's own journal records. */
+const OWN_ORIGIN = 'cmsis-developer-assistant';
+/** The next step after a fence answered: the op may wait for a person. */
+const FENCE_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
+
 /** What one request asks for, once its body is parsed. */
 interface OpRequest {
     op: string;
     args: unknown;
     /** The tool call the router forwarded, when it named one. */
     call?: CallContext;
+    /** How long the router waits for the answer (#14); none from a router of 2.5.0. */
+    budgetMs?: number;
 }
 
-/** Told when an op starts running in this window and when it has settled, either way (#16: the status bar). */
-export type OpListener = (op: OpName, phase: 'start' | 'end') => void;
+/** How far an op has got: started, answered by its fence while it keeps running (#14), or settled either way. */
+export type OpPhase = 'start' | 'fenced' | 'end';
+
+/** One run of an op as the listener sees it: a ticket that tells two runs apart, and how long it has run. */
+export interface OpRun {
+    ticket: number;
+    ranMs: number;
+}
+
+/** Told when an op starts running in this window, outlives its fence, and settles (#16: the status bar; #14: the notice). */
+export type OpListener = (op: OpName, phase: OpPhase, run: OpRun) => void;
+
+/** What the `health` reply and the fence's message say about this window. */
+export interface WindowFacts {
+    pid: number;
+    /** The window's name as VS Code shows it. */
+    name?: string;
+    role?: WindowRole;
+    /** The extension version. */
+    version?: string;
+    /** The event-loop delay since the coordinator's last heartbeat. */
+    lagMs?: LagFigures;
+}
+
+/** How a window's control server fences its ops and describes the window (#14); every field has a default. */
+export interface ControlServerOptions {
+    /** The budget of an op whose router named none (2.5.0): what this window's own router would allow it. */
+    defaultBudgetMs?: (op: string, args: unknown) => number;
+    /** The fence answers this long before the budget runs out; 5 s. */
+    fenceMarginMs?: number;
+    /** The shortest fence; 1 s. */
+    minFenceMs?: number;
+    /** This window, as `health` and the fence's message describe it; the pid alone by default. */
+    facts?: () => WindowFacts;
+}
 
 /** Longest call id and session id taken from an envelope; anything longer is not one of ours. */
 const CALL_ID_MAX_CHARS = 128;
@@ -155,10 +218,9 @@ function errorBody(failure: ToolError, typed: boolean): object {
     return { error };
 }
 
-/** Milliseconds since the returned function was made. */
-function stopwatch(): () => number {
-    const origin = Date.now();
-    return () => Date.now() - origin;
+/** A budget a router named, when it is a usable number of milliseconds. */
+function budgetNamed(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 /**
@@ -170,9 +232,22 @@ function parseOpRequest(body: string): OpRequest {
     const named: unknown = parsed.op;
     if (typeof named === 'string') {
         const call = callNamed(parsed.callId, parsed.sessionId);
-        return { op: named, args: parsed.args ?? {}, ...(call ? { call } : {}) };
+        const budgetMs = budgetNamed(parsed.budgetMs);
+        return { op: named, args: parsed.args ?? {}, ...(call ? { call } : {}), ...(budgetMs !== undefined ? { budgetMs } : {}) };
     }
     throw new Error('Control request has no op');
+}
+
+/** A handler entry point as the dispatch calls it. */
+type EntryPoint = (args: unknown) => Promise<ToolText> | ToolText;
+
+/** Call an entry point; a synchronous throw becomes a rejection. */
+function invoke(entryPoint: EntryPoint, owner: object, args: unknown): Promise<ToolText> {
+    try {
+        return Promise.resolve(entryPoint.call(owner, args));
+    } catch (failure) {
+        return Promise.reject(failure);
+    }
 }
 
 /** A status with no body and no content type. */
@@ -208,14 +283,37 @@ export class ControlServer {
     private listener: http.Server | undefined;
     private boundPort = 0;
     private opListener: OpListener | undefined;
+    /** The ops running in this window, fenced ones included until they settle (#14). */
+    private readonly busy = new BusyTable();
+    /** Fence timers not yet fired; `stop()` clears them. */
+    private readonly fenceTimers = new Set<ReturnType<typeof setTimeout>>();
+    private readonly defaultBudgetMs: (op: string, args: unknown) => number;
+    private readonly fenceTimings: { fenceMarginMs: number; minFenceMs: number };
+    private readonly facts: () => WindowFacts;
+    /** How this server answers each internal op. */
+    private readonly internalOps: Readonly<Record<InternalOpName, (args: unknown) => ToolText | Promise<ToolText>>> = {
+        health: () => this.health(),
+        sessionEnded: (args) => this.sessionEnded(args),
+    };
 
-    /** @param journal the window's problem journal; a test gives each fake window its own. */
+    /**
+     * @param journal the window's problem journal; a test gives each fake window its own.
+     * @param options the fence's timings and what the window says about itself (#14).
+     */
     constructor(
         private readonly handler: IDebuggingHandler,
         private readonly token: string,
         private readonly packDocs?: PackDocsHandlers,
         private readonly journal: ProblemJournal = problemJournal(),
-    ) {}
+        options: ControlServerOptions = {},
+    ) {
+        this.defaultBudgetMs = options.defaultBudgetMs ?? ((op, args) => forwardTimeoutMs(op, args, DEFAULT_TOOL_MS));
+        this.fenceTimings = {
+            fenceMarginMs: options.fenceMarginMs ?? CHANNEL_TIMINGS.fenceMarginMs,
+            minFenceMs: options.minFenceMs ?? CHANNEL_TIMINGS.minFenceMs,
+        };
+        this.facts = options.facts ?? (() => ({ pid: process.pid }));
+    }
 
     /** The listening port; 0 before `start()` resolved and from the moment `stop()` begins. */
     getPort(): number {
@@ -227,18 +325,30 @@ export class ControlServer {
         this.opListener = listener;
     }
 
+    /** The ops running in this window now, oldest first; a fenced op stays until it settles (#14). */
+    busyOps(): readonly BusyRun[] {
+        return this.busy.list();
+    }
+
+    /** How long receiving a request and its headers may take; undefined while not listening. */
+    receiveLimits(): { requestMs: number; headersMs: number } | undefined {
+        const listening = this.listener;
+        return listening ? { requestMs: listening.requestTimeout, headersMs: listening.headersTimeout } : undefined;
+    }
+
     /** Hand one op event to the listener; a listener that throws is logged, never felt by the op. */
-    private tell(op: OpName, phase: 'start' | 'end'): void {
+    private tell(run: BusyRun, phase: OpPhase): void {
         try {
-            this.opListener?.(op, phase);
+            this.opListener?.(run.op as OpName, phase, { ticket: run.ticket, ranMs: Date.now() - run.startedAt });
         } catch (failure) {
-            logger.warn(`The op listener failed on ${op} ${phase}`, failure);
+            logger.warn(`The op listener failed on ${run.op} ${phase}`, failure);
         }
     }
 
     /** Listen on an OS-chosen loopback port and resolve with it. */
     start(): Promise<number> {
-        const httpServer = http.createServer((incoming, reply) => this.accept(incoming, reply));
+        const limits: http.ServerOptions = { requestTimeout: REQUEST_RECEIVE_MS, headersTimeout: HEADERS_RECEIVE_MS };
+        const httpServer = http.createServer(limits, (incoming, reply) => this.accept(incoming, reply));
         return new Promise<number>((resolvePort, rejectListen) => {
             httpServer.once('error', rejectListen);
             httpServer.listen(0, LOOPBACK_ONLY, () => {
@@ -255,9 +365,14 @@ export class ControlServer {
 
     /**
      * Close within the grace of `closeHttpServer`: idle connections at once,
-     * in-flight ones when the grace ends. Their ops are not cancelled.
+     * in-flight ones when the grace ends. Their ops are not cancelled, and
+     * their fences no longer fire.
      */
     stop(): Promise<void> {
+        for (const timer of this.fenceTimers) {
+            clearTimeout(timer);
+        }
+        this.fenceTimers.clear();
         const closing = this.listener;
         this.listener = undefined;
         this.boundPort = 0;
@@ -308,7 +423,25 @@ export class ControlServer {
             replyJson(reply, 413, { error: `control request above ${CONTROL_REQUEST_MAX_BYTES} bytes` });
             return;
         }
-        this.execute(body.toString('utf8')).then(
+        const failed = (failure: unknown): void => {
+            const counted = countersBody(this.journal.counters(), typed);
+            replyJson(reply, 500, { ...errorBody(toToolError(failure), typed), ...counted }, typed);
+        };
+        let request: OpRequest;
+        try {
+            request = parseOpRequest(body.toString('utf8'));
+        } catch (failure) {
+            failed(failure);
+            return;
+        }
+        if (!isInternalOp(request.op)) {
+            reply.once('close', () => {
+                if (!reply.writableEnded) {
+                    logger.warn(`control op=${request.op}: the router abandoned the call before it was answered; the op runs on`);
+                }
+            });
+        }
+        this.execute(request).then(
             ({ outcome, counters }) => {
                 const counted = countersBody(counters, typed);
                 if (outcome instanceof ToolError) {
@@ -317,28 +450,31 @@ export class ControlServer {
                     replyJson(reply, 200, { ...resultBody(outcome, typed), ...counted }, typed);
                 }
             },
-            (failure: unknown) => {
-                const counted = countersBody(this.journal.counters(), typed);
-                replyJson(reply, 500, { ...errorBody(toToolError(failure), typed), ...counted }, typed);
-            },
+            failed,
         );
     }
 
     /**
-     * Parse the body and run its op. A request that cannot be run — no op,
-     * an unknown one — rejects; the op's own failure is the outcome. Fields
-     * beyond `op`, `args`, `callId` and `sessionId` are ignored.
+     * Run a parsed request: an internal op here and now, any other through
+     * `dispatch`. A request that cannot be run — an unknown op — rejects; the
+     * op's own failure is the outcome. Fields beyond `op`, `args`, `callId`,
+     * `sessionId` and `budgetMs` are ignored.
      */
-    private async execute(text: string): Promise<JournaledOutcome> {
-        const request = parseOpRequest(text);
-        return this.dispatch(request.op, request.args, request.call);
+    private async execute(request: OpRequest): Promise<JournaledOutcome> {
+        if (isInternalOp(request.op)) {
+            return { outcome: await this.internalOps[request.op](request.args), counters: this.journal.counters() };
+        }
+        return this.dispatch(request);
     }
 
-    /** Run one op against the handler that owns it, through the journal, and trace the outcome. */
-    private async dispatch(op: string, opArgs: unknown, call: CallContext | undefined): Promise<JournaledOutcome> {
-        if (isInternalOp(op)) {
-            return { outcome: await this.runInternal(op, opArgs), counters: this.journal.counters() };
-        }
+    /**
+     * Run one op against the handler that owns it, through the journal and
+     * inside its fence, and trace the outcome. The op leaves the busy table,
+     * and the listener hears its end, when its promise settles, even long
+     * after its fence answered.
+     */
+    private async dispatch(request: OpRequest): Promise<JournaledOutcome> {
+        const { op, args: opArgs, call } = request;
         // Before any property lookup: `constructor` or `__proto__` stop here.
         if (!isKnownOp(op)) {
             throw new ToolError('TOOL_DISABLED', `Control op ${op} refused: not a known operation`);
@@ -348,34 +484,102 @@ export class ControlServer {
         if (!(entryPoint instanceof Function)) {
             throw new ToolError('TOOL_DISABLED', `Control op ${op} is not implemented in this window`);
         }
-        const elapsed = stopwatch();
-        this.tell(op, 'start');
-        try {
-            const journaled = await runJournaled(this.journal, call,
-                () => (entryPoint as (args: unknown) => Promise<ToolText>).call(owner, opArgs));
-            const { outcome } = journaled;
-            logger.info(outcome instanceof ToolError
-                ? `control op=${op} ms=${elapsed()} failed: ${outcome.message}`
-                : `control op=${op} ms=${elapsed()} out=${resultBytes(outcome)} B`);
-            return journaled;
-        } finally {
-            this.tell(op, 'end');
+        const fenceMs = workerFenceMs(request.budgetMs ?? this.defaultBudgetMs(op, opArgs), this.fenceTimings);
+        const run = this.busy.begin(op, call?.callId);
+        this.tell(run, 'start');
+        const journaled = await runJournaled(this.journal, call, () => {
+            const work = invoke(entryPoint as EntryPoint, owner, opArgs);
+            work.then(() => this.settled(run), () => this.settled(run));
+            return this.fence(work, run, fenceMs, call);
+        });
+        const { outcome } = journaled;
+        const ms = Date.now() - run.startedAt;
+        logger.info(outcome instanceof ToolError
+            ? `control op=${op} ms=${ms} failed: ${outcome.message}`
+            : `control op=${op} ms=${ms} out=${resultBytes(outcome)} B`);
+        if (run.fenced) {
+            // Told after the outcome was taken, so a notice the listener journals does not ride along with it.
+            this.tell(run, 'fenced');
         }
+        return journaled;
     }
 
-    /** An internal op, answered by this window itself; a request it cannot read is refused like a failed op. */
-    private async runInternal(op: InternalOpName, opArgs: unknown): Promise<ToolText> {
-        switch (op) {
-            case 'sessionEnded': {
-                const sessionId: unknown = (opArgs as { sessionId?: unknown } | null | undefined)?.sessionId;
-                if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > SESSION_ID_MAX_CHARS) {
-                    throw new ToolError('INVALID_ARGUMENT', 'sessionEnded needs the id of the MCP session that ended');
+    /** `work`, unless the fence fires first: then a `WORKER_TIMEOUT` rejection, and `work` runs on. */
+    private fence(work: Promise<ToolText>, run: BusyRun, fenceMs: number, call: CallContext | undefined): Promise<ToolText> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const expiry = new Promise<never>((_answered, fail) => {
+            timer = setTimeout(() => {
+                if (timer !== undefined) {
+                    this.fenceTimers.delete(timer);
                 }
-                const answer = await serialHandler.sessionEnded(sessionId);
-                logger.info(`control op=${op}: ${answer}`);
-                return answer;
+                fail(this.expire(run, fenceMs, call));
+            }, fenceMs);
+            this.fenceTimers.add(timer);
+        });
+        return Promise.race([work, expiry]).finally(() => {
+            if (timer !== undefined) {
+                clearTimeout(timer);
+                this.fenceTimers.delete(timer);
             }
+        });
+    }
+
+    /** The fence fired: mark the run, journal it in this window, and say so in the `WORKER_TIMEOUT` the router gets. */
+    private expire(run: BusyRun, fenceMs: number, call: CallContext | undefined): ToolError {
+        this.busy.fence(run);
+        const facts = this.facts();
+        const where = facts.name ? `window pid ${facts.pid} (${facts.name})` : `window pid ${facts.pid}`;
+        const message = `'${toolNameOf(run.op)}' did not finish within ${secondsText(fenceMs)} in ${where}; it is still running there.`;
+        this.journal.append({
+            source: 'extension', origin: OWN_ORIGIN, severity: 'warning', code: 'WORKER_TIMEOUT', message, hint: FENCE_HINT,
+            ...(call ? { toolCallId: call.callId } : {}),
+        });
+        logger.warn(`control op=${run.op} outlived its ${fenceMs} ms fence: answered WORKER_TIMEOUT, the op runs on`);
+        return new ToolError('WORKER_TIMEOUT', message, FENCE_HINT);
+    }
+
+    /** The op's promise settled: out of the busy table, and the listener hears its end. */
+    private settled(run: BusyRun): void {
+        this.busy.end(run);
+        if (run.fenced && run.fencedAt !== undefined) {
+            logger.warn(`control op=${run.op} finished ${secondsText(Date.now() - run.fencedAt)} after its fence; its result was discarded`);
         }
+        this.tell(run, 'end');
+    }
+
+    /** The `health` reply: this window is alive, and what it is doing. */
+    private health(): ToolReply {
+        const facts = this.facts();
+        const now = Date.now();
+        const busy: JsonObject[] = this.busy.list().map((run) => ({
+            op: run.op, ageS: Math.round((now - run.startedAt) / 1000), fenced: run.fenced,
+        }));
+        const data: JsonObject = { pid: facts.pid, uptimeS: Math.round(process.uptime()), busy };
+        if (facts.version !== undefined) {
+            data.version = facts.version;
+        }
+        if (facts.role !== undefined) {
+            data.role = facts.role;
+        }
+        if (facts.lagMs !== undefined) {
+            data.lagMs = { p99: facts.lagMs.p99, max: facts.lagMs.max };
+        }
+        return { text: `Window pid ${facts.pid} is alive; ${busy.length} op(s) running.`, status: 'ok', data };
+    }
+
+    /**
+     * The internal op `sessionEnded` (#49): an MCP session ended, so the serial
+     * port it held here is released. A request it cannot read is refused like
+     * a failed op.
+     */
+    private async sessionEnded(opArgs: unknown): Promise<ToolText> {
+        const sessionId: unknown = (opArgs as { sessionId?: unknown } | null | undefined)?.sessionId;
+        if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > SESSION_ID_MAX_CHARS) {
+            throw new ToolError('INVALID_ARGUMENT', 'sessionEnded needs the id of the MCP session that ended');
+        }
+        const answer = await serialHandler.sessionEnded(sessionId);
+        logger.info(`control op=sessionEnded: ${answer}`);
+        return answer;
     }
 
     private ownerOf(op: string): object {

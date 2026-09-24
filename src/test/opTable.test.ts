@@ -17,14 +17,17 @@
 import * as assert from 'assert';
 import {
     DEBUG_OPS,
+    INTERNAL_OPS,
     PACKDOCS_OPS,
     SERIAL_OPS,
     forwardTimeoutMs,
+    isInternalOp,
     isKnownOp,
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
     targetHintOf,
+    workerFenceMs,
 } from '../core/opTable';
 
 /** The router's own default in these cases: 30 s per tool call. */
@@ -102,5 +105,32 @@ suite('Op table', () => {
         assert.strictEqual(forwardTimeoutMs('handleRead', { waitMs: 50_000 }, 10_000), 65_000);
         assert.strictEqual(forwardTimeoutMs('handleCapture', { durationMs: 1_000 }, TOOL_MS), 45_000, 'a short one keeps the default');
         assert.strictEqual(forwardTimeoutMs('handleRead', { waitMs: -5, durationMs: 'long' }, TOOL_MS), 45_000);
+    });
+
+    test('the margin and the slow-op floor can be injected (#14)', () => {
+        assert.strictEqual(forwardTimeoutMs('handleStepOver', {}, 1_000, { marginMs: 500 }), 1_500);
+        assert.strictEqual(forwardTimeoutMs('handleFlash', {}, 1_000, { marginMs: 500, slowFloorMs: 4_000 }), 4_000);
+        assert.strictEqual(forwardTimeoutMs('handleFlash', { timeoutMs: 9_000 }, 1_000, { marginMs: 500, slowFloorMs: 4_000 }), 9_500);
+    });
+
+    test('the worker\'s fence answers 5 s inside the budget, never below 1 s, never beyond a timer\'s range (#14)', () => {
+        // The proposal's table: start_debugging, the slow ops, read_memory with timeoutMs 5000.
+        assert.strictEqual(workerFenceMs(forwardTimeoutMs('handleStartDebugging', {}, 180_000)), 190_000);
+        assert.strictEqual(workerFenceMs(forwardTimeoutMs('handleCmsisCommand', {}, 180_000)), 595_000);
+        assert.strictEqual(workerFenceMs(forwardTimeoutMs('handleReadMemory', { timeoutMs: 5_000 }, 180_000)), 15_000);
+        assert.strictEqual(workerFenceMs(5), 1_000, 'a budget too small for any fence');
+        assert.strictEqual(workerFenceMs(1e12), 2_147_483_647);
+        assert.strictEqual(workerFenceMs(400, { fenceMarginMs: 100, minFenceMs: 10 }), 300);
+    });
+
+    test('internal ops are answered by the control server itself: no tool, no dispatch (#14)', () => {
+        assert.deepStrictEqual([...INTERNAL_OPS], ['health', 'sessionEnded']);
+        for (const op of INTERNAL_OPS) {
+            assert.ok(isInternalOp(op));
+            assert.ok(!isKnownOp(op), `${op} is not dispatched to a handler`);
+            assert.ok(!(DEBUG_OPS as readonly string[]).includes(op));
+        }
+        assert.ok(!isInternalOp('handleGetSessionStatus'));
+        assert.ok(!isInternalOp('constructor'));
     });
 });

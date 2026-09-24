@@ -16,16 +16,19 @@
 
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
-import { ControlServer } from './controlServer';
+import { ControlServer, OpPhase, OpRun, WindowFacts } from './controlServer';
 import { DebugMCPServer, DebugMCPServerOptions, PortInUseError, SessionHandlers } from './debugMCPServer';
 import { DebuggingExecutor, ConfigurationManager, DebuggingHandler } from '.';
-import { HardwareTimeouts } from './debuggingExecutor';
+import { HardwareTimeouts, SERVER_VERSION } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
+import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs } from './core/opTable';
 import { problemJournal, type ProblemJournal } from './core/problemJournal';
 import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
+import { LagMonitor, NoticeGate, secondsText } from './core/windowHealth';
+import { toolNameOf } from './core/windowStatus';
 import { logger } from './utils/logger';
 import { notifyWarning } from './utils/notify';
 import { WindowStatus } from './windowStatus';
@@ -38,6 +41,15 @@ const PRODUCT = 'CMSIS Developer Assistant';
 
 /** How often a worker re-tries the router port after the router disappears. */
 const PROMOTION_POLL_MS = 10_000;
+
+/** At most one notice per tool in this time when calls outlive their fence (#14). */
+const FENCE_NOTICE_EVERY_MS = 10 * 60_000;
+
+/** The notices' button that opens the output channel. */
+const SHOW_LOG = 'Show Log';
+
+/** Shows a warning with buttons and resolves with the one chosen: `notifyWarning`, or a test's stand-in. */
+export type WarningNotifier = (message: string, ...items: string[]) => Thenable<string | undefined> | undefined;
 
 export interface CoordinatorOptions {
     port: number;
@@ -77,6 +89,14 @@ export interface CoordinatorOptions {
      * test can tell two windows in one process apart.
      */
     journal?: ProblemJournal;
+    /**
+     * The control channel's timings (#14): the router's budgets and health
+     * checks, and this window's fences. `CHANNEL_TIMINGS` by default; the
+     * transport tests shorten them.
+     */
+    timings?: Partial<ChannelTimings>;
+    /** How this window shows its warnings; `notifyWarning` by default, which journals them too. */
+    notify?: WarningNotifier;
 }
 
 const SERIAL_TEARDOWN_MS = 2_000;
@@ -97,25 +117,40 @@ async function defaultSerialTeardown(): Promise<void> {
  *
  * Once started, the window also shows its role in the status bar, and the
  * item's click chooses the default target window (#16).
+ *
+ * The control channel is watched from both ends (#14): the control server
+ * fences each op inside the budget the router names, and the coordinator
+ * tells the user, at most once per tool in ten minutes, when a call outlived
+ * its fence here; the routers of this window share one record of when each
+ * window last answered, and ask a quiet one for its health first.
  */
 export class WindowCoordinator {
     private readonly registry: WorkspaceRegistry;
     private readonly controlToken = randomUUID();
     private readonly localHandler: DebuggingHandler;
     private readonly journal: ProblemJournal;
+    private readonly timings: ChannelTimings;
+    private readonly notify: WarningNotifier;
+    /** When each window last answered this window's routers, by pid (#14). */
+    private readonly heard = new Map<number, number>();
+    /** One notice per tool in ten minutes when a call outlives its fence (#14). */
+    private readonly fenceNotices = new NoticeGate(FENCE_NOTICE_EVERY_MS);
 
     private controlServer: ControlServer | undefined;
     private mcpServer: DebugMCPServer | undefined;
     private status: WindowStatus | undefined;
+    private lag: LagMonitor | undefined;
     private heartbeat: ReturnType<typeof setInterval> | undefined;
     private promotionTimer: ReturnType<typeof setInterval> | undefined;
     private disposed = false;
 
     constructor(private readonly options: CoordinatorOptions) {
+        this.notify = options.notify ?? notifyWarning;
         this.registry = options.registry ?? new WorkspaceRegistry(undefined, undefined, undefined, {
-            onRefused: (message) => void notifyWarning(`${PRODUCT}: ${message}`),
+            onRefused: (message) => void this.notify(`${PRODUCT}: ${message}`),
         });
         this.journal = options.journal ?? problemJournal();
+        this.timings = { ...CHANNEL_TIMINGS, ...options.timings };
         const executor = new DebuggingExecutor(options.hardwareTimeouts);
         const configManager = new ConfigurationManager();
         this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds, this.journal);
@@ -143,12 +178,22 @@ export class WindowCoordinator {
     }
 
     public async start(context: vscode.ExtensionContext): Promise<void> {
-        this.controlServer = new ControlServer(this.localHandler, this.controlToken, this.options.packDocs, this.journal);
+        this.lag = new LagMonitor();
+        this.controlServer = new ControlServer(this.localHandler, this.controlToken, this.options.packDocs, this.journal, {
+            // A router of 2.5.0 names no budget; this window's own router would allow this much.
+            defaultBudgetMs: (op, args) => forwardTimeoutMs(op, args, this.options.timeoutInSeconds * 1000, this.forwardTimings()),
+            fenceMarginMs: this.timings.fenceMarginMs,
+            minFenceMs: this.timings.minFenceMs,
+            facts: () => this.facts(),
+        });
+        this.controlServer.onOp((op, phase, run) => this.noteOp(op, phase, run));
         await this.controlServer.start();
 
         this.publish();
         this.heartbeat = setInterval(() => {
             this.registry.heartbeat();
+            // The lag the health reply shows is that since the last heartbeat.
+            this.lag?.reset();
             // Another window may have chosen a new default target since.
             this.status?.reloadDefault();
         }, HEARTBEAT_MS);
@@ -236,24 +281,79 @@ export class WindowCoordinator {
     }
 
     /**
-     * Put this window's item into the status bar and feed it the ops the
-     * control server runs. A status bar that cannot be shown costs the
+     * Put this window's item into the status bar; the control server's op
+     * hook feeds it (`noteOp`). A status bar that cannot be shown costs the
      * window nothing else: the failure is logged and routing goes on.
      */
     private showStatus(): void {
         if (this.disposed || this.status !== undefined || this.controlServer === undefined) { return; }
         try {
-            const status = new WindowStatus({
+            this.status = new WindowStatus({
                 registry: this.registry,
                 role: () => this.role(),
                 endpoint: () => `${this.getEndpoint()}/mcp`,
                 sessions: () => this.mcpServer?.describeSessions(),
             });
-            this.status = status;
-            this.controlServer.onOp((op, phase) => status.noteOp(op, phase));
         } catch (error) {
             logger.warn('The window status bar item could not be shown', error);
         }
+    }
+
+    /** The control server's op hook: the status bar hears every phase, the user a call past its fence (#14). */
+    private noteOp(op: OpName, phase: OpPhase, run: OpRun): void {
+        try {
+            this.status?.noteOp(op, phase, run.ticket);
+        } catch (error) {
+            logger.warn(`The status bar item could not show ${op} ${phase}`, error);
+        }
+        if (phase === 'fenced') {
+            this.noticeFence(op, run.ranMs);
+        }
+    }
+
+    /**
+     * Tell the user that an agent call has waited here past its fence, at
+     * most once per tool in ten minutes: often it waits for a picker or a
+     * dialog that only the user can answer. The notice is journaled too.
+     */
+    private noticeFence(op: OpName, ranMs: number): void {
+        const tool = toolNameOf(op);
+        if (this.disposed || !this.fenceNotices.allow(tool, Date.now())) {
+            return;
+        }
+        const message = `${PRODUCT}: an agent's ${tool} has been waiting ${secondsText(ranMs)} in this window; `
+            + 'the agent was told it timed out. A picker or dialog here may be waiting for you.';
+        this.warn(message);
+    }
+
+    /** Show a warning with the Show Log button; a notifier that fails or answers nothing is fine. */
+    private warn(message: string): void {
+        try {
+            void Promise.resolve(this.notify(message, SHOW_LOG)).then((choice) => {
+                if (choice === SHOW_LOG) {
+                    logger.show();
+                }
+            }, () => undefined);
+        } catch (error) {
+            logger.warn('Could not show a warning', error);
+        }
+    }
+
+    /** What this window's control server says about it in `health` and its fence's message (#14). */
+    private facts(): WindowFacts {
+        return {
+            pid: this.registry.ownPid(),
+            // A window without a workspace is named by its pid alone.
+            name: vscode.workspace.name,
+            role: this.role(),
+            version: SERVER_VERSION,
+            lagMs: this.lag?.read(),
+        };
+    }
+
+    /** The router's budget timings, from this window's channel timings. */
+    private forwardTimings(): { marginMs: number; slowFloorMs: number } {
+        return { marginMs: this.timings.forwardMarginMs, slowFloorMs: this.timings.slowFloorMs };
     }
 
     /**
@@ -266,7 +366,13 @@ export class WindowCoordinator {
      * the router tells the windows it forwarded to (#49).
      */
     private sessionHandlers(): SessionHandlers {
-        const router = new RoutingDebuggingHandler(this.registry, this.options.timeoutInSeconds * 1000);
+        const router = new RoutingDebuggingHandler(this.registry, this.options.timeoutInSeconds * 1000, {
+            forward: this.forwardTimings(),
+            quietMs: this.timings.quietMs,
+            healthTimeoutMs: this.timings.healthTimeoutMs,
+            watchdogEveryMs: this.timings.watchdogEveryMs,
+            heard: this.heard,
+        });
         return {
             debug: router,
             serial: (op, args) => router.serialOp(op, args),
@@ -325,6 +431,8 @@ export class WindowCoordinator {
         this.controlServer?.onOp(undefined);
         this.status?.dispose();
         this.status = undefined;
+        this.lag?.dispose();
+        this.lag = undefined;
         // Unregister before stopping the servers so no other window can pick
         // this entry up and try to forward into a closing extension host.
         this.registry.unregister();

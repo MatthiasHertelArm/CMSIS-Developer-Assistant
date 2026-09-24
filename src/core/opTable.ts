@@ -132,14 +132,17 @@ export const PACKDOCS_OPS = [...PACKDOCS_DOC_OPS, ...PACKDOCS_BUILD_OPS] as cons
 
 /**
  * Ops between windows that are no tools: the control server answers them
- * itself, before the op table is consulted, without the op hook of the status
- * bar and without the problem journal. `sessionEnded {sessionId}` (#49): the
- * router says that an MCP session ended, and the window releases the serial
- * port and the Serial Monitor subscription that session held there. A window
- * of an earlier version answers "not a known operation", which the router
- * ignores.
+ * itself, before the op table is consulted, at once — never queued behind an
+ * op that runs — without the op hook of the status bar and without the
+ * problem journal.
+ * - `health` (#14): the window's extension host is alive, with what it is busy
+ *   with; a window of 2.5.0 answers it with 500, which says the same.
+ * - `sessionEnded {sessionId}` (#49): the router says that an MCP session
+ *   ended, and the window releases the serial port and the Serial Monitor
+ *   subscription that session held there. A window of an earlier version
+ *   answers "not a known operation", which the router ignores.
  */
-export const INTERNAL_OPS = ['sessionEnded'] as const;
+export const INTERNAL_OPS = ['health', 'sessionEnded'] as const;
 
 export type DebugOpName = typeof DEBUG_OPS[number];
 export type SerialOpName = typeof SERIAL_OPS[number];
@@ -193,20 +196,72 @@ const SLOW_OPS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * How long the router waits for a worker to answer.
+ * The timings of the control channel (#14). Every figure can be injected, so
+ * that the tests of the fences and the watchdog run in milliseconds.
+ */
+export interface ChannelTimings {
+    /** Router: a forward's budget is the call's tool timeout plus this. */
+    forwardMarginMs: number;
+    /** Router: the least budget of `cmsis_action`, `flash` and the documentation ops. */
+    slowFloorMs: number;
+    /** Worker: its fence answers this long before the router's budget runs out. */
+    fenceMarginMs: number;
+    /** Worker: the shortest fence, whatever budget a router names. */
+    minFenceMs: number;
+    /** Router: silence from a window after which a call checks the window's health first. */
+    quietMs: number;
+    /** Router: how long a health check may take. */
+    healthTimeoutMs: number;
+    /** Router: how often a pending forward checks its window's health, the first time after this long. */
+    watchdogEveryMs: number;
+}
+
+/** The timings the extension runs with. */
+export const CHANNEL_TIMINGS: Readonly<ChannelTimings> = Object.freeze({
+    forwardMarginMs: 15_000,
+    slowFloorMs: 10 * 60_000,
+    fenceMarginMs: 5_000,
+    minFenceMs: 1_000,
+    quietMs: 30_000,
+    healthTimeoutMs: 2_000,
+    watchdogEveryMs: 15_000,
+});
+
+/** What `forwardTimeoutMs` adds to a tool timeout, and the floor of the slow ops. */
+export interface ForwardTimings {
+    marginMs?: number;
+    slowFloorMs?: number;
+}
+
+/**
+ * How long the router waits for a worker to answer: its budget, which the
+ * envelope also tells the worker (`budgetMs`, #14).
  *
  * Always above the worker's own bound so the worker's error — which is specific
  * and actionable — wins over a generic router timeout. A serial call that
  * waits the time it names (`serial_read {waitMs}`, `serial_capture
  * {durationMs}`, each up to 60 s) gets at least that long (#49).
  */
-export function forwardTimeoutMs(op: string, args: unknown, defaultToolMs: number): number {
+export function forwardTimeoutMs(op: string, args: unknown, defaultToolMs: number, timings: ForwardTimings = {}): number {
+    const { marginMs = CHANNEL_TIMINGS.forwardMarginMs, slowFloorMs = CHANNEL_TIMINGS.slowFloorMs } = timings;
     const given = (typeof args === 'object' && args !== null ? args : {}) as { timeoutMs?: unknown; waitMs?: unknown; durationMs?: unknown };
     const positive = (value: unknown): value is number => typeof value === 'number' && value > 0;
     const toolMs = Math.max(positive(given.timeoutMs) ? given.timeoutMs : defaultToolMs,
         ...[given.waitMs, given.durationMs].filter(positive));
-    const floor = SLOW_OPS.has(op) ? 10 * 60_000 : 0;
-    return Math.max(toolMs + 15_000, floor);
+    const floor = SLOW_OPS.has(op) ? slowFloorMs : 0;
+    return Math.max(toolMs + marginMs, floor);
+}
+
+/** `setTimeout`'s longest delay; a longer one fires at once. */
+const LONGEST_TIMER_MS = 2_147_483_647;
+
+/**
+ * The worker's fence for a forward's budget (#14): `fenceMarginMs` inside
+ * it, so the worker's `WORKER_TIMEOUT` reaches the router before the router
+ * gives up, and never shorter than `minFenceMs`.
+ */
+export function workerFenceMs(budgetMs: number, timings: Pick<ChannelTimings, 'fenceMarginMs' | 'minFenceMs'> = CHANNEL_TIMINGS): number {
+    return Math.min(LONGEST_TIMER_MS, Math.max(timings.minFenceMs, budgetMs - timings.fenceMarginMs));
 }
 
 /**

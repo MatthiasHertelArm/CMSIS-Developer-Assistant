@@ -34,7 +34,8 @@ owns the workspace or the board the call is about.
 | `src/utils/workspaceRegistry.ts` | `WorkspaceRegistry`: the machine-wide list of windows, one JSON file per window, and the default target |
 | `src/routingDebuggingHandler.ts` | `RoutingDebuggingHandler`: picks the target window for a call and forwards it; answers `list_debug_windows` and `select_debug_window` |
 | `src/controlServer.ts` | `ControlServer`: receives a forwarded call and runs it against this window's handlers |
-| `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends; `targetHintOf()` |
+| `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends, the internal ops, the channel's timings and budgets; `targetHintOf()` |
+| `src/core/windowHealth.ts` | what a window knows about its own health: the busy table, the event-loop lag, the notice gate |
 | `src/windowStatus.ts`, `src/core/windowStatus.ts` | the status-bar item and Select Target Window: the wiring, and the pure rendering |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
 
@@ -144,12 +145,15 @@ router's forwarding methods are generated from it, so a new tool is routable
 without further code. The `window` argument is the router's alone: it is
 taken out of the arguments before they are sent.
 
-- The router waits for socket activity for the tool's timeout plus 15 s, so
+- The router gives a forward a budget of the tool's timeout plus 15 s, so
   the worker's own, more specific timeout answer arrives first. `cmsis_action`,
   `flash` and the documentation ops, which can take minutes, get at least ten
-  minutes (`forwardTimeoutMs()`). A window that stays silent longer ends the
-  call with `WORKER_TIMEOUT`; it is busy, not gone, so the session keeps it
-  as its target.
+  minutes (`forwardTimeoutMs()`). The budget is wall-clock time, and the
+  envelope names it to the worker, whose fence answers 5 s before it runs
+  out (see [Fences and health checks](#fences-and-health-checks)). A window
+  that stays silent longer ends the call with `WORKER_TIMEOUT`; it is busy,
+  not gone, so the session keeps it as its target, as long as it answered
+  its last health check.
 - Requests above 1 MiB and responses above 16 MiB are cut off; they only
   guard against runaways. The first reaches the router as a 413 and becomes
   `INVALID_ARGUMENT`, the second is `INTERNAL`; either way the window
@@ -191,6 +195,66 @@ new batch ends with a note naming the `get_recent_problems` call to make. A
 2.5.0 worker sends no counters, and then there is neither; a 2.3.10 router
 gets no counters at all.
 
+A third addition is the forward's budget, `budgetMs` (#14): how long the
+router waits for this answer. A worker of 2.5.0 ignores it; a router of
+2.5.0 sends none, and the worker then takes the budget its own router would
+give the op, from its own `timeoutInSeconds`.
+
+## Fences and health checks
+
+A forwarded op that never settled used to hold the agent's call for the
+whole budget — 195 s by default, ten minutes for `cmsis_action` — while
+nothing told the worker, and nothing noticed an extension host that had
+stopped running. `start_debugging` without a configuration name waited for
+a person in a picker the agent could not see. The channel is now watched
+from both ends (#14):
+
+- **The worker's fence.** `ControlServer.dispatch()` races every op
+  against a timer of the budget minus 5 s, at least 1 s
+  (`workerFenceMs()`). When it fires, the router is answered
+  `WORKER_TIMEOUT` — the tool, the window, and that it still runs there,
+  with the hint that a picker or dialog may wait for the user — and the
+  window journals a warning with that code. Nothing is cancelled: no API
+  withdraws a DAP request, a task or a picker. The op stays in the busy
+  table (`BusyTable`) until its promise settles; only then does the op hook
+  hear its end, and its late result is logged and dropped. A router that
+  gives up and closes the request is logged too.
+- **What the user sees.** The op hook's `fenced` phase turns the window's
+  status-bar item to the warning background while the call runs on, and
+  the coordinator shows a warning, at most one per tool in ten minutes
+  (`NoticeGate`), through `notifyWarning`, which journals it: often the
+  user is the only one who can close the picker or dialog.
+- **`health`.** An internal op (`INTERNAL_OPS` in `src/core/opTable.ts`):
+  no tool, answered by the control server itself at once, never queued
+  behind an op, never journaled or shown in the status bar. It answers the
+  window's pid, version, role, uptime, event-loop lag since the last
+  heartbeat (`LagMonitor`, from `perf_hooks.monitorEventLoopDelay`) and busy
+  ops. A 2.5.0 window answers it 500, which counts as alive: any answer
+  shows that the extension host runs.
+- **The router's checks.** Before a call to a window it has not heard from
+  for 30 s (or never), `RoutingDebuggingHandler` asks `health`, on a
+  connection of its own, and allows 2 s. While a forward is pending it asks
+  again every 15 s, and two misses in a row end the call. A window that
+  misses is `WINDOW_UNREACHABLE` and forgotten as the session's target: its
+  extension host is blocked, or it closed. A window that is busy but
+  answers keeps its whole budget, however long a build takes. When the
+  budget runs out, `WORKER_TIMEOUT` keeps the target only if the last check
+  passed. The sessions of one router window share when each window last
+  answered (`RoutingOptions.heard`).
+- **Receiving.** A whole request may take 10 s to arrive and its headers
+  5 s, where Node allows 300 s and 60 s: requests come over loopback and
+  hold at most 1 MiB. These limits bound the receiving only, never the op.
+- **Timings.** Every figure is in `CHANNEL_TIMINGS` and can be injected —
+  `forwardTimeoutMs()`, `RoutingOptions`, `ControlServerOptions`,
+  `CoordinatorOptions.timings` — so the tests of fences and checks run in
+  milliseconds.
+
+| Call | Router budget | Worker fence |
+| ---- | ------------- | ------------ |
+| `start_debugging` without `timeoutMs` | 195 s | 190 s |
+| `cmsis_action`, `flash`, documentation ops | 600 s (floor) | 595 s |
+| `read_memory { timeoutMs: 5000 }` | 20 s | 15 s (the handler's own cap answers at 5 s) |
+
 ## The control server
 
 `ControlServer` listens on an ephemeral port on `127.0.0.1`. The ops include
@@ -210,10 +274,12 @@ The 403 and 404 bodies are JSON that names `list_debug_windows` and
 `select_debug_window`, for an agent that found the port by itself. Routers
 read only the status of a 403 or 404, so the body changes nothing for them.
 
-The server then checks the op name against the op table before looking up
-any method, dispatches it to the debugging handler, the serial handler, or
-the documentation or build-artefact handler, and answers `{result}` with 200
-or `{error}` with 500, in the envelope the request asked for (see above). An
+The server then answers an internal op itself (see
+[Fences and health checks](#fences-and-health-checks)), and checks any other
+op name against the op table before looking up any method, dispatches it to
+the debugging handler, the serial handler, or the documentation or
+build-artefact handler inside its fence, and answers `{result}` with 200 or
+`{error}` with 500, in the envelope the request asked for (see above). An
 unknown op, a method the window lacks and absent documentation handlers are
 `TOOL_DISABLED`.
 
@@ -245,10 +311,12 @@ was the router or which window an agent was driving.
   an agent call runs in the window. Its tooltip gives the MCP endpoint, the
   default target, the calls running and the last one; in the router window
   also every open MCP session with the window it drives and the rung that
-  chose it. The item shows with a single window too: it confirms the server
-  runs.
-- **Its sources.** `ControlServer.onOp()` tells the window when an op starts
-  and ends; every call arrives that way, the router's own included. The
+  chose it. While a call runs on past its fence it has the warning
+  background (#14). The item shows with a single window too: it confirms
+  the server runs.
+- **Its sources.** `ControlServer.onOp()` tells the window when an op starts,
+  outlives its fence and ends, with a ticket per run; every call arrives
+  that way, the router's own included. The
   router asks its `DebugMCPServer` for `describeSessions()`, which reads each
   session's `RoutingDebuggingHandler.describeTarget()` from memory. The
   default target is read again on the 20 s heartbeat, and at once in the
@@ -292,7 +360,13 @@ releases the window's serial ports, giving that step at most two seconds.
   the note once per batch and after `get_recent_problems` none, no note from
   a worker without counters; the end of a session — `sessionEnded` only to
   the windows it reached, once, an old or silent window passed by, and the
-  control server's own answer without the op hook
+  control server's own answer without the op hook; fences and health checks
+  (#14) — a handler that never answers, a late settle, a budget from the
+  window's own timeout, `health` while an op hangs, the receive limits, a
+  blocked window, a window that stops answering mid-call, a budget that ends
+  after a missed check, a 500 as alive, the quiet rule
+- `src/test/windowHealth.test.ts`: the busy table, the notice gate, the
+  event-loop lag, seconds in messages
 - `src/test/workspaceRegistry.test.ts`: registration, pruning and path
   matching; the directory name, modes, and refused directories; the default
   target file and how its window is found again
@@ -308,4 +382,6 @@ releases the window's serial ports, giving that step at most two seconds.
   both debug, promotion when the router closes; roles and status-bar items,
   `window` on exactly the listed tools, `cmsis_action {window}`, a default
   chosen through the quick pick resolving the tie of two idle windows;
-  problem records and the count of new errors from the target window only
+  problem records and the count of new errors from the target window only; a
+  worker whose handler never answers, with `WORKER_TIMEOUT` inside the
+  budget, one notice and the warning background (#14)

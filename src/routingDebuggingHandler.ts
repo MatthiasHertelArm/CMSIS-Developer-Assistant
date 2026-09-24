@@ -35,6 +35,16 @@
  * the session forget the window, as `WINDOW_UNREACHABLE`. A window that does
  * not answer in time is busy, not gone: `WORKER_TIMEOUT`, target kept.
  *
+ * The router also watches the window (#14). The envelope names the forward's
+ * budget (`budgetMs`), so the worker's fence answers first. A window that
+ * has not answered for 30 s is asked `health` before the call goes out, and
+ * a forward still pending after 15 s asks every 15 s; a window that stays
+ * silent for 2 s, or twice in a row while a call runs, is `WINDOW_UNREACHABLE`
+ * and forgotten: its extension host is blocked, or it closed. A window that
+ * answers health keeps its whole budget, however long a build takes. When the
+ * budget runs out, `WORKER_TIMEOUT` keeps the target only if the last health
+ * check passed. Any answer to `health` counts, since 2.5.0 answers it 500.
+ *
  * The envelope carries the call's id and MCP session id from the call
  * context (#48), and the worker's reply its problem-journal counters. From
  * those the session's `ProblemNotices` add the count line to
@@ -50,11 +60,14 @@ import * as http from 'http';
 import type { IDebuggingHandler } from './debuggingHandler';
 import { currentCallContext } from './core/callContext';
 import {
+    CHANNEL_TIMINGS,
     CONTROL_ENVELOPE_HEADER,
     CONTROL_ENVELOPE_VERSION,
     CONTROL_RESPONSE_MAX_BYTES,
     DEBUG_OPS,
     DebugOpName,
+    ForwardTimings,
+    InternalOpName,
     TargetHint,
     WINDOW_ARGUMENT,
     forwardTimeoutMs,
@@ -72,7 +85,8 @@ import {
     toToolError,
     upgradeLegacyText,
 } from './core/toolResult';
-import type { SessionTarget } from './core/windowStatus';
+import { secondsText } from './core/windowHealth';
+import { toolNameOf, type SessionTarget } from './core/windowStatus';
 import {
     DefaultTarget,
     describeWindow,
@@ -101,9 +115,37 @@ const UNREACHABLE_HINT = 'It may have been closed. Call list_debug_windows to se
 const BUSY_HINT = 'The call may still be running there. Call get_session_status to see the state of that window, then retry.';
 /** How long a window may take to hear that a session ended; nobody waits for the answer. */
 const SESSION_END_TIMEOUT_MS = 2_000;
+/** After a window stopped answering health checks (#14). */
+const SILENT_HINT = 'Call list_debug_windows; if it persists, reload that window.';
+/** The internal op that asks a window whether its extension host runs. */
+const HEALTH_OP: InternalOpName = 'health';
+/** Health checks a pending forward may miss in a row before it is given up. */
+const WATCHDOG_MISSES = 2;
 
 /** One method per debugging op; the class gets them from the op table below. */
 type DebugForwarders = { [Op in DebugOpName]: (args?: unknown) => Promise<ToolText> };
+
+/**
+ * How the router times a forward and watches the window it goes to (#14).
+ * Every field has a default; the tests shorten them.
+ */
+export interface RoutingOptions {
+    /** A forward's budget; `forwardTimeoutMs` with `forward` and the tool timeout by default. */
+    budgetMs?: (op: string, args: unknown) => number;
+    /** The margin and slow-op floor `forwardTimeoutMs` uses when `budgetMs` is not given. */
+    forward?: ForwardTimings;
+    /** Silence from a window after which a call asks it `health` first; 30 s. */
+    quietMs?: number;
+    /** How long a health check may take; 2 s. */
+    healthTimeoutMs?: number;
+    /** How often a pending forward checks its window's health, first after this long; 15 s. */
+    watchdogEveryMs?: number;
+    /** When each window last answered, by pid; the router window shares one map among its sessions. */
+    heard?: Map<number, number>;
+}
+
+/** What a health check found: a window that answered, one that stayed silent, or a channel that failed. */
+type HealthProbe = { kind: 'alive' } | { kind: 'silent' } | { kind: 'failed'; reason: string };
 
 interface Resolved {
     entry: WindowRegistration;
@@ -118,10 +160,80 @@ interface WorkerAnswer {
 
 /**
  * The control channel itself failed: nothing listens on the port, the
- * connection dropped, the token is stale, or the answer is not a control
- * reply. The only failure after which the session forgets the window.
+ * connection dropped, the token is stale, the answer is not a control reply,
+ * or the window stopped answering health checks. The only failure after
+ * which the session forgets the window; `reported` is what the agent gets
+ * instead of the generic "Could not reach …".
  */
-class ChannelFailure extends Error {}
+class ChannelFailure extends Error {
+    constructor(message: string, readonly reported?: ToolError) {
+        super(message);
+    }
+}
+
+/** How a window is named in the watchdog's texts: pid, and the workspace name when it has one. */
+function windowLabel(entry: WindowRegistration): string {
+    return typeof entry.name === 'string' && entry.name.length > 0 ? `pid ${entry.pid} (${entry.name})` : `pid ${entry.pid}`;
+}
+
+/** A health check before the call went unanswered (#14). */
+function silentBeforeCall(entry: WindowRegistration, healthTimeoutMs: number): ChannelFailure {
+    return new ChannelFailure('no answer to a health check', new ToolError('WINDOW_UNREACHABLE',
+        `The VS Code window ${windowLabel(entry)} did not answer a health check within ${secondsText(healthTimeoutMs)} — `
+            + 'its extension host is blocked, or the window closed.', SILENT_HINT));
+}
+
+/** Health checks while the call ran went unanswered (#14). */
+function silentDuringCall(entry: WindowRegistration, op: string, why: string): ChannelFailure {
+    return new ChannelFailure(why, new ToolError('WINDOW_UNREACHABLE',
+        `The VS Code window ${windowLabel(entry)} ${why} while '${toolNameOf(op)}' ran there — `
+            + 'its extension host is blocked, or the window closed.',
+        `${SILENT_HINT} The call may still finish there once the window answers again; get_session_status shows its state.`));
+}
+
+/**
+ * Ask a window `health`, on a connection of its own. Any answer within
+ * `timeoutMs` counts as alive, a 500 of a 2.5.0 window included: it shows
+ * that the window's event loop runs. The body is read and dropped.
+ */
+function probeHealth(entry: WindowRegistration, timeoutMs: number): Promise<HealthProbe> {
+    const body = Buffer.from(JSON.stringify({ op: HEALTH_OP, args: {} }), 'utf8');
+    return new Promise<HealthProbe>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let settled = false;
+        const settle = (probe: HealthProbe): void => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(probe);
+            }
+        };
+        const outgoing = http.request({
+            host: '127.0.0.1',
+            port: entry.controlPort,
+            path: '/op',
+            method: 'POST',
+            // A fresh connection: a pooled one the window just closed would read as a failure.
+            agent: false,
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': body.length,
+                [TOKEN_HEADER]: entry.controlToken,
+                [CONTROL_ENVELOPE_HEADER]: String(CONTROL_ENVELOPE_VERSION),
+            },
+        }, (incoming) => {
+            incoming.on('error', () => undefined);
+            incoming.resume();
+            settle({ kind: 'alive' });
+        });
+        timer = setTimeout(() => {
+            settle({ kind: 'silent' });
+            outgoing.destroy();
+        }, timeoutMs);
+        outgoing.on('error', (fault: Error) => settle({ kind: 'failed', reason: fault.message }));
+        outgoing.end(body);
+    });
+}
 
 /** A window as `AMBIGUOUS_WINDOW` and a `window` argument that matches nothing list it in `data.candidates`. */
 function candidateOf(w: WindowRegistration, defaultPid: number | undefined): JsonObject {
@@ -185,17 +297,29 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     private readonly notices = new ProblemNotices();
     /** The windows this session forwarded a call to, by pid: those told when it ends (#49). */
     private readonly forwardedTo = new Set<number>();
+    /** A forward's budget: how long a window may take before the call ends as `WORKER_TIMEOUT`. */
+    private readonly budgetMs: (op: string, args: unknown) => number;
+    private readonly quietMs: number;
+    private readonly healthTimeoutMs: number;
+    private readonly watchdogEveryMs: number;
+    /** When each window last answered, by pid (#14). */
+    private readonly heard: Map<number, number>;
 
     /**
      * @param defaultToolMs the tool timeout a call gets without its own `timeoutMs`.
-     * @param answerWithinMs how long a window may stay silent before the call ends
-     *   as `WORKER_TIMEOUT`; by default `forwardTimeoutMs` (tests shorten it).
+     * @param options the budget and the health checks (#14); tests shorten them.
      */
     constructor(
         private readonly registry: WorkspaceRegistry,
         defaultToolMs: number,
-        private readonly answerWithinMs: (op: string, args: unknown) => number = (op, args) => forwardTimeoutMs(op, args, defaultToolMs),
-    ) {}
+        options: RoutingOptions = {},
+    ) {
+        this.budgetMs = options.budgetMs ?? ((op, args) => forwardTimeoutMs(op, args, defaultToolMs, options.forward));
+        this.quietMs = options.quietMs ?? CHANNEL_TIMINGS.quietMs;
+        this.healthTimeoutMs = options.healthTimeoutMs ?? CHANNEL_TIMINGS.healthTimeoutMs;
+        this.watchdogEveryMs = options.watchdogEveryMs ?? CHANNEL_TIMINGS.watchdogEveryMs;
+        this.heard = options.heard ?? new Map<number, number>();
+    }
 
     serialOp(op: string, args?: unknown): Promise<ToolText> {
         return this.relay(op, args);
@@ -311,10 +435,11 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     }
 
     /**
-     * One forwarded call: pick the window, send, and hand back what it
-     * answered, with this session's notice of new errors in that window.
-     * The worker's own failure passes as its `ToolError`; only a failed
-     * channel drops the window as this session's target.
+     * One forwarded call: pick the window, check its health when it has
+     * been quiet, send, and hand back what it answered, with this session's
+     * notice of new errors in that window. The worker's own failure passes
+     * as its `ToolError`; only a failed channel drops the window as this
+     * session's target.
      */
     private async relay(op: string, args: unknown): Promise<ToolText> {
         const given = args === undefined ? {} : args;
@@ -324,6 +449,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         this.forwardedTo.add(entry.pid);
         let answer: WorkerAnswer;
         try {
+            await this.checkIfQuiet(entry);
             answer = await this.post(entry, op, sent);
         } catch (failure) {
             if (!(failure instanceof ChannelFailure)) {
@@ -332,7 +458,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             if (this.target !== undefined && this.target.pid === entry.pid) {
                 this.forget();
             }
-            throw new ToolError('WINDOW_UNREACHABLE',
+            logger.warn(`Routing ${op} → pid=${entry.pid} failed: ${failure.message}`);
+            throw failure.reported ?? new ToolError('WINDOW_UNREACHABLE',
                 `Could not reach the VS Code window handling this session (pid=${entry.pid}): ${failure.message}`, UNREACHABLE_HINT);
         }
         const noticed = this.notices.observe(String(entry.pid), answer.counters, op, answer.outcome);
@@ -465,24 +592,64 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     }
 
     /**
-     * POST `{op, args}` to the window's control server — with the call's id
-     * and MCP session id when the call has a context — asking for the typed
-     * envelope, and resolve with what the window answered, its failure
-     * included. Rejects with `WORKER_TIMEOUT` when the window stays silent for
-     * `idleLimitMs`, and with a `ChannelFailure` when the channel itself fails.
+     * Ask the window `health` first when it has not answered for `quietMs`,
+     * or never has (#14). A window that stays silent, or whose channel
+     * fails, rejects as a `ChannelFailure`; one that answers is heard now.
      */
-    private post(entry: WindowRegistration, op: string, args: unknown, idleLimitMs = this.answerWithinMs(op, args)): Promise<WorkerAnswer> {
+    private async checkIfQuiet(entry: WindowRegistration): Promise<void> {
+        const last = this.heard.get(entry.pid);
+        if (last !== undefined && Date.now() - last <= this.quietMs) {
+            return;
+        }
+        const probe = await probeHealth(entry, this.healthTimeoutMs);
+        if (probe.kind === 'alive') {
+            this.heard.set(entry.pid, Date.now());
+            return;
+        }
+        throw probe.kind === 'failed' ? new ChannelFailure(probe.reason) : silentBeforeCall(entry, this.healthTimeoutMs);
+    }
+
+    /**
+     * POST `{op, args, budgetMs}` to the window's control server — with the
+     * call's id and MCP session id when the call has a context — asking for
+     * the typed envelope, and resolve with what the window answered, its
+     * failure included.
+     *
+     * The budget is wall-clock time. While the call is pending, the window
+     * is asked `health` every `watchdogEveryMs`; two misses in a row end the
+     * call as a `ChannelFailure`. When the budget runs out the call ends as
+     * `WORKER_TIMEOUT` after a passed health check, else as a
+     * `ChannelFailure`. A failed channel rejects as a `ChannelFailure` too.
+     * `budgetMs` defaults to the op's forward budget; the internal op
+     * `sessionEnded` (#49), which nobody waits for, passes 2 s.
+     */
+    private post(entry: WindowRegistration, op: string, args: unknown, budgetMs = this.budgetMs(op, args)): Promise<WorkerAnswer> {
         const call = currentCallContext();
-        const envelope = call ? { op, args, callId: call.callId, ...(call.sessionId ? { sessionId: call.sessionId } : {}) } : { op, args };
-        const body = Buffer.from(JSON.stringify(envelope), 'utf8');
+        const named = call ? { callId: call.callId, ...(call.sessionId ? { sessionId: call.sessionId } : {}) } : {};
+        const body = Buffer.from(JSON.stringify({ op, args, ...named, budgetMs }), 'utf8');
         return new Promise<WorkerAnswer>((resolve, reject) => {
+            let concluded = false;
+            let lastCheckPassed = true;
+            let misses = 0;
+            let checking = false;
+            let deadline: ReturnType<typeof setTimeout> | undefined;
+            let watchdog: ReturnType<typeof setInterval> | undefined;
+            /** Settle once: stop the timers and run `settle`; false when the call had settled already. */
+            const conclude = (settle: () => void): boolean => {
+                if (concluded) {
+                    return false;
+                }
+                concluded = true;
+                clearTimeout(deadline);
+                clearInterval(watchdog);
+                settle();
+                return true;
+            };
             const outgoing = http.request({
                 host: '127.0.0.1',
                 port: entry.controlPort,
                 path: '/op',
                 method: 'POST',
-                // Socket inactivity, not a wall-clock deadline.
-                timeout: idleLimitMs,
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': body.length,
@@ -492,42 +659,66 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             }, (incoming) => {
                 const parts: Buffer[] = [];
                 let size = 0;
-                let refused = false;
                 incoming.on('data', (chunk: Buffer) => {
-                    if (refused) {
+                    if (concluded) {
                         return;
                     }
                     size += chunk.length;
                     if (size > CONTROL_RESPONSE_MAX_BYTES) {
-                        refused = true;
                         parts.length = 0;
                         // The window answered, only too much: it stays the target.
-                        reject(new ToolError('INTERNAL', `control response above ${CONTROL_RESPONSE_MAX_BYTES} bytes from pid ${entry.pid}`));
+                        conclude(() => reject(new ToolError('INTERNAL', `control response above ${CONTROL_RESPONSE_MAX_BYTES} bytes from pid ${entry.pid}`)));
                         outgoing.destroy();
                         return;
                     }
                     parts.push(chunk);
                 });
-                incoming.on('error', (fault: Error) => reject(new ChannelFailure(fault.message)));
-                incoming.on('end', () => {
-                    if (refused) {
-                        return;
-                    }
+                incoming.on('error', (fault: Error) => conclude(() => reject(new ChannelFailure(fault.message))));
+                incoming.on('end', () => conclude(() => {
                     try {
                         const typed = incoming.headers[CONTROL_ENVELOPE_HEADER] !== undefined;
-                        resolve(readReply(incoming.statusCode, typed, Buffer.concat(parts).toString('utf8')));
+                        const answer = readReply(incoming.statusCode, typed, Buffer.concat(parts).toString('utf8'));
+                        this.heard.set(entry.pid, Date.now());
+                        resolve(answer);
                     } catch (failure) {
                         reject(failure);
                     }
+                }));
+            });
+            deadline = setTimeout(() => {
+                const ended = conclude(() => reject(lastCheckPassed
+                    ? new ToolError('WORKER_TIMEOUT', `The VS Code window handling this session (pid=${entry.pid}) sent no response within `
+                        + `${secondsText(budgetMs)} — it may be busy or wedged.`, BUSY_HINT)
+                    : silentDuringCall(entry, op, `sent no response within ${secondsText(budgetMs)} and missed its last health check`)));
+                if (ended) {
+                    outgoing.destroy();
+                }
+            }, budgetMs);
+            watchdog = setInterval(() => {
+                if (checking || concluded) {
+                    return;
+                }
+                checking = true;
+                void probeHealth(entry, this.healthTimeoutMs).then((probe) => {
+                    checking = false;
+                    if (concluded) {
+                        return;
+                    }
+                    if (probe.kind === 'alive') {
+                        lastCheckPassed = true;
+                        misses = 0;
+                        this.heard.set(entry.pid, Date.now());
+                        return;
+                    }
+                    lastCheckPassed = false;
+                    misses += 1;
+                    if (misses >= WATCHDOG_MISSES
+                        && conclude(() => reject(silentDuringCall(entry, op, `missed ${misses} health checks in a row`)))) {
+                        outgoing.destroy();
+                    }
                 });
-            });
-            outgoing.on('timeout', () => {
-                reject(new ToolError('WORKER_TIMEOUT',
-                    `The VS Code window handling this session (pid=${entry.pid}) sent no response within `
-                    + `${Math.round(idleLimitMs / 1000)}s — it may be busy or wedged.`, BUSY_HINT));
-                outgoing.destroy();
-            });
-            outgoing.on('error', (fault: Error) => reject(new ChannelFailure(fault.message)));
+            }, this.watchdogEveryMs);
+            outgoing.on('error', (fault: Error) => conclude(() => reject(new ChannelFailure(fault.message))));
             outgoing.end(body);
         });
     }
