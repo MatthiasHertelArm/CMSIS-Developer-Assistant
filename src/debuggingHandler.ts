@@ -498,7 +498,7 @@ export class DebuggingHandler
                 logger.info(`Debug session is live (state: ${state})`);
                 return true;
             }
-            logger.info(`Waiting for the debug session to come up (attempt ${attempt}, state: ${state})`);
+            logger.debug(`Waiting for the debug session to come up (attempt ${attempt}, state: ${state})`);
             await clock.sleep(Math.min(1000 * 2 ** attempt, 10_000) + Math.random() * 200);
         }
         return false;
@@ -516,7 +516,7 @@ export class DebuggingHandler
         await send();
         const result = await armed;
         if (result.kind === 'timeout') {
-            logger.warn(`No DAP stopped event within ${limitMs} ms`);
+            logger.debug(`No DAP stopped event within ${limitMs} ms`);
         }
         let state: DebugState;
         try {
@@ -735,7 +735,7 @@ export class DebuggingHandler
             }
             const settled = await this.settlesWithin(this.dbg.stopDebugging(), STOP_WAIT_MS);
             if (!settled && this.dbg.hasDebugSession()) {
-                logger.warn(`stop_debugging: the session did not end within ${STOP_WAIT_MS} ms`);
+                logger.info(`stop_debugging: the session did not end within ${STOP_WAIT_MS} ms`);
                 return { text: STOP_UNCONFIRMED, status: 'timeout' };
             }
             return `${SESSION_STOPPED}\n\n${ROOT_CAUSE_CHECK}`;

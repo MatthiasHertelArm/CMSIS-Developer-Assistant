@@ -214,6 +214,10 @@ it is:
 - **Logging:** `logger` from `src/utils/logger.ts` (`debug`, `info`, `warn`,
   `error`, each with an optional detail), which writes to the *CMSIS
   Developer Assistant* output channel. No `console.log` in extension code.
+  `warn` and `error` are for what the user can act on; a routine outcome
+  (an expected refusal, a fallback taken, a wait answered, a line per tool
+  call) is `info` or `debug`. The channel shows Info and above unless the
+  user sets its level to Debug.
 - **Without VS Code:** no module calls the `vscode` API at load time; the
   transport harness and `test/transport/packaged-vsix.js` load the code under
   a minimal stub. Logic that needs no editor goes into modules without a

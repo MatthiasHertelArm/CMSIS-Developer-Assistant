@@ -241,7 +241,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             await customRequestWithTimeout(session, 'threads', {}, this.budgets.probe());
         } catch (err) {
             if (err instanceof HardwareTimeoutError) {
-                logger.warn('hasActiveSession: threads probe timed out — probe or target may be unresponsive');
+                logger.info('hasActiveSession: threads probe timed out — probe or target may be unresponsive');
             } else {
                 logger.debug('hasActiveSession: threads probe failed', err);
             }

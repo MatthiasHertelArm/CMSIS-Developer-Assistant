@@ -1009,7 +1009,7 @@ export class AgentConfigurationManager {
             const picks = readSelection(scope);
             const wanted = resolveDesiredSkills(catalog, picks ?? [], { packEnabled, includeBundled: scope.kind === 'user' });
             if (wanted.unknown.length > 0) {
-                logger.warn(`Skills unknown to this version, ignored for ${scopeName(scope)}: ${wanted.unknown.join(', ')}`);
+                logger.info(`Skills unknown to this version, ignored for ${scopeName(scope)}: ${wanted.unknown.join(', ')}`);
             }
             if (wanted.suppressed.length > 0) {
                 logger.info(`AI Skills Pack disabled; kept in the setting but not installed for ${scopeName(scope)}: ${wanted.suppressed.join(', ')}`);
@@ -1022,7 +1022,7 @@ export class AgentConfigurationManager {
                     logger.warn(`Skill ${failed.name ?? '(root)'} in ${failed.root} failed: ${failed.error}`);
                 }
                 for (const foreign of report.skippedForeign) {
-                    logger.warn(`Left ${foreign.name} in ${foreign.root} untouched: it was not installed by this extension`);
+                    logger.info(`Left ${foreign.name} in ${foreign.root} untouched: it was not installed by this extension`);
                 }
             }
             total.installed.push(...report.installed);

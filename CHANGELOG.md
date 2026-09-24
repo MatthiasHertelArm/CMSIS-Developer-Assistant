@@ -16,6 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - Fields are redacted like variables: by their own name and value, with the notice when one is withheld. A withheld field, and every field of an expression that is itself a credential name, is never opened. GDB commands (`-exec …`, `>…`) have no fields.
   - `depth` adds 109 bytes to `tools/list` (31 286 of 32 000 in one window).
 
+- **The output channel is quiet in normal operation.**
+  - The problem journal's `[problem #N] …` lines are written at debug level, so they appear only when the _CMSIS Developer Assistant_ channel's log level is Debug (**Set Log Level…** in the Output view). The journal, `get_recent_problems` and **Copy Recent Problems** are unchanged.
+  - The line per tool call (`tool=… ms=… outcome=…`), per forwarded op and per routed call are debug entries too, as are a stop wait that ran out, the waits for a session to come up, a serial buffer that is full (logged for every chunk before), a promotion bid that lost and a session transport that did not close cleanly.
+  - Expected outcomes are info rather than warnings: a configuration picker nobody answered, a missing or unreadable `launch.json` with the configuration synthesized instead, an unreachable window (the agent gets `WINDOW_UNREACHABLE`), a call the router gave up on, a result discarded after its fence, a probe that did not answer the status check, unknown or foreign skills left alone.
+  - The logger passes debug entries to the channel, which applies the level the user picked; before, they were dropped whatever the level. Real failures stay warnings and errors.
+
 ### Fixed
 - **`cmsis_action build` no longer reports ✅ for a build that failed to compile (part of #15).**
   - CMSIS Solution 1.70.1 closes its build task with exit code 0 whatever cbuild returned: its build runner drops the exit code, and the task's pseudoterminal then closes with 0. A tester got "✅ CMSIS 'build' succeeded … exited 0 after 3 s" four times while cbuild failed with `call to undeclared function '__disable_irq'`, and the image stayed 37 minutes old. The job tracker bound the right execution; the 0 came from CMSIS Solution.

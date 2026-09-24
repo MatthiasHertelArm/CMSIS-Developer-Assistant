@@ -360,7 +360,7 @@ export class DebugMCPServer {
             try {
                 await session.transport.close();
             } catch (problem) {
-                logger.warn(`MCP session ${session.transport.sessionId ?? '(no id)'} did not close cleanly`, problem);
+                logger.debug(`MCP session ${session.transport.sessionId ?? '(no id)'} did not close cleanly`, problem);
             }
         }
         this.sessions.clear();
@@ -394,7 +394,7 @@ export class DebugMCPServer {
             }
             ended += 1;
             logger.info(`MCP session ${id} expired: no request for ${Math.round((now - session.lastSeenAt) / 60_000)} min`);
-            session.transport.close().catch((problem: unknown) => logger.warn(`MCP session ${id} did not close cleanly`, problem));
+            session.transport.close().catch((problem: unknown) => logger.debug(`MCP session ${id} did not close cleanly`, problem));
         }
         return ended;
     }
@@ -455,7 +455,7 @@ export class DebugMCPServer {
             logger.error('Handling an MCP request failed', failure);
             if (opened !== undefined && !opened.adopted) {
                 await discard(opened);
-                logger.warn('Released the transport and server of a session that never opened');
+                logger.debug('Released the transport and server of a session that never opened');
             }
             refuse(res, 500, -32603, REQUEST_FAILED);
         }
@@ -538,7 +538,7 @@ export class DebugMCPServer {
             return;
         }
         Promise.resolve().then(() => ended(id)).catch((problem: unknown) =>
-            logger.warn(`The end of MCP session ${id} could not be passed on`, problem));
+            logger.info(`The end of MCP session ${id} could not be passed on`, problem));
     }
 
     /** One finished tool call of any session: into the instance totals, the JSONL file and the log. */
@@ -546,7 +546,7 @@ export class DebugMCPServer {
         this.instanceTotals.record(sample);
         this.sink?.(sample);
         const session = sample.sessionId ? ` session=${sample.sessionId.slice(0, 8)}` : '';
-        logger.info(`tool=${sample.tool} ms=${sample.ms} in=${formatBytes(sample.argBytes)} ` +
+        logger.debug(`tool=${sample.tool} ms=${sample.ms} in=${formatBytes(sample.argBytes)} ` +
             `out=${formatBytes(sample.resultBytes)} outcome=${sample.outcome}${session}`);
     }
 }
