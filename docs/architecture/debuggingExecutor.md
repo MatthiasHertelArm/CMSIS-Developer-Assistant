@@ -115,8 +115,9 @@ can fake only the part a case drives.
   never from the editor, and a snapshot never fails. The same snapshot without
   source text is how the executor finds the focused frame before a GDB
   command or register read. Call stacks, the thread list (with the top frame
-  of the first 32 threads, fetched four at a time), variables per scope and
-  expression evaluation are plain DAP requests.
+  of the first 32 threads, fetched four at a time), variables per scope,
+  expression evaluation and the children of a structured value
+  (`getVariableChildren()`) are plain DAP requests.
 - **Target access.** `readMemory()` uses DAP `readMemory` and falls back to
   reading word by word through GDB (`readWordThroughGdb()` in
   `src/executor/gdbMemory.ts` tries a watch expression, then the raw GDB read

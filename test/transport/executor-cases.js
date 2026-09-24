@@ -1016,6 +1016,19 @@ async function main() {
     }
     reset();
     {
+        const listed = [{ name: 'period_ms', value: '500', type: 'uint32_t', variablesReference: 0 }, { name: 'broken' }, null];
+        const { session, calls } = makeSession(() => ({ variables: listed }));
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        const children = await ex.getVariableChildren(7, 900);
+        check('E6 children: one variables request, entries without a value dropped',
+            calls.length === 1 && calls[0].json === '{"variablesReference":7}' && eq(children, [listed[0]]), calls.map((c) => c.json));
+        session.customRequest = () => Promise.reject(new Error('Invalid variable reference'));
+        const e = await rejects(ex.getVariableChildren(7));
+        check('E6 children: a failure is wrapped', e && e.message === 'Reading the fields failed: Invalid variable reference', e && e.message);
+    }
+    reset();
+    {
         const { session } = makeSession(() => undefined, { type: 'gdbtarget', program: 'a.elf', target: { server: 'pyocd', port: 3333 }, cmsis: { cbuildRunFile: 'x.cbuild-run.yml' } }, 'S');
         focusOn(session);
         const info = await new DebuggingExecutor().getDeviceInfo();

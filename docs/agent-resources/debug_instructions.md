@@ -252,7 +252,7 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 - Step, continue, pause and `wait_for_stop` return a compact state: the location, the top 5 frames (the rest counted — `get_call_stack` has them all, workspace-relative, 20 inline unless you pass `levels`), and the breakpoint list only when it changed.
 - Names that match nothing are reported back explicitly, so a typo does not look like "the variable does not exist".
 - To inspect a **caller's** frame without disturbing the active one: `get_call_stack` → take a `frameId` → `get_frame_variables`.
-- `evaluate_expression` evaluates C expressions in the current frame; `-exec …` passes a GDB command through and returns what GDB printed (`-exec x/8xw $sp`, `-exec info breakpoints`). On the CMSIS Debugger the tool sends it with that adapter's own prefix, `>`, which you may write as well (`>info registers`).
+- `evaluate_expression` evaluates C expressions in the current frame; a struct, array or pointer lists its fields under the result (`depth` 2 or 3 opens nested ones, at most 32 per level), so read the whole struct in one call instead of field by field. `-exec …` passes a GDB command through and returns what GDB printed (`-exec x/8xw $sp`, `-exec info breakpoints`). On the CMSIS Debugger the tool sends it with that adapter's own prefix, `>`, which you may write as well (`>info registers`).
 
 ## 🔌 When the variable and the hardware disagree
 

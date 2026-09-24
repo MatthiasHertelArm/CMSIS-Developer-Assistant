@@ -56,7 +56,7 @@ import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState'
 import type { BreakpointBinding, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
 import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { logger } from './utils/logger';
-import { REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
+import { isSensitiveName, REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
 import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/sessionStateTracker';
 import { HardwareTimeoutError } from './utils/timeout';
 import { currentCallContext } from './core/callContext';
@@ -71,10 +71,13 @@ import { findPeripheral, findRegister, listPeripheralNames, loadSvdForLookup, Sv
 import { shortenPath } from './core/textBudget';
 import { Refusal, toToolError, ToolError, ToolText, wrapError } from './core/toolResult';
 import {
+    anyFieldRedacted,
     DapScope,
     DEFAULT_LISTING_LIMITS,
     DEFAULT_NAME_LISTING_LIMIT,
+    expandFields,
     formatMissingNames,
+    renderFields,
     renderScopes,
     renderVariableNames,
     selectVariables,
@@ -112,7 +115,7 @@ interface LogpointRequest { fileFullPath: string; line: number; logMessage: stri
 interface SourceLine { fileFullPath: string; line: number }
 interface ScopeRequest { scope?: VariableScope; timeoutMs?: number }
 interface ValuesRequest { scope?: VariableScope; variableNames?: string[]; timeoutMs?: number }
-interface ExpressionRequest { expression: string; timeoutMs?: number }
+interface ExpressionRequest { expression: string; depth?: number; timeoutMs?: number }
 interface MemoryRequest { address: string; length: number; format?: 'hex' | 'ascii' | 'both'; timeoutMs?: number }
 interface PeripheralReadRequest { peripheral: string; register?: string; timeoutMs?: number }
 interface DiagnoseRequest { levels?: number; timeoutMs?: number }
@@ -289,7 +292,7 @@ interface StopOutcome {
 }
 
 type VariablesReply = { scopes?: DapScope[] } | undefined | null;
-type EvaluateReply = { result?: unknown; type?: string } | undefined | null;
+type EvaluateReply = { result?: unknown; type?: string; variablesReference?: number } | undefined | null;
 type RedactCallback = (name: string, value: string) => { value: string; redacted: boolean };
 
 /** The `redactSecrets` setting, read on every call. */
@@ -1449,6 +1452,9 @@ export class DebuggingHandler
      * A GDB command written `-exec <cmd>` or `><cmd>` goes to GDB (on the
      * CMSIS Debugger in its `>` spelling, with the text GDB printed as the
      * result) and is never redacted: it is a raw target read like read_memory.
+     * A result with children (a struct, an array, a pointer) lists them under
+     * `Fields:`, `depth` levels deep (one by default), capped and redacted
+     * like a variable listing.
      */
     handleEvaluateExpression(args: ExpressionRequest): Answer {
         return this.fence('evaluate_expression', args.timeoutMs, 'error', async () => {
@@ -1460,14 +1466,29 @@ export class DebuggingHandler
             }
             const passthrough = passthroughCommand(args.expression) !== undefined;
             const printedNothing = passthrough && String(reply.result).trim() === '';
-            const shown = redactionEnabled() && !passthrough
+            const redacting = redactionEnabled() && !passthrough;
+            const shown = redacting
                 ? redactExpressionResult(args.expression, reply.result)
                 : { value: printedNothing ? '(GDB printed nothing)' : String(reply.result), redacted: false };
             let text = `Evaluated: ${args.expression}\nResult: ${shown.value}`;
             if (reply.type) {
                 text += `\nType: ${reply.type}`;
             }
-            if (shown.redacted) {
+            let redacted = shown.redacted;
+            const reference = typeof reply.variablesReference === 'number' ? reply.variablesReference : 0;
+            // A struct, array or pointer: its fields below, never those of a withheld or credential-named value.
+            if (reference > 0 && !passthrough && !shown.redacted && !(redacting && isSensitiveName(args.expression.trim()))) {
+                const fields = await expandFields({
+                    children: (ref) => this.dbg.getVariableChildren(ref, args.timeoutMs),
+                    redact: redacting ? (name, value) => redactVariableValue(name, value) : undefined,
+                    withholdChildren: redacting ? isSensitiveName : undefined,
+                }, reference, args.depth ?? 1);
+                if (fields.shown.length > 0 || fields.hidden > 0 || fields.error !== undefined) {
+                    text += `\n${renderFields(fields)}`;
+                }
+                redacted ||= anyFieldRedacted(fields);
+            }
+            if (redacted) {
                 text += `\n\n${REDACTION_NOTICE}`;
             }
             return text;

@@ -262,7 +262,7 @@
     },
     {
       "name": "evaluate",
-      "description": "Halted in main: symbols, arithmetic, format suffix, struct, secret-named pointer and array, unknown symbol, and the GDB passthrough both ways: -exec is sent as the adapter's > and > as it is; the text GDB printed as stdout output comes back as the result.",
+      "description": "Halted in main: symbols, arithmetic, format suffix, struct with its fields, secret-named pointer and array (no fields), unknown symbol, a nested struct one and two levels deep (an array cut at 32 elements, a credential-named field withheld), and the GDB passthrough both ways: -exec is sent as the adapter's > and > as it is; the text GDB printed as stdout output comes back as the result.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -306,10 +306,11 @@
           "args": {
             "expression": "config"
           },
-          "text": "Evaluated: config\nResult: {...}\nType: led_config_t",
+          "text": "Evaluated: config\nResult: {...}\nType: led_config_t\nFields:\n  period_ms: 500 (uint32_t)\n  pin: 5 '\\005' (uint8_t)",
           "traffic": [
             "dap: threads {}",
-            "dap: evaluate {\"expression\":\"config\",\"frameId\":1000,\"context\":\"repl\"} -> \"{...}\""
+            "dap: evaluate {\"expression\":\"config\",\"frameId\":1000,\"context\":\"repl\"} -> \"{...}\"",
+            "dap: variables {\"variablesReference\":5000}"
           ]
         },
         {
@@ -378,6 +379,33 @@
           "traffic": [
             "dap: threads {}",
             "dap: evaluate {\"expression\":\"$pc\",\"frameId\":1000,\"context\":\"repl\"} -> \"0x80002fe <main+22>\""
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "sensor"
+          },
+          "text": "Evaluated: sensor\nResult: {...}\nType: sensor_t\nFields:\n  id: 3 '\\003' (uint8_t)\n  cal: {...} (cal_t)\n  samples: {...} (uint16_t [40])\n  token: <redacted: possible secret> (char [12])\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"sensor\",\"frameId\":1000,\"context\":\"repl\"} -> \"{...}\"",
+            "dap: variables {\"variablesReference\":5003}"
+          ]
+        },
+        {
+          "tool": "evaluate_expression",
+          "args": {
+            "expression": "sensor",
+            "depth": 2
+          },
+          "text": "Evaluated: sensor\nResult: {...}\nType: sensor_t\nFields:\n  id: 3 '\\003' (uint8_t)\n  cal: {...} (cal_t)\n    offset: -12 (int16_t)\n    gain: 1.25 (float)\n  samples: {...} (uint16_t [40])\n    [0]: 0 (uint16_t)\n    [1]: 10 (uint16_t)\n    [2]: 20 (uint16_t)\n    [3]: 30 (uint16_t)\n    [4]: 40 (uint16_t)\n    [5]: 50 (uint16_t)\n    [6]: 60 (uint16_t)\n    [7]: 70 (uint16_t)\n    [8]: 80 (uint16_t)\n    [9]: 90 (uint16_t)\n    [10]: 100 (uint16_t)\n    [11]: 110 (uint16_t)\n    [12]: 120 (uint16_t)\n    [13]: 130 (uint16_t)\n    [14]: 140 (uint16_t)\n    [15]: 150 (uint16_t)\n    [16]: 160 (uint16_t)\n    [17]: 170 (uint16_t)\n    [18]: 180 (uint16_t)\n    [19]: 190 (uint16_t)\n    [20]: 200 (uint16_t)\n    [21]: 210 (uint16_t)\n    [22]: 220 (uint16_t)\n    [23]: 230 (uint16_t)\n    [24]: 240 (uint16_t)\n    [25]: 250 (uint16_t)\n    [26]: 260 (uint16_t)\n    [27]: 270 (uint16_t)\n    [28]: 280 (uint16_t)\n    [29]: 290 (uint16_t)\n    [30]: 300 (uint16_t)\n    [31]: 310 (uint16_t)\n    … 8 more — evaluate a field or element by name to read it\n  token: <redacted: possible secret> (char [12])\n\nNOTE: values matching '<redacted: possible secret>' were held back because the variable name or the value itself resembles a credential such as an API key, token, password or connection string. To debug such a value, check its type, its length or whether it is null rather than asking for its contents. Numeric scalars are never withheld, so firmware flags and counters stay readable. Turn this off with the \"cmsis-developer-assistant.redactSecrets\" setting.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\"sensor\",\"frameId\":1000,\"context\":\"repl\"} -> \"{...}\"",
+            "dap: variables {\"variablesReference\":5007}",
+            "dap: variables {\"variablesReference\":5008}",
+            "dap: variables {\"variablesReference\":5009}"
           ]
         }
       ]

@@ -254,6 +254,12 @@ class ScriptedExecutor {
         this.note('evaluateExpression', expression, frameId, ms);
         return { result: '1' };
     };
+    /** The children behind each variablesReference. */
+    childrenOf: Record<number, Awaited<ReturnType<IDebuggingExecutor['getVariableChildren']>>> = {};
+    getVariableChildren: IDebuggingExecutor['getVariableChildren'] = async (reference, ms) => {
+        this.note('getVariableChildren', reference, ms);
+        return this.childrenOf[reference] ?? [];
+    };
     readMemory: IDebuggingExecutor['readMemory'] = async (address, length, ms) => {
         this.note('readMemory', address, length, ms);
         return Buffer.alloc(length);
@@ -1436,6 +1442,34 @@ suite('DebuggingHandler', () => {
                 'The debug adapter returned no result for this expression.');
             x.evaluateExpression = async () => ({ result: 42, type: 'int' });
             assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: 'x' })), 'Evaluated: x\nResult: 42\nType: int');
+        });
+
+        test('evaluate shows the fields of a struct under the result, one level unless depth says more, redacted like variables', async () => {
+            const x = new ScriptedExecutor();
+            x.evaluateExpression = async (expression) => ({ result: '{...}', type: 'led_config_t', variablesReference: expression === 'password' ? 9 : 7 });
+            x.childrenOf = {
+                7: [
+                    { name: 'period_ms', value: '500', type: 'uint32_t' },
+                    { name: 'timing', value: '{...}', type: 'timing_t', variablesReference: 8 },
+                    { name: 'secret', value: '"s3cr3t-value"', type: 'char [13]', variablesReference: 9 },
+                ],
+                8: [{ name: 'on_ms', value: '20', type: 'uint16_t' }],
+                9: [{ name: '[0]', value: "115 's'", type: 'char' }],
+            };
+            const h = handlerFor(x, focusedOn(4));
+            assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: 'config', timeoutMs: 800 })),
+                'Evaluated: config\nResult: {...}\nType: led_config_t\nFields:\n  period_ms: 500 (uint32_t)\n  timing: {...} (timing_t)\n'
+                + `  secret: <redacted: possible secret> (char [13])\n\n${REDACTION_NOTICE}`);
+            assert.deepStrictEqual(x.argsOf('getVariableChildren'), [[7, 800]], 'one level, under the call\'s timeout');
+            const deeper = await textAnswer(h.handleEvaluateExpression({ expression: 'config', depth: 2 }));
+            assert.ok(deeper.includes('  timing: {...} (timing_t)\n    on_ms: 20 (uint16_t)\n  secret:'), deeper);
+            assert.deepStrictEqual(x.argsOf('getVariableChildren').slice(1).map((call) => call[0]), [7, 8], 'the withheld field stays closed');
+
+            await textAnswer(h.handleEvaluateExpression({ expression: 'password' }));
+            assert.deepStrictEqual(x.argsOf('getVariableChildren').length, 3, 'a credential-named expression is not opened');
+            x.evaluateExpression = async () => ({ result: 'text', variablesReference: 7 });
+            assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: '-exec print config' })),
+                'Evaluated: -exec print config\nResult: text', 'a GDB command has no fields');
         });
 
         test('frame variables use the given frame', async () => {
