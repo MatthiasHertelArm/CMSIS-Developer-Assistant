@@ -38,6 +38,7 @@ import { classifyProblem } from '../core/problemCodes';
 import { failedResponseMessage } from '../core/problemFeed';
 import { problemJournal, type ProblemJournal, type ProblemSeverity, type ProblemSource } from '../core/problemJournal';
 import { logger } from './logger';
+import { notifyJournaledWarning } from './notify';
 
 /**
  * Per-session record of the most recent execution-state events seen on the
@@ -80,6 +81,71 @@ const liveSessions: vscode.DebugSession[] = [];
 
 /** Sessions the tracker has seen end, so a wait that starts afterwards knows at once. */
 const endedSessions = new WeakSet<vscode.DebugSession>();
+
+// ── Starts an agent asked for ───────────────────────────────────────────────
+
+/**
+ * How long after a tool call asked for a debug start its session may still
+ * come up: a load that runs before the launch and GDB's own 15 s connect
+ * timeout included.
+ */
+export const AGENT_START_WINDOW_MS = 180_000;
+
+/** Until when a session that starts in this window counts as one an agent started. */
+let agentStartsUntil = 0;
+/** The sessions that did, and their child sessions (the cores of a multi-core launch). */
+const agentStartedSessions = new WeakSet<vscode.DebugSession>();
+
+/**
+ * A tool call is about to start a debug session in this window, directly
+ * (`start_debugging`, `restart_debugging`) or through the CMSIS Solution
+ * extension (`cmsis_action load_and_debug` or `attach`): sessions that start
+ * within `windowMs` count as the agent's.
+ */
+export function expectAgentStart(windowMs: number = AGENT_START_WINDOW_MS, now: number = Date.now()): void {
+    agentStartsUntil = Math.max(agentStartsUntil, now + windowMs);
+}
+
+/** Forget every expected agent start; for tests, which share one extension host. */
+export function forgetAgentStarts(): void {
+    agentStartsUntil = 0;
+}
+
+/** True for a session an agent's tool call started, or a child session of one. */
+export function isAgentStarted(session: vscode.DebugSession): boolean {
+    return agentStartedSessions.has(session);
+}
+
+function noteSessionOrigin(session: vscode.DebugSession): void {
+    const parent = session.parentSession;
+    if (Date.now() <= agentStartsUntil || (parent !== undefined && agentStartedSessions.has(parent))) {
+        agentStartedSessions.add(session);
+    }
+}
+
+/**
+ * Mark a failed `launch` or `attach` response so VS Code shows no dialog:
+ * it shows the error of a failed start as a modal dialog ("could not
+ * connect: Operation timed out." with "Open 'launch.json'") unless the error
+ * says `showUser: false`, and the CMSIS Debugger's adapter marks every start
+ * error for the user. For a start an agent asked for, nobody may be at the
+ * screen to close the dialog, and the agent has the error in its tool result
+ * and in the problem journal already. The tracker is handed the response
+ * before VS Code reads it, so the mark set here is the one VS Code sees.
+ * Returns the error text.
+ */
+export function quietStartFailure(message: { message?: unknown; body?: { error?: unknown } }): string {
+    const body = message.body ?? (message.body = {});
+    const reported = body.error;
+    const error = typeof reported === 'object' && reported !== null ? reported as { format?: unknown; showUser?: boolean } : undefined;
+    const text = typeof error?.format === 'string' && error.format !== '' ? error.format : String(message.message ?? 'the debug start failed');
+    if (error) {
+        error.showUser = false;
+    } else {
+        body.error = { id: 0, format: text, showUser: false };
+    }
+    return text;
+}
 
 function getOrInit(session: vscode.DebugSession): SessionExecState {
     let state = sessionStates.get(session);
@@ -587,6 +653,18 @@ function sessionEnded(session: vscode.DebugSession): void {
 
 // ── The tracker ────────────────────────────────────────────────────
 
+/** Take VS Code's dialog off a failed start an agent asked for, and tell the user in a notification instead. Never throws. */
+function noticeQuietStartFailure(session: vscode.DebugSession, message: { message?: unknown; body?: { error?: unknown } }): void {
+    try {
+        const text = quietStartFailure(message);
+        logger.info(`The ${session.configuration?.request ?? 'debug'} start of '${session.name}' an agent asked for failed: ${text}; VS Code shows no dialog for it`);
+        // The failed response is journaled already (journalFailedResponse); the toast is for the user only.
+        void notifyJournaledWarning(`CMSIS Developer Assistant: the debug start an agent asked for ('${session.name}') failed: ${text} The agent got the error.`);
+    } catch (caught) {
+        logger.warn('A failed debug start could not be kept from opening a dialog', caught);
+    }
+}
+
 /**
  * The adapter tracker of one session: what `registerSessionStateTracker`'s
  * factory hands VS Code for every session, exported so tests can feed it
@@ -597,6 +675,7 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
     // VS Code's restart of an adapter without a restart request relaunches it in the same session.
     endedSessions.delete(session);
     addLiveSession(session);
+    noteSessionOrigin(session);
     return {
         onWillReceiveMessage(message: any): void {
             if (message?.type !== 'request') {
@@ -615,6 +694,9 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
                 }
                 if (message.success === false) {
                     journalFailedResponse(journal, session, message, sender);
+                    if ((message.command === 'launch' || message.command === 'attach') && agentStartedSessions.has(session)) {
+                        noticeQuietStartFailure(session, message);
+                    }
                 }
                 return;
             }

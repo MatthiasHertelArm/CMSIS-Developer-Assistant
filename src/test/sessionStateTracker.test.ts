@@ -21,10 +21,14 @@ import {
     awaitBreakpointsApplied,
     captureOutput,
     createSessionTracker,
+    expectAgentStart,
+    forgetAgentStarts,
     forgetGdbLogpoints,
     gdbLogpointsOf,
     getLiveSessionNames,
+    isAgentStarted,
     noteOwnRequest,
+    quietStartFailure,
     rememberGdbLogpoint,
     waitForSessionEnd,
     waitForStopEvent,
@@ -240,6 +244,53 @@ suite('Session state tracker', () => {
             again.onDidSendMessage?.({ type: 'event', event: 'stopped', body: { reason: 'breakpoint', threadId: 1 } });
             assert.deepStrictEqual(await stop, { kind: 'stopped', reason: 'breakpoint', threadId: 1 });
             again.onWillStopSession?.();
+        });
+    });
+
+    suite('a failed start an agent asked for opens no dialog', () => {
+        teardown(() => forgetAgentStarts());
+
+        /** A failed launch response as cdt-gdb-adapter sends it: the error marked for the user. */
+        const failedLaunch = (command = 'launch'): { type: string; command: string; success: boolean; message: string; body: { error: { id: number; format: string; showUser?: boolean } } } => ({
+            type: 'response', command, success: false, message: 'could not connect: Operation timed out.',
+            body: { error: { id: 1, format: 'could not connect: Operation timed out.', showUser: true } },
+        });
+
+        test('a session started while an agent start is expected gets its failed launch or attach marked showUser false', () => {
+            expectAgentStart(60_000);
+            const agents = track();
+            assert.ok(isAgentStarted(agents.session));
+            const launch = failedLaunch();
+            agents.tracker.onDidSendMessage?.(launch);
+            assert.strictEqual(launch.body.error.showUser, false, 'VS Code shows no modal dialog for it');
+            const attach = failedLaunch('attach');
+            agents.tracker.onDidSendMessage?.(attach);
+            assert.strictEqual(attach.body.error.showUser, false);
+            // Other failed requests keep what the adapter said.
+            const evaluate = { ...failedLaunch(), command: 'evaluate' };
+            agents.tracker.onDidSendMessage?.(evaluate);
+            assert.strictEqual(evaluate.body.error.showUser, true);
+        });
+
+        test('a session the user started keeps VS Code\'s dialog; a child session of an agent\'s start counts as the agent\'s', () => {
+            const users = track();
+            assert.ok(!isAgentStarted(users.session));
+            const launch = failedLaunch();
+            users.tracker.onDidSendMessage?.(launch);
+            assert.strictEqual(launch.body.error.showUser, true);
+
+            expectAgentStart(60_000);
+            const root = track();
+            forgetAgentStarts();
+            const core = { id: 'core1', name: 'core 1', type: 'gdbtarget', configuration: {}, parentSession: root.session } as unknown as vscode.DebugSession;
+            createSessionTracker(core);
+            assert.ok(isAgentStarted(core));
+        });
+
+        test('an error response without an error object gets one that says showUser false', () => {
+            const bare: { message: string; body?: { error?: unknown } } = { message: 'Unable to start debugging.' };
+            assert.strictEqual(quietStartFailure(bare), 'Unable to start debugging.');
+            assert.deepStrictEqual(bare.body, { error: { id: 0, format: 'Unable to start debugging.', showUser: false } });
         });
     });
 

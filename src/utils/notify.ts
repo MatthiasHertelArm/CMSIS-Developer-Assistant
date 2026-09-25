@@ -19,7 +19,9 @@
  * as `vscode.window.showErrorMessage` / `showWarningMessage` would, and also
  * records it in the window's problem journal (source `ui`), so an agent learns
  * what the user was told. Modal confirmations are questions, not problems,
- * and keep calling VS Code directly.
+ * and keep calling VS Code directly. `notifyJournaledWarning` is for a problem
+ * the journal already holds in its own words (a failed DAP response), which a
+ * second record would only repeat.
  */
 
 import * as vscode from 'vscode';
@@ -46,4 +48,9 @@ export function notifyError(message: string, ...items: string[]): Thenable<strin
 export function notifyWarning(message: string, ...items: string[]): Thenable<string | undefined> {
     recordNotice('warning', message);
     return vscode.window.showWarningMessage(message, ...items);
+}
+
+/** Shows a warning about a problem the journal already holds, without a second record of it. */
+export function notifyJournaledWarning(message: string): Thenable<string | undefined> {
+    return vscode.window.showWarningMessage(message);
 }

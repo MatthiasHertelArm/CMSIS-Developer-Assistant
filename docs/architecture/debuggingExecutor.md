@@ -179,6 +179,24 @@ fallbacks and restart) no longer apply to the CMSIS Debugger since #13; KB3
 (the `-exec` prefix) is fixed by #56, and of KB4 only the `set` fallback of a
 memory write and the reset still judge GDB's reply by its text alone.
 
+## A failed start opens no dialog
+
+When a launch or attach fails, VS Code shows the adapter's error as a modal
+dialog ("could not connect: Operation timed out." with "Open 'launch.json'")
+unless the error says `showUser: false`; the CMSIS Debugger's adapter marks
+every start error for the user. Nobody may be at the screen when an agent
+started the session, so the executor's starts (`startDebugging`,
+`startDebuggingByName`, `restart`) and `cmsis_action load_and_debug` and
+`attach` call `expectAgentStart()`: sessions that begin within the next
+three minutes, and their child sessions, count as the agent's. For those,
+the adapter tracker sets `showUser: false` on a failed `launch` or `attach`
+response (`quietStartFailure()`), which it is handed before VS Code reads
+it. The agent has the error in its tool result and the problem journal; the
+user gets a plain notification. A session the user starts keeps VS Code's
+dialog. That the tracker sees the response before VS Code does is how the
+extension host works today, not a documented promise of the API, so a VS
+Code update needs a look at this.
+
 ## Where to look
 
 | File | Contents |
@@ -193,7 +211,7 @@ memory write and the reset still judge GDB's reply by its text alone.
 | `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
 | `src/executor/sessionReports.ts` | `probeSession()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
-| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session |
+| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`) |
 | `src/utils/timeout.ts` | `withTimeout()`, `customRequestWithTimeout()`, `HardwareTimeoutError` |
 
 ## Tests
