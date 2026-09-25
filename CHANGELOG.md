@@ -4,6 +4,15 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **A debug start an agent asked for no longer opens VS Code's modal dialog when it fails.**
+  - A failed launch or attach, such as GDB's "could not connect: Operation timed out." when no GDB server listens, made VS Code open a modal dialog with "Open 'launch.json'". With nobody at the screen it blocked the window until someone closed it.
+  - For sessions that `start_debugging`, `restart_debugging` or `cmsis_action load_and_debug` / `attach` start, and their child sessions, the error goes to the agent (tool result and problem journal) and to the user as a plain notification. A session the user starts keeps VS Code's dialog.
+  - This relies on the adapter tracker seeing the failed response before VS Code reads it, which is how the extension host works today but is not a documented API promise.
+- **`cmsis_action attach` without a GDB server is refused at once.** When no CMSIS Run task is alive and nothing listens on the port of the attach configurations in `.vscode/launch.json`, it answers `NO_SESSION` naming the port, with `load_and_run` or `load_and_debug` as the next step, instead of waiting for GDB's 15 s connect timeout.
+
 ## [2.5.2] - 2026-09-24
 
 ### Changed

@@ -134,7 +134,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `erase` | Erase target flash. | Waits for the task. |
 | `load_and_run` | Flash and run without a debug session; the CMSIS Run task keeps a GDB server on the probe. | Waits until Load ended and Run stays up. |
 | `load_and_debug` | Flash and start a debug session (the *Debug* button). | Waits for its Load, then returns when the session is up, with its state. |
-| `attach` | Debug firmware started with `load_and_run`: connects to the GDB server CMSIS Run hosts (no programming). | Returns when the session is up. |
+| `attach` | Debug firmware started with `load_and_run`: connects to the GDB server CMSIS Run hosts (no programming). | Returns when the session is up. Refused at once (`NO_SESSION`) when no CMSIS Run task is alive and no GDB server listens on the attach configuration's port. |
 | `detach` / `stop_run` | Detach the debugger / stop the CMSIS tasks of a `load_and_run`, which frees the probe. | `detach` at once; `stop_run` once the tasks have ended. |
 | `status` | Starts nothing: waits for the job in flight, or lists the recent results and the running CMSIS tasks. | The job's result, like the call that started it. |
 

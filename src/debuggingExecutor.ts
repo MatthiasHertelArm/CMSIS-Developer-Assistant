@@ -57,8 +57,8 @@ import { type DapVariable, isDapVariable } from './core/variableView';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import {
-    awaitBreakpointsApplied, forgetGdbLogpoints, GdbLogpoint, gdbLogpointsOf, getLiveSessionCount, getLiveSessionNames, getStoppedReason,
-    isSessionStopped, rememberGdbLogpoint, resolveActiveSession, StopWaitResult, waitForSessionEnd, waitForStopEvent,
+    awaitBreakpointsApplied, expectAgentStart, forgetGdbLogpoints, GdbLogpoint, gdbLogpointsOf, getLiveSessionCount, getLiveSessionNames,
+    getStoppedReason, isSessionStopped, rememberGdbLogpoint, resolveActiveSession, StopWaitResult, waitForSessionEnd, waitForStopEvent,
 } from './utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
@@ -163,6 +163,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     async startDebugging(folderPath: string, launch: vscode.DebugConfiguration): Promise<boolean> {
         try {
             const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(folderPath));
+            // A failed start then gives the agent its error instead of opening VS Code's modal dialog.
+            expectAgentStart();
             return await vscode.debug.startDebugging(folder, launch);
         } catch (err) {
             throw wrapError('Starting the debug session failed', err);
@@ -176,6 +178,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 throw new ToolError('INVALID_ARGUMENT', noLaunchFolderText(folderPath));
             }
             // The name, not a configuration: VS Code looks it up in the folder's launch.json.
+            expectAgentStart();
             return await vscode.debug.startDebugging(folder, launchName);
         } catch (err) {
             throw wrapError(`Failed to start debugging with configuration '${launchName}'`, err);
@@ -195,6 +198,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     async restart(): Promise<RestartOutcome> {
         try {
+            expectAgentStart();
             const session = resolveActiveSession();
             if (session?.type !== CMSIS_DEBUGGER_TYPE) {
                 await vscode.commands.executeCommand(WORKBENCH_RESTART);

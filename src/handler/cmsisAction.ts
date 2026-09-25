@@ -68,6 +68,8 @@ import {
     targetMatches,
 } from '../core/cmsisTarget';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
+import { silentAttachEndpoints } from '../core/gdbServerPorts';
+import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
 import { withTimeout } from '../utils/timeout';
 import { failureText, LONG_LIMIT_CAP_MS } from './fence';
 import type { HandlerHost } from './host';
@@ -591,10 +593,41 @@ async function loadOrSession(issue: Issue, jobId: string, budgetMs: number): Pro
  * is the answer before any session probe. Without one (FVP, Arm Debugger)
  * the session decides alone.
  */
+/**
+ * The session this call is about to have CMSIS Solution start counts as the
+ * agent's, for as long as the call may wait plus a minute: a failed start
+ * then reaches the agent instead of VS Code's modal dialog.
+ */
+function expectSessionOf(issue: Issue): void {
+    expectAgentStart(Math.max(AGENT_START_WINDOW_MS, answerBy(issue) - issue.context.host.now() + 60_000));
+}
+
+/**
+ * Before an attach with no CMSIS Run task alive: when the attach
+ * configurations' GDB server ports all stay silent, refuse at once. Otherwise
+ * GDB tries for 15 s, fails with "could not connect: Operation timed out.",
+ * and VS Code shows it as a modal dialog.
+ */
+async function refuseAttachWithoutServer(issue: Issue, solutionPath: string | undefined): Promise<void> {
+    if (!solutionPath) {
+        return;
+    }
+    const silent = await silentAttachEndpoints(selectionFolder(solutionPath, issue.context.host));
+    if (!silent) {
+        return;
+    }
+    const where = silent.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
+    throw new ToolError('NO_SESSION',
+        `CMSIS 'attach'${issue.tag} not started: no GDB server listens on ${where}, and no CMSIS Run task is alive in this window.`,
+        'cmsis_action load_and_run starts CMSIS Run, which hosts the GDB server; attach after it. '
+            + 'Or cmsis_action load_and_debug, which starts its own.');
+}
+
 async function loadAndDebug(issue: Issue): Promise<ToolText> {
     const { tracker } = issue;
     const { host } = issue.context;
     const job = tracker.begin('load_and_debug', issue.target);
+    expectSessionOf(issue);
     try {
         await issueCommand(issue, 'load_and_debug');
     } catch (caught) {
@@ -724,6 +757,10 @@ export async function runCmsisAction(
             return `CMSIS '${action}'${tag} issued via '${command}'. It runs in the CMSIS extension — check the CMSIS output channel if you need to confirm.`;
         case 'attach': {
             const runAlive = tracker.probeOwners().some((owner) => owner.kind === 'run' || owner.kind === 'loadRun');
+            if (!runAlive) {
+                await refuseAttachWithoutServer(issue, solution.solutionPath);
+            }
+            expectSessionOf(issue);
             await issueCommand(issue, action);
             return sessionPhase(issue, action, '', runAlive);
         }
