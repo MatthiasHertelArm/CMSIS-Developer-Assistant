@@ -363,7 +363,14 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
         return { bytes, sha256: hash.digest('hex'), ms };
     } catch (e) {
         controller.abort();
-        out.destroy();
+        // The stream opens the .part file asynchronously. Destroy it and wait
+        // for 'close' before unlinking: an open that completes after the
+        // unlink would leave the file behind (seen on a slow macOS runner).
+        await new Promise<void>(resolve => {
+            if (out.closed) { resolve(); return; }
+            out.once('close', resolve);
+            out.destroy();
+        });
         try { fs.unlinkSync(part); } catch { /* nothing to clean */ }
         throw new Error(`download of ${url} failed: ${describeError(e)}`);
     } finally {
