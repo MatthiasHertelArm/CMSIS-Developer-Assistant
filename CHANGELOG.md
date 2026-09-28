@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - Nothing is indexed or parsed until an agent calls one of the tools; activation only reads the settings. `false` plus a window reload drops a group again.
 
 ### Fixed
+- **A refused or failed `fetch_doc` download leaves no `.part` file behind.** The write stream opens its file asynchronously, and the cleanup could run before the open had completed; the download now waits for the stream to close before removing the partial file.
 - **A debug start an agent asked for no longer opens VS Code's modal dialog when it fails.**
   - A failed launch or attach, such as GDB's "could not connect: Operation timed out." when no GDB server listens, made VS Code open a modal dialog with "Open 'launch.json'". With nobody at the screen it blocked the window until someone closed it.
   - For sessions that `start_debugging`, `restart_debugging` or `cmsis_action load_and_debug` / `attach` start, and their child sessions, the error goes to the agent (tool result and problem journal) and to the user as a plain notification. A session the user starts keeps VS Code's dialog.
