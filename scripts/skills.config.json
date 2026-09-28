@@ -65,11 +65,11 @@
         "summary": "`get_session_status`, `check_target_connection`, `get_recent_problems` (what went wrong in the window: adapter and GDB-server errors, failed tasks and builds, notifications), `get_debug_instructions`; with several VS Code windows `list_debug_windows` and `select_debug_window`."
       },
       {
-        "name": "Documentation (experimental, off by default — cmsis-developer-assistant.packDocs.enabled)",
+        "name": "Documentation (experimental, on by default — cmsis-developer-assistant.packDocs.enabled)",
         "summary": "`list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited answers from the reference manuals, datasheets, errata and board manuals the target's packs ship or link, Arm documents, imported and workspace PDFs, and third-party part datasheets (sensors, ADCs) — start any part-number lookup here; fetch_doc indexes a PDF URL found on the web."
       },
       {
-        "name": "Build artefacts (experimental, off by default — cmsis-developer-assistant.buildInfo.enabled)",
+        "name": "Build artefacts (experimental, on by default — cmsis-developer-assistant.buildInfo.enabled)",
         "summary": "`list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current target, read deterministically."
       }
     ],
@@ -78,8 +78,8 @@
       "aiSkills.enabled": "Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept.",
       "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected.",
       "agentRules.install": "`ask`: the setup offers to add the tool rules to your agents' rule files, previewed, and keeps blocks written earlier current. `never`: no rule file is touched.",
-      "packDocs.enabled": "Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. Off by default; PDFs are indexed with the bundled pdf.js, nothing to install; window reload.",
-      "buildInfo.enabled": "Experimental. Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. Off by default; window reload."
+      "packDocs.enabled": "Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. On by default; off drops the five tools from the tool list; PDFs are indexed with the bundled pdf.js, nothing to install; window reload.",
+      "buildInfo.enabled": "Experimental. Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. On by default; off drops the five tools from the tool list; window reload."
     }
   },
   "categories": [

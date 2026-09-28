@@ -11377,7 +11377,7 @@
           {
             "key": "cmsis-developer-assistant.packDocs.enabled",
             "type": "boolean",
-            "default": false
+            "default": true
           },
           {
             "key": "cmsis-developer-assistant.packDocs.extractor",
@@ -11415,7 +11415,7 @@
           {
             "key": "cmsis-developer-assistant.buildInfo.enabled",
             "type": "boolean",
-            "default": false
+            "default": true
           },
           {
             "key": "cmsis-developer-assistant.buildInfo.maxSymbols",
@@ -11608,8 +11608,8 @@
               },
               "serverOptions": {
                 "serialEnabled": true,
-                "packDocsEnabled": false,
-                "buildInfoEnabled": false,
+                "packDocsEnabled": true,
+                "buildInfoEnabled": true,
                 "telemetry": {
                   "jsonlPath": "<undefined>"
                 }
@@ -12609,7 +12609,7 @@
             },
             {
               "key": "cmsis-developer-assistant.buildInfo.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
@@ -12625,7 +12625,7 @@
             },
             {
               "key": "cmsis-developer-assistant.packDocs.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.packDocs.extractor",
@@ -13164,7 +13164,7 @@
             },
             {
               "key": "cmsis-developer-assistant.buildInfo.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
@@ -13180,7 +13180,7 @@
             },
             {
               "key": "cmsis-developer-assistant.packDocs.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.packDocs.extractor",
@@ -13503,8 +13503,8 @@
               },
               "serverOptions": {
                 "serialEnabled": true,
-                "packDocsEnabled": false,
-                "buildInfoEnabled": false,
+                "packDocsEnabled": true,
+                "buildInfoEnabled": true,
                 "telemetry": {
                   "jsonlPath": "<undefined>"
                 }
@@ -13619,7 +13619,7 @@
             },
             {
               "key": "cmsis-developer-assistant.buildInfo.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
@@ -13635,7 +13635,7 @@
             },
             {
               "key": "cmsis-developer-assistant.packDocs.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.packDocs.extractor",
@@ -13914,7 +13914,7 @@
           "settingsRead": [
             {
               "key": "cmsis-developer-assistant.buildInfo.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
@@ -13926,7 +13926,7 @@
             },
             {
               "key": "cmsis-developer-assistant.packDocs.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.packDocs.extractor",
@@ -14198,8 +14198,8 @@
               },
               "serverOptions": {
                 "serialEnabled": true,
-                "packDocsEnabled": false,
-                "buildInfoEnabled": false,
+                "packDocsEnabled": true,
+                "buildInfoEnabled": true,
                 "telemetry": {
                   "jsonlPath": "<w>/telemetry/t.jsonl"
                 }
@@ -14377,7 +14377,7 @@
             },
             {
               "key": "cmsis-developer-assistant.buildInfo.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
@@ -14393,7 +14393,7 @@
             },
             {
               "key": "cmsis-developer-assistant.packDocs.enabled",
-              "fallback": false
+              "fallback": true
             },
             {
               "key": "cmsis-developer-assistant.packDocs.extractor",

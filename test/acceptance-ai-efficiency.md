@@ -27,7 +27,7 @@ explains what it tried`, `get_debug_instructions serves the breakpoints topic`; 
 
 | # | Do | Expect |
 |---|----|--------|
-| 1.1 | List tools | 45 tools (35 with `cmsis-developer-assistant.serial.enabled: false` + reload; 55 with `packDocs.enabled` and `buildInfo.enabled` on); no description longer than ~4 lines |
+| 1.1 | List tools | 55 tools (50 with `cmsis-developer-assistant.buildInfo.enabled: false`, 45 with `packDocs.enabled: false` too, 35 with `serial.enabled: false` as well — each after a window reload); no description longer than ~4 lines |
 | 1.2 | `get_debug_instructions` (no args) | ~3 KB: the numbered steps, `## 🐞 DEBUGGER FIRST`, then `## Topics` with six entries |
 | 1.3 | `get_debug_instructions { topic: "faults" }` | The fault section only (EXC_RETURN, the flag table); footer names the other topics |
 | 1.4 | `get_debug_instructions { topic: "nonsense" }` | `Unknown topic 'nonsense'. Showing the overview.` — no error |

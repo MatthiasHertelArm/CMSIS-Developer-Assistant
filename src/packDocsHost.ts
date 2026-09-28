@@ -42,8 +42,8 @@ const CONFIG = 'cmsis-developer-assistant';
 export function readPackDocsGates(): { packDocsEnabled: boolean; buildInfoEnabled: boolean } {
     const c = vscode.workspace.getConfiguration(CONFIG);
     return {
-        packDocsEnabled: c.get<boolean>('packDocs.enabled', false),
-        buildInfoEnabled: c.get<boolean>('buildInfo.enabled', false),
+        packDocsEnabled: c.get<boolean>('packDocs.enabled', true),
+        buildInfoEnabled: c.get<boolean>('buildInfo.enabled', true),
     };
 }
 
