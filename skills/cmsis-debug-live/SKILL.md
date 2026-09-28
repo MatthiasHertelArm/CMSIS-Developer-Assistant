@@ -301,7 +301,7 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
   `search_target_docs` (register or bit name) and `get_peripheral_docs` answer
   from the reference manual with page cites, and `lookup_symbol` turns a fault
   PC into a function — when `cmsis-developer-assistant.packDocs.enabled` /
-  `buildInfo.enabled` are on (off by default; see `$cmsis-pack-docs`). Do not
+  `buildInfo.enabled` are on (both by default; see `$cmsis-pack-docs`). Do not
   ask the user for a manual and do not read a PDF into your context: search,
   or suggest the setting; a PDF the user provides goes into `docs/` and is
   searched. Third-party parts (sensors, ADCs, codecs) included: a part-number

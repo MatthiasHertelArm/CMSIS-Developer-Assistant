@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+- **The documentation and build-artefact tools are on by default.**
+  - `cmsis-developer-assistant.packDocs.enabled` and `cmsis-developer-assistant.buildInfo.enabled` now default to `true`: `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs`, `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout` and `get_build_diagnostics` are in every agent's tool list without a settings change, and the server instructions describe them instead of pointing at the settings. Both groups stay experimental.
+  - Nothing is indexed or parsed until an agent calls one of the tools; activation only reads the settings. `false` plus a window reload drops a group again.
+
 ### Fixed
 - **A debug start an agent asked for no longer opens VS Code's modal dialog when it fails.**
   - A failed launch or attach, such as GDB's "could not connect: Operation timed out." when no GDB server listens, made VS Code open a modal dialog with "Open 'launch.json'". With nobody at the screen it blocked the window until someone closed it.

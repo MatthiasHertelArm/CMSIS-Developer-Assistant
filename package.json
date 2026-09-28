@@ -219,8 +219,8 @@
         },
         "cmsis-developer-assistant.packDocs.enabled": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "**Experimental** — the documentation system is new and its tools, arguments and output may change between releases. Offer the documentation tools to AI agents: `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the reference manuals, datasheets, errata and board manuals the current csolution target's DFP/BSP ship or link, plus Arm documents, your own imported manuals and the workspace `docs/` folder. Adds five tools to the MCP tool list every agent turn carries; PDFs are indexed with the bundled pdf.js (poppler optional, see `packDocs.extractor`). Read once at activation: changing it needs a window reload.",
+          "default": true,
+          "markdownDescription": "**Experimental** — the documentation system is new and its tools, arguments and output may change between releases. Offer the documentation tools to AI agents: `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs` — page-cited search over the reference manuals, datasheets, errata and board manuals the current csolution target's DFP/BSP ship or link, plus Arm documents, your own imported manuals and the workspace `docs/` folder. On by default; off drops the five tools from the MCP tool list every agent turn carries. PDFs are indexed with the bundled pdf.js (poppler optional, see `packDocs.extractor`). Read once at activation: changing it needs a window reload.",
           "tags": [
             "experimental"
           ]
@@ -286,8 +286,8 @@
         },
         "cmsis-developer-assistant.buildInfo.enabled": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "**Experimental** — the build-artefact tools are new and may change between releases. Offer the build-artefact tools to AI agents: `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current csolution target, read deterministically. Adds five tools to the MCP tool list every agent turn carries. Read once at activation: changing it needs a window reload.",
+          "default": true,
+          "markdownDescription": "**Experimental** — the build-artefact tools are new and may change between releases. Offer the build-artefact tools to AI agents: `list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current csolution target, read deterministically. On by default; off drops the five tools from the MCP tool list every agent turn carries. Read once at activation: changing it needs a window reload.",
           "tags": [
             "experimental"
           ]
