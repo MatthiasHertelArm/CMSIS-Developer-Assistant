@@ -521,12 +521,16 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         }
         const folder = result.data.opened;
         const giveUpAt = Date.now() + this.openedWindowWaitMs;
-        let opened = this.registry.findByWorkspaceFolder(folder);
+        // Only a window that lists the folder counts: the registry's own lookups
+        // let a lone window without folders stand in for any path, and that
+        // window is the empty one the call came from.
+        const holder = (): WindowRegistration | undefined => this.registry.list().find((w) => holdsPath(w, folder));
+        let opened = holder();
         while (opened === undefined && Date.now() < giveUpAt) {
             await new Promise<void>((wake) => {
                 setTimeout(wake, Math.min(OPENED_WINDOW_POLL_MS, this.openedWindowWaitMs));
             });
-            opened = this.registry.findByWorkspaceFolder(folder);
+            opened = holder();
         }
         if (opened === undefined) {
             return {
