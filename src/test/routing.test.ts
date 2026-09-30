@@ -545,6 +545,20 @@ suite('Multi-window routing', () => {
             assert.strictEqual(router.describeTarget()?.name, 'gamma');
         });
 
+        test('from a lone window without a folder: that window is not taken for the new one', async () => {
+            const gamma = folder('gamma');
+            const open = async (args?: unknown): Promise<ToolText> => {
+                setTimeout(() => void openWindow('gamma', { workspaceFolders: [gamma] }), 150);
+                return opening('empty', gamma, true)(args);
+            };
+            const empty = await openWindow('empty', { workspaceFolders: [] }, true, { handleCmsisCommand: open });
+            const router = newRouter({ openedWindowWaitMs: 5_000 });
+            const result = await router.handleCmsisCommand({ action: 'open_solution', path: gamma }) as { text: string; data: JsonObject };
+            assert.match(result.text, /\nThe window registered as pid \d+ \(gamma\); this session's calls now go to it\./);
+            assert.notStrictEqual(result.data.windowPid, empty.pid);
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'gamma');
+        });
+
         test('a pin stays, and a window that never registers is reported', async () => {
             const gamma = folder('gamma');
             const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')] }, true, { handleCmsisCommand: opening('alpha', gamma, true) });
