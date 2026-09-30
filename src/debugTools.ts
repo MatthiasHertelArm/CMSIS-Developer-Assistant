@@ -68,7 +68,7 @@ const say = (...sentences: string[]): string => sentences.join(' ');
 const ABOUT = {
     get_debug_instructions: say(
         'Debugging guide for harnesses that do not load the "cmsis-debug-live" Agent Skill.',
-        'Default: a short overview plus the topic list; pass topic for one section (session, build, breakpoints, inspection, faults, troubleshooting).',
+        'Default: a short overview plus the topic list; pass topic for one section (bootstrap, session, build, breakpoints, inspection, faults, troubleshooting).',
     ),
     start_debugging: say(
         'Start a debug session through the VS Code debug pipeline (launch.json).',
@@ -251,6 +251,7 @@ const ABOUT = {
         'build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code.',
         'A task still running at the wait returns status running: call action status, never start it again.',
         'load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.',
+        'open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +
@@ -782,8 +783,9 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'load', 'erase', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run', 'status'])
+            action: z.enum(['build', 'load', 'erase', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run', 'status', 'open_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
+            path: z.string().optional().describe('open_solution only: absolute path of a *.csolution.yml or of its folder.'),
             target: z.string().optional().describe('Target-type or type@set from the csolution (e.g. "MPS3", "HP@debug"). ' +
                 'Switched and verified when it differs from the active one; omit to use the panel selection.'),
             timeoutMs: z.number().int().min(100).max(600_000).optional()

@@ -29,6 +29,37 @@ Only the user can lift a rule, by asking for the specific command.
 
 Do not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.
 
+<!-- topic: bootstrap | An empty VS Code window: what is missing, open_solution, creating the project -->
+## 🚀 Starting from an empty window
+
+A VS Code window without a folder has nothing the CMSIS tools can act on. `get_session_status` and the refusal of `cmsis_action` say which part is missing. Work down this table; every row names the sign and the next step.
+
+| Missing | How it shows | Next step |
+| ------- | ------------ | --------- |
+| The CMSIS extensions | Status line `Extensions: … not installed`; `[CMSIS_NO_SOLUTION]` with "(Arm.cmsis-csolution) is not installed". | Ask the user to install the Keil Studio Pack (`Arm.keil-studio-pack`: CMSIS Solution, CMSIS Debugger, Arm Tools Environment Manager) and to reload the window. |
+| A folder | `[NO_WORKSPACE]`; status line `Workspace: no folder is open`. | The project exists: `cmsis_action {action:'open_solution', path}`. It does not: create it first (below), then open it. |
+| A csolution | `[CMSIS_NO_SOLUTION]` with "contains no *.csolution.yml". | Create the solution with the skill `cmsis-bootstrap`, which hands over to `start-cmsis-project`: board or device, packs, an example or a minimal project, one build. |
+| A loaded solution | `[CMSIS_NO_SOLUTION]` with "A solution file exists". | `cmsis_action {action:'open_solution', path:'<file>'}` activates it. After a window opens, the extension needs some seconds; `get_recent_problems` shows what it reported. |
+| The tools | `cmsis_action build` fails because cbuild, the compiler, CMake or Ninja is not found. | The folder needs a `vcpkg-configuration.json`. The Arm Tools Environment Manager fetches what it names when the folder opens; ask the user to answer its prompts. Do not install a compiler yourself. |
+| A debug configuration | `load_and_debug` starts no session, or `load` is refused because the task is not offered. | The target set needs a `debugger:` node; the CMSIS Solution extension then writes `.vscode/launch.json` and `tasks.json`. Skill `cmsis-debugger-setup`. |
+
+### Opening the project
+
+`cmsis_action {action:'open_solution', path}` takes the absolute path of a `*.csolution.yml` or of its folder.
+
+- A folder that a window already has open is used there, and the solution is made the active one.
+- Any other folder opens in a **new** VS Code window. The window you started in keeps running, the MCP server with it, and this session's later calls go to the new window. `list_debug_windows` shows both.
+- Then: `get_session_status`, `cmsis_action build`, `cmsis_action load_and_debug`.
+
+### What stays with the user
+
+Installing extensions, the licence and download prompts of the tools environment, connecting the board and its probe, and the choice of the project folder. Ask for them; do not work around them in a shell.
+
+### Shell commands during the bootstrap
+
+Only the ones a CMSIS skill step names: `csolution list boards`, `devices`, `examples`, `templates` and `debuggers`, `cpackget list` and `add`, and the two validation commands of `start-cmsis-project`. Once the folder is open in VS Code, build with `cmsis_action build`.
+<!-- /topic -->
+
 <!-- topic: session | The five session states and the right next action for each, several VS Code windows, leaving the session clean -->
 ## 🔎 Session status gate
 

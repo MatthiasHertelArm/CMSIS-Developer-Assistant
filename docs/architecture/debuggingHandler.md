@@ -247,11 +247,30 @@ window's CMSIS job tracker (next section):
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
   alive after 10 s. `detach` returns at once.
 
+- `open_solution` needs no active solution either. It takes the path of a
+  csolution or of its folder. A folder this window has open is activated
+  here (`cmsis-csolution.activateSolution`, verified, refused under a live
+  session). Any other folder is opened in a new VS Code window
+  (`HandlerHost.openFolder`), so the window that answers, and with it the MCP
+  server, keeps running; the result's `data.newWindow` tells the router to
+  follow (see windowRouting.md).
+
 Before any command: a debug session refuses `load_and_debug` and `attach`,
 the probe guard refuses what another owner blocks (`PROBE_BUSY`), a window
-without an active solution is `CMSIS_NO_SOLUTION`, an unknown target or
-action `INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does
-not have (`load` on an Arm Debugger adapter, for example).
+without an active solution is refused, an unknown target or action is
+`INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does not
+have (`load` on an Arm Debugger adapter, for example).
+
+A window without an active solution is an ordinary state for an agent that
+starts in an empty VS Code, so the refusal says which part is missing
+(`whyNoSolution()`, texts in `src/core/bootstrapState.ts`): no folder open is
+`NO_WORKSPACE`; the CMSIS Solution extension not installed, no csolution file
+in the workspace, or a file the extension has not loaded are
+`CMSIS_NO_SOLUTION`, each with its own next step. `flash` answers
+`NO_WORKSPACE` likewise, and `get_session_status` adds the same finding as
+lines while no session runs in a window without a folder. The steps from
+there are the `bootstrap` topic of the agent guide and the skill
+`cmsis-bootstrap`.
 
 When `target` names a target-type or target-set that is not active, the
 selection is written into the solution folder's `.vscode/cmsis.json`, the
@@ -472,7 +491,8 @@ by #56.
 | `src/handler/problemText.ts` | the `get_recent_problems` reply |
 | `src/windowProblems.ts` | the output-channel mirror (`mirrorProblem()`, debug level), the `logger.error` sink, "Copy Recent Problems", failed jobs and build lines, the Problems panel |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
-| `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status` |
+| `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status`, `open_solution`, why no solution is active |
+| `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; the csolution files below a folder that is not open yet |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
 | `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0 |

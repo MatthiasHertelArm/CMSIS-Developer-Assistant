@@ -512,6 +512,61 @@ suite('Multi-window routing', () => {
         });
     });
 
+    suite('cmsis_action open_solution', () => {
+        const opening = (label: string, opened: string, newWindow: boolean) => (args?: unknown): Promise<ToolText> =>
+            Promise.resolve({ text: `${label} opened ${JSON.stringify(args)}`, status: 'ok', data: { opened, newWindow } });
+
+        test('it runs in the window that has the folder open, tie or not, and the session stays there', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] }, true, { handleCmsisCommand: opening('alpha', folder('alpha'), false) });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            const solution = path.join(folder('alpha'), 'app', 'Demo.csolution.yml');
+            const result = await router.handleCmsisCommand({ action: 'open_solution', path: solution });
+            assert.strictEqual(textOf(result), `alpha opened ${JSON.stringify({ action: 'open_solution', path: solution })}`);
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'alpha');
+        });
+
+        test('a new window is followed once it registers: the session moves to it', async () => {
+            const gamma = folder('gamma');
+            const open = (label: string) => async (args?: unknown): Promise<ToolText> => {
+                // The window appears a moment after the worker answered, as a real one does.
+                setTimeout(() => void openWindow('gamma', { workspaceFolders: [gamma] }), 60);
+                return opening(label, gamma, true)(args);
+            };
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] }, true, { handleCmsisCommand: open('alpha') });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] }, true, { handleCmsisCommand: open('beta') });
+            const router = newRouter({ openedWindowWaitMs: 5_000 });
+            // Two idle windows are a tie for any other call; a folder can be opened from either.
+            const result = await router.handleCmsisCommand({ action: 'open_solution', path: gamma }) as { text: string; data: JsonObject };
+            assert.match(result.text, /^(alpha|beta) opened /);
+            assert.match(result.text, /\nThe window registered as pid \d+ \(gamma\); this session's calls now go to it\. Next: get_session_status, then cmsis_action build\.$/);
+            assert.strictEqual(typeof result.data.windowPid, 'number');
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'gamma');
+            assert.strictEqual(router.describeTarget()?.name, 'gamma');
+        });
+
+        test('a pin stays, and a window that never registers is reported', async () => {
+            const gamma = folder('gamma');
+            const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')] }, true, { handleCmsisCommand: opening('alpha', gamma, true) });
+            const router = newRouter({ openedWindowWaitMs: 200 });
+            const late = await router.handleCmsisCommand({ action: 'open_solution', path: gamma });
+            assert.match(textOf(late), /\nThe new window has not registered within 0\.2 s: call list_debug_windows in a few seconds\.$/);
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'alpha');
+
+            router.selectDebugWindow({ pid: alpha.pid });
+            await openWindow('gamma', { workspaceFolders: [gamma] });
+            // The folder is open now: the call goes to its window, and the pin keeps the calls after it.
+            assertAnsweredBy(await router.handleCmsisCommand({ action: 'open_solution', path: gamma }), 'gamma');
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'alpha');
+        });
+
+        test('another action with a path argument is routed like any call', async () => {
+            await openWindow('solo', { workspaceFolders: [folder('solo')] });
+            const answer = textOf(await newRouter().handleCmsisCommand({ action: 'build', path: folder('elsewhere') }));
+            assert.strictEqual(answer, echo('solo', 'debug', 'handleCmsisCommand', { action: 'build', path: folder('elsewhere') }));
+        });
+    });
+
     suite('control server', () => {
 
         test('a wrong token is turned away', async () => {

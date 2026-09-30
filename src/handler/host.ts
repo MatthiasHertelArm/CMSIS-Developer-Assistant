@@ -63,6 +63,8 @@ export interface HandlerHost {
     findFiles(include: string, exclude: string, maxResults: number): Thenable<vscode.Uri[]>;
     /** What the pyOCD lookup of `flash` reads. */
     toolEnvironment(): ToolEnvironment;
+    /** `vscode.openFolder`: open `folder` in a new VS Code window, or in this one. */
+    openFolder(folder: string, newWindow: boolean): Thenable<unknown>;
 }
 
 /** The real thing: Node timers and the VS Code API, looked up per call. */
@@ -95,4 +97,5 @@ export const VSCODE_HOST: HandlerHost = {
         pathEnv: process.env.PATH,
         platform: process.platform,
     }),
+    openFolder: (folder, newWindow) => vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: newWindow }),
 };

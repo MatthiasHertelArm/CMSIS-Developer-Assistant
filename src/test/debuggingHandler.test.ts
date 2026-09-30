@@ -1728,17 +1728,49 @@ suite('DebuggingHandler', () => {
                 ['running', 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.'],
                 ['unresponsive', 'Hint: probe/GDB server is hung. Try restart_debugging, stop_debugging, or check the physical connection.'],
             ];
+            const withFolder = { workspaceFolders: () => [{ uri: vscode.Uri.file('/w'), name: 'w', index: 0 }] };
             for (const [state, hint] of hints) {
                 x.sessionStatus = { state, sessionName: null, sessionType: null, configurationName: null, dapResponsive: false, dapProbeMs: null };
-                const text = await textAnswer(handlerFor(x).handleGetSessionStatus());
+                const text = await textAnswer(handlerFor(x, withFolder).handleGetSessionStatus());
                 assert.strictEqual(text, `State: ${state}\nDAP responsive: false\n`
                     + 'Diagnostics: serverVersion=1.2.3, liveSessionsInThisWindow=2 [S, T], vscodeActiveDebugSession=set\n' + hint);
             }
             x.getDiagnostics = () => ({ serverVersion: '1.2.3', liveSessionCount: 0, liveSessionNames: [], hasVscodeActiveSession: false });
             x.sessionStatus = { state: 'no-session', sessionName: null, sessionType: null, configurationName: null, dapResponsive: false, dapProbeMs: null };
-            const empty = await textAnswer(handlerFor(x).handleGetSessionStatus());
+            const empty = await textAnswer(handlerFor(x, withFolder).handleGetSessionStatus());
             assert.ok(empty.includes('liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\n'
                 + 'Hint: no debug session is running in the VS Code window this call was routed to.'), empty);
+        });
+
+        test('session status without a session says what an empty window lacks: a folder, the CMSIS extensions', async () => {
+            const x = new ScriptedExecutor();
+            x.sessionStatus = { state: 'no-session', sessionName: null, sessionType: null, configurationName: null, dapResponsive: false, dapProbeMs: null };
+            const environment = (installed: string[]): Partial<HandlerHost> => ({
+                toolEnvironment: () => ({
+                    extension: (id) => (installed.includes(id) ? { path: `/ext/${id}`, version: '1.0.0' } : undefined),
+                    pathEnv: '',
+                    platform: process.platform,
+                }),
+            });
+            const gaps = async (host: Partial<HandlerHost>): Promise<string[]> =>
+                (await textAnswer(handlerFor(x, host).handleGetSessionStatus())).split('\n')
+                    .filter((line) => line.startsWith('Workspace: ') || line.startsWith('Extensions: '));
+
+            assert.deepStrictEqual(await gaps({ workspaceFolders: () => [], ...environment([]) }), [
+                'Workspace: no folder is open in this VS Code window. '
+                + 'Open the project with cmsis_action {action:\'open_solution\', path:\'<folder or *.csolution.yml>\'}. '
+                + 'get_debug_instructions {topic:\'bootstrap\'} has the steps from an empty window to a debugged board.',
+                'Extensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, '
+                + 'so cmsis_action and gdbtarget sessions cannot work here. '
+                + 'Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.',
+            ]);
+            const both = environment(['Arm.cmsis-csolution', 'Arm.vscode-cmsis-debugger']);
+            assert.strictEqual((await gaps({ workspaceFolders: () => [], ...both })).length, 1, 'only the folder is missing');
+            assert.deepStrictEqual(await gaps({ workspaceFolders: () => [{ uri: vscode.Uri.file('/w'), name: 'w', index: 0 }], ...environment([]) }), [],
+                'a window with a folder is not told about CMSIS extensions');
+
+            x.sessionStatus = { state: 'stopped', sessionName: 'S', sessionType: 'python', configurationName: null, dapResponsive: true, dapProbeMs: 3 };
+            assert.deepStrictEqual(await gaps({ workspaceFolders: () => [], ...environment([]) }), [], 'a session of any kind needs no folder');
         });
 
         test('session status names the serial port this window holds, for the asking session, and why it was released (#49)', async () => {
@@ -1888,12 +1920,176 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(asked, ['solution', 'target']);
         });
 
-        test('no active solution is answered before anything runs', async () => {
+        test('no active solution is answered before anything runs, and says which part is missing', async () => {
             const x = new ScriptedExecutor();
-            const refused = await refusalOf(handlerFor(x).handleCmsisCommand({ action: 'stop_run' }), 'CMSIS_NO_SOLUTION');
-            assert.ok(refused.message.startsWith('CMSIS \'stop_run\' not attempted: the CMSIS Solution extension reports no active solution '
-                + 'in this VS Code window (cmsis-csolution.getSolutionFile → query failed: '), refused.message);
-            assert.ok(refused.hint?.includes('(serverVersion=9.8.7)'), refused.hint);
+            const opened = { workspaceFolders: () => [{ uri: vscode.Uri.file('/w'), name: 'w', index: 0 }] };
+            const installed: Partial<HandlerHost> = {
+                toolEnvironment: () => ({ extension: () => ({ path: '/ext/csolution', version: '1.72.0' }), pathEnv: '', platform: process.platform }),
+            };
+            const refusedBy = (host: Partial<HandlerHost>, code: ErrorCode): Promise<ToolError> =>
+                refusalOf(handlerFor(x, host).handleCmsisCommand({ action: 'stop_run' }), code);
+
+            // No folder open: NO_WORKSPACE, whatever else is missing.
+            assert.strictEqual(errorDetail(await refusedBy({ workspaceFolders: () => [] }, 'NO_WORKSPACE')),
+                'CMSIS \'stop_run\' not attempted: no folder is open in this VS Code window, so there is no CMSIS solution to act on.\n'
+                + 'Open the project with cmsis_action {action:\'open_solution\', path:\'<folder or *.csolution.yml>\'}. '
+                + 'No project yet? get_debug_instructions {topic:\'bootstrap\'} has the steps from an empty window to a debugged board.');
+
+            // A folder, but no CMSIS Solution extension.
+            const noExtension = await refusedBy({
+                ...opened,
+                toolEnvironment: () => ({ extension: () => undefined, pathEnv: '', platform: process.platform }),
+            }, 'CMSIS_NO_SOLUTION');
+            assert.strictEqual(noExtension.message, 'CMSIS \'stop_run\' not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) '
+                + 'is not installed in this VS Code, so there is no active solution.');
+            assert.ok(noExtension.hint?.startsWith('Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack)'), noExtension.hint);
+
+            // The extension, a folder, and no csolution file in it.
+            const noFile = await refusedBy({ ...opened, ...installed, findFiles: async () => [] }, 'CMSIS_NO_SOLUTION');
+            assert.ok(noFile.message.startsWith('CMSIS \'stop_run\' not attempted: the CMSIS Solution extension reports no active solution '
+                + 'in this VS Code window (cmsis-csolution.getSolutionFile → query failed: '), noFile.message);
+            assert.ok(noFile.hint?.startsWith('The open folder (w) contains no *.csolution.yml. Create the solution first'), noFile.hint);
+
+            // A csolution file that the extension has not loaded.
+            const file = path.join(path.sep, 'w', 'demo.csolution.yml');
+            const notLoaded = await refusedBy({ ...opened, ...installed, findFiles: async () => [vscode.Uri.file(file)] }, 'CMSIS_NO_SOLUTION');
+            assert.strictEqual(notLoaded.hint, `A solution file exists: ${vscode.Uri.file(file).fsPath}. The extension may still be loading it, or failed to load it. `
+                + `cmsis_action {action:'open_solution', path:'${vscode.Uri.file(file).fsPath}'} activates it; get_recent_problems shows what the extension reported.`);
+
+            // The search failed: the general fixes, with the server version.
+            const unknown = await refusedBy({ ...opened, ...installed, findFiles: () => Promise.reject(new Error('no search')) }, 'CMSIS_NO_SOLUTION');
+            assert.ok(unknown.hint?.includes('(serverVersion=9.8.7)'), unknown.hint);
+        });
+
+        suite('open_solution', () => {
+            let scratch: string;
+            setup(() => {
+                scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cda-open-')));
+            });
+            teardown(() => {
+                fs.rmSync(scratch, { recursive: true, force: true });
+            });
+            const installed: Partial<HandlerHost> = {
+                toolEnvironment: () => ({ extension: () => ({ path: '/ext/csolution', version: '1.72.0' }), pathEnv: '', platform: process.platform }),
+            };
+            const asFolder = (fsPath: string): vscode.WorkspaceFolder => ({ uri: vscode.Uri.file(fsPath), name: path.basename(fsPath), index: 0 });
+            const open = (handler: DebuggingHandler, given?: string): Promise<ToolText> =>
+                handler.handleCmsisCommand({ action: 'open_solution', path: given });
+
+            test('a missing, relative, absent or foreign path is INVALID_ARGUMENT, and nothing is opened', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const openedFolders: string[] = [];
+                const handler = handlerFor(x, { workspaceFolders: () => [], openFolder: async (folder) => void openedFolders.push(folder) });
+                const usage = '\nPass path: the absolute path of a *.csolution.yml, or of the folder that holds the project.';
+                assert.strictEqual(errorDetail(await refusalOf(open(handler), 'INVALID_ARGUMENT')), `CMSIS 'open_solution' not attempted: no path given.${usage}`);
+                assert.strictEqual(errorDetail(await refusalOf(open(handler, 'demo'), 'INVALID_ARGUMENT')),
+                    `CMSIS 'open_solution' not attempted: 'demo' is not an absolute path.${usage}`);
+                const absent = path.join(scratch, 'nowhere');
+                assert.strictEqual(errorDetail(await refusalOf(open(handler, absent), 'INVALID_ARGUMENT')),
+                    `CMSIS 'open_solution' not attempted: ${absent} does not exist.${usage}`);
+                const other = path.join(scratch, 'notes.txt');
+                fs.writeFileSync(other, '');
+                assert.strictEqual(errorDetail(await refusalOf(open(handler, other), 'INVALID_ARGUMENT')),
+                    `CMSIS 'open_solution' not attempted: ${other} is neither a folder nor a *.csolution.yml.${usage}`);
+                assert.deepStrictEqual(openedFolders, []);
+            });
+
+            test('a folder that is not open here is opened in a new window, with the csolution it holds in the data', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const project = path.join(scratch, 'Blinky');
+                fs.mkdirSync(path.join(project, 'app'), { recursive: true });
+                const solution = path.join(project, 'Blinky.csolution.yml');
+                fs.writeFileSync(solution, 'solution:\n');
+                const calls: Array<[string, boolean]> = [];
+                const handler = handlerFor(x, { workspaceFolders: () => [], openFolder: async (folder, fresh) => void calls.push([folder, fresh]) });
+
+                const byFolder = await open(handler, project);
+                assert.deepStrictEqual(calls, [[project, true]]);
+                assert.deepStrictEqual(byFolder, {
+                    text: `Opening ${project} in a new VS Code window. Solution: Blinky.csolution.yml. `
+                        + 'The window joins the CMSIS Developer Assistant once its extensions have started, and the CMSIS Solution extension '
+                        + `then loads the solution. Reach it with window: '${project}' on cmsis_action, or select_debug_window.`,
+                    status: 'ok',
+                    data: { opened: project, newWindow: true, solution },
+                });
+
+                // By file: its folder is opened. An empty folder opens too, and says that the solution is still to come.
+                assert.deepStrictEqual((await open(handler, solution) as { data: unknown }).data, { opened: project, newWindow: true, solution });
+                const empty = path.join(scratch, 'Empty');
+                fs.mkdirSync(empty);
+                const bare = await open(handler, empty);
+                assert.match(textOf(bare), /It has no \*\.csolution\.yml yet: create the solution there before cmsis_action build\./);
+                assert.deepStrictEqual((bare as { data: unknown }).data, { opened: empty, newWindow: true });
+            });
+
+            test('VS Code failing to open the folder is TASK_FAILED with the way to do it by hand', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const handler = handlerFor(x, { workspaceFolders: () => [], openFolder: () => Promise.reject(new Error('no window')) });
+                const refused = await refusalOf(open(handler, scratch), 'TASK_FAILED');
+                assert.strictEqual(refused.message, `CMSIS 'open_solution' failed: VS Code did not open ${scratch} (no window).`);
+            });
+
+            test('a folder this window has open is activated here: asked once, verified, and not under a debug session', async () => {
+                const solution = path.join(scratch, 'demo.csolution.yml');
+                fs.writeFileSync(solution, 'solution:\n');
+                let active = '';
+                const activated: unknown[] = [];
+                registrations = standIns({
+                    'cmsis-csolution.getSolutionFile': () => active,
+                    'cmsis-csolution.getActiveTargetSet': () => (active ? 'MPS3@debug' : ''),
+                    'cmsis-csolution.activateSolution': (file) => {
+                        activated.push(file);
+                        active = String(file);
+                    },
+                });
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const opened: string[] = [];
+                const host: Partial<HandlerHost> = {
+                    ...installed, workspaceFolders: () => [asFolder(scratch)], openFolder: async (folder) => void opened.push(folder),
+                };
+                const expected = {
+                    text: `${scratch} is open in this VS Code window. Active solution: ${solution}, target MPS3@debug. `
+                        + 'Next: cmsis_action build, then load_and_debug.',
+                    status: 'ok',
+                    data: { opened: scratch, newWindow: false, solution },
+                };
+                assert.deepStrictEqual(await open(handlerFor(x, host), scratch), expected);
+                assert.deepStrictEqual(activated, [solution]);
+                // Already active: nothing is asked again, by folder or by file.
+                assert.deepStrictEqual(await open(handlerFor(x, host), solution), expected);
+                assert.deepStrictEqual(activated, [solution]);
+                assert.deepStrictEqual(opened, [], 'no window is opened for a folder that is open here');
+
+                // Another solution under a live session is refused.
+                const second = path.join(scratch, 'other.csolution.yml');
+                fs.writeFileSync(second, 'solution:\n');
+                const live = new ScriptedExecutor();
+                const busy = await refusalOf(open(handlerFor(live, host), second), 'PROBE_BUSY');
+                assert.strictEqual(busy.hint, 'Call stop_debugging first, then repeat this call.');
+                // Two files and none named: the extension's choice stands, the files are listed.
+                assert.strictEqual(textOf(await open(handlerFor(x, host), scratch)),
+                    `${scratch} is open in this VS Code window. Solutions: demo.csolution.yml, other.csolution.yml. `
+                    + `Active solution: ${solution}. Pass the path of one *.csolution.yml to activate it.`);
+            });
+
+            test('an open folder without the CMSIS Solution extension, or without a csolution, is reported as it is', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const bare = handlerFor(x, { workspaceFolders: () => [asFolder(scratch)], ...installed });
+                assert.strictEqual(textOf(await open(bare, scratch)),
+                    `${scratch} is open in this VS Code window. It has no *.csolution.yml yet: create the solution there before cmsis_action build.`);
+                fs.writeFileSync(path.join(scratch, 'demo.csolution.yml'), 'solution:\n');
+                const noExtension = handlerFor(x, {
+                    workspaceFolders: () => [asFolder(scratch)],
+                    toolEnvironment: () => ({ extension: () => undefined, pathEnv: '', platform: process.platform }),
+                });
+                const refused = await refusalOf(open(noExtension, scratch), 'CMSIS_NO_SOLUTION');
+                assert.ok(refused.message.includes('(Arm.cmsis-csolution) is not installed'), refused.message);
+            });
         });
 
         test('a failing command within the kick-off is returned through the fence; a late one is dropped', async () => {
@@ -2462,8 +2658,10 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(await refused(withFolder.handleFlash({ cbuildRunFile: 'out/x.cbuild-run.yml' })),
                 `cbuild-run file not found: ${path.join(workspace, 'out/x.cbuild-run.yml')}.\n`
                 + 'Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/.');
-            assert.strictEqual(await refused(handlerFor(x, { workspaceFolders: () => [] }).handleFlash({})),
-                'No workspace folder open and no cbuildRunFile argument given — cannot resolve what to flash.');
+            assert.strictEqual(errorDetail(await refusalOf(handlerFor(x, { workspaceFolders: () => [] }).handleFlash({}), 'NO_WORKSPACE')),
+                'flash not attempted: no folder is open in this VS Code window, so there is no CMSIS solution to act on.\n'
+                + 'Open the project with cmsis_action {action:\'open_solution\', path:\'<folder or *.csolution.yml>\'}. '
+                + 'No project yet? get_debug_instructions {topic:\'bootstrap\'} has the steps from an empty window to a debugged board.');
 
             const found = [vscode.Uri.file('/ws/out/a.cbuild-run.yml'), vscode.Uri.file('/ws/out/b.cbuild-run.yml')];
             const twoMatches = handlerFor(x, { workspaceFolders: () => [folder(workspace)], findFiles: async () => found });

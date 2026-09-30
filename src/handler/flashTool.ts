@@ -26,7 +26,8 @@
  * the CMSIS Debugger's bundled one first (#45). Refusals and failures reject
  * with a `ToolError`; a pyOCD run that was killed at the budget answers with
  * status `timeout` (#11). The budget may run to 600 s (#12) and is counted
- * from the call, so the file and pyOCD lookups come out of it.
+ * from the call, so the file and pyOCD lookups come out of it. Without a
+ * folder open and without a named file the refusal is `NO_WORKSPACE`.
  */
 
 import * as vscode from 'vscode';
@@ -37,6 +38,7 @@ import type { IDebuggingExecutor } from '../debuggingExecutor';
 import { guardProbe } from '../core/cmsisTasks';
 import { fileExists, FlashResult, flashWithPyocd, probePyocd, PyocdCandidate, resolvePyocd } from '../core/flashController';
 import { parseCbuildRun } from '../core/packDocs/cbuildRun';
+import { noWorkspaceRefusal } from '../core/bootstrapState';
 import { ToolError, ToolText } from '../core/toolResult';
 import { LONG_LIMIT_CAP_MS } from './fence';
 import type { HandlerHost } from './host';
@@ -54,7 +56,7 @@ export const FLASH_FENCE_ADVICE = 'pyOCD may still be programming the target; fl
     + 'do not start it again, and do not run pyOCD yourself.';
 
 /** The file to program, or why there is none (with what to do about it, where that is not in the sentence). */
-type CbuildRunChoice = { file: string } | { problem: string; hint?: string };
+type CbuildRunChoice = { file: string } | { problem: string; hint?: string } | { noWorkspace: true };
 
 /** The `cmsis.cbuildRunFile` of the first launch configuration whose file exists. */
 async function cbuildRunFromLaunchJson(folder: vscode.WorkspaceFolder): Promise<string | undefined> {
@@ -97,7 +99,7 @@ async function chooseCbuildRun(requested: string | undefined, host: HandlerHost)
             : { problem: `cbuild-run file not found: ${file}.`, hint: 'Pass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/.' };
     }
     if (!folder) {
-        return { problem: 'No workspace folder open and no cbuildRunFile argument given — cannot resolve what to flash.' };
+        return { noWorkspace: true };
     }
     const fromLaunch = await cbuildRunFromLaunchJson(folder);
     if (fromLaunch) {
@@ -225,6 +227,10 @@ export async function runFlash(
         throw probeRefusal('flash', '', verdict, host.now());
     }
     const choice = await chooseCbuildRun(request.cbuildRunFile, host);
+    if ('noWorkspace' in choice) {
+        // No folder and no file named: the same refusal as cmsis_action's, with the way to open a project.
+        throw noWorkspaceRefusal('flash');
+    }
     if ('problem' in choice) {
         throw new ToolError('INVALID_ARGUMENT', choice.problem, choice.hint);
     }
