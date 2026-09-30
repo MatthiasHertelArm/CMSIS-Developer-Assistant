@@ -161,6 +161,21 @@ export function renderHelpSkillMarkdown(
         );
     }
 
+    // The extension's own selectable skills of a category without an entry point.
+    const routed = new Set(routers.map(entry => entry.category));
+    for (const category of SKILL_CATEGORY_ORDER) {
+        const own = catalog.skills.filter(entry => entry.source === 'extension' && entry.category === category);
+        if (routed.has(category) || own.length === 0) {
+            continue;
+        }
+        memberSections.push(
+            `### ${SKILL_CATEGORY_LABELS[category]} (selected one by one)`,
+            '',
+            ...own.map(entry => `- \`$${entry.name}\` — ${oneLiner(entry)}`),
+            '',
+        );
+    }
+
     // --- VS Code commands ----------------------------------------------------
     const visibleIds = new Set(contributions.commands.map(command => command.command));
     for (const id of Object.keys(config.commands)) {
