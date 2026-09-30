@@ -344,10 +344,20 @@ async function main() {
         idle.isError !== true && /^No CMSIS job in this window/.test(idleText), idleText.split('\n')[0]);
     const noWorkspace = await callTool('flash', {}, 31);
     const noWorkspaceText = noWorkspace.content?.[0]?.text ?? '';
-    check('flash without a workspace is a clear INVALID_ARGUMENT error without pip',
-        noWorkspace.isError === true && noWorkspace.structuredContent?.error_code === 'INVALID_ARGUMENT'
-            && /No workspace folder open/.test(noWorkspaceText) && !/pip/i.test(noWorkspaceText),
+    check('flash without a workspace is a NO_WORKSPACE error that names open_solution, without pip',
+        noWorkspace.isError === true && noWorkspace.structuredContent?.error_code === 'NO_WORKSPACE'
+            && /no folder is open in this VS Code window/.test(noWorkspaceText) && /open_solution/.test(noWorkspaceText)
+            && !/pip/i.test(noWorkspaceText),
         noWorkspaceText.split('\n')[0]);
+    const noProject = await callTool('cmsis_action', { action: 'build' }, 32);
+    check('cmsis_action build without a workspace is NO_WORKSPACE with the bootstrap topic',
+        noProject.isError === true && noProject.structuredContent?.error_code === 'NO_WORKSPACE'
+            && /topic:'bootstrap'/.test(noProject.content?.[0]?.text ?? ''),
+        (noProject.content?.[0]?.text ?? '').split('\n')[0]);
+    const badOpen = await callTool('cmsis_action', { action: 'open_solution', path: 'relative/demo.csolution.yml' }, 33);
+    check('cmsis_action open_solution with a relative path is INVALID_ARGUMENT',
+        badOpen.isError === true && badOpen.structuredContent?.error_code === 'INVALID_ARGUMENT',
+        (badOpen.content?.[0]?.text ?? '').split('\n')[0]);
 
     // 5. REGRESSION: three consecutive get_threads on one session must all return.
     for (let i = 1; i <= 3; i++) {
@@ -379,7 +389,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 13 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 15 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

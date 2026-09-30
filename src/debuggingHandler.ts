@@ -93,6 +93,7 @@ import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
 import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from './handler/problemText';
 import { renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
+import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
 import { secondsText } from './core/windowHealth';
@@ -123,7 +124,7 @@ interface PeripheralLookup { name?: string; address?: string; filter?: string; s
 interface RegisterLookup { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }
 interface StackRequest { threadId?: number; levels?: number; timeoutMs?: number }
 interface FrameValuesRequest { frameId: number; scope?: VariableScope; variableNames?: string[]; timeoutMs?: number }
-interface CmsisRequest { action: CmsisAction; target?: string; timeoutMs?: number }
+interface CmsisRequest { action: CmsisAction; target?: string; timeoutMs?: number; path?: string }
 interface FlashRequest { cbuildRunFile?: string; timeoutMs?: number }
 interface ProblemsRequest { sinceSeq?: number; sources?: ProblemSource[]; minSeverity?: ProblemSeverity; limit?: number }
 
@@ -833,11 +834,33 @@ export class DebuggingHandler
 
     /**
      * The session, plus one line on this window's CMSIS tasks when there is
-     * anything to say (#46), and one on its serial port (#49).
+     * anything to say (#46), and one on its serial port (#49). Without a
+     * session, also what the window lacks for CMSIS work: a folder, the
+     * CMSIS Solution or the CMSIS Debugger extension.
      */
     async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
-        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...this.cmsisTaskLines(), ...this.serialLines()]);
+        const gaps = status.state === 'no-session' ? this.bootstrapLines() : [];
+        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()]);
+    }
+
+    /**
+     * What the window lacks before CMSIS work can start, for a status without
+     * a session: no folder open, the CMSIS Solution or CMSIS Debugger
+     * extension not installed. Never throws, since that tool must not.
+     */
+    private bootstrapLines(): string[] {
+        try {
+            const host = this.host();
+            const environment = host.toolEnvironment();
+            return bootstrapStatusLines({
+                folders: host.workspaceFolders().length,
+                solutionExtension: environment.extension(SOLUTION_EXTENSION_ID) !== undefined,
+                debuggerExtension: environment.extension(DEBUGGER_EXTENSION_ID) !== undefined,
+            });
+        } catch {
+            return [];
+        }
     }
 
     /**
@@ -1706,7 +1729,7 @@ export class DebuggingHandler
             host: this.host(),
             awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
             renderFullState: (state) => this.fullState(state),
-        }, args.action, args.target, waitMs), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
+        }, args.action, args.target, waitMs, args.path), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
         return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();
     }
 

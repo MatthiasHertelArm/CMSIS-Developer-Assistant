@@ -51,6 +51,12 @@
  * `get_session_status` and a one-time note about new errors to a successful
  * result, per window; a worker that sends no counters gets neither.
  *
+ * `cmsis_action open_solution` is routed by its path (#bootstrap): to the
+ * window that has the folder open, else to the session's target, and when
+ * that is a tie to the router's own window, since any window can open a
+ * folder. When the worker opened a new window, the router waits for it to
+ * register and makes it the session's target; a pin stays.
+ *
  * The session remembers the windows it forwarded to. When it ends, the MCP
  * server calls `sessionEnded`, which tells each of them with the internal op
  * `sessionEnded`, so they release the serial ports the session held (#49).
@@ -73,6 +79,7 @@ import {
     forwardTimeoutMs,
     targetHintOf,
 } from './core/opTable';
+import { liesInside } from './core/bootstrapState';
 import { ProblemNotices } from './core/problemFeed';
 import type { JournalCounters } from './core/problemJournal';
 import {
@@ -122,6 +129,13 @@ const HEALTH_OP: InternalOpName = 'health';
 /** Health checks a pending forward may miss in a row before it is given up. */
 const WATCHDOG_MISSES = 2;
 
+/** The op and action of `cmsis_action open_solution`, which the router routes by its `path` and follows to the new window. */
+const CMSIS_OP = 'handleCmsisCommand';
+const OPEN_SOLUTION = 'open_solution';
+/** How long, and how often, the router looks for the window `open_solution` opened. */
+const OPENED_WINDOW_WAIT_MS = 30_000;
+const OPENED_WINDOW_POLL_MS = 500;
+
 /** One method per debugging op; the class gets them from the op table below. */
 type DebugForwarders = { [Op in DebugOpName]: (args?: unknown) => Promise<ToolText> };
 
@@ -142,6 +156,8 @@ export interface RoutingOptions {
     watchdogEveryMs?: number;
     /** When each window last answered, by pid; the router window shares one map among its sessions. */
     heard?: Map<number, number>;
+    /** How long the router waits for a window that `open_solution` opened to register; 30 s. */
+    openedWindowWaitMs?: number;
 }
 
 /** What a health check found: a window that answered, one that stayed silent, or a channel that failed. */
@@ -238,6 +254,21 @@ function withoutWindow(args: unknown): unknown {
     return rest;
 }
 
+/** The `path` of a `cmsis_action open_solution` call; undefined for every other call. */
+function openSolutionPath(op: string, args: unknown): string | undefined {
+    if (op !== CMSIS_OP || typeof args !== 'object' || args === null) {
+        return undefined;
+    }
+    const { action, path: given } = args as { action?: unknown; path?: unknown };
+    return action === OPEN_SOLUTION && typeof given === 'string' && given.length > 0 ? given : undefined;
+}
+
+/** Whether one of the window's folders is `target` or contains it; a window without folders holds nothing. */
+function holdsPath(entry: WindowRegistration, target: string): boolean {
+    const folders = Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
+    return folders.some((folder) => liesInside(target, folder));
+}
+
 /** The indented window list inside routing errors and the selection miss. */
 function bulletList(windows: WindowRegistration[]): string {
     return windows.map((w) => `  • ${describeWindow(w)}`).join('\n');
@@ -281,6 +312,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     private readonly watchdogEveryMs: number;
     /** When each window last answered, by pid (#14). */
     private readonly heard: Map<number, number>;
+    private readonly openedWindowWaitMs: number;
 
     /**
      * @param defaultToolMs the tool timeout a call gets without its own `timeoutMs`.
@@ -296,6 +328,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         this.healthTimeoutMs = options.healthTimeoutMs ?? CHANNEL_TIMINGS.healthTimeoutMs;
         this.watchdogEveryMs = options.watchdogEveryMs ?? CHANNEL_TIMINGS.watchdogEveryMs;
         this.heard = options.heard ?? new Map<number, number>();
+        this.openedWindowWaitMs = options.openedWindowWaitMs ?? OPENED_WINDOW_WAIT_MS;
     }
 
     serialOp(op: string, args?: unknown): Promise<ToolText> {
@@ -420,7 +453,10 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
      */
     private async relay(op: string, args: unknown): Promise<ToolText> {
         const given = args === undefined ? {} : args;
-        const { entry, reason } = this.resolveTarget(targetHintOf(given));
+        const opening = openSolutionPath(op, given);
+        const { entry, reason } = opening === undefined
+            ? this.resolveTarget(targetHintOf(given))
+            : this.resolveForOpen(opening, targetHintOf(given));
         const sent = withoutWindow(given);
         logger.debug(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
         this.forwardedTo.add(entry.pid);
@@ -443,7 +479,78 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (noticed instanceof ToolError) {
             throw noticed;
         }
-        return noticed;
+        return opening === undefined ? noticed : this.followOpened(noticed);
+    }
+
+    /**
+     * The window `open_solution` runs in: the one a `window` argument names,
+     * else the one that has the path open, else this session's target as for
+     * any call. A tie goes to the router's own window, or the first listed:
+     * any window can open a folder.
+     */
+    private resolveForOpen(solutionPath: string, hint: TargetHint | undefined): Resolved {
+        if (hint !== undefined && hint.source === 'window') {
+            return this.resolveTarget(hint);
+        }
+        const holder = this.registry.list().find((w) => holdsPath(w, solutionPath));
+        if (holder !== undefined) {
+            return this.pinnedPid === undefined ? this.settle(holder, 'path') : { entry: holder, reason: 'path' };
+        }
+        try {
+            return this.resolveTarget(undefined);
+        } catch (failure) {
+            if (!(failure instanceof ToolError) || failure.code !== 'AMBIGUOUS_WINDOW') {
+                throw failure;
+            }
+            const any = this.registry.findByPid(this.registry.ownPid()) ?? this.registry.list()[0];
+            if (any === undefined) {
+                throw failure;
+            }
+            return { entry: any, reason: 'only-window' };
+        }
+    }
+
+    /**
+     * After `open_solution` opened a new window (`data.newWindow`): wait for
+     * the window that holds the folder to register, make it this session's
+     * target unless a pin says otherwise, and say so in the result.
+     */
+    private async followOpened(result: ToolText): Promise<ToolText> {
+        if (!isToolReply(result) || result.data?.newWindow !== true || typeof result.data.opened !== 'string') {
+            return result;
+        }
+        const folder = result.data.opened;
+        const giveUpAt = Date.now() + this.openedWindowWaitMs;
+        let opened = this.registry.findByWorkspaceFolder(folder);
+        while (opened === undefined && Date.now() < giveUpAt) {
+            await new Promise<void>((wake) => {
+                setTimeout(wake, Math.min(OPENED_WINDOW_POLL_MS, this.openedWindowWaitMs));
+            });
+            opened = this.registry.findByWorkspaceFolder(folder);
+        }
+        if (opened === undefined) {
+            return {
+                ...result,
+                text: `${result.text}\nThe new window has not registered within ${secondsText(this.openedWindowWaitMs)}: `
+                    + 'call list_debug_windows in a few seconds.',
+            };
+        }
+        const label = windowLabel(opened);
+        if (this.pinnedPid !== undefined && this.pinnedPid !== opened.pid) {
+            return {
+                ...result,
+                text: `${result.text}\nThe window registered as ${label}. This session stays pinned to pid=${this.pinnedPid}: `
+                    + 'pass window, or call select_debug_window, to work in the new one.',
+                data: { ...result.data, windowPid: opened.pid },
+            };
+        }
+        this.settle(opened, 'path');
+        return {
+            ...result,
+            text: `${result.text}\nThe window registered as ${label}; this session's calls now go to it. `
+                + 'Next: get_session_status, then cmsis_action build.',
+            data: { ...result.data, windowPid: opened.pid },
+        };
     }
 
     /** The resolution ladder; the first rung that applies decides, and a miss throws. */

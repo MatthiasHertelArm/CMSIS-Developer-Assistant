@@ -124,6 +124,17 @@ that applies decides:
    session.
 7. **The only window.** The one registered window.
 
+`cmsis_action open_solution` is routed by the path it carries, because its
+job is to bring a window into being (`resolveForOpen()`): it goes to the
+window that has that folder open, else through the ladder, and where the
+ladder would refuse a tie it runs in the router's own window, since any
+window can open a folder. When the worker opened a new window (its reply
+carries `data.newWindow`), the router waits up to 30 s for a window with that
+folder to register (`followOpened()`), makes it the session's target and says
+so in the result; a pin stays, and the result then says how to reach the new
+window. The agent's MCP session survives the whole bootstrap this way: the
+empty window it started in stays the router.
+
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take
 effect at once all the same, every session remembers the `setAt` of the

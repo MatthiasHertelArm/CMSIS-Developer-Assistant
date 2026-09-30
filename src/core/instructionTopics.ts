@@ -29,7 +29,7 @@
  * Everything before the first marker is the overview. Pure: no vscode, no I/O.
  */
 
-export const TOPICS = ['overview', 'session', 'build', 'breakpoints', 'inspection', 'faults', 'troubleshooting'] as const;
+export const TOPICS = ['overview', 'bootstrap', 'session', 'build', 'breakpoints', 'inspection', 'faults', 'troubleshooting'] as const;
 export type Topic = (typeof TOPICS)[number];
 
 export interface TopicSection {

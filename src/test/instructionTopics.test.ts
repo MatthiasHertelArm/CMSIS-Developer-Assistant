@@ -106,13 +106,16 @@ suite('Instruction topics', () => {
             const overview = sliceTopic(doc);
             // The tool rules lead the overview; toolContract.test.ts holds them under 1 600 bytes.
             const ownText = removeBlock(overview, RULES_BLOCK);
-            assert.ok(Buffer.byteLength(ownText) <= 3200, `overview without the tool rules is ${Buffer.byteLength(ownText)} bytes`);
+            // 3 200 bytes until 2.5.9, which added the `bootstrap` topic and its line in the list.
+            assert.ok(Buffer.byteLength(ownText) <= 3300, `overview without the tool rules is ${Buffer.byteLength(ownText)} bytes`);
             assert.match(overview, /^## .*DEBUGGER FIRST/m);
             assert.match(overview, /printf/);
             assert.ok(Buffer.byteLength(overview) < Buffer.byteLength(doc) / 4, 'overview must be a fraction of the guide');
         });
 
         test('the topics carry the sections an agent asks for', () => {
+            assert.match(sliceTopic(doc, 'bootstrap'), /NO_WORKSPACE/);
+            assert.match(sliceTopic(doc, 'bootstrap'), /open_solution/);
             assert.match(sliceTopic(doc, 'session'), /no-session/);
             assert.match(sliceTopic(doc, 'build'), /cbuild-run\.yml/);
             assert.match(sliceTopic(doc, 'build'), /cmsis_action/);
