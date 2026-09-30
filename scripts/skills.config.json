@@ -14,6 +14,25 @@
       "category": "bring-up"
     },
     {
+      "name": "cmsis-bootstrap",
+      "category": "project"
+    },
+    {
+      "name": "cmsis-debugger-setup",
+      "category": "project",
+      "optional": true
+    },
+    {
+      "name": "fvp-debug-setup",
+      "category": "debug",
+      "optional": true
+    },
+    {
+      "name": "debugger-troubleshooting",
+      "category": "debug",
+      "optional": true
+    },
+    {
       "name": "cmsis-help",
       "category": "help",
       "generated": true
@@ -22,7 +41,7 @@
   "help": {
     "displayName": "CMSIS: Help",
     "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
-    "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+    "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-bootstrap, cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
     "commands": {
       "cmsis-developer-assistant.configure": "The first-run setup, on demand: register the MCP server with the agents you pick, choose the AI Skills Pack skills to install, then add the tool rules to your agents' rule files (CLAUDE.md, AGENTS.md, …), each change shown as a diff first.",
       "cmsis-developer-assistant.selectSkills": "Pick the AI Skills Pack skills (category entry points or individual skills) to install, and where: the current project's `.agents/skills` (this workspace only — the default, so the skills cost context only where they apply) or your personal skills directories (every workspace).",
@@ -38,7 +57,7 @@
     "toolGroups": [
       {
         "name": "CMSIS Solution actions",
-        "summary": "`cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons) and status (the job in flight); `flash` — program with the CMSIS Debugger's pyOCD, with a synchronous result."
+        "summary": "`cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons), status (the job in flight) and open_solution (open the folder of a csolution in a VS Code window and activate it; works from an empty window); `flash` — program with the CMSIS Debugger's pyOCD, with a synchronous result."
       },
       {
         "name": "Run control",
@@ -74,7 +93,7 @@
       }
     ],
     "settings": {
-      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to install. As a User setting they go into your personal skills directories (every workspace), as a Workspace or Folder setting into that project's `.agents/skills` only; `cmsis-debug-live`, `add-board-layer`, `cmsis-pack-docs` and `cmsis-help` are always installed personally.",
+      "installedSkills": "The AI Skills Pack skills (entry points or individual skills) to install. As a User setting they go into your personal skills directories (every workspace), as a Workspace or Folder setting into that project's `.agents/skills` only; `cmsis-debug-live`, `add-board-layer`, `cmsis-bootstrap`, `cmsis-pack-docs` and `cmsis-help` are always installed personally.",
       "aiSkills.enabled": "Install the AI Skills Pack at all. Off: pack skills this extension installed are removed, the skills setup step and the install prompt are skipped; the selection is kept.",
       "aiSkills.promptOnDetect": "Offer to install the pack — at most once a month — when an agent has the MCP server registered but no pack skill is selected.",
       "agentRules.install": "`ask`: the setup offers to add the tool rules to your agents' rule files, previewed, and keeps blocks written earlier current. `never`: no rule file is touched.",
@@ -91,10 +110,12 @@
       "shortDescription": "Create, extend or retarget CMSIS csolution and Zephyr projects",
       "description": "Set up and extend CMSIS csolution projects and Zephyr-based CMSIS solutions: verify the CMSIS-Toolbox, CMake, Ninja and compiler environment or a Zephyr west workspace; resolve a fuzzy board or device name to its exact CMSIS identity and BSP/DFP, or to its Zephyr board target; add a verified target to an existing *.csolution.yml; find compatible packaged board layers; or create an initial west-integrated CMSIS Zephyr Blinky solution. Use when the user wants to create, extend or retarget a csolution, check their build tools, or identify board, device and pack identifiers; this skill routes to the specialised project skills installed next to it. Not for debugging a running target (cmsis-debug-live) or for PDSC authoring (cmsis-pack).",
       "workflow": [
+        "No folder open or no solution yet: `/cmsis-bootstrap` first; it creates or opens the project and comes back here.",
         "`$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.",
         "`$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.",
         "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.",
-        "`$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green."
+        "`$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green.",
+        "`$cmsis-debugger-setup` once the solution builds: set the debug adapter of the target set, let the CMSIS Solution extension write launch.json, and verify Load & Debug on the target."
       ]
     },
     {

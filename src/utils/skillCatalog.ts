@@ -46,7 +46,13 @@ export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
     'help': 'Help',
 };
 
-export type SkillSource = 'cmsis-skills' | 'bundled' | 'generated';
+/**
+ * Where a skill comes from. `bundled`: the extension's own, always installed.
+ * `extension`: the extension's own, but selectable like a pack skill, so that
+ * it costs an agent's context only where the user wants it. `cmsis-skills`:
+ * vendored from Open-CMSIS-Pack/cmsis-skills. `generated`: a category router.
+ */
+export type SkillSource = 'cmsis-skills' | 'bundled' | 'generated' | 'extension';
 
 export interface SkillCatalogEntry {
     /** Equals the directory name and the frontmatter `name`. */
@@ -105,9 +111,12 @@ export function isBundledSkill(entry: SkillCatalogEntry): boolean {
     return entry.source === 'bundled';
 }
 
-/** The AI Skills Pack: the vendored cmsis-skills skills and the generated per-category routers. */
+/**
+ * The AI Skills Pack: the vendored cmsis-skills skills, the generated
+ * per-category routers, and the extension's own selectable skills.
+ */
 export function isPackSkill(entry: SkillCatalogEntry): boolean {
-    return entry.source === 'cmsis-skills' || entry.source === 'generated';
+    return entry.source === 'cmsis-skills' || entry.source === 'generated' || entry.source === 'extension';
 }
 
 export function bundledSkillNames(catalog: SkillCatalog): string[] {

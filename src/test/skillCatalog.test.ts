@@ -27,6 +27,8 @@ import {
     extractSkillReferences,
     groupByCategory,
     hasPackSkillSelected,
+    isBundledSkill,
+    isPackSkill,
     loadSkillCatalog,
     parseSkillFrontmatter,
     resolveDesiredSkills,
@@ -115,15 +117,37 @@ suite('Agent skill catalog', () => {
         }
     });
 
-    test('the bundled entries are the board-layer, pack-docs, debugging and help skills, nothing else', () => {
+    test('the bundled entries are the board-layer, bootstrap, pack-docs, debugging and help skills, nothing else', () => {
         const bundled = catalog().skills.filter(entry => entry.source === 'bundled');
         assert.deepStrictEqual(bundled.map(entry => [entry.name, entry.category, entry.path]), [
             ['add-board-layer', 'project', 'skills/add-board-layer'],
+            ['cmsis-bootstrap', 'project', 'skills/cmsis-bootstrap'],
             ['cmsis-pack-docs', 'bring-up', 'skills/cmsis-pack-docs'],
             ['cmsis-debug-live', 'debug', 'skills/cmsis-debug-live'],
             [HELP_SKILL_NAME, 'help', `skills/${HELP_SKILL_NAME}`],
         ]);
-        assert.deepStrictEqual(bundledSkillNames(catalog()), ['add-board-layer', 'cmsis-pack-docs', 'cmsis-debug-live', HELP_SKILL_NAME]);
+        assert.deepStrictEqual(bundledSkillNames(catalog()),
+            ['add-board-layer', 'cmsis-bootstrap', 'cmsis-pack-docs', 'cmsis-debug-live', HELP_SKILL_NAME]);
+    });
+
+    test('the extension\'s selectable skills are pack skills: offered in the picker, never installed unasked', () => {
+        const own = catalog().skills.filter(entry => entry.source === 'extension');
+        assert.deepStrictEqual(own.map(entry => [entry.name, entry.category, entry.path]), [
+            ['cmsis-debugger-setup', 'project', 'skills/cmsis-debugger-setup'],
+            ['debugger-troubleshooting', 'debug', 'skills/debugger-troubleshooting'],
+            ['fvp-debug-setup', 'debug', 'skills/fvp-debug-setup'],
+        ]);
+        for (const entry of own) {
+            assert.ok(isPackSkill(entry) && !isBundledSkill(entry), entry.name);
+            assert.ok(entry.description.length <= 1024, `${entry.name}: description of ${entry.description.length} chars`);
+            assert.ok(entry.displayName?.startsWith('CMSIS: '), `${entry.name}: display name`);
+            assert.ok(entry.shortDescription, `${entry.name}: short description`);
+        }
+        assert.ok(!bundledSkillNames(catalog()).includes('fvp-debug-setup'));
+        const picked = resolveDesiredSkills(catalog(), ['fvp-debug-setup']);
+        assert.ok(picked.explicit.includes('fvp-debug-setup'));
+        assert.ok(!resolveDesiredSkills(catalog(), []).explicit.includes('fvp-debug-setup'), 'not installed without a pick');
+        assert.ok(hasPackSkillSelected(catalog(), ['debugger-troubleshooting']));
     });
 
     test('every dependency resolves to a catalog skill and nothing depends on itself', () => {
@@ -158,10 +182,11 @@ suite('Agent skill catalog', () => {
                 [...categoriesWithSkills].sort());
         });
 
-        test('a router depends on exactly the skills of its category', () => {
+        test('a router depends on exactly the selectable skills of its category: the upstream ones and the extension\'s own', () => {
             for (const router of routers()) {
                 const members = catalog().skills
-                    .filter(entry => entry.kind === 'skill' && entry.category === router.category && entry.source === 'cmsis-skills')
+                    .filter(entry => entry.kind === 'skill' && entry.category === router.category
+                        && (entry.source === 'cmsis-skills' || entry.source === 'extension'))
                     .map(entry => entry.name)
                     .sort();
                 assert.deepStrictEqual([...router.dependsOn].sort(), members, `${router.name}`);

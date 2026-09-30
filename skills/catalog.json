@@ -19,6 +19,7 @@
         "add-cmsis-target",
         "check-cmsis-environment",
         "check-zephyr-environment",
+        "cmsis-debugger-setup",
         "identify-cmsis-board-layer",
         "identify-cmsis-board-support",
         "identify-zephyr-board",
@@ -66,6 +67,31 @@
       "displayName": "CMSIS: Check Zephyr Environment",
       "shortDescription": "Verify a local Zephyr west environment",
       "dependsOn": []
+    },
+    {
+      "name": "cmsis-bootstrap",
+      "description": "Get from an empty VS Code window (no folder open, no project on disk) to a CMSIS solution that builds, flashes and debugs: check the CMSIS extensions and the tools environment, choose the project folder, create the solution for the board or device with $start-cmsis-project or open an existing one with cmsis_action open_solution, wait for the CMSIS Solution extension to load it, build, wire the debugger and hand over to cmsis-debug-live. Use when the user wants to start a new CMSIS project for a board, when get_session_status says that no folder is open, or when cmsis_action answers NO_WORKSPACE or CMSIS_NO_SOLUTION. Not for extending an existing solution (cmsis-project) and not for debugging a running target (cmsis-debug-live).",
+      "category": "project",
+      "kind": "skill",
+      "source": "bundled",
+      "path": "skills/cmsis-bootstrap",
+      "displayName": "CMSIS: Start from an Empty Window",
+      "shortDescription": "Go from an empty VS Code window to a CMSIS solution that builds and debugs",
+      "dependsOn": []
+    },
+    {
+      "name": "cmsis-debugger-setup",
+      "description": "Wire the debug adapter of a CMSIS csolution target so that Load & Debug works, and prove it on the target: choose the adapter (CMSIS-DAP@pyOCD, ST-Link@pyOCD, ULINKplus@pyOCD, J-Link Server, …) from csolution list debuggers, set the debugger node of the target set, let the CMSIS Solution extension write launch.json and tasks.json, then verify with cmsis_action load_and_debug, a breakpoint and the serial console. Use when a new target has no debugger yet, when launch.json has no gdbtarget configuration, when cmsis_action says a CMSIS task is not offered, or when the probe changes. For an Arm FVP use fvp-debug-setup; for a session that fails to connect use debugger-troubleshooting.",
+      "category": "project",
+      "kind": "skill",
+      "source": "extension",
+      "path": "skills/cmsis-debugger-setup",
+      "displayName": "CMSIS: Debugger Setup",
+      "shortDescription": "Wire the debug adapter of a csolution target and verify Load & Debug",
+      "dependsOn": [
+        "debugger-troubleshooting",
+        "fvp-debug-setup"
+      ]
     },
     {
       "name": "identify-cmsis-board-layer",
@@ -245,6 +271,28 @@
       "dependsOn": []
     },
     {
+      "name": "debugger-troubleshooting",
+      "description": "Diagnose a failing embedded debug or flash session: the GDB server will not start, the target will not connect, \"Failed to power up DAP\", \"Could not find core in Coresight setup\", \"Could not read memory\", \"Waiting for a debug probe\", flashing succeeds but the firmware faults or is silent, or programming is implausibly slow. Covers pyOCD and J-Link sessions of the CMSIS Debugger, CMSIS-Toolbox cbuild-run files and FVP setups, and works through the CMSIS Developer Assistant tools first. Use when cmsis_action load_and_debug, attach, load or flash fails and the cause is not obvious from the error text.",
+      "category": "debug",
+      "kind": "skill",
+      "source": "extension",
+      "path": "skills/debugger-troubleshooting",
+      "displayName": "CMSIS: Debugger Troubleshooting",
+      "shortDescription": "Find out why a debug or flash session fails to start, connect or program",
+      "dependsOn": []
+    },
+    {
+      "name": "fvp-debug-setup",
+      "description": "Wire the CMSIS Solution extension's Run/Debug buttons to an Arm FVP using the model's built-in GDBServer plugin (MDK FVP models 11.32.23+, vcpkg arm:models/arm/avh-fvp). Sets the csolution `debugger: name: Arm-FVP` node, installs a model shim that resolves plugins/GDBServer.so, line-buffers the model's stdout and runs the model in Docker on macOS (where Arm ships no FVP build), and fixes the launch config's readiness handshake so GDB does not connect before the model is listening. Use when the user wants to debug firmware on a Corstone FVP, migrate off fvp-gdb/Iris, or map the CMSIS view buttons to an FVP in a csolution project.",
+      "category": "debug",
+      "kind": "skill",
+      "source": "extension",
+      "path": "skills/fvp-debug-setup",
+      "displayName": "CMSIS: FVP Debug Setup",
+      "shortDescription": "Make Load & Debug and Run work against an Arm FVP model",
+      "dependsOn": []
+    },
+    {
       "name": "cmsis-pack",
       "description": "Author and maintain CMSIS-Pack Debug Description content in a Device Family Pack PDSC: device-specific debug sequences (unlock, debug-port setup, reset, bootloader, flash, debug authentication, multi-core start, sleep and low-power), CoreSight trace sequences (TraceStart, TraceCapture, TraceFlush, TraceStop), <debugvars> runtime variables, and the non-sequence <debug>, <debugconfig>, debug-port and access-port definitions — each evidence-backed, validated, and applied only after the user confirms. Use when the user wants to add, change, review, validate or apply PDSC debug or trace sequences or debugvars for a device; this skill routes to the specialised pack-authoring skills installed next to it. Not for a live debug session (cmsis-debug-live) or for first establishing a device's debug facts (cmsis-bring-up).",
       "category": "pack",
@@ -365,7 +413,7 @@
     },
     {
       "name": "cmsis-help",
-      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-bootstrap, cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
       "category": "help",
       "kind": "skill",
       "source": "bundled",
