@@ -138,6 +138,7 @@ suite('bm25 + search', () => {
         assert.strictEqual(out.hits.length, 0);
         const text = renderSearch('quantum flux capacitor', out.hits, { resolution: 'Target: test', indexedNow: [], skipped: [], searched: [rm.doc], web: [], ms: out.ms });
         assert.match(text, /No page contains the query terms/);
+        assert.match(text, /with the user's consent, find its PDF URL on the web and fetch_doc \{ url \}/, 'the web is offered for a missing document, not for the answer');
     });
 
     test('contents and index pages are demoted below the pages they point at', () => {

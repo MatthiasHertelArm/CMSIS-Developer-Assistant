@@ -4,6 +4,12 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Pack Docs panel: a tool call named in a reply is a link.** `Next: read_doc_pages { doc: 'p/rm', pages: '3' }`, `fetch_doc { doc }` or `Call list_target_docs` in the Tools tab's output loads that call — tool and arguments, or the tool's template for a bare name — into the runner, ready to run after a look at the arguments.
+- **A documentation reply with nothing found says where else to look.** `search_target_docs` without a hit and `list_target_docs` without documents end with: the missing manual or datasheet may be on the vendor's site; with the user's consent, find its PDF URL on the web and `fetch_doc { url }` to make it searchable — register meanings are not taken from web snippets.
+
 ## [2.5.3] - 2026-09-28
 
 ### Changed

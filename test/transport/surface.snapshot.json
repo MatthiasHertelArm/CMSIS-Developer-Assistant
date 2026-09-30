@@ -1371,8 +1371,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44761,
-          "sha256": "88756ebf3b96fcd35a805702c10ab843e6eff8dd35ececa4192249ab41c566d0"
+          "bytes": 44775,
+          "sha256": "4f51b818b7f3dd0b19805de43851fc4c92f64c42721d4a4d62e646aa37569632"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -2799,8 +2799,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44761,
-          "sha256": "88756ebf3b96fcd35a805702c10ab843e6eff8dd35ececa4192249ab41c566d0"
+          "bytes": 44775,
+          "sha256": "4f51b818b7f3dd0b19805de43851fc4c92f64c42721d4a4d62e646aa37569632"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -4670,8 +4670,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44761,
-          "sha256": "88756ebf3b96fcd35a805702c10ab843e6eff8dd35ececa4192249ab41c566d0"
+          "bytes": 44775,
+          "sha256": "4f51b818b7f3dd0b19805de43851fc4c92f64c42721d4a4d62e646aa37569632"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -6483,8 +6483,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44761,
-          "sha256": "88756ebf3b96fcd35a805702c10ab843e6eff8dd35ececa4192249ab41c566d0"
+          "bytes": 44775,
+          "sha256": "4f51b818b7f3dd0b19805de43851fc4c92f64c42721d4a4d62e646aa37569632"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -8382,8 +8382,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 44761,
-          "sha256": "88756ebf3b96fcd35a805702c10ab843e6eff8dd35ececa4192249ab41c566d0"
+          "bytes": 44775,
+          "sha256": "4f51b818b7f3dd0b19805de43851fc4c92f64c42721d4a4d62e646aa37569632"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -8731,7 +8731,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · start_debugging <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {

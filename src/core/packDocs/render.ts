@@ -60,6 +60,13 @@ function armRow(d: DocRef): string {
     return `  ${d.id} · ${d.kind ?? 'arm'} · ${d.title} · ${docState(d)}`;
 }
 
+/**
+ * Offered when the target's documents do not answer. The web is for finding
+ * a PDF to fetch, never for the answer itself, and the user is asked first.
+ */
+export const INTERNET_HINT = 'If the target\'s documents do not cover it, the missing manual or datasheet may be on the vendor\'s site: ' +
+    'with the user\'s consent, find its PDF URL on the web and fetch_doc { url } to make it searchable here. Do not take register meanings from web snippets.';
+
 export function renderDocList(resolution: string, docs: DocRef[], notes: string[], info: DocListInfo = {}): string {
     const lines: string[] = [resolution];
     if (info.processors) { lines.push(`Core: ${info.processors}`); }
@@ -67,6 +74,7 @@ export function renderDocList(resolution: string, docs: DocRef[], notes: string[
     if (!docs.length) {
         lines.push('No documents: the packs declare no <book> elements and contain no PDFs' +
             (info.workspaceDirs?.length ? `, and ${info.workspaceDirs.join(', ')} holds none.` : '.'));
+        lines.push(INTERNET_HINT);
         return lines.join('\n');
     }
     const packDocs = docs.filter(d => d.scope !== 'workspace' && d.scope !== 'arm' && d.scope !== 'user');
@@ -157,6 +165,7 @@ export function renderSearch(query: string, hits: SearchHit[], info: SearchInfo)
         lines.push(`Not searched: ${unlisted.length} unlisted PDF${unlisted.length === 1 ? '' : 's'} in the pack not attributed to this device/board ` +
             `(includeUnlisted: true or a doc filter searches them).`);
     }
+    if (!hits.length) { lines.push(INTERNET_HINT); }
     return lines.join('\n');
 }
 
