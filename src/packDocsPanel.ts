@@ -39,6 +39,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { CachedDoc, PackDocsLog, TargetArgs, buildChapterIndex, docState } from './core/packDocs';
+import { renderToolReplyHtml } from './core/packDocs/toolLinks';
 import { ToolText, errorText, textOf, toToolError } from './core/toolResult';
 import { PackDocsHandler } from './packDocsHandler';
 
@@ -289,7 +290,9 @@ export class PackDocsPanel {
                     this.log.info(`[debug panel] ${spec.name} ${JSON.stringify(args)}`);
                     // As the agent reads it: the text, or the error with its code.
                     const text = await spec.run(args as never).then(textOf, (failure: unknown) => errorText(toToolError(failure)));
-                    this.post({ type: 'tool.result', tool: spec.name, args: JSON.stringify(args), text, ms: Date.now() - t0 });
+                    // Calls named in the reply become links that load the call into the runner.
+                    const html = renderToolReplyHtml(text, this.specs.map(s => s.name));
+                    this.post({ type: 'tool.result', tool: spec.name, args: JSON.stringify(args), text, html, ms: Date.now() - t0 });
                     return;
                 }
                 default:
@@ -338,6 +341,7 @@ export class PackDocsPanel {
   pre { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); white-space: pre-wrap; background: var(--vscode-textCodeBlock-background); padding: 8px; margin: 4px 0 10px; max-height: 60vh; overflow: auto; }
   h3 { margin: 12px 0 4px; } h2 { margin: 6px 0; }
   a { color: var(--vscode-textLink-foreground); cursor: pointer; }
+  #out a.call { text-decoration: underline dotted; }
   input, select, textarea, button.btn { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); padding: 3px 6px; font-family: inherit; font-size: inherit; }
   button.btn { background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
   button.chip { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border: none; border-radius: 8px; padding: 1px 8px; margin: 2px; cursor: pointer; font: inherit; }
@@ -394,7 +398,7 @@ export class PackDocsPanel {
   <div id="detail"><div class="muted">Select a document on the left to see its extracted pages, chapters, index and metadata. Columns: id, source, pages (or sections), size of the source file, when it was extracted.</div></div>
 </div>
 <div id="tools" class="view">
-  <div class="intro">Run a tool in-process, as an agent would. Arguments are the tool's JSON input; target, pack and device work as in the MCP tools. Ctrl/⌘+Enter runs.</div>
+  <div class="intro">Run a tool in-process, as an agent would. Arguments are the tool's JSON input; target, pack and device work as in the MCP tools. Ctrl/⌘+Enter runs. A call named in a reply is a link: click it to load the call into the arguments, ready to run.</div>
   <div class="toolbar">
     <label>Tool <select id="toolSel"></select></label>
     <button class="btn" id="runBtn">Run</button>
@@ -465,6 +469,13 @@ export class PackDocsPanel {
   $('inspectBtn').onclick = inspect;
   $('ctxDevice').onkeydown = $('ctxPack').onkeydown = (ev) => { if (ev.key === 'Enter') inspect(); };
   function runTool(tool, args) { showTab('Tools'); $('toolSel').value = tool; $('args').value = JSON.stringify(args, null, 2); $('runBtn').onclick(); }
+  // A call linked in a reply: loaded, not run — the user checks the arguments first. Without arguments the tool's template is loaded.
+  function loadTool(tool, args) { showTab('Tools'); $('toolSel').value = tool; $('args').value = JSON.stringify(args === undefined ? (templates[tool] || {}) : args, null, 2); save({ tool, args: $('args').value }); $('runInfo').textContent = 'loaded from the reply — Run or Ctrl/⌘+Enter'; $('args').focus(); }
+  function showReply(m) {
+    if (!m.html) { $('out').textContent = m.text; return; }
+    $('out').innerHTML = m.html;
+    for (const a of $('out').querySelectorAll('a.call')) { a.onclick = () => loadTool(a.dataset.tool, a.dataset.args === undefined ? undefined : JSON.parse(a.dataset.args)); }
+  }
   function browseStore(id) { showTab('Store'); selected = id; if (storeMsg) renderList(storeMsg); vscode.postMessage({ type: 'store.detail', id }); $('detail').innerHTML = '<div class="muted">loading ' + esc(id) + '…</div>'; }
   function renderTarget(r) {
     inspection = r; targetIds = new Set((r.docs || []).map(d => d.id));
@@ -713,10 +724,10 @@ export class PackDocsPanel {
     else if (m.type === 'tools.list') renderTools(m);
     else if (m.type === 'tool.result') {
       $('runBtn').disabled = false; $('runInfo').textContent = m.ms + ' ms · ' + m.text.length + ' chars';
-      $('out').textContent = m.text;
+      showReply(m);
       history.unshift(m); history = history.slice(0, 20);
       $('hist').innerHTML = '<div class="muted">History (click to restore)</div>' + history.map((x, i) => '<div><a data-h="' + i + '" class="mono">' + esc(x.tool) + ' ' + esc(x.args) + '</a> <span class="muted">' + x.ms + ' ms</span></div>').join('');
-      for (const a of document.querySelectorAll('a[data-h]')) { a.onclick = () => { const x = history[Number(a.dataset.h)]; $('toolSel').value = x.tool; $('args').value = JSON.stringify(JSON.parse(x.args || '{}'), null, 2); $('out').textContent = x.text; }; }
+      for (const a of document.querySelectorAll('a[data-h]')) { a.onclick = () => { const x = history[Number(a.dataset.h)]; $('toolSel').value = x.tool; $('args').value = JSON.stringify(JSON.parse(x.args || '{}'), null, 2); showReply(x); }; }
       if (/^(Fetched|Already fetched)|Indexed now|^— /.test(m.text)) { vscode.postMessage({ type: 'store.list' }); if (inspection) vscode.postMessage({ type: 'target.inspect', args: currentArgs() }); }
     }
     else if (m.type === 'store.cleared') { $('status').textContent = m.text; selected = undefined; $('detail').innerHTML = '<div class="muted">' + esc(m.text) + '</div>'; }
