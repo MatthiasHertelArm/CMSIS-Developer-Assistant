@@ -4,6 +4,14 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The last tool rule no longer makes an agent give up and hand the work to the user (tester feedback).**
+  - It read "If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code". After two expression reads that GDB could not evaluate, a tester's agent stopped, left the CPU paused and asked the user, several times, to stop debugging and run **Load & Run** by hand.
+  - It now reads: "When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do."
+  - Four other rules lost a few words to keep the rules under 1 600 bytes (1 598); their meaning is unchanged. The server instructions, the guide, the skills that carry the rules and `/cmsis-help` follow, and a rules block the setup wrote into an agent's rule file is brought up to date at the next activation.
+
 ## [2.5.10] - 2026-09-30
 
 ### Added
