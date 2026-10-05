@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - It now reads: "When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do."
   - Four other rules lost a few words to keep the rules under 1 600 bytes (1 598); their meaning is unchanged. The server instructions, the guide, the skills that carry the rules and `/cmsis-help` follow, and a rules block the setup wrote into an agent's rule file is brought up to date at the next activation.
 
+### Fixed
+- **The server reports its real version.** Release 2.5.10 raised the version in `package.json` but not the one the server reports, so `get_session_status` and the MCP `initialize` answer of 2.5.10 say `serverVersion=2.5.9`. It reports 2.5.10 again. `test/transport/executor-cases.js` compares the two numbers and failed on `main`; it is a local check, not a CI job.
+
 ## [2.5.10] - 2026-09-30
 
 ### Added
