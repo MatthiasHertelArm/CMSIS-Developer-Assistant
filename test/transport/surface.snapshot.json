@@ -1503,7 +1503,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "text": "Nothing to remove — no breakpoint is set at /nonexistent/main.c:1."
@@ -1609,7 +1609,7 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
         },
         "get_device_info": {
           "isError": true,
@@ -1646,7 +1646,7 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
@@ -4814,7 +4814,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "text": "Nothing to remove — no breakpoint is set at /nonexistent/main.c:1."
@@ -4920,7 +4920,7 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
         },
         "get_device_info": {
           "isError": true,
@@ -4957,7 +4957,7 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
@@ -5012,15 +5012,15 @@
         },
         "search_target_docs": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool search_target_docs: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"query\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool search_target_docs: Invalid input: expected string, received undefined at query"
         },
         "get_peripheral_docs": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_peripheral_docs: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_peripheral_docs: Invalid input: expected string, received undefined at peripheral"
         },
         "read_doc_pages": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool read_doc_pages: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"doc\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pages\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool read_doc_pages: Invalid input: expected string, received undefined at doc\nInvalid input: expected string, received undefined at pages"
         },
         "list_build_artifacts": {
           "text": "No *.cbuild-run.yml found in the workspace — no build output yet. Build first: cmsis_action build (the Build button of the CMSIS Solution view) builds the active solution; the build writes out/<solution>+<target>.cbuild-run.yml and the images."
@@ -6643,7 +6643,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "isError": true,
@@ -6777,7 +6777,7 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
         },
         "get_device_info": {
           "isError": true,
@@ -6821,7 +6821,7 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
@@ -8540,7 +8540,7 @@
         },
         "add_logpoint": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"line\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool add_logpoint: Invalid input: expected number, received undefined at line"
         },
         "remove_breakpoint": {
           "isError": true,
@@ -8653,7 +8653,7 @@
         },
         "lookup_register": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"peripheral\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"register\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool lookup_register: Invalid input: expected string, received undefined at peripheral\nInvalid input: expected string, received undefined at register"
         },
         "get_device_info": {
           "isError": true,
@@ -8690,7 +8690,7 @@
         },
         "get_frame_variables": {
           "isError": true,
-          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"frameId\"\n    ],\n    \"message\": \"Invalid input: expected number, received undefined\"\n  }\n]"
+          "text": "MCP error -32602: Input validation error: Invalid arguments for tool get_frame_variables: Invalid input: expected number, received undefined at frameId"
         },
         "serial_capture": {
           "isError": true,
