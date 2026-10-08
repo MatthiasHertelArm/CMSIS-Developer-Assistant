@@ -9,7 +9,7 @@ replaces each (#50). This file is the only place they are written:
   into the bundled skills `cmsis-debug-live`, `cmsis-pack-docs`,
   `add-board-layer` and `cmsis-help`, and into `debug_instructions.md`.
   `src/test/toolContract.test.ts` fails when a copy differs.
-- *Configure Agents and Skills* offers to write the rules block into the
+- *Configure Agent* offers to write the rules block into the
   agents' rule files (`CLAUDE.md`, `AGENTS.md`, …), each change previewed,
   and activation brings the blocks it wrote up to date
   (`src/core/agentRules.ts`).
@@ -40,7 +40,7 @@ Only the user can lift a rule, by asking for the specific command.
 |---|---|
 | `pyocd load`, `pyocd flash` | `flash`, or `cmsis_action load` |
 | `pyocd reset`, `monitor reset` | `reset`, which verifies that the target did reset |
-| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`, or `cmsis_action attach` for firmware started with `cmsis_action load_and_run` |
+| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`; or `cmsis_action run` (the GDB server without programming) followed by `cmsis_action attach` |
 | `pyocd commander`, `gdb -ex "x/…"` | `read_memory`, `read_core_registers`, `evaluate_expression` |
 | `pyocd list`, `JLinkExe` to check the probe | `check_target_connection`, `get_session_status` |
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |

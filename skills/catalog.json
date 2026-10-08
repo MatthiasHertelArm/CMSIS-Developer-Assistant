@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "source": {
     "repository": "https://github.com/Open-CMSIS-Pack/cmsis-skills.git",
-    "sha": "d778b91c476ab9562796b8e44a0a8e7bb18844b8",
+    "sha": "25c2085a810ee531cc13df9d34ce2768cd84c421",
     "sourcePath": "generic-mcu-skills/skills"
   },
   "skills": [
@@ -24,7 +24,8 @@
         "identify-cmsis-board-support",
         "identify-zephyr-board",
         "start-zephyr-project"
-      ]
+      ],
+      "invocable": true
     },
     {
       "name": "add-board-layer",
@@ -33,7 +34,8 @@
       "kind": "skill",
       "source": "bundled",
       "path": "skills/add-board-layer",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": true
     },
     {
       "name": "add-cmsis-target",
@@ -44,18 +46,20 @@
       "path": "skills/cmsis-skills/add-cmsis-target",
       "displayName": "CMSIS: Add Target",
       "shortDescription": "Add a verified target and packaged board layer",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "check-cmsis-environment",
-      "description": "Verify CMSIS-Toolbox, its CMake and Ninja build environment, and the available compiler toolchains with cbuild. Use before creating or building a CMSIS solution project.",
+      "description": "Verify the CMSIS tools environment exported by the CMSIS Solution extension, CMSIS-Toolbox, CMake, Ninja, and available compiler toolchains. Use before creating or building a CMSIS solution project.",
       "category": "project",
       "kind": "skill",
       "source": "cmsis-skills",
       "path": "skills/cmsis-skills/check-cmsis-environment",
       "displayName": "CMSIS: Check Environment",
       "shortDescription": "Verify CMSIS build tools and compiler toolchains",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "check-zephyr-environment",
@@ -66,7 +70,8 @@
       "path": "skills/cmsis-skills/check-zephyr-environment",
       "displayName": "CMSIS: Check Zephyr Environment",
       "shortDescription": "Verify a local Zephyr west environment",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "cmsis-bootstrap",
@@ -77,7 +82,15 @@
       "path": "skills/cmsis-bootstrap",
       "displayName": "CMSIS: Start from an Empty Window",
       "shortDescription": "Go from an empty VS Code window to a CMSIS solution that builds and debugs",
-      "dependsOn": []
+      "dependsOn": [
+        "add-board-layer",
+        "check-cmsis-environment",
+        "cmsis-debugger-setup",
+        "debugger-troubleshooting",
+        "fvp-debug-setup",
+        "identify-cmsis-board-support"
+      ],
+      "invocable": true
     },
     {
       "name": "cmsis-debugger-setup",
@@ -91,7 +104,8 @@
       "dependsOn": [
         "debugger-troubleshooting",
         "fvp-debug-setup"
-      ]
+      ],
+      "invocable": false
     },
     {
       "name": "identify-cmsis-board-layer",
@@ -102,7 +116,8 @@
       "path": "skills/cmsis-skills/identify-cmsis-board-layer",
       "displayName": "CMSIS: Identify Board Layer",
       "shortDescription": "Find compatible packaged CMSIS board layers",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "identify-cmsis-board-support",
@@ -113,7 +128,8 @@
       "path": "skills/cmsis-skills/identify-cmsis-board-support",
       "displayName": "CMSIS: Identify Board Support",
       "shortDescription": "Resolve one board or device and find its BSP or DFP",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "identify-zephyr-board",
@@ -124,7 +140,8 @@
       "path": "skills/cmsis-skills/identify-zephyr-board",
       "displayName": "CMSIS: Identify Zephyr Board",
       "shortDescription": "Resolve a physical board to a Zephyr target",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "start-zephyr-project",
@@ -135,52 +152,8 @@
       "path": "skills/cmsis-skills/start-zephyr-project",
       "displayName": "CMSIS: Start Zephyr Project",
       "shortDescription": "Create a CMSIS solution for a Zephyr board",
-      "dependsOn": []
-    },
-    {
-      "name": "cmsis-bring-up",
-      "description": "Establish documentation-led, verifiable device debug and trace facts for an SoC or board before CMSIS-Pack debug content is authored: the debug access topology (processor association, debug-port and access-port path, protocol, dormant state), reset, unlock, authentication, boot, flash and low-power debug behaviour, CoreSight trace paths and components, board connector, jumper and pin-routing choices, supplementary pyOCD topology scans, pyOCD availability, and recovery of moved or broken vendor documentation URLs. Use when the user asks how a device is debugged, what its debug or trace topology is, wants a debug or trace knowledge record (.agent-artifacts) built or refreshed, or before generating PDSC debug or trace sequences; this skill routes to the specialised bring-up skills installed next to it. No live target connection is required; for a live session use cmsis-debug-live.",
-      "category": "bring-up",
-      "kind": "router",
-      "source": "generated",
-      "path": "skills/cmsis-bring-up",
-      "displayName": "CMSIS: Debug Knowledge",
-      "shortDescription": "Establish verifiable device debug and trace facts from documentation",
-      "dependsOn": [
-        "board-debug-knowledge",
-        "check-pyocd-availability",
-        "debug-access-knowledge",
-        "debug-knowledge",
-        "pyocd-detect-debug-topology",
-        "resolve-official-device-documentation",
-        "trace-knowledge"
-      ]
-    },
-    {
-      "name": "board-debug-knowledge",
-      "description": "Document a named board's supported debug and trace connector, jumper, pin-routing, and configuration choices without narrowing device-level Pack support. Use only for an explicitly requested board-specific debug or trace configuration before a knowledge workflow records optional board alternatives or a Pack workflow designs a runtime variable.",
-      "category": "bring-up",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/board-debug-knowledge",
-      "displayName": "CMSIS: Board Debug Knowledge",
-      "shortDescription": "Document board-level debug and trace knowledge.",
-      "dependsOn": [
-        "resolve-official-device-documentation"
-      ]
-    },
-    {
-      "name": "check-pyocd-availability",
-      "description": "Prefer the active Visual Studio Code CMSIS Debugger extension's bundled pyOCD, or otherwise check whether pyOCD is runnable from the active shell. Use before a workflow needs to run pyOCD without installing, configuring, or modifying it.",
-      "category": "bring-up",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/check-pyocd-availability",
-      "displayName": "CMSIS: Check pyOCD Availability",
-      "shortDescription": "Find pyOCD or the CMSIS Debugger bundle.",
-      "dependsOn": [
-        "pyocd-detect-debug-topology"
-      ]
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "cmsis-pack-docs",
@@ -189,77 +162,8 @@
       "kind": "skill",
       "source": "bundled",
       "path": "skills/cmsis-pack-docs",
-      "dependsOn": []
-    },
-    {
-      "name": "debug-access-knowledge",
-      "description": "Build a documentation-led, verifiable record of an existing SoC's reusable CMSIS debug access topology: processor association, debug port and access-port path, protocol, and dormant-state decision. Use before work that needs those access facts, including debug-definition, debug-behavior, or CoreSight trace knowledge; no active target connection is required.",
-      "category": "bring-up",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/debug-access-knowledge",
-      "displayName": "CMSIS: Debug Access Knowledge",
-      "shortDescription": "Verify reusable CMSIS debug access facts.",
-      "dependsOn": [
-        "board-debug-knowledge",
-        "pyocd-detect-debug-topology",
-        "resolve-official-device-documentation"
-      ]
-    },
-    {
-      "name": "debug-knowledge",
-      "description": "Build a documentation-led, verifiable knowledge record of an existing SoC's reset, unlock, authentication, boot, flash, processor-control, and low-power debug behavior after `$debug-access-knowledge` has established the reusable access topology. Use when those device-debug facts need establishing or refreshing for PDSC debug sequences; no active target connection is required.",
-      "category": "bring-up",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/debug-knowledge",
-      "displayName": "CMSIS: Debug Knowledge",
-      "shortDescription": "Document reset and low-power debug behavior.",
-      "dependsOn": [
-        "board-debug-knowledge",
-        "debug-access-knowledge",
-        "resolve-official-device-documentation"
-      ]
-    },
-    {
-      "name": "pyocd-detect-debug-topology",
-      "description": "Capture supplementary, non-authoritative CMSIS debug and CoreSight topology evidence from the complete stdout/stderr of `pyocd gdbserver -vv --target cortex_m` after `$check-pyocd-availability` succeeds. Use when documentation does not establish a required processor, debug-port, access-port, or CoreSight-component observation; do not use detection to infer missing hardware behavior.",
-      "category": "bring-up",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/pyocd-detect-debug-topology",
-      "displayName": "CMSIS: pyOCD Detect Debug Topology",
-      "shortDescription": "Capture supplementary CMSIS debug scan evidence.",
-      "dependsOn": [
-        "check-pyocd-availability"
-      ]
-    },
-    {
-      "name": "resolve-official-device-documentation",
-      "description": "Recover or conclusively account for an unavailable vendor device-documentation URL by finding the current official source and returning a traceable retrieval result. Use when a CMSIS device, debug, trace, board, or Pack research workflow has a broken, moved, or inaccessible vendor document reference.",
-      "category": "bring-up",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/resolve-official-device-documentation",
-      "displayName": "CMSIS: Resolve Official Device Documentation",
-      "shortDescription": "Recover authoritative vendor device documentation.",
-      "dependsOn": []
-    },
-    {
-      "name": "trace-knowledge",
-      "description": "Build a documentation-led, verifiable knowledge record of an existing SoC's CoreSight trace paths, components, operating requirements, and constraints for subsequent generation of PDSC trace sequences. Use when documented trace facts need establishing or refreshing before generating or maintaining CoreSight trace setup. No active target connection is required; treat runtime scanning as supplementary evidence.",
-      "category": "bring-up",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/trace-knowledge",
-      "displayName": "CMSIS: Trace Knowledge",
-      "shortDescription": "Document SoC CoreSight trace topology",
-      "dependsOn": [
-        "board-debug-knowledge",
-        "debug-access-knowledge",
-        "pyocd-detect-debug-topology",
-        "resolve-official-device-documentation"
-      ]
+      "dependsOn": [],
+      "invocable": true
     },
     {
       "name": "cmsis-debug-live",
@@ -268,7 +172,11 @@
       "kind": "skill",
       "source": "bundled",
       "path": "skills/cmsis-debug-live",
-      "dependsOn": []
+      "dependsOn": [
+        "cmsis-pack-docs",
+        "debugger-troubleshooting"
+      ],
+      "invocable": true
     },
     {
       "name": "debugger-troubleshooting",
@@ -279,7 +187,8 @@
       "path": "skills/debugger-troubleshooting",
       "displayName": "CMSIS: Debugger Troubleshooting",
       "shortDescription": "Find out why a debug or flash session fails to start, connect or program",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
       "name": "fvp-debug-setup",
@@ -290,137 +199,32 @@
       "path": "skills/fvp-debug-setup",
       "displayName": "CMSIS: FVP Debug Setup",
       "shortDescription": "Make Load & Debug and Run work against an Arm FVP model",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": false
     },
     {
-      "name": "cmsis-pack",
-      "description": "Author and maintain CMSIS-Pack Debug Description content in a Device Family Pack PDSC: device-specific debug sequences (unlock, debug-port setup, reset, bootloader, flash, debug authentication, multi-core start, sleep and low-power), CoreSight trace sequences (TraceStart, TraceCapture, TraceFlush, TraceStop), <debugvars> runtime variables, and the non-sequence <debug>, <debugconfig>, debug-port and access-port definitions — each evidence-backed, validated, and applied only after the user confirms. Use when the user wants to add, change, review, validate or apply PDSC debug or trace sequences or debugvars for a device; this skill routes to the specialised pack-authoring skills installed next to it. Not for a live debug session (cmsis-debug-live) or for first establishing a device's debug facts (cmsis-bring-up).",
-      "category": "pack",
-      "kind": "router",
-      "source": "generated",
-      "path": "skills/cmsis-pack",
-      "displayName": "CMSIS: Pack Debug Authoring",
-      "shortDescription": "Author, validate and apply PDSC debug and trace sequences and debugvars",
-      "dependsOn": [
-        "apply-confirmed-pdsc-proposal",
-        "generate-debug-description",
-        "generate-debug-sequences",
-        "generate-trace-sequences",
-        "manage-pdsc-debugvars",
-        "prepare-pdsc-sequence-change",
-        "validate-pdsc-sequence-xml"
-      ]
-    },
-    {
-      "name": "apply-confirmed-pdsc-proposal",
-      "description": "Apply a complete, explicitly confirmed CMSIS-Pack PDSC sequence or `debugvars` proposal provided through the active conversation and run its required validation. Use after a debug or trace proposal has been reviewed and the user has authorized edits to the named PDSC files; do not create agent-artifact records, infer missing technical behavior, or apply changes before confirmation.",
-      "category": "pack",
+      "name": "create-csolution-github-action",
+      "description": "Create a GitHub Actions workflow that builds selected targets from the currently loaded CMSIS solution and optionally tests configured FVP targets. Use when a CMSIS solution workspace needs single-target or target-matrix CI.",
+      "category": "devops",
       "kind": "skill",
       "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/apply-confirmed-pdsc-proposal",
-      "displayName": "CMSIS: Apply Confirmed PDSC Proposal",
-      "shortDescription": "Apply and validate a confirmed PDSC proposal",
-      "dependsOn": [
-        "validate-pdsc-sequence-xml"
-      ]
-    },
-    {
-      "name": "generate-debug-description",
-      "description": "Add or review non-sequence CMSIS-Pack Debug Description content in an existing Device Family Pack PDSC. Use for debug, debugconfig, dbg_datapatch, debug-port, or access-port definitions after `$debug-access-knowledge` has established the required access facts. Do not collect knowledge, generate or update debugvars, implement device debug sequences, or generate CoreSight trace sequences.",
-      "category": "pack",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/generate-debug-description",
-      "displayName": "CMSIS: Generate Debug Description",
-      "shortDescription": "Add verified CMSIS-Pack debug definitions",
-      "dependsOn": [
-        "debug-access-knowledge",
-        "validate-pdsc-sequence-xml"
-      ]
-    },
-    {
-      "name": "generate-debug-sequences",
-      "description": "Add evidence-backed, device-specific non-trace CMSIS-Pack Debug Description sequences to an existing Device Family Pack PDSC. Use for device unlock, debug-port setup, reset, bootloader, flash, debug-authentication, multi-core startup, or reliable debug through sleep, deep-sleep, and device low-power modes after `$debug-access-knowledge` and `$debug-knowledge` have established the required facts; use the shared PDSC preparation, debugvars, application, and XML-validation skills for their respective integration work; do not use for CoreSight trace setup.",
-      "category": "pack",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/generate-debug-sequences",
-      "displayName": "CMSIS: Generate Debug Sequences",
-      "shortDescription": "Generate verified device debug sequences",
-      "dependsOn": [
-        "apply-confirmed-pdsc-proposal",
-        "debug-access-knowledge",
-        "debug-knowledge",
-        "manage-pdsc-debugvars",
-        "prepare-pdsc-sequence-change",
-        "validate-pdsc-sequence-xml"
-      ]
-    },
-    {
-      "name": "generate-trace-sequences",
-      "description": "Add modular, evidence-backed CoreSight trace sequences to an existing CMSIS Device Family Pack PDSC. Use after `$trace-knowledge` has produced a READY trace knowledge record that evidences available trace paths, when assembling per-component trace snippets into TraceStart, TraceCapture, TraceFlush, and TraceStop sequences, or when maintaining trace setup with device-specific extension placeholders; use the shared PDSC preparation, debugvars, application, and XML-validation skills for their respective integration work. Consult `$debug-access-knowledge` only when a required access fact is not self-contained in the trace record.",
-      "category": "pack",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/generate-trace-sequences",
-      "displayName": "CMSIS: Generate Trace Sequences",
-      "shortDescription": "Generate CoreSight trace PDSC sequences",
-      "dependsOn": [
-        "apply-confirmed-pdsc-proposal",
-        "debug-access-knowledge",
-        "manage-pdsc-debugvars",
-        "prepare-pdsc-sequence-change",
-        "trace-knowledge",
-        "validate-pdsc-sequence-xml"
-      ]
-    },
-    {
-      "name": "manage-pdsc-debugvars",
-      "description": "Design a documented CMSIS-Pack PDSC `debugvars` runtime choice through the active conversation. Use when defining or revising a `__var`, checking collisions and scope, or proposing its minimal sequence use and Configuration Wizard annotation; do not create agent-artifact records, edit files, invent device behavior, or redesign debug or trace sequences.",
-      "category": "pack",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/manage-pdsc-debugvars",
-      "displayName": "CMSIS: Manage PDSC Debug Variables",
-      "shortDescription": "Design and safely integrate PDSC debug variables",
-      "dependsOn": []
-    },
-    {
-      "name": "prepare-pdsc-sequence-change",
-      "description": "Prepare an evidence-backed CMSIS-Pack PDSC sequence-change summary through the active conversation before debug or trace sequence assembly. Use when scoping a PDSC sequence change, checking verified knowledge facts and inherited definitions, or selecting shared-versus-leaf placement; do not create, read, or update agent-artifact records.",
-      "category": "pack",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/prepare-pdsc-sequence-change",
-      "displayName": "CMSIS: Prepare PDSC Sequence Change",
-      "shortDescription": "Prepare evidence-backed PDSC sequence proposals",
-      "dependsOn": [
-        "debug-access-knowledge",
-        "debug-knowledge",
-        "trace-knowledge"
-      ]
-    },
-    {
-      "name": "validate-pdsc-sequence-xml",
-      "description": "Validate common CMSIS-Pack PDSC sequence XML and C-like block formatting through the active conversation after a proposed or applied change. Use for debug or trace PDSC sequence edits that need XML/PDSC syntax, block layout, and complete match inspection; do not create agent-artifact records or validate device behavior.",
-      "category": "pack",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/validate-pdsc-sequence-xml",
-      "displayName": "CMSIS: Validate PDSC Sequence XML",
-      "shortDescription": "Validate PDSC sequence XML and block formatting",
-      "dependsOn": []
+      "path": "skills/cmsis-skills/create-csolution-github-action",
+      "displayName": "CMSIS: Create Csolution GitHub Action",
+      "shortDescription": "Create build or FVP-test CI for a CMSIS solution",
+      "dependsOn": [],
+      "invocable": true
     },
     {
       "name": "cmsis-help",
-      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-bootstrap, cmsis-project, cmsis-bring-up, cmsis-pack, cmsis-debug-live, cmsis-pack-docs, add-board-layer) and the member skills behind each, the VS Code commands that register agents and select skills, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings that control the AI Skills Pack. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, how to install more CMSIS skills, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-bootstrap, cmsis-project, add-board-layer, cmsis-debug-live, cmsis-pack-docs, create-csolution-github-action) and the member skills behind each, the VS Code commands, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
       "category": "help",
       "kind": "skill",
       "source": "bundled",
       "path": "skills/cmsis-help",
       "displayName": "CMSIS: Help",
       "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
-      "dependsOn": []
+      "dependsOn": [],
+      "invocable": true
     }
   ]
 }

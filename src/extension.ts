@@ -23,10 +23,10 @@
  * manager, the documentation handlers and their commands, this window's
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
  * for in-editor Copilot, agent-configuration migration, the update of the tool
- * rules recorded in agents' rule files, the settings and workspace-folder
- * listeners, the agent/skill commands, Select Target Window, the serial port's
- * status-bar item and Release Serial Port (#49), and the first-run setup or
- * skills prompt two seconds later. `deactivate` shuts the coordinator down so
+ * rules recorded in agents' rule files, the settings listener, the agent
+ * commands, Select Target Window, the serial port's status-bar item and
+ * Release Serial Port (#49), and the first-run setup two seconds later.
+ * `deactivate` shuts the coordinator down so
  * the window leaves the shared registry before the host exits.
  *
  * Under the extension test runner (`npm test`) the suites exercise the modules
@@ -63,7 +63,7 @@ const SECTION = 'cmsis-developer-assistant';
 const PRODUCT = 'CMSIS Developer Assistant';
 /** The MCP server definition provider id contributed in package.json. */
 const MCP_PROVIDER_ID = 'cmsis-developer-assistant';
-/** Delay before the first-run setup or the skills prompt, so they do not compete with startup. */
+/** Delay before the first-run setup, so it does not compete with startup. */
 const SETUP_DELAY_MS = 2000;
 const RELOAD_BUTTON = 'Reload Window';
 const PORT_RELOAD_NOTICE = `${PRODUCT}: the server port setting changed. Reload the window to restart the MCP server on the new port.`;
@@ -201,17 +201,12 @@ function hostedByTestRunner(extensionContext: vscode.ExtensionContext): boolean 
     return extensionContext.extensionMode === vscode.ExtensionMode.Test;
 }
 
-/** A settings change: skills follow at once (not under the test runner), the rest needs a window reload. */
+/** A settings change: the documentation settings apply at once, the port and the tool-group switches need a window reload. */
 async function onSettingsChanged(
     change: vscode.ConfigurationChangeEvent,
-    manager: AgentConfigurationManager,
     packDocs: PackDocsHandlers,
-    syncsSkills: boolean,
 ): Promise<void> {
     const touches = (key: string): boolean => change.affectsConfiguration(`${SECTION}.${key}`);
-    if (syncsSkills && (touches('installedSkills') || touches('aiSkills.enabled'))) {
-        await manager.syncSkills('setting changed');
-    }
     if (touches('packDocs')) {
         packDocs.docs.refreshSettings();
     }
@@ -226,21 +221,18 @@ async function onSettingsChanged(
     }
 }
 
-/** The three agent/skill commands; each does nothing without a manager. */
+/** The two agent commands; each does nothing without a manager. */
 function registerAgentCommands(extensionContext: vscode.ExtensionContext): void {
     extensionContext.subscriptions.push(
         vscode.commands.registerCommand(`${SECTION}.configure`, async () => {
             await agentManager?.runSetupFlow();
-        }),
-        vscode.commands.registerCommand(`${SECTION}.selectSkills`, async () => {
-            await agentManager?.showSkillSelectionDialog();
         }),
         vscode.commands.registerCommand(`${SECTION}.resetPopupState`, async () => {
             if (!agentManager) {
                 return;
             }
             await agentManager.resetPopupState();
-            void vscode.window.showInformationMessage(`${PRODUCT}: the setup prompt and the skills reminder have been reset.`);
+            void vscode.window.showInformationMessage(`${PRODUCT}: the setup prompt has been reset.`);
         }),
     );
 }
@@ -262,16 +254,14 @@ function registerWindowCommand(extensionContext: vscode.ExtensionContext): void 
     );
 }
 
-/** Two seconds after activation: the first-run setup when it is due, else the monthly skills prompt. */
-async function setupOrSkillsPrompt(manager: AgentConfigurationManager): Promise<void> {
+/** Two seconds after activation: the first-run setup, when it is due. */
+async function setupWhenDue(manager: AgentConfigurationManager): Promise<void> {
     try {
         if (await manager.shouldShowPopup()) {
             await manager.runSetupFlow();
-        } else {
-            await manager.maybePromptForSkills();
         }
     } catch (failure) {
-        logger.error('The first-run setup or the skills prompt failed', failure);
+        logger.error('The first-run setup failed', failure);
     }
 }
 
@@ -326,19 +316,14 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     }
 
     extensionContext.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration((change) => onSettingsChanged(change, manager, packDocs, !hostsTests)),
-        vscode.workspace.onDidChangeWorkspaceFolders(async () => {
-            if (!hostsTests) {
-                await manager.syncSkills('workspace folders changed');
-            }
-        }),
+        vscode.workspace.onDidChangeConfiguration((change) => onSettingsChanged(change, packDocs)),
     );
     registerAgentCommands(extensionContext);
     registerWindowCommand(extensionContext);
     registerSerialHandle(extensionContext);
 
     if (!hostsTests) {
-        setTimeout(() => setupOrSkillsPrompt(manager), SETUP_DELAY_MS);
+        setTimeout(() => setupWhenDue(manager), SETUP_DELAY_MS);
     }
     logger.info(`${PRODUCT} activated`);
 }

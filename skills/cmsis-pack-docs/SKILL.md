@@ -113,9 +113,10 @@ table:
    scanned CoreSight component by its part number (CoreSight TRMs). Do
    **not** fetch CoreSight TRMs to program funnels, replicators, ETF/ETB/
    ETR, TPIU or SWO: the trace generator templates own that.
-4. If `fetch_doc` reports a dead or unknown URL, run
-   `$resolve-official-device-documentation`, then
-   `fetch_doc { url: <Replacement official URL> }`.
+4. If `fetch_doc` reports a dead or unknown URL, find the document's
+   current official URL on the vendor's site (a web search for the document
+   number is fine; never read the PDF itself into the conversation), tell
+   the user where it came from, then `fetch_doc { url: <official URL> }`.
 5. Only then add the *Documents requiring user download* row, with
    **Requested workspace path** `.agent-artifacts/docs/<file>.pdf` — a copy
    placed there is listed and searched automatically.

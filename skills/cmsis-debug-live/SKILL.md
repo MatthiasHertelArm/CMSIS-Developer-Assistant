@@ -89,7 +89,7 @@ Only the user can lift a rule, by asking for the specific command.
 |---|---|
 | `pyocd load`, `pyocd flash` | `flash`, or `cmsis_action load` |
 | `pyocd reset`, `monitor reset` | `reset`, which verifies that the target did reset |
-| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`, or `cmsis_action attach` for firmware started with `cmsis_action load_and_run` |
+| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`; or `cmsis_action run` (the GDB server without programming) followed by `cmsis_action attach` |
 | `pyocd commander`, `gdb -ex "x/…"` | `read_memory`, `read_core_registers`, `evaluate_expression` |
 | `pyocd list`, `JLinkExe` to check the probe | `check_target_connection`, `get_session_status` |
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |
@@ -152,9 +152,11 @@ then has status `running` and names the job: call `cmsis_action` with
 `action='status'` for the result, and never start the build again to learn
 it — a repeated build attaches to the one in flight.
 
-`load_and_run` leaves the CMSIS Run task holding the probe (it hosts the GDB
-server): `attach` debugs that firmware, and `cmsis_action` `stop_run` frees
-the probe before `load`, `load_and_debug` or `flash`. A `PROBE_BUSY` error
+`run` and `load_and_run` leave the CMSIS Run task holding the probe (it hosts
+the GDB server): `attach` debugs that firmware, and `cmsis_action` `stop_run`
+frees the probe before `load`, `load_and_debug` or `flash`. To look at a
+target that is already running without touching its flash, `run` then
+`attach` (the pyOCD task resets the target and lets it run; J-Link's does not). A `PROBE_BUSY` error
 names what holds the probe and the step to take. `flash` uses the CMSIS
 Debugger's bundled pyOCD — never install one.
 If `launch.json` is stale, the user has to regenerate it: **CMSIS Solution →
@@ -213,7 +215,9 @@ already live, so checking first saves a round trip.
   instructions.
 - When a session does not start, `get_recent_problems` with
   `sources: ['gdb-server']` and `minSeverity: 'info'` shows what pyOCD or
-  J-Link said.
+  J-Link said. When it still does not start, connect or program after that,
+  hand over to `$debugger-troubleshooting`, which walks the checks in order
+  (probe, power, GDB server, flash algorithm, image) through the tools.
 
 ## Debugger first — do not start by adding prints
 

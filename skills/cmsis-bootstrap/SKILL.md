@@ -29,9 +29,9 @@ Goal: a CMSIS solution that is open in a VS Code window, builds with
 This skill does little work of its own. It finds out what is missing, asks the user
 for the few things only they can decide or do, and hands over to the skill that owns
 each step. Every `$name` is a skill installed next to this one
-(`../<name>/SKILL.md`). When one is missing, say so: the user adds it with
-**CMSIS Developer Assistant: Select Agent Skills** in VS Code. Do not improvise its
-steps.
+(`../<name>/SKILL.md`). When one is missing, say so: the user installs the skills
+again with **CMSIS Developer Assistant: Configure Agent** in VS Code. Do not improvise
+its steps.
 
 ## 1. Find out where you are
 

@@ -15,8 +15,9 @@
  */
 
 /**
- * Copies catalog skills into the user's personal skills directories and
- * removes the ones they deselected — and nothing else.
+ * Copies the catalog skills into the user's personal skills directories and
+ * removes the ones this extension installed earlier and no longer ships —
+ * and nothing else.
  *
  * No `vscode` import: the class takes its roots and paths from the caller
  * so the unit tests can run it against temp directories.
@@ -107,12 +108,12 @@ export function getSkillInstallRoots(options: SkillInstallRootsOptions = {}): Sk
 }
 
 /**
- * Where a project's own skills go, for one workspace folder — the same
- * conventions one level down: `<folder>/.agents/skills` is the cross-agent
- * project location, `<folder>/.claude/skills` the only one Claude Code
- * reads, so it is written when Claude Code is on this machine (a Claude home
- * exists) or the project already has a `.claude` directory. When it is not
- * written it is still swept, for a copy an earlier setup left there.
+ * Where releases 2.5.x could install a project's own selection, for one
+ * workspace folder — the same conventions one level down:
+ * `<folder>/.agents/skills` and `<folder>/.claude/skills`. Since 2.5.15 the
+ * skills are personal only; the manager sweeps both roots for marker-guarded
+ * leftovers and writes neither (`install` is kept apart for that reason: it
+ * says which root an earlier release wrote).
  */
 export function getProjectSkillInstallRoots(folder: string, options: SkillInstallRootsOptions = {}): SkillInstallRoots {
     const env = options.env ?? process.env;
@@ -197,10 +198,8 @@ export class SkillInstaller {
      * its own and is reported, never thrown — not being able to write a
      * skill file must never take activation down with it.
      *
-     * The roots are per call: the personal directories and each workspace
-     * folder's project directories are synced from their own selections.
-     * A root is only created when something is to be installed into it, so
-     * a project without a selection never gains an empty `.agents/skills`.
+     * A root is only created when something is to be installed into it;
+     * `sweepOnly` roots lose our leftovers and are never written.
      */
     public async sync(
         roots: SkillInstallRoots,

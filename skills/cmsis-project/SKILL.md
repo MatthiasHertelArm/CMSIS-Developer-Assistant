@@ -39,13 +39,12 @@ prerequisites, steps and guardrails.
 - Honour its *Prerequisites* — if it names another `$skill`, run that one first — and apply
   its *Guardrails*. Do not merge, reorder or paraphrase steps across member skills.
 - If `../<name>/SKILL.md` is missing, say so instead of improvising: the skill was not
-  installed. The user can add it with **CMSIS Developer Assistant: Select Agent Skills** in VS Code or by editing the
-  `cmsis-developer-assistant.installedSkills` setting.
+  installed. The user can install the skills again with **CMSIS Developer Assistant: Configure Agent** in VS Code.
 
 ## Member skills
 
 - `$add-cmsis-target` — Add a verified board or device target to an existing CMSIS solution, declare its support packs, and offer compatible packaged board layers when the project uses them.
-- `$check-cmsis-environment` — Verify CMSIS-Toolbox, its CMake and Ninja build environment, and the available compiler toolchains with cbuild.
+- `$check-cmsis-environment` — Verify the CMSIS tools environment exported by the CMSIS Solution extension, CMSIS-Toolbox, CMake, Ninja, and available compiler toolchains.
 - `$check-zephyr-environment` — Verify an existing Zephyr workspace, its Python virtual environment, and the venv-local west installation.
 - `$cmsis-debugger-setup` — Wire the debug adapter of a CMSIS csolution target so that Load & Debug works, and prove it on the target: choose the adapter (CMSIS-DAP@pyOCD, ST-Link@pyOCD, ULINKplus@pyOCD, J-Link Server, …) from csolution list debuggers, set the debugger node of the target set, let the CMSIS Solution extension write launch.json and tasks.json, then verify with cmsis_action load_and_debug, a breakpoint and the serial console.
 - `$identify-cmsis-board-layer` — Identify packaged CMSIS board layers compatible with an existing solution target and its required connections.

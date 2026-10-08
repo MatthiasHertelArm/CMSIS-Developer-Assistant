@@ -20,21 +20,20 @@
  * - Registers this extension's MCP server in the home-directory configuration
  *   files of eight agents (seven JSON files and Codex's TOML file), and
  *   migrates the entries earlier releases wrote there.
- * - Runs the three-step setup: which agents to register, which AI Skills Pack
- *   skills to install (for this user or one workspace folder), and which of
- *   the agents' rule files get the tool rules, each change shown as a diff
- *   and written only when confirmed.
- * - Applies the `installedSkills` and `aiSkills.enabled` settings to the skills
- *   directories, scope by scope, and shows the monthly "install the skills?"
- *   prompt.
+ * - Runs the two-step setup: which agents to register (the CMSIS skills are
+ *   installed into the personal skills directories at the same time), and
+ *   which of the agents' rule files get the tool rules, each change shown as
+ *   a diff and written only when confirmed.
+ * - Installs the skill catalog into the personal skills directories at
+ *   activation and after the setup; there is no selection.
  * - Keeps the tool rules it wrote into rule files current at activation.
  *
  * The files written here belong to other programs, so their locations, entry
  * shapes and layout are a contract. Every write is atomic (`atomicFile.ts`);
  * a JSON file that exists is re-read right before the write and everything
  * else in it is kept (`jsonFileRewrite.ts`). What to install and where comes
- * from the pure skill modules (`skillCatalog.ts`, `skillInstaller.ts`,
- * `skillPrompt.ts`); which rule file each agent reads and what changes in it,
+ * from the pure skill modules (`skillCatalog.ts`, `skillInstaller.ts`);
+ * which rule file each agent reads and what changes in it,
  * from `core/agentRules.ts` and `agentRuleFiles.ts`.
  *
  * Loading this module calls no `vscode` API: the transport tests load it
@@ -74,21 +73,7 @@ import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
 import { notifyError } from './notify';
-import {
-    AI_SKILLS_ENABLED_SETTING,
-    AI_SKILLS_PROMPT_SETTING,
-    DEFAULT_INSTALLED_SKILLS,
-    INSTALLED_SKILLS_SETTING,
-    SKILL_CATEGORY_LABELS,
-    SkillCatalog,
-    SkillCatalogEntry,
-    bundledSkillNames,
-    groupByCategory,
-    hasPackSkillSelected,
-    isBundledSkill,
-    loadSkillCatalog,
-    resolveDesiredSkills,
-} from './skillCatalog';
+import { SkillCatalog, installSet, loadSkillCatalog } from './skillCatalog';
 import {
     SkillInstallRoots,
     SkillInstaller,
@@ -97,7 +82,6 @@ import {
     getSkillInstallRoots,
     summarizeSkillSync,
 } from './skillInstaller';
-import { SKILLS_PROMPT_SHOWN_KEY, SKILL_PROMPT_BUTTONS, decideSkillPrompt, skillPromptMessage } from './skillPrompt';
 
 /** Name of this server's entry in every agent configuration. */
 export const SERVER_KEY = 'cmsis-developer-assistant';
@@ -138,20 +122,18 @@ const SETTINGS_SECTION = 'cmsis-developer-assistant';
 
 /**
  * globalState: the first-run setup has been answered (accepted or dismissed).
- * The suffix goes up when the flow gains a step, so everyone sees it once more
- * (v4: the tool rules step).
+ * The suffix goes up when the flow changes, so everyone sees it once more
+ * (v4: the tool rules step; v5: the skills step gone, the catalog installed
+ * with the agents).
  */
-const SETUP_ANSWERED_KEY = 'cmsis-developer-assistant.popupShown.v4';
+const SETUP_ANSWERED_KEY = 'cmsis-developer-assistant.popupShown.v5';
+/** globalState of releases before 2.5.15: when the monthly skills prompt was last shown. Cleared, never read. */
+const LEGACY_SKILLS_PROMPT_KEY = 'cmsis-developer-assistant.skillsPrompt.lastShownAt';
 
 const PRODUCT = 'CMSIS Developer Assistant';
 const SETUP_TITLE = `${PRODUCT} Setup`;
 const AGENT_ITEM_NOTE = 'Write the MCP server entry into this agent\'s configuration';
 const OPEN_FILE_BUTTON = 'View File';
-const ENABLE_BUTTON = 'Enable and Select';
-const PACK_DISABLED_NOTICE = `${PRODUCT}: the AI Skills Pack is disabled (setting cmsis-developer-assistant.aiSkills.enabled); only the extension's own skills are installed.`;
-
-/** The step mark of the skill picker when it runs on its own (Select Agent Skills). */
-const SKILLS_ALONE_MARK = ' (2/2)';
 /** The URI scheme of the texts the rules preview shows in the diff editor. */
 const RULES_PREVIEW_SCHEME = 'cmsis-developer-assistant-rules';
 const WRITE_BUTTON = 'Write';
@@ -161,9 +143,6 @@ const RULE_LOG: RuleLog = {
     info: (message) => logger.info(message),
     warn: (message, detail) => logger.warn(message, detail),
 };
-
-/** Longest skill detail line in the picker. */
-const DETAIL_MAX = 140;
 
 // ---------------------------------------------------------------------------
 // The supported agents
@@ -508,133 +487,34 @@ async function migrateCodexAgent(agent: TomlAgentInfo, url: string): Promise<boo
 }
 
 // ---------------------------------------------------------------------------
-// Skill scopes
+// Skill directories
 // ---------------------------------------------------------------------------
 
-/** Where a skill selection is stored and where its skills go: this user, or one local workspace folder. */
-type SkillScope = { kind: 'user' } | { kind: 'folder'; folder: vscode.WorkspaceFolder };
-
-const USER_SCOPE: SkillScope = { kind: 'user' };
-
-/** The open workspace folders on the local file system; remote ones get no skills. */
+/** The open workspace folders on the local file system. */
 function localFolders(): vscode.WorkspaceFolder[] {
     return (vscode.workspace.workspaceFolders ?? []).filter((folder) => folder.uri.scheme === 'file');
 }
 
-function scopesInOrder(): SkillScope[] {
-    return [USER_SCOPE, ...localFolders().map((folder): SkillScope => ({ kind: 'folder', folder }))];
-}
-
-function scopeName(scope: SkillScope): string {
-    return scope.kind === 'user' ? 'this user' : `the "${scope.folder.name}" workspace folder`;
-}
-
-function installRootsOf(scope: SkillScope): SkillInstallRoots {
-    return scope.kind === 'user' ? getSkillInstallRoots() : getProjectSkillInstallRoots(scope.folder.uri.fsPath);
-}
-
-function skillNames(value: unknown): string[] {
-    return Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : [];
-}
-
 /**
- * The scope's `installedSkills` picks. The user scope always has a value
- * (`[]` when unset); a folder has none unless the folder or the workspace
- * sets one.
+ * Where the skills go: the personal directories of every agent on this
+ * machine. Releases 2.5.x could also install a selection into a workspace
+ * folder (`<folder>/.agents/skills`, `<folder>/.claude/skills`); those roots
+ * are swept for marker-guarded leftovers, never written.
  */
-function readSelection(scope: SkillScope): string[] | undefined {
-    if (scope.kind === 'user') {
-        const seen = vscode.workspace.getConfiguration(SETTINGS_SECTION).inspect<unknown>(INSTALLED_SKILLS_SETTING);
-        return skillNames(seen?.globalValue ?? [...DEFAULT_INSTALLED_SKILLS]);
+function skillRoots(): SkillInstallRoots {
+    const personal = getSkillInstallRoots();
+    const sweepOnly = [...personal.sweepOnly];
+    for (const folder of localFolders()) {
+        const project = getProjectSkillInstallRoots(folder.uri.fsPath);
+        sweepOnly.push(...project.install, ...project.sweepOnly);
     }
-    const seen = vscode.workspace.getConfiguration(SETTINGS_SECTION, scope.folder.uri).inspect<unknown>(INSTALLED_SKILLS_SETTING);
-    const stored = seen?.workspaceFolderValue ?? seen?.workspaceValue;
-    return stored === undefined ? undefined : skillNames(stored);
-}
-
-/** Store the picks where the scope reads them: user settings, or the folder's (a `.code-workspace` file makes that the folder level). */
-async function writeSelection(scope: SkillScope, names: string[]): Promise<void> {
-    if (scope.kind === 'user') {
-        await vscode.workspace.getConfiguration(SETTINGS_SECTION).update(INSTALLED_SKILLS_SETTING, names, vscode.ConfigurationTarget.Global);
-        return;
-    }
-    const level = vscode.workspace.workspaceFile !== undefined
-        ? vscode.ConfigurationTarget.WorkspaceFolder
-        : vscode.ConfigurationTarget.Workspace;
-    await vscode.workspace.getConfiguration(SETTINGS_SECTION, scope.folder.uri).update(INSTALLED_SKILLS_SETTING, names, level);
+    return { install: personal.install, sweepOnly };
 }
 
 /** A directory for display, with the home directory as `~` (a plain prefix test). */
 function shortenHome(dir: string): string {
     const homePrefix = os.homedir();
     return dir.startsWith(homePrefix) ? `~${dir.slice(homePrefix.length)}` : dir;
-}
-
-/** One picker detail line: whitespace runs collapsed, cut at 140 characters with a `…`. */
-function detailLine(text: string): string {
-    const flat = text.replace(/\s+/g, ' ').trim();
-    return flat.length > DETAIL_MAX ? `${flat.slice(0, DETAIL_MAX - 1).trimEnd()}…` : flat;
-}
-
-/** How many pack skills a scope has picked, for the scope picker. */
-function selectionState(catalog: SkillCatalog, picks: string[] | undefined): string {
-    if (picks === undefined) {
-        return 'no selection yet';
-    }
-    const count = resolveDesiredSkills(catalog, picks, { includeBundled: false }).explicit.length;
-    return count === 1 ? '1 pack skill selected' : `${count} pack skills selected`;
-}
-
-interface ScopePickItem extends vscode.QuickPickItem {
-    scope: SkillScope;
-}
-
-interface SkillPickItem extends vscode.QuickPickItem {
-    /** Absent on the category separators. */
-    entry?: SkillCatalogEntry;
-}
-
-function skillPickItem(entry: SkillCatalogEntry, known: ReadonlySet<string>, picked: boolean): SkillPickItem {
-    const members = entry.dependsOn.filter((name) => known.has(name));
-    const title = entry.displayName || entry.name;
-    const summary = detailLine(entry.shortDescription || entry.description);
-    if (entry.kind === 'router') {
-        return {
-            label: `$(list-tree) ${title}`,
-            description: `/${entry.name} — one command for the whole category, ${members.length} member skills installed hidden`,
-            detail: summary,
-            picked,
-            entry,
-        };
-    }
-    return {
-        label: title,
-        description: `/${entry.name}`,
-        detail: members.length > 0 ? `${summary}  ·  also installs (hidden): ${members.join(', ')}` : summary,
-        picked,
-        entry,
-    };
-}
-
-/** The pack skills offered to a scope, grouped under their category headings; the extension's own skills are not offered. */
-function skillPickItems(catalog: SkillCatalog, preselected: ReadonlySet<string>): SkillPickItem[] {
-    const known = new Set(catalog.skills.map((entry) => entry.name));
-    const items: SkillPickItem[] = [];
-    for (const [category, entries] of groupByCategory(catalog)) {
-        const offered = entries.filter((entry) => !isBundledSkill(entry));
-        if (offered.length === 0) {
-            continue;
-        }
-        items.push({ label: SKILL_CATEGORY_LABELS[category], kind: vscode.QuickPickItemKind.Separator });
-        for (const entry of offered) {
-            items.push(skillPickItem(entry, known, preselected.has(entry.name)));
-        }
-    }
-    return items;
-}
-
-function emptyReport(): SkillSyncReport {
-    return { installed: [], removed: [], skippedForeign: [], failed: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -676,10 +556,10 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * The first-run setup: the agent picker, then the skill picker when the AI
-     * Skills Pack is enabled, then the tool rules for the agents' rule files
-     * unless `agentRules.install` is `never` (each step follows whether the
-     * one before was accepted or dismissed). Counts as answered afterwards,
+     * The first-run setup: the agent picker (accepting it also installs the
+     * skills), then the tool rules for the agents' rule files unless
+     * `agentRules.install` is `never` (the second step follows whether the
+     * first was accepted or dismissed). Counts as answered afterwards,
      * whatever happened.
      */
     runSetupFlow(): Promise<void> {
@@ -710,10 +590,10 @@ export class AgentConfigurationManager {
         }
     }
 
-    /** Make the first-run setup due again and forget when the skills prompt was last shown. */
+    /** Make the first-run setup due again. */
     async resetPopupState(): Promise<void> {
         await this.ctx.globalState.update(SETUP_ANSWERED_KEY, false);
-        await this.ctx.globalState.update(SKILLS_PROMPT_SHOWN_KEY, undefined);
+        await this.ctx.globalState.update(LEGACY_SKILLS_PROMPT_KEY, undefined);
     }
 
     /**
@@ -728,102 +608,21 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * Install and remove skills so that every scope matches its selection:
-     * this user first, then each local workspace folder. Runs one at a time,
-     * in call order; resolves `null` when the catalog cannot be loaded.
+     * Install the skill catalog into the personal skills directories and
+     * remove what this extension installed there earlier and no longer ships.
+     * Runs one at a time, in call order; resolves `null` when the catalog
+     * cannot be loaded.
      */
     syncSkills(reason: string): Promise<SkillSyncReport | null> {
-        const run = this.syncQueue.then(() => this.syncAllScopes(reason));
+        const run = this.syncQueue.then(() => this.installCatalog(reason));
         this.syncQueue = run.catch(() => undefined);
         return run;
-    }
-
-    /**
-     * The skill picker: where to install (when a local folder is open), then
-     * which pack skills. Accepting stores the selection in that scope's setting
-     * and syncs. Resolves `false` when the user backs out. `stepMark` is the
-     * " (n/m)" the titles carry inside the setup.
-     */
-    async showSkillSelectionDialog(stepMark: string = SKILLS_ALONE_MARK): Promise<boolean> {
-        const catalog = this.catalog();
-        if (!catalog) {
-            void notifyError(`${PRODUCT}: the bundled skill catalog could not be loaded.`);
-            return false;
-        }
-        if (!this.packEnabled()) {
-            const answer = await vscode.window.showInformationMessage(PACK_DISABLED_NOTICE, ENABLE_BUTTON);
-            if (answer !== ENABLE_BUTTON) {
-                return false;
-            }
-            await vscode.workspace.getConfiguration(SETTINGS_SECTION).update(AI_SKILLS_ENABLED_SETTING, true, vscode.ConfigurationTarget.Global);
-        }
-        const scope = await this.chooseScope(catalog, stepMark);
-        if (!scope) {
-            return false;
-        }
-        const names = await this.chooseSkills(catalog, scope, stepMark);
-        if (!names) {
-            return false;
-        }
-        await this.applySelection(catalog, scope, names);
-        return true;
-    }
-
-    /**
-     * The monthly "install the skills?" prompt, shown only when an agent has
-     * this server registered and no pack skill is selected anywhere
-     * (`decideSkillPrompt` has the full rule). The time is stored before the
-     * prompt appears, so a dismissed prompt counts as shown.
-     */
-    async maybePromptForSkills(now: number = Date.now()): Promise<void> {
-        const catalog = this.catalog();
-        if (!catalog) {
-            return;
-        }
-        const registeredWith: string[] = [];
-        for (const agent of agentsWithFiles()) {
-            try {
-                if (agentConfigHasServer(agent, await fs.promises.readFile(agent.configPath, 'utf8'))) {
-                    registeredWith.push(agent.displayName);
-                }
-            } catch (failure) {
-                logger.warn(`Could not read ${agent.configPath} to look for the MCP server`, failure);
-            }
-        }
-        const settings = vscode.workspace.getConfiguration(SETTINGS_SECTION);
-        const allPicks = scopesInOrder().flatMap((scope) => readSelection(scope) ?? []);
-        const decision = decideSkillPrompt({
-            promptEnabled: settings.get<boolean>(AI_SKILLS_PROMPT_SETTING, true),
-            packEnabled: settings.get<boolean>(AI_SKILLS_ENABLED_SETTING, true),
-            firstRunPending: this.ctx.globalState.get<boolean>(SETUP_ANSWERED_KEY) !== true,
-            hostManaged: isHostManaged(),
-            agentsWithServer: registeredWith,
-            packSkillSelected: hasPackSkillSelected(catalog, allPicks),
-            lastShownAt: this.ctx.globalState.get<number>(SKILLS_PROMPT_SHOWN_KEY),
-            now,
-        });
-        if (!decision.show) {
-            logger.info(`Skills prompt not shown: ${decision.reason}`);
-            return;
-        }
-        await this.ctx.globalState.update(SKILLS_PROMPT_SHOWN_KEY, now);
-        const { select, later, never } = SKILL_PROMPT_BUTTONS;
-        const reply = await vscode.window.showInformationMessage(skillPromptMessage(registeredWith), select, later, never);
-        if (reply === select) {
-            await this.showSkillSelectionDialog();
-        } else if (reply === never) {
-            await settings.update(AI_SKILLS_PROMPT_SETTING, false, vscode.ConfigurationTarget.Global);
-        }
     }
 
     // --- setup and agents --------------------------------------------------
 
     private endpointUrl(): string {
         return `http://localhost:${this.mcpPort}/mcp`;
-    }
-
-    private packEnabled(): boolean {
-        return vscode.workspace.getConfiguration(SETTINGS_SECTION).get<boolean>(AI_SKILLS_ENABLED_SETTING, true);
     }
 
     /** `agentRules.install` is not `never`: the setup offers the rule files and activation keeps them current. */
@@ -834,22 +633,17 @@ export class AgentConfigurationManager {
     private async walkThroughSetup(): Promise<void> {
         try {
             const roster = supportedAgents();
-            const steps: Array<'agents' | 'skills' | 'rules'> = ['agents'];
-            if (this.packEnabled()) {
-                steps.push('skills');
-            } else {
-                logger.info('AI Skills Pack disabled: the setup skips the skills step');
-            }
+            const steps: Array<'agents' | 'rules'> = ['agents'];
             if (this.rulesEnabled()) {
                 steps.push('rules');
             } else {
                 logger.info('agentRules.install is "never": the setup skips the tool rules step');
             }
-            const mark = (step: 'agents' | 'skills' | 'rules'): string =>
+            const mark = (step: 'agents' | 'rules'): string =>
                 (steps.length > 1 ? ` (${steps.indexOf(step) + 1}/${steps.length})` : '');
             const chosen = await this.pickAndConfigureAgents(roster, mark('agents'));
-            if (steps.includes('skills')) {
-                await this.showSkillSelectionDialog(mark('skills'));
+            if (chosen.length > 0) {
+                await this.installForAgents();
             }
             if (steps.includes('rules')) {
                 await this.offerAgentRules(chosen, mark('rules'));
@@ -997,141 +791,48 @@ export class AgentConfigurationManager {
         return this.catalogCache;
     }
 
-    /** One `syncSkills` run over every scope; the reports are concatenated in scope order. */
-    private async syncAllScopes(reason: string): Promise<SkillSyncReport | null> {
+    /** One `syncSkills` run: the whole catalog into the personal directories, the project roots of 2.5.x swept. */
+    private async installCatalog(reason: string): Promise<SkillSyncReport | null> {
         const catalog = this.catalog();
         if (!catalog) {
             return null;
         }
-        const packEnabled = this.packEnabled();
-        const total = emptyReport();
-        for (const scope of scopesInOrder()) {
-            const picks = readSelection(scope);
-            const wanted = resolveDesiredSkills(catalog, picks ?? [], { packEnabled, includeBundled: scope.kind === 'user' });
-            if (wanted.unknown.length > 0) {
-                logger.info(`Skills unknown to this version, ignored for ${scopeName(scope)}: ${wanted.unknown.join(', ')}`);
-            }
-            if (wanted.suppressed.length > 0) {
-                logger.info(`AI Skills Pack disabled; kept in the setting but not installed for ${scopeName(scope)}: ${wanted.suppressed.join(', ')}`);
-            }
-            const report = await this.installer.sync(installRootsOf(scope), catalog, wanted.explicit, wanted.implied);
-            if (picks !== undefined || report.removed.length > 0 || report.failed.length > 0) {
-                logger.info(`Skill sync (${reason}) for ${scopeName(scope)}, pack ${packEnabled ? 'enabled' : 'disabled'}: `
-                    + `${summarizeSkillSync(report)}; visible [${wanted.explicit.join(', ')}], hidden [${wanted.implied.join(', ')}]`);
-                for (const failed of report.failed) {
-                    logger.warn(`Skill ${failed.name ?? '(root)'} in ${failed.root} failed: ${failed.error}`);
-                }
-                for (const foreign of report.skippedForeign) {
-                    logger.info(`Left ${foreign.name} in ${foreign.root} untouched: it was not installed by this extension`);
-                }
-            }
-            total.installed.push(...report.installed);
-            total.removed.push(...report.removed);
-            total.skippedForeign.push(...report.skippedForeign);
-            total.failed.push(...report.failed);
+        const wanted = installSet(catalog);
+        const roots = skillRoots();
+        const report = await this.installer.sync(roots, catalog, wanted.visible, wanted.hidden);
+        logger.info(`Skill install (${reason}) into ${roots.install.map(shortenHome).join(', ')}: ${summarizeSkillSync(report)}; `
+            + `visible [${wanted.visible.join(', ')}], hidden [${wanted.hidden.join(', ')}]`);
+        for (const failed of report.failed) {
+            logger.warn(`Skill ${failed.name ?? '(root)'} in ${failed.root} failed: ${failed.error}`);
         }
-        return total;
+        for (const foreign of report.skippedForeign) {
+            logger.info(`Left ${foreign.name} in ${foreign.root} untouched: it was not installed by this extension`);
+        }
+        return report;
     }
 
-    /** Where to install: asked only when a local workspace folder is open, the folders first. */
-    private async chooseScope(catalog: SkillCatalog, stepMark: string): Promise<SkillScope | undefined> {
-        const folders = localFolders();
-        const several = folders.length > 1;
-        const scopeItems: ScopePickItem[] = folders.map((folder) => {
-            const scope: SkillScope = { kind: 'folder', folder };
-            const roots = getProjectSkillInstallRoots(folder.uri.fsPath).install
-                .map((root) => `${folder.name}/${path.relative(folder.uri.fsPath, root).split(path.sep).join('/')}`);
-            return {
-                label: several ? `$(root-folder) This workspace only — ${folder.name}` : '$(root-folder) This workspace only',
-                description: roots.join(', '),
-                detail: `Recommended: the agent loads them only in this project, so other projects' context stays lean — ${selectionState(catalog, readSelection(scope))}`,
-                scope,
-            };
-        });
-        if (scopeItems.length === 0) {
-            return USER_SCOPE;
+    /** After the agents step: install the skills and say where they went. */
+    private async installForAgents(): Promise<void> {
+        const catalog = this.catalog();
+        if (!catalog) {
+            void notifyError(`${PRODUCT}: the bundled skill catalog could not be loaded, so no skills were installed.`);
+            return;
         }
-        scopeItems.push({
-            label: '$(account) This user',
-            description: getSkillInstallRoots().install.map((root) => shortenHome(root)).join(', '),
-            detail: `Every workspace on this machine — every agent session carries them — ${selectionState(catalog, readSelection(USER_SCOPE))}`,
-            scope: USER_SCOPE,
-        });
-        const where = await vscode.window.showQuickPick(scopeItems, {
-            title: `${SETUP_TITLE}${stepMark} - Where to Install Agent Skills`,
-            placeHolder: 'Install the AI Skills Pack skills into this workspace only (default) or for this user, in every workspace',
-            ignoreFocusOut: true,
-        });
-        return where?.scope;
-    }
-
-    /** Which pack skills: the scope's current picks are preselected. Resolves the chosen names, or `undefined` when closed. */
-    private chooseSkills(catalog: SkillCatalog, scope: SkillScope, stepMark: string): Promise<string[] | undefined> {
-        const preselected = new Set(resolveDesiredSkills(catalog, readSelection(scope) ?? [], { includeBundled: false }).explicit);
-        const items = skillPickItems(catalog, preselected);
-        return new Promise<string[] | undefined>((settle) => {
-            const skillList = vscode.window.createQuickPick<SkillPickItem>();
-            skillList.title = `${SETUP_TITLE}${stepMark} - Choose Agent Skills to Install for ${scopeName(scope)}`;
-            skillList.placeholder = scope.kind === 'user'
-                ? `Select the AI Skills Pack skills to install into your personal skills directories (always installed: ${bundledSkillNames(catalog).join(', ')}; Esc keeps the current selection)`
-                : `Select the AI Skills Pack skills to install into ${scope.folder.name}/.agents/skills (the extension's own skills stay in your personal directories; Esc keeps the current selection)`;
-            skillList.canSelectMany = true;
-            skillList.ignoreFocusOut = true;
-            skillList.matchOnDescription = true;
-            skillList.matchOnDetail = true;
-            skillList.items = items;
-            skillList.selectedItems = items.filter((item) => item.picked);
-            let accepted = false;
-            skillList.onDidAccept(() => {
-                accepted = true;
-                const names = skillList.selectedItems.flatMap((item) => (item.entry ? [item.entry.name] : []));
-                skillList.hide();
-                settle(names);
-            });
-            skillList.onDidHide(() => {
-                skillList.dispose();
-                if (!accepted) {
-                    settle(undefined);
-                }
-            });
-            skillList.show();
-        });
-    }
-
-    /** Store the picks, sync, and report what happened in the chosen scope. */
-    private async applySelection(catalog: SkillCatalog, scope: SkillScope, names: string[]): Promise<void> {
-        try {
-            await writeSelection(scope, names);
-            const report = await this.syncSkills('selection');
-            const wanted = resolveDesiredSkills(catalog, names, { includeBundled: scope.kind === 'user' });
-            if (report) {
-                void vscode.window.showInformationMessage(this.selectionSummary(scope, wanted.explicit.length, wanted.implied.length, report));
-            }
-        } catch (failure) {
-            logger.error('Could not save the skill selection', failure);
-            void notifyError(`Failed to save the skill selection: ${String(failure)}`);
+        const report = await this.syncSkills('setup');
+        if (!report) {
+            return;
         }
-    }
-
-    /** The result toast; only records under the scope's own install directories count. */
-    private selectionSummary(scope: SkillScope, visible: number, hidden: number, report: SkillSyncReport): string {
-        const ownRoots = new Set(installRootsOf(scope).install);
-        const mine = <T extends { root: string }>(records: T[]): T[] => records.filter((record) => ownRoots.has(record.root));
-        const into = [...new Set(mine(report.installed).map((record) => shortenHome(record.root)))];
-        const failed = mine(report.failed).length;
-        let text = `${PRODUCT}: ${visible} skill(s)`;
-        if (hidden > 0) {
-            text += ` (+${hidden} required, hidden)`;
-        }
-        text += ` installed for ${scopeName(scope)}`;
+        const wanted = installSet(catalog);
+        const into = [...new Set(report.installed.map((record) => shortenHome(record.root)))];
+        let text = `${PRODUCT}: ${wanted.visible.length} CMSIS skills (+${wanted.hidden.length} hidden member skills) installed`;
         if (into.length > 0) {
             text += ` into ${into.join(', ')}`;
         }
-        text += `; ${mine(report.removed).length} removed.`;
-        if (failed > 0) {
-            text += ` ${failed} failed — see the output log.`;
+        text += '.';
+        if (report.failed.length > 0) {
+            text += ` ${report.failed.length} failed — see the output log.`;
         }
-        return text;
+        void vscode.window.showInformationMessage(text);
     }
 
     // --- tool rules ----------------------------------------------------------
@@ -1165,7 +866,7 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * The agents whose rule files step 3 offers: the ones picked in step 1,
+     * The agents whose rule files step 2 offers: the ones picked in step 1,
      * the ones whose configuration registers the server already, and VS Code
      * Copilot Chat, which reaches the server through the definition provider.
      */

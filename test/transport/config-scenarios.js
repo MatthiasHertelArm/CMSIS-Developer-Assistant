@@ -61,9 +61,8 @@ const REPO = path.resolve(__dirname, '..', '..');
 const OUT = path.join(REPO, 'out', 'src');
 const SNAPSHOT = path.join(__dirname, 'config-scenarios.snapshot.json');
 const SCENARIO_TIMEOUT_MS = 20_000;
-/** The `now` handed to maybePromptForSkills. */
+/** A fixed epoch for globalState values of earlier releases. */
 const FIXED_NOW = 1_700_000_000_000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 const FIXTURE_VERSION = '0.0.0-fixture';
 
 const argv = process.argv.slice(2);
@@ -451,7 +450,6 @@ function pickOptions(options) {
     return o;
 }
 
-const skillNameOf = (item) => (item.description ?? '').split(' ')[0].replace(/^\//, '');
 
 /** What the scripted user does with a createQuickPick picker. */
 function decideQuickPick(state) {
@@ -460,12 +458,6 @@ function decideQuickPick(state) {
         const a = val(S.ui.agents);
         if (a === null || a === undefined) { return null; }
         return { accept: (it) => a === 'all' || a.includes(it.detail) };
-    }
-    if (/Agent Skills/i.test(title)) {
-        const s = val(S.ui.skills);
-        if (s === null || s === undefined) { return null; }
-        if (s === 'keep') { return { keep: true }; }
-        return { accept: (it) => s.includes(skillNameOf(it)) };
     }
     if (/Rule Files/i.test(title)) {
         // 'keep' accepts the checks as the picker opens; a list keeps the items whose label contains one of its strings.
@@ -480,15 +472,6 @@ function decideQuickPick(state) {
 /** What the scripted user picks in a showQuickPick; an index or undefined. */
 function decidePick(items, options) {
     if (S.ui.pick) { return S.ui.pick(items, options); }
-    if (/Where to Install/i.test(options?.title ?? '')) {
-        const sc = val(S.ui.scope);
-        if (sc === null || sc === undefined) { return undefined; }
-        if (typeof sc === 'number') { return sc; }
-        const i = sc === 'user'
-            ? items.findIndex((it) => /This user/.test(it.label))
-            : items.findIndex((it) => (it.description ?? '').startsWith(`${sc}/`));
-        return i < 0 ? undefined : i;
-    }
     return undefined;
 }
 
@@ -954,18 +937,17 @@ function makeContext(w, def) {
 // Fixture extension: a small skill catalog
 // ===========================================================================
 
-const LONG_SUMMARY = 'A deliberately long   short description\twith  runs of\nwhitespace that the picker collapses to single spaces before it cuts the text at one hundred and forty characters and appends a mark.';
-
+/** The whole fixture catalog is installed: the router, the bundled skills and the unrouted devops skill visible, the rest hidden. */
 const FIXTURE_SKILLS = [
-    { name: 'fx-router', category: 'project', kind: 'router', source: 'generated', displayName: 'FX: Project', shortDescription: 'One command for the fixture project skills.', dependsOn: ['fx-alpha', 'fx-beta', 'fx-missing'] },
-    { name: 'fx-alpha', category: 'project', kind: 'skill', source: 'cmsis-skills', displayName: 'FX: Alpha', shortDescription: LONG_SUMMARY, dependsOn: ['fx-gamma'] },
-    { name: 'fx-beta', category: 'project', kind: 'skill', source: 'cmsis-skills', dependsOn: [] },
-    { name: 'fx-bundled-a', category: 'project', kind: 'skill', source: 'bundled', dependsOn: [] },
-    { name: 'fx-gamma', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', displayName: 'FX: Gamma', shortDescription: 'Gamma, which needs delta.', dependsOn: ['fx-delta'] },
-    { name: 'fx-delta', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', dependsOn: [] },
-    { name: 'fx-bundled-b', category: 'debug', kind: 'skill', source: 'bundled', dependsOn: [] },
-    { name: 'fx-broken', category: 'pack', kind: 'skill', source: 'cmsis-skills', displayName: 'FX: Broken', shortDescription: 'Listed, but its directory is missing.', dependsOn: [], missing: true },
-    { name: 'fx-help', category: 'help', kind: 'skill', source: 'bundled', dependsOn: [] },
+    { name: 'fx-router', category: 'project', kind: 'router', source: 'generated', displayName: 'FX: Project', shortDescription: 'One command for the fixture project skills.', dependsOn: ['fx-alpha', 'fx-beta', 'fx-missing'], invocable: true },
+    { name: 'fx-alpha', category: 'project', kind: 'skill', source: 'cmsis-skills', displayName: 'FX: Alpha', shortDescription: 'Alpha, which needs gamma.', dependsOn: ['fx-gamma'], invocable: false },
+    { name: 'fx-beta', category: 'project', kind: 'skill', source: 'cmsis-skills', dependsOn: [], invocable: false },
+    { name: 'fx-bundled-a', category: 'project', kind: 'skill', source: 'bundled', dependsOn: [], invocable: true },
+    { name: 'fx-gamma', category: 'project', kind: 'skill', source: 'extension', displayName: 'FX: Gamma', shortDescription: 'Gamma, which needs delta.', dependsOn: ['fx-delta'], invocable: false },
+    { name: 'fx-delta', category: 'debug', kind: 'skill', source: 'extension', dependsOn: [], invocable: false },
+    { name: 'fx-bundled-b', category: 'debug', kind: 'skill', source: 'bundled', dependsOn: [], invocable: true },
+    { name: 'fx-broken', category: 'devops', kind: 'skill', source: 'cmsis-skills', displayName: 'FX: Broken', shortDescription: 'Listed, but its directory is missing.', dependsOn: [], missing: true, invocable: true },
+    { name: 'fx-help', category: 'help', kind: 'skill', source: 'bundled', dependsOn: [], invocable: true },
 ];
 
 function fixtureSkillMd(name) {
@@ -987,6 +969,7 @@ function writeFixtureExtension() {
             ...(s.displayName ? { displayName: s.displayName } : {}),
             ...(s.shortDescription ? { shortDescription: s.shortDescription } : {}),
             dependsOn: s.dependsOn,
+            invocable: s.invocable,
         };
         return entry;
     });
@@ -1132,7 +1115,7 @@ function instrumentManager(mod) {
         }
     }
     for (const name of ['syncSkills', 'migrateExistingConfigurations', 'refreshAgentRules', 'updatePort', 'shouldShowPopup', 'runSetupFlow',
-        'maybePromptForSkills', 'resetPopupState', 'showSkillSelectionDialog']) {
+        'resetPopupState']) {
         const orig = Base.prototype[name];
         if (typeof orig !== 'function') { continue; }   // not a prototype method: calls go unrecorded, the diff shows it
         RecordedAgentConfigurationManager.prototype[name] = function (...a) {
@@ -1325,10 +1308,10 @@ async function attempt(label, fn) {
 const KEY = 'cmsis-developer-assistant';
 const LEGACY = 'cmsis-debugmcp';
 const SETTING = (k) => `cmsis-developer-assistant.${k}`;
-const POPUP_KEY = 'cmsis-developer-assistant.popupShown.v4';
-const PROMPT_KEY = 'cmsis-developer-assistant.skillsPrompt.lastShownAt';
+const POPUP_KEY = 'cmsis-developer-assistant.popupShown.v5';
+/** globalState of releases before 2.5.15; resetPopupState still clears it. */
+const LEGACY_PROMPT_KEY = 'cmsis-developer-assistant.skillsPrompt.lastShownAt';
 const URL_3001 = 'http://localhost:3001/mcp';
-const SKILLS_OFF = { global: { [SETTING('aiSkills.enabled')]: false } };
 
 const json = (v, indent = 2) => JSON.stringify(v, null, indent);
 const answerWhen = (re, index = 0) => (ev) => (re.test(ev.message) ? index : undefined);
@@ -1388,7 +1371,7 @@ const SEED_STALE = agentSeeds({
 function configureAll(extra = {}) {
     return {
         ui: { agents: 'all', ...extra.ui },
-        settings: extra.settings ?? SKILLS_OFF,
+        ...(extra.settings ? { settings: extra.settings } : {}),
         run: async (h) => {
             const m = h.manager();
             await m.runSetupFlow();
@@ -1400,7 +1383,6 @@ function configureAll(extra = {}) {
 function configureOne(agentDisplayName) {
     return {
         ui: { agents: [agentDisplayName] },
-        settings: SKILLS_OFF,
         run: async (h) => { await h.manager().runSetupFlow(); },
     };
 }
@@ -1468,27 +1450,19 @@ function pureHelperCases() {
 }
 
 let ACM = null;
-let SKILL_PROMPT = null;
 
 function agentScenarios() {
-    const B = SKILL_PROMPT.SKILL_PROMPT_BUTTONS;
     const popupDone = { [POPUP_KEY]: true };
-    const nudgeSeeds = agentSeeds({
+    const registeredSeeds = agentSeeds({
         'codex': '[mcp_servers.cmsis-developer-assistant]\nurl = "http://localhost:3001/mcp"\n',
         'claude-code': json({ mcpServers: { [KEY]: { type: 'http', url: URL_3001 } } }),
-    });
-    const nudge = (extra) => ({
-        state: popupDone,
-        seed: nudgeSeeds,
-        run: async (h) => { await h.manager().maybePromptForSkills(FIXED_NOW); },
-        ...extra,
     });
     return [
         // --- pure helpers -------------------------------------------------------------
         { id: 'agents/pure-helpers', about: 'exported TOML helpers and agentConfigHasServer', run: async () => pureHelperCases() },
 
         // --- roster: where each agent's file lives -----------------------------------------
-        { id: 'agents/roster-darwin', about: 'configure all eight on darwin, no files yet (skills step off)', ...configureAll() },
+        { id: 'agents/roster-darwin', about: 'configure all eight on darwin, no files yet; the skills go to the personal directories', ...configureAll() },
         { id: 'agents/roster-win32-appdata', platform: 'win32', env: { APPDATA: '<w>/appdata' }, ...configureAll() },
         { id: 'agents/roster-win32-no-appdata', platform: 'win32', ...configureAll() },
         { id: 'agents/roster-linux-xdg', platform: 'linux', env: { XDG_CONFIG_HOME: '<w>/xdg' }, ...configureAll() },
@@ -1529,18 +1503,16 @@ function agentScenarios() {
             id: 'agents/configure-file-keeps-changing', about: '~/.claude.json differs on every read: the read-modify-write gives up; the next agent still runs',
             seed: agentSeeds({ 'claude-code': json({ n: 0, mcpServers: {} }) }),
             ui: { agents: ['Claude Code', 'Claude Desktop'], onRead: changingFile('claude-code') },
-            settings: SKILLS_OFF,
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
             id: 'agents/configure-open-config', about: 'the success toast button opens the file; answers are awaited in order',
             ui: { agents: ['Cline', 'Codex', 'Claude Desktop'], message: answerWhen(/Cline|Claude Desktop/) },
-            settings: SKILLS_OFF,
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
             id: 'agents/configure-port-and-timeout', about: 'constructor timeout 42 and updatePort(4555) reach the written entries',
-            ui: { agents: 'all' }, settings: SKILLS_OFF,
+            ui: { agents: 'all' },
             run: async (h) => { const m = h.manager(42, 3001); m.updatePort(4555); await m.runSetupFlow(); },
         },
         { id: 'agents/configure-codex-crlf', seed: agentSeeds({ codex: '[mcp_servers.cmsis-developer-assistant]\r\nurl = "http://localhost:9999/mcp"\r\n\r\n[other]\r\nk = 1\r\n' }), ...configureOne('Codex') },
@@ -1655,28 +1627,24 @@ function agentScenarios() {
         { id: 'agents/popup-gemini-home-empty', env: { GEMINI_HOME: '' }, run: async (h) => h.manager().shouldShowPopup() },
         { id: 'agents/popup-already-shown', state: popupDone, run: async (h) => h.manager().shouldShowPopup() },
         {
-            id: 'agents/popup-reset', state: { [POPUP_KEY]: true, [PROMPT_KEY]: FIXED_NOW },
+            id: 'agents/popup-reset', state: { [POPUP_KEY]: true, [LEGACY_PROMPT_KEY]: FIXED_NOW },
             run: async (h) => { const m = h.manager(); const before = await m.shouldShowPopup(); await m.resetPopupState(); return { before, after: await m.shouldShowPopup() }; },
         },
 
         // --- the setup flow --------------------------------------------------------------------------
         {
-            id: 'agents/setup-agents-then-user-skills', about: 'two agents (Cline answered "open"), then two skills for this user',
+            id: 'agents/setup-agents-install-skills', about: 'two agents (Cline answered "open"); accepting installs the whole catalog into the personal directories',
             seed: { 'home/.claude/': '' },
-            ui: { agents: ['Cline', 'Codex'], skills: ['fx-router', 'fx-beta'], message: answerWhen(/Cline/) },
+            ui: { agents: ['Cline', 'Codex'], message: answerWhen(/Cline/) },
             run: async (h) => { const m = h.manager(); await m.runSetupFlow(); return { shouldShowPopupAfter: await m.shouldShowPopup() }; },
         },
         {
-            id: 'agents/setup-dismiss-both', ui: { agents: null, skills: null },
+            id: 'agents/setup-dismiss-both', about: 'the agent picker dismissed: no skills installed, the rules step still comes', ui: { agents: null },
             run: async (h) => { const m = h.manager(); await m.runSetupFlow(); return { shouldShowPopupAfter: await m.shouldShowPopup() }; },
         },
         {
-            id: 'agents/setup-accept-nothing', about: 'empty agent selection accepted; skill preselection kept',
-            ui: { agents: [], skills: 'keep' },
-            run: async (h) => { await h.manager().runSetupFlow(); },
-        },
-        {
-            id: 'agents/setup-skills-disabled', settings: SKILLS_OFF, ui: { agents: ['Cursor'] },
+            id: 'agents/setup-accept-nothing', about: 'empty agent selection accepted: nothing registered, no skills installed',
+            ui: { agents: [] },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
@@ -1684,18 +1652,15 @@ function agentScenarios() {
             run: async (h) => { const m = h.manager(); await m.runSetupFlow(); return { shouldShowPopupAfter: await m.shouldShowPopup() }; },
         },
         {
-            id: 'agents/setup-folder-scope-workspace', about: 'two file folders and a remote one; picks go to wsB (Workspace target)',
+            id: 'agents/setup-with-folders', about: 'two file folders and a remote one: the skills still go to the personal directories; 2.5.x project copies are swept',
             folders: [{ name: 'wsA' }, { name: 'wsB' }, { name: 'remote', scheme: 'vscode-vfs' }],
-            settings: { workspace: { [SETTING('installedSkills')]: ['fx-beta'] } },
-            ui: { agents: null, scope: 'wsB', skills: ['fx-alpha'] },
+            seed: { ...installedSkill('wsB/.agents/skills', 'fx-beta', true), ...foreignSkill('wsA/.agents/skills', 'fx-alpha') },
+            ui: { agents: ['Cursor'] },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
-            id: 'agents/setup-folder-scope-workspacefile', about: 'a .code-workspace is open: WorkspaceFolder target',
-            folders: [{ name: 'wsA' }], workspaceFile: 'fixture.code-workspace',
-            seed: { 'wsA/.claude/': '' },
-            settings: { wsA: { [SETTING('installedSkills')]: ['fx-router'] }, global: { [SETTING('installedSkills')]: ['fx-beta'] } },
-            ui: { agents: null, scope: 'wsA', skills: ['fx-router', 'fx-gamma'] },
+            id: 'agents/setup-no-catalog', about: 'the catalog cannot be loaded: the agents are registered, the user is told that no skills were installed',
+            extensionPath: '<w>/extension-without-catalog', ui: { agents: ['Cursor'] },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
 
@@ -1703,13 +1668,11 @@ function agentScenarios() {
         {
             id: 'agents/rules-user-files-written', about: 'Claude Code and Codex set up: their user files are preselected, each shown as a diff and written on Write',
             seed: { 'home/.codex/AGENTS.md': '# My Codex notes\n\nUse tabs.\n' },
-            settings: SKILLS_OFF,
             ui: { agents: ['Claude Code', 'Codex'], rules: 'keep', message: answerWhen(/tool rules/) },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
             id: 'agents/rules-preview-declined', about: 'the diff is shown and the dialog dismissed: no rule file is written',
-            settings: SKILLS_OFF,
             ui: { agents: ['Claude Code'], rules: 'keep' },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
@@ -1717,16 +1680,15 @@ function agentScenarios() {
             id: 'agents/rules-shared-agents-md', about: 'the workspace AGENTS.md of Codex, Copilot CLI, Antigravity and Copilot Chat is one item, written once; the user files unchecked',
             folders: [{ name: 'wsA' }],
             seed: { 'wsA/AGENTS.md': '# Team rules\n' },
-            settings: SKILLS_OFF,
             ui: { agents: ['Codex', 'GitHub Copilot CLI', 'Antigravity'], rules: ['wsA/AGENTS.md'], message: answerWhen(/tool rules/) },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
-            id: 'agents/rules-workspace-own-files', about: 'Cursor, Cline and Roo Code get files of their own, Claude Code the project CLAUDE.md it reads; skills step on (3 steps)',
+            id: 'agents/rules-workspace-own-files', about: 'Cursor, Cline and Roo Code get files of their own, Claude Code the project CLAUDE.md it reads',
             folders: [{ name: 'wsA' }],
             seed: { 'wsA/CLAUDE.md': '# Project notes\n', 'wsA/.roo/rules/style.md': 'Be brief.\n' },
             ui: {
-                agents: ['Cursor', 'Cline', 'Roo Code', 'Claude Code'], scope: null,
+                agents: ['Cursor', 'Cline', 'Roo Code', 'Claude Code'],
                 rules: ['wsA/CLAUDE.md', 'wsA/.cursor', 'wsA/.clinerules', 'wsA/.roo'], message: answerWhen(/tool rules/),
             },
             run: async (h) => { await h.manager().runSetupFlow(); },
@@ -1749,19 +1711,18 @@ function agentScenarios() {
                     },
                 ],
             }),
-            settings: SKILLS_OFF,
             ui: { agents: null, rules: [], message: answerWhen(/tool rules/) },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
             id: 'agents/rules-never', about: 'agentRules.install "never": the setup has no rules step',
-            settings: { global: { [SETTING('aiSkills.enabled')]: false, [SETTING('agentRules.install')]: 'never' } },
+            settings: { global: { [SETTING('agentRules.install')]: 'never' } },
             ui: { agents: ['Claude Code'] },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {
             id: 'agents/rules-no-contract', about: 'the tool contract cannot be read: the step is skipped, the setup still counts as answered',
-            extensionPath: '<w>/extension-without-contract', settings: SKILLS_OFF, ui: { agents: ['Claude Code'] },
+            extensionPath: '<w>/extension-without-contract', ui: { agents: ['Claude Code'] },
             run: async (h) => { const m = h.manager(); await m.runSetupFlow(); return { shouldShowPopupAfter: await m.shouldShowPopup() }; },
         },
         {
@@ -1788,71 +1749,23 @@ function agentScenarios() {
             run: async (h) => { await h.manager().refreshAgentRules(); },
         },
 
-        // --- the skill picker on its own ----------------------------------------------------------------
-        {
-            id: 'agents/skills-pack-disabled-enable', settings: SKILLS_OFF, ui: { message: answerWhen(/disabled/), skills: null },
-            run: async (h) => h.manager().showSkillSelectionDialog(),
-        },
-        {
-            id: 'agents/skills-pack-disabled-dismiss', settings: SKILLS_OFF,
-            run: async (h) => h.manager().showSkillSelectionDialog(),
-        },
-        {
-            id: 'agents/skills-no-catalog', extensionPath: '<w>/extension-without-catalog', state: popupDone, seed: nudgeSeeds,
-            run: async (h) => {
-                const m = h.manager();
-                return {
-                    syncSkills: [await m.syncSkills('first'), await m.syncSkills('second')].map(u),
-                    showSkillSelectionDialog: await m.showSkillSelectionDialog(),
-                    maybePromptForSkills: u(await m.maybePromptForSkills(FIXED_NOW)),
-                };
-            },
-        },
-        {
-            id: 'agents/skills-user-with-failure', about: 'a selected skill whose bundled directory is missing',
-            settings: { global: { [SETTING('installedSkills')]: ['fx-broken', 'fx-delta'] } },
-            ui: { skills: 'keep' },
-            run: async (h) => h.manager().showSkillSelectionDialog(),
-        },
-        {
-            id: 'agents/skills-scope-items', about: 'scope picker states per folder, then the user-scope items',
-            folders: [{ name: 'wsA' }, { name: 'wsB' }, { name: 'wsC' }],
-            settings: {
-                global: { [SETTING('installedSkills')]: ['fx-alpha', 'fx-bundled-a', 'unknown-x'] },
-                wsA: { [SETTING('installedSkills')]: ['fx-alpha', 'fx-router'] },
-                wsB: { [SETTING('installedSkills')]: ['fx-beta'] },
-            },
-            ui: { scope: seq(null, 'user'), skills: null },
-            run: async (h) => { const m = h.manager(); return [await m.showSkillSelectionDialog(), await m.showSkillSelectionDialog()]; },
-        },
-
         // --- syncSkills -------------------------------------------------------------------------------------
         {
-            id: 'agents/sync-scopes', about: 'user + two file folders (+ a remote one), foreign and earlier-installed skills',
+            id: 'agents/sync-no-catalog', extensionPath: '<w>/extension-without-catalog', state: popupDone, seed: registeredSeeds,
+            run: async (h) => { const m = h.manager(); return [await m.syncSkills('first'), await m.syncSkills('second')].map(u); },
+        },
+        {
+            id: 'agents/sync-whole-catalog', about: 'every catalog skill into the personal roots (a Claude home exists): visible and hidden; foreign and earlier-installed skills; fx-broken fails on its own',
             folders: [{ name: 'wsA' }, { name: 'wsB' }, { name: 'remote', scheme: 'vscode-vfs' }],
             seed: {
                 'home/.claude/': '',
                 ...foreignSkill('home/.agents/skills', 'fx-gamma'),
                 ...installedSkill('home/.agents/skills', 'old-skill'),
                 ...installedSkill('home/.copilot/skills', 'fx-help'),
-                ...installedSkill('wsB/.agents/skills', 'fx-beta'),
+                ...installedSkill('wsB/.agents/skills', 'fx-beta', true),
+                ...installedSkill('wsB/.claude/skills', 'fx-router'),
+                ...foreignSkill('wsA/.agents/skills', 'theirs'),
             },
-            settings: {
-                global: { [SETTING('installedSkills')]: ['fx-alpha', 'unknown-x', 7] },
-                wsA: { [SETTING('installedSkills')]: ['fx-router'] },
-            },
-            run: async (h) => summariseReport(await h.manager().syncSkills('scenario')),
-        },
-        {
-            id: 'agents/sync-folder-values', about: 'workspace value applies to a folder without its own; a non-array value reads as []',
-            folders: [{ name: 'wsA' }, { name: 'wsB' }],
-            settings: { workspace: { [SETTING('installedSkills')]: ['fx-beta'] }, wsA: { [SETTING('installedSkills')]: 'fx-alpha' }, global: { [SETTING('installedSkills')]: 'x' } },
-            run: async (h) => summariseReport(await h.manager().syncSkills('scenario')),
-        },
-        {
-            id: 'agents/sync-pack-disabled',
-            seed: { ...installedSkill('home/.agents/skills', 'fx-alpha') },
-            settings: { global: { [SETTING('aiSkills.enabled')]: false, [SETTING('installedSkills')]: ['fx-alpha'] } },
             run: async (h) => summariseReport(await h.manager().syncSkills('scenario')),
         },
         {
@@ -1872,25 +1785,6 @@ function agentScenarios() {
                 return outcomes.map((o) => (o.status === 'fulfilled' ? { fulfilled: summariseReport(o.value) } : { rejected: describeError(o.reason) }));
             },
         },
-
-        // --- the monthly nudge ----------------------------------------------------------------------------------------
-        nudge({ id: 'agents/nudge-select', ui: { message: (ev) => ev.items.indexOf(B.select), skills: null } }),
-        nudge({ id: 'agents/nudge-never', ui: { message: (ev) => ev.items.indexOf(B.never) } }),
-        nudge({ id: 'agents/nudge-later', ui: { message: (ev) => ev.items.indexOf(B.later) } }),
-        nudge({ id: 'agents/nudge-dismissed' }),
-        nudge({ id: 'agents/nudge-first-run-pending', state: {} }),
-        nudge({ id: 'agents/nudge-snoozed', state: { ...popupDone, [PROMPT_KEY]: FIXED_NOW - DAY_MS } }),
-        nudge({ id: 'agents/nudge-due-again', state: { ...popupDone, [PROMPT_KEY]: FIXED_NOW - 31 * DAY_MS } }),
-        nudge({ id: 'agents/nudge-no-agent', seed: agentSeeds({ 'cline': json({ mcpServers: { [LEGACY]: {} } }) }) }),
-        nudge({ id: 'agents/nudge-already-selected', folders: [{ name: 'wsA' }], settings: { wsA: { [SETTING('installedSkills')]: ['fx-delta'] } } }),
-        nudge({ id: 'agents/nudge-bundled-only-selected', settings: { global: { [SETTING('installedSkills')]: ['fx-help'] } } }),
-        nudge({ id: 'agents/nudge-disabled', settings: { global: { [SETTING('aiSkills.promptOnDetect')]: false } } }),
-        nudge({ id: 'agents/nudge-pack-disabled', settings: SKILLS_OFF }),
-        nudge({ id: 'agents/nudge-host-managed', env: { ANTIGRAVITY_ENV: 'true' } }),
-        nudge({
-            id: 'agents/nudge-unreadable-file', about: 'Claude Code path is a directory: counts as "no server"',
-            seed: { ...agentSeeds({ 'cline': json({ mcpServers: { [KEY]: {} } }) }), 'home/.claude.json/': '' },
-        }),
     ];
 }
 
@@ -2230,8 +2124,6 @@ function extensionScenarios() {
             seed: agentSeeds({ cline: json({ mcpServers: { [LEGACY]: { type: 'streamableHttp', url: URL_3001 } } }) }),
             ui: {
                 agents: seq(['Claude Code'], null),
-                scope: seq('user', null),
-                skills: 'keep',
                 message: (() => { let reloads = 0; return (ev) => (/server port setting changed/.test(ev.message) && reloads++ === 0 ? 0 : undefined); })(),
             },
             run: async (h) => {
@@ -2244,8 +2136,7 @@ function extensionScenarios() {
                 step('debug session terminates');
                 await fire('debug.onDidTerminateDebugSession', fakeSession);
                 for (const keys of [
-                    [SETTING('installedSkills')],
-                    [SETTING('aiSkills.enabled')],
+                    [SETTING('agentRules.install')],
                     [SETTING('packDocs.extractor')],
                     [SETTING('serverPort')],
                     [SETTING('buildInfo.enabled')],
@@ -2265,13 +2156,12 @@ function extensionScenarios() {
                 await fireTimer();
                 await runCommand('cmsis-developer-assistant.resetPopupState');
                 await runCommand('cmsis-developer-assistant.configure');
-                await runCommand('cmsis-developer-assistant.selectSkills');
                 out.deactivation = await deactivateRecorded(ext, port);
                 return out;
             },
         },
         {
-            id: 'extension/activate-worker', about: 'router port taken; every setting non-default; duplicate extension installed; nudge from the timer',
+            id: 'extension/activate-worker', about: 'router port taken; every setting non-default; duplicate extension installed; the timer with the setup answered',
             folders: [{ name: 'ws' }],
             state: { [POPUP_KEY]: true },
             seed: agentSeeds({ 'claude-code': json({ mcpServers: { [KEY]: { type: 'http', url: URL_3001 } } }) }),
@@ -2288,7 +2178,6 @@ function extensionScenarios() {
             },
             ui: {
                 extension: (id) => (id === 'arm.cmsis-pack-docs' ? { id, isActive: false, exports: undefined } : undefined),
-                message: (ev) => (ev.items.includes(SKILL_PROMPT.SKILL_PROMPT_BUTTONS.later) ? ev.items.indexOf(SKILL_PROMPT.SKILL_PROMPT_BUTTONS.later) : undefined),
             },
             run: async (h) => {
                 clearTmp();
@@ -2327,12 +2216,11 @@ function extensionScenarios() {
             id: 'extension/activate-under-test-runner', about: 'extensionMode Test (npm test): no skill sync, migration, coordinator or setup timer; the commands still register',
             extensionMode: 3,
             seed: agentSeeds({ cline: json({ mcpServers: { [LEGACY]: { type: 'streamableHttp', url: URL_3001 } } }) }),
-            settings: { global: { [SETTING('installedSkills')]: ['fx-alpha'] } },
             run: async (h) => {
                 clearTmp();
                 const { ext, m } = loadExtension();
                 const out = { activation: await activateRecorded(h, ext, m) };
-                await configChange(['cmsis-developer-assistant.installedSkills']);
+                await configChange(['cmsis-developer-assistant.agentRules.install']);
                 await fireTimer();
                 out.deactivation = await deactivateRecorded(ext);
                 return out;
@@ -2422,7 +2310,6 @@ async function main() {
         resolveUserDocsDir: load('core/packDocs/userDocs.js').resolveUserDocsDir,
     };
     ACM = load('utils/agentConfigurationManager.js');
-    SKILL_PROMPT = load('utils/skillPrompt.js');
     instrumentSkillInstaller(load('utils/skillInstaller.js'));
     installFence();
     if (argv.includes('--check-fence')) { await checkFence(); return; }

@@ -18,7 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SkillCatalog, resolveDesiredSkills } from '../utils/skillCatalog';
+import { SkillCatalog, installSet } from '../utils/skillCatalog';
 import {
     SKILL_MARKER_FILE,
     SkillInstaller,
@@ -46,10 +46,10 @@ suite('Agent skill installer', () => {
         schemaVersion: 1,
         source: { repository: 'r', sha: 'feedface', sourcePath: 'p' },
         skills: [
-            { name: 'cmsis-debug-live', description: 'bundled', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [] },
-            { name: 'cmsis-help', description: 'bundled help', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [] },
-            { name: 'r-pack', description: 'router', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen'] },
-            { name: 'gen', description: 'gen', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/gen', dependsOn: [] },
+            { name: 'cmsis-debug-live', description: 'bundled', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [], invocable: true },
+            { name: 'cmsis-help', description: 'bundled help', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [], invocable: true },
+            { name: 'r-pack', description: 'router', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen'], invocable: true },
+            { name: 'gen', description: 'gen', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/gen', dependsOn: [], invocable: false },
         ],
     };
 
@@ -149,15 +149,16 @@ suite('Agent skill installer', () => {
         assert.deepStrictEqual(report.removed, [{ root: rootA, name: 'gen' }]);
     });
 
-    test('disabling the AI Skills Pack removes the pack skills this extension installed and keeps the bundled ones', async () => {
-        const enabled = resolveDesiredSkills(catalog, ['r-pack']);
-        await installer().sync(homeRoots(), catalog, enabled.explicit, enabled.implied);
+    test('a skill dropped from the catalog in a later release is removed from every root on the next sync', async () => {
+        const whole = installSet(catalog);
+        await installer().sync(homeRoots(), catalog, whole.visible, whole.hidden);
         assert.ok(fs.existsSync(path.join(rootA, 'r-pack', 'SKILL.md')));
-        assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')));
+        assert.strictEqual(readMarker(rootA, 'gen').hidden, true);
         writeSkill(path.join(rootA, 'my-own-skill'), 'my-own-skill');
 
-        const disabled = resolveDesiredSkills(catalog, ['r-pack'], { packEnabled: false });
-        const report = await installer().sync(homeRoots(), catalog, disabled.explicit, disabled.implied);
+        const slimmer: SkillCatalog = { ...catalog, skills: catalog.skills.filter(entry => entry.category !== 'pack') };
+        const remaining = installSet(slimmer);
+        const report = await installer().sync(homeRoots(), slimmer, remaining.visible, remaining.hidden);
 
         for (const root of [rootA, rootB]) {
             assert.ok(!fs.existsSync(path.join(root, 'r-pack')), 'router should be removed');
@@ -167,7 +168,6 @@ suite('Agent skill installer', () => {
         }
         assert.ok(fs.existsSync(path.join(rootA, 'my-own-skill', 'SKILL.md')), 'user skill must survive');
         assert.deepStrictEqual(report.removed.map(r => r.name).sort(), ['gen', 'gen', 'r-pack', 'r-pack']);
-        assert.deepStrictEqual(disabled.suppressed, ['r-pack']);
     });
 
     test('never overwrites a foreign skill directory of the same name', async () => {
@@ -210,7 +210,7 @@ suite('Agent skill installer', () => {
     });
 
     test('a missing bundled skill is reported, not thrown', async () => {
-        const broken: SkillCatalog = { ...catalog, skills: [...catalog.skills, { name: 'ghost', description: '', category: 'devops', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/ghost', dependsOn: [] }] };
+        const broken: SkillCatalog = { ...catalog, skills: [...catalog.skills, { name: 'ghost', description: '', category: 'devops', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/ghost', dependsOn: [], invocable: true }] };
         const report = await installer().sync(homeRoots(), broken, ['ghost', 'gen'], []);
         assert.strictEqual(report.failed.filter(f => f.name === 'ghost').length, 2);
         assert.ok(fs.existsSync(path.join(rootA, 'gen', 'SKILL.md')), 'other skills still install');
@@ -253,7 +253,7 @@ suite('Agent skill installer', () => {
         assert.deepStrictEqual(report.failed, []);
     });
 
-    test('a project without a selection is only swept: its roots are never created', async () => {
+    test('nothing to install: the roots are swept, never created', async () => {
         const project = path.join(tmp, 'project');
         fs.mkdirSync(project);
         const roots = { install: [path.join(project, '.agents', 'skills'), path.join(project, '.claude', 'skills')], sweepOnly: [] };
@@ -262,24 +262,22 @@ suite('Agent skill installer', () => {
         assert.deepStrictEqual(fs.readdirSync(project), [], 'no .agents or .claude directory may appear');
     });
 
-    test('a project selection installs the pack skills into the project and a cleared selection removes them again', async () => {
+    test('the project roots a 2.5.x selection wrote are swept: our marked copies go, the project\'s own skill survives', async () => {
         const project = path.join(tmp, 'project');
-        const roots = { install: [path.join(project, '.agents', 'skills')], sweepOnly: [path.join(project, '.claude', 'skills')] };
-        writeSkill(path.join(project, '.agents', 'skills', 'theirs'), 'theirs');
-        writeSkill(path.join(project, '.claude', 'skills', 'gen'), 'gen'); // an earlier setup's copy, marked
-        fs.writeFileSync(path.join(project, '.claude', 'skills', 'gen', SKILL_MARKER_FILE), JSON.stringify({ name: 'gen' }));
-
-        const desired = resolveDesiredSkills(catalog, ['r-pack'], { includeBundled: false });
-        await installer().sync(roots, catalog, desired.explicit, desired.implied);
-        assert.ok(fs.existsSync(path.join(project, '.agents', 'skills', 'r-pack', SKILL_MARKER_FILE)));
-        assert.strictEqual(readMarker(path.join(project, '.agents', 'skills'), 'gen').hidden, true);
-        assert.ok(!fs.existsSync(path.join(project, '.agents', 'skills', 'cmsis-debug-live')), 'bundled skills stay personal');
-        assert.ok(!fs.existsSync(path.join(project, '.claude', 'skills', 'gen')), 'the sweep-only root lost our leftover');
-        assert.ok(fs.existsSync(path.join(project, '.agents', 'skills', 'theirs', 'SKILL.md')), 'the project\'s own skill survives');
-
-        const report = await installer().sync(roots, catalog, [], []);
-        assert.deepStrictEqual(report.removed.map(r => r.name).sort(), ['gen', 'r-pack']);
-        assert.deepStrictEqual(fs.readdirSync(path.join(project, '.agents', 'skills')), ['theirs']);
+        const agents = path.join(project, '.agents', 'skills');
+        const claude = path.join(project, '.claude', 'skills');
+        writeSkill(path.join(agents, 'theirs'), 'theirs');
+        for (const root of [agents, claude]) {
+            writeSkill(path.join(root, 'gen'), 'gen');
+            fs.writeFileSync(path.join(root, 'gen', SKILL_MARKER_FILE), JSON.stringify({ name: 'gen' }));
+        }
+        const whole = installSet(catalog);
+        const report = await installer().sync({ install: [rootA], sweepOnly: [agents, claude] }, catalog, whole.visible, whole.hidden);
+        assert.deepStrictEqual(report.removed.map(r => r.root).sort(), [agents, claude].sort());
+        assert.ok(!fs.existsSync(path.join(agents, 'gen')) && !fs.existsSync(path.join(claude, 'gen')));
+        assert.ok(fs.existsSync(path.join(agents, 'theirs', 'SKILL.md')), 'the project\'s own skill survives');
+        assert.ok(!fs.existsSync(path.join(agents, 'r-pack')), 'a sweep-only root is never written');
+        assert.ok(fs.existsSync(path.join(rootA, 'r-pack', SKILL_MARKER_FILE)), 'the personal root gets the catalog');
     });
 
     suite('hideFromMenu', () => {
@@ -317,7 +315,7 @@ suite('Agent skill installer', () => {
             assert.ok(!custom.install.includes(path.join(home, '.claude', 'skills')));
         });
 
-        test('project roots: .agents/skills always; .claude/skills written for Claude Code users or a project that has .claude, swept otherwise', () => {
+        test('project roots of 2.5.x: .agents/skills always; .claude/skills for Claude Code users or a project that has .claude (both only swept now)', () => {
             const folder = '/work/proj';
             const project = (existing: string[], env: NodeJS.ProcessEnv = {}) =>
                 getProjectSkillInstallRoots(folder, { env, home, exists: p => existing.includes(p) });

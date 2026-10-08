@@ -74,7 +74,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 | [`src/utils/agentConfigurationManager.ts`](src/utils/agentConfigurationManager.ts) | Dropped the static Copilot `mcp.json` write (superseded by `McpServerDefinitionProvider`). `updatePort()` so the actual OS-assigned port is reflected in Cline/Cursor configs. |
 | [`docs/agent-resources/debug_instructions.md`](docs/agent-resources/debug_instructions.md) | PHASE 0 (target awareness from CMSIS YAMLs + launch.json), PHASE 1 (5-state session-status gate decision table), Cortex-M hardware breakpoint limit guidance. CMSIS-first workflow steers agents to `cmsis_action load_and_debug` over `start_debugging`. |
 | [`package.json`](package.json) | `name`, `displayName`, `publisher`, `author`, `homepage`, `bugs`, `repository`, command ids, config section. Added `serialport` dependency. Keywords added: `embedded`, `cortex-m`, `cmsis`, `arm`, `gdbtarget`. |
-| [`README.md`](README.md) | Rewritten around the Cortex-M workflow with the current full tool list and CMSIS-first quick start. |
+| [`README.md`](README.md), [`docs/user-guide.md`](docs/user-guide.md) | The README is the Marketplace page (what the assistant does, how to start); the user guide holds the full tool list, the commands, the settings, manual agent registration and the known limitations. |
 | [`CHANGELOG.md`](CHANGELOG.md) | v1.0.27 release entry. |
 
 ---

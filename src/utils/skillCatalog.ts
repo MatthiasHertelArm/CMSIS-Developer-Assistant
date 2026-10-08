@@ -27,15 +27,16 @@ import * as path from 'path';
 
 /**
  * The upstream category directories (`generic-mcu-skills/skills/<category>/`)
- * plus the extension's own. A category may have no skills at the pinned
- * commit; it then gets no router, no picker heading and no help section.
+ * plus the extension's own. Only the categories `scripts/skills.config.json`
+ * names are vendored; a category without skills in the catalog gets no
+ * router and no help section.
  */
 export type SkillCategory = 'project' | 'bring-up' | 'debug' | 'pack' | 'ethos-u' | 'devops' | 'help';
 
-/** Display order in the picker and in the generated catalog. */
+/** Display order in the generated catalog and in the help skill. */
 export const SKILL_CATEGORY_ORDER: readonly SkillCategory[] = ['project', 'bring-up', 'debug', 'pack', 'ethos-u', 'devops', 'help'];
 
-/** Picker group headings. */
+/** Category headings of the help skill. */
 export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
     'project': 'Project setup',
     'bring-up': 'Device debug and trace knowledge',
@@ -47,9 +48,9 @@ export const SKILL_CATEGORY_LABELS: Readonly<Record<SkillCategory, string>> = {
 };
 
 /**
- * Where a skill comes from. `bundled`: the extension's own, always installed.
- * `extension`: the extension's own, but selectable like a pack skill, so that
- * it costs an agent's context only where the user wants it. `cmsis-skills`:
+ * Where a skill comes from. `bundled`: the extension's own entry points, a
+ * slash command each. `extension`: the extension's own skills reached through
+ * an entry point or a hand-over (`$name`), installed hidden. `cmsis-skills`:
  * vendored from Open-CMSIS-Pack/cmsis-skills. `generated`: a category router.
  */
 export type SkillSource = 'cmsis-skills' | 'bundled' | 'generated' | 'extension';
@@ -71,6 +72,14 @@ export interface SkillCatalogEntry {
     shortDescription?: string;
     /** Other catalog skills this one refers to with the `$name` sigil; for routers, every member. */
     dependsOn: string[];
+    /**
+     * Installed visible, as a slash command: the extension's own skills, the
+     * routers, and a skill of a category without a router. The members of a
+     * router are installed with `user-invocable: false` (`false` here): the
+     * model still invokes them by description or through the router, but
+     * they stay out of the `/` menu.
+     */
+    invocable: boolean;
 }
 
 export interface SkillCatalog {
@@ -85,51 +94,13 @@ export interface SkillCatalog {
 
 export const SKILL_CATALOG_FILE = path.join('skills', 'catalog.json');
 
-/**
- * Setting key under `cmsis-developer-assistant.` holding the explicit pack
- * picks. Where the value is stored says where the skills go: the user value
- * fills the personal skills directories, a workspace or folder value the
- * project's own (`<folder>/.agents/skills`, `<folder>/.claude/skills`).
- */
-export const INSTALLED_SKILLS_SETTING = 'installedSkills';
-
-/** Setting key under the prefix: whether the AI Skills Pack (cmsis-skills skills + routers) is installed at all. */
-export const AI_SKILLS_ENABLED_SETTING = 'aiSkills.enabled';
-
-/** Setting key under the prefix: whether to offer the pack to users whose agents have the server registered. */
-export const AI_SKILLS_PROMPT_SETTING = 'aiSkills.promptOnDetect';
-
-/**
- * What a fresh install has picked from the pack — nothing. The bundled
- * skills (`cmsis-debug-live`, `cmsis-help`) are not picks: they are always
- * installed, whatever the setting says.
- */
-export const DEFAULT_INSTALLED_SKILLS: readonly string[] = [];
-
-/** The extension's own skills: always installed, never offered in the picker. */
+/** The extension's own skills, authored in this repository. */
 export function isBundledSkill(entry: SkillCatalogEntry): boolean {
     return entry.source === 'bundled';
 }
 
-/**
- * The AI Skills Pack: the vendored cmsis-skills skills, the generated
- * per-category routers, and the extension's own selectable skills.
- */
-export function isPackSkill(entry: SkillCatalogEntry): boolean {
-    return entry.source === 'cmsis-skills' || entry.source === 'generated' || entry.source === 'extension';
-}
-
 export function bundledSkillNames(catalog: SkillCatalog): string[] {
     return catalog.skills.filter(isBundledSkill).map(entry => entry.name);
-}
-
-/** Whether the configured picks name at least one pack skill the catalog knows. */
-export function hasPackSkillSelected(catalog: SkillCatalog, configured: readonly string[]): boolean {
-    const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
-    return configured.some(name => {
-        const entry = byName.get(name);
-        return entry !== undefined && isPackSkill(entry);
-    });
 }
 
 export function parseSkillCatalog(json: string): SkillCatalog {
@@ -147,115 +118,24 @@ export function loadSkillCatalog(extensionPath: string): SkillCatalog {
     return parseSkillCatalog(fs.readFileSync(path.join(extensionPath, SKILL_CATALOG_FILE), 'utf8'));
 }
 
-export interface DesiredSkills {
-    /** The bundled skills plus the pack skills the user picked, in catalog order. Installed visible. */
-    explicit: string[];
-    /** Transitive `dependsOn` closure of the explicit set, minus the set. Installed hidden. */
-    implied: string[];
-    /** Configured names the catalog does not know (e.g. synced from another version). Ignored. */
-    unknown: string[];
-    /** Configured pack picks withheld because the pack is disabled. Kept in the setting for re-enabling. */
-    suppressed: string[];
-}
-
-export interface DesiredSkillsOptions {
-    /** `aiSkills.enabled`. Off: only the bundled skills are desired, whatever was picked. Default on. */
-    packEnabled?: boolean;
-    /**
-     * Whether the extension's own skills are part of the result. Default on
-     * — the personal directories always carry them. A project (workspace
-     * folder) selection leaves them out: they are already there for every
-     * agent on the machine, and a second copy in the project would show up
-     * twice in the slash menu.
-     */
-    includeBundled?: boolean;
+/** What the installer puts into the personal skills directories: the whole catalog, split by visibility. */
+export interface InstallSet {
+    /** Installed as they are, in catalog order: slash commands. */
+    visible: string[];
+    /** Installed with `user-invocable: false`, in catalog order: the members of the routers. */
+    hidden: string[];
 }
 
 /**
- * Turn the configured picks into the set to install. The bundled skills are
- * always in (unless `includeBundled` is off); the setting stores only the
- * pack picks; the closure is recomputed here every time, so a dependency
- * added upstream reaches existing users on the next sync. With the pack
- * disabled the picks are reported as `suppressed` and nothing from the pack
- * is desired — the installer's sweep then removes what it installed earlier.
+ * Every catalog skill is installed; `invocable` decides whether it shows up
+ * in the `/` menu. There is no selection: the catalog is the set, and the
+ * next sync after an upgrade brings existing installations in line with it.
  */
-export function resolveDesiredSkills(
-    catalog: SkillCatalog,
-    configured: readonly string[],
-    options: DesiredSkillsOptions = {},
-): DesiredSkills {
-    const packEnabled = options.packEnabled ?? true;
-    const includeBundled = options.includeBundled ?? true;
-    const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
-    const order = new Map(catalog.skills.map((entry, index) => [entry.name, index]));
-    const sortCatalogOrder = (names: Iterable<string>): string[] =>
-        [...new Set(names)].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
-
-    const explicitSet = new Set<string>(includeBundled ? bundledSkillNames(catalog) : []);
-    const unknown: string[] = [];
-    const suppressed: string[] = [];
-    for (const name of configured) {
-        const entry = byName.get(name);
-        if (!entry) {
-            if (!unknown.includes(name)) {
-                unknown.push(name);
-            }
-        } else if (isPackSkill(entry) && !packEnabled) {
-            if (!suppressed.includes(name)) {
-                suppressed.push(name);
-            }
-        } else if (isBundledSkill(entry) && !includeBundled) {
-            continue; // a pre-2.3.2 selection naming a bundled skill: nothing to do here
-        } else {
-            explicitSet.add(name);
-        }
-    }
-
-    const closure = new Set<string>();
-    const queue = [...explicitSet];
-    while (queue.length > 0) {
-        const name = queue.pop() as string;
-        for (const dependency of byName.get(name)?.dependsOn ?? []) {
-            const entry = byName.get(dependency);
-            if (!entry || explicitSet.has(dependency) || closure.has(dependency)) {
-                continue;
-            }
-            if (isPackSkill(entry) && !packEnabled) {
-                continue;
-            }
-            if (isBundledSkill(entry) && !includeBundled) {
-                continue; // available from the personal directories
-            }
-            closure.add(dependency);
-            queue.push(dependency);
-        }
-    }
-
+export function installSet(catalog: SkillCatalog): InstallSet {
     return {
-        explicit: sortCatalogOrder(explicitSet),
-        implied: sortCatalogOrder(closure),
-        unknown,
-        suppressed,
+        visible: catalog.skills.filter(entry => entry.invocable).map(entry => entry.name),
+        hidden: catalog.skills.filter(entry => !entry.invocable).map(entry => entry.name),
     };
-}
-
-/** Entries grouped by category, categories in display order, the router first within each group. */
-export function groupByCategory(catalog: SkillCatalog): Map<SkillCategory, SkillCatalogEntry[]> {
-    const groups = new Map<SkillCategory, SkillCatalogEntry[]>();
-    for (const category of SKILL_CATEGORY_ORDER) {
-        const entries = catalog.skills.filter(entry => entry.category === category);
-        if (entries.length === 0) {
-            continue;
-        }
-        entries.sort((a, b) => {
-            if (a.kind !== b.kind) {
-                return a.kind === 'router' ? -1 : 1;
-            }
-            return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-        });
-        groups.set(category, entries);
-    }
-    return groups;
 }
 
 export interface SkillFrontmatter {
