@@ -59,3 +59,12 @@ docs/**
 
 # personal scratch notes
 notes.md
+# Build output of the knowledge index (2.7 line); never shipped.
+graphify-out/**
+# README images: the packaged readme (out/readme.vsix.md) inlines them as data URIs.
+assets/architecture.png
+assets/architecture.mmd
+docs/cmsis-developer-assistant.png
+docs/ai-development-lifecycle.png
+# Local state of other developer tools in the checkout; never shipped.
+.embedder/**
