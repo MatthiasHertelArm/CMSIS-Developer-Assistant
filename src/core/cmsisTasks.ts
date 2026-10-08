@@ -106,7 +106,7 @@ export function classifyByLabelLoosely(facts: TaskFacts): CmsisTaskKind | undefi
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
 /** The `cmsis_action` actions that run a CMSIS task and are followed as jobs. */
-export type JobAction = 'build' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug';
+export type JobAction = 'build' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug';
 
 /** A job this window's cmsis_action began, or an execution started elsewhere (the panel) that the tracker adopted. */
 export type JobOrigin = 'call' | 'adopted';
@@ -117,7 +117,7 @@ export type JobState = 'armed' | 'started' | 'ok' | 'failed' | 'cancelled' | 'ru
 export type JobRole = 'main' | 'load' | 'run';
 
 /** How a job is judged done. */
-type SettleRule = 'main-ends' | 'load-ends' | 'load-then-run';
+type SettleRule = 'main-ends' | 'load-ends' | 'run-stays-up' | 'load-then-run';
 
 interface ActionPhase {
     /** The kind each role binds, first come first served. */
@@ -130,6 +130,9 @@ interface ActionPhase {
 /**
  * What each action waits for (#47, step 3):
  *   - build, load, erase: the bound execution's process ends;
+ *   - run: `CMSIS Run` alone (the panel's Run button: the GDB server without
+ *     a Load) — its process started and is still alive 2 s later; ending at
+ *     all is a failure (#73);
  *   - load_and_run: a single task (Arm Debugger, uVision) ends, or, for the
  *     compound of the pyOCD, J-Link and FVP templates, Load ended 0 and
  *     Run's process started and is still alive 2 s later — the rule the
@@ -141,13 +144,14 @@ export const ACTION_PHASES: Readonly<Record<JobAction, ActionPhase>> = {
     build: { roles: { main: 'build' }, settle: 'main-ends' },
     load: { roles: { main: 'load' }, settle: 'main-ends', label: 'CMSIS Load' },
     erase: { roles: { main: 'erase' }, settle: 'main-ends', label: 'CMSIS Erase' },
+    run: { roles: { run: 'run' }, settle: 'run-stays-up', label: 'CMSIS Run' },
     load_and_run: { roles: { main: 'loadRun', load: 'load', run: 'run' }, settle: 'load-then-run', label: 'CMSIS Load+Run' },
     load_and_debug: { roles: { load: 'load' }, settle: 'load-ends' },
 };
 
 /** A job that saw no expected task start this long after its command went out has `not-started`. */
 export const NOTHING_STARTED_MS = 10_000;
-/** How long CMSIS Run must stay up after its process started before load_and_run counts as running. */
+/** How long CMSIS Run must stay up after its process started before run and load_and_run count as running. */
 export const RUN_GRACE_MS = 2_000;
 
 /** One task execution as a job saw it. Times are the tracker's clock. */
@@ -472,9 +476,26 @@ function verdictOf(job: Job, now: number): Verdict {
             }
             return hasEnded(load) ? byExitCode(load) : { state: 'started' };
         }
+        case 'run-stays-up':
+            return runStaysUp(job, now);
         case 'load-then-run':
             return loadThenRun(job, now);
     }
+}
+
+/** `run`: CMSIS Run hosts the GDB server and is meant to stay up; it counts once its process has survived the grace. */
+function runStaysUp(job: Job, now: number): Verdict {
+    const run = executionIn(job, 'run');
+    if (!run) {
+        return awaitingStart(job, now);
+    }
+    if (hasEnded(run)) {
+        return { state: run.exitCode === undefined ? 'cancelled' : 'failed', by: run.key };
+    }
+    if (run.processStartedAt !== undefined) {
+        return now - run.processStartedAt >= RUN_GRACE_MS ? { state: 'running-ok', by: run.key } : { state: 'started' };
+    }
+    return { state: 'started' };
 }
 
 function loadThenRun(job: Job, now: number): Verdict {
@@ -514,7 +535,8 @@ export function nextTimeCheck(job: Job): number | undefined {
     }
     const load = executionIn(job, 'load');
     const run = executionIn(job, 'run');
-    if (job.action === 'load_and_run' && load && hasEnded(load) && run?.processStartedAt !== undefined && !hasEnded(run)) {
+    const loadDone = job.action === 'run' || (job.action === 'load_and_run' && load !== undefined && hasEnded(load));
+    if (loadDone && run?.processStartedAt !== undefined && !hasEnded(run)) {
         return run.processStartedAt + RUN_GRACE_MS;
     }
     return undefined;
@@ -532,7 +554,7 @@ export interface ProbeOwner {
 
 /** The actions the guard judges: every cmsis_action action and flash. */
 export type GuardedAction =
-    | 'build' | 'status' | 'detach' | 'stop_run' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug' | 'attach' | 'flash';
+    | 'build' | 'status' | 'detach' | 'stop_run' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'flash';
 
 /**
  * Why an action may not touch the probe: CMSIS Run (or Load+Run) hosts a GDB

@@ -2439,6 +2439,32 @@ suite('DebuggingHandler', () => {
                 assert.ok(failed.hint?.includes('call flash, which returns pyOCD\'s own error lines'), failed.hint);
             });
 
+            test('run: CMSIS Run alone stays up and the result says nothing was programmed; a Run that ends fails with its code (#73)', async () => {
+                const w = jobWorld();
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisRun': () => {
+                        setTimeout(() => w.tasks.start(w.tasks.execution(shellTask('CMSIS Run'))), 5);
+                    },
+                });
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'run' })),
+                    /^✅ CMSIS 'run' on HE: 'CMSIS Run' started and stays active — it hosts the GDB server \(job g-1\); nothing was built or programmed\. The flash is untouched; the pyOCD task resets the target and lets the firmware run \(--reset-run\), the J-Link task leaves it running as it was \(-nohalt\), the FVP task starts the model\. cmsis_action attach to debug; cmsis_action stop_run frees the probe\.$/);
+
+                const failing = jobWorld();
+                again();
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisRun': () => {
+                        const run = failing.tasks.execution(shellTask('CMSIS Run'));
+                        setTimeout(() => {
+                            failing.tasks.start(run);
+                            failing.tasks.finish(run, 1);
+                        }, 5);
+                    },
+                });
+                const failed = await refusalOf(failing.handler.handleCmsisCommand({ action: 'run' }), 'TASK_FAILED');
+                assert.match(failed.message, /^❌ CMSIS 'run' FAILED on HE — 'CMSIS Run' ended with code 1 after [\d.]+ s; it hosts the GDB server and must stay up \(job g-1\)\.$/);
+                assert.ok(failed.hint?.startsWith('Read the \'CMSIS Run\' terminal'), failed.hint);
+            });
+
             test('load_and_debug: a failed pre-launch Load is the answer before any session probe; a good one leads the result', async () => {
                 const w = jobWorld(50);
                 solutionOn('HE', { 'cmsis-csolution.cmsisLoadAndDebug': runs(w.tasks, shellTask('CMSIS Load'), 1) });
@@ -2614,7 +2640,8 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(lost.message, 'CMSIS \'attach\' on HE started a debug session but it did NOT survive the initial connect — '
                 + 't+3s: 1 thread(s), then t+6s: thread probe failed — session ended.');
             assert.ok(lost.hint?.startsWith('For \'attach\' this almost always means no GDB server is listening'), lost.hint);
-            assert.ok(lost.hint?.includes('No CMSIS Run task is alive in this window — load_and_run first, or load_and_debug.'), lost.hint);
+            assert.ok(lost.hint?.includes('No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming; '
+                + 'load_and_run programs first.'), lost.hint);
             const never = await replyAnswer(attach(undefined), 'running');
             assert.ok(never.startsWith('CMSIS \'attach\' on HE issued via \'cmsis-csolution.cmsisAttachDebugger\'. '
                 + 'The flash/connect pipeline is running in the CMSIS extension'), never);

@@ -93,14 +93,15 @@ import { failureText, LONG_LIMIT_CAP_MS } from './fence';
 import type { HandlerHost } from './host';
 import { formatDuration, idleStatus, jobResult, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
 
-export type CmsisAction = 'build' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run' | 'status'
-    | 'open_solution';
+export type CmsisAction = 'build' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run'
+    | 'status' | 'open_solution';
 
 /** The CMSIS Solution command behind each action. A Map, so `constructor` and friends are not actions. */
 const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['build', 'cmsis-csolution.build'],
     ['load', 'cmsis-csolution.cmsisLoad'],
     ['erase', 'cmsis-csolution.cmsisErase'],
+    ['run', 'cmsis-csolution.cmsisRun'],
     ['load_and_run', 'cmsis-csolution.cmsisLoadAndRun'],
     ['load_and_debug', 'cmsis-csolution.cmsisLoadAndDebug'],
     ['attach', 'cmsis-csolution.cmsisAttachDebugger'],
@@ -108,11 +109,11 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['stop_run', 'cmsis-csolution.cmsisStopRun'],
 ]);
 
-/** Actions that run a cbuild or flash task and end with its result; a repeated one attaches to the job in flight. */
-const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'load_and_run']);
+/** Actions that run a CMSIS task and end with its result; a repeated one attaches to the job in flight. */
+const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'run', 'load_and_run']);
 const SESSION_ACTIONS: ReadonlySet<string> = new Set(['load_and_debug', 'attach']);
 /** Actions whose default wait is the long one: they wait for a task. */
-const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'load_and_run', 'load_and_debug', 'status']);
+const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'status']);
 
 /** Waits without a positive `timeoutMs`: 60 s for the task actions and status (#12), 30 s for the rest. */
 const LONG_WAIT_DEFAULT_MS = 60_000;
@@ -160,7 +161,7 @@ export interface CmsisActionContext {
     renderFullState(state: DebugState): string;
 }
 
-/** Whether the action runs a cbuild / flash task (build, load, erase, load_and_run). */
+/** Whether the action runs a CMSIS task (build, load, erase, run, load_and_run). */
 export function isTaskAction(action: string): boolean {
     return TASK_ACTIONS.has(action);
 }
@@ -436,7 +437,7 @@ async function issueCommand(issue: Issue, action: string, returned?: (value: unk
     }
 }
 
-/** build, load, erase, load_and_run: arm a job, issue the command, wait for the job until the deadline. */
+/** build, load, erase, run, load_and_run: arm a job, issue the command, wait for the job until the deadline. */
 async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<string> | undefined): Promise<ToolText> {
     const { tracker } = issue;
     const job = tracker.begin(action, issue.target);
@@ -451,7 +452,7 @@ async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<strin
     return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels });
 }
 
-/** A repeated build, load, erase or load_and_run waits for the job in flight instead of starting a second one (#12). */
+/** A repeated build, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
 async function attachToJob(
     context: CmsisActionContext,
     job: Job,
@@ -585,7 +586,7 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
         };
     }
     const noRun = action === 'attach' && !runAlive
-        ? ' No CMSIS Run task is alive in this window — load_and_run first, or load_and_debug.'
+        ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming; load_and_run programs first.'
         : '';
     throw new ToolError('TASK_FAILED',
         `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${loaded}${survival.detail}.`,
@@ -645,8 +646,8 @@ async function refuseAttachWithoutServer(issue: Issue, solutionPath: string | un
     const where = silent.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
     throw new ToolError('NO_SESSION',
         `CMSIS 'attach'${issue.tag} not started: no GDB server listens on ${where}, and no CMSIS Run task is alive in this window.`,
-        'cmsis_action load_and_run starts CMSIS Run, which hosts the GDB server; attach after it. '
-            + 'Or cmsis_action load_and_debug, which starts its own.');
+        'cmsis_action run starts CMSIS Run, which hosts the GDB server, without building or programming; attach after it. '
+            + 'load_and_run programs the built image first; load_and_debug starts a session of its own.');
 }
 
 async function loadAndDebug(issue: Issue): Promise<ToolText> {

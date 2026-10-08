@@ -1195,7 +1195,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: the GDB server (CMSIS Run) without build or flash, then attach. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1206,6 +1206,7 @@
                   "build",
                   "load",
                   "erase",
+                  "run",
                   "load_and_run",
                   "load_and_debug",
                   "attach",
@@ -1377,8 +1378,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47952,
-          "sha256": "36c915bef82f008179d1f00a7e3a701f27847ca99947f4d578c4a049f0647b69"
+          "bytes": 48314,
+          "sha256": "8b723e19f985d2847fe4ebb76dad53f460a34b32c3642844a1039865fb7c9132"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -2629,7 +2630,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: the GDB server (CMSIS Run) without build or flash, then attach. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2640,6 +2641,7 @@
                   "build",
                   "load",
                   "erase",
+                  "run",
                   "load_and_run",
                   "load_and_debug",
                   "attach",
@@ -2811,8 +2813,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47952,
-          "sha256": "36c915bef82f008179d1f00a7e3a701f27847ca99947f4d578c4a049f0647b69"
+          "bytes": 48314,
+          "sha256": "8b723e19f985d2847fe4ebb76dad53f460a34b32c3642844a1039865fb7c9132"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -4506,7 +4508,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: the GDB server (CMSIS Run) without build or flash, then attach. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4517,6 +4519,7 @@
                   "build",
                   "load",
                   "erase",
+                  "run",
                   "load_and_run",
                   "load_and_debug",
                   "attach",
@@ -4688,8 +4691,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47952,
-          "sha256": "36c915bef82f008179d1f00a7e3a701f27847ca99947f4d578c4a049f0647b69"
+          "bytes": 48314,
+          "sha256": "8b723e19f985d2847fe4ebb76dad53f460a34b32c3642844a1039865fb7c9132"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -6279,7 +6282,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: the GDB server (CMSIS Run) without build or flash, then attach. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6290,6 +6293,7 @@
                   "build",
                   "load",
                   "erase",
+                  "run",
                   "load_and_run",
                   "load_and_debug",
                   "attach",
@@ -6507,8 +6511,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47952,
-          "sha256": "36c915bef82f008179d1f00a7e3a701f27847ca99947f4d578c4a049f0647b69"
+          "bytes": 48314,
+          "sha256": "8b723e19f985d2847fe4ebb76dad53f460a34b32c3642844a1039865fb7c9132"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -8184,7 +8188,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: the GDB server (CMSIS Run) without build or flash, then attach. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8195,6 +8199,7 @@
                   "build",
                   "load",
                   "erase",
+                  "run",
                   "load_and_run",
                   "load_and_debug",
                   "attach",
@@ -8412,8 +8417,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 47952,
-          "sha256": "36c915bef82f008179d1f00a7e3a701f27847ca99947f4d578c4a049f0647b69"
+          "bytes": 48314,
+          "sha256": "8b723e19f985d2847fe4ebb76dad53f460a34b32c3642844a1039865fb7c9132"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
