@@ -73,7 +73,8 @@ import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
 import { notifyError } from './notify';
-import { SkillCatalog, installSet, loadSkillCatalog } from './skillCatalog';
+import { SKILLS_REPLACED_SETTING, SkillCatalog, installSet, loadSkillCatalog } from './skillCatalog';
+import { HELP_SKILL_NAME, catalogForInstall } from './skillHelp';
 import {
     SkillInstallRoots,
     SkillInstaller,
@@ -800,10 +801,18 @@ export class AgentConfigurationManager {
         if (!catalog) {
             return null;
         }
-        const wanted = installSet(catalog);
+        // With the skills replaced by the knowledge tools only cmsis-help is wanted, as the one slash command that
+        // says what there is and how to work — in its variant that names the knowledge units, not the skills;
+        // the installer's sweep removes the other skills it installed.
+        const replaced = vscode.workspace.getConfiguration(SETTINGS_SECTION).get<boolean>(SKILLS_REPLACED_SETTING, false);
+        const source = catalogForInstall(catalog, replaced);
+        const wanted = replaced
+            ? { visible: source.skills.filter(entry => entry.name === HELP_SKILL_NAME).map(entry => entry.name), hidden: [] }
+            : installSet(source);
         const roots = skillRoots();
-        const report = await this.installer.sync(roots, catalog, wanted.visible, wanted.hidden);
-        logger.info(`Skill install (${reason}) into ${roots.install.map(shortenHome).join(', ')}: ${summarizeSkillSync(report)}; `
+        const report = await this.installer.sync(roots, source, wanted.visible, wanted.hidden);
+        logger.info(`Skill install (${reason}${replaced ? ', skills replaced by the knowledge tools' : ''}) into `
+            + `${roots.install.map(shortenHome).join(', ')}: ${summarizeSkillSync(report)}; `
             + `visible [${wanted.visible.join(', ')}], hidden [${wanted.hidden.join(', ')}]`);
         for (const failed of report.failed) {
             logger.warn(`Skill ${failed.name ?? '(root)'} in ${failed.root} failed: ${failed.error}`);

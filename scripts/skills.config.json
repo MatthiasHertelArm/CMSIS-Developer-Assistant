@@ -51,6 +51,7 @@
     "displayName": "CMSIS: Help",
     "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
     "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-bootstrap, cmsis-project, add-board-layer, cmsis-debug-live, cmsis-pack-docs, create-csolution-github-action) and the member skills behind each, the VS Code commands, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+    "knowledgeDescription": "List what the CMSIS Developer Assistant offers and which part fits a task while the knowledge tools replace the skills: the procedures of the knowledge index (cmsis-bootstrap, add-board-layer, cmsis-debug-live, cmsis-pack-docs and the routing units route-project, route-bring-up, route-pack) and the procedures behind each, the VS Code commands, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings. Use when the user asks what CMSIS skills, commands, procedures or tools are available, which one to use for a CMSIS task, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the unit or tool that does the work.",
     "commands": {
       "cmsis-developer-assistant.configure": "The first-run setup, on demand: register the MCP server with the agents you pick (the CMSIS skills are installed into your personal skills directories at the same time), then add the tool rules to your agents' rule files (CLAUDE.md, AGENTS.md, …), each change shown as a diff first.",
       "cmsis-developer-assistant.selectTargetWindow": "With several VS Code windows open, choose the default window for agent calls that name no window or file (also a click on \"CDA\" in the status bar), or Automatic.",
@@ -60,6 +61,7 @@
       "cmsis-developer-assistant.importUserDoc": "Copy PDFs the packs do not ship (NDA manuals, portal downloads) into the user documents folder, attributed to the current pack, device, board or core, and index them.",
       "cmsis-developer-assistant.openUserDocsFolder": "Reveal the user documents folder in the file manager.",
       "cmsis-developer-assistant.openPackDocsPanel": "Open the Pack Docs panel: the resolved target, its documents and their index state, the SVD peripherals, the page store (with confirmed actions to clear the extracted text or delete the downloaded PDFs), and a runner for the documentation tools.",
+      "cmsis-developer-assistant.openKnowledgePanel": "Experimental. Open the knowledge browser: every unit of the knowledge index (`knowledge.indexPath`) with filters and the search of `knowledge_search`, a unit's text, files and frontmatter, its relations as a graph to walk, and an overview of the index. Read-only; it works whether or not `knowledge.enabled` offers the tools to agents.",
       "cmsis-developer-assistant.copyRecentProblems": "Copy the last 50 warnings and errors this window recorded (debug adapter and GDB server, failed tasks and builds, notifications, serial ports) to the clipboard, to paste into a bug report instead of a screenshot."
     },
     "toolGroups": [
@@ -98,6 +100,10 @@
       {
         "name": "Build artefacts (experimental, on by default — cmsis-developer-assistant.buildInfo.enabled)",
         "summary": "`list_build_artifacts`, `get_memory_usage`, `lookup_symbol`, `get_section_layout`, `get_build_diagnostics` — the ELF, linker map and build log of the current target, read deterministically."
+      },
+      {
+        "name": "Knowledge (experimental, off by default — cmsis-developer-assistant.knowledge.enabled)",
+        "summary": "`knowledge_search`, `knowledge_get`, `knowledge_expand` — how-to knowledge from the knowledge indexes: the base index (procedures, which are the skills as units, rules, routing units, the causes and fixes of csolution, packchk and svdconv messages, digests of closed issues) and the `knowledge.db` every installed pack and the workspace (`.cmsis/knowledge.db`) carry, such as the converted documentation of Zephyr, TF-M, CMSIS components and tools; all are searched as one, whatever the target, and a hit says which index it came from. Search returns summaries, `knowledge_get` the whole unit and the files it ships."
       }
     ],
     "settings": {
@@ -110,7 +116,9 @@
       "build.diagnosticRerun": "After a failed build, re-run cbuild once with --log so the cmsis_action result shows the error lines (default on).",
       "serial.enabled": "Offer the serial_* tools (default on); window reload.",
       "serial.idleCloseSeconds": "Release a serial port an agent opened after this many seconds without a serial call (default 300; 0 is off).",
-      "telemetry.jsonlPath": "Append one JSON line per tool call to this file; empty is off."
+      "telemetry.jsonlPath": "Append one JSON line per tool call to this file; empty is off.",
+      "knowledge.enabled": "Experimental. Offer the knowledge tools and name the unit of a known error message in a failed build's result; `knowledge.indexPath` names the base `knowledge.db`, read with the `knowledge.db` of every installed pack and `.cmsis/knowledge.db` of the workspace. Window reload.",
+      "knowledge.replaceSkills": "With the knowledge tools on: install no CMSIS skill except `cmsis-help`, remove the others this extension installed, and take procedures from `knowledge_search` and `knowledge_get` instead."
     }
   },
   "categories": [

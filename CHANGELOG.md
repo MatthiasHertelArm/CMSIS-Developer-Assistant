@@ -4,6 +4,14 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Knowledge engine preview (experimental, off by default).** The tools `knowledge_search`, `knowledge_get` and `knowledge_expand` over a local knowledge index (`cmsis-developer-assistant.knowledge.enabled`, `knowledge.indexPath`, `knowledge.includeIncomplete`), the **Open Knowledge Browser** panel, the unit of a known error message in a failed build's result, and `knowledge.replaceSkills`, which installs no skill but `cmsis-help` and takes the procedures from the index instead.
+
+### Changed
+- **`/cmsis-help` tells the truth while `knowledge.replaceSkills` is on.** The one skill installed in that mode listed the seven slash commands of the skills mode, with a conditional section asking the agent to work out that they are knowledge units — and an agent repeated the table, offered `/cmsis-bootstrap` and co., and sent the user to **Select Agent Skills**. The skill is now generated twice (`skills/cmsis-help/`, `skills/cmsis-help-knowledge/`), and the installer puts the knowledge variant under the skill's name while the setting is on: it names the units (`proc-<name>`, `route-<category>`) where the other names commands and member skills, opens with how to work from `knowledge_search` and `knowledge_get`, and says that `/cmsis-help` is the one slash command. The skills variant lost the conditional section.
+
 ## [2.5.20] - 2026-10-12
 
 The README as VS Code renders it.

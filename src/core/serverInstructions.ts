@@ -30,6 +30,9 @@
 export interface InstructionOptions {
     packDocsEnabled?: boolean;
     buildInfoEnabled?: boolean;
+    knowledgeEnabled?: boolean;
+    /** `knowledge.replaceSkills`: no skill is installed, so none is named. */
+    skillsReplaced?: boolean;
 }
 
 /** What the tools are for. The problem kinds named here are what make an agent reach for them. */
@@ -44,6 +47,13 @@ const SKILL_FIRST =
     'target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault ' +
     'decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary ' +
     'printf/UART logging in the firmware.';
+
+/** In place of `SKILL_FIRST` when no skill is installed: the guide brings the same plan. */
+const GUIDE_FIRST =
+    'Before anything else in such an investigation, call get_debug_instructions. It brings the target-awareness checklist, ' +
+    'the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root ' +
+    'cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. ' +
+    'No Agent Skills are installed for these tools: procedures come from knowledge_search and knowledge_get.';
 
 const WITHOUT_SKILLS =
     'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
@@ -77,6 +87,33 @@ const BUILD_ARTEFACTS_ON =
     'get_build_diagnostics) read the ELF, linker map and build log of the current target.';
 
 /**
+ * Experimental. What a skill's description did by itself — load the
+ * procedure when its task comes up — has to be said in words when the
+ * procedures are knowledge units: look the procedure up before the work.
+ * It stands first, ahead of the purpose and everything else.
+ */
+const KNOWLEDGE_FIRST =
+    'Knowledge first: before you start a CMSIS task — a new project, a target or a board layer, the debugger or an FVP setup, ' +
+    'pack debug or trace content, a debug or flash session that fails — call knowledge_search with the task in a few words, read ' +
+    'the procedure it finds with knowledge_get and follow it; do not work such a task from memory. The units route-project, ' +
+    'route-bring-up, route-pack and route-debug, where the index has them, say which procedure fits and in which order.';
+
+/**
+ * The line the first `get_session_status` adds to the tool rules reminder
+ * while the knowledge tools are on.
+ */
+export const KNOWLEDGE_REMINDER = 'Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.';
+
+/** Experimental; a procedure read here stands where the tool rules say "a CMSIS skill step". */
+const KNOWLEDGE_ON =
+    'The knowledge tools (knowledge_search, knowledge_get, knowledge_expand) hold how-to knowledge: procedures, rules, the ' +
+    'causes and fixes of csolution, packchk and svdconv messages, and the documentation the installed packs carry as knowledge ' +
+    '(a hit says which pack it came from). For an error message of those tools call knowledge_search ' +
+    'with the exact text before guessing or searching the web; results are summaries, so read the unit with knowledge_get ' +
+    'before acting. A procedure from knowledge_get counts as a CMSIS skill for the tool rules. Units marked draft are not ' +
+    'reviewed: say so when you rely on one.';
+
+/**
  * The line the first `get_session_status` of a session adds after the status,
  * before the call statistics: by then the instructions may lie far back in
  * the conversation, or have been compacted away.
@@ -90,10 +127,16 @@ export const TOOL_RULES_REMINDER =
  * build-artefact tools go unmentioned while they are off.
  */
 export function composeInstructions(options: Readonly<InstructionOptions>): string {
-    const parts = [PURPOSE, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
+    const lead = options.knowledgeEnabled === true ? [KNOWLEDGE_FIRST, PURPOSE] : [PURPOSE];
+    const parts = options.skillsReplaced === true
+        ? [...lead, GUIDE_FIRST, TIMEOUT_OVERRIDE, READING_RESULTS]
+        : [...lead, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
     if (options.buildInfoEnabled === true) {
         parts.push(BUILD_ARTEFACTS_ON);
+    }
+    if (options.knowledgeEnabled === true) {
+        parts.push(KNOWLEDGE_ON);
     }
     return parts.join(' ');
 }

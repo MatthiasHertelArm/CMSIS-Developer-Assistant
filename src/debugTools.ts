@@ -47,13 +47,14 @@ import { WINDOW_ARGUMENT } from './core/opTable';
 import { journalLocally } from './core/problemFeed';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal } from './core/problemJournal';
 import { RELEASE_RULES } from './core/serialLease';
-import { TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
+import { KNOWLEDGE_REMINDER, TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
 import { TOOL_CONTRACT_DOC, parseToolContract } from './core/toolContract';
 import type { ToolMetrics } from './core/toolMetrics';
 import { ToolText, textOf } from './core/toolResult';
 import { SERVER_VERSION } from './debuggingExecutor';
 import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
+import { registerKnowledgeTools } from './knowledgeTools';
 import { registerPackDocsTools } from './packDocsTools';
 import { logger } from './utils/logger';
 
@@ -64,6 +65,21 @@ const SERVER_NAME = 'cmsis-developer-assistant';
 
 /** The sentences of one description, joined by single spaces. */
 const say = (...sentences: string[]): string => sentences.join(' ');
+
+/** The two descriptions that name a skill, for a session without skills (`knowledge.replaceSkills`). */
+const ABOUT_WITHOUT_SKILLS = {
+    get_debug_instructions: say(
+        'Debugging guide: call it before a debugging investigation.',
+        'Default: a short overview plus the topic list; pass topic for one section (bootstrap, session, build, breakpoints, inspection, faults, troubleshooting).',
+    ),
+    start_debugging: say(
+        'Start a debug session through the VS Code debug pipeline (launch.json).',
+        'Before using this tool, call get_debug_instructions.',
+        'For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the ' +
+        'flash step and suits non-CMSIS projects or attaching to an already-flashed target.',
+        'Refuses while a session is active.',
+    ),
+};
 
 const ABOUT = {
     get_debug_instructions: say(
@@ -527,7 +543,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     const { options, docs, ring } = parts;
 
     mcp.registerTool('get_debug_instructions', {
-        description: ABOUT.get_debug_instructions,
+        description: options.skillsReplaced === true ? ABOUT_WITHOUT_SKILLS.get_debug_instructions : ABOUT.get_debug_instructions,
         inputSchema: {
             topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
         },
@@ -535,7 +551,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     }, async (args) => reply(guideSection(await docs.read(GUIDE_FILE), args.topic)));
 
     mcp.registerTool('start_debugging', {
-        description: ABOUT.start_debugging,
+        description: options.skillsReplaced === true ? ABOUT_WITHOUT_SKILLS.start_debugging : ABOUT.start_debugging,
         inputSchema: {
             fileFullPath: z.string().optional().describe('Source file to debug; optional when configurationName is given.'),
             workingDirectory: z.string().describe('Directory the debug session runs in'),
@@ -779,6 +795,9 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     if (packDocs !== undefined && options.buildInfoEnabled === true) {
         registerBuildInfoTools(mcp, packDocs);
     }
+    if (packDocs !== undefined && options.knowledgeEnabled === true) {
+        registerKnowledgeTools(mcp, packDocs);
+    }
 
     // CMSIS Solution actions and programming.
     mcp.registerTool('cmsis_action', {
@@ -808,7 +827,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     let rulesRepeated = parts.toolRules === undefined;
     mcp.registerTool('get_session_status', { description: ABOUT.get_session_status, annotations: LOOK_ONLY }, async () => {
         const state = await debug.handleGetSessionStatus();
-        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER}`;
+        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER}${options.knowledgeEnabled === true ? ` ${KNOWLEDGE_REMINDER}` : ''}`;
         rulesRepeated = true;
         // Read after the handler: the totals cover this session's earlier calls, not this one.
         return reply(`${textOf(state)}${reminder}\n\n${ring.formatTotals()}`);

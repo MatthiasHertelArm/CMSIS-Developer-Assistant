@@ -96,6 +96,7 @@ import { parseCbuildRunOutputs, parseCbuildYml } from './core/buildInfo/artifact
 import { BuildLogSummary, parseBuildLog, readBuildLog } from './core/buildInfo/buildLog';
 import { renderBuildFailure } from './core/buildInfo/render';
 import { BuildCheck, BuildMessage, Job, JobDiagnosis, JobExecution, MAX_BUILD_MESSAGES } from './core/cmsisTasks';
+import { knownMessageLines } from './core/knowledge/knownMessageLookup';
 import { formatDuration } from './handler/jobText';
 import { logger } from './utils/logger';
 import { withTimeout } from './utils/timeout';
@@ -151,8 +152,12 @@ export interface DiagnosisHost {
     killTree(child: DiagnosticChild): void;
     /** The tracker's clock: job times, the cap and the kill grace. */
     readonly clock: TrackerClock;
+    /** Lines for the error messages the knowledge index knows; absent or empty without the knowledge tools. */
+    knownMessageLines?(messages: readonly string[]): string[];
 }
 
+/** A build result names at most this many units of the knowledge index. */
+const MAX_KNOWN_MESSAGE_LINES = 3;
 /** After a kill, the re-run counts as ended this long later even without a `close` event. */
 const KILL_GRACE_MS = 5_000;
 /** What is kept of cbuild's own output, the end of it, for when the log is missing or short. */
@@ -365,10 +370,24 @@ export class BuildDiagnosisRunner {
             return;
         }
         if (job.state === 'failed' && decided.exitCode !== 0) {
-            this.tracker.completeWith(job.id, this.diagnose(decided));
+            this.tracker.completeWith(job.id, this.diagnose(decided).then((diagnosis) => this.withKnownMessages(diagnosis)));
         } else if (job.state === 'ok' && decided.exitCode === 0 && this.tracker.definitionOf(decided.key)?.clean !== true) {
-            this.tracker.completeWith(job.id, this.check(decided));
+            this.tracker.completeWith(job.id, this.check(decided).then((diagnosis) => this.withKnownMessages(diagnosis)));
         }
+    }
+
+    /** The diagnosis with a line for each error message the knowledge index has a unit for. */
+    withKnownMessages(diagnosis: JobDiagnosis): JobDiagnosis {
+        if (diagnosis.errors.length === 0 || !this.host.knownMessageLines) {
+            return diagnosis;
+        }
+        let lines: string[] = [];
+        try {
+            lines = this.host.knownMessageLines(diagnosis.errors.map((error) => error.message)).slice(0, MAX_KNOWN_MESSAGE_LINES);
+        } catch (caught) {
+            logger.debug('Build diagnosis: the knowledge lookup failed', caught);
+        }
+        return lines.length > 0 ? { ...diagnosis, text: [diagnosis.text, ...lines].filter((part) => part.length > 0).join('\n') } : diagnosis;
     }
 
     /** The check of the build `decided` ran, which exited 0; never rejects. */
@@ -706,5 +725,6 @@ export function vscodeDiagnosisHost(clock: TrackerClock): DiagnosisHost {
         spawn: (command, args, options) => spawnProcess(command, [...args], options),
         killTree: (child) => killProcessTree(child, process.platform),
         clock,
+        knownMessageLines,
     };
 }

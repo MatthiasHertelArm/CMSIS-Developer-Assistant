@@ -31,8 +31,10 @@ import {
     parseSkillFrontmatter,
 } from '../utils/skillCatalog';
 import {
+    HELP_SKILL_KNOWLEDGE_PATH,
     HELP_SKILL_NAME,
     HelpSkillConfig,
+    catalogForInstall,
     readPackageContributions,
     renderHelpOpenAiYaml,
     renderHelpSkillMarkdown,
@@ -306,6 +308,77 @@ suite('Agent skill catalog', () => {
                 assert.ok(markdown.includes(`\`cmsis-developer-assistant.${id}\``), `missing setting ${id}`);
             }
             assert.ok(contributions().commands.length >= 2, 'palette commands disappeared');
+        });
+
+        /**
+         * The variant installed while `knowledge.replaceSkills` is on. An
+         * agent reads it where no skill but this one exists, so it must name
+         * no slash command it could offer, and every unit it names has to be
+         * one the knowledge base builds from the catalog (`proc-<name>`,
+         * `route-<category>`).
+         */
+        suite('the knowledge variant', () => {
+            const knowledgeDir = path.join(repoRoot, HELP_SKILL_KNOWLEDGE_PATH);
+            const shippedKnowledge = (): string => fs.readFileSync(path.join(knowledgeDir, 'SKILL.md'), 'utf8');
+
+            test('ships beside the skills variant, exactly as the generator renders it now', () => {
+                assert.strictEqual(shippedKnowledge(), renderHelpSkillMarkdown(catalog(), contributions(), config(), contract(), 'knowledge'),
+                    `${HELP_SKILL_KNOWLEDGE_PATH}/SKILL.md is stale — run \`npm run skills:sync -- --offline\``);
+                assert.strictEqual(fs.readFileSync(path.join(knowledgeDir, 'agents', 'openai.yaml'), 'utf8'), renderHelpOpenAiYaml(config()));
+                assert.notStrictEqual(shippedKnowledge(), shipped());
+            });
+
+            test('carries the same name and its own description, so it installs as cmsis-help', () => {
+                const frontmatter = parseSkillFrontmatter(shippedKnowledge());
+                assert.strictEqual(frontmatter?.name, HELP_SKILL_NAME);
+                assert.strictEqual(frontmatter?.description, config().knowledgeDescription);
+                assert.ok(config().knowledgeDescription.length <= 1024);
+                assert.notStrictEqual(config().knowledgeDescription, config().description);
+            });
+
+            test('names the units, and /cmsis-help as the only slash command', () => {
+                const markdown = shippedKnowledge();
+                const slashCommands = [...markdown.matchAll(/`\/([a-z0-9-]+)`/g)].map(match => match[1]);
+                assert.deepStrictEqual([...new Set(slashCommands)], [HELP_SKILL_NAME], 'a /command an agent could offer');
+                assert.ok(!/`\$[a-z]/.test(markdown), 'a $skill reference');
+                for (const router of catalog().skills.filter(skill => skill.kind === 'router')) {
+                    assert.ok(markdown.includes(`\`route-${router.category}\``), `missing route-${router.category}`);
+                    // As a command, a hand-over or a bare name — not as part of a longer unit id such as proc-start-cmsis-project.
+                    assert.ok(!new RegExp(`\`[/$]?${router.name}\``).test(markdown), `router ${router.name} named as a skill`);
+                    for (const member of router.dependsOn) {
+                        assert.ok(markdown.includes(`\`proc-${member}\``), `missing proc-${member}`);
+                    }
+                }
+                for (const entry of catalog().skills.filter(skill => skill.source === 'bundled' && skill.name !== HELP_SKILL_NAME)) {
+                    assert.ok(markdown.includes(`\`proc-${entry.name}\``), `missing proc-${entry.name}`);
+                }
+                for (const entry of catalog().skills.filter(skill => skill.source === 'extension')) {
+                    assert.ok(markdown.includes(`\`proc-${entry.name}\``), `missing proc-${entry.name}`);
+                }
+                assert.ok(markdown.includes('`knowledge_get`') && markdown.includes('`knowledge_search`'));
+                assert.ok(!markdown.includes('Select Agent Skills** in VS Code'), 'sends the user to install a skill');
+            });
+
+            test('still names every palette command and every listed setting', () => {
+                const markdown = shippedKnowledge();
+                for (const command of contributions().commands) {
+                    assert.ok(markdown.includes(`\`${command.command}\``), `missing command id ${command.command}`);
+                }
+                for (const id of Object.keys(config().settings)) {
+                    assert.ok(markdown.includes(`\`cmsis-developer-assistant.${id}\``), `missing setting ${id}`);
+                }
+            });
+
+            test('catalogForInstall points the help entry at it while the skills are replaced, and at nothing else', () => {
+                const base = catalog();
+                const replaced = catalogForInstall(base, true);
+                assert.strictEqual(replaced.skills.find(skill => skill.name === HELP_SKILL_NAME)?.path, HELP_SKILL_KNOWLEDGE_PATH);
+                assert.deepStrictEqual(
+                    replaced.skills.filter(skill => skill.name !== HELP_SKILL_NAME),
+                    base.skills.filter(skill => skill.name !== HELP_SKILL_NAME));
+                assert.strictEqual(catalogForInstall(base, false), base);
+                assert.ok(fs.existsSync(path.join(repoRoot, replaced.skills.find(skill => skill.name === HELP_SKILL_NAME)!.path, 'SKILL.md')));
+            });
         });
 
         test('every palette command needs a one-liner in the generator config, and vice versa', () => {

@@ -11571,6 +11571,11 @@
             "category": "CMSIS Developer Assistant"
           },
           {
+            "command": "cmsis-developer-assistant.openKnowledgePanel",
+            "title": "Open Knowledge Browser",
+            "category": "CMSIS Developer Assistant"
+          },
+          {
             "command": "cmsis-developer-assistant.copyRecentProblems",
             "title": "Copy Recent Problems",
             "category": "CMSIS Developer Assistant"
@@ -11691,6 +11696,27 @@
               "**/out/**/*.log",
               "**/build*.log"
             ]
+          },
+          {
+            "key": "cmsis-developer-assistant.knowledge.enabled",
+            "type": "boolean",
+            "default": false
+          },
+          {
+            "key": "cmsis-developer-assistant.knowledge.indexPath",
+            "type": "string",
+            "default": ""
+          },
+          {
+            "key": "cmsis-developer-assistant.knowledge.replaceSkills",
+            "type": "boolean",
+            "default": false,
+            "scope": "application"
+          },
+          {
+            "key": "cmsis-developer-assistant.knowledge.includeIncomplete",
+            "type": "boolean",
+            "default": false
           }
         ]
       },
@@ -11866,6 +11892,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.openPackDocsPanel"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openKnowledgePanel"
         },
         {
           "ev": "getExtension",
@@ -12531,6 +12561,14 @@
               "fallback": 10000
             },
             {
+              "key": "cmsis-developer-assistant.knowledge.enabled",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -12589,6 +12627,7 @@
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -12611,6 +12650,7 @@
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
+            "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
@@ -12865,6 +12905,10 @@
           "id": "cmsis-developer-assistant.openPackDocsPanel"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
           "ev": "getExtension",
           "id": "arm.cmsis-pack-docs"
         },
@@ -13046,6 +13090,14 @@
               "fallback": 10000
             },
             {
+              "key": "cmsis-developer-assistant.knowledge.enabled",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -13104,6 +13156,7 @@
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -13126,6 +13179,7 @@
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
+            "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
@@ -13378,6 +13432,10 @@
           "id": "cmsis-developer-assistant.openPackDocsPanel"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
           "ev": "getExtension",
           "id": "arm.cmsis-pack-docs"
         },
@@ -13505,6 +13563,14 @@
               "fallback": 10000
             },
             {
+              "key": "cmsis-developer-assistant.knowledge.enabled",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -13563,6 +13629,7 @@
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -13585,6 +13652,7 @@
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
+            "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.resetPopupState",
@@ -13739,6 +13807,10 @@
           "id": "cmsis-developer-assistant.openPackDocsPanel"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
           "ev": "getExtension",
           "id": "arm.cmsis-pack-docs"
         },
@@ -13793,6 +13865,10 @@
             {
               "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
               "fallback": 10000
+            },
+            {
+              "key": "cmsis-developer-assistant.knowledge.enabled",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
@@ -13853,6 +13929,7 @@
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -13875,6 +13952,7 @@
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
+            "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.resetPopupState",
@@ -14067,6 +14145,10 @@
           "id": "cmsis-developer-assistant.openPackDocsPanel"
         },
         {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
           "ev": "getExtension",
           "id": "arm.cmsis-pack-docs"
         },
@@ -14247,6 +14329,14 @@
               "fallback": 10000
             },
             {
+              "key": "cmsis-developer-assistant.knowledge.enabled",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -14305,6 +14395,7 @@
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -14327,6 +14418,7 @@
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
+            "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",

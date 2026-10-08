@@ -683,6 +683,50 @@ async function main() {
         !lbuild.error && /cbuild-run|build/i.test(lbuild.text), lbuild.text.split('\n')[0]);
     await request(fport, 'DELETE', { 'mcp-session-id': fsid });
     await full.stop();
+
+    // 10. The experimental knowledge tools: in neither list above, and three
+    //     tools more through their own gate. Without an index they fail with
+    //     the setting to fill in.
+    const { KnowledgeHandler } = require(path.join(OUT, 'knowledgeHandler.js'));
+    const knowledgeDispatch = localPackDocsDispatch({
+        docs: new PackDocsHandler(docsHost, { timeoutMs: 30_000 }),
+        build: new BuildInfoHandler(buildHost, { timeoutMs: 30_000 }),
+        knowledge: new KnowledgeHandler(
+            { indexPath: () => undefined, includeIncomplete: () => false, packRoot: async () => undefined, workspaceFolders: () => [], projectFacts: async () => ({}), log: silentLog }, { timeoutMs: 30_000 }),
+    });
+    const withKnowledge = new DebugMCPServer(0, 30, undefined, () => ({ debug, serial: localSerialDispatch, packDocs: knowledgeDispatch }),
+        { knowledgeEnabled: true });
+    await withKnowledge.initialize();
+    await withKnowledge.start();
+    const kport = withKnowledge.getActualPort();
+    const kinit = await request(kport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const ksid = kinit.headers['mcp-session-id'];
+    check('the server instructions mention the knowledge tools only when they are on',
+        /knowledge_search/.test(parseSse(kinit.body)?.result?.instructions ?? '') && !/knowledge_search/.test(instructions) && !/knowledge_search/.test(finstructions));
+    await request(kport, 'POST', { 'mcp-session-id': ksid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const klist = await request(kport, 'POST', { 'mcp-session-id': ksid }, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    const ktools = parseSse(klist.body)?.result?.tools ?? [];
+    const KNOWLEDGE_TOOLS = ['knowledge_search', 'knowledge_get', 'knowledge_expand'];
+    check('knowledge enabled adds exactly the three knowledge tools',
+        KNOWLEDGE_TOOLS.every((n) => ktools.some((t) => t.name === n)) && ktools.length === tools.length + KNOWLEDGE_TOOLS.length, `${ktools.length} tools`);
+    check('neither the default list nor the documentation and build-artefact list carries them',
+        KNOWLEDGE_TOOLS.every((n) => !names.includes(n) && !fnames.has(n)));
+    // What the three tools add to every turn of a session that has them.
+    const KNOWLEDGE_TOOLS_BUDGET_BYTES = 2_000;
+    const knowledgeBytes = Buffer.byteLength(JSON.stringify(ktools)) - toolsBytes;
+    check(`the knowledge tools add at most ${KNOWLEDGE_TOOLS_BUDGET_BYTES} bytes to tools/list`,
+        knowledgeBytes > 0 && knowledgeBytes <= KNOWLEDGE_TOOLS_BUDGET_BYTES, `${knowledgeBytes} bytes`);
+    const ksearch = parseSse((await request(kport, 'POST', { 'mcp-session-id': ksid }, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'knowledge_search', arguments: { query: 'M302' } },
+    })).body);
+    const ksearchText = ksearch?.result?.content?.[0]?.text ?? '';
+    check('knowledge_search without an index fails with TOOL_DISABLED and names the setting',
+        ksearch?.result?.isError === true && /^\[TOOL_DISABLED\]/.test(ksearchText) && /knowledge\.indexPath/.test(ksearchText), ksearchText.split('\n')[0]);
+    await request(kport, 'DELETE', { 'mcp-session-id': ksid });
+    await withKnowledge.stop();
     fs.rmSync(docsDir, { recursive: true, force: true });
 
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

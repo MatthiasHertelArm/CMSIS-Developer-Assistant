@@ -173,6 +173,7 @@ and type **CMSIS Developer Assistant** to find them.
 | **Import Document for Current Target** | Import and attribute PDFs that are not supplied by a software pack. |
 | **Open User Documents Folder** | Open the folder containing imported target documentation. |
 | **Open Pack Docs Panel** | Inspect target documents, SVD peripherals, index state, and documentation tools. |
+| **Open Knowledge Browser** | Experimental. A panel over the knowledge index named by `cmsis-developer-assistant.knowledge.indexPath`: every unit with filters by type, domain and state and the search of `knowledge_search`; a unit's text, the files it ships and its frontmatter; its relations as a graph to walk; and an overview of the index with the routing units as places to start. Read-only. |
 | **Copy Recent Problems** | Copy recent errors and warnings, with their source and suggested next step. |
 
 ## Choose a workflow

@@ -117,7 +117,10 @@ the catalog by that flag; the installer gets the whole catalog every time.
 
 `cmsis-help` is itself generated (`src/utils/skillHelp.ts`) from the catalog,
 `package.json`, the `help` block of `scripts/skills.config.json` and the tool
-contract. The contract (`docs/agent-resources/tool-contract.md`, #50) is also
+contract — twice: `skills/cmsis-help/` names the slash commands and member
+skills, `skills/cmsis-help-knowledge/` the knowledge units that stand in for
+them, and `syncAllScopes()` installs the latter under the skill's name while
+`knowledge.replaceSkills` is on (`catalogForInstall()`). The contract (`docs/agent-resources/tool-contract.md`, #50) is also
 copied between marker comments into the hand-written skills of the extension,
 which the installer then copies out like any other file. See
 `skills/README.md`.

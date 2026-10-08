@@ -94,6 +94,13 @@ export interface SkillCatalog {
 
 export const SKILL_CATALOG_FILE = path.join('skills', 'catalog.json');
 
+/**
+ * Setting key under `cmsis-developer-assistant.`, experimental: the knowledge
+ * tools stand in for every skill but `cmsis-help`, so the installer puts in
+ * that one alone and removes the others it installed.
+ */
+export const SKILLS_REPLACED_SETTING = 'knowledge.replaceSkills';
+
 /** The extension's own skills, authored in this repository. */
 export function isBundledSkill(entry: SkillCatalogEntry): boolean {
     return entry.source === 'bundled';

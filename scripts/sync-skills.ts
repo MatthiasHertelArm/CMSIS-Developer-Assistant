@@ -55,7 +55,9 @@ import {
 } from '../src/utils/skillCatalog.js';
 import {
     HELP_SKILL_NAME,
+    HELP_SKILL_KNOWLEDGE_PATH,
     HelpSkillConfig,
+    HelpSkillMode,
     helpCatalogEntry,
     readPackageContributions,
     renderHelpOpenAiYaml,
@@ -473,12 +475,16 @@ function writeGenerated(
     // Rendered from the finished catalog plus package.json, so the list of
     // slash commands, VS Code commands and settings cannot drift from what
     // ships; src/test/skillCatalog.test.ts re-renders it and compares.
-    const helpDir = path.join(skillsDir, HELP_SKILL_NAME);
+    // Twice: the `knowledge` variant is what the installer copies under the
+    // skill's name while `knowledge.replaceSkills` is on.
     const contributions = readPackageContributions(readJson<unknown>(path.join(repoRoot, 'package.json')));
-    fs.rmSync(helpDir, { recursive: true, force: true });
-    fs.mkdirSync(path.join(helpDir, 'agents'), { recursive: true });
-    fs.writeFileSync(path.join(helpDir, 'SKILL.md'), renderHelpSkillMarkdown(catalog, contributions, config.help, contract), 'utf8');
-    fs.writeFileSync(path.join(helpDir, 'agents', 'openai.yaml'), renderHelpOpenAiYaml(config.help), 'utf8');
+    const variants: [string, HelpSkillMode][] = [[path.join(skillsDir, HELP_SKILL_NAME), 'skills'], [path.join(repoRoot, HELP_SKILL_KNOWLEDGE_PATH), 'knowledge']];
+    for (const [helpDir, mode] of variants) {
+        fs.rmSync(helpDir, { recursive: true, force: true });
+        fs.mkdirSync(path.join(helpDir, 'agents'), { recursive: true });
+        fs.writeFileSync(path.join(helpDir, 'SKILL.md'), renderHelpSkillMarkdown(catalog, contributions, config.help, contract, mode), 'utf8');
+        fs.writeFileSync(path.join(helpDir, 'agents', 'openai.yaml'), renderHelpOpenAiYaml(config.help), 'utf8');
+    }
 
     writeJson(catalogPath, catalog);
 

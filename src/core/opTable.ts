@@ -36,6 +36,7 @@ import type { IDebuggingHandler } from '../debuggingHandler';
 import type { SerialHandler } from '../serialHandler';
 import type { PackDocsHandler } from '../packDocsHandler';
 import type { BuildInfoHandler } from '../buildInfoHandler';
+import type { KnowledgeHandler } from '../knowledgeHandler';
 
 /**
  * Body caps on the control channel — a runaway stop, not a budget. Tool
@@ -127,8 +128,18 @@ export const PACKDOCS_BUILD_OPS = [
     'handleGetBuildDiagnostics',
 ] as const;
 
+/** Ops served by the knowledge handler (`KnowledgeHandler`); experimental. */
+export const KNOWLEDGE_OPS = [
+    'handleKnowledgeSearch',
+    'handleKnowledgeGet',
+    'handleKnowledgeExpand',
+] as const;
+
 /** Both pack-docs groups: one dispatch, one routing path, two enable gates. */
 export const PACKDOCS_OPS = [...PACKDOCS_DOC_OPS, ...PACKDOCS_BUILD_OPS] as const;
+
+/** Everything the pack-docs dispatch carries: the two groups above and the knowledge ops. */
+const PACKDOCS_DISPATCH_OPS = [...PACKDOCS_OPS, ...KNOWLEDGE_OPS] as const;
 
 /**
  * Ops between windows that are no tools: the control server answers them
@@ -148,14 +159,16 @@ export type DebugOpName = typeof DEBUG_OPS[number];
 export type SerialOpName = typeof SERIAL_OPS[number];
 export type PackDocsDocOpName = typeof PACKDOCS_DOC_OPS[number];
 export type PackDocsBuildOpName = typeof PACKDOCS_BUILD_OPS[number];
-export type PackDocsOpName = PackDocsDocOpName | PackDocsBuildOpName;
+export type KnowledgeOpName = typeof KNOWLEDGE_OPS[number];
+export type PackDocsOpName = PackDocsDocOpName | PackDocsBuildOpName | KnowledgeOpName;
 export type OpName = DebugOpName | SerialOpName | PackDocsOpName;
 export type InternalOpName = typeof INTERNAL_OPS[number];
 
 const DEBUG_OP_SET: ReadonlySet<string> = new Set(DEBUG_OPS);
 const SERIAL_OP_SET: ReadonlySet<string> = new Set(SERIAL_OPS);
 const PACKDOCS_DOC_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_DOC_OPS);
-const PACKDOCS_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_OPS);
+const PACKDOCS_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_DISPATCH_OPS);
+const KNOWLEDGE_OP_SET: ReadonlySet<string> = new Set(KNOWLEDGE_OPS);
 const INTERNAL_OP_SET: ReadonlySet<string> = new Set(INTERNAL_OPS);
 
 /** True when `op` is a name the control server is willing to dispatch. */
@@ -171,7 +184,12 @@ export function isPackDocsOp(op: string): op is PackDocsOpName {
     return PACKDOCS_OP_SET.has(op);
 }
 
-/** True for the documentation half of the pack-docs ops (else build artefacts). */
+/** True for a knowledge op, which the pack-docs dispatch carries too. */
+export function isKnowledgeOp(op: string): op is KnowledgeOpName {
+    return KNOWLEDGE_OP_SET.has(op);
+}
+
+/** True for the documentation ops (else build artefacts or knowledge). */
 export function isPackDocsDocOp(op: string): op is PackDocsDocOpName {
     return PACKDOCS_DOC_OP_SET.has(op);
 }
@@ -340,12 +358,16 @@ type _MissingPackDocsDocOps = Exclude<_HandleKeys<PackDocsHandler>, PackDocsDocO
 type _ExtraPackDocsDocOps = Exclude<PackDocsDocOpName, _HandleKeys<PackDocsHandler>>;
 type _MissingPackDocsBuildOps = Exclude<_HandleKeys<BuildInfoHandler>, PackDocsBuildOpName>;
 type _ExtraPackDocsBuildOps = Exclude<PackDocsBuildOpName, _HandleKeys<BuildInfoHandler>>;
+type _MissingKnowledgeOps = Exclude<_HandleKeys<KnowledgeHandler>, KnowledgeOpName>;
+type _ExtraKnowledgeOps = Exclude<KnowledgeOpName, _HandleKeys<KnowledgeHandler>>;
 
 const _debugOpsAreExhaustive: [_MissingDebugOps, _ExtraDebugOps] extends [never, never] ? true : never = true;
 const _serialOpsAreExhaustive: [_MissingSerialOps, _ExtraSerialOps] extends [never, never] ? true : never = true;
 const _packDocsDocOpsAreExhaustive: [_MissingPackDocsDocOps, _ExtraPackDocsDocOps] extends [never, never] ? true : never = true;
 const _packDocsBuildOpsAreExhaustive: [_MissingPackDocsBuildOps, _ExtraPackDocsBuildOps] extends [never, never] ? true : never = true;
+const _knowledgeOpsAreExhaustive: [_MissingKnowledgeOps, _ExtraKnowledgeOps] extends [never, never] ? true : never = true;
 void _debugOpsAreExhaustive;
 void _serialOpsAreExhaustive;
 void _packDocsDocOpsAreExhaustive;
 void _packDocsBuildOpsAreExhaustive;
+void _knowledgeOpsAreExhaustive;

@@ -110,6 +110,11 @@
         "category": "CMSIS Developer Assistant"
       },
       {
+        "command": "cmsis-developer-assistant.openKnowledgePanel",
+        "title": "Open Knowledge Browser",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
         "command": "cmsis-developer-assistant.copyRecentProblems",
         "title": "Copy Recent Problems",
         "category": "CMSIS Developer Assistant"
@@ -285,6 +290,39 @@
             "**/build*.log"
           ],
           "markdownDescription": "Workspace globs searched for build logs by `get_build_diagnostics` (newest first). After a failed build, `cmsis_action build` writes one into `out/cmsis-developer-assistant/build-diagnostic.log`.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.knowledge.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Experimental, local use** — offer the knowledge tools to AI agents: `knowledge_search`, `knowledge_get`, `knowledge_expand` over the knowledge index named by `knowledge.indexPath` (procedures, rules, and the causes and fixes of csolution, packchk and svdconv messages). A failed `cmsis_action build` then also names the unit of an error message the index knows. Off by default; no index ships with the extension. Read once at activation: changing it needs a window reload.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.knowledge.indexPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path of the base knowledge index (`knowledge.db`) the knowledge tools read: absolute, starting with `~`, or relative to the first workspace folder. Read with it, whatever the active target: the `knowledge.db` (or `knowledge/knowledge.db`) of every installed pack under the pack root or in `.Local/local_repository.pidx`, and `.cmsis/knowledge.db` of each workspace folder. All opened read-only; a rebuilt, added or removed file is picked up on the next call.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.knowledge.replaceSkills": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "**Experimental, local use** — let the knowledge tools stand in for every Agent Skill: the extension installs no skill, removes the skills it installed (also `cmsis-debug-live` and the other skills of its own), and its instructions name `get_debug_instructions` and the knowledge tools instead of a skill. Skills this extension did not install are left alone. The removal applies at once; the instructions after a window reload.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.knowledge.includeIncomplete": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Also return knowledge units whose text is still a placeholder, such as an error message without a recorded cause. Off leaves them out of `knowledge_search`; a build result never names them.",
           "tags": [
             "experimental"
           ]
