@@ -23,6 +23,7 @@
         "identify-cmsis-board-layer",
         "identify-cmsis-board-support",
         "identify-zephyr-board",
+        "start-cmsis-project",
         "start-zephyr-project"
       ],
       "invocable": true
@@ -36,7 +37,9 @@
       "path": "skills/add-board-layer",
       "displayName": "CMSIS: Add Board Layer",
       "shortDescription": "Add a board layer to an existing csolution by asking for the few open decisions, then build it",
-      "dependsOn": [],
+      "dependsOn": [
+        "cmsis-debugger-setup"
+      ],
       "invocable": true
     },
     {
@@ -77,7 +80,7 @@
     },
     {
       "name": "cmsis-bootstrap",
-      "description": "Get from an empty VS Code window (no folder open, no project on disk) to a CMSIS solution that builds, flashes and debugs: check the CMSIS extensions and the tools environment, choose the project folder, create the solution for the board or device with $start-cmsis-project or open an existing one with cmsis_action open_solution, wait for the CMSIS Solution extension to load it, build, wire the debugger and hand over to cmsis-debug-live. Use when the user wants to start a new CMSIS project for a board, when get_session_status says that no folder is open, or when cmsis_action answers NO_WORKSPACE or CMSIS_NO_SOLUTION. Not for extending an existing solution (cmsis-project) and not for debugging a running target (cmsis-debug-live).",
+      "description": "Get from an empty VS Code window (no folder open, no project on disk) or from a folder without a solution to a CMSIS solution that builds, flashes and debugs: check the CMSIS extensions, choose the project folder, open it so the Arm Tools Environment Manager fetches the tools, create the solution for the board or device with $start-cmsis-project (a minimal project that always works, or an example of the board's pack) or open an existing one with cmsis_action open_solution, build, wire the debugger and hand over to cmsis-debug-live. Use when the user wants to start a new CMSIS project for a board, when get_session_status says that no folder is open, or when cmsis_action answers NO_WORKSPACE or CMSIS_NO_SOLUTION. Not for extending an existing solution (cmsis-project) and not for debugging a running target (cmsis-debug-live).",
       "category": "project",
       "kind": "skill",
       "source": "bundled",
@@ -87,10 +90,14 @@
       "dependsOn": [
         "add-board-layer",
         "check-cmsis-environment",
+        "check-zephyr-environment",
         "cmsis-debugger-setup",
         "debugger-troubleshooting",
         "fvp-debug-setup",
-        "identify-cmsis-board-support"
+        "identify-cmsis-board-support",
+        "identify-zephyr-board",
+        "start-cmsis-project",
+        "start-zephyr-project"
       ],
       "invocable": true
     },
@@ -143,6 +150,24 @@
       "displayName": "CMSIS: Identify Zephyr Board",
       "shortDescription": "Resolve a physical board to a Zephyr target",
       "dependsOn": [],
+      "invocable": false
+    },
+    {
+      "name": "start-cmsis-project",
+      "description": "Create the first CMSIS solution for a board or device in a folder that has no *.csolution.yml yet: a minimal project (CMSIS CORE, the DFP's Device:Startup component, a bare main) that every device with a DFP can have, or an example or template of the board's pack when one exists; write the files, open the solution with cmsis_action open_solution and build with cmsis_action build, which fetches the packs. Use from cmsis-bootstrap or cmsis-project when a new project has to be started for a verified board, device and pack. Not for extending a solution that exists (add-cmsis-target) and not for Zephyr (start-zephyr-project).",
+      "category": "project",
+      "kind": "skill",
+      "source": "extension",
+      "path": "skills/start-cmsis-project",
+      "displayName": "CMSIS: Start Project",
+      "shortDescription": "Create the first csolution for a board or device: a minimal project, or an example or template of its pack",
+      "dependsOn": [
+        "add-board-layer",
+        "add-cmsis-target",
+        "check-cmsis-environment",
+        "cmsis-debugger-setup",
+        "identify-cmsis-board-support"
+      ],
       "invocable": false
     },
     {

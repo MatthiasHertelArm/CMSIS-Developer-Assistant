@@ -38,7 +38,7 @@ A VS Code window without a folder has nothing the CMSIS tools can act on. `get_s
 | ------- | ------------ | --------- |
 | The CMSIS extensions | Status line `Extensions: … not installed`; `[CMSIS_NO_SOLUTION]` with "(Arm.cmsis-csolution) is not installed". | Ask the user to install the Keil Studio Pack (`Arm.keil-studio-pack`: CMSIS Solution, CMSIS Debugger, Arm Tools Environment Manager) and to reload the window. |
 | A folder | `[NO_WORKSPACE]`; status line `Workspace: no folder is open`. | The project exists: `cmsis_action {action:'open_solution', path}`. It does not: create it first (below), then open it. |
-| A csolution | `[CMSIS_NO_SOLUTION]` with "contains no *.csolution.yml". | Create the solution with the skill `cmsis-bootstrap`, which hands over to `start-cmsis-project`: board or device, packs, an example or a minimal project, one build. |
+| A csolution | `[CMSIS_NO_SOLUTION]` with "contains no *.csolution.yml". | Create the solution with the skill `cmsis-bootstrap`, which hands over to `start-cmsis-project`: board or device, packs, a minimal project (CMSIS CORE, startup, `main`) or an example of the pack, written as files; `open_solution`, then one `cmsis_action build` fetches the packs. |
 | A loaded solution | `[CMSIS_NO_SOLUTION]` with "A solution file exists". | `cmsis_action {action:'open_solution', path:'<file>'}` activates it. After a window opens, the extension needs some seconds; `get_recent_problems` shows what it reported. |
 | The tools | `cmsis_action build` fails because cbuild, the compiler, CMake or Ninja is not found. | The folder needs a `vcpkg-configuration.json`. The Arm Tools Environment Manager fetches what it names when the folder opens; ask the user to answer its prompts. Do not install a compiler yourself. |
 | A debug configuration | `load_and_debug` starts no session, or `load` is refused because the task is not offered. | The target set needs a `debugger:` node; the CMSIS Solution extension then writes `.vscode/launch.json` and `tasks.json`. Skill `cmsis-debugger-setup`. |
@@ -57,7 +57,7 @@ Installing extensions, the licence and download prompts of the tools environment
 
 ### Shell commands during the bootstrap
 
-Only the ones a CMSIS skill step names: `csolution list boards`, `devices`, `examples`, `templates` and `debuggers`, `cpackget list` and `add`, and the two validation commands of `start-cmsis-project`. Once the folder is open in VS Code, build with `cmsis_action build`.
+Only the ones a CMSIS skill step names: `csolution list boards`, `devices`, `examples`, `templates` and `debuggers`, by absolute path, since the tools the Arm Tools Environment Manager activates are visible to VS Code's terminals, not to an agent's shell. The minimal project of `start-cmsis-project` needs none of them. Once the folder is open in VS Code, build with `cmsis_action build`, never `cbuild`.
 <!-- /topic -->
 
 <!-- topic: session | The five session states and the right next action for each, several VS Code windows, leaving the session clean -->

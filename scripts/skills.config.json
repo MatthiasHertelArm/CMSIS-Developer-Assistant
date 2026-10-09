@@ -27,6 +27,11 @@
       "hidden": true
     },
     {
+      "name": "start-cmsis-project",
+      "category": "project",
+      "hidden": true
+    },
+    {
       "name": "fvp-debug-setup",
       "category": "debug",
       "hidden": true
@@ -60,7 +65,7 @@
     "toolGroups": [
       {
         "name": "CMSIS Solution actions",
-        "summary": "`cmsis_action` — build, load, erase, load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons), status (the job in flight) and open_solution (open the folder of a csolution in a VS Code window and activate it; works from an empty window); `flash` — program with the CMSIS Debugger's pyOCD, with a synchronous result."
+        "summary": "`cmsis_action` — build, load, erase, run (the GDB server alone), load_and_run, load_and_debug, attach, detach, stop_run (the CMSIS Solution panel buttons), status (the job in flight) and open_solution (open the folder of a csolution in a VS Code window and activate it; works from an empty window); `flash` — program with the CMSIS Debugger's pyOCD, with a synchronous result."
       },
       {
         "name": "Run control",
@@ -98,7 +103,14 @@
     "settings": {
       "agentRules.install": "`ask`: the setup offers to add the tool rules to your agents' rule files, previewed, and keeps blocks written earlier current. `never`: no rule file is touched.",
       "packDocs.enabled": "Experimental. Offer the documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) to agents. On by default; off drops the five tools from the tool list; PDFs are indexed with the bundled pdf.js, nothing to install; window reload.",
-      "buildInfo.enabled": "Experimental. Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. On by default; off drops the five tools from the tool list; window reload."
+      "buildInfo.enabled": "Experimental. Offer the build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, get_build_diagnostics) to agents. On by default; off drops the five tools from the tool list; window reload.",
+      "serverPort": "Port of the MCP server (default 3001); window reload after a change.",
+      "timeoutInSeconds": "Time limit of a debugging operation (default 180 s); a wait for a stop or a session never exceeds 60 s.",
+      "redactSecrets": "Withhold variable and expression values that look like credentials (default on); raw memory reads are never redacted.",
+      "build.diagnosticRerun": "After a failed build, re-run cbuild once with --log so the cmsis_action result shows the error lines (default on).",
+      "serial.enabled": "Offer the serial_* tools (default on); window reload.",
+      "serial.idleCloseSeconds": "Release a serial port an agent opened after this many seconds without a serial call (default 300; 0 is off).",
+      "telemetry.jsonlPath": "Append one JSON line per tool call to this file; empty is off."
     }
   },
   "categories": [
@@ -110,7 +122,7 @@
       "shortDescription": "Create, extend or retarget CMSIS csolution and Zephyr projects",
       "description": "Set up and extend CMSIS csolution projects and Zephyr-based CMSIS solutions: verify the CMSIS-Toolbox, CMake, Ninja and compiler environment or a Zephyr west workspace; resolve a fuzzy board or device name to its exact CMSIS identity and BSP/DFP, or to its Zephyr board target; add a verified target to an existing *.csolution.yml; find compatible packaged board layers; or create an initial west-integrated CMSIS Zephyr Blinky solution. Use when the user wants to create, extend or retarget a csolution, check their build tools, or identify board, device and pack identifiers; this skill routes to the specialised project skills installed next to it. Not for debugging a running target (cmsis-debug-live) or for PDSC authoring (cmsis-pack).",
       "workflow": [
-        "No folder open or no solution yet: `/cmsis-bootstrap` first; it creates or opens the project and comes back here.",
+        "No folder open or no solution yet: `/cmsis-bootstrap` first; it opens or creates the project folder and hands over to `$start-cmsis-project`, which writes a minimal project (CMSIS CORE, the DFP's startup, a bare `main`; Arm Compiler 6 unless the user prefers another compiler) or copies an example of the board's pack, then builds it with `cmsis_action build`.",
         "`$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.",
         "`$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.",
         "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.",

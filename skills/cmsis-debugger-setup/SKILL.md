@@ -53,6 +53,11 @@ CMSIS-Toolbox lists:
 csolution list debuggers
 ```
 
+This step names the command, so it is allowed; it needs the toolbox on your PATH,
+which the Arm Tools Environment Manager gives VS Code's terminals, not your shell.
+When `csolution` is not found, do not search for it: the table below is the
+fallback, it is the toolbox's own `debug-adapters.yml`.
+
 | Probe | Adapter name |
 |---|---|
 | CMSIS-DAP, DAPLink, on-board CMSIS-DAP | `CMSIS-DAP@pyOCD` |
@@ -98,9 +103,12 @@ them by hand.
 1. `cmsis_action { action: 'build' }`. The build also refreshes
    `out/<solution>+<target>.cbuild-run.yml`.
 2. Check the cbuild-run file: its `debugger:` block names the adapter.
-3. Check `.vscode/launch.json`: a configuration of `"type": "gdbtarget"` named after
-   the adapter, such as `CMSIS_DAP@pyOCD (launch)`, `STLink@pyOCD (launch)` or
-   `JLink (launch)`, and `.vscode/tasks.json` with the `CMSIS Load` task.
+3. Check `.vscode/launch.json`: a configuration of `"type": "gdbtarget"` whose
+   `cmsis` node says `"updateConfiguration": "auto"`, named after the adapter's
+   template (`CMSIS_DAP@pyOCD (launch)`, `STLink@pyOCD (launch)`,
+   `ULINKpro@pyOCD (launch)` for ULINKplus and ULINKpro, `JLink (launch)`,
+   `Arm-FVP@GDB (launch)`; a multi-core device prefixes the processor name), and
+   `.vscode/tasks.json` with the `CMSIS Load` task. Do not look for one exact name.
 4. When the files did not change: ask the user to open **Manage Solution Settings**
    in the CMSIS view and to confirm the debugger there, or to check that
    `cmsis-csolution.autoDebugLaunch` is on. A launch configuration whose `cmsis`
@@ -113,13 +121,17 @@ Ask the user to connect the board. Then, in this order:
 
 1. `serial_list_ports`: the probe's virtual COM port is a sign that the board is
    connected. `serial_open` it before anything runs, so that no output is lost.
+   The port is yours until `serial_close` (or 300 s idle): the user's Serial
+   Monitor cannot open it meanwhile, say so.
 2. `add_breakpoint` at the entry of the application code, not only at `main`.
 3. `cmsis_action { action: 'load_and_debug' }`. Never `start_debugging` for a CMSIS
    target: it skips the flash download.
 4. `continue_execution` and `wait_for_stop` to the breakpoint; `get_call_stack`,
    `get_variables_values` and one `read_peripheral_register` to show that stepping
    and reads work.
-5. `clear_all_breakpoints`, let it run, and `serial_read` the application's output.
+5. `clear_all_breakpoints`, let it run, and `serial_read { waitMs: 5000 }` for the
+   application's output; without `waitMs` the call returns at once with what is
+   buffered.
 6. `stop_debugging`, `serial_close`.
 
 Things that otherwise cost an hour each:

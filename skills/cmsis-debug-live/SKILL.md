@@ -176,7 +176,7 @@ never throws.
 
 | State | Correct next action |
 |-------|---------------------|
-| `no-session` | `cmsis_action load_and_debug` for CMSIS projects — builds, flashes, attaches. `start_debugging` only for non-CMSIS targets, or to attach without reflashing. |
+| `no-session` | `cmsis_action load_and_debug` for CMSIS projects — builds, flashes, attaches. `cmsis_action run` then `attach` to look at a target without reflashing; `start_debugging` only for non-CMSIS targets. |
 | `initializing` | Wait, ask again. Do **not** issue a second start. |
 | `stopped` | Inspect freely. |
 | `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. |
@@ -322,7 +322,9 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
 
 ## When it faulted
 
-`diagnose_fault` does the whole first pass in one call: the decoded fault
+A fault does not halt the core by itself: the handler spins. `get_session_status`
+first; when the state is `running`, `pause_execution`, which lands in the handler.
+Then `diagnose_fault` does the whole first pass in one call: the decoded fault
 registers, the stacked exception frame (the PC of the faulting instruction and
 its caller — on a stacked exception the interesting PC is in the frame, not in
 the current registers), the top frames, the faulting address resolved against

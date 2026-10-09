@@ -26,8 +26,8 @@ Only the user can lift a rule, by asking for the specific command.
 Goal: produce a **working board layer** for a new target in an existing
 csolution — `Board.clayer.yml` plus whatever startup / stdio / memory files it
 needs — and wire it in as a target-type, ending on a green build. Real-hardware
-bring-up (probe, serial marker, breakpoints) is the `$csolution-retarget` §6
-flow; hand off to it once the layer builds.
+bring-up (probe, serial marker, breakpoints) belongs to `$cmsis-debugger-setup`
+and then `cmsis-debug-live`; hand off once the layer builds.
 
 The method is an **interview**: read everything the repo already answers, ask
 the user only the handful of decisions it cannot, then generate. Never
@@ -65,7 +65,8 @@ Gather these first — each one you find is a question you do NOT ask:
   (`Board-Layer`, `AI-Layer`, …), `target-set`/`debugger`, `packs`, and any
   solution-level node that cannot fork per target (`mlops:`, a generated layer,
   a single `.vscode`). An un-forkable node means **replace-on-a-branch**, not a
-  new target-type (see `$csolution-retarget` §0).
+  new target-type: the new board replaces the old one in a git branch of the
+  solution, and the layer is written for that branch.
 - An existing board layer in the repo to mirror, and its file set — copy its
   shape rather than inventing one.
 - If the user has already named the board, resolve its identity now (§2) so the
@@ -269,9 +270,10 @@ that terminal's toolbox (`csolution -V` shows whether it knows `mlops:`).
 
 Show the user the layer file set, the csolution diff, and the green build
 summary. Then state the finish line honestly: a build is not a bring-up.
-If a probe + VCP are attached, continue into `$csolution-retarget` §6
-(serial_open → breakpoints → `cmsis_action load_and_debug` → success marker →
-verify the config registers live). If no hardware is attached, say so — the
+If a probe + VCP are attached, continue with `$cmsis-debugger-setup` (the
+`debugger:` node, launch.json, `serial_open` → breakpoints →
+`cmsis_action load_and_debug` → success marker) and `cmsis-debug-live` to verify
+the config registers live. If no hardware is attached, say so — the
 layer is validated to *compile and link*, not to run — and commit the layer
 under `board/<BoardName>/` (generator output included), the csolution edit and
 the regenerated `.vscode` files, noting the new target in the README.

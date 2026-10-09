@@ -382,6 +382,13 @@ function writeGenerated(
             fail(`bundled skill ${bundled.name} has no valid frontmatter`);
         }
         const metadata = readOpenAiMetadata(skillDir);
+        // A hand-over to a skill that is not shipped is a dead end for the agent
+        // (2.5.15 shipped two). Every `$name` must be an upstream, bundled or router skill.
+        const unknown = extractSkillReferences(markdown)
+            .filter(ref => ref !== bundled.name && !knownNames.has(ref) && /^[a-z]+(?:-[a-z0-9]+)+$/.test(ref));
+        if (unknown.length > 0) {
+            fail(`skill ${bundled.name} refers to skill(s) that are not shipped: ${unknown.join(', ')}`);
+        }
         if (!bundled.hidden) {
             return {
                 name: bundled.name,

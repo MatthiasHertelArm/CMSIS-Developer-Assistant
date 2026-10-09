@@ -65,8 +65,10 @@ gdbserver exited with code 254
   commands only look at the host and are allowed:
 
   ```sh
-  lsof -nP -iTCP:3333 -sTCP:LISTEN
+  lsof -nP -iTCP:3333 -sTCP:LISTEN            # macOS, Linux
   ps -ww -o pid,etime,command -p <PID>
+  netstat -ano | findstr :3333               # Windows
+  tasklist /FI "PID eq <PID>"
   ```
 
   Identify the process before anything is stopped: it may be a session the user
@@ -102,9 +104,8 @@ image. The symptoms are then arbitrary: halted at a reset vector, a garbage PC,
 
 `Failed to power up DAP` is not recoverable in software. The debug port answers while
 the domain behind it is off, so connecting under reset or at a lower clock fails too.
-Ask the user to unplug and replug power; the reset button is often not enough. When
-the skill `board-power-cycle` is installed and the board sits on a switchable hub, it
-can do that.
+Ask the user to unplug and replug power; the reset button is often not enough. A
+user-installed skill for a switchable USB hub, when there is one, can do that.
 
 A hung bus transaction can take the debug port down with it. If the failure started
 right after the firmware stalled a bus master (a DMA or an NPU waiting for an
@@ -169,8 +170,8 @@ initialisation.
 - Verify instead of assuming: `get_section_layout` gives the load address of the RW
   section; `read_memory` there must show the initial values, not `0xFF`.
 - When the image has to be programmed with a vendor tool, program the LOAD segment by
-  its physical address. `arm-none-eabi-readelf -l <image>` lists offset, file size
-  and physical address of each segment; reading the ELF on the host is allowed.
+  its physical address: `get_section_layout` lists the sections with their load
+  addresses, which is what the vendor tool needs.
 
 ## 7. Programming is implausibly slow
 
@@ -201,8 +202,8 @@ These need J-Link's own tools. Explain, and let the user run them.
 - **A malformed `JLinkDevices.xml` is rejected in silence.** The only sign is
   `The selected device "X" is unknown to this software version` and a fallback to a
   generic core. Validating the XML on the host is allowed:
-  `xmllint --noout JLinkDevices.xml`. A double hyphen inside an XML comment is
-  illegal and easy to introduce.
+  `xmllint --noout JLinkDevices.xml` (macOS, Linux; on Windows read the file). A
+  double hyphen inside an XML comment is illegal and easy to introduce.
 - J-Link Commander has no command-line option for the device file's path. It is a
   DLL setting, and it names the file, not the directory:
   `exec JLinkDevicesXMLPath = /abs/path/to/JLinkDevices.xml`.
@@ -238,8 +239,9 @@ These need J-Link's own tools. Explain, and let the user run them.
 - If a pack declares an `<algorithm>` without a matching `<memory>` region, pyOCD
   falls back to the architectural memory map, treats the window as device memory,
   and fails with a memory transfer fault on a raw write. That is a defect of the
-  pack: report it with the device and the region, and see `cmsis-pack` for the
-  debug description.
+  pack: report it with the device and the region to the pack's vendor; the pack
+  authoring skills of cmsis-skills (category pack) are not installed by this
+  extension.
 
 ## When you are through
 

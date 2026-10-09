@@ -96,8 +96,8 @@ try/catch so one failure does not abort the rest.
 (`scripts/sync-skills.ts`) and shipped in the VSIX. It lists the extension's
 own entry points `cmsis-debug-live`, `add-board-layer`, `cmsis-bootstrap`,
 `cmsis-pack-docs` and `cmsis-help` (source `bundled`), its hidden skills
-`cmsis-debugger-setup`, `fvp-debug-setup` and `debugger-troubleshooting`
-(source `extension`), the Open-CMSIS-Pack/cmsis-skills skills of the
+`start-cmsis-project`, `cmsis-debugger-setup`, `fvp-debug-setup` and
+`debugger-troubleshooting` (source `extension`), the Open-CMSIS-Pack/cmsis-skills skills of the
 categories `scripts/skills.config.json` names in `upstreamCategories`
 (`project` and `devops`; vendored under `skills/cmsis-skills/` at the commit
 pinned in `skills/cmsis-skills.lock.json`), and one generated *router* skill

@@ -21,11 +21,12 @@ prerequisites, steps and guardrails.
 | Find compatible packaged CMSIS board layers | `$identify-cmsis-board-layer` |
 | Resolve one board or device and find its BSP or DFP | `$identify-cmsis-board-support` |
 | Resolve a physical board to a Zephyr target | `$identify-zephyr-board` |
+| Create the first csolution for a board or device: a minimal project, or an example or template of its pack | `$start-cmsis-project` |
 | Create a CMSIS solution for a Zephyr board | `$start-zephyr-project` |
 
 ## Typical workflow
 
-1. No folder open or no solution yet: `/cmsis-bootstrap` first; it creates or opens the project and comes back here.
+1. No folder open or no solution yet: `/cmsis-bootstrap` first; it opens or creates the project folder and hands over to `$start-cmsis-project`, which writes a minimal project (CMSIS CORE, the DFP's startup, a bare `main`; Arm Compiler 6 unless the user prefers another compiler) or copies an example of the board's pack, then builds it with `cmsis_action build`.
 2. `$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.
 3. `$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.
 4. `$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.
@@ -50,6 +51,7 @@ prerequisites, steps and guardrails.
 - `$identify-cmsis-board-layer` — Identify packaged CMSIS board layers compatible with an existing solution target and its required connections.
 - `$identify-cmsis-board-support` — Resolve a supplied board or device to exactly one verified CMSIS identity, identify its BSP or DFP, and ask the user when multiple candidates remain.
 - `$identify-zephyr-board` — Resolve a user-supplied physical board to its exact Zephyr board target and fitted MCU or SoC using the installed west board catalog.
+- `$start-cmsis-project` — Create the first CMSIS solution for a board or device in a folder that has no *.csolution.yml yet: a minimal project (CMSIS CORE, the DFP's Device:Startup component, a bare main) that every device with a DFP can have, or an example or template of the board's pack when one exists; write the files, open the solution with cmsis_action open_solution and build with cmsis_action build, which fetches the packs.
 - `$start-zephyr-project` — Create an initial CMSIS Zephyr Blinky solution for a board already supported by Zephyr.
 
 Need the full list of CMSIS slash commands, VS Code commands, MCP tools and settings?

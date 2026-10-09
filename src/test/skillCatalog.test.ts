@@ -133,6 +133,7 @@ suite('Agent skill catalog', () => {
         const own = catalog().skills.filter(entry => entry.source === 'extension');
         assert.deepStrictEqual(own.map(entry => [entry.name, entry.category, entry.path]), [
             ['cmsis-debugger-setup', 'project', 'skills/cmsis-debugger-setup'],
+            ['start-cmsis-project', 'project', 'skills/start-cmsis-project'],
             ['debugger-troubleshooting', 'debug', 'skills/debugger-troubleshooting'],
             ['fvp-debug-setup', 'debug', 'skills/fvp-debug-setup'],
         ]);
@@ -173,13 +174,18 @@ suite('Agent skill catalog', () => {
         }
     });
 
-    test('the $name references in each vendored SKILL.md are recorded as dependencies', () => {
+    test('the $name references in each shipped SKILL.md are recorded as dependencies, and every one is shipped', () => {
         const names = new Set(catalog().skills.map(entry => entry.name));
-        for (const entry of catalog().skills.filter(e => e.source === 'cmsis-skills')) {
+        const skillName = /^[a-z]+(?:-[a-z0-9]+)+$/;
+        for (const entry of catalog().skills.filter(e => e.kind === 'skill' && e.name !== HELP_SKILL_NAME)) {
             const markdown = fs.readFileSync(path.join(repoRoot, entry.path, 'SKILL.md'), 'utf8');
             const expected = extractSkillReferences(markdown).filter(ref => names.has(ref) && ref !== entry.name);
             assert.deepStrictEqual([...entry.dependsOn].sort(), expected,
                 `${entry.name}: dependsOn is out of date — run \`npm run skills:sync\``);
+            // A hand-over to a skill that is not shipped is a dead end for the agent: 2.5.15
+            // shipped $start-cmsis-project and $csolution-retarget that way.
+            const unresolved = extractSkillReferences(markdown).filter(ref => !names.has(ref) && ref !== entry.name && skillName.test(ref));
+            assert.deepStrictEqual(unresolved, [], `${entry.name}: refers to skill(s) that are not shipped`);
         }
     });
 
