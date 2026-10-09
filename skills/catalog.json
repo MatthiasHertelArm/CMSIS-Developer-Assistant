@@ -34,6 +34,8 @@
       "kind": "skill",
       "source": "bundled",
       "path": "skills/add-board-layer",
+      "displayName": "CMSIS: Add Board Layer",
+      "shortDescription": "Add a board layer to an existing csolution by asking for the few open decisions, then build it",
       "dependsOn": [],
       "invocable": true
     },
@@ -162,6 +164,8 @@
       "kind": "skill",
       "source": "bundled",
       "path": "skills/cmsis-pack-docs",
+      "displayName": "CMSIS: Pack Documentation",
+      "shortDescription": "Look up registers, peripherals, errata and board facts in the target's manuals, with page citations",
       "dependsOn": [],
       "invocable": true
     },
@@ -172,6 +176,8 @@
       "kind": "skill",
       "source": "bundled",
       "path": "skills/cmsis-debug-live",
+      "displayName": "CMSIS: Live Debugging",
+      "shortDescription": "Investigate a firmware runtime bug on a live Cortex-M debug session: faults, hangs, wrong values, silent peripherals",
       "dependsOn": [
         "cmsis-pack-docs",
         "debugger-troubleshooting"

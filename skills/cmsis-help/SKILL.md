@@ -36,10 +36,10 @@ extension's output channel says why, and running the command again repeats the i
 | Command | What it does |
 |---|---|
 | `/cmsis-project` | Create, extend or retarget CMSIS csolution and Zephyr projects — one command for the whole category; its 8 member skills are listed below |
-| `/add-board-layer` | Add a board layer to an existing CMSIS csolution by interviewing the user for the few facts that cannot be read from the repo — board/device, layer strategy, debugger, STDIO transport, memory — then generating Board.clayer.yml and its startup / retarget-stdio / regions / device-header files (reusing the BSP layer when it fits, running the DFP's configuration generator when startup only comes from it, or a minimal bare-metal layer otherwise) and wiring the target-type into the solution. |
+| `/add-board-layer` | Add a board layer to an existing csolution by asking for the few open decisions, then build it |
 | `/cmsis-bootstrap` | Go from an empty VS Code window to a CMSIS solution that builds and debugs |
-| `/cmsis-pack-docs` | Look things up in the documentation of the current CMSIS csolution target through the CMSIS Developer Assistant documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) — the reference manual, datasheet, errata and board manual the packs ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and ETM specifications, core TRM), and the datasheets of third-party parts (sensors, ADCs, codecs) the user added or fetch_doc downloaded. |
-| `/cmsis-debug-live` | Drive a live Arm Cortex-M debug session through the CMSIS Debugger to investigate firmware runtime bugs — HardFaults and other faults, crashes, hangs, failing tests, peripherals that do not respond, wrong/null values that are right in simulation but wrong on hardware, unexpected output, code that never reaches the line you expect, timing that does not close. |
+| `/cmsis-pack-docs` | Look up registers, peripherals, errata and board facts in the target's manuals, with page citations |
+| `/cmsis-debug-live` | Investigate a firmware runtime bug on a live Cortex-M debug session: faults, hangs, wrong values, silent peripherals |
 | `/create-csolution-github-action` | Create build or FVP-test CI for a CMSIS solution |
 | `/cmsis-help` | This list. |
 
