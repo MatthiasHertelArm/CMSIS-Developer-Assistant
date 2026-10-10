@@ -91,15 +91,15 @@ The session-status output includes a hint for each state. If state is `running` 
 - Read program counter: `$pc`
 - Read stack pointer: `$sp`
 - Read link register: `$lr`
-- Disassemble around PC: `-exec disassemble $pc-16,$pc+16`
-- Show exception frame: `-exec x/8xw $sp` (R0,R1,R2,R3,R12,LR,PC,xPSR)
+- Exception frame: `read_memory` at `$sp` (from `read_core_registers`), 32 bytes: R0,R1,R2,R3,R12,LR,PC,xPSR; `diagnose_fault` decodes it
+- Disassembly around PC: `evaluate_expression` cannot run GDB's `-exec` commands; `lookup_symbol` names the function at the PC
 
 ### Multi-Core Debugging (Alif AppKit)
 
 - The Alif AppKit has dual Cortex-M55 cores (HP + HE)
 - Each core gets a separate debug session
-- Use VS Code's debug session picker to switch between cores
-- The active tools operate on whichever session is currently selected
+- The tools act on the active session; `get_session_status` names it, and the user switches cores in VS Code's debug session picker
+- With several VS Code windows, `list_debug_windows` and `select_debug_window` choose the window, not the core
 
 ## Fault Analysis Quick Reference
 

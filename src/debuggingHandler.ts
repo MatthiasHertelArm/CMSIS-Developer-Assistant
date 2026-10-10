@@ -124,7 +124,7 @@ interface PeripheralLookup { name?: string; address?: string; filter?: string; s
 interface RegisterLookup { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }
 interface StackRequest { threadId?: number; levels?: number; timeoutMs?: number }
 interface FrameValuesRequest { frameId: number; scope?: VariableScope; variableNames?: string[]; timeoutMs?: number }
-interface CmsisRequest { action: CmsisAction; target?: string; timeoutMs?: number; path?: string }
+interface CmsisRequest { action: CmsisAction; target?: string; timeoutMs?: number; path?: string; client?: string }
 interface FlashRequest { cbuildRunFile?: string; timeoutMs?: number }
 interface ProblemsRequest { sinceSeq?: number; sources?: ProblemSource[]; minSeverity?: ProblemSeverity; limit?: number }
 
@@ -1729,7 +1729,7 @@ export class DebuggingHandler
             host: this.host(),
             awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
             renderFullState: (state) => this.fullState(state),
-        }, args.action, args.target, waitMs, args.path), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
+        }, args.action, args.target, waitMs, args.path, args.client), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
         return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();
     }
 

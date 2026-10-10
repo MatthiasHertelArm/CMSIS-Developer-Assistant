@@ -83,13 +83,15 @@ interface CategoryConfig {
 }
 
 interface SkillsConfig {
+    /** The upstream categories that are vendored and installed; the others stay upstream. */
+    upstreamCategories: SkillCategory[];
     /**
      * The extension's own skills. `generated: true` marks one this script
-     * writes itself (the help skill). `optional: true` marks one that is not
-     * always installed: it is offered in the picker like a pack skill, and is
-     * a member of its category's router when that category has one.
+     * writes itself (the help skill). `hidden: true` marks one installed with
+     * `user-invocable: false`: a member of its category's router when that
+     * category has one, else a hand-over target of another skill.
      */
-    bundled: { name: string; category: SkillCategory; generated?: boolean; optional?: boolean }[];
+    bundled: { name: string; category: SkillCategory; generated?: boolean; hidden?: boolean }[];
     help: HelpSkillConfig;
     categories: CategoryConfig[];
 }
@@ -112,8 +114,7 @@ interface RouterMember {
 }
 
 const MAX_DESCRIPTION_LENGTH = 1024;
-const SETTING_ID = 'cmsis-developer-assistant.installedSkills';
-const COMMAND_TITLE = 'CMSIS Developer Assistant: Select Agent Skills';
+const COMMAND_TITLE = 'CMSIS Developer Assistant: Configure Agent';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -171,7 +172,8 @@ function fetchUpstream(lock: SkillLock, sha: string): string {
     return scratch;
 }
 
-function collectUpstreamSkills(sourceRoot: string): UpstreamSkill[] {
+/** The upstream skills of the configured categories; every other upstream directory is named and left where it is. */
+function collectUpstreamSkills(sourceRoot: string, included: readonly SkillCategory[]): UpstreamSkill[] {
     if (!fs.existsSync(sourceRoot)) {
         fail(`source path ${sourceRoot} does not exist in the fetched tree`);
     }
@@ -181,8 +183,9 @@ function collectUpstreamSkills(sourceRoot: string): UpstreamSkill[] {
             continue;
         }
         const category = categoryEntry.name as SkillCategory;
-        if (!SKILL_CATEGORY_ORDER.includes(category)) {
-            fail(`upstream category "${category}" is not one of ${SKILL_CATEGORY_ORDER.join(', ')} — extend SkillCategory first`);
+        if (!included.includes(category)) {
+            console.log(`  leaving upstream ${categoryEntry.name}/ out: not in upstreamCategories`);
+            continue;
         }
         const categoryDir = path.join(sourceRoot, category);
         for (const skillEntry of fs.readdirSync(categoryDir, { withFileTypes: true })) {
@@ -255,8 +258,7 @@ function routerMarkdown(category: CategoryConfig, members: RouterMember[], allDe
         '- Honour its *Prerequisites* — if it names another `$skill`, run that one first — and apply',
         '  its *Guardrails*. Do not merge, reorder or paraphrase steps across member skills.',
         '- If `../<name>/SKILL.md` is missing, say so instead of improvising: the skill was not',
-        `  installed. The user can add it with **${COMMAND_TITLE}** in VS Code or by editing the`,
-        `  \`${SETTING_ID}\` setting.`,
+        `  installed. The user can install the skills again with **${COMMAND_TITLE}** in VS Code.`,
         '',
         '## Member skills',
         '',
@@ -289,7 +291,18 @@ function firstSentence(text: string): string {
 
 /** The config checks that do not depend on where the upstream skills come from. */
 function validateConfig(config: SkillsConfig): void {
+    if (!Array.isArray(config.upstreamCategories) || config.upstreamCategories.length === 0) {
+        fail('scripts/skills.config.json must name the vendored upstream categories under "upstreamCategories"');
+    }
+    for (const category of config.upstreamCategories) {
+        if (!SKILL_CATEGORY_ORDER.includes(category)) {
+            fail(`upstreamCategories names "${category}", which is not one of ${SKILL_CATEGORY_ORDER.join(', ')} — extend SkillCategory first`);
+        }
+    }
     for (const category of config.categories) {
+        if (!config.upstreamCategories.includes(category.id)) {
+            fail(`router ${category.router} is configured for category "${category.id}", which upstreamCategories does not include`);
+        }
         if (category.description.length > MAX_DESCRIPTION_LENGTH) {
             fail(`router ${category.router} description is ${category.description.length} chars; the Agent Skills limit is ${MAX_DESCRIPTION_LENGTH}`);
         }
@@ -345,17 +358,17 @@ function writeGenerated(
     contract: ToolContract,
 ): void {
     // --- routers ------------------------------------------------------------
-    // A router comes from a `categories` entry of the config; a category with
-    // skills but no entry gets none, and the catalog test then asks for one.
+    // A router comes from a `categories` entry of the config. The skills of a
+    // category without one are installed as slash commands of their own.
     const configured = new Set(config.categories.map(category => category.id));
     for (const category of SKILL_CATEGORY_ORDER) {
         const count = upstreamEntries.filter(entry => entry.category === category).length;
         if (count > 0 && !configured.has(category)) {
-            console.warn(`  category ${category} has ${count} upstream skill(s) but no router in scripts/skills.config.json; add one`);
+            console.log(`  category ${category}: ${count} upstream skill(s), no router; installed as slash commands`);
         }
     }
     // --- the extension's own skills ------------------------------------------
-    // Read first: the optional ones are router members like the upstream skills.
+    // Read first: the hidden ones are router members like the upstream skills.
     const knownNames = new Set<string>([...upstreamEntries.map(entry => entry.name), ...reservedNames(config)]);
     const bundledEntries: SkillCatalogEntry[] = config.bundled.map(bundled => {
         if (bundled.generated) {
@@ -369,7 +382,14 @@ function writeGenerated(
             fail(`bundled skill ${bundled.name} has no valid frontmatter`);
         }
         const metadata = readOpenAiMetadata(skillDir);
-        if (!bundled.optional) {
+        // A hand-over to a skill that is not shipped is a dead end for the agent
+        // (2.5.15 shipped two). Every `$name` must be an upstream, bundled or router skill.
+        const unknown = extractSkillReferences(markdown)
+            .filter(ref => ref !== bundled.name && !knownNames.has(ref) && /^[a-z]+(?:-[a-z0-9]+)+$/.test(ref));
+        if (unknown.length > 0) {
+            fail(`skill ${bundled.name} refers to skill(s) that are not shipped: ${unknown.join(', ')}`);
+        }
+        if (!bundled.hidden) {
             return {
                 name: bundled.name,
                 description: frontmatter.description,
@@ -379,7 +399,8 @@ function writeGenerated(
                 path: `skills/${bundled.name}`,
                 ...(metadata.displayName ? { displayName: metadata.displayName } : {}),
                 ...(metadata.shortDescription ? { shortDescription: metadata.shortDescription } : {}),
-                dependsOn: [],
+                dependsOn: extractSkillReferences(markdown).filter(ref => ref !== bundled.name && knownNames.has(ref)),
+                invocable: true,
             };
         }
         if (frontmatter.description.length > MAX_DESCRIPTION_LENGTH) {
@@ -395,14 +416,15 @@ function writeGenerated(
             ...(metadata.displayName ? { displayName: metadata.displayName } : {}),
             ...(metadata.shortDescription ? { shortDescription: metadata.shortDescription } : {}),
             dependsOn: extractSkillReferences(markdown).filter(ref => ref !== bundled.name && knownNames.has(ref)),
+            invocable: false,
         };
     });
-    const optionalEntries = bundledEntries.filter(entry => entry.source === 'extension');
+    const hiddenEntries = bundledEntries.filter(entry => entry.source === 'extension');
 
-    const allDescriptions = new Map([...upstreamEntries, ...optionalEntries].map(entry => [entry.name, entry.description]));
+    const allDescriptions = new Map([...upstreamEntries, ...hiddenEntries].map(entry => [entry.name, entry.description]));
     const routerEntries: SkillCatalogEntry[] = [];
     for (const category of config.categories) {
-        const members = [...upstreamEntries, ...optionalEntries]
+        const members = [...upstreamEntries, ...hiddenEntries]
             .filter(entry => entry.category === category.id)
             .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         const routerDir = path.join(skillsDir, category.router);
@@ -425,11 +447,15 @@ function writeGenerated(
             displayName: category.displayName,
             shortDescription: category.shortDescription,
             dependsOn: members.map(member => member.name),
+            invocable: true,
         });
     }
 
     // --- catalog -----------------------------------------------------------
-    const all = [...routerEntries, ...bundledEntries, ...upstreamEntries];
+    // An upstream skill is a slash command of its own only where its category has no router.
+    const routed = new Set(routerEntries.map(entry => entry.category));
+    const placedUpstream = upstreamEntries.map(entry => ({ ...entry, invocable: !routed.has(entry.category) }));
+    const all = [...routerEntries, ...bundledEntries, ...placedUpstream];
     all.sort((a, b) => {
         const categoryDelta = SKILL_CATEGORY_ORDER.indexOf(a.category) - SKILL_CATEGORY_ORDER.indexOf(b.category);
         if (categoryDelta !== 0) {
@@ -474,8 +500,9 @@ function writeGenerated(
         }
     }
 
-    console.log(`Catalog: ${routerEntries.length} routers, ${bundledEntries.length - optionalEntries.length} bundled (incl. ${HELP_SKILL_NAME}), `
-        + `${optionalEntries.length} selectable extension skills, ${upstreamEntries.length} upstream skills`);
+    const visible = all.filter(entry => entry.invocable).length;
+    console.log(`Catalog: ${routerEntries.length} routers, ${bundledEntries.length - hiddenEntries.length} bundled (incl. ${HELP_SKILL_NAME}), `
+        + `${hiddenEntries.length} hidden extension skills, ${upstreamEntries.length} upstream skills; ${visible} slash commands, ${all.length - visible} hidden`);
 }
 
 /** `--offline`: the upstream skills as the committed catalog lists them; nothing is fetched, vendored or locked. */
@@ -517,7 +544,7 @@ function syncFromUpstream(config: SkillsConfig, contract: ToolContract): void {
     const scratch = fetchUpstream(lock, sha);
     try {
         const sourceRoot = path.join(scratch, lock.sourcePath);
-        const upstream = collectUpstreamSkills(sourceRoot);
+        const upstream = collectUpstreamSkills(sourceRoot, config.upstreamCategories);
         if (upstream.length === 0) {
             fail('no upstream skills found');
         }
@@ -553,10 +580,23 @@ function syncFromUpstream(config: SkillsConfig, contract: ToolContract): void {
             }
         }
         if (unresolved.size > 0) {
+            const leftOut = new Set(collectUpstreamSkills(sourceRoot, SKILL_CATEGORY_ORDER.filter(c => !config.upstreamCategories.includes(c)))
+                .map(skill => skill.name));
+            let broken = false;
             for (const [name, refs] of unresolved) {
-                console.error(`  ${name} refers to unknown skill(s): ${refs.join(', ')}`);
+                const missing = refs.filter(ref => !leftOut.has(ref));
+                const excluded = refs.filter(ref => leftOut.has(ref));
+                if (excluded.length > 0) {
+                    console.warn(`  ${name} refers to skill(s) of a category left out: ${excluded.join(', ')} (the agent is told they are not installed)`);
+                }
+                if (missing.length > 0) {
+                    console.error(`  ${name} refers to unknown skill(s): ${missing.join(', ')}`);
+                    broken = true;
+                }
             }
-            fail('unresolved $skill references — upstream renamed or removed a skill; check the lines above');
+            if (broken) {
+                fail('unresolved $skill references — upstream renamed or removed a skill; check the lines above');
+            }
         }
 
         const upstreamEntries: SkillCatalogEntry[] = upstream.map(skill => ({
@@ -569,6 +609,7 @@ function syncFromUpstream(config: SkillsConfig, contract: ToolContract): void {
             ...(skill.displayName ? { displayName: skill.displayName } : {}),
             ...(skill.shortDescription ? { shortDescription: skill.shortDescription } : {}),
             dependsOn: dependsOn.get(skill.name) ?? [],
+            invocable: true, // settled in writeGenerated, once the routers are known
         }));
 
         writeGenerated(config, { repository: lock.repository, sha, sourcePath: lock.sourcePath }, upstreamEntries, contract);

@@ -5,15 +5,15 @@
 
 Only the user can lift a rule, by asking for the specific command.
 
-- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names the command.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
-- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
-- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
-- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.
+- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.
 <!-- cmsis-developer-assistant:rules:end -->
 
 ## Work through these steps in order
@@ -38,7 +38,7 @@ A VS Code window without a folder has nothing the CMSIS tools can act on. `get_s
 | ------- | ------------ | --------- |
 | The CMSIS extensions | Status line `Extensions: … not installed`; `[CMSIS_NO_SOLUTION]` with "(Arm.cmsis-csolution) is not installed". | Ask the user to install the Keil Studio Pack (`Arm.keil-studio-pack`: CMSIS Solution, CMSIS Debugger, Arm Tools Environment Manager) and to reload the window. |
 | A folder | `[NO_WORKSPACE]`; status line `Workspace: no folder is open`. | The project exists: `cmsis_action {action:'open_solution', path}`. It does not: create it first (below), then open it. |
-| A csolution | `[CMSIS_NO_SOLUTION]` with "contains no *.csolution.yml". | Create the solution with the skill `cmsis-bootstrap`, which hands over to `start-cmsis-project`: board or device, packs, an example or a minimal project, one build. |
+| A csolution | `[CMSIS_NO_SOLUTION]` with "contains no *.csolution.yml". | Create the solution with the skill `cmsis-bootstrap`, which hands over to `start-cmsis-project`: board or device, packs, a minimal project (CMSIS CORE, startup, `main`) or an example of the pack, written as files; `open_solution`, then one `cmsis_action build` fetches the packs. |
 | A loaded solution | `[CMSIS_NO_SOLUTION]` with "A solution file exists". | `cmsis_action {action:'open_solution', path:'<file>'}` activates it. After a window opens, the extension needs some seconds; `get_recent_problems` shows what it reported. |
 | The tools | `cmsis_action build` fails because cbuild, the compiler, CMake or Ninja is not found. | The folder needs a `vcpkg-configuration.json`. The Arm Tools Environment Manager fetches what it names when the folder opens; ask the user to answer its prompts. Do not install a compiler yourself. |
 | A debug configuration | `load_and_debug` starts no session, or `load` is refused because the task is not offered. | The target set needs a `debugger:` node; the CMSIS Solution extension then writes `.vscode/launch.json` and `tasks.json`. Skill `cmsis-debugger-setup`. |
@@ -48,7 +48,8 @@ A VS Code window without a folder has nothing the CMSIS tools can act on. `get_s
 `cmsis_action {action:'open_solution', path}` takes the absolute path of a `*.csolution.yml` or of its folder.
 
 - A folder that a window already has open is used there, and the solution is made the active one.
-- Any other folder opens in a **new** VS Code window. The window you started in keeps running, the MCP server with it, and this session's later calls go to the new window. `list_debug_windows` shows both.
+- A window without any folder (the empty window you started in) opens the folder in itself when you run outside the window (Claude Code, Codex, Gemini CLI): VS Code reloads the window a second after the result, and the MCP server with it. Wait about 10 s, then call `get_session_status`; a client that lost the session connects again on the same port, by itself or at that call.
+- Otherwise the folder opens in a **new** VS Code window: when another folder is open here, or when you are a chat inside this window (Copilot Chat, Cline, Roo Code), which the reload would end. This session's later calls go to the new window. `list_debug_windows` shows both.
 - Then: `get_session_status`, `cmsis_action build`, `cmsis_action load_and_debug`.
 
 ### What stays with the user
@@ -57,7 +58,7 @@ Installing extensions, the licence and download prompts of the tools environment
 
 ### Shell commands during the bootstrap
 
-Only the ones a CMSIS skill step names: `csolution list boards`, `devices`, `examples`, `templates` and `debuggers`, `cpackget list` and `add`, and the two validation commands of `start-cmsis-project`. Once the folder is open in VS Code, build with `cmsis_action build`.
+Only the ones a CMSIS skill step names: `csolution list boards`, `devices`, `examples`, `templates` and `debuggers`, by absolute path, since the tools the Arm Tools Environment Manager activates are visible to VS Code's terminals, not to an agent's shell. The minimal project of `start-cmsis-project` needs none of them. Once the folder is open in VS Code, build with `cmsis_action build`, never `cbuild`.
 <!-- /topic -->
 
 <!-- topic: session | The five session states and the right next action for each, several VS Code windows, leaving the session clean -->
@@ -163,21 +164,22 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `build` | Build the active context. | Waits for the cbuild task. |
 | `load` | Flash the built image. | Waits for the flash task. |
 | `erase` | Erase target flash. | Waits for the task. |
+| `run` | Start the CMSIS Run task alone: the GDB server on the probe, no build, no flash — the way to `attach` to a target that is already running. The pyOCD task resets the target and lets the firmware run, the J-Link task leaves it as it was. The FVP task starts the model with the last-built image and hosts no GDB server: use `load_and_debug` there. | Waits until Run stays up. |
 | `load_and_run` | Flash and run without a debug session; the CMSIS Run task keeps a GDB server on the probe. | Waits until Load ended and Run stays up. |
 | `load_and_debug` | Flash and start a debug session (the *Debug* button). | Waits for its Load, then returns when the session is up, with its state. |
-| `attach` | Debug firmware started with `load_and_run`: connects to the GDB server CMSIS Run hosts (no programming). | Returns when the session is up. Refused at once (`NO_SESSION`) when no CMSIS Run task is alive and no GDB server listens on the attach configuration's port. |
-| `detach` / `stop_run` | Detach the debugger / stop the CMSIS tasks of a `load_and_run`, which frees the probe. | `detach` at once; `stop_run` once the tasks have ended. |
+| `attach` | Debug firmware started with `run` or `load_and_run`: connects to the GDB server CMSIS Run hosts (no programming). | Returns when the session is up. Refused at once (`NO_SESSION`) when no GDB server listens on the attach configuration's port: with no CMSIS Run task alive, `run` is the next step; with one alive, that task hosts no server (an FVP) and `load_and_debug` is. |
+| `detach` / `stop_run` | Detach the debugger / stop the CMSIS tasks of a `run` or `load_and_run`, which frees the probe. | `detach` at once; `stop_run` once the tasks have ended. |
 | `status` | Starts nothing: waits for the job in flight, or lists the recent results and the running CMSIS tasks. | The job's result, like the call that started it. |
 
-**Read the result line.** `build`, `load`, `erase` and `load_and_run` end with a terminal ✅ success / ❌ failure, the task, its exit code, how long it ran and the job id (`job b-3`). On ❌ fix the source and build again — do not poll for an output file and do not call `get_session_status` to find out whether a build worked. `load_and_debug` reports a failed Load before anything else; it and `attach` verify that the session really has a target behind it. A session whose target reports no threads yet comes back with status `running`: poll `get_session_status`.
+**Read the result line.** `build`, `load`, `erase`, `run` and `load_and_run` end with a terminal ✅ success / ❌ failure, the task, its exit code, how long it ran and the job id (`job b-3`). On ❌ fix the source and build again — do not poll for an output file and do not call `get_session_status` to find out whether a build worked. `load_and_debug` reports a failed Load before anything else; it and `attach` verify that the session really has a target behind it. A session whose target reports no threads yet comes back with status `running`: poll `get_session_status`.
 
 **Build errors.** A failed `build` lists its error lines with file and line: the errors csolution recorded in `<name>.cbuild-idx.yml` (a missing pack or component), else those of a diagnostic re-run of cbuild with `--log`, whose log `get_build_diagnostics` reads. A re-run recompiles only what failed, so its warning count covers those files only. When the lines take longer than the call's wait, the result says they are coming: `cmsis_action {action:'status'}` returns them — do not start another build, and do not run cbuild yourself, to see them.
 
 **Exit 0 is checked.** CMSIS Solution reports exit 0 for a failed build too, so a `build` whose task exited 0 is checked before it answers ✅: an image not rewritten since the build started leads to the same re-run, and a build that fails there comes back ❌ with its error lines. ⚠️ means the check could not decide; do not load that image before the user confirms the build.
 
-**Long builds.** A call waits 60 s by default; `timeoutMs` takes up to 600000 for `cmsis_action` and `flash` when your client allows calls that long (other tools: 60000). Pack resolution or a first build can outlast the wait. That is not a failure: the reply has status `running` and names the job. Call `cmsis_action {action:'status'}` to wait for the result — never start a build again to learn its status; a repeated `build`, `load`, `erase` or `load_and_run` attaches to the job in flight instead of starting another. For `load_and_debug` / `attach`, `timeoutMs` bounds the session-readiness wait.
+**Long builds.** A call waits 60 s by default; `timeoutMs` takes up to 600000 for `cmsis_action` and `flash` when your client allows calls that long (other tools: 60000). Pack resolution or a first build can outlast the wait. That is not a failure: the reply has status `running` and names the job. Call `cmsis_action {action:'status'}` to wait for the result — never start a build again to learn its status; a repeated `build`, `load`, `erase`, `run` or `load_and_run` attaches to the job in flight instead of starting another. For `load_and_debug` / `attach`, `timeoutMs` bounds the session-readiness wait.
 
-**One probe, one owner.** After `load_and_run` the CMSIS Run task holds the probe. While it does, `load`, `erase`, `load_and_run`, `load_and_debug` and `flash` answer `PROBE_BUSY`: call `cmsis_action {action:'stop_run'}` first — or `attach` to debug the running firmware. A `PROBE_BUSY` error names what holds the probe and the step that frees it; `get_session_status` lists the CMSIS tasks of the window in one line.
+**One probe, one owner.** After `run` or `load_and_run` the CMSIS Run task holds the probe. While it does, `load`, `erase`, `load_and_run`, `load_and_debug` and `flash` answer `PROBE_BUSY`: call `cmsis_action {action:'stop_run'}` first — or `attach` to debug the running firmware. A `PROBE_BUSY` error names what holds the probe and the step that frees it; `get_session_status` lists the CMSIS tasks of the window in one line.
 
 **`flash`** programs the target with `pyocd load --cbuild-run` and returns synchronously: bytes programmed and rate, or the exit code with pyOCD's error lines. It programs every image listed under `output:` in the cbuild-run file (multi-core safe), auto-resolves that file from `launch.json` / `out/` when `cbuildRunFile` is omitted, and uses the pyOCD bundled with the CMSIS Debugger extension — never install pyOCD yourself. It **refuses while a debug session or a CMSIS Run task holds the probe** — programming under a live session wedges most probes — so the sequence is `stop_debugging` (or `cmsis_action stop_run`) → `flash` → a new session. `cmsis_action load` is the alternative that uses the CMSIS extension's own flash pipeline.
 
@@ -190,7 +192,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 |---|---|
 | `pyocd load`, `pyocd flash` | `flash`, or `cmsis_action load` |
 | `pyocd reset`, `monitor reset` | `reset`, which verifies that the target did reset |
-| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`, or `cmsis_action attach` for firmware started with `cmsis_action load_and_run` |
+| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`; or `cmsis_action run` (the GDB server without programming) followed by `cmsis_action attach` |
 | `pyocd commander`, `gdb -ex "x/…"` | `read_memory`, `read_core_registers`, `evaluate_expression` |
 | `pyocd list`, `JLinkExe` to check the probe | `check_target_connection`, `get_session_status` |
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |

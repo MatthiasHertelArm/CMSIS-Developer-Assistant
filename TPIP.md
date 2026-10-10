@@ -1,6 +1,6 @@
 # TPIP Report for CMSIS Developer Assistant
 
-Generated for release: 2.5.10
+Generated for release: 2.5.19
 
 | *Package* | *Version* | *Repository* | *License* |
 | --- | --- | --- | --- |
@@ -8,6 +8,6 @@ Generated for release: 2.5.10
 | express | 5.2.1 | https://github.com/expressjs/express | [MIT](https://github.com/expressjs/express/blob/master/LICENSE) |
 | jsonc-parser | 3.3.1 | https://github.com/microsoft/node-jsonc-parser | [MIT](https://github.com/microsoft/node-jsonc-parser/blob/main/LICENSE.md) |
 | serialport | 13.0.0 | https://github.com/serialport/node-serialport | [MIT](https://github.com/serialport/node-serialport/blob/master/LICENSE) |
-| cmsis-skills (generic-mcu-skills, vendored under skills/cmsis-skills) | d778b91 | https://github.com/Open-CMSIS-Pack/cmsis-skills | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/main/LICENSE) |
+| cmsis-skills (generic-mcu-skills, vendored under skills/cmsis-skills) | 25c2085 | https://github.com/Open-CMSIS-Pack/cmsis-skills | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/main/LICENSE) |
 | zod | 4.5.2 | https://github.com/colinhacks/zod | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE) |
 | pdfjs-dist | 6.3.289 | https://github.com/mozilla/pdf.js | [Apache-2.0](https://github.com/mozilla/pdf.js/blob/master/LICENSE) |
