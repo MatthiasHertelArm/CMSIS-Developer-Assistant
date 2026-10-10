@@ -71,15 +71,15 @@ allowed-tools:
 
 Only the user can lift a rule, by asking for the specific command.
 
-- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names the command.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
-- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
-- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
-- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.
+- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.
 <!-- cmsis-developer-assistant:rules:end -->
 
 <!-- cmsis-developer-assistant:shell-to-tool:begin -->
@@ -89,7 +89,7 @@ Only the user can lift a rule, by asking for the specific command.
 |---|---|
 | `pyocd load`, `pyocd flash` | `flash`, or `cmsis_action load` |
 | `pyocd reset`, `monitor reset` | `reset`, which verifies that the target did reset |
-| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`, or `cmsis_action attach` for firmware started with `cmsis_action load_and_run` |
+| `pyocd gdbserver`, `JLinkGDBServer`, `openocd`, `arm-none-eabi-gdb` | `cmsis_action load_and_debug`; or `cmsis_action run` (the GDB server without programming) followed by `cmsis_action attach` |
 | `pyocd commander`, `gdb -ex "x/…"` | `read_memory`, `read_core_registers`, `evaluate_expression` |
 | `pyocd list`, `JLinkExe` to check the probe | `check_target_connection`, `get_session_status` |
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |
@@ -152,9 +152,13 @@ then has status `running` and names the job: call `cmsis_action` with
 `action='status'` for the result, and never start the build again to learn
 it — a repeated build attaches to the one in flight.
 
-`load_and_run` leaves the CMSIS Run task holding the probe (it hosts the GDB
-server): `attach` debugs that firmware, and `cmsis_action` `stop_run` frees
-the probe before `load`, `load_and_debug` or `flash`. A `PROBE_BUSY` error
+`run` and `load_and_run` leave the CMSIS Run task holding the probe (with a
+probe adapter it hosts the GDB server; an FVP's Run is the bare model, so
+`attach` has nothing to reach there and `load_and_debug` is the way): `attach`
+debugs that firmware, and `cmsis_action` `stop_run` frees the probe before
+`load`, `load_and_debug` or `flash`. To look at a
+target that is already running without touching its flash, `run` then
+`attach` (the pyOCD task resets the target and lets it run; J-Link's does not). A `PROBE_BUSY` error
 names what holds the probe and the step to take. `flash` uses the CMSIS
 Debugger's bundled pyOCD — never install one.
 If `launch.json` is stale, the user has to regenerate it: **CMSIS Solution →
@@ -174,7 +178,7 @@ never throws.
 
 | State | Correct next action |
 |-------|---------------------|
-| `no-session` | `cmsis_action load_and_debug` for CMSIS projects — builds, flashes, attaches. `start_debugging` only for non-CMSIS targets, or to attach without reflashing. |
+| `no-session` | `cmsis_action load_and_debug` for CMSIS projects — builds, flashes, attaches. `cmsis_action run` then `attach` to look at a target without reflashing; `start_debugging` only for non-CMSIS targets. |
 | `initializing` | Wait, ask again. Do **not** issue a second start. |
 | `stopped` | Inspect freely. |
 | `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. |
@@ -213,7 +217,9 @@ already live, so checking first saves a round trip.
   instructions.
 - When a session does not start, `get_recent_problems` with
   `sources: ['gdb-server']` and `minSeverity: 'info'` shows what pyOCD or
-  J-Link said.
+  J-Link said. When it still does not start, connect or program after that,
+  hand over to `$debugger-troubleshooting`, which walks the checks in order
+  (probe, power, GDB server, flash algorithm, image) through the tools.
 
 ## Debugger first — do not start by adding prints
 
@@ -318,7 +324,9 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
 
 ## When it faulted
 
-`diagnose_fault` does the whole first pass in one call: the decoded fault
+A fault does not halt the core by itself: the handler spins. `get_session_status`
+first; when the state is `running`, `pause_execution`, which lands in the handler.
+Then `diagnose_fault` does the whole first pass in one call: the decoded fault
 registers, the stacked exception frame (the PC of the faulting instruction and
 its caller — on a stacked exception the interesting PC is in the frame, not in
 the current registers), the top frames, the faulting address resolved against

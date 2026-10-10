@@ -250,8 +250,9 @@ const ABOUT = {
         'like the panel buttons; every result names the target it ran on.',
         'build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code.',
         'A task still running at the wait returns status running: call action status, never start it again.',
+        'run: CMSIS Run alone, no build or flash — a probe\'s GDB server, then attach; an FVP hosts none.',
         'load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.',
-        'open_solution opens the folder of a csolution (path) in a VS Code window and activates the solution; it needs no open project.',
+        'open_solution opens a csolution\'s folder (path) in a VS Code window and activates it; needs no open project.',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +
@@ -783,7 +784,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'load', 'erase', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run', 'status', 'open_solution'])
+            action: z.enum(['build', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run', 'status', 'open_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
             path: z.string().optional().describe('open_solution only: absolute path of a *.csolution.yml or of its folder.'),
             target: z.string().optional().describe('Target-type or type@set from the csolution (e.g. "MPS3", "HP@debug"). ' +
@@ -791,7 +792,8 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             timeoutMs: z.number().int().min(100).max(600_000).optional()
                 .describe(`${LONG_TIMEOUT_DESC} For load_and_debug / attach: the session-readiness wait.`),
         },
-    }, (args) => debug.handleCmsisCommand(args).then(reply));
+    // The client's name decides whether open_solution may reload this window (src/core/clientHosting.ts).
+    }, (args) => debug.handleCmsisCommand({ ...args, client: mcp.server.getClientVersion()?.name }).then(reply));
     mcp.registerTool('flash', {
         description: ABOUT.flash,
         inputSchema: {

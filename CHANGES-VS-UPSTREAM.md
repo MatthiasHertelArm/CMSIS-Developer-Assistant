@@ -6,7 +6,7 @@ Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugM
 
 Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0; individual changes cherry-picked through [`148cbb9a`](https://github.com/microsoft/DebugMCP/commit/148cbb9a) (upstream v2.3.1, 2026-08-20). See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
 
-Current release: **v2.5.9** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
+Current release: **v2.5.19** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
 
 ---
 
@@ -74,7 +74,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 | [`src/utils/agentConfigurationManager.ts`](src/utils/agentConfigurationManager.ts) | Dropped the static Copilot `mcp.json` write (superseded by `McpServerDefinitionProvider`). `updatePort()` so the actual OS-assigned port is reflected in Cline/Cursor configs. |
 | [`docs/agent-resources/debug_instructions.md`](docs/agent-resources/debug_instructions.md) | PHASE 0 (target awareness from CMSIS YAMLs + launch.json), PHASE 1 (5-state session-status gate decision table), Cortex-M hardware breakpoint limit guidance. CMSIS-first workflow steers agents to `cmsis_action load_and_debug` over `start_debugging`. |
 | [`package.json`](package.json) | `name`, `displayName`, `publisher`, `author`, `homepage`, `bugs`, `repository`, command ids, config section. Added `serialport` dependency. Keywords added: `embedded`, `cortex-m`, `cmsis`, `arm`, `gdbtarget`. |
-| [`README.md`](README.md) | Rewritten around the Cortex-M workflow with the current full tool list and CMSIS-first quick start. |
+| [`README.md`](README.md), [`docs/user-guide.md`](docs/user-guide.md) | The README is the Marketplace page (what the assistant does, how to start); the user guide holds the full tool list, the commands, the settings, manual agent registration and the known limitations. |
 | [`CHANGELOG.md`](CHANGELOG.md) | v1.0.27 release entry. |
 
 ---
@@ -102,7 +102,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 **CMSIS Solution panel control:**
 
-- `cmsis_action(action, target?, timeoutMs?, path?)` — `build` / `load` / `erase` / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`, and since 2.5.9 `open_solution` with `path`, which opens the folder of a csolution in a VS Code window and works from an empty window; `target` (`type` or `type@set`) switches and verifies the active target first, results name the target they ran on. ⭐ Preferred entry point for embedded.
+- `cmsis_action(action, target?, timeoutMs?, path?)` — `build` / `load` / `erase` / `run` (since 2.5.15: the GDB server without build or flash, for `attach`) / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`, and since 2.5.9 `open_solution` with `path`, which opens the folder of a csolution in a VS Code window and works from an empty window; `target` (`type` or `type@set`) switches and verifies the active target first, results name the target they ran on. ⭐ Preferred entry point for embedded.
 - `flash(cbuildRunFile?, timeoutMs?)` — `pyocd load --cbuild-run` as a synchronous operation: bytes programmed + structured flash error; refuses under an active session.
 
 **Documentation and build artefacts (both on by default since 2.5.3 — `packDocs.enabled` / `buildInfo.enabled`):**

@@ -231,9 +231,14 @@ command of the CMSIS Solution extension (`cmsis-csolution.build`,
 their work is done, so the outcome is observed separately, through the
 window's CMSIS job tracker (next section):
 
-- `build`, `load`, `erase` and `load_and_run` arm a job, issue the command
-  and wait for the job: a ✅ line with the task, its exit code, how long it
-  ran and the job id, or a ❌ line rejected as `TASK_FAILED`.
+- `build`, `load`, `erase`, `run` and `load_and_run` arm a job, issue the
+  command and wait for the job: a ✅ line with the task, its exit code, how
+  long it ran and the job id, or a ❌ line rejected as `TASK_FAILED`. `run`
+  (#73) starts the adapter's `CMSIS Run` task alone, job id `g-<n>`; its
+  result says what the task did to the target, because the adapters differ:
+  the pyOCD task resets and runs, the J-Link task leaves the core as it was,
+  and the FVP task starts the model with the last-built image and hosts no
+  GDB server, so `attach` has nothing to reach there.
 - `load_and_debug` waits for its pre-launch `CMSIS Load` when the launch
   configuration has one (a failed Load is the answer, before any session
   probe); then it and `attach` wait for a live session and probe its threads
@@ -250,10 +255,18 @@ window's CMSIS job tracker (next section):
 - `open_solution` needs no active solution either. It takes the path of a
   csolution or of its folder. A folder this window has open is activated
   here (`cmsis-csolution.activateSolution`, verified, refused under a live
-  session). Any other folder is opened in a new VS Code window
-  (`HandlerHost.openFolder`), so the window that answers, and with it the MCP
-  server, keeps running; the result's `data.newWindow` tells the router to
-  follow (see windowRouting.md).
+  session). A window without any folder opens it in itself
+  (`openHere()`) when the client runs outside the window — the tool passes
+  the client's `initialize` name, `src/core/clientHosting.ts` knows the
+  CLIs: VS Code reloads the window for that, the MCP server with it, so the
+  reply goes out first and `HandlerHost.openFolder` runs a second later;
+  the reply (`data.reloads`) tells the agent to come back after the reload,
+  and the client reconnects on the same port (Claude Code does so by
+  itself). A chat inside the window (Copilot Chat, Cline, Roo Code; also any
+  unknown client) would be ended by the reload, so for it, as for a window
+  with another folder, the folder opens in a new VS Code window and the
+  window that answers keeps running; the result's `data.newWindow` tells
+  the router to follow (see windowRouting.md).
 
 Before any command: a debug session refuses `load_and_debug` and `attach`,
 the probe guard refuses what another owner blocks (`PROBE_BUSY`), a window
@@ -318,7 +331,9 @@ the panel are seen too. It keeps the live CMSIS executions and the jobs:
   returns. Other CMSIS executions are noted, never the result, so a
   `cbuild setup` after a target switch cannot answer for a build;
 - `load_and_run` counts as done once Load ended 0 and CMSIS Run, which
-  hosts the GDB server and never ends, stayed up for 2 s;
+  hosts the GDB server and never ends, stayed up for 2 s; `run` once CMSIS
+  Run alone stayed up that long, and a Run that ends earlier is `failed`
+  with its exit code;
 - nothing expected starting within 10 s of the command is `not-started`;
 - a build, load or erase started elsewhere is adopted as a job of its own,
   so that a repeated call attaches to it instead of starting another;

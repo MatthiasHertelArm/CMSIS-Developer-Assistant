@@ -68,6 +68,7 @@ const AFTER_SUCCESS: Readonly<Record<JobAction, string>> = {
     build: ' The firmware is built — use cmsis_action load or load_and_debug to flash it.',
     load: ' Firmware flashed. Use cmsis_action attach or load_and_debug to start a debug session.',
     erase: ' Target flash erased.',
+    run: ' CMSIS Run has ended; the GDB server is gone.',
     load_and_run: ' Firmware flashed and running (no debug session).',
     load_and_debug: ' Its pre-launch Load is done; the debug session starts next — poll get_session_status.',
 };
@@ -97,6 +98,15 @@ function flashFailedHint(task: string): string {
 
 const RUN_FAILED_HINT = 'Read the \'CMSIS Run\' terminal: a GDB server that ends at once usually finds the probe or its port taken. '
     + 'cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks; cmsis_action {action:\'stop_run\'} ends them.';
+
+/**
+ * What the adapters' CMSIS Run task does, so an agent does not promise more than the task keeps (#73).
+ * The pyOCD and J-Link tasks are GDB servers; the FVP task is the bare model with the last-built image,
+ * which hosts no GDB server (the plugin lives in the launch configuration), so attach has nothing to reach.
+ */
+const RUN_TASK_EFFECT = 'The flash is untouched; the pyOCD task resets the target and lets the firmware run (--reset-run), '
+    + 'the J-Link task leaves it running as it was (-nohalt). The FVP task starts the model with the last-built image and '
+    + 'hosts no GDB server: there, use load_and_debug for a session.';
 
 /** How the reply reads the job's situation: target tag, clock, and what the call did. */
 export interface ResultContext {
@@ -170,7 +180,7 @@ export function stillRunning(job: Job, context: ResultContext): ToolReply {
 /** The actions a debugger adapter offers, from the labels of its tasks. */
 function offeredActions(labels: ReadonlySet<string>): string {
     const offered: string[] = [];
-    for (const action of ['load', 'erase', 'load_and_run'] as const) {
+    for (const action of ['load', 'erase', 'run', 'load_and_run'] as const) {
         const label = ACTION_PHASES[action].label;
         if (label !== undefined && labels.has(label)) {
             offered.push(action);
@@ -272,6 +282,12 @@ function failed(job: Job, context: ResultContext, decided: JobExecution): ToolEr
                 + `it hosts the GDB server and must stay up (job ${id}).${meanwhile(job)}`,
             RUN_FAILED_HINT);
     }
+    if (job.action === 'run') {
+        return new ToolError('TASK_FAILED',
+            `${preface}❌ CMSIS 'run' FAILED${tag} — '${decided.name}' ended ${code === undefined ? 'without an exit code' : `with code ${code}`} `
+                + `after ${ranFor(decided, now)}; it hosts the GDB server and must stay up (job ${id}).${meanwhile(job)}`,
+            RUN_FAILED_HINT);
+    }
     if (job.action === 'load_and_run' && code === undefined) {
         return new ToolError('TASK_FAILED',
             `${preface}❌ CMSIS 'load_and_run' FAILED${tag} — '${decided.name}' ended without a live 'CMSIS Run' (job ${id}).${meanwhile(job)}`,
@@ -345,9 +361,15 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
         case 'running-ok': {
             const load = executionIn(job, 'load');
             const run = executionIn(job, 'run');
+            if (job.action === 'run') {
+                return `${preface}✅ CMSIS 'run'${tag}: '${run?.name ?? 'CMSIS Run'}' started and stays active — with a probe adapter it hosts `
+                    + `the GDB server (job ${job.id}); nothing was built or programmed. ${RUN_TASK_EFFECT} cmsis_action attach to debug; `
+                    + `cmsis_action stop_run frees the probe.${meanwhile(job)}`;
+            }
             const flashed = load ? `flashed ('${load.name}' exited 0 after ${ranFor(load, now)}); ` : '';
             return `${preface}✅ CMSIS 'load_and_run'${tag}: ${flashed}'${run?.name ?? 'CMSIS Run'}' started and stays active — `
-                + `it hosts the GDB server (job ${job.id}). cmsis_action attach to debug; cmsis_action stop_run frees the probe.${meanwhile(job)}`;
+                + `with a probe adapter it hosts the GDB server (job ${job.id}); an FVP runs the image without one. `
+                + `cmsis_action attach to debug; cmsis_action stop_run frees the probe.${meanwhile(job)}`;
         }
         case 'failed':
             if (decided) {

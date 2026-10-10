@@ -107,9 +107,9 @@ check('the bundle keeps serialport external',
     /require\(["']serialport["']\)/.test(bundle),
     'bundle require()s serialport at runtime rather than inlining it');
 
-// 7. The skills ship, since activation copies the selected ones out of the
-//    extension: the bundled debugging skill, the catalog that drives the
-//    picker, the upstream lock, and every SKILL.md the catalog points at.
+// 7. The skills ship, since activation copies them out of the
+//    extension: the bundled debugging skill, the catalog that lists them,
+//    the upstream lock, and every SKILL.md the catalog points at.
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
 check('the pack-docs skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-pack-docs', 'SKILL.md')));

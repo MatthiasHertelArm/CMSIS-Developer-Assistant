@@ -8,9 +8,9 @@ Install location follows the [Agent Skills](https://agentskills.io) convention:
 the extension copies this directory to `~/.agents/skills/cmsis-debug-live/`, to
 `~/.claude/skills/cmsis-debug-live/` when a Claude home exists, and to
 `$COPILOT_HOME/skills/` when that variable is set. That happens on every
-activation for every skill selected in the `installedSkills` setting — this
-one is selected by default. The other skills in the catalog are described in
-[`../README.md`](../README.md).
+activation and when **CMSIS Developer Assistant: Configure Agent** registers
+the agents, for every skill of the catalog. The other skills in the catalog
+are described in [`../README.md`](../README.md).
 
 Invoke it as `/cmsis-debug-live` in harnesses that support skills.
 

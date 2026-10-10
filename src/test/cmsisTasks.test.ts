@@ -177,6 +177,20 @@ suite('cmsisTasks', () => {
                 'a settled job keeps its state');
         });
 
+        test('run: CMSIS Run alone must stay up for the grace; ending at all fails, even with exit 0 (#73)', () => {
+            const started = fold(armed('run'), { type: 'issued', at: 0 }, start(1, 'CMSIS Run', 'run', 3));
+            assert.strictEqual(started.state, 'started');
+            assert.strictEqual(nextTimeCheck(started), 3 + RUN_GRACE_MS);
+            assert.strictEqual(reduceJob(started, { type: 'processEnd', key: 1, exitCode: 0, at: 4 }).state, 'failed');
+            assert.strictEqual(reduceJob(started, { type: 'processEnd', key: 1, exitCode: undefined, at: 4 }).state, 'cancelled');
+            const up = reduceJob(started, { type: 'tick', at: 3 + RUN_GRACE_MS });
+            assert.strictEqual(up.state, 'running-ok');
+            assert.strictEqual(up.decidedBy, 1);
+            assert.strictEqual(nextTimeCheck(up), undefined);
+            const nothing = fold(armed('run'), { type: 'issued', at: 0 }, { type: 'tick', at: NOTHING_STARTED_MS });
+            assert.strictEqual(nothing.state, 'not-started');
+        });
+
         test('load_and_run: a compound that ends without a live Run fails', () => {
             const job = fold(armed('load_and_run'), start(1, 'CMSIS Load+Run', 'loadRun', 1, 'taskStart'),
                 start(2, 'CMSIS Load', 'load', 2), { type: 'processEnd', key: 2, exitCode: 0, at: 3 },
@@ -212,6 +226,7 @@ suite('cmsisTasks', () => {
             ['stop_run', ['allowed', 'allowed', 'allowed', 'allowed', 'allowed', 'allowed']],
             ['load', ['server', 'server', 'busy', 'busy', 'busy', 'session']],
             ['erase', ['server', 'server', 'busy', 'busy', 'busy', 'session']],
+            ['run', ['server', 'server', 'busy', 'busy', 'busy', 'session']],
             ['load_and_run', ['server', 'server', 'busy', 'busy', 'busy', 'session']],
             ['load_and_debug', ['server', 'server', 'busy', 'busy', 'busy', 'session']],
             ['attach', ['allowed', 'allowed', 'busy', 'busy', 'busy', 'session']],

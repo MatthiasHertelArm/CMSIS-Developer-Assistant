@@ -15,8 +15,9 @@
  */
 
 /**
- * Copies catalog skills into the user's personal skills directories and
- * removes the ones they deselected — and nothing else.
+ * Copies the catalog skills into the user's personal skills directories and
+ * removes the ones this extension installed earlier and no longer ships —
+ * and nothing else.
  *
  * No `vscode` import: the class takes its roots and paths from the caller
  * so the unit tests can run it against temp directories.
@@ -107,12 +108,12 @@ export function getSkillInstallRoots(options: SkillInstallRootsOptions = {}): Sk
 }
 
 /**
- * Where a project's own skills go, for one workspace folder — the same
- * conventions one level down: `<folder>/.agents/skills` is the cross-agent
- * project location, `<folder>/.claude/skills` the only one Claude Code
- * reads, so it is written when Claude Code is on this machine (a Claude home
- * exists) or the project already has a `.claude` directory. When it is not
- * written it is still swept, for a copy an earlier setup left there.
+ * Where releases 2.5.x could install a project's own selection, for one
+ * workspace folder — the same conventions one level down:
+ * `<folder>/.agents/skills` and `<folder>/.claude/skills`. Since 2.5.15 the
+ * skills are personal only; the manager sweeps both roots for marker-guarded
+ * leftovers and writes neither (`install` is kept apart for that reason: it
+ * says which root an earlier release wrote).
  */
 export function getProjectSkillInstallRoots(folder: string, options: SkillInstallRootsOptions = {}): SkillInstallRoots {
     const env = options.env ?? process.env;
@@ -131,6 +132,40 @@ export function getProjectSkillInstallRoots(folder: string, options: SkillInstal
     }
 
     return { install, sweepOnly };
+}
+
+/**
+ * The directory a path really names: its real path when it exists, the
+ * resolved path otherwise. Lets two spellings of one directory compare equal.
+ */
+function canonicalDir(dir: string): string {
+    try {
+        return fs.realpathSync.native(dir);
+    } catch {
+        return path.resolve(dir);
+    }
+}
+
+/**
+ * Drops from `sweepOnly` every directory that is also an install root. A
+ * workspace folder can be the home directory (or hold `CLAUDE_CONFIG_DIR`),
+ * and then its 2.5.x project roots are the personal roots the same sync has
+ * just written into; sweeping them would remove every skill again. Compared
+ * by canonical path, so a symlinked home is caught too.
+ */
+export function withoutInstallRoots(sweepOnly: string[], install: string[], canonical: (dir: string) => string = canonicalDir): string[] {
+    const installed = new Set(install.map(canonical));
+    const seen = new Set<string>();
+    const kept: string[] = [];
+    for (const dir of sweepOnly) {
+        const key = canonical(dir);
+        if (installed.has(key) || seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        kept.push(dir);
+    }
+    return kept;
 }
 
 export interface SkillSyncRecord {
@@ -197,10 +232,8 @@ export class SkillInstaller {
      * its own and is reported, never thrown — not being able to write a
      * skill file must never take activation down with it.
      *
-     * The roots are per call: the personal directories and each workspace
-     * folder's project directories are synced from their own selections.
-     * A root is only created when something is to be installed into it, so
-     * a project without a selection never gains an empty `.agents/skills`.
+     * A root is only created when something is to be installed into it;
+     * `sweepOnly` roots lose our leftovers and are never written.
      */
     public async sync(
         roots: SkillInstallRoots,

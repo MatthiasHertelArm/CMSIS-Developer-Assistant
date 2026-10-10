@@ -10,15 +10,15 @@ description: "Diagnose a failing embedded debug or flash session: the GDB server
 
 Only the user can lift a rule, by asking for the specific command.
 
-- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names the command.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
-- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
-- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
-- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.
+- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.
 <!-- cmsis-developer-assistant:rules:end -->
 
 Work the checks in order. Each is cheap and rules out a whole class of cause. Most
@@ -65,8 +65,10 @@ gdbserver exited with code 254
   commands only look at the host and are allowed:
 
   ```sh
-  lsof -nP -iTCP:3333 -sTCP:LISTEN
+  lsof -nP -iTCP:3333 -sTCP:LISTEN            # macOS, Linux
   ps -ww -o pid,etime,command -p <PID>
+  netstat -ano | findstr :3333               # Windows
+  tasklist /FI "PID eq <PID>"
   ```
 
   Identify the process before anything is stopped: it may be a session the user
@@ -102,9 +104,8 @@ image. The symptoms are then arbitrary: halted at a reset vector, a garbage PC,
 
 `Failed to power up DAP` is not recoverable in software. The debug port answers while
 the domain behind it is off, so connecting under reset or at a lower clock fails too.
-Ask the user to unplug and replug power; the reset button is often not enough. When
-the skill `board-power-cycle` is installed and the board sits on a switchable hub, it
-can do that.
+Ask the user to unplug and replug power; the reset button is often not enough. A
+user-installed skill for a switchable USB hub, when there is one, can do that.
 
 A hung bus transaction can take the debug port down with it. If the failure started
 right after the firmware stalled a bus master (a DMA or an NPU waiting for an
@@ -169,8 +170,8 @@ initialisation.
 - Verify instead of assuming: `get_section_layout` gives the load address of the RW
   section; `read_memory` there must show the initial values, not `0xFF`.
 - When the image has to be programmed with a vendor tool, program the LOAD segment by
-  its physical address. `arm-none-eabi-readelf -l <image>` lists offset, file size
-  and physical address of each segment; reading the ELF on the host is allowed.
+  its physical address: `get_section_layout` lists the sections with their load
+  addresses, which is what the vendor tool needs.
 
 ## 7. Programming is implausibly slow
 
@@ -201,8 +202,8 @@ These need J-Link's own tools. Explain, and let the user run them.
 - **A malformed `JLinkDevices.xml` is rejected in silence.** The only sign is
   `The selected device "X" is unknown to this software version` and a fallback to a
   generic core. Validating the XML on the host is allowed:
-  `xmllint --noout JLinkDevices.xml`. A double hyphen inside an XML comment is
-  illegal and easy to introduce.
+  `xmllint --noout JLinkDevices.xml` (macOS, Linux; on Windows read the file). A
+  double hyphen inside an XML comment is illegal and easy to introduce.
 - J-Link Commander has no command-line option for the device file's path. It is a
   DLL setting, and it names the file, not the directory:
   `exec JLinkDevicesXMLPath = /abs/path/to/JLinkDevices.xml`.
@@ -238,8 +239,9 @@ These need J-Link's own tools. Explain, and let the user run them.
 - If a pack declares an `<algorithm>` without a matching `<memory>` region, pyOCD
   falls back to the architectural memory map, treats the window as device memory,
   and fails with a memory transfer fault on a raw write. That is a defect of the
-  pack: report it with the device and the region, and see `cmsis-pack` for the
-  debug description.
+  pack: report it with the device and the region to the pack's vendor; the pack
+  authoring skills of cmsis-skills (category pack) are not installed by this
+  extension.
 
 ## When you are through
 

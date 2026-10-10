@@ -340,7 +340,7 @@ function isInside(file: string, dir: string): boolean {
 
 /** The first line of every rules block: who manages it, and how to take it out. */
 export const RULES_PROVENANCE = '<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. '
-    + 'To take the rules out, uncheck this file in "CMSIS Developer Assistant: Configure Agents and Skills", '
+    + 'To take the rules out, uncheck this file in "CMSIS Developer Assistant: Configure Agent", '
     + 'or delete the block with its markers. -->';
 
 /** What goes between the markers: the provenance line, then the rules section of the tool contract. */

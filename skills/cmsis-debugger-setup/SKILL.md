@@ -10,15 +10,15 @@ description: "Wire the debug adapter of a CMSIS csolution target so that Load & 
 
 Only the user can lift a rule, by asking for the specific command.
 
-- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names the command.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
-- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
-- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
-- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.
+- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.
 <!-- cmsis-developer-assistant:rules:end -->
 
 ## Goal
@@ -52,6 +52,11 @@ CMSIS-Toolbox lists:
 ```text
 csolution list debuggers
 ```
+
+This step names the command, so it is allowed; it needs the toolbox on your PATH,
+which the Arm Tools Environment Manager gives VS Code's terminals, not your shell.
+When `csolution` is not found, do not search for it: the table below is the
+fallback, it is the toolbox's own `debug-adapters.yml`.
 
 | Probe | Adapter name |
 |---|---|
@@ -98,9 +103,12 @@ them by hand.
 1. `cmsis_action { action: 'build' }`. The build also refreshes
    `out/<solution>+<target>.cbuild-run.yml`.
 2. Check the cbuild-run file: its `debugger:` block names the adapter.
-3. Check `.vscode/launch.json`: a configuration of `"type": "gdbtarget"` named after
-   the adapter, such as `CMSIS_DAP@pyOCD (launch)`, `STLink@pyOCD (launch)` or
-   `JLink (launch)`, and `.vscode/tasks.json` with the `CMSIS Load` task.
+3. Check `.vscode/launch.json`: a configuration of `"type": "gdbtarget"` whose
+   `cmsis` node says `"updateConfiguration": "auto"`, named after the adapter's
+   template (`CMSIS_DAP@pyOCD (launch)`, `STLink@pyOCD (launch)`,
+   `ULINKpro@pyOCD (launch)` for ULINKplus and ULINKpro, `JLink (launch)`,
+   `Arm-FVP@GDB (launch)`; a multi-core device prefixes the processor name), and
+   `.vscode/tasks.json` with the `CMSIS Load` task. Do not look for one exact name.
 4. When the files did not change: ask the user to open **Manage Solution Settings**
    in the CMSIS view and to confirm the debugger there, or to check that
    `cmsis-csolution.autoDebugLaunch` is on. A launch configuration whose `cmsis`
@@ -113,13 +121,17 @@ Ask the user to connect the board. Then, in this order:
 
 1. `serial_list_ports`: the probe's virtual COM port is a sign that the board is
    connected. `serial_open` it before anything runs, so that no output is lost.
+   The port is yours until `serial_close` (or 300 s idle): the user's Serial
+   Monitor cannot open it meanwhile, say so.
 2. `add_breakpoint` at the entry of the application code, not only at `main`.
 3. `cmsis_action { action: 'load_and_debug' }`. Never `start_debugging` for a CMSIS
    target: it skips the flash download.
 4. `continue_execution` and `wait_for_stop` to the breakpoint; `get_call_stack`,
    `get_variables_values` and one `read_peripheral_register` to show that stepping
    and reads work.
-5. `clear_all_breakpoints`, let it run, and `serial_read` the application's output.
+5. `clear_all_breakpoints`, let it run, and `serial_read { waitMs: 5000 }` for the
+   application's output; without `waitMs` the call returns at once with what is
+   buffered.
 6. `stop_debugging`, `serial_close`.
 
 Things that otherwise cost an hour each:

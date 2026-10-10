@@ -1974,7 +1974,7 @@ suite('DebuggingHandler', () => {
             };
             const asFolder = (fsPath: string): vscode.WorkspaceFolder => ({ uri: vscode.Uri.file(fsPath), name: path.basename(fsPath), index: 0 });
             const open = (handler: DebuggingHandler, given?: string): Promise<ToolText> =>
-                handler.handleCmsisCommand({ action: 'open_solution', path: given });
+                handler.handleCmsisCommand({ action: 'open_solution', path: given, client: 'claude-code' });
 
             test('a missing, relative, absent or foreign path is INVALID_ARGUMENT, and nothing is opened', async () => {
                 const x = new ScriptedExecutor();
@@ -2003,7 +2003,10 @@ suite('DebuggingHandler', () => {
                 const solution = path.join(project, 'Blinky.csolution.yml');
                 fs.writeFileSync(solution, 'solution:\n');
                 const calls: Array<[string, boolean]> = [];
-                const handler = handlerFor(x, { workspaceFolders: () => [], openFolder: async (folder, fresh) => void calls.push([folder, fresh]) });
+                // A window with another folder open: any other folder goes to a new window.
+                const elsewhere = path.join(scratch, 'Elsewhere');
+                fs.mkdirSync(elsewhere);
+                const handler = handlerFor(x, { workspaceFolders: () => [asFolder(elsewhere)], openFolder: async (folder, fresh) => void calls.push([folder, fresh]) });
 
                 const byFolder = await open(handler, project);
                 assert.deepStrictEqual(calls, [[project, true]]);
@@ -2027,9 +2030,63 @@ suite('DebuggingHandler', () => {
             test('VS Code failing to open the folder is TASK_FAILED with the way to do it by hand', async () => {
                 const x = new ScriptedExecutor();
                 x.session = false;
-                const handler = handlerFor(x, { workspaceFolders: () => [], openFolder: () => Promise.reject(new Error('no window')) });
+                const elsewhere = path.join(scratch, 'Elsewhere');
+                fs.mkdirSync(elsewhere);
+                const handler = handlerFor(x, { workspaceFolders: () => [asFolder(elsewhere)], openFolder: () => Promise.reject(new Error('no window')) });
                 const refused = await refusalOf(open(handler, scratch), 'TASK_FAILED');
                 assert.strictEqual(refused.message, `CMSIS 'open_solution' failed: VS Code did not open ${scratch} (no window).`);
+            });
+
+            test('a window without a folder opens the folder in itself, after the reply: the text says the window reloads and how to come back', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const project = path.join(scratch, 'Blinky');
+                fs.mkdirSync(project);
+                const solution = path.join(project, 'Blinky.csolution.yml');
+                fs.writeFileSync(solution, 'solution:\n');
+                const calls: Array<[string, boolean]> = [];
+                let slept = 0;
+                let release: () => void = () => undefined;
+                const gate = new Promise<void>((done) => {
+                    release = done;
+                });
+                const handler = handlerFor(x, {
+                    workspaceFolders: () => [],
+                    sleep: async (ms) => {
+                        slept = ms;
+                        await gate;
+                    },
+                    openFolder: async (folder, fresh) => void calls.push([folder, fresh]),
+                });
+                const reply = await open(handler, project);
+                assert.deepStrictEqual(calls, [], 'the folder is not opened before the reply left');
+                assert.strictEqual(slept, 1_000);
+                assert.deepStrictEqual(reply, {
+                    text: `Opening ${project} in this window, which has no folder: VS Code reloads it in a second, and the MCP server with it. `
+                        + 'Solution: Blinky.csolution.yml. Wait about 10 s, then call get_session_status; if the connection is refused or the session is unknown, '
+                        + 'connect again — the server listens on the same port. The CMSIS Solution extension loads the solution once the window is back.',
+                    status: 'ok',
+                    data: { opened: project, newWindow: false, reloads: true, solution },
+                });
+                release();
+                await new Promise<void>((tick) => setImmediate(tick));
+                assert.deepStrictEqual(calls, [[project, false]], 'opened in this window once the delay passed');
+            });
+
+            test('a window without a folder opens a new window for a client that lives inside it (Copilot Chat, unknown), and says why', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const project = path.join(scratch, 'Blinky');
+                fs.mkdirSync(project);
+                fs.writeFileSync(path.join(project, 'Blinky.csolution.yml'), 'solution:\n');
+                for (const client of ['Visual Studio Code', undefined]) {
+                    const calls: Array<[string, boolean]> = [];
+                    const handler = handlerFor(x, { workspaceFolders: () => [], openFolder: async (folder, fresh) => void calls.push([folder, fresh]) });
+                    const reply = await handler.handleCmsisCommand({ action: 'open_solution', path: project, client });
+                    assert.deepStrictEqual(calls, [[project, true]], String(client));
+                    assert.ok(textOf(reply).endsWith(' This window stays without a folder: your client runs inside it, and opening the folder here would reload the window and end your session.'), textOf(reply));
+                    assert.deepStrictEqual((reply as { data: unknown }).data, { opened: project, newWindow: true, solution: path.join(project, 'Blinky.csolution.yml') });
+                }
             });
 
             test('a folder this window has open is activated here: asked once, verified, and not under a debug session', async () => {
@@ -2418,7 +2475,7 @@ suite('DebuggingHandler', () => {
                     },
                 });
                 assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'load_and_run' })),
-                    /^✅ CMSIS 'load_and_run' on HE: flashed \('CMSIS Load' exited 0 after [\d.]+ s\); 'CMSIS Run' started and stays active — it hosts the GDB server \(job r-1\)\. cmsis_action attach to debug; cmsis_action stop_run frees the probe\.$/);
+                    /^✅ CMSIS 'load_and_run' on HE: flashed \('CMSIS Load' exited 0 after [\d.]+ s\); 'CMSIS Run' started and stays active — with a probe adapter it hosts the GDB server \(job r-1\); an FVP runs the image without one\. cmsis_action attach to debug; cmsis_action stop_run frees the probe\.$/);
 
                 const failing = jobWorld();
                 again();
@@ -2437,6 +2494,32 @@ suite('DebuggingHandler', () => {
                 const failed = await refusalOf(failing.handler.handleCmsisCommand({ action: 'load_and_run' }), 'TASK_FAILED');
                 assert.match(failed.message, /^❌ CMSIS 'load_and_run' FAILED on HE — 'CMSIS Load' exited with code 1 after [\d.]+ s, so 'CMSIS Run' was not started \(job r-1\)\.$/);
                 assert.ok(failed.hint?.includes('call flash, which returns pyOCD\'s own error lines'), failed.hint);
+            });
+
+            test('run: CMSIS Run alone stays up and the result says nothing was programmed; a Run that ends fails with its code (#73)', async () => {
+                const w = jobWorld();
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisRun': () => {
+                        setTimeout(() => w.tasks.start(w.tasks.execution(shellTask('CMSIS Run'))), 5);
+                    },
+                });
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'run' })),
+                    /^✅ CMSIS 'run' on HE: 'CMSIS Run' started and stays active — with a probe adapter it hosts the GDB server \(job g-1\); nothing was built or programmed\. The flash is untouched; the pyOCD task resets the target and lets the firmware run \(--reset-run\), the J-Link task leaves it running as it was \(-nohalt\)\. The FVP task starts the model with the last-built image and hosts no GDB server: there, use load_and_debug for a session\. cmsis_action attach to debug; cmsis_action stop_run frees the probe\.$/);
+
+                const failing = jobWorld();
+                again();
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisRun': () => {
+                        const run = failing.tasks.execution(shellTask('CMSIS Run'));
+                        setTimeout(() => {
+                            failing.tasks.start(run);
+                            failing.tasks.finish(run, 1);
+                        }, 5);
+                    },
+                });
+                const failed = await refusalOf(failing.handler.handleCmsisCommand({ action: 'run' }), 'TASK_FAILED');
+                assert.match(failed.message, /^❌ CMSIS 'run' FAILED on HE — 'CMSIS Run' ended with code 1 after [\d.]+ s; it hosts the GDB server and must stay up \(job g-1\)\.$/);
+                assert.ok(failed.hint?.startsWith('Read the \'CMSIS Run\' terminal'), failed.hint);
             });
 
             test('load_and_debug: a failed pre-launch Load is the answer before any session probe; a good one leads the result', async () => {
@@ -2510,6 +2593,61 @@ suite('DebuggingHandler', () => {
                 await w.handler.handleCmsisCommand({ action: 'attach', timeoutMs: 2_000 });
                 await w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 2_000 });
                 assert.deepStrictEqual(w.issued, ['attach', 'build']);
+            });
+
+            test('attach with every launch.json endpoint silent: refused before the command, and the hint depends on whether a CMSIS Run is alive', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-attach-'));
+                try {
+                    // A port nobody listens on: bound once, released at once.
+                    const net = await import('net');
+                    const free = net.createServer();
+                    await new Promise<void>((done) => free.listen(0, '127.0.0.1', done));
+                    const port = (free.address() as { port: number }).port;
+                    await new Promise<void>((done) => free.close(() => done()));
+                    fs.mkdirSync(path.join(dir, '.vscode'));
+                    fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({
+                        configurations: [{ name: 'Arm-FVP@GDB (attach)', type: 'gdbtarget', request: 'attach', target: { host: '127.0.0.1', port } }],
+                    }));
+                    const folders = () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }];
+                    const world = (alive: boolean) => {
+                        again();
+                        const clock = fastClock(20);
+                        const tasks = new FakeTasks();
+                        tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
+                        const tracker = new CmsisJobTracker(tasks, clock);
+                        if (alive) {
+                            tasks.start(tasks.execution(shellTask('CMSIS Run')));
+                        }
+                        const x = new ScriptedExecutor();
+                        x.session = false;
+                        const issued: string[] = [];
+                        registrations = standIns({
+                            'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                            'cmsis-csolution.getActiveTargetSet': () => 'HE',
+                            'cmsis-csolution.cmsisAttachDebugger': () => {
+                                issued.push('attach');
+                            },
+                        });
+                        return { handler: handlerFor(x, { ...clock, cmsisJobs: () => tracker, workspaceFolders: folders }), issued };
+                    };
+
+                    const withRun = world(true);
+                    const refusedWithRun = await refusalOf(withRun.handler.handleCmsisCommand({ action: 'attach', timeoutMs: 2_000 }), 'NO_SESSION');
+                    assert.strictEqual(refusedWithRun.message,
+                        `CMSIS 'attach' on HE not started: a CMSIS Run task is alive in this window, but no GDB server listens on 127.0.0.1:${port} ('Arm-FVP@GDB (attach)').`);
+                    assert.ok(refusedWithRun.hint?.startsWith('This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one;'), refusedWithRun.hint);
+                    assert.ok(refusedWithRun.hint?.includes('Use load_and_debug'), refusedWithRun.hint);
+                    assert.deepStrictEqual(withRun.issued, [], 'the attach command was not issued');
+
+                    const withoutRun = world(false);
+                    const refused = await refusalOf(withoutRun.handler.handleCmsisCommand({ action: 'attach', timeoutMs: 2_000 }), 'NO_SESSION');
+                    assert.strictEqual(refused.message,
+                        `CMSIS 'attach' on HE not started: no GDB server listens on 127.0.0.1:${port} ('Arm-FVP@GDB (attach)'), and no CMSIS Run task is alive in this window.`);
+                    assert.ok(refused.hint?.startsWith('cmsis_action run starts CMSIS Run, which hosts the GDB server with a probe adapter (pyOCD resets the target and lets it run)'), refused.hint);
+                    assert.deepStrictEqual(withoutRun.issued, []);
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
             });
 
             test('a Load in flight: the same action attaches to it, another one waits', async () => {
@@ -2614,7 +2752,8 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(lost.message, 'CMSIS \'attach\' on HE started a debug session but it did NOT survive the initial connect — '
                 + 't+3s: 1 thread(s), then t+6s: thread probe failed — session ended.');
             assert.ok(lost.hint?.startsWith('For \'attach\' this almost always means no GDB server is listening'), lost.hint);
-            assert.ok(lost.hint?.includes('No CMSIS Run task is alive in this window — load_and_run first, or load_and_debug.'), lost.hint);
+            assert.ok(lost.hint?.includes('No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
+                + '(the pyOCD task resets the target first); load_and_run programs first.'), lost.hint);
             const never = await replyAnswer(attach(undefined), 'running');
             assert.ok(never.startsWith('CMSIS \'attach\' on HE issued via \'cmsis-csolution.cmsisAttachDebugger\'. '
                 + 'The flash/connect pipeline is running in the CMSIS extension'), never);

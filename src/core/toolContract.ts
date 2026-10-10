@@ -93,6 +93,7 @@ export const CONTRACT_COPIES: readonly ContractCopy[] = [
     { file: 'skills/add-board-layer/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
     { file: 'skills/cmsis-bootstrap/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
     { file: 'skills/cmsis-debugger-setup/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
+    { file: 'skills/start-cmsis-project/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
     { file: 'skills/fvp-debug-setup/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
     { file: 'skills/debugger-troubleshooting/SKILL.md', blocks: [{ id: RULES_BLOCK, placement: AFTER_HEADING_1 }] },
     {
