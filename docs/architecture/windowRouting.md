@@ -132,8 +132,11 @@ window can open a folder. When the worker opened a new window (its reply
 carries `data.newWindow`), the router waits up to 30 s for a window with that
 folder to register (`followOpened()`), makes it the session's target and says
 so in the result; a pin stays, and the result then says how to reach the new
-window. The agent's MCP session survives the whole bootstrap this way: the
-empty window it started in stays the router.
+window. For a CLI client a window without any folder opens the folder in
+itself and reloads (`data.reloads`); when that window is the router, every
+session is gone for a few seconds and the clients reconnect to the same
+port once it is back, which Claude Code does without the agent noticing. A
+client inside the window never gets the reload (`src/core/clientHosting.ts`).
 
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take

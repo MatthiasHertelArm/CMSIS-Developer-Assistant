@@ -25,13 +25,10 @@ import {
     SkillCatalogEntry,
     bundledSkillNames,
     extractSkillReferences,
-    groupByCategory,
-    hasPackSkillSelected,
+    installSet,
     isBundledSkill,
-    isPackSkill,
     loadSkillCatalog,
     parseSkillFrontmatter,
-    resolveDesiredSkills,
 } from '../utils/skillCatalog';
 import {
     HELP_SKILL_NAME,
@@ -56,6 +53,8 @@ suite('Agent skill catalog', () => {
     const skillsDir = path.join(repoRoot, 'skills');
     const vendorDir = path.join(skillsDir, 'cmsis-skills');
     const lockPath = path.join(skillsDir, 'cmsis-skills.lock.json');
+    const syncConfig = (): { upstreamCategories: string[]; categories: { id: string; router: string }[] } =>
+        JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'skills.config.json'), 'utf8'));
 
     const catalog = (): SkillCatalog => loadSkillCatalog(repoRoot);
     const lock = (): { sha: string; contentHash: string; repository: string } =>
@@ -130,24 +129,39 @@ suite('Agent skill catalog', () => {
             ['add-board-layer', 'cmsis-bootstrap', 'cmsis-pack-docs', 'cmsis-debug-live', HELP_SKILL_NAME]);
     });
 
-    test('the extension\'s selectable skills are pack skills: offered in the picker, never installed unasked', () => {
+    test('the extension\'s hidden skills are installed out of the slash menu, reached through an entry point or a hand-over', () => {
         const own = catalog().skills.filter(entry => entry.source === 'extension');
         assert.deepStrictEqual(own.map(entry => [entry.name, entry.category, entry.path]), [
             ['cmsis-debugger-setup', 'project', 'skills/cmsis-debugger-setup'],
+            ['start-cmsis-project', 'project', 'skills/start-cmsis-project'],
             ['debugger-troubleshooting', 'debug', 'skills/debugger-troubleshooting'],
             ['fvp-debug-setup', 'debug', 'skills/fvp-debug-setup'],
         ]);
+        const reachedFrom = (name: string): string[] => catalog().skills.filter(entry => entry.dependsOn.includes(name)).map(entry => entry.name);
         for (const entry of own) {
-            assert.ok(isPackSkill(entry) && !isBundledSkill(entry), entry.name);
+            assert.ok(!isBundledSkill(entry) && !entry.invocable, entry.name);
             assert.ok(entry.description.length <= 1024, `${entry.name}: description of ${entry.description.length} chars`);
             assert.ok(entry.displayName?.startsWith('CMSIS: '), `${entry.name}: display name`);
             assert.ok(entry.shortDescription, `${entry.name}: short description`);
+            assert.ok(reachedFrom(entry.name).length > 0, `${entry.name}: no router or skill hands over to it`);
         }
         assert.ok(!bundledSkillNames(catalog()).includes('fvp-debug-setup'));
-        const picked = resolveDesiredSkills(catalog(), ['fvp-debug-setup']);
-        assert.ok(picked.explicit.includes('fvp-debug-setup'));
-        assert.ok(!resolveDesiredSkills(catalog(), []).explicit.includes('fvp-debug-setup'), 'not installed without a pick');
-        assert.ok(hasPackSkillSelected(catalog(), ['debugger-troubleshooting']));
+        assert.ok(installSet(catalog()).hidden.includes('fvp-debug-setup'));
+    });
+
+    test('every catalog skill is installed: the entry points visible, the members and hand-over targets hidden', () => {
+        const set = installSet(catalog());
+        assert.deepStrictEqual([...set.visible, ...set.hidden].sort(), catalog().skills.map(entry => entry.name).sort());
+        const routed = new Set(catalog().skills.filter(entry => entry.kind === 'router').map(entry => entry.category));
+        for (const entry of catalog().skills) {
+            const expected = entry.kind === 'router' || entry.source === 'bundled'
+                || (entry.source === 'cmsis-skills' && !routed.has(entry.category));
+            assert.strictEqual(entry.invocable, expected, `${entry.name}: invocable`);
+        }
+        assert.deepStrictEqual(set.visible.filter(name => name.startsWith('cmsis-') || name === 'add-board-layer'),
+            ['cmsis-project', 'add-board-layer', 'cmsis-bootstrap', 'cmsis-pack-docs', 'cmsis-debug-live', HELP_SKILL_NAME]);
+        assert.ok(!catalog().skills.some(entry => entry.category === 'bring-up' && entry.source === 'cmsis-skills'), 'bring-up stays upstream');
+        assert.ok(!catalog().skills.some(entry => entry.category === 'pack'), 'pack stays upstream');
     });
 
     test('every dependency resolves to a catalog skill and nothing depends on itself', () => {
@@ -160,29 +174,37 @@ suite('Agent skill catalog', () => {
         }
     });
 
-    test('the $name references in each vendored SKILL.md are recorded as dependencies', () => {
+    test('the $name references in each shipped SKILL.md are recorded as dependencies, and every one is shipped', () => {
         const names = new Set(catalog().skills.map(entry => entry.name));
-        for (const entry of catalog().skills.filter(e => e.source === 'cmsis-skills')) {
+        const skillName = /^[a-z]+(?:-[a-z0-9]+)+$/;
+        for (const entry of catalog().skills.filter(e => e.kind === 'skill' && e.name !== HELP_SKILL_NAME)) {
             const markdown = fs.readFileSync(path.join(repoRoot, entry.path, 'SKILL.md'), 'utf8');
             const expected = extractSkillReferences(markdown).filter(ref => names.has(ref) && ref !== entry.name);
             assert.deepStrictEqual([...entry.dependsOn].sort(), expected,
                 `${entry.name}: dependsOn is out of date — run \`npm run skills:sync\``);
+            // A hand-over to a skill that is not shipped is a dead end for the agent: 2.5.15
+            // shipped $start-cmsis-project and $csolution-retarget that way.
+            const unresolved = extractSkillReferences(markdown).filter(ref => !names.has(ref) && ref !== entry.name && skillName.test(ref));
+            assert.deepStrictEqual(unresolved, [], `${entry.name}: refers to skill(s) that are not shipped`);
         }
     });
 
     suite('routers', () => {
         const routers = (): SkillCatalogEntry[] => catalog().skills.filter(entry => entry.kind === 'router');
 
-        test('one router per category that has upstream skills', () => {
-            const categoriesWithSkills = new Set(catalog().skills
-                .filter(entry => entry.source === 'cmsis-skills')
-                .map(entry => entry.category));
-            assert.deepStrictEqual(
-                routers().map(router => router.category).sort(),
-                [...categoriesWithSkills].sort());
+        test('one router per configured category; the skills of an unrouted category are slash commands of their own', () => {
+            const configured = syncConfig().categories.map(category => category.id).sort();
+            assert.deepStrictEqual(routers().map(router => router.category).sort(), configured);
+            const vendored = new Set(catalog().skills.filter(entry => entry.source === 'cmsis-skills').map(entry => entry.category));
+            for (const category of vendored) {
+                assert.ok(syncConfig().upstreamCategories.includes(category), `${category} is vendored but not in upstreamCategories`);
+            }
+            for (const entry of catalog().skills.filter(skill => skill.source === 'cmsis-skills')) {
+                assert.strictEqual(entry.invocable, !configured.includes(entry.category), entry.name);
+            }
         });
 
-        test('a router depends on exactly the selectable skills of its category: the upstream ones and the extension\'s own', () => {
+        test('a router depends on exactly the hidden skills of its category: the upstream ones and the extension\'s own', () => {
             for (const router of routers()) {
                 const members = catalog().skills
                     .filter(entry => entry.kind === 'skill' && entry.category === router.category
@@ -261,8 +283,12 @@ suite('Agent skill catalog', () => {
 
         test('it names every slash command, every router member, every palette command and every listed setting', () => {
             const markdown = shipped();
-            for (const entry of catalog().skills.filter(skill => skill.kind === 'router' || skill.source === 'bundled')) {
+            for (const entry of catalog().skills.filter(skill => skill.invocable)) {
                 assert.ok(markdown.includes(`\`/${entry.name}\``), `missing /${entry.name}`);
+            }
+            for (const entry of catalog().skills.filter(skill => !skill.invocable)) {
+                assert.ok(markdown.includes(`\`$${entry.name}\``), `missing $${entry.name}`);
+                assert.ok(!markdown.includes(`\`/${entry.name}\``), `/${entry.name} is not a slash command`);
             }
             for (const router of catalog().skills.filter(skill => skill.kind === 'router')) {
                 for (const member of router.dependsOn) {
@@ -294,97 +320,39 @@ suite('Agent skill catalog', () => {
         });
     });
 
-    suite('resolveDesiredSkills', () => {
+    suite('installSet', () => {
+        const entry = (name: string, category: SkillCatalogEntry['category'], kind: SkillCatalogEntry['kind'], source: SkillCatalogEntry['source'],
+            invocable: boolean, dependsOn: string[] = []): SkillCatalogEntry =>
+            ({ name, description: '', category, kind, source, path: `skills/${name}`, dependsOn, invocable });
         const fake: SkillCatalog = {
             schemaVersion: 1,
             source: { repository: 'r', sha: 'abc', sourcePath: 'p' },
             skills: [
-                { name: 'r-pack', description: '', category: 'pack', kind: 'router', source: 'generated', path: 'skills/r-pack', dependsOn: ['gen', 'val'] },
-                { name: 'gen', description: '', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/gen', dependsOn: ['know', 'val'] },
-                { name: 'val', description: '', category: 'pack', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/val', dependsOn: [] },
-                { name: 'know', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/know', dependsOn: ['docs', 'know2'] },
-                { name: 'know2', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/know2', dependsOn: ['know'] },
-                { name: 'docs', description: '', category: 'bring-up', kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/docs', dependsOn: [] },
-                { name: 'cmsis-debug-live', description: '', category: 'debug', kind: 'skill', source: 'bundled', path: 'skills/cmsis-debug-live', dependsOn: [] },
-                { name: 'cmsis-help', description: '', category: 'help', kind: 'skill', source: 'bundled', path: 'skills/cmsis-help', dependsOn: [] },
+                entry('r-project', 'project', 'router', 'generated', true, ['env', 'setup']),
+                entry('env', 'project', 'skill', 'cmsis-skills', false),
+                entry('setup', 'project', 'skill', 'extension', false, ['trouble']),
+                entry('cmsis-debug-live', 'debug', 'skill', 'bundled', true),
+                entry('trouble', 'debug', 'skill', 'extension', false),
+                entry('ci', 'devops', 'skill', 'cmsis-skills', true),
+                entry('cmsis-help', 'help', 'skill', 'bundled', true),
             ],
         };
-        const bundled = ['cmsis-debug-live', 'cmsis-help'];
 
-        test('an empty selection still installs the bundled skills, and nothing else', () => {
-            assert.deepStrictEqual(resolveDesiredSkills(fake, []), { explicit: bundled, implied: [], unknown: [], suppressed: [] });
+        test('splits the whole catalog by the invocable flag, in catalog order', () => {
+            assert.deepStrictEqual(installSet(fake), {
+                visible: ['r-project', 'cmsis-debug-live', 'ci', 'cmsis-help'],
+                hidden: ['env', 'setup', 'trouble'],
+            });
         });
 
-        test('a pre-2.3.2 selection that names the bundled skill is accepted and dedupes', () => {
-            const desired = resolveDesiredSkills(fake, ['cmsis-debug-live']);
-            assert.deepStrictEqual(desired, { explicit: bundled, implied: [], unknown: [], suppressed: [] });
-        });
-
-        test('picking a router implies its members and their transitive dependencies', () => {
-            const desired = resolveDesiredSkills(fake, ['r-pack']);
-            assert.deepStrictEqual(desired.explicit, ['r-pack', ...bundled]);
-            assert.deepStrictEqual([...desired.implied].sort(), ['docs', 'gen', 'know', 'know2', 'val']);
-        });
-
-        test('explicit picks are never listed as implied, cycles terminate', () => {
-            const desired = resolveDesiredSkills(fake, ['know', 'know2']);
-            assert.deepStrictEqual(desired.explicit, ['know', 'know2', ...bundled]);
-            assert.deepStrictEqual(desired.implied, ['docs']);
-        });
-
-        test('unknown names are reported, not thrown, and duplicates collapse', () => {
-            const desired = resolveDesiredSkills(fake, ['val', 'from-the-future', 'val', 'from-the-future']);
-            assert.deepStrictEqual(desired.explicit, ['val', ...bundled]);
-            assert.deepStrictEqual(desired.unknown, ['from-the-future']);
-        });
-
-        test('with the pack disabled only the bundled skills are desired and the picks are reported as suppressed', () => {
-            const desired = resolveDesiredSkills(fake, ['r-pack', 'know', 'cmsis-debug-live', 'from-the-future'], { packEnabled: false });
-            assert.deepStrictEqual(desired.explicit, bundled);
-            assert.deepStrictEqual(desired.implied, [], 'pack members must not sneak in through the closure');
-            assert.deepStrictEqual(desired.suppressed, ['r-pack', 'know']);
-            assert.deepStrictEqual(desired.unknown, ['from-the-future']);
-        });
-
-        test('without the bundled skills — a project selection — only the pack picks and their pack dependencies are desired', () => {
-            const desired = resolveDesiredSkills(fake, ['r-pack', 'cmsis-debug-live'], { includeBundled: false });
-            assert.deepStrictEqual(desired.explicit, ['r-pack'], 'a bundled name in the picks is neither installed nor unknown');
-            assert.deepStrictEqual([...desired.implied].sort(), ['docs', 'gen', 'know', 'know2', 'val']);
-            assert.deepStrictEqual(desired.unknown, []);
-
-            assert.deepStrictEqual(resolveDesiredSkills(fake, [], { includeBundled: false }),
-                { explicit: [], implied: [], unknown: [], suppressed: [] }, 'nothing picked, nothing desired: the project is left alone');
-            assert.deepStrictEqual(resolveDesiredSkills(fake, ['r-pack'], { includeBundled: false, packEnabled: false }),
-                { explicit: [], implied: [], unknown: [], suppressed: ['r-pack'] });
-
-            // A pack skill depending on a bundled one: the personal copy serves; the project gets no duplicate.
-            const dependsOnBundled: SkillCatalog = {
-                ...fake,
-                skills: fake.skills.map(entry => entry.name === 'val' ? { ...entry, dependsOn: ['cmsis-debug-live'] } : entry),
-            };
-            assert.deepStrictEqual(resolveDesiredSkills(dependsOnBundled, ['val'], { includeBundled: false }).implied, []);
-            assert.deepStrictEqual(resolveDesiredSkills(dependsOnBundled, ['val']).implied, [],
-                'with the bundled skills in, the dependency is already explicit');
-        });
-
-        test('hasPackSkillSelected sees routers and members, not bundled or unknown names', () => {
-            assert.strictEqual(hasPackSkillSelected(fake, []), false);
-            assert.strictEqual(hasPackSkillSelected(fake, ['cmsis-debug-live', 'from-the-future']), false);
-            assert.strictEqual(hasPackSkillSelected(fake, ['r-pack']), true);
-            assert.strictEqual(hasPackSkillSelected(fake, ['cmsis-debug-live', 'docs']), true);
-        });
-
-        test('groupByCategory orders categories and puts the router first', () => {
-            const groups = groupByCategory(fake);
-            assert.deepStrictEqual([...groups.keys()], ['bring-up', 'debug', 'pack', 'help']);
-            assert.deepStrictEqual(groups.get('pack')?.map(entry => entry.name), ['r-pack', 'gen', 'val']);
+        test('an empty catalog installs nothing', () => {
+            assert.deepStrictEqual(installSet({ ...fake, skills: [] }), { visible: [], hidden: [] });
         });
     });
 
     /**
-     * Upstream added the `ethos-u` category; `skills:sync -- --update` refused
-     * it until `SkillCategory` knew it. At the pinned commit it has no skills,
-     * so it must leave every generated file as it is.
+     * Upstream's `ethos-u` category is known but not vendored (it is not in
+     * `upstreamCategories`), so it must leave every generated file as it is.
      */
     suite('a category without skills (ethos-u)', () => {
         test('ethos-u is a known category with a label, placed after the CMSIS ones', () => {
@@ -395,25 +363,23 @@ suite('Agent skill catalog', () => {
             }
         });
 
-        test('with no skills it gets no picker heading, no router and no help section', () => {
-            assert.ok(!groupByCategory(catalog()).has('ethos-u'));
+        test('with no skills it gets no router and no help section', () => {
+            assert.ok(!syncConfig().upstreamCategories.includes('ethos-u'));
             assert.ok(!catalog().skills.some(entry => entry.category === 'ethos-u'));
             const help = fs.readFileSync(path.join(skillsDir, HELP_SKILL_NAME, 'SKILL.md'), 'utf8');
             assert.ok(!help.includes('Ethos-U'), 'the shipped help names no empty category');
         });
 
-        test('once it has skills and a router, the picker and the help show it after pack', () => {
+        test('once it has skills and a router, the help shows it', () => {
             const npu: SkillCatalogEntry = {
                 name: 'npu-skill', description: 'Decode an NPU command stream. Use when asked.', category: 'ethos-u',
-                kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/npu-skill', dependsOn: [],
+                kind: 'skill', source: 'cmsis-skills', path: 'skills/cmsis-skills/npu-skill', dependsOn: [], invocable: false,
             };
             const router: SkillCatalogEntry = {
                 name: 'cmsis-npu', description: 'Ethos-U entry point.', category: 'ethos-u', kind: 'router', source: 'generated',
-                path: 'skills/cmsis-npu', shortDescription: 'Work on the Ethos-U NPU', dependsOn: ['npu-skill'],
+                path: 'skills/cmsis-npu', shortDescription: 'Work on the Ethos-U NPU', dependsOn: ['npu-skill'], invocable: true,
             };
             const grown: SkillCatalog = { ...catalog(), skills: [...catalog().skills, npu, router] };
-            const categories = [...groupByCategory(grown).keys()];
-            assert.strictEqual(categories.indexOf('ethos-u'), categories.indexOf('pack') + 1);
             const help = renderHelpSkillMarkdown(grown,
                 readPackageContributions(JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))),
                 JSON.parse(fs.readFileSync(path.join(repoRoot, 'scripts', 'skills.config.json'), 'utf8')).help,

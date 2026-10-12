@@ -153,7 +153,7 @@ const END_POLL_MS = 250;
 
 /** The job id prefix of each action: `b-3` is the third job of the window, a build. */
 const ID_PREFIX: Readonly<Record<JobAction, string>> = {
-    build: 'b', load: 'l', erase: 'e', load_and_run: 'r', load_and_debug: 'd',
+    build: 'b', load: 'l', erase: 'e', run: 'g', load_and_run: 'r', load_and_debug: 'd',
 };
 
 /** Executions started elsewhere that become jobs of their own, so that a repeated call attaches to them. */

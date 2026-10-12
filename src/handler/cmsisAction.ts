@@ -89,18 +89,21 @@ import { silentAttachEndpoints } from '../core/gdbServerPorts';
 import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
 import { withTimeout } from '../utils/timeout';
+import { survivesWindowReload } from '../core/clientHosting';
+import { logger } from '../utils/logger';
 import { failureText, LONG_LIMIT_CAP_MS } from './fence';
 import type { HandlerHost } from './host';
 import { formatDuration, idleStatus, jobResult, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
 
-export type CmsisAction = 'build' | 'load' | 'erase' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run' | 'status'
-    | 'open_solution';
+export type CmsisAction = 'build' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run'
+    | 'status' | 'open_solution';
 
 /** The CMSIS Solution command behind each action. A Map, so `constructor` and friends are not actions. */
 const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['build', 'cmsis-csolution.build'],
     ['load', 'cmsis-csolution.cmsisLoad'],
     ['erase', 'cmsis-csolution.cmsisErase'],
+    ['run', 'cmsis-csolution.cmsisRun'],
     ['load_and_run', 'cmsis-csolution.cmsisLoadAndRun'],
     ['load_and_debug', 'cmsis-csolution.cmsisLoadAndDebug'],
     ['attach', 'cmsis-csolution.cmsisAttachDebugger'],
@@ -108,11 +111,11 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['stop_run', 'cmsis-csolution.cmsisStopRun'],
 ]);
 
-/** Actions that run a cbuild or flash task and end with its result; a repeated one attaches to the job in flight. */
-const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'load_and_run']);
+/** Actions that run a CMSIS task and end with its result; a repeated one attaches to the job in flight. */
+const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'run', 'load_and_run']);
 const SESSION_ACTIONS: ReadonlySet<string> = new Set(['load_and_debug', 'attach']);
 /** Actions whose default wait is the long one: they wait for a task. */
-const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'load_and_run', 'load_and_debug', 'status']);
+const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'status']);
 
 /** Waits without a positive `timeoutMs`: 60 s for the task actions and status (#12), 30 s for the rest. */
 const LONG_WAIT_DEFAULT_MS = 60_000;
@@ -160,7 +163,7 @@ export interface CmsisActionContext {
     renderFullState(state: DebugState): string;
 }
 
-/** Whether the action runs a cbuild / flash task (build, load, erase, load_and_run). */
+/** Whether the action runs a CMSIS task (build, load, erase, run, load_and_run). */
 export function isTaskAction(action: string): boolean {
     return TASK_ACTIONS.has(action);
 }
@@ -436,7 +439,7 @@ async function issueCommand(issue: Issue, action: string, returned?: (value: unk
     }
 }
 
-/** build, load, erase, load_and_run: arm a job, issue the command, wait for the job until the deadline. */
+/** build, load, erase, run, load_and_run: arm a job, issue the command, wait for the job until the deadline. */
 async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<string> | undefined): Promise<ToolText> {
     const { tracker } = issue;
     const job = tracker.begin(action, issue.target);
@@ -451,7 +454,7 @@ async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<strin
     return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels });
 }
 
-/** A repeated build, load, erase or load_and_run waits for the job in flight instead of starting a second one (#12). */
+/** A repeated build, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
 async function attachToJob(
     context: CmsisActionContext,
     job: Job,
@@ -585,7 +588,8 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
         };
     }
     const noRun = action === 'attach' && !runAlive
-        ? ' No CMSIS Run task is alive in this window — load_and_run first, or load_and_debug.'
+        ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
+            + '(the pyOCD task resets the target first); load_and_run programs first.'
         : '';
     throw new ToolError('TASK_FAILED',
         `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${loaded}${survival.detail}.`,
@@ -634,7 +638,12 @@ function expectSessionOf(issue: Issue): void {
  * GDB tries for 15 s, fails with "could not connect: Operation timed out.",
  * and VS Code shows it as a modal dialog.
  */
-async function refuseAttachWithoutServer(issue: Issue, solutionPath: string | undefined): Promise<void> {
+/**
+ * Refuse an attach whose launch.json endpoints all stay silent. With no CMSIS Run alive, the
+ * next step is to start one; with one alive, the task is no GDB server (the FVP adapter's CMSIS
+ * Run is the bare model, the plugin lives in the launch configuration), so the way is load_and_debug.
+ */
+async function refuseAttachWithoutServer(issue: Issue, solutionPath: string | undefined, runAlive: boolean): Promise<void> {
     if (!solutionPath) {
         return;
     }
@@ -643,10 +652,16 @@ async function refuseAttachWithoutServer(issue: Issue, solutionPath: string | un
         return;
     }
     const where = silent.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
+    if (runAlive) {
+        throw new ToolError('NO_SESSION',
+            `CMSIS 'attach'${issue.tag} not started: a CMSIS Run task is alive in this window, but no GDB server listens on ${where}.`,
+            'This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one; the plugin belongs to the launch configuration). '
+                + 'Use load_and_debug, which launches the server with the session; cmsis_action stop_run ends the running task first.');
+    }
     throw new ToolError('NO_SESSION',
         `CMSIS 'attach'${issue.tag} not started: no GDB server listens on ${where}, and no CMSIS Run task is alive in this window.`,
-        'cmsis_action load_and_run starts CMSIS Run, which hosts the GDB server; attach after it. '
-            + 'Or cmsis_action load_and_debug, which starts its own.');
+        'cmsis_action run starts CMSIS Run, which hosts the GDB server with a probe adapter (pyOCD resets the target and lets it run), '
+            + 'without building or programming; attach after it. load_and_run programs the built image first; load_and_debug starts a session of its own.');
 }
 
 async function loadAndDebug(issue: Issue): Promise<ToolText> {
@@ -813,19 +828,32 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
     };
 }
 
+/** How long after the reply a window without a folder waits before it opens the folder in itself, so the reply gets out first. */
+const RELOAD_DELAY_MS = 1_000;
+
 /**
  * `open_solution`: open the folder of a csolution in a VS Code window and
  * make the solution active. A folder this window has open is activated
- * here; any other is opened in a new window, so the window that answers
- * keeps running, the MCP server with it. The router follows the new window
- * once it registers (`data.newWindow`).
+ * here. A window without any folder opens it in itself when the client runs
+ * outside the window (`survivesWindowReload`): VS Code reloads the window
+ * for that, the MCP server with it, so the reply goes out first and the
+ * folder is opened a second later; the agent is told to come back after the
+ * reload. Otherwise — another folder is open, or the client is a chat inside
+ * this window that the reload would end — the folder opens in a new window,
+ * so the window that answers keeps running; the router follows the new
+ * window once it registers (`data.newWindow`).
  */
-async function openSolution(context: CmsisActionContext, given: string | undefined, deadline: number): Promise<ToolText> {
+async function openSolution(context: CmsisActionContext, given: string | undefined, deadline: number, client: string | undefined): Promise<ToolText> {
     const { host } = context;
     const place = placeOf(given);
     const probe = place.named ?? place.folder;
-    if (host.workspaceFolders().some((folder) => liesInside(probe, folder.uri.fsPath))) {
+    const folders = host.workspaceFolders();
+    if (folders.some((folder) => liesInside(probe, folder.uri.fsPath))) {
         return activateHere(context, place, deadline);
+    }
+    const empty = folders.length === 0;
+    if (empty && survivesWindowReload(client)) {
+        return openHere(context, place);
     }
     try {
         await withTimeout('vscode.openFolder', KICKOFF_MS, () => Promise.resolve(host.openFolder(place.folder, true)));
@@ -837,10 +865,36 @@ async function openSolution(context: CmsisActionContext, given: string | undefin
     if (place.named !== undefined || place.solutions.length === 1) {
         data.solution = place.named ?? place.solutions[0];
     }
+    const stays = empty ? ' This window stays without a folder: your client runs inside it, and opening the folder here would reload the window and end your session.' : '';
     return {
         text: `Opening ${place.folder} in a new VS Code window. ${solutionsNote(place)} `
             + 'The window joins the CMSIS Developer Assistant once its extensions have started, and the CMSIS Solution extension '
-            + `then loads the solution. Reach it with window: '${place.folder}' on cmsis_action, or select_debug_window.`,
+            + `then loads the solution. Reach it with window: '${place.folder}' on cmsis_action, or select_debug_window.${stays}`,
+        status: 'ok',
+        data,
+    };
+}
+
+/**
+ * `open_solution` from a window without a folder: the folder is opened in
+ * this window after the reply left. The window reloads, the MCP server
+ * starts again a few seconds later and knows no session; the text says what
+ * the agent does then. A failure to open is logged, since nobody is left to
+ * tell: the agent sees it when the status still shows no folder.
+ */
+function openHere(context: CmsisActionContext, place: SolutionPlace): ToolText {
+    const { host } = context;
+    void host.sleep(RELOAD_DELAY_MS).then(() => host.openFolder(place.folder, false)).catch((caught: unknown) => {
+        logger.warn(`open_solution: VS Code did not open ${place.folder} in this window`, failureText(caught));
+    });
+    const data: { opened: string; newWindow: boolean; reloads: boolean; solution?: string } = { opened: place.folder, newWindow: false, reloads: true };
+    if (place.named !== undefined || place.solutions.length === 1) {
+        data.solution = place.named ?? place.solutions[0];
+    }
+    return {
+        text: `Opening ${place.folder} in this window, which has no folder: VS Code reloads it in a second, and the MCP server with it. `
+            + `${solutionsNote(place)} Wait about 10 s, then call get_session_status; if the connection is refused or the session is unknown, `
+            + 'connect again — the server listens on the same port. The CMSIS Solution extension loads the solution once the window is back.',
         status: 'ok',
         data,
     };
@@ -857,6 +911,7 @@ export async function runCmsisAction(
     target: string | undefined,
     waitMs: number,
     openPath?: string,
+    client?: string,
 ): Promise<ToolText> {
     const { executor, host } = context;
     const deadline = host.now() + waitMs;
@@ -865,7 +920,7 @@ export async function runCmsisAction(
         return reportStatus(context, deadline);
     }
     if (action === 'open_solution') {
-        return openSolution(context, openPath, deadline);
+        return openSolution(context, openPath, deadline, client);
     }
     if (SESSION_ACTIONS.has(action) && executor.hasDebugSession()) {
         const status = await executor.getSessionStatus();
@@ -943,9 +998,7 @@ export async function runCmsisAction(
             return `CMSIS '${action}'${tag} issued via '${command}'. It runs in the CMSIS extension — check the CMSIS output channel if you need to confirm.`;
         case 'attach': {
             const runAlive = tracker.probeOwners().some((owner) => owner.kind === 'run' || owner.kind === 'loadRun');
-            if (!runAlive) {
-                await refuseAttachWithoutServer(issue, solution.solutionPath);
-            }
+            await refuseAttachWithoutServer(issue, solution.solutionPath, runAlive);
             expectSessionOf(issue);
             await issueCommand(issue, action);
             return sessionPhase(issue, action, '', runAlive);

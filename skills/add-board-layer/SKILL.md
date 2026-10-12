@@ -10,15 +10,15 @@ description: Add a board layer to an existing CMSIS csolution by interviewing th
 
 Only the user can lift a rule, by asking for the specific command.
 
-- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names the command.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
-- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
-- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
-- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.
+- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.
 <!-- cmsis-developer-assistant:rules:end -->
 
 ## Goal and method
@@ -26,8 +26,8 @@ Only the user can lift a rule, by asking for the specific command.
 Goal: produce a **working board layer** for a new target in an existing
 csolution — `Board.clayer.yml` plus whatever startup / stdio / memory files it
 needs — and wire it in as a target-type, ending on a green build. Real-hardware
-bring-up (probe, serial marker, breakpoints) is the `$csolution-retarget` §6
-flow; hand off to it once the layer builds.
+bring-up (probe, serial marker, breakpoints) belongs to `$cmsis-debugger-setup`
+and then `cmsis-debug-live`; hand off once the layer builds.
 
 The method is an **interview**: read everything the repo already answers, ask
 the user only the handful of decisions it cannot, then generate. Never
@@ -65,7 +65,8 @@ Gather these first — each one you find is a question you do NOT ask:
   (`Board-Layer`, `AI-Layer`, …), `target-set`/`debugger`, `packs`, and any
   solution-level node that cannot fork per target (`mlops:`, a generated layer,
   a single `.vscode`). An un-forkable node means **replace-on-a-branch**, not a
-  new target-type (see `$csolution-retarget` §0).
+  new target-type: the new board replaces the old one in a git branch of the
+  solution, and the layer is written for that branch.
 - An existing board layer in the repo to mirror, and its file set — copy its
   shape rather than inventing one.
 - If the user has already named the board, resolve its identity now (§2) so the
@@ -269,9 +270,10 @@ that terminal's toolbox (`csolution -V` shows whether it knows `mlops:`).
 
 Show the user the layer file set, the csolution diff, and the green build
 summary. Then state the finish line honestly: a build is not a bring-up.
-If a probe + VCP are attached, continue into `$csolution-retarget` §6
-(serial_open → breakpoints → `cmsis_action load_and_debug` → success marker →
-verify the config registers live). If no hardware is attached, say so — the
+If a probe + VCP are attached, continue with `$cmsis-debugger-setup` (the
+`debugger:` node, launch.json, `serial_open` → breakpoints →
+`cmsis_action load_and_debug` → success marker) and `cmsis-debug-live` to verify
+the config registers live. If no hardware is attached, say so — the
 layer is validated to *compile and link*, not to run — and commit the layer
 under `board/<BoardName>/` (generator output included), the csolution edit and
 the regenerated `.vscode` files, noting the new target in the README.

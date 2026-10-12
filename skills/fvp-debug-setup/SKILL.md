@@ -10,15 +10,15 @@ description: "Wire the CMSIS Solution extension's Run/Debug buttons to an Arm FV
 
 Only the user can lift a rule, by asking for the specific command.
 
-- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against the board from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks for it or a CMSIS skill step names the command.
+- Talk to the board only through the cmsis-developer-assistant MCP tools. Never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` from a shell, and never install pyOCD.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names the command.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
-- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep over the map file.
-- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`) instead of substituting a shell command.
-- The control server and the registry files are internal: never call or read them. With several VS Code windows open, use `list_debug_windows` and `select_debug_window`.
+- Symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
+- If a tool you need is not in your tool list, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.
+- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.
 - A running target rejects reads and steps: call `pause_execution` first.
-- If a tool fails twice, call `get_session_status` and `get_recent_problems`, then stop and tell the user what to do in VS Code. Do not work around a failing tool with a shell command.
+- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.
 <!-- cmsis-developer-assistant:rules:end -->
 
 Goal: make the CMSIS view's **Load & Debug** and **Run** buttons work end-to-end against an FVP, with no external GDB bridge.
@@ -27,7 +27,7 @@ Since **MDK FVP models 11.32.23** the release ships `plugins/GDBServer.so` (`.dl
 
 ## 1. Verify prerequisites
 
-**The model release.** `arm:models/arm/avh-fvp` in `vcpkg-configuration.json` must be `>= 11.32.23`. The registry is a zip served at `https://artifacts.tools.arm.com/vcpkg-registry/` — download and unpack it to see the real versions and their download URLs rather than trusting the local cache in `~/.vcpkg/registries/`, which goes stale. Archive naming changed with this release: `mdk-fvp-<major>.<minor>_<patch>_linux_{arm64,x86}.tar.gz` (was `avh-linux-*`).
+**The model release.** `arm:models/arm/avh-fvp` in `vcpkg-configuration.json` must be `>= 11.32.23`. The versions the registry offers are what the Arm Tools Environment Manager shows for the artifact (**Configure Arm Tools Environment**); ask the user to pick a release there rather than trusting the local cache in `~/.vcpkg/registries/`, which goes stale. Archive naming changed with this release: `mdk-fvp-<major>.<minor>_<patch>_linux_{arm64,x86}.tar.gz` (was `avh-linux-*`).
 
 **Host support.** The artifact has demands for `windows and x64`, `linux and x64`, `linux and arm64` — **no darwin**. On macOS `vcpkg activate` silently installs nothing (you get an artifact dir containing only `artifact.json`), so the model has to run in Docker. Check `docker info` there.
 
@@ -68,7 +68,7 @@ Verified against `arm.cmsis-csolution` **1.70.0** and **1.72.0**; the debug adap
 
 - The **debug button** starts the launch config by **name**, rendered from the active adapter template. For `Arm-FVP` that is `Arm-FVP@GDB (launch)`; the attach button starts `Arm-FVP@GDB (attach)`.
 - The **run button** runs the task `CMSIS Load+Run`; the standalone buttons run `CMSIS Load` / `CMSIS Run` / `CMSIS Erase`.
-- On regeneration the extension rewrites every `CMSIS *` task and every launch config carrying `"cmsis": {"updateConfiguration": "auto"}`, and *removes* auto configs that are not in the generated set. `"manual"` survives both. Regeneration also fires on a plain file-watch of the csolution yml — useful for testing: `touch <name>.csolution.yml`, wait, re-read `.vscode/launch.json`.
+- On regeneration the extension rewrites every `CMSIS *` task and every launch config carrying `"cmsis": {"updateConfiguration": "auto"}`, and *removes* auto configs that are not in the generated set. `"manual"` survives both. Regeneration also fires when the csolution changes on disk and on `cmsis_action { action: 'build' }`; after it, re-read `.vscode/launch.json`.
 
 **`templates/debug/FVP.adapter.json` in the extension already does the right thing** — read it (`~/.vscode/extensions/arm.cmsis-csolution-*/templates/debug/`) rather than reinventing it. It generates `Arm-FVP@GDB (launch)` as a `request: "launch"` config whose `target.server` is the model and whose `serverParameters` are `-D --plugin ${env:AVH_FVP_PLUGINS}/GDBServer.so -C GDBServer.port=<port> <config-file> <args> -a <image>`, plus `CMSIS Load` (echo no-op — the model loads the image at launch), `CMSIS Run` (the bare model, free-running) and `CMSIS Load+Run`. That is why this skill switches the adapter instead of hijacking the pyOCD names; older notes claiming `Arm-FVP` generates no launch config are out of date.
 
@@ -87,7 +87,7 @@ The yml-node names come from `debug-adapters.yml` (`model`, `config-file`, `args
 
 **Do not set `args: ""`.** The template does `config.args?.trim().split(/\s+/) ?? []`, and an empty string splits to `['']`, injecting an empty argv entry into the model command line. Omit the node entirely instead.
 
-Regenerate and confirm the node landed: the `debugger:` block in `out/<solution>+<target>.cbuild-run.yml` should show `name: Arm-FVP`, `model:`, `config-file:`.
+Regenerate with `cmsis_action { action: 'build' }` and confirm the node landed: the `debugger:` block in `out/<solution>+<target>.cbuild-run.yml` should show `name: Arm-FVP`, `model:`, `config-file:`.
 
 ## 5. The two readiness bugs — fix both or neither works
 
@@ -125,6 +125,15 @@ Blank the port to select the event-driven branch — better than `serverStartupD
 
 Leave `Arm-FVP@GDB (attach)` on `auto` — it has no `serverParameters`, so it is unaffected.
 
+**The edit, as one step.** This is the one case where the launch configuration is edited by hand (the `cmsis-debugger-setup` rule not to applies to generated configs that work). In `.vscode/launch.json`, in the `Arm-FVP@GDB (launch)` entry:
+
+1. set `"port": ""` under `target`;
+2. add `"serverPortRegExp": "GDBServer: Listening .*port=([0-9]+)"` and `"portDetectionTimeout": 300000` under `target`;
+3. set `"cmsis": { "updateConfiguration": "manual" }` and add the re-sync comment;
+4. on Linux and macOS point `target.server` at the shim of step 6; on Windows see the caveats.
+
+Show the user the diff before writing it.
+
 ## 6. Install the model shim
 
 Copy `templates/fvp.sh` and (macOS only) `templates/fvp.Dockerfile` into the project's `.vscode/`, replace `{{FVP_MODEL}}`, `{{FVP_VERSION}}` and, in the Dockerfile, `{{FVP_ARCHIVE}}` (`fvp.sh` passes the real archive name as a build argument, so any placeholder value works there), and `chmod +x fvp.sh`. It is worth installing even on Linux-only projects for the first two reasons:
@@ -144,13 +153,13 @@ Copy `templates/fvp.sh` and (macOS only) `templates/fvp.Dockerfile` into the pro
 Verify through VS Code, because that exercises the adapter's own readiness path, which is what breaks:
 
 1. `cmsis_action { action: 'build' }`, then `cmsis_action { action: 'load_and_debug' }` with the FVP target active.
-2. The result reports a session that stopped at `main`. `get_call_stack` shows `main` on top.
+2. The result says that the session survived the connect (it does not name the stop location); `get_call_stack` then shows `main` on top.
 3. `get_recent_problems { sources: ['gdb-server'], minSeverity: 'info' }` lists the model's output. The line `GDBServer: Listening address="0.0.0.0" port=3333` must appear **before** the session came up. A line `gdb connection lost` followed by the banner means fix 5(a) or 5(b) is missing.
 4. `continue_execution`, then read the firmware's output: the model's stdout is in the debug console, and the UART is in its telnet or log file, as the model's configuration says.
 5. `stop_debugging`. On macOS, `docker ps` must be empty afterwards.
 6. `cmsis_action { action: 'load_and_run' }` for the free-running path (no `-D`, no plugin), and check that the firmware's output appears; `cmsis_action { action: 'stop_run' }` ends it.
 
-When the session cannot be started through VS Code, or the user asks for the launch path to be replayed outside it, `templates/verify-launch.py` in this skill directory does that: it parses the committed `launch.json`, spawns `target.server` with `target.serverParameters` as VS Code would expand them, reads the server's output until `serverPortRegExp` matches, then runs `arm-none-eabi-gdb -batch` with the configuration's `initCommands` plus `continue`, `bt`, `detach`. It talks to the model only, never to a board. It exits non-zero unless the breakpoint was hit and no container was left behind, and it says so when `target.port` is still set, which means fix 5(a) was never applied.
+Only when the user asks for the launch path to be replayed outside VS Code (the script starts `arm-none-eabi-gdb`, which the tool rules otherwise forbid), `templates/verify-launch.py` in this skill directory does that: it parses the committed `launch.json`, spawns `target.server` with `target.serverParameters` as VS Code would expand them, reads the server's output until `serverPortRegExp` matches, then runs `arm-none-eabi-gdb -batch` with the configuration's `initCommands` plus `continue`, `bt`, `detach`. It talks to the model only, never to a board. It exits non-zero unless the breakpoint was hit and no container was left behind, and it says so when `target.port` is still set, which means fix 5(a) was never applied.
 
 Success looks like:
 
@@ -167,5 +176,5 @@ On macOS warn that the very first run builds the container image (~100MB downloa
 - **Run restarts the model, it does not resume a halted one** — RSP detach leaves the core halted and the plugin has no resume command (§2).
 - Only one model can hold the GDB port at a time; a stale `fvp-gdb` or an older container will block it. `lsof -nP -iTCP:3333 -sTCP:LISTEN` finds the culprit.
 - The launch config is `manual`: after changing target-type or build-type, its `program`/`serverParameters` paths need re-syncing (§5).
-- Windows: point `model:` straight at `FVP_Corstone_SSE-320.exe` — the shim is a macOS detour and is POSIX shell.
+- Windows: the shim is POSIX shell, so fix 5(b) is not available; point `model:` straight at `FVP_Corstone_SSE-320.exe`, keep `port` set and use `"serverStartupDelay": 3000` (a fixed wait instead of the banner match) in the launch configuration; raise it when `gdb connection lost` still appears before the banner. The `chmod +x` of step 6 does not apply.
 - Worth reporting upstream: Arm's `FVP.adapter.json` sets neither `serverStartupDelay` nor `serverPortRegExp`, so the generated config races on every host; macOS just loses it every time.

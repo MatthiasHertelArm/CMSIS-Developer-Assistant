@@ -107,6 +107,7 @@ export function helpCatalogEntry(config: HelpSkillConfig): SkillCatalogEntry {
         displayName: config.displayName,
         shortDescription: config.shortDescription,
         dependsOn: [],
+        invocable: true,
     };
 }
 
@@ -132,16 +133,19 @@ export function renderHelpSkillMarkdown(
 ): string {
     const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
     const routers = catalog.skills.filter(entry => entry.kind === 'router');
-    const bundled = catalog.skills.filter(entry => entry.source === 'bundled');
     const oneLiner = (entry: SkillCatalogEntry): string => cell(entry.shortDescription ?? firstSentence(entry.description));
 
-    // --- slash commands ------------------------------------------------------
-    const commandRows = [
-        ...routers.map(router =>
-            `| \`/${router.name}\` | ${oneLiner(router)} — one command for the whole category; its ${router.dependsOn.length} member skills are listed below |`),
-        ...bundled.map(entry =>
-            `| \`/${entry.name}\` | ${entry.name === HELP_SKILL_NAME ? 'This list.' : oneLiner(entry)} |`),
+    // --- slash commands: every invocable skill, the routers first -------------
+    const slashCommands = [
+        ...routers,
+        ...catalog.skills.filter(entry => entry.invocable && entry.kind !== 'router'),
     ];
+    const commandRows = slashCommands.map(entry => {
+        if (entry.kind === 'router') {
+            return `| \`/${entry.name}\` | ${oneLiner(entry)} — one command for the whole category; its ${entry.dependsOn.length} member skills are listed below |`;
+        }
+        return `| \`/${entry.name}\` | ${entry.name === HELP_SKILL_NAME ? 'This list.' : oneLiner(entry)} |`;
+    });
 
     // --- member skills by category ------------------------------------------
     const memberSections: string[] = [];
@@ -161,17 +165,23 @@ export function renderHelpSkillMarkdown(
         );
     }
 
-    // The extension's own selectable skills of a category without an entry point.
-    const routed = new Set(routers.map(entry => entry.category));
+    // Hidden skills that no entry point lists: reached by a `$name` hand-over from another skill.
+    const listed = new Set(routers.flatMap(router => router.dependsOn));
     for (const category of SKILL_CATEGORY_ORDER) {
-        const own = catalog.skills.filter(entry => entry.source === 'extension' && entry.category === category);
-        if (routed.has(category) || own.length === 0) {
+        const handedOver = catalog.skills.filter(entry => !entry.invocable && !listed.has(entry.name) && entry.category === category);
+        if (handedOver.length === 0) {
             continue;
         }
+        const callers = (name: string): string[] => catalog.skills
+            .filter(entry => entry.dependsOn.includes(name))
+            .map(entry => `\`${entry.invocable ? '/' : '$'}${entry.name}\``);
         memberSections.push(
-            `### ${SKILL_CATEGORY_LABELS[category]} (selected one by one)`,
+            `### ${SKILL_CATEGORY_LABELS[category]} (reached by hand-over)`,
             '',
-            ...own.map(entry => `- \`$${entry.name}\` — ${oneLiner(entry)}`),
+            ...handedOver.map(entry => {
+                const from = callers(entry.name);
+                return `- \`$${entry.name}\` — ${oneLiner(entry)}${from.length > 0 ? ` (from ${from.join(', ')})` : ''}`;
+            }),
             '',
         );
     }
@@ -217,10 +227,11 @@ export function renderHelpSkillMarkdown(
         '',
         'Answer the user from the lists below: which CMSIS slash commands, VS Code commands,',
         'MCP tools and settings exist, and which one fits the task at hand. This skill does no',
-        'work of its own and runs no tools — it points at the skill or tool that does. A',
-        '`/name` whose `../<name>/SKILL.md` is missing next to this file is not installed; the',
-        'user adds it with **CMSIS Developer Assistant: Select Agent Skills** in VS Code or by',
-        `editing the \`${SETTINGS_PREFIX}.installedSkills\` setting.`,
+        'work of its own and runs no tools — it points at the skill or tool that does. Every',
+        'skill below is installed into the user\'s personal skills directories by',
+        '**CMSIS Developer Assistant: Configure Agent** and at each activation of the extension;',
+        'a `/name` whose `../<name>/SKILL.md` is missing next to this file did not install — the',
+        'extension\'s output channel says why, and running the command again repeats the install.',
         '',
         '## Slash commands',
         '',
@@ -230,9 +241,8 @@ export function renderHelpSkillMarkdown(
         '',
         '## Member skills by category',
         '',
-        'Selecting a category entry point installs its members with `user-invocable: false`:',
-        'they stay out of the `/` menu, the model invokes them by description or through the',
-        'entry point, and the user can also select them individually to make them visible.',
+        'The members of an entry point are installed with `user-invocable: false`: they stay out',
+        'of the `/` menu, and the model invokes them by description or through the entry point.',
         '',
         ...memberSections,
         '## VS Code commands',
@@ -250,8 +260,8 @@ export function renderHelpSkillMarkdown(
         '',
         'For the debugging workflow call `get_debug_instructions` (or read the',
         `\`${SETTINGS_PREFIX}://docs/debug_instructions\` resource); for a live target investigation`,
-        'invoke `/cmsis-debug-live` first. The *Agent Tools* section of the extension README lists',
-        'every tool and parameter.',
+        'invoke `/cmsis-debug-live` first. The *Agent Tools* section of the extension\'s user',
+        'guide (`docs/user-guide.md` in the repository) lists every tool and parameter.',
         '',
         renderContractBlock(TABLE_BLOCK, contract),
         '',
