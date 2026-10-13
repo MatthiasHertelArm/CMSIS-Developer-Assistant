@@ -305,7 +305,7 @@
         "cmsis-developer-assistant.knowledge.indexPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path of the base knowledge index (`knowledge.db`) the knowledge tools read: absolute, starting with `~`, or relative to the first workspace folder. Read with it, whatever the active target: the `knowledge.db` (or `knowledge/knowledge.db`) of every installed pack under the pack root or in `.Local/local_repository.pidx`, and `.cmsis/knowledge.db` of each workspace folder. All opened read-only; a rebuilt, added or removed file is picked up on the next call.",
+          "markdownDescription": "Path of the base knowledge index (`knowledge.db`) the knowledge tools read: absolute, starting with `~`, or relative to the first workspace folder. Read with it: the `.knowledge/knowledge.db` of every installed pack under the pack root or in `.Local/local_repository.pidx`, whose units are offered only in projects that use the pack, and `.cmsis/knowledge.db` of each workspace folder. All opened read-only; a rebuilt, added or removed file is picked up on the next call.",
           "tags": [
             "experimental"
           ]

@@ -159,10 +159,12 @@ export class KnowledgePanel {
                     break;
                 }
                 case 'open.source': {
-                    // Only the file the index itself names for this unit, and only when it is on this machine.
+                    // Only the file the index itself names for this unit, and only when it is on this machine. A relative
+                    // path starts in the folder above the index the unit came from: a pack's folder for .knowledge/knowledge.db.
                     const id = typeof message.id === 'string' ? message.id : '';
-                    const source = detailOf(await this.knowledge.browseIndex(), id)?.sourcePath;
-                    const index = this.knowledge.indexFile();
+                    const browsed = await this.knowledge.browseIndex();
+                    const source = detailOf(browsed, id)?.sourcePath;
+                    const index = browsed.fileOf(id) ?? this.knowledge.indexFile();
                     const file = source && index && !path.isAbsolute(source) ? path.resolve(path.dirname(index), '..', source) : source;
                     if (file && fs.existsSync(file)) {
                         await vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true });

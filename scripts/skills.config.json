@@ -103,7 +103,7 @@
       },
       {
         "name": "Knowledge (experimental, off by default — cmsis-developer-assistant.knowledge.enabled)",
-        "summary": "`knowledge_search`, `knowledge_get`, `knowledge_expand` — how-to knowledge from the knowledge indexes: the base index (procedures, which are the skills as units, rules, routing units, the causes and fixes of csolution, packchk and svdconv messages, digests of closed issues) and the `knowledge.db` every installed pack and the workspace (`.cmsis/knowledge.db`) carry, such as the converted documentation of Zephyr, TF-M, CMSIS components and tools; all are searched as one, whatever the target, and a hit says which index it came from. Search returns summaries, `knowledge_get` the whole unit and the files it ships."
+        "summary": "`knowledge_search`, `knowledge_get`, `knowledge_expand` — how-to knowledge from the knowledge indexes: the base index (procedures, which are the skills as units, rules, routing units, the causes and fixes of csolution, packchk and svdconv messages, digests of closed issues), the `.knowledge/knowledge.db` every installed pack carries, offered only in projects that use the pack, and the workspace's `.cmsis/knowledge.db`; all are searched as one, and a hit says which index it came from. Search returns summaries, `knowledge_get` the whole unit and the files it ships."
       }
     ],
     "settings": {
@@ -117,7 +117,7 @@
       "serial.enabled": "Offer the serial_* tools (default on); window reload.",
       "serial.idleCloseSeconds": "Release a serial port an agent opened after this many seconds without a serial call (default 300; 0 is off).",
       "telemetry.jsonlPath": "Append one JSON line per tool call to this file; empty is off.",
-      "knowledge.enabled": "Experimental. Offer the knowledge tools and name the unit of a known error message in a failed build's result; `knowledge.indexPath` names the base `knowledge.db`, read with the `knowledge.db` of every installed pack and `.cmsis/knowledge.db` of the workspace. Window reload.",
+      "knowledge.enabled": "Experimental. Offer the knowledge tools and name the unit of a known error message in a failed build's result; `knowledge.indexPath` names the base `knowledge.db`, read with the `.knowledge/knowledge.db` of every installed pack and `.cmsis/knowledge.db` of the workspace. Window reload.",
       "knowledge.replaceSkills": "With the knowledge tools on: install only the core skills `cmsis-debug-live`, `cmsis-pack-docs` and `cmsis-help` (and what they hand over to), remove the others this extension installed, and take the other procedures from `knowledge_search` and `knowledge_get`."
     }
   },

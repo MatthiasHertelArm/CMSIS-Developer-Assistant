@@ -17,8 +17,8 @@
 /**
  * What a knowledge search knows about the project without being told: the
  * device, board and packs of the active `*.cbuild-run.yml`, the cores from
- * the device pack's PDSC on disk, the compiler and the components from the
- * cbuild files. The documentation and build-artefact cores already resolve
+ * the device pack's PDSC on disk, the compiler, the components and the
+ * other packs from the cbuild files. The documentation and build-artefact cores already resolve
  * all of it; this module only puts their answers together.
  *
  * It never throws: a workspace without a build has no facts, and the search
@@ -48,6 +48,18 @@ export function componentsOf(cbuildYml: string): string[] {
         const match = line.match(/^\s+- component:\s*(.+?)\s*$/);
         if (match) {
             found.push(match[1].replace(/^["']|["']$/g, ''));
+        }
+    }
+    return found;
+}
+
+/** `    - pack: ARM::CMSIS@6.1.0` lines of a cbuild.yml, as `ARM::CMSIS`. */
+export function packsOf(cbuildYml: string): string[] {
+    const found: string[] = [];
+    for (const line of cbuildYml.split(/\r?\n/)) {
+        const match = line.match(/^\s+- pack:\s*(.+?)\s*$/);
+        if (match) {
+            found.push(match[1].replace(/^["']|["']$/g, '').replace(/@.*$/, ''));
         }
     }
     return found;
@@ -94,13 +106,17 @@ export async function projectFacts(docs: PackDocsHost, build: BuildInfoHost): Pr
         if (!('error' in context)) {
             facts.compiler = context.compiler;
             const components = new Set<string>();
+            const packs = new Set(facts.packs);
             for (const image of context.images) {
                 if (image.cbuildYml && fs.existsSync(image.cbuildYml)) {
-                    componentsOf(fs.readFileSync(image.cbuildYml, 'utf-8')).forEach((c) => components.add(c));
+                    const yml = fs.readFileSync(image.cbuildYml, 'utf-8');
+                    componentsOf(yml).forEach((c) => components.add(c));
+                    packsOf(yml).forEach((pack) => packs.add(pack));
                 }
                 facts.compiler ??= image.compiler;
             }
             facts.components = [...components];
+            facts.packs = [...packs];
         }
         return { facts, ...(note ? { note } : {}) };
     } catch (caught) {

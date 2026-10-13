@@ -23,7 +23,7 @@ Phases 1 and 2 are implemented behind `knowledge.enabled`, as the recommendation
 
 ## Added 2026-10-06: several indexes
 
-The extension now reads a set of indexes as one: the base file of the setting, the `knowledge.db` of every installed pack (pack root and `.Local/local_repository.pidx`) and `.cmsis/knowledge.db` of the workspace, all whatever the active target. Ranked lists are merged by rank; a hit names the index it came from. The knowledge base builds a core index and a documentation index (`scripts/build_split.sh`), the latter installed as the test pack `Local::CMSIS_Knowledge@1.0.0`. This is phase 3 without the bundling.
+The extension now reads a set of indexes as one: the base file of the setting, the `.knowledge/knowledge.db` of every installed pack (pack root and `.Local/local_repository.pidx`; its units only for projects that use the pack) and `.cmsis/knowledge.db` of the workspace. Ranked lists are merged by rank; a hit names the index it came from. The knowledge base builds a core index and a documentation index (`scripts/build_split.sh`), the latter installed as the test pack `Local::CMSIS_Knowledge@1.0.0`. This is phase 3 without the bundling.
 
 ## Problem
 

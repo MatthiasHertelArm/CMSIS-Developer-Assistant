@@ -16,9 +16,9 @@
 
 /**
  * Reads a knowledge index: the `knowledge.db` the knowledge-base tooling
- * builds (`build_index.py`), one SQLite file with the knowledge units and
- * entities (`nodes`), their relations (`edges`) and an FTS5 index over the
- * units (`nodes_fts`).
+ * builds (`build_index.py`), or `cmsis-knowledge` for a pack, one SQLite file
+ * with the knowledge units and entities (`nodes`), their relations (`edges`)
+ * and an FTS5 index over the units (`nodes_fts`).
  *
  * The file is opened read-only with Node's own `node:sqlite`, so nothing is
  * installed and nothing native ships. The vector table of the index
@@ -33,6 +33,10 @@ import { ToolError } from '../toolResult';
 /** The major version of the index layout this reader understands; an index without `schema_version` counts as 1. */
 export const KNOWLEDGE_SCHEMA_VERSION = 1;
 
+/** Relation of a pack's unit to that pack: the unit is offered only to a project that uses the pack. */
+export const SCOPE_RELATION = 'scoped_to';
+/** Relation of a board to a part mounted on it (`<mountedPart>` of the PDSC). */
+export const PART_RELATION = 'has_part';
 /** Relations along which a unit's validity is inherited: a device's subfamily, family, pack and cores. */
 const ANCESTOR_RELATIONS = ['part_of', 'has_core'];
 const ANCESTOR_DEPTH = 6;
@@ -120,6 +124,8 @@ export interface KnowledgeReader {
     sources(): IndexSource[];
     /** The label of the index a node came from; undefined for the base index. */
     sourceOf(id: string): string | undefined;
+    /** The file of the index a node came from, the base index included. */
+    fileOf(id: string): string | undefined;
     close(): void;
     node(id: string): KnowledgeNode | undefined;
     has(id: string): boolean;
@@ -128,9 +134,12 @@ export interface KnowledgeReader {
     exactSymptoms(lines: readonly string[]): string[];
     exactSymptomLines(lines: readonly string[]): Map<string, number>;
     appliesTo(id: string): string[];
+    /** The packs a unit is scoped to; none means it is not scoped. */
+    scopesOf(id: string): string[];
     refinements(): [specific: string, general: string][];
     ancestors(id: string): Set<string>;
     mountedDevices(board: string): string[];
+    mountedParts(board: string): string[];
     componentIds(name: string): string[];
     units(): KnowledgeNode[];
     nodeCounts(): { kind: string; type: string; count: number }[];
@@ -209,6 +218,10 @@ export class KnowledgeIndex implements KnowledgeReader {
         return undefined;
     }
 
+    fileOf(id: string): string | undefined {
+        return this.has(id) ? this.file : undefined;
+    }
+
     close(): void {
         this.db.close();
     }
@@ -265,6 +278,11 @@ export class KnowledgeIndex implements KnowledgeReader {
         return this.db.prepare("SELECT dst FROM edges WHERE src = ? AND rel = 'applies_to'").all(id).map((row) => text(row.dst));
     }
 
+    /** The packs a unit is scoped to: every unit a pack ships names that pack. */
+    scopesOf(id: string): string[] {
+        return this.db.prepare('SELECT dst FROM edges WHERE src = ? AND rel = ?').all(id, SCOPE_RELATION).map((row) => text(row.dst));
+    }
+
     /** Every `refines` relation: the more specific unit, then the general one it replaces. */
     refinements(): [specific: string, general: string][] {
         return this.db.prepare("SELECT src, dst FROM edges WHERE rel = 'refines'").all().map((row) => [text(row.src), text(row.dst)]);
@@ -294,6 +312,11 @@ export class KnowledgeIndex implements KnowledgeReader {
     /** The devices mounted on a board. */
     mountedDevices(board: string): string[] {
         return this.db.prepare("SELECT dst FROM edges WHERE src = ? AND rel = 'mounted_on'").all(board).map((row) => text(row.dst));
+    }
+
+    /** The parts mounted on a board: sensors, codecs, the interface MCU. */
+    mountedParts(board: string): string[] {
+        return this.db.prepare('SELECT dst FROM edges WHERE src = ? AND rel = ?').all(board, PART_RELATION).map((row) => text(row.dst));
     }
 
     /** Component entities by their name without the vendor: `CMSIS:CORE` finds `component:ARM::CMSIS:CORE`. */
@@ -434,6 +457,10 @@ export class KnowledgeSet implements KnowledgeReader {
         return owner === undefined || owner === this.members[0] ? undefined : owner.label;
     }
 
+    fileOf(id: string): string | undefined {
+        return this.members.find((member) => member.index.has(id))?.index.file;
+    }
+
     close(): void {
         this.members.forEach((member) => member.index.close());
     }
@@ -477,6 +504,11 @@ export class KnowledgeSet implements KnowledgeReader {
         return [...new Set(this.each((index) => index.appliesTo(id)))];
     }
 
+    scopesOf(id: string): string[] {
+        // Scoped by the index the unit is read from: a base unit of the same id is not.
+        return this.members.find((member) => member.index.has(id))?.index.scopesOf(id) ?? [];
+    }
+
     refinements(): [specific: string, general: string][] {
         return this.each((index) => index.refinements());
     }
@@ -497,6 +529,10 @@ export class KnowledgeSet implements KnowledgeReader {
 
     mountedDevices(board: string): string[] {
         return [...new Set(this.each((index) => index.mountedDevices(board)))];
+    }
+
+    mountedParts(board: string): string[] {
+        return [...new Set(this.each((index) => index.mountedParts(board)))];
     }
 
     componentIds(name: string): string[] {

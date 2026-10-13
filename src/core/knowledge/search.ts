@@ -22,7 +22,9 @@
  *      of entity ids, with what the index knows above them.
  *   2. Candidates come from BM25; a unit whose symptom pattern matches a
  *      line of the query stands first.
- *   3. A unit without `applies_to` holds everywhere. Otherwise each
+ *   3. A unit a pack ships is scoped to that pack (`scoped_to`): only a
+ *      project that uses the pack sees it, and without a project nobody.
+ *      A unit without `applies_to` holds everywhere. Otherwise each
  *      dimension it names (core, toolchain, tool, …) must have one target in
  *      the project; a dimension the project says nothing about leaves the
  *      unit in, marked `unverified` (the tool dimension unmarked: it
@@ -69,7 +71,7 @@ export interface ProjectFacts {
     compiler?: string;
     /** `Dcore` of the device's processors: `Cortex-M33`. */
     cores?: readonly string[];
-    /** `Vendor::Name` of the device and board packs. */
+    /** `Vendor::Name` of the packs the project uses: the device and board packs and those its build lists. */
     packs?: readonly string[];
     /** `ARM::CMSIS:CORE@6.1.0`. */
     components?: readonly string[];
@@ -200,6 +202,9 @@ export function contextEntities(index: KnowledgeReader, facts: ProjectFacts): Se
             for (const device of index.mountedDevices(id)) {
                 addWithAncestors(device);
             }
+            for (const part of index.mountedParts(id)) {
+                entities.add(part);
+            }
         }
     }
     for (const core of facts.cores ?? []) {
@@ -224,6 +229,14 @@ export function contextEntities(index: KnowledgeReader, facts: ProjectFacts): Se
         entities.add(`tool:${tool.trim().toLowerCase()}`);
     }
     return entities;
+}
+
+/**
+ * May a project see a unit? A unit scoped to packs only when the project
+ * uses one of them; without a context, never.
+ */
+export function inScope(scopes: readonly string[], context: ReadonlySet<string> | undefined): boolean {
+    return scopes.length === 0 || (context !== undefined && scopes.some((scope) => context.has(scope)));
 }
 
 /**
@@ -286,6 +299,9 @@ export function searchKnowledge(index: KnowledgeReader, query: string, options: 
             || (options.types !== undefined && options.types.length > 0 && !options.types.includes(node.type))) {
             continue;
         }
+        if (!inScope(index.scopesOf(id), options.context)) {
+            continue;
+        }
         const { applies, unverified } = appliesIn(index.appliesTo(id), options.context);
         if (!applies) {
             continue;
@@ -331,14 +347,15 @@ export function searchKnowledge(index: KnowledgeReader, query: string, options: 
 
 /**
  * The complete unit behind each message that the index knows by its exact
- * symptom: what a failed build's error lines can point to.
+ * symptom: what a failed build's error lines can point to. A pack's unit
+ * only when `context`, the project's entities, has the pack.
  */
-export function knownMessages(index: KnowledgeReader, messages: readonly string[]): { message: string; id: string }[] {
+export function knownMessages(index: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): { message: string; id: string }[] {
     const found: { message: string; id: string }[] = [];
     for (const message of messages) {
         for (const id of index.exactSymptoms(messageLines(message))) {
             const node = index.node(id);
-            if (node !== undefined && !isIncomplete(node) && !found.some((f) => f.id === id)) {
+            if (node !== undefined && !isIncomplete(node) && inScope(index.scopesOf(id), context) && !found.some((f) => f.id === id)) {
                 found.push({ message, id });
             }
         }

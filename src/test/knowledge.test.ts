@@ -26,8 +26,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { DatabaseSync } from 'node:sqlite';
-import { componentsOf } from '../core/knowledge/projectFacts';
-import { appliesIn, contextEntities, isIncomplete, knownMessages, messageLines, ProjectFacts, searchKnowledge, sectionOf } from '../core/knowledge/search';
+import { componentsOf, packsOf } from '../core/knowledge/projectFacts';
+import { appliesIn, contextEntities, inScope, isIncomplete, knownMessages, messageLines, ProjectFacts, searchKnowledge, sectionOf } from '../core/knowledge/search';
 import { detailOf, graphAround, overviewOf, renderMarkdown, TYPE_ORDER, unitRows } from '../core/knowledge/browse';
 import { discoverIndexes, installedPackIndexes, localRepositoryIndexes, workspaceIndexes } from '../core/knowledge/packIndexes';
 import { interleaveByRank, KnowledgeIndex, KnowledgeSet } from '../core/knowledge/store';
@@ -539,14 +539,19 @@ suite('knowledge tools', () => {
         suiteSetup(() => {
             root = path.join(dir, 'packs');
             const packDir = path.join(root, 'MyVendor', 'MYCHIP_DFP', '1.2.0');
-            fs.mkdirSync(path.join(packDir, 'knowledge'), { recursive: true });
-            packFile = path.join(packDir, 'knowledge', 'knowledge.db');
+            fs.mkdirSync(path.join(packDir, '.knowledge'), { recursive: true });
+            packFile = path.join(packDir, '.knowledge', 'knowledge.db');
             writePackIndex(packFile);
             fs.mkdirSync(path.join(root, 'Other', 'NoKnowledge_DFP', '1.0.0'), { recursive: true });
+            // The places of the knowledge-base prototype are not read any more.
+            for (const old of [path.join(root, 'Old', 'Root_DFP', '1.0.0'), path.join(root, 'Old', 'Folder_DFP', '1.0.0', 'knowledge')]) {
+                fs.mkdirSync(old, { recursive: true });
+                writePackIndex(path.join(old, 'knowledge.db'));
+            }
             fs.mkdirSync(path.join(root, '.Web'), { recursive: true });
             const localPack = path.join(dir, 'local-pack');
-            fs.mkdirSync(localPack, { recursive: true });
-            writePackIndex(path.join(localPack, 'knowledge.db'));
+            fs.mkdirSync(path.join(localPack, '.knowledge'), { recursive: true });
+            writePackIndex(path.join(localPack, '.knowledge', 'knowledge.db'));
             fs.mkdirSync(path.join(root, '.Local'), { recursive: true });
             fs.writeFileSync(path.join(root, '.Local', 'local_repository.pidx'),
                 `<?xml version="1.0"?><index><pindex><pdsc url="file://${localPack}/" vendor="Local" name="Knowledge" version="0.1.0"/></pindex></index>`);
@@ -603,7 +608,7 @@ suite('knowledge tools', () => {
             let text = textOf(await live.handleKnowledgeSearch({ query: 'image not signed' }));
             assert.match(text, /Indexes: base and workspace \(2 units\)\./);
             assert.match(text, /1\. ts-pack-boot · troubleshooting · draft · exact symptom · from workspace/);
-            const late = path.join(own, 'V', 'P', '2.0.0');
+            const late = path.join(own, 'V', 'P', '2.0.0', '.knowledge');
             fs.mkdirSync(late, { recursive: true });
             fs.copyFileSync(packFile, path.join(late, 'knowledge.db'));
             text = textOf(await live.handleKnowledgeSearch({ query: 'image not signed' }));
@@ -613,11 +618,75 @@ suite('knowledge tools', () => {
         });
 
         test('an unreadable pack index fails the call with its file named', async () => {
-            const bad = path.join(dir, 'bad-root', 'V', 'P', '1.0.0');
+            const bad = path.join(dir, 'bad-root', 'V', 'P', '1.0.0', '.knowledge');
             fs.mkdirSync(bad, { recursive: true });
             fs.writeFileSync(path.join(bad, 'knowledge.db'), 'not a database');
             const live = handlerFor({ indexPath: file, packRoot: path.join(dir, 'bad-root') });
             await refusedAs('INVALID_ARGUMENT', live.handleKnowledgeGet({ id: 'fx-generic' }), /bad-root.*is not a knowledge index/);
+            live.dispose();
+        });
+
+        /** A pack root with Acme::Mini_BSP 0.2.0, whose .knowledge folder cmsis-knowledge 0.1.0 built. */
+        const BUILT_PACKS = path.join(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'knowledge', 'packs');
+        const LOCKED = 'flash is locked (result code 0x42)';
+
+        test('a scoped unit needs one of its packs in the context, and without a context it is out', () => {
+            assert.strictEqual(inScope([], undefined), true);
+            assert.strictEqual(inScope(['pack:A::B'], undefined), false);
+            assert.strictEqual(inScope(['pack:A::B'], new Set(['pack:C::D', 'pack:A::B'])), true);
+            assert.strictEqual(inScope(['pack:A::B'], new Set(['pack:C::D'])), false);
+        });
+
+        test('a pack built by cmsis-knowledge: its units only where the pack is used, the parts of its board in the context', () => {
+            const found = installedPackIndexes(BUILT_PACKS);
+            assert.deepStrictEqual(found.map((entry) => entry.label), ['Acme::Mini_BSP@0.2.0']);
+            const own = new KnowledgeIndex(found[0].file);
+            assert.deepStrictEqual([own.info.schema_version, own.info.scope, own.info.pack, own.info.builder], ['1', 'pack', 'Acme::Mini_BSP@0.2.0', 'cmsis-knowledge']);
+            own.close();
+            const set = new KnowledgeSet([{ label: 'base', file }, ...found]);
+            try {
+                assert.strictEqual(set.sources()[1].units, 3);
+                assert.deepStrictEqual(set.scopesOf('ts-mini-flash-locked'), ['pack:Acme::Mini_BSP']);
+                assert.deepStrictEqual(set.scopesOf('fx-generic'), []);
+                assert.strictEqual(set.fileOf('ts-mini-flash-locked'), found[0].file);
+                assert.strictEqual(set.fileOf('fx-generic'), file);
+                assert.strictEqual(set.fileOf('nothing'), undefined);
+                const mini = (results: { id: string }[]): string[] => results.map((hit) => hit.id).filter((id) => id.includes('mini'));
+
+                // Without a project, and in a project without the pack, its units are not offered, not even by their message.
+                assert.deepStrictEqual(mini(searchKnowledge(set, LOCKED).results), []);
+                const elsewhere = contextEntities(set, { board: 'Other::board', packs: ['Other::BSP'], compiler: 'GCC' });
+                assert.deepStrictEqual(mini(searchKnowledge(set, LOCKED, { context: elsewhere }).results), []);
+                assert.deepStrictEqual(knownMessages(set, [LOCKED]), []);
+
+                // The board of the pack brings the pack itself, its device and the parts mounted on it.
+                assert.ok(contextEntities(set, { board: 'Acme::mini-board' }).has('pack:Acme::Mini_BSP'));
+                const context = contextEntities(set, { board: 'Acme::mini-board', packs: ['Acme::Mini_BSP', 'Acme::Acme_DFP'], compiler: 'GCC' });
+                assert.ok(context.has('part:LSM6DSO') && context.has('device:AC12_xA'), [...context].join(', '));
+                const onBoard = searchKnowledge(set, LOCKED, { context });
+                assert.deepStrictEqual([onBoard.results[0]?.id, onBoard.results[0]?.exactSymptom, onBoard.results[0]?.source],
+                    ['ts-mini-flash-locked', true, 'Acme::Mini_BSP@0.2.0']);
+                const sensor = searchKnowledge(set, 'motion sensor I2C address', { context });
+                assert.ok(sensor.results.some((hit) => hit.id === 'concept-mini-board' && hit.applies === undefined), JSON.stringify(sensor.results));
+                assert.deepStrictEqual(knownMessages(set, [LOCKED], context).map((known) => known.id), ['ts-mini-flash-locked']);
+                // The unit names its Markdown file relative to the pack folder, which ships it next to the index.
+                const source = detailOf(set, 'ts-mini-flash-locked')?.sourcePath ?? '';
+                assert.strictEqual(source, '.knowledge/units/ts-mini-flash-locked.md');
+                assert.ok(fs.existsSync(path.resolve(path.dirname(found[0].file), '..', source)));
+            } finally {
+                set.close();
+            }
+        });
+
+        test('a failed build names the unit of a pack once a search has seen a project that uses the pack', async () => {
+            const live = new KnowledgeHandler({
+                indexPath: () => file, includeIncomplete: () => false, packRoot: async () => BUILT_PACKS, workspaceFolders: () => [],
+                projectFacts: async () => ({ facts: { board: 'Acme::mini-board', packs: ['Acme::Mini_BSP'], compiler: 'GCC' } }), log: silentLog,
+            }, { timeoutMs: 5_000 });
+            await live.handleKnowledgeGet({ id: 'fx-generic' });
+            assert.deepStrictEqual(live.knownMessageLines([LOCKED]), []);
+            assert.match(textOf(await live.handleKnowledgeSearch({ query: LOCKED })), /1\. ts-mini-flash-locked · troubleshooting · draft · exact symptom · from Acme::Mini_BSP@0\.2\.0/);
+            assert.deepStrictEqual(live.knownMessageLines([LOCKED]), ['Known message: knowledge_get { id: "ts-mini-flash-locked" } has its cause and fix.']);
             live.dispose();
         });
     });
@@ -662,6 +731,12 @@ suite('knowledge tools', () => {
         test('the components of a cbuild.yml are read from its component lines', () => {
             const yml = 'build:\n  components:\n    - component: ARM::CMSIS:CORE@6.1.0\n      condition: x\n    - component: "Keil::Device:Startup@1.0.0"\n';
             assert.deepStrictEqual(componentsOf(yml), ['ARM::CMSIS:CORE@6.1.0', 'Keil::Device:Startup@1.0.0']);
+        });
+
+        test('the packs of a cbuild.yml are read from its pack lines, without their version', () => {
+            const yml = 'build:\n  packs:\n    - pack: ARM::CMSIS@6.1.0\n      path: ${CMSIS_PACK_ROOT}/ARM/CMSIS/6.1.0\n'
+                + '    - pack: "MicroBit::MicroBit_V2_BSP@0.1.0"\n  components:\n    - component: ARM::CMSIS:CORE@6.1.0\n      from-pack: ARM::CMSIS@6.1.0\n';
+            assert.deepStrictEqual(packsOf(yml), ['ARM::CMSIS', 'MicroBit::MicroBit_V2_BSP']);
         });
     });
 });

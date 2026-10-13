@@ -30,17 +30,33 @@ search is BM25 and exact symptoms.
 
 - **A set of indexes, not one file.** `KnowledgeReader` is what search, the
   tools and the browser read; `KnowledgeIndex` is one file, `KnowledgeSet`
-  several read as one: the base file of the setting, then every
-  `knowledge.db` an installed pack carries (`<root>/<Vendor>/<Pack>/<version>/`,
-  or a pack registered from a folder in `.Local/local_repository.pidx`) and
-  `.cmsis/knowledge.db` of the workspace (`packIndexes.ts`). All are read
-  whatever the active target: the `applies_to` filter keeps a pack's units
-  to its devices, and an entity a pack names (its family) continues in the
-  base graph. Ids are looked up in order, so the base wins a clash; BM25
-  lists are merged by rank, since scores of different files are not
-  comparable; everything else is the union. A hit and `knowledge_get` say
-  which index a unit came from. The set is reopened when any file changes,
-  appears or goes.
+  several read as one: the base file of the setting, then the
+  `.knowledge/knowledge.db` every installed pack carries
+  (`<root>/<Vendor>/<Pack>/<version>/`, or a pack registered from a folder in
+  `.Local/local_repository.pidx`) and `.cmsis/knowledge.db` of the workspace
+  (`packIndexes.ts`). All are opened whatever the active target, and an
+  entity a pack names (its family) continues in the base graph. Ids are
+  looked up in order, so the base wins a clash; BM25 lists are merged by
+  rank, since scores of different files are not comparable; everything
+  else is the union. A hit and `knowledge_get` say which index a unit came
+  from. The set is reopened when any file changes, appears or goes.
+- **Pack knowledge.** A pack ships its units as Markdown in
+  `.knowledge/units/` and the index built from them, which `cmsis-knowledge`
+  of [cmsis-developer-assistant-tools](https://github.com/MatthiasHertelArm/cmsis-developer-assistant-tools)
+  writes; its `docs/format.md` is the contract with this reader. Other
+  places in a pack are not read. A unit's `path` is relative to the pack
+  folder, so the browser opens the file next to the index the unit came
+  from (`fileOf`).
+- **Scope.** Every unit of such a pack is `scoped_to` its pack: `inScope`
+  offers it only when the project's entities hold that pack, and without a
+  project not at all, which is stricter than `applies_to`, where a
+  dimension the project does not mention keeps the unit. The project's
+  packs are the device and board packs of the target and the `packs:` of
+  its cbuild files; a board also brings the pack it comes from through the
+  graph. The lines for a failed build use the project of the last search.
+- **Parts.** A board's `<mountedPart>` is a `part:` entity (`has_part`);
+  the context adds the parts of the active board, so a unit about a sensor
+  applies on every board that mounts it.
 - **`node:sqlite`.** The index is opened with the SQLite that Node brings,
   loaded through `process.getBuiltinModule` on first use, so nothing native
   ships and a VS Code without the module gets a typed refusal.
@@ -137,12 +153,12 @@ nothing; it works with the gate off, since it serves a person, not an agent.
 | Path | What |
 | ---- | ---- |
 | `src/core/knowledge/store.ts` | `KnowledgeReader`, `KnowledgeIndex` (one file: the SQL over `nodes`, `edges`, `nodes_fts`), `KnowledgeSet` (several, merged) |
-| `src/core/knowledge/packIndexes.ts` | Where pack and workspace indexes are found |
-| `src/core/knowledge/search.ts` | `searchKnowledge`, `contextEntities`, `appliesIn`, `isIncomplete`, `knownMessages` |
+| `src/core/knowledge/packIndexes.ts` | Where pack and workspace indexes are found (`PACK_INDEX`, `WORKSPACE_INDEX`) |
+| `src/core/knowledge/search.ts` | `searchKnowledge`, `contextEntities`, `inScope`, `appliesIn`, `isIncomplete`, `knownMessages` |
 | `src/core/knowledge/projectFacts.ts` | The facts of the active target |
 | `src/knowledgeHandler.ts` | `handleKnowledgeSearch`, `handleKnowledgeGet`, `handleKnowledgeExpand`, the reply texts |
 | `src/knowledgeTools.ts` | Tool names and schemas |
 | `src/core/knowledge/browse.ts` | The browser's data: list, overview, one node, the neighbourhood, Markdown as HTML |
 | `src/knowledgePanel.ts`, `src/knowledgePanelPage.ts` | The knowledge browser: messages and guards; the page's style and script |
 | `src/packDocsHost.ts` | The gate, the settings and the host |
-| `src/test/knowledge.test.ts` | An index written in the test, the retrieval cases of the prototype, the handler and the dispatch |
+| `src/test/knowledge.test.ts` | An index written in the test, the retrieval cases of the prototype, the handler and the dispatch; a pack built by `cmsis-knowledge` in `src/test/fixtures/knowledge/packs` |

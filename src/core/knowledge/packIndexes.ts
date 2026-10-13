@@ -16,12 +16,13 @@
 
 /**
  * Where knowledge indexes come from besides the setting: every installed
- * pack that carries one, and the workspace. A pack ships its knowledge as
- * `knowledge.db` (or `knowledge/knowledge.db`) next to its PDSC, built by
- * the knowledge-base tooling; a project keeps its own under
- * `.cmsis/knowledge.db`. All of them are read whatever the active target:
- * the `applies_to` filter of the units keeps a pack's knowledge to its
- * devices.
+ * pack that carries one, and the workspace. A pack ships its knowledge in
+ * the folder `.knowledge` next to its PDSC: the units as Markdown in
+ * `.knowledge/units/` and the index `.knowledge/knowledge.db`, built by
+ * `cmsis-knowledge` (cmsis-developer-assistant-tools). A project keeps its
+ * own index as `.cmsis/knowledge.db`. All of them are opened whatever the
+ * active target; the units of a pack are scoped to it (`scoped_to`), so a
+ * search offers them only to a project that uses the pack.
  *
  * Found by reading the pack root (`<root>/<Vendor>/<Pack>/<version>/`) and
  * the local repository index cpackget keeps (`.Local/local_repository.pidx`,
@@ -31,8 +32,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-/** The file names a pack or a workspace may carry. */
-const INDEX_NAMES = ['knowledge.db', path.join('knowledge', 'knowledge.db')];
+/** The index of a pack, relative to the folder of its PDSC. */
+export const PACK_INDEX = path.join('.knowledge', 'knowledge.db');
+/** The index of a workspace folder, relative to it. */
+export const WORKSPACE_INDEX = path.join('.cmsis', 'knowledge.db');
 
 export interface FoundIndex {
     /** `Vendor::Pack@version` for a pack, `workspace` or `workspace:<name>` for a folder. */
@@ -40,18 +43,13 @@ export interface FoundIndex {
     file: string;
 }
 
-function indexIn(dir: string): string | undefined {
-    for (const name of INDEX_NAMES) {
-        const candidate = path.join(dir, name);
-        try {
-            if (fs.statSync(candidate).isFile()) {
-                return candidate;
-            }
-        } catch {
-            // not there
-        }
+function indexIn(dir: string, name: string): string | undefined {
+    const candidate = path.join(dir, name);
+    try {
+        return fs.statSync(candidate).isFile() ? candidate : undefined;
+    } catch {
+        return undefined; // not there
     }
-    return undefined;
 }
 
 function subdirs(dir: string): string[] {
@@ -70,7 +68,7 @@ export function installedPackIndexes(packRoot: string): FoundIndex[] {
     for (const vendor of subdirs(packRoot)) {
         for (const pack of subdirs(path.join(packRoot, vendor))) {
             for (const version of subdirs(path.join(packRoot, vendor, pack))) {
-                const file = indexIn(path.join(packRoot, vendor, pack, version));
+                const file = indexIn(path.join(packRoot, vendor, pack, version), PACK_INDEX);
                 if (file !== undefined) {
                     found.push({ label: `${vendor}::${pack}@${version}`, file });
                 }
@@ -109,7 +107,7 @@ export function localRepositoryIndexes(packRoot: string): FoundIndex[] {
         if (/^\/[A-Za-z]:/.test(dir)) {
             dir = dir.slice(1); // file:///C:/… on Windows
         }
-        const file = indexIn(dir);
+        const file = indexIn(dir, PACK_INDEX);
         if (file !== undefined) {
             const version = attribute('version');
             found.push({ label: `${attribute('vendor') ?? '?'}::${attribute('name') ?? '?'}${version ? `@${version}` : ''} (local)`, file });
@@ -122,7 +120,7 @@ export function localRepositoryIndexes(packRoot: string): FoundIndex[] {
 export function workspaceIndexes(folders: readonly string[]): FoundIndex[] {
     const found: FoundIndex[] = [];
     for (const folder of folders) {
-        const file = indexIn(path.join(folder, '.cmsis'));
+        const file = indexIn(folder, WORKSPACE_INDEX);
         if (file !== undefined) {
             found.push({ label: folders.length === 1 ? 'workspace' : `workspace:${path.basename(folder)}`, file });
         }

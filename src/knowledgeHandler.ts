@@ -111,6 +111,8 @@ export class KnowledgeHandler {
     private open?: { key: string; index: KnowledgeReader };
     /** The pack root of the last call, for the synchronous build hook. */
     private packRootSeen?: string;
+    /** The project's entities at the last search, for the synchronous build hook: a pack's unit needs its pack there. */
+    private contextSeen?: ReadonlySet<string>;
 
     constructor(private readonly host: KnowledgeHost, private readonly options: KnowledgeHandlerOptions) { }
 
@@ -127,6 +129,9 @@ export class KnowledgeHandler {
             const tools = (args.tools ?? []).map((tool) => tool.trim()).filter((tool) => tool.length > 0);
             const facts: ProjectFacts | undefined = project.facts || tools.length > 0 ? { ...project.facts, tools } : undefined;
             const context = facts ? contextEntities(index, facts) : undefined;
+            if (project.facts) {
+                this.contextSeen = contextEntities(index, project.facts);
+            }
             const result = searchKnowledge(index, query, {
                 domain: args.domain?.trim() || undefined, types: args.types, context, k: args.k ?? DEFAULT_RESULTS,
                 includeIncomplete: this.host.includeIncomplete(),
@@ -268,8 +273,9 @@ export class KnowledgeHandler {
             if (this.host.indexPath() === undefined) {
                 return [];
             }
-            // The pack root is asked for asynchronously; before the first tool call the packs are not read here.
-            return knownMessages(this.openSet(this.packRootSeen), messages).map(({ id }) => `Known message: knowledge_get { id: "${id}" } has its cause and fix.`);
+            // The pack root and the project are asked for asynchronously: before the first search, the packs are not read here.
+            return knownMessages(this.openSet(this.packRootSeen), messages, this.contextSeen)
+                .map(({ id }) => `Known message: knowledge_get { id: "${id}" } has its cause and fix.`);
         } catch (caught) {
             this.host.log.debug(`knowledge: no known-message lines: ${caught instanceof Error ? caught.message : String(caught)}`);
             return [];
