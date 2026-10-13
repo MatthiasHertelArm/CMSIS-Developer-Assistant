@@ -24,11 +24,12 @@
  * The skill is rendered twice, since what it must say depends on a setting
  * the agent cannot see. With the skills installed (`HelpSkillMode`
  * `skills`), it lists the slash commands and the member skills. With
- * `knowledge.replaceSkills` on (`knowledge`), no skill but this one is
- * installed and the procedures are units of the knowledge index: the same
- * lists name the units instead, and nothing reads like a command the agent
- * could invoke. One file for both, with a condition for the agent to work
- * out, did not hold: a model given a table of `/commands` repeats the table.
+ * `knowledge.replaceSkills` on (`knowledge`), only the core skills
+ * (`CORE_SKILLS` and what they hand over to) are installed and the other
+ * procedures are units of the knowledge index: the same lists name the
+ * units for those, and nothing reads like a command the agent could invoke.
+ * One file for both, with a condition for the agent to work out, did not
+ * hold: a model given a table of `/commands` repeats the table.
  * The sync writes the `knowledge` variant to `HELP_SKILL_KNOWLEDGE_PATH`,
  * and the installer copies it under the skill's name when the setting is on
  * (`catalogForInstall`).
@@ -43,7 +44,7 @@
  */
 
 import { RULES_BLOCK, TABLE_BLOCK, ToolContract, renderContractBlock } from '../core/toolContract';
-import { SKILL_CATEGORY_LABELS, SKILL_CATEGORY_ORDER, SkillCatalog, SkillCatalogEntry } from './skillCatalog';
+import { SKILL_CATEGORY_LABELS, SKILL_CATEGORY_ORDER, SkillCatalog, SkillCatalogEntry, coreInstallSet } from './skillCatalog';
 
 export const HELP_SKILL_NAME = 'cmsis-help';
 
@@ -185,8 +186,12 @@ export function renderHelpSkillMarkdown(
     const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
     const routers = catalog.skills.filter(entry => entry.kind === 'router');
     const oneLiner = (entry: SkillCatalogEntry): string => cell(entry.shortDescription ?? firstSentence(entry.description));
+    // The skills installed in knowledge mode: the core and what they hand over to. The rest are units.
+    const core = coreInstallSet(catalog);
+    const installed = new Set(knowledge ? [...core.visible, ...core.hidden] : catalog.skills.map(entry => entry.name));
+    const asSkill = (name: string, invocable: boolean): string => `${invocable ? '/' : '$'}${name}`;
     /** How a skill is named: its slash command or hand-over name, or its unit in the knowledge index. */
-    const nameOf = (entry: SkillCatalogEntry): string => knowledge ? procedureUnit(entry.name) : `${entry.invocable ? '/' : '$'}${entry.name}`;
+    const nameOf = (entry: SkillCatalogEntry): string => installed.has(entry.name) ? asSkill(entry.name, entry.invocable) : procedureUnit(entry.name);
 
     // --- slash commands, or the units behind them: every invocable skill, the routers first ----
     const slashCommands = [
@@ -208,7 +213,7 @@ export function renderHelpSkillMarkdown(
     const memberSections: string[] = [];
     const sectioned: string[] = [];
     const memberLine = (name: string, member: SkillCatalogEntry | undefined): string =>
-        `- \`${knowledge ? procedureUnit(name) : `$${name}`}\` — ${member ? oneLiner(member) : '(not in the catalog)'}`;
+        `- \`${installed.has(name) ? asSkill(name, member?.invocable === true) : procedureUnit(name)}\` — ${member ? oneLiner(member) : '(not in the catalog)'}`;
     for (const category of SKILL_CATEGORY_ORDER) {
         const router = routers.find(entry => entry.category === category);
         if (!router) {
@@ -277,13 +282,14 @@ export function renderHelpSkillMarkdown(
         ? [
             '## How to use this list',
             '',
-            `The setting \`${SETTINGS_PREFIX}.knowledge.replaceSkills\` is on: no CMSIS skill is installed`,
-            'but this one, and the procedures behind the CMSIS tasks are units of the knowledge index,',
-            'read with `knowledge_get`. Answer the user from the lists below: which procedures, VS Code',
-            'commands, MCP tools and settings exist, and which one fits the task at hand. This skill does',
-            'no work of its own and runs no tools — it points at the unit or tool that does. Name a',
-            'procedure by its unit id; there is no `/` command behind it, so do not offer one, and do not',
-            'tell the user to install a skill.',
+            `The setting \`${SETTINGS_PREFIX}.knowledge.replaceSkills\` is on: only the core CMSIS skills are`,
+            `installed — ${core.visible.map(name => `\`/${name}\``).join(', ')}${core.hidden.length > 0 ? ` and, behind them, ${core.hidden.map(name => `\`$${name}\``).join(', ')}` : ''} —`,
+            'and the procedures behind the other CMSIS tasks are units of the knowledge index, read with',
+            '`knowledge_get`. Answer the user from the lists below: which procedures, VS Code commands,',
+            'MCP tools and settings exist, and which one fits the task at hand. This skill does no work',
+            'of its own and runs no tools — it points at the skill, unit or tool that does. A procedure',
+            'named by a `proc-` unit id has no `/` command behind it: do not offer one, and do not tell',
+            'the user to install a skill.',
             '',
             '## Working from the knowledge tools',
             '',
@@ -342,12 +348,12 @@ export function renderHelpSkillMarkdown(
         ? [
             'Open the command palette (Ctrl/Cmd+Shift+P) and type the title. While',
             `\`${SETTINGS_PREFIX}.knowledge.replaceSkills\` is on, **Configure Agent** and each activation`,
-            'install this skill alone and remove the other CMSIS skills the extension installed.',
+            'install the core skills alone and remove the other CMSIS skills the extension installed.',
         ]
         : ['Open the command palette (Ctrl/Cmd+Shift+P) and type the title.'];
-    const debugFirst = knowledge
-        ? `read \`${procedureUnit('cmsis-debug-live')}\` with \`knowledge_get\` first.`
-        : 'invoke `/cmsis-debug-live` first.';
+    const debugFirst = installed.has('cmsis-debug-live')
+        ? 'invoke `/cmsis-debug-live` first.'
+        : `read \`${procedureUnit('cmsis-debug-live')}\` with \`knowledge_get\` first.`;
 
     return [
         '---',

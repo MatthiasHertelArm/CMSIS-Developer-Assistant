@@ -647,8 +647,9 @@ suite('knowledge tools', () => {
             assert.match(composeInstructions({ knowledgeEnabled: true }), /knowledge_search, knowledge_get, knowledge_expand/);
             assert.match(composeInstructions({ knowledgeEnabled: true }), /invoke the Agent Skill "cmsis-debug-live"/);
             const withoutSkills = composeInstructions({ knowledgeEnabled: true, skillsReplaced: true });
-            assert.doesNotMatch(withoutSkills, /cmsis-debug-live|do not load skills/);
-            assert.match(withoutSkills, /call get_debug_instructions\. .* No Agent Skills are installed/);
+            assert.match(withoutSkills, /invoke the Agent Skill "cmsis-debug-live"/);
+            assert.match(withoutSkills, /Only the core Agent Skills are installed: cmsis-debug-live, cmsis-pack-docs and cmsis-help\. There is no skill for the other CMSIS tasks: their procedures come from knowledge_search and knowledge_get\./);
+            assert.doesNotMatch(composeInstructions({ knowledgeEnabled: true }), /Only the core Agent Skills/);
             // What a skill's description did by itself has to be said: look the procedure up before the work, and first of all.
             for (const text of [withoutSkills, composeInstructions({ knowledgeEnabled: true })]) {
                 assert.ok(text.startsWith('Knowledge first: before you start a CMSIS task'), text.slice(0, 80));

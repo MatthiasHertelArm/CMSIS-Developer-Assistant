@@ -25,6 +25,7 @@ import {
     SkillCatalogEntry,
     bundledSkillNames,
     extractSkillReferences,
+    coreInstallSet,
     installSet,
     isBundledSkill,
     loadSkillCatalog,
@@ -336,23 +337,26 @@ suite('Agent skill catalog', () => {
                 assert.notStrictEqual(config().knowledgeDescription, config().description);
             });
 
-            test('names the units, and /cmsis-help as the only slash command', () => {
+            test('names the core skills as commands and every other procedure as a unit', () => {
                 const markdown = shippedKnowledge();
+                const core = coreInstallSet(catalog());
                 const slashCommands = [...markdown.matchAll(/`\/([a-z0-9-]+)`/g)].map(match => match[1]);
-                assert.deepStrictEqual([...new Set(slashCommands)], [HELP_SKILL_NAME], 'a /command an agent could offer');
-                assert.ok(!/`\$[a-z]/.test(markdown), 'a $skill reference');
+                assert.deepStrictEqual([...new Set(slashCommands)].sort(), [...core.visible].sort(), 'a /command an agent could offer');
+                const handOvers = [...markdown.matchAll(/`\$([a-z0-9-]+)`/g)].map(match => match[1]);
+                assert.deepStrictEqual([...new Set(handOvers)].sort(), [...core.hidden].sort(), 'a $skill reference');
+                const installed = new Set([...core.visible, ...core.hidden]);
+                for (const name of installed) {
+                    assert.ok(!markdown.includes(`\`proc-${name}\``), `installed skill ${name} named as a unit`);
+                }
                 for (const router of catalog().skills.filter(skill => skill.kind === 'router')) {
                     assert.ok(markdown.includes(`\`route-${router.category}\``), `missing route-${router.category}`);
                     // As a command, a hand-over or a bare name — not as part of a longer unit id such as proc-start-cmsis-project.
                     assert.ok(!new RegExp(`\`[/$]?${router.name}\``).test(markdown), `router ${router.name} named as a skill`);
-                    for (const member of router.dependsOn) {
+                    for (const member of router.dependsOn.filter(name => !installed.has(name))) {
                         assert.ok(markdown.includes(`\`proc-${member}\``), `missing proc-${member}`);
                     }
                 }
-                for (const entry of catalog().skills.filter(skill => skill.source === 'bundled' && skill.name !== HELP_SKILL_NAME)) {
-                    assert.ok(markdown.includes(`\`proc-${entry.name}\``), `missing proc-${entry.name}`);
-                }
-                for (const entry of catalog().skills.filter(skill => skill.source === 'extension')) {
+                for (const entry of catalog().skills.filter(skill => (skill.source === 'bundled' || skill.source === 'extension') && !installed.has(skill.name))) {
                     assert.ok(markdown.includes(`\`proc-${entry.name}\``), `missing proc-${entry.name}`);
                 }
                 assert.ok(markdown.includes('`knowledge_get`') && markdown.includes('`knowledge_search`'));
@@ -420,6 +424,21 @@ suite('Agent skill catalog', () => {
 
         test('an empty catalog installs nothing', () => {
             assert.deepStrictEqual(installSet({ ...fake, skills: [] }), { visible: [], hidden: [] });
+        });
+
+        test('with the skills replaced, the core skills and what they hand over to, in catalog order', () => {
+            const withCore = { ...fake, skills: [...fake.skills, entry('cmsis-pack-docs', 'bring-up', 'skill', 'bundled', true)] };
+            withCore.skills[3] = entry('cmsis-debug-live', 'debug', 'skill', 'bundled', true, ['cmsis-pack-docs', 'trouble']);
+            assert.deepStrictEqual(coreInstallSet(withCore), {
+                visible: ['cmsis-debug-live', 'cmsis-help', 'cmsis-pack-docs'],
+                hidden: ['trouble'],
+            });
+            // A core skill the catalog lacks is left out; nothing else creeps in.
+            assert.deepStrictEqual(coreInstallSet(fake), { visible: ['cmsis-debug-live', 'cmsis-help'], hidden: [] });
+            assert.deepStrictEqual(coreInstallSet({ ...fake, skills: [] }), { visible: [], hidden: [] });
+            const shipped = coreInstallSet(catalog());
+            assert.deepStrictEqual(shipped.visible, ['cmsis-pack-docs', 'cmsis-debug-live', 'cmsis-help']);
+            assert.deepStrictEqual(shipped.hidden, ['debugger-troubleshooting']);
         });
     });
 

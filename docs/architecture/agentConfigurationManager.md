@@ -114,6 +114,9 @@ extension's hidden skills, which another skill hands over to). Harnesses
 that honour the field keep hidden skills out of the `/` menu while the model
 still invokes them by description; the rest ignore it. `installSet()` splits
 the catalog by that flag; the installer gets the whole catalog every time.
+While `knowledge.replaceSkills` is on, `coreInstallSet()` wants only the core
+skills — `cmsis-debug-live`, `cmsis-pack-docs`, `cmsis-help` — and the hidden
+skills they hand over to; the sweep removes the rest.
 
 `cmsis-help` is itself generated (`src/utils/skillHelp.ts`) from the catalog,
 `package.json`, the `help` block of `scripts/skills.config.json` and the tool

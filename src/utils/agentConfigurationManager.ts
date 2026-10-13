@@ -73,8 +73,8 @@ import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
 import { notifyError } from './notify';
-import { SKILLS_REPLACED_SETTING, SkillCatalog, installSet, loadSkillCatalog } from './skillCatalog';
-import { HELP_SKILL_NAME, catalogForInstall } from './skillHelp';
+import { SKILLS_REPLACED_SETTING, SkillCatalog, coreInstallSet, installSet, loadSkillCatalog } from './skillCatalog';
+import { catalogForInstall } from './skillHelp';
 import {
     SkillInstallRoots,
     SkillInstaller,
@@ -801,14 +801,12 @@ export class AgentConfigurationManager {
         if (!catalog) {
             return null;
         }
-        // With the skills replaced by the knowledge tools only cmsis-help is wanted, as the one slash command that
-        // says what there is and how to work — in its variant that names the knowledge units, not the skills;
-        // the installer's sweep removes the other skills it installed.
+        // With the skills replaced by the knowledge tools only the core skills are wanted — how to use the tools,
+        // the documentation and the knowledge, cmsis-help in its variant that names the knowledge units, not the
+        // skills — and the hidden skills they hand over to; the installer's sweep removes the other skills it installed.
         const replaced = vscode.workspace.getConfiguration(SETTINGS_SECTION).get<boolean>(SKILLS_REPLACED_SETTING, false);
         const source = catalogForInstall(catalog, replaced);
-        const wanted = replaced
-            ? { visible: source.skills.filter(entry => entry.name === HELP_SKILL_NAME).map(entry => entry.name), hidden: [] }
-            : installSet(source);
+        const wanted = replaced ? coreInstallSet(source) : installSet(source);
         const roots = skillRoots();
         const report = await this.installer.sync(roots, source, wanted.visible, wanted.hidden);
         logger.info(`Skill install (${reason}${replaced ? ', skills replaced by the knowledge tools' : ''}) into `

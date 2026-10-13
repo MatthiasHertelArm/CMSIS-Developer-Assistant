@@ -66,21 +66,6 @@ const SERVER_NAME = 'cmsis-developer-assistant';
 /** The sentences of one description, joined by single spaces. */
 const say = (...sentences: string[]): string => sentences.join(' ');
 
-/** The two descriptions that name a skill, for a session without skills (`knowledge.replaceSkills`). */
-const ABOUT_WITHOUT_SKILLS = {
-    get_debug_instructions: say(
-        'Debugging guide: call it before a debugging investigation.',
-        'Default: a short overview plus the topic list; pass topic for one section (bootstrap, session, build, breakpoints, inspection, faults, troubleshooting).',
-    ),
-    start_debugging: say(
-        'Start a debug session through the VS Code debug pipeline (launch.json).',
-        'Before using this tool, call get_debug_instructions.',
-        'For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the ' +
-        'flash step and suits non-CMSIS projects or attaching to an already-flashed target.',
-        'Refuses while a session is active.',
-    ),
-};
-
 const ABOUT = {
     get_debug_instructions: say(
         'Debugging guide for harnesses that do not load the "cmsis-debug-live" Agent Skill.',
@@ -543,7 +528,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     const { options, docs, ring } = parts;
 
     mcp.registerTool('get_debug_instructions', {
-        description: options.skillsReplaced === true ? ABOUT_WITHOUT_SKILLS.get_debug_instructions : ABOUT.get_debug_instructions,
+        description: ABOUT.get_debug_instructions,
         inputSchema: {
             topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
         },
@@ -551,7 +536,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     }, async (args) => reply(guideSection(await docs.read(GUIDE_FILE), args.topic)));
 
     mcp.registerTool('start_debugging', {
-        description: options.skillsReplaced === true ? ABOUT_WITHOUT_SKILLS.start_debugging : ABOUT.start_debugging,
+        description: ABOUT.start_debugging,
         inputSchema: {
             fileFullPath: z.string().optional().describe('Source file to debug; optional when configurationName is given.'),
             workingDirectory: z.string().describe('Directory the debug session runs in'),

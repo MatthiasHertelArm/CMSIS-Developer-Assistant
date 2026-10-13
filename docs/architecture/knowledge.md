@@ -82,18 +82,20 @@ search is BM25 and exact symptoms.
   open with one sentence that says it: before a CMSIS task, look the
   procedure up with `knowledge_search` and follow it (`KNOWLEDGE_FIRST`), and
   the first `get_session_status` repeats it in a line (`KNOWLEDGE_REMINDER`).
-- **Without skills.** `knowledge.replaceSkills` makes the skill sync want
-  `cmsis-help` alone, so `/cmsis-help` stays as the one slash command — in
-  its `knowledge` variant (`skills/cmsis-help-knowledge/`, rendered by the
-  same generator in the other mode and put under the skill's name by
-  `catalogForInstall()`), which lists the units of the index (`proc-<name>`,
-  `route-<category>`) where the other lists slash commands and member
-  skills, and says how to work from the knowledge tools. One file for both
-  modes, with a condition for the agent to evaluate, did not hold: given a
-  table of `/commands`, a model repeats the table. The installer's sweep
-  removes every other skill it installed, and
-  the instructions and the two tool descriptions that name
-  `cmsis-debug-live` name `get_debug_instructions` instead. The extension's
+- **Core skills only.** `knowledge.replaceSkills` makes the skill sync want
+  the core skills alone (`CORE_SKILLS`, `coreInstallSet()`): how to use the
+  tools (`cmsis-debug-live`), the documentation (`cmsis-pack-docs`) and the
+  knowledge (`cmsis-help`), plus the hidden skills they hand over to, so no
+  `$name` dangles. `cmsis-help` comes in its `knowledge` variant
+  (`skills/cmsis-help-knowledge/`, rendered by the same generator in the
+  other mode and put under the skill's name by `catalogForInstall()`), which
+  names the installed core skills as commands and every other procedure as
+  a unit of the index (`proc-<name>`, `route-<category>`), and says how to
+  work from the knowledge tools. One file for both modes, with a condition
+  for the agent to evaluate, did not hold: given a table of `/commands`, a
+  model repeats the table. The installer's sweep removes every other skill
+  it installed, and the instructions say that only the core skills are
+  installed and where the other procedures come from. The extension's
   own skills are procedures of the index too: the knowledge-base tooling
   reads them from this repository's `skills/` through `catalog.json`
   (`skill2ku.py`), and writes one routing unit per category, `route-<domain>`,

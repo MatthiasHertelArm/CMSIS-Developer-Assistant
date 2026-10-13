@@ -23,13 +23,14 @@ Only the user can lift a rule, by asking for the specific command.
 
 ## How to use this list
 
-The setting `cmsis-developer-assistant.knowledge.replaceSkills` is on: no CMSIS skill is installed
-but this one, and the procedures behind the CMSIS tasks are units of the knowledge index,
-read with `knowledge_get`. Answer the user from the lists below: which procedures, VS Code
-commands, MCP tools and settings exist, and which one fits the task at hand. This skill does
-no work of its own and runs no tools — it points at the unit or tool that does. Name a
-procedure by its unit id; there is no `/` command behind it, so do not offer one, and do not
-tell the user to install a skill.
+The setting `cmsis-developer-assistant.knowledge.replaceSkills` is on: only the core CMSIS skills are
+installed — `/cmsis-pack-docs`, `/cmsis-debug-live`, `/cmsis-help` and, behind them, `$debugger-troubleshooting` —
+and the procedures behind the other CMSIS tasks are units of the knowledge index, read with
+`knowledge_get`. Answer the user from the lists below: which procedures, VS Code commands,
+MCP tools and settings exist, and which one fits the task at hand. This skill does no work
+of its own and runs no tools — it points at the skill, unit or tool that does. A procedure
+named by a `proc-` unit id has no `/` command behind it: do not offer one, and do not tell
+the user to install a skill.
 
 ## Working from the knowledge tools
 
@@ -54,8 +55,8 @@ Do not work a CMSIS task from memory.
 | `route-project` | Create, extend or retarget CMSIS csolution and Zephyr projects — which of its 9 procedures (listed below) fits and in which order |
 | `proc-add-board-layer` | Add a board layer to an existing csolution by asking for the few open decisions, then build it |
 | `proc-cmsis-bootstrap` | Go from an empty VS Code window to a CMSIS solution that builds and debugs |
-| `proc-cmsis-pack-docs` | Look up registers, peripherals, errata and board facts in the target's manuals, with page citations |
-| `proc-cmsis-debug-live` | Investigate a firmware runtime bug on a live Cortex-M debug session: faults, hangs, wrong values, silent peripherals |
+| `/cmsis-pack-docs` | Look up registers, peripherals, errata and board facts in the target's manuals, with page citations |
+| `/cmsis-debug-live` | Investigate a firmware runtime bug on a live Cortex-M debug session: faults, hangs, wrong values, silent peripherals |
 | `proc-create-csolution-github-action` | Create build or FVP-test CI for a CMSIS solution |
 
 `/cmsis-help` is the one slash command in this mode; it shows this list.
@@ -79,14 +80,14 @@ is a unit of its own, read with `knowledge_get`.
 
 ### Live debugging (`route-debug` where the index has it)
 
-- `proc-debugger-troubleshooting` — Find out why a debug or flash session fails to start, connect or program (from `proc-cmsis-bootstrap`, `proc-cmsis-debugger-setup`, `proc-cmsis-debug-live`)
+- `$debugger-troubleshooting` — Find out why a debug or flash session fails to start, connect or program (from `proc-cmsis-bootstrap`, `proc-cmsis-debugger-setup`, `/cmsis-debug-live`)
 - `proc-fvp-debug-setup` — Make Load & Debug and Run work against an Arm FVP model (from `proc-cmsis-bootstrap`, `proc-cmsis-debugger-setup`)
 
 ## VS Code commands
 
 Open the command palette (Ctrl/Cmd+Shift+P) and type the title. While
 `cmsis-developer-assistant.knowledge.replaceSkills` is on, **Configure Agent** and each activation
-install this skill alone and remove the other CMSIS skills the extension installed.
+install the core skills alone and remove the other CMSIS skills the extension installed.
 
 - **CMSIS Developer Assistant: Configure Agent** (`cmsis-developer-assistant.configure`) — The first-run setup, on demand: register the MCP server with the agents you pick (the CMSIS skills are installed into your personal skills directories at the same time), then add the tool rules to your agents' rule files (CLAUDE.md, AGENTS.md, …), each change shown as a diff first.
 - **CMSIS Developer Assistant: Select Target Window** (`cmsis-developer-assistant.selectTargetWindow`) — With several VS Code windows open, choose the default window for agent calls that name no window or file (also a click on "CDA" in the status bar), or Automatic.
@@ -117,7 +118,7 @@ the agents the user selected in the setup) exposes these tool groups:
 
 For the debugging workflow call `get_debug_instructions` (or read the
 `cmsis-developer-assistant://docs/debug_instructions` resource); for a live target investigation
-read `proc-cmsis-debug-live` with `knowledge_get` first. The *Agent Tools* section of the extension's user
+invoke `/cmsis-debug-live` first. The *Agent Tools* section of the extension's user
 guide (`docs/user-guide.md` in the repository) lists every tool and parameter.
 
 <!-- cmsis-developer-assistant:shell-to-tool:begin -->
@@ -157,7 +158,7 @@ VS Code settings under `cmsis-developer-assistant.*` (Settings → Extensions �
 | `cmsis-developer-assistant.serial.idleCloseSeconds` | `300` | Release a serial port an agent opened after this many seconds without a serial call (default 300; 0 is off). |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off. |
 | `cmsis-developer-assistant.knowledge.enabled` | `false` | Experimental. Offer the knowledge tools and name the unit of a known error message in a failed build's result; `knowledge.indexPath` names the base `knowledge.db`, read with the `knowledge.db` of every installed pack and `.cmsis/knowledge.db` of the workspace. Window reload. |
-| `cmsis-developer-assistant.knowledge.replaceSkills` | `false` | With the knowledge tools on: install no CMSIS skill except `cmsis-help`, remove the others this extension installed, and take procedures from `knowledge_search` and `knowledge_get` instead. |
+| `cmsis-developer-assistant.knowledge.replaceSkills` | `false` | With the knowledge tools on: install only the core skills `cmsis-debug-live`, `cmsis-pack-docs` and `cmsis-help` (and what they hand over to), remove the others this extension installed, and take the other procedures from `knowledge_search` and `knowledge_get`. |
 
 *Generated by `npm run skills:sync` from skills/catalog.json, package.json,
 scripts/skills.config.json and docs/agent-resources/tool-contract.md; edit those, not

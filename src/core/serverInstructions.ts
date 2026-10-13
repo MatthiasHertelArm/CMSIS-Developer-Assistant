@@ -31,7 +31,7 @@ export interface InstructionOptions {
     packDocsEnabled?: boolean;
     buildInfoEnabled?: boolean;
     knowledgeEnabled?: boolean;
-    /** `knowledge.replaceSkills`: no skill is installed, so none is named. */
+    /** `knowledge.replaceSkills`: only the core skills are installed; the other procedures are knowledge units. */
     skillsReplaced?: boolean;
 }
 
@@ -48,12 +48,10 @@ const SKILL_FIRST =
     'decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary ' +
     'printf/UART logging in the firmware.';
 
-/** In place of `SKILL_FIRST` when no skill is installed: the guide brings the same plan. */
-const GUIDE_FIRST =
-    'Before anything else in such an investigation, call get_debug_instructions. It brings the target-awareness checklist, ' +
-    'the session-status gate, where to set breakpoints, the step-then-inspect loop, fault decode and the way to the root ' +
-    'cause, so the tools are used with a plan rather than by guesswork or temporary printf/UART logging in the firmware. ' +
-    'No Agent Skills are installed for these tools: procedures come from knowledge_search and knowledge_get.';
+/** After `SKILL_FIRST` while the knowledge tools replace the other skills: what is a skill and what is a unit. */
+const CORE_SKILLS_ONLY =
+    'Only the core Agent Skills are installed: cmsis-debug-live, cmsis-pack-docs and cmsis-help. There is no skill for the ' +
+    'other CMSIS tasks: their procedures come from knowledge_search and knowledge_get.';
 
 const WITHOUT_SKILLS =
     'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
@@ -129,7 +127,7 @@ export const TOOL_RULES_REMINDER =
 export function composeInstructions(options: Readonly<InstructionOptions>): string {
     const lead = options.knowledgeEnabled === true ? [KNOWLEDGE_FIRST, PURPOSE] : [PURPOSE];
     const parts = options.skillsReplaced === true
-        ? [...lead, GUIDE_FIRST, TIMEOUT_OVERRIDE, READING_RESULTS]
+        ? [...lead, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS]
         : [...lead, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
     if (options.buildInfoEnabled === true) {

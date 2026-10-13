@@ -314,7 +314,7 @@
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "markdownDescription": "**Experimental, local use** — let the knowledge tools stand in for every Agent Skill: the extension installs no skill, removes the skills it installed (also `cmsis-debug-live` and the other skills of its own), and its instructions name `get_debug_instructions` and the knowledge tools instead of a skill. Skills this extension did not install are left alone. The removal applies at once; the instructions after a window reload.",
+          "markdownDescription": "**Experimental, local use** — let the knowledge tools stand in for every Agent Skill but the core: the extension installs only `cmsis-debug-live` (how to use the tools), `cmsis-pack-docs` (the documentation) and `cmsis-help` (what there is, naming the knowledge units), with the hidden skills they hand over to, removes the other skills it installed, and its instructions say that the procedures of the other CMSIS tasks come from the knowledge tools. Skills this extension did not install are left alone. The removal applies at once; the instructions after a window reload.",
           "tags": [
             "experimental"
           ]

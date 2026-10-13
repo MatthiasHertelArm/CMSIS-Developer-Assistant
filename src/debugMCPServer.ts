@@ -103,7 +103,7 @@ export interface DebugMCPServerOptions {
     buildInfoEnabled?: boolean;
     /** The three experimental knowledge tools, for sessions that have a pack-docs dispatch. */
     knowledgeEnabled?: boolean;
-    /** `knowledge.replaceSkills`: instructions and descriptions name the guide instead of a skill. */
+    /** `knowledge.replaceSkills`: the instructions say that only the core skills are installed. */
     skillsReplaced?: boolean;
     /** Append each tool-call sample to this file as one JSON line. */
     telemetry?: { jsonlPath?: string };
