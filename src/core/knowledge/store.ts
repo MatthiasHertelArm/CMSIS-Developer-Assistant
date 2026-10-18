@@ -172,8 +172,10 @@ export class KnowledgeIndex implements KnowledgeReader {
                 'Set cmsis-developer-assistant.knowledge.indexPath to a knowledge.db.');
         }
         const { DatabaseSync: Database } = sqliteModule();
+        let opened: DatabaseSync | undefined;
         try {
-            this.db = new Database(file, { readOnly: true });
+            opened = new Database(file, { readOnly: true });
+            this.db = opened;
             const tables = new Set(this.db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')").all().map((row) => text(row.name)));
             const missing = ['nodes', 'edges', 'nodes_fts'].filter((name) => !tables.has(name));
             if (missing.length > 0) {
@@ -187,6 +189,8 @@ export class KnowledgeIndex implements KnowledgeReader {
             }
             this.info = info;
         } catch (caught) {
+            // Closed here, not left to the collector: on Windows an open handle keeps the file from being replaced or deleted.
+            opened?.close();
             throw new ToolError('INVALID_ARGUMENT', `${file} is not a knowledge index: ${caught instanceof Error ? caught.message : String(caught)}`,
                 'Set cmsis-developer-assistant.knowledge.indexPath to a knowledge.db built by build_index.py.');
         }
