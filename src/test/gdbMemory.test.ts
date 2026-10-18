@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import type * as vscode from 'vscode';
+import * as assert from 'assert';
 import {
     attemptsText, CAUSE_MAX_CHARS, classifyReadFailure, DHCSR_ADDRESS, isLockedUp, LOCKUP_NOTE, wedgeHint,
 } from '../core/probeWedge';

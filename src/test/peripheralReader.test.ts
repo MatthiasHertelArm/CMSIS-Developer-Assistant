@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import * as path from 'path';
 import { readPeripheralViaMemory, readWord } from '../core/peripheralReader';
 import { HardwareTimeoutError } from '../utils/timeout';

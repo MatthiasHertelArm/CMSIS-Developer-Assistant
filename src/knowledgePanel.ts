@@ -34,9 +34,9 @@
  * (open a file, open a link) are checked here.
  */
 
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { detailOf, graphAround, overviewOf, unitRows } from './core/knowledge/browse';
 import { KNOWLEDGE_PANEL_SCRIPT, KNOWLEDGE_PANEL_STYLE } from './knowledgePanelPage';
 import { toToolError } from './core/toolResult';

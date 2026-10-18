@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { SerialPortMock } from 'serialport';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
 import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
@@ -36,7 +37,6 @@ import type { HandlerHost } from '../handler/host';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
-import { SerialPortMock } from 'serialport';
 import { FakeExecution, FakeTasks, FixtureTask, workspaceTasks } from './cmsisTaskFixtures';
 import { MockSerial, mockSerial } from './serialFixtures';
 

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import type * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -21,7 +22,6 @@ import type { AddressInfo } from 'net';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import type * as vscode from 'vscode';
 import { SERVER_VERSION } from '../debuggingExecutor';
 import { WindowCoordinator } from '../windowCoordinator';
 import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';

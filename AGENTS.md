@@ -198,7 +198,9 @@ it is:
   failed. A caught value is `unknown` until checked.
 - **Imports:** `import * as vscode from 'vscode'` first, then Node built-ins
   and packages, then this repository's modules; `import type` for type-only
-  imports. Import names are camelCase or PascalCase (ESLint naming rule).
+  imports, which keep the place of their module. `src/test/importOrder.test.ts`
+  checks the order. Import names are camelCase or PascalCase (ESLint naming
+  rule).
 - **Names:** camelCase for functions, methods and variables; PascalCase for
   classes, interfaces and types; UPPER_SNAKE_CASE for module constants such as
   limits and fixed texts. Only the three layer contracts carry an `I` prefix:
