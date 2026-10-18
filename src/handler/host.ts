@@ -17,8 +17,9 @@
 /**
  * What the debugging handler takes from its surroundings apart from the
  * executor: a clock, VS Code's focused stack frame, the window's CMSIS job
- * tracker, its owned serial port, the workspace folders, and where `flash`
- * looks for pyOCD.
+ * tracker, its owned serial port, the workspace folders, where `flash`
+ * looks for its cbuild-run file and for pyOCD, what `cmsis_action
+ * install_pack` asks, and the CMSIS Solution extension behind `cmsis_query`.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
@@ -29,7 +30,11 @@
 
 import * as vscode from 'vscode';
 import { CmsisJobTracker, windowJobTracker } from '../cmsisJobTracker';
+import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
 import { SerialController, serialController } from '../core/serialController';
+import { activeCbuildRunFile } from '../utils/solutionQueries';
+import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
+import type { SolutionExtensionHandle } from '../core/solutionApi';
 
 /** An installed extension, as the pyOCD lookup of `flash` needs it. */
 export interface InstalledExtension {
@@ -61,10 +66,20 @@ export interface HandlerHost {
     workspaceFolders(): readonly vscode.WorkspaceFolder[];
     /** `vscode.workspace.findFiles`. */
     findFiles(include: string, exclude: string, maxResults: number): Thenable<vscode.Uri[]>;
+    /**
+     * The `cbuild-run.yml` of the CMSIS Solution extension's active target
+     * (`getCbuildRunFile`); undefined when the extension is not active, lacks
+     * the command, answers `""` or not within 3 s. `flash` takes it first.
+     */
+    activeCbuildRunFile(): Promise<string | undefined>;
     /** What the pyOCD lookup of `flash` reads. */
     toolEnvironment(): ToolEnvironment;
     /** `vscode.openFolder`: open `folder` in a new VS Code window, or in this one. */
     openFolder(folder: string, newWindow: boolean): Thenable<unknown>;
+    /** The CMSIS Solution extension's pack install, the pack root and the licence question of `install_pack`. */
+    packInstall(): PackInstallHost;
+    /** The CMSIS Solution extension, for its public API (`cmsis_query`, `create_solution`); undefined when it is not installed. */
+    solutionExtension(): SolutionExtensionHandle | undefined;
 }
 
 /** The real thing: Node timers and the VS Code API, looked up per call. */
@@ -85,6 +100,7 @@ export const VSCODE_HOST: HandlerHost = {
     ownedSerial: () => serialController,
     workspaceFolders: () => vscode.workspace.workspaceFolders ?? [],
     findFiles: (include, exclude, maxResults) => vscode.workspace.findFiles(include, exclude, maxResults),
+    activeCbuildRunFile: () => activeCbuildRunFile(),
     toolEnvironment: () => ({
         extension: (id) => {
             const found = vscode.extensions.getExtension(id);
@@ -98,4 +114,23 @@ export const VSCODE_HOST: HandlerHost = {
         platform: process.platform,
     }),
     openFolder: (folder, newWindow) => vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: newWindow }),
+    packInstall: () => VSCODE_PACK_INSTALL_HOST,
+    solutionExtension: () => {
+        const found = vscode.extensions.getExtension(SOLUTION_EXTENSION_ID);
+        if (!found) {
+            return undefined;
+        }
+        const version: unknown = (found.packageJSON as { version?: unknown } | undefined)?.version;
+        // Read at each use: activation changes both.
+        return {
+            get isActive(): boolean {
+                return found.isActive;
+            },
+            get exports(): unknown {
+                return found.exports;
+            },
+            version: typeof version === 'string' ? version : undefined,
+            activate: () => found.activate(),
+        };
+    },
 };

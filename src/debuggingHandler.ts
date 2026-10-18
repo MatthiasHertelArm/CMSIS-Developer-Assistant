@@ -17,8 +17,8 @@
 /**
  * The debugging tools behind the MCP server: one `handle*` method per tool.
  * Each checks what state the session is in, asks the executor (and, for
- * `cmsis_action` and `flash`, the CMSIS Solution extension or pyOCD) and
- * answers with one text for the agent.
+ * `cmsis_action`, `cmsis_query` and `flash`, the CMSIS Solution extension or
+ * pyOCD) and answers with one text for the agent.
  *
  * `DebugMCPServer` calls a handler directly in the window that serves MCP;
  * a worker window's `ControlServer` calls it by op name with `args ?? {}`.
@@ -83,6 +83,8 @@ import {
     selectVariables,
 } from './core/variableView';
 import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, runCmsisAction } from './handler/cmsisAction';
+import { CatalogQuery, queryCatalog } from './core/catalogQuery';
+import { acquireSolutionApi } from './core/solutionApi';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
 import {
@@ -124,7 +126,13 @@ interface PeripheralLookup { name?: string; address?: string; filter?: string; s
 interface RegisterLookup { peripheral: string; register: string; svdFile?: string; pname?: string; timeoutMs?: number }
 interface StackRequest { threadId?: number; levels?: number; timeoutMs?: number }
 interface FrameValuesRequest { frameId: number; scope?: VariableScope; variableNames?: string[]; timeoutMs?: number }
-interface CmsisRequest { action: CmsisAction; target?: string; timeoutMs?: number; path?: string; client?: string }
+interface CmsisRequest {
+    action: CmsisAction; target?: string; timeoutMs?: number; path?: string; client?: string;
+    /** install_pack: the Vendor::Name@version to install. */
+    pack?: string;
+    /** create_solution: the board, device and draft ids from cmsis_query, and whether to run git init. */
+    board?: string; device?: string; draft?: string; git?: boolean;
+}
 interface FlashRequest { cbuildRunFile?: string; timeoutMs?: number }
 interface ProblemsRequest { sinceSeq?: number; sources?: ProblemSource[]; minSeverity?: ProblemSeverity; limit?: number }
 
@@ -167,6 +175,7 @@ export interface IDebuggingHandler {
     handleGetThreads(args?: TimeoutArg): Answer;
     handleGetFrameVariables(args: FrameValuesRequest): Answer;
     handleCmsisCommand(args: CmsisRequest): Answer;
+    handleCmsisQuery(args: CatalogQuery): Answer;
     handleFlash(args: FlashRequest): Answer;
 }
 
@@ -198,6 +207,9 @@ const PICKER_NAMES_LISTED = 10;
 const TRIAGE_REGISTERS = ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim'];
 
 const NO_ACTIVE_SESSION = 'No active debug session.';
+/** `cmsis_query`: the fence, and how much earlier the query's own deadline answers. */
+const QUERY_FENCE_MS = 60_000;
+const QUERY_MARGIN_MS = 3_000;
 /** How to get a session: CMSIS projects start theirs through the CMSIS Solution extension (#20). */
 const START_FIRST = 'Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.';
 const NOTHING_TO_STOP = 'Nothing to stop — no debug session is active.';
@@ -1729,8 +1741,23 @@ export class DebuggingHandler
             host: this.host(),
             awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
             renderFullState: (state) => this.fullState(state),
-        }, args.action, args.target, waitMs, args.path, args.client), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
+        }, args.action, args.target, waitMs, args.path, args.client, args.pack, args), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
         return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();
+    }
+
+    /**
+     * `cmsis_query` (#41, the catalog slice): boards, devices and the examples
+     * of a board or device from CMSIS Solution's API version 2. Needs no
+     * solution and no session; activates the CMSIS Solution extension when it
+     * is installed but inactive.
+     */
+    handleCmsisQuery(args: CatalogQuery): Answer {
+        return this.fence('cmsis_query', QUERY_FENCE_MS, 'error', async () => {
+            const host = this.host();
+            const deadline = host.now() + QUERY_FENCE_MS - QUERY_MARGIN_MS;
+            const api = await acquireSolutionApi(host.solutionExtension(), `cmsis_query {what:'${args.what}'}`, host);
+            return queryCatalog(api, args, host, deadline);
+        });
     }
 
     /** `flash`; it notes a serial port this window holds (#49). */

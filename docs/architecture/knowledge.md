@@ -12,7 +12,12 @@ The knowledge index is mandatory. The extension ships the core index
 (`resources/knowledge/core.db`, copied in from the knowledge-base repository
 before packaging, git-ignored) and the knowledge tools are always on.
 `knowledge.indexPath` replaces the core index, for testing a rebuilt one.
-Packs and the workspace add their own indexes to it.
+Packs and the workspace add their own indexes to it: every pack under the
+pack root and in cpackget's local repository, and the DFP and BSP folders
+the CMSIS Solution extension names for the active target, which reach a
+pack a csolution names with `path:` outside the pack root
+(`KnowledgeHost.packFolders`, filled by `namedPackFolders` in
+`src/core/packDocs/targetDocs.ts`). A file found twice is opened once.
 
 
 - **Knowledge first.** A skill is loaded because its description matches
@@ -65,7 +70,7 @@ nothing; it works with the gate off, since it serves a person, not an agent.
 | Path | What |
 | ---- | ---- |
 | `src/core/knowledge/store.ts` | `KnowledgeReader`, `KnowledgeIndex` (one file: the SQL over `nodes`, `edges`, `nodes_fts`), `KnowledgeSet` (several, merged) |
-| `src/core/knowledge/packIndexes.ts` | Where pack and workspace indexes are found (`PACK_INDEX`, `WORKSPACE_INDEX`) |
+| `src/core/knowledge/packIndexes.ts` | Where pack and workspace indexes are found (`PACK_INDEX`, `WORKSPACE_INDEX`), the folders of the active target's packs included (`packFolderIndexes`) |
 | `src/core/knowledge/search.ts` | `searchKnowledge`, `contextEntities`, `inScope`, `appliesIn`, `isIncomplete`, `knownMessages` |
 | `src/core/knowledge/projectFacts.ts` | The facts of the active target |
 | `src/knowledgeHandler.ts` | `handleKnowledgeSearch`, `handleKnowledgeGet`, `handleKnowledgeExpand`, the reply texts |

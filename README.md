@@ -61,8 +61,10 @@ Together, these capabilities help the agent follow repeatable workflows, use
 the established CMSIS tools, and base its decisions on the actual target and
 project configuration.
 
-The extension helps configure supported coding agents and installs the CMSIS
-skills. GitHub Copilot in VS Code discovers the MCP server automatically.
+The extension helps configure supported coding agents and installs the
+`cmsis-help` skill; the CMSIS procedures come from the knowledge index the
+extension ships, and packs can add their own. GitHub Copilot in VS Code
+discovers the MCP server automatically.
 The integration has been tested with Codex, Claude Code, and GitHub Copilot.
 Other agents that support MCP and the Agent Skills format may also work.
 
@@ -91,6 +93,8 @@ CMSIS Developer Assistant is free to use and works in combination with:
 CMSIS Developer Assistant supports these embedded development activities:
 
 - Creating and extending CMSIS and Zephyr projects.
+- Finding boards, devices and their examples in the CMSIS catalog, creating a
+  project from an example, and installing the verified device and board packs.
 - Adding targets, boards, layers, startup code, standard I/O, and debugger
   configuration.
 - Building, programming, running, attaching to, and debugging Cortex-M
@@ -173,7 +177,7 @@ and type **CMSIS Developer Assistant** to find them.
 | **Import Document for Current Target** | Import and attribute PDFs that are not supplied by a software pack. |
 | **Open User Documents Folder** | Open the folder containing imported target documentation. |
 | **Open Pack Docs Panel** | Inspect target documents, SVD peripherals, index state, and documentation tools. |
-| **Open Knowledge Browser** | Experimental. A panel over the knowledge index named by `cmsis-developer-assistant.knowledge.indexPath`: every unit with filters by type, domain and state and the search of `knowledge_search`; a unit's text, the files it ships and its frontmatter; its relations as a graph to walk; and an overview of the index with the routing units as places to start. Read-only. |
+| **Open Knowledge Browser** | Experimental. A panel over the knowledge index: the core index the extension ships (or the one `cmsis-developer-assistant.knowledge.indexPath` names), the packs' and the workspace's: every unit with filters by type, domain and state and the search of `knowledge_search`; a unit's text, the files it ships and its frontmatter; its relations as a graph to walk; and an overview of the index with the routing units as places to start. Read-only. |
 | **Copy Recent Problems** | Copy recent errors and warnings, with their source and suggested next step. |
 
 ## Choose a workflow

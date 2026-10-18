@@ -73,6 +73,12 @@ suite('Window problem sources', () => {
         assert.strictEqual(failedJobProblem(job({ state: 'ok' })), undefined);
         assert.strictEqual(failedJobProblem(job({ state: 'cancelled' })), undefined);
         assert.strictEqual(failedJobProblem(job({ decidedBy: undefined })), undefined);
+        const rebuild = failedJobProblem(job({
+            id: 'rb-3', action: 'rebuild',
+            executions: [{ key: 1, name: 'cbuild blinky.csolution.yml --rebuild --active HE', kind: 'rebuild', role: 'main', startedAt: 1, exitCode: 2 }],
+        }));
+        assert.deepStrictEqual([rebuild?.source, rebuild?.hint], ['build', 'cmsis_action {action:\'status\'} shows its error lines.'],
+            'a rebuild is a build');
     });
 
     test('the error lines of a failed build are BUILD_ERROR records with a workspace-relative file; warnings carry no code', () => {

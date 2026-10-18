@@ -29,8 +29,11 @@ import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
 import { LagMonitor, NoticeGate, RouterWarning, RouterWatch, busyCallsOf, portSilent, secondsText } from './core/windowHealth';
 import { toolNameOf } from './core/windowStatus';
+import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
+import { solutionFileOf } from './core/solutionAnswers';
 import { logger } from './utils/logger';
 import { notifyWarning } from './utils/notify';
+import { withTimeout } from './utils/timeout';
 import { WindowStatus } from './windowStatus';
 
 /** Refresh well inside the registry's 60 s staleness window. */
@@ -102,9 +105,29 @@ export interface CoordinatorOptions {
     notify?: WarningNotifier;
     /** The clock of the notices and of the stuck-router watch; `Date.now` by default. */
     clock?: () => number;
+    /**
+     * The answer of `cmsis-csolution.getSolutionFile` for the window listing,
+     * or undefined when the CMSIS Solution extension is not active. Injectable
+     * for tests.
+     */
+    solutionFile?: () => Thenable<unknown> | undefined;
 }
 
 const SERIAL_TEARDOWN_MS = 2_000;
+
+/** How long the window listing waits for the CMSIS Solution extension's answer. */
+const SOLUTION_QUERY_MS = 3_000;
+
+/**
+ * Ask the CMSIS Solution extension for its active solution, but only while it
+ * is active: running its command would activate it in every window.
+ */
+function querySolutionFile(): Thenable<unknown> | undefined {
+    if (!vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)?.isActive) {
+        return undefined;
+    }
+    return vscode.commands.executeCommand<unknown>('cmsis-csolution.getSolutionFile');
+}
 
 async function defaultSerialTeardown(): Promise<void> {
     await serialController.close();
@@ -158,6 +181,12 @@ export class WindowCoordinator {
     private lastLag: EventLoopLag | undefined;
     private heartbeat: ReturnType<typeof setInterval> | undefined;
     private promotionTimer: ReturnType<typeof setInterval> | undefined;
+    /** The csolution file the CMSIS Solution extension last named, as the registry entry carries it. */
+    private solutionFile: string | undefined;
+    /** The `getSolutionFile` query in flight; one at a time. */
+    private solutionQuery: Promise<void> | undefined;
+    /** A refresh was asked for while a query was in flight: ask again when it ends. */
+    private solutionQueryAgain = false;
     private disposed = false;
 
     constructor(private readonly options: CoordinatorOptions) {
@@ -353,6 +382,8 @@ export class WindowCoordinator {
         this.lag?.reset();
         this.registry.heartbeat({ busy: this.busyCalls(), lagMs: this.lastLag });
         this.status?.reloadDefault();
+        // A solution opened or closed since the last publish shows up in the listing.
+        this.refreshSolutionFile();
     }
 
     /** The calls busy here for more than 10 s, as the registry entry lists them; undefined when none is. */
@@ -469,6 +500,7 @@ export class WindowCoordinator {
      */
     public publish(): void {
         if (this.disposed || !this.controlServer) { return; }
+        this.refreshSolutionFile();
 
         const session = vscode.debug.activeDebugSession;
         this.registry.register({
@@ -478,7 +510,7 @@ export class WindowCoordinator {
             name: vscode.workspace.name ?? NO_WORKSPACE,
             hasActiveSession: !!session,
             activeConfigurationName: session?.configuration?.name,
-            cmsisProject: this.cmsisProjectPath(),
+            cmsisProject: this.solutionFile,
             role: this.role(),
             version: SERVER_VERSION,
             // Both from the heartbeat: none before the first one.
@@ -488,21 +520,49 @@ export class WindowCoordinator {
     }
 
     /**
-     * Best-effort path of the CMSIS solution in this window, for the window
-     * listing. Never throws: the CMSIS Solution extension may not be installed,
-     * and this is a display detail, not a routing decision.
+     * Ask the CMSIS Solution extension which csolution this window has, for
+     * the window listing, and publish again when the answer changed. The
+     * extension exports no active solution, so this asks its command. A
+     * display detail, not a routing decision: it never throws, and a failed
+     * or slow query keeps the last answer.
      */
-    private cmsisProjectPath(): string | undefined {
-        try {
-            const ext = vscode.extensions.getExtension('Arm.cmsis-csolution');
-            if (!ext?.isActive) { return undefined; }
-            const solution = (ext.exports as { activeSolution?: unknown } | undefined)?.activeSolution;
-            if (typeof solution === 'string') { return solution; }
-            const asRecord = solution as Record<string, any> | undefined;
-            return asRecord?.fsPath ?? asRecord?.path ?? undefined;
-        } catch {
-            return undefined;
+    private refreshSolutionFile(): void {
+        if (this.disposed) { return; }
+        if (this.solutionQuery !== undefined) {
+            this.solutionQueryAgain = true;
+            return;
         }
+        let answer: Thenable<unknown> | undefined;
+        try {
+            answer = (this.options.solutionFile ?? querySolutionFile)();
+        } catch (caught) {
+            logger.debug(`window listing: no csolution from the CMSIS Solution extension: ${caught instanceof Error ? caught.message : String(caught)}`);
+            return;
+        }
+        if (answer === undefined) {
+            this.noteSolutionFile(undefined);
+            return;
+        }
+        const pending = answer;
+        this.solutionQuery = withTimeout('cmsis getSolutionFile', SOLUTION_QUERY_MS, () => Promise.resolve(pending))
+            .then(
+                (value) => this.noteSolutionFile(solutionFileOf(value)),
+                (caught: unknown) => logger.debug(`window listing: getSolutionFile: ${caught instanceof Error ? caught.message : String(caught)}`),
+            )
+            .finally(() => {
+                this.solutionQuery = undefined;
+                if (this.solutionQueryAgain) {
+                    this.solutionQueryAgain = false;
+                    this.refreshSolutionFile();
+                }
+            });
+    }
+
+    /** Keep the csolution the extension named; a change is published at once. */
+    private noteSolutionFile(file: string | undefined): void {
+        if (file === this.solutionFile) { return; }
+        this.solutionFile = file;
+        this.publish();
     }
 
     public async dispose(): Promise<void> {

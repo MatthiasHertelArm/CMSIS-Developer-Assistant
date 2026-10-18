@@ -30,9 +30,12 @@ import { BuildInfoHost, BuildInfoSettings, defaultBuildInfoSettings } from './co
 import { PackDocsHost, PackDocsSettings, defaultSettings } from './core/packDocs/host';
 import { defaultPackRoot, resolveUserDocsDir } from './core/packDocs';
 import { effectivePackRoot } from './core/packDocs/host';
-import { ActiveContextHint } from './core/packDocs/cbuildRun';
+import { ActiveContextHint, formatPackId } from './core/packDocs/cbuildRun';
+import { namedPackFolders } from './core/packDocs/targetDocs';
+import { solutionNameOf, targetTypeOf } from './core/solutionAnswers';
 import { withTimeout } from './utils/timeout';
 import { toolchainPackRoot } from './utils/toolchainPackRoot';
+import { activeCbuildRunFile, activePackFolders } from './utils/solutionQueries';
 import { PackDocsHandler } from './packDocsHandler';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { projectFacts } from './core/knowledge/projectFacts';
@@ -126,11 +129,8 @@ async function activeContext(): Promise<ActiveContextHint | undefined> {
             withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getSolutionFile'))),
             withTimeout('cmsis getActiveTargetSet', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getActiveTargetSet'))),
         ]);
-        const record = file as Record<string, any> | undefined;
-        const solutionPath = typeof file === 'string' ? file : record?.solutionFile ?? record?.fsPath ?? record?.path ?? record?.uri?.fsPath;
-        const solution = typeof solutionPath === 'string' && solutionPath
-            ? path.basename(solutionPath).replace(/\.csolution\.ya?ml$/i, '') : undefined;
-        const targetType = typeof set === 'string' && set.trim() ? set.trim().split('@')[0] : undefined;
+        const solution = solutionNameOf(file);
+        const targetType = targetTypeOf(set);
         return solution || targetType ? { solution, targetType } : undefined;
     } catch {
         return undefined;
@@ -166,6 +166,8 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         // csolution file (CMSIS-Toolbox 2.8) or under out/ (older layouts).
         findCbuildRunFiles: () => findFiles('**/*.cbuild-run.yml', 50),
         activeContext,
+        activeCbuildRunFile: () => activeCbuildRunFile(),
+        activePackFolders: () => activePackFolders(),
     };
 }
 
@@ -177,6 +179,7 @@ export function makeKnowledgeHost(docs: PackDocsHost, build: BuildInfoHost, bund
         packRoot: () => effectivePackRoot(docs),
         workspaceFolders,
         projectFacts: () => projectFacts(docs, build),
+        packFolders: async () => (await namedPackFolders(docs)).map(({ pack, dir }) => ({ pack: formatPackId(pack), dir })),
         log: logger,
     };
 }

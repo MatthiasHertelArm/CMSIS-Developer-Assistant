@@ -24,9 +24,12 @@
  * active target; the units of a pack are scoped to it (`scoped_to`), so a
  * search offers them only to a project that uses the pack.
  *
- * Found by reading the pack root (`<root>/<Vendor>/<Pack>/<version>/`) and
- * the local repository index cpackget keeps (`.Local/local_repository.pidx`,
- * packs registered from a folder). No `vscode` import.
+ * Found by reading the pack root (`<root>/<Vendor>/<Pack>/<version>/`), the
+ * local repository index cpackget keeps (`.Local/local_repository.pidx`,
+ * packs registered from a folder), and the folders the caller names for the
+ * active target's packs (the DFP and BSP folders the CMSIS Solution
+ * extension reports, which a csolution `packs:` entry with `path:` puts
+ * outside the pack root). No `vscode` import.
  */
 
 import * as fs from 'fs';
@@ -41,6 +44,13 @@ export interface FoundIndex {
     /** `Vendor::Pack@version` for a pack, `workspace` or `workspace:<name>` for a folder. */
     label: string;
     file: string;
+}
+
+/** A pack of the active target and the folder its PDSC is in. */
+export interface PackFolder {
+    /** `Vendor::Pack@version`. */
+    pack: string;
+    dir: string;
 }
 
 function indexIn(dir: string, name: string): string | undefined {
@@ -116,6 +126,18 @@ export function localRepositoryIndexes(packRoot: string): FoundIndex[] {
     return found;
 }
 
+/** The indexes in the folders of the active target's packs, labelled like the packs of the local repository. */
+export function packFolderIndexes(packFolders: readonly PackFolder[]): FoundIndex[] {
+    const found: FoundIndex[] = [];
+    for (const { pack, dir } of packFolders) {
+        const file = indexIn(dir, PACK_INDEX);
+        if (file !== undefined) {
+            found.push({ label: `${pack} (local)`, file });
+        }
+    }
+    return found;
+}
+
 /** The index a workspace folder carries under `.cmsis/`. */
 export function workspaceIndexes(folders: readonly string[]): FoundIndex[] {
     const found: FoundIndex[] = [];
@@ -128,13 +150,30 @@ export function workspaceIndexes(folders: readonly string[]): FoundIndex[] {
     return found;
 }
 
-/** Every index besides the base one, packs first, without a file twice. */
-export function discoverIndexes(packRoot: string | undefined, folders: readonly string[]): FoundIndex[] {
+/** One key for every spelling of a file: the pack root and the CMSIS Solution extension may name it through different links. */
+function sameFileKey(file: string): string {
+    try {
+        return fs.realpathSync(file);
+    } catch {
+        return path.resolve(file);
+    }
+}
+
+/**
+ * Every index besides the base one, packs first, without a file twice: a
+ * pack folder that lies in the pack root keeps the label of the installed
+ * pack.
+ */
+export function discoverIndexes(packRoot: string | undefined, folders: readonly string[], packFolders: readonly PackFolder[] = []): FoundIndex[] {
     const all = [
         ...(packRoot ? installedPackIndexes(packRoot) : []),
         ...(packRoot ? localRepositoryIndexes(packRoot) : []),
+        ...packFolderIndexes(packFolders),
         ...workspaceIndexes(folders),
     ];
     const seen = new Set<string>();
-    return all.filter((entry) => !seen.has(entry.file) && seen.add(entry.file));
+    return all.filter((entry) => {
+        const key = sameFileKey(entry.file);
+        return !seen.has(key) && seen.add(key);
+    });
 }

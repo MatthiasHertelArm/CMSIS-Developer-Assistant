@@ -32,9 +32,11 @@
  *     that (`reduceJob` in `src/core/cmsisTasks.ts`); a build binds to the
  *     execution the build command returns, when it returns one;
  *   - other CMSIS executions of the window are noted, never the result;
- *   - a build, load or erase started elsewhere while no job of that action
- *     is open is adopted, so a repeated call waits for it instead of
- *     starting a second one;
+ *   - a build, rebuild, clean, load or erase started elsewhere while no job
+ *     of that action is open is adopted, so a repeated call waits for it
+ *     instead of starting a second one;
+ *   - `requestStop` marks the executions `cmsis_action stop_build` ends, so
+ *     that their jobs count as stopped however the task closes;
  *   - settled jobs are kept 10 minutes, in memory only.
  *
  * A build's result is completed after the job settled: an `onDidFinishJob`
@@ -59,6 +61,7 @@ import { problemJournal } from './core/problemJournal';
 import { attachJobJournal } from './windowProblems';
 import {
     armJob,
+    BUILD_TASK_TYPE,
     classifyByLabelLoosely,
     classifyCmsisTask,
     CmsisTaskKind,
@@ -153,12 +156,12 @@ const END_POLL_MS = 250;
 
 /** The job id prefix of each action: `b-3` is the third job of the window, a build. */
 const ID_PREFIX: Readonly<Record<JobAction, string>> = {
-    build: 'b', load: 'l', erase: 'e', run: 'g', load_and_run: 'r', load_and_debug: 'd',
+    build: 'b', rebuild: 'rb', clean: 'c', load: 'l', erase: 'e', run: 'g', load_and_run: 'r', load_and_debug: 'd',
 };
 
 /** Executions started elsewhere that become jobs of their own, so that a repeated call attaches to them. */
 const ADOPTED: ReadonlyMap<CmsisTaskKind, JobAction> = new Map<CmsisTaskKind, JobAction>([
-    ['build', 'build'], ['load', 'load'], ['erase', 'erase'],
+    ['build', 'build'], ['rebuild', 'rebuild'], ['clean', 'clean'], ['load', 'load'], ['erase', 'erase'],
 ]);
 
 /** Kinds that hold the probe while they are alive. */
@@ -167,7 +170,7 @@ const PROBE_KINDS: ReadonlySet<CmsisTaskKind> = new Set<CmsisTaskKind>(['run', '
 /** The facts of an execution's task; undefined for anything that is not shaped like one. */
 function factsOf(execution: unknown): TaskFacts | undefined {
     const task = (execution as { task?: unknown } | undefined)?.task as
-        { name?: unknown; source?: unknown; definition?: { type?: unknown; setup?: unknown } } | undefined;
+        { name?: unknown; source?: unknown; definition?: { type?: unknown; setup?: unknown; clean?: unknown; rebuild?: unknown } } | undefined;
     if (typeof task?.name !== 'string') {
         return undefined;
     }
@@ -176,6 +179,8 @@ function factsOf(execution: unknown): TaskFacts | undefined {
         source: typeof task.source === 'string' ? task.source : '',
         type: typeof task.definition?.type === 'string' ? task.definition.type : undefined,
         setup: task.definition?.setup === true,
+        clean: task.definition?.clean === true,
+        rebuild: task.definition?.rebuild === true,
     };
 }
 
@@ -473,6 +478,30 @@ export class CmsisJobTracker {
         return all.filter((execution) => factsOf(execution)?.name.startsWith('CMSIS') === true);
     }
 
+    /**
+     * The executions of CMSIS Solution's build task type alive now — builds,
+     * rebuilds, cleans and setups — which its Stop Build ends. VS Code's own
+     * list when it offers one, else the tracker's.
+     */
+    buildExecutions(): ExecutionLike[] {
+        const listed = this.aliveInVsCode();
+        const all = listed ?? this.liveExecutions().map((execution) => execution.execution);
+        return all.filter((execution) => factsOf(execution)?.type === BUILD_TASK_TYPE);
+    }
+
+    /**
+     * `cmsis_action stop_build` is about to end these executions: each counts
+     * as stopped in its job (state `cancelled`), whatever exit code its task
+     * closes with. Returns the open jobs they are bound to.
+     */
+    requestStop(executions: readonly ExecutionLike[]): Job[] {
+        const keys = executions.map((execution) => this.liveKeyOf(execution)).filter((key): key is number => key !== undefined);
+        for (const key of keys) {
+            this.dispatch({ type: 'stopRequested', key, at: this.clock.now() });
+        }
+        return this.openJobs().filter((job) => job.executions.some((execution) => execution.role !== undefined && keys.includes(execution.key)));
+    }
+
     /** Resolves when every one of `executions` has ended, or after `ms` with those still alive. */
     waitForEnd(executions: readonly ExecutionLike[], ms: number): Promise<EndReport> {
         const endedAt = new Map<ExecutionLike, number>();
@@ -524,17 +553,19 @@ export class CmsisJobTracker {
     /**
      * The labels of the tasks CMSIS Solution can run in `folder` (source
      * `Workspace`, scoped to the folder), from `fetchTasks` within 3 s and
-     * cached until the folder's tasks.json changes. Undefined when they could
-     * not be read, so that the caller does not refuse on a guess.
+     * cached until the folder's tasks.json changes; `fresh` reads them again
+     * (after the tasks were rewritten, VS Code may list the new ones a moment
+     * later than the file changed). Undefined when they could not be read, so
+     * that the caller does not refuse on a guess.
      */
-    async taskLabels(folder: string): Promise<ReadonlySet<string> | undefined> {
+    async taskLabels(folder: string, fresh = false): Promise<ReadonlySet<string> | undefined> {
         const fetchTasks = this.source.fetchTasks;
         if (!fetchTasks) {
             return undefined;
         }
         const stamp = tasksJsonStamp(folder);
         const cached = this.labelCache.get(folder);
-        if (cached && cached.stamp === stamp) {
+        if (!fresh && cached && cached.stamp === stamp) {
             return cached.labels;
         }
         let tasks: readonly FetchedTask[] | undefined;
@@ -732,7 +763,7 @@ export class CmsisJobTracker {
         return false;
     }
 
-    /** A build, load or erase nobody asked for: follow it as a job, unless one of that action is open. */
+    /** A build, rebuild, clean, load or erase nobody asked for: follow it as a job, unless one of that action is open. */
     private adopt(kind: CmsisTaskKind, event: JobEvent): void {
         const action = ADOPTED.get(kind);
         if (!action || this.inFlight(action)) {

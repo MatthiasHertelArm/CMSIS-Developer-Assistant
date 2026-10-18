@@ -157,6 +157,37 @@ suite('WindowCoordinator and the router window (#14)', () => {
         }
     });
 
+    test('the window publishes the csolution the CMSIS Solution extension names, and drops it when the solution closes', async () => {
+        const registry = registryView();
+        let answer: unknown = { solutionFile: '/w/Blinky.csolution.yml' };
+        const coordinator = new WindowCoordinator({
+            port: 0, timeoutInSeconds: 1, hardwareTimeouts: {}, registry, serialTeardown: noTeardown,
+            solutionFile: () => Promise.resolve(answer),
+        });
+        const context = { subscriptions: [] as vscode.Disposable[] };
+        const published = async (expected: string | undefined): Promise<void> => {
+            for (let tries = 0; tries < 50; tries++) {
+                if (registry.list().find((entry) => entry.pid === process.pid)?.cmsisProject === expected) {
+                    return;
+                }
+                await new Promise((later) => setTimeout(later, 20));
+            }
+            assert.fail(`cmsisProject is not ${expected ?? 'unset'}`);
+        };
+        try {
+            await coordinator.start(context as unknown as vscode.ExtensionContext);
+            await published('/w/Blinky.csolution.yml');
+            answer = '';
+            coordinator.publish();
+            await published(undefined);
+        } finally {
+            await coordinator.dispose();
+            for (const subscription of context.subscriptions) {
+                subscription.dispose();
+            }
+        }
+    });
+
     test('a stale router entry and a silent port raise one warning per episode', async () => {
         const port = await holdSilently();
         const base = Date.now();

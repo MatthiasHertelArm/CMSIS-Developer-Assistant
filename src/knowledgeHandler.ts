@@ -30,7 +30,7 @@ import { describeFacts, ProjectFactsResult } from './core/knowledge/projectFacts
 import {
     contextEntities, DEFAULT_RESULTS, isIncomplete, knownMessages, ProjectFacts, searchKnowledge, SearchHit, tokensOf,
 } from './core/knowledge/search';
-import { discoverIndexes } from './core/knowledge/packIndexes';
+import { discoverIndexes, PackFolder } from './core/knowledge/packIndexes';
 import { KnowledgeNode, KnowledgeReader, KnowledgeSet, Neighbour } from './core/knowledge/store';
 import type { PackDocsLog } from './core/packDocs/host';
 import { JsonObject, JsonValue, ToolError, ToolText } from './core/toolResult';
@@ -46,6 +46,12 @@ export interface KnowledgeHost {
     packRoot(): Promise<string | undefined>;
     /** The open workspace folders, which may carry `.cmsis/knowledge.db`. */
     workspaceFolders(): string[];
+    /**
+     * The folders of the active target's packs, when the host knows them
+     * outside the pack root (the CMSIS Solution extension's DFP and BSP
+     * folders); their `.knowledge/knowledge.db` is read like an installed pack's.
+     */
+    packFolders?(): Promise<readonly PackFolder[]>;
     /** The facts of the window's active target. */
     projectFacts(): Promise<ProjectFactsResult>;
     log: PackDocsLog;
@@ -111,6 +117,8 @@ export class KnowledgeHandler {
     private open?: { key: string; index: KnowledgeReader };
     /** The pack root of the last call, for the synchronous build hook. */
     private packRootSeen?: string;
+    /** The active target's pack folders at the last call, for the same hook. */
+    private packFoldersSeen: readonly PackFolder[] = [];
     /** The project's entities at the last search, for the synchronous build hook: a pack's unit needs its pack there. */
     private contextSeen?: ReadonlySet<string>;
 
@@ -274,7 +282,7 @@ export class KnowledgeHandler {
                 return [];
             }
             // The pack root and the project are asked for asynchronously: before the first search, the packs are not read here.
-            return knownMessages(this.openSet(this.packRootSeen), messages, this.contextSeen)
+            return knownMessages(this.openSet(this.packRootSeen, this.packFoldersSeen), messages, this.contextSeen)
                 .map(({ id }) => `Known message: knowledge_get { id: "${id}" } has its cause and fix.`);
         } catch (caught) {
             this.host.log.debug(`knowledge: no known-message lines: ${caught instanceof Error ? caught.message : String(caught)}`);
@@ -296,17 +304,28 @@ export class KnowledgeHandler {
      */
     private async index(): Promise<KnowledgeReader> {
         this.packRootSeen = await this.host.packRoot();
-        return this.openSet(this.packRootSeen);
+        this.packFoldersSeen = await this.packFolders();
+        return this.openSet(this.packRootSeen, this.packFoldersSeen);
     }
 
-    /** The set for a pack root, reused while no file changed. */
-    private openSet(packRoot: string | undefined): KnowledgeReader {
+    /** The host's pack folders; none when it has no answer. Never throws. */
+    private async packFolders(): Promise<readonly PackFolder[]> {
+        try {
+            return (await this.host.packFolders?.()) ?? [];
+        } catch (caught) {
+            this.host.log.debug(`knowledge: no pack folders: ${caught instanceof Error ? caught.message : String(caught)}`);
+            return [];
+        }
+    }
+
+    /** The set for a pack root and the active target's pack folders, reused while no file changed. */
+    private openSet(packRoot: string | undefined, packFolders: readonly PackFolder[]): KnowledgeReader {
         const file = this.host.indexPath();
         if (file === undefined) {
             throw new ToolError('TOOL_DISABLED', 'No knowledge index is set',
                 'Ask the user to set cmsis-developer-assistant.knowledge.indexPath to a knowledge.db.');
         }
-        const files = [{ label: 'base', file }, ...discoverIndexes(packRoot, this.host.workspaceFolders())
+        const files = [{ label: 'base', file }, ...discoverIndexes(packRoot, this.host.workspaceFolders(), packFolders)
             .filter((found) => found.file !== file)];
         const key = files.map(({ label, file: each }) => {
             try {

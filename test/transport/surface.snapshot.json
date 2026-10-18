@@ -1195,7 +1195,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1204,6 +1204,8 @@
                 "type": "string",
                 "enum": [
                   "build",
+                  "rebuild",
+                  "clean",
                   "load",
                   "erase",
                   "run",
@@ -1212,14 +1214,35 @@
                   "attach",
                   "detach",
                   "stop_run",
+                  "stop_build",
                   "status",
-                  "open_solution"
+                  "open_solution",
+                  "install_pack",
+                  "create_solution"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
               "path": {
-                "description": "open_solution only: absolute path of a *.csolution.yml or of its folder.",
+                "description": "Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project's folder.",
                 "type": "string"
+              },
+              "pack": {
+                "description": "install_pack only: the Vendor::Name@version to install; needs no open project.",
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "device": {
+                "type": "string"
+              },
+              "draft": {
+                "description": "create_solution: example or template; it, board and device are ids from cmsis_query",
+                "type": "string"
+              },
+              "git": {
+                "description": "create_solution: git init, default off",
+                "type": "boolean"
               },
               "target": {
                 "description": "Target-type or type@set from the csolution (e.g. \"MPS3\", \"HP@debug\"). Switched and verified when it differs from the active one; omit to use the panel selection.",
@@ -1235,6 +1258,54 @@
             "required": [
               "action"
             ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "cmsis_query",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string",
+                "enum": [
+                  "boards",
+                  "devices",
+                  "examples"
+                ]
+              },
+              "vendor": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "board": {
+                "description": "examples: board id",
+                "type": "string"
+              },
+              "device": {
+                "description": "boards: pattern; examples: device id",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Default 20",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "what"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -1378,8 +1449,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 49515,
-          "sha256": "947e2885c27d6d4aa89216486d343aa7711895fe5186d6a2f7f8113afe571dc1"
+          "bytes": 54226,
+          "sha256": "d61bb23583d34091a29ac2ac106de6fce3c55f87111eddc2c5f53a6dd46461d1"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -1400,7 +1471,7 @@
       },
       "calls": {
         "get_debug_instructions": {
-          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
+          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, the catalog, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
         },
         "start_debugging": {
           "isError": true,
@@ -1707,6 +1778,16 @@
           },
           "text": "[NO_WORKSPACE] CMSIS 'stop_run' not attempted: no folder is open in this VS Code window, so there is no CMSIS solution to act on.\nOpen the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. No project yet? get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
         },
+        "cmsis_query": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "CMSIS_NO_SOLUTION",
+            "message": "cmsis_query {what:'boards'} not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) is not installed in this VS Code, so there is no active solution.",
+            "hint": "Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
+          },
+          "text": "[CMSIS_NO_SOLUTION] cmsis_query {what:'boards'} not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) is not installed in this VS Code, so there is no active solution.\nAsk the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
+        },
         "flash": {
           "isError": true,
           "structuredContent": {
@@ -1718,7 +1799,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): 42 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_query <size> over 1 call · cmsis_action <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {
@@ -2630,7 +2711,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2639,6 +2720,8 @@
                 "type": "string",
                 "enum": [
                   "build",
+                  "rebuild",
+                  "clean",
                   "load",
                   "erase",
                   "run",
@@ -2647,14 +2730,35 @@
                   "attach",
                   "detach",
                   "stop_run",
+                  "stop_build",
                   "status",
-                  "open_solution"
+                  "open_solution",
+                  "install_pack",
+                  "create_solution"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
               "path": {
-                "description": "open_solution only: absolute path of a *.csolution.yml or of its folder.",
+                "description": "Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project's folder.",
                 "type": "string"
+              },
+              "pack": {
+                "description": "install_pack only: the Vendor::Name@version to install; needs no open project.",
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "device": {
+                "type": "string"
+              },
+              "draft": {
+                "description": "create_solution: example or template; it, board and device are ids from cmsis_query",
+                "type": "string"
+              },
+              "git": {
+                "description": "create_solution: git init, default off",
+                "type": "boolean"
               },
               "target": {
                 "description": "Target-type or type@set from the csolution (e.g. \"MPS3\", \"HP@debug\"). Switched and verified when it differs from the active one; omit to use the panel selection.",
@@ -2670,6 +2774,54 @@
             "required": [
               "action"
             ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "cmsis_query",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string",
+                "enum": [
+                  "boards",
+                  "devices",
+                  "examples"
+                ]
+              },
+              "vendor": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "board": {
+                "description": "examples: board id",
+                "type": "string"
+              },
+              "device": {
+                "description": "boards: pattern; examples: device id",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Default 20",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "what"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -2813,8 +2965,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 49515,
-          "sha256": "947e2885c27d6d4aa89216486d343aa7711895fe5186d6a2f7f8113afe571dc1"
+          "bytes": 54226,
+          "sha256": "d61bb23583d34091a29ac2ac106de6fce3c55f87111eddc2c5f53a6dd46461d1"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -4611,7 +4763,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4620,6 +4772,8 @@
                 "type": "string",
                 "enum": [
                   "build",
+                  "rebuild",
+                  "clean",
                   "load",
                   "erase",
                   "run",
@@ -4628,14 +4782,35 @@
                   "attach",
                   "detach",
                   "stop_run",
+                  "stop_build",
                   "status",
-                  "open_solution"
+                  "open_solution",
+                  "install_pack",
+                  "create_solution"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
               "path": {
-                "description": "open_solution only: absolute path of a *.csolution.yml or of its folder.",
+                "description": "Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project's folder.",
                 "type": "string"
+              },
+              "pack": {
+                "description": "install_pack only: the Vendor::Name@version to install; needs no open project.",
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "device": {
+                "type": "string"
+              },
+              "draft": {
+                "description": "create_solution: example or template; it, board and device are ids from cmsis_query",
+                "type": "string"
+              },
+              "git": {
+                "description": "create_solution: git init, default off",
+                "type": "boolean"
               },
               "target": {
                 "description": "Target-type or type@set from the csolution (e.g. \"MPS3\", \"HP@debug\"). Switched and verified when it differs from the active one; omit to use the panel selection.",
@@ -4651,6 +4826,54 @@
             "required": [
               "action"
             ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "cmsis_query",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string",
+                "enum": [
+                  "boards",
+                  "devices",
+                  "examples"
+                ]
+              },
+              "vendor": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "board": {
+                "description": "examples: board id",
+                "type": "string"
+              },
+              "device": {
+                "description": "boards: pattern; examples: device id",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Default 20",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "what"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -4794,8 +5017,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 49515,
-          "sha256": "947e2885c27d6d4aa89216486d343aa7711895fe5186d6a2f7f8113afe571dc1"
+          "bytes": 54226,
+          "sha256": "d61bb23583d34091a29ac2ac106de6fce3c55f87111eddc2c5f53a6dd46461d1"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -4816,7 +5039,7 @@
       },
       "calls": {
         "get_debug_instructions": {
-          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
+          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, the catalog, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
         },
         "start_debugging": {
           "isError": true,
@@ -5165,6 +5388,16 @@
           },
           "text": "[NO_WORKSPACE] CMSIS 'stop_run' not attempted: no folder is open in this VS Code window, so there is no CMSIS solution to act on.\nOpen the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. No project yet? get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
         },
+        "cmsis_query": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "CMSIS_NO_SOLUTION",
+            "message": "cmsis_query {what:'boards'} not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) is not installed in this VS Code, so there is no active solution.",
+            "hint": "Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
+          },
+          "text": "[CMSIS_NO_SOLUTION] cmsis_query {what:'boards'} not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) is not installed in this VS Code, so there is no active solution.\nAsk the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
+        },
         "flash": {
           "isError": true,
           "structuredContent": {
@@ -5176,7 +5409,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): 47 calls · <size> returned · <n>s in tools · 0 timeouts · 27 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): 48 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_query <size> over 1 call · cmsis_action <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {
@@ -6500,7 +6733,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6509,6 +6742,8 @@
                 "type": "string",
                 "enum": [
                   "build",
+                  "rebuild",
+                  "clean",
                   "load",
                   "erase",
                   "run",
@@ -6517,14 +6752,35 @@
                   "attach",
                   "detach",
                   "stop_run",
+                  "stop_build",
                   "status",
-                  "open_solution"
+                  "open_solution",
+                  "install_pack",
+                  "create_solution"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
               "path": {
-                "description": "open_solution only: absolute path of a *.csolution.yml or of its folder.",
+                "description": "Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project's folder.",
                 "type": "string"
+              },
+              "pack": {
+                "description": "install_pack only: the Vendor::Name@version to install; needs no open project.",
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "device": {
+                "type": "string"
+              },
+              "draft": {
+                "description": "create_solution: example or template; it, board and device are ids from cmsis_query",
+                "type": "string"
+              },
+              "git": {
+                "description": "create_solution: git init, default off",
+                "type": "boolean"
               },
               "target": {
                 "description": "Target-type or type@set from the csolution (e.g. \"MPS3\", \"HP@debug\"). Switched and verified when it differs from the active one; omit to use the panel selection.",
@@ -6544,6 +6800,54 @@
             "required": [
               "action"
             ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "cmsis_query",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string",
+                "enum": [
+                  "boards",
+                  "devices",
+                  "examples"
+                ]
+              },
+              "vendor": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "board": {
+                "description": "examples: board id",
+                "type": "string"
+              },
+              "device": {
+                "description": "boards: pattern; examples: device id",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Default 20",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "what"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -6729,8 +7033,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 49515,
-          "sha256": "947e2885c27d6d4aa89216486d343aa7711895fe5186d6a2f7f8113afe571dc1"
+          "bytes": 54226,
+          "sha256": "d61bb23583d34091a29ac2ac106de6fce3c55f87111eddc2c5f53a6dd46461d1"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -6751,7 +7055,7 @@
       },
       "calls": {
         "get_debug_instructions": {
-          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
+          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, the catalog, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
         },
         "start_debugging": {
           "isError": true,
@@ -7158,6 +7462,16 @@
           "text": "MCP error -32602: Input validation error: Invalid arguments for tool knowledge_expand: Invalid input: expected string, received undefined at id"
         },
         "cmsis_action": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "WINDOW_UNREACHABLE",
+            "message": "No CMSIS Developer Assistant-enabled VS Code window is currently registered.",
+            "hint": "Open your project in VS Code and wait for the extension to activate."
+          },
+          "text": "[WINDOW_UNREACHABLE] No CMSIS Developer Assistant-enabled VS Code window is currently registered.\nOpen your project in VS Code and wait for the extension to activate."
+        },
+        "cmsis_query": {
           "isError": true,
           "structuredContent": {
             "status": "error",
@@ -8521,7 +8835,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; every result names the target it ran on. build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8530,6 +8844,8 @@
                 "type": "string",
                 "enum": [
                   "build",
+                  "rebuild",
+                  "clean",
                   "load",
                   "erase",
                   "run",
@@ -8538,14 +8854,35 @@
                   "attach",
                   "detach",
                   "stop_run",
+                  "stop_build",
                   "status",
-                  "open_solution"
+                  "open_solution",
+                  "install_pack",
+                  "create_solution"
                 ],
                 "description": "Which CMSIS Solution action to invoke"
               },
               "path": {
-                "description": "open_solution only: absolute path of a *.csolution.yml or of its folder.",
+                "description": "Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project's folder.",
                 "type": "string"
+              },
+              "pack": {
+                "description": "install_pack only: the Vendor::Name@version to install; needs no open project.",
+                "type": "string"
+              },
+              "board": {
+                "type": "string"
+              },
+              "device": {
+                "type": "string"
+              },
+              "draft": {
+                "description": "create_solution: example or template; it, board and device are ids from cmsis_query",
+                "type": "string"
+              },
+              "git": {
+                "description": "create_solution: git init, default off",
+                "type": "boolean"
               },
               "target": {
                 "description": "Target-type or type@set from the csolution (e.g. \"MPS3\", \"HP@debug\"). Switched and verified when it differs from the active one; omit to use the panel selection.",
@@ -8565,6 +8902,54 @@
             "required": [
               "action"
             ]
+          },
+          "execution": {
+            "taskSupport": "forbidden"
+          }
+        },
+        {
+          "name": "cmsis_query",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "inputSchema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string",
+                "enum": [
+                  "boards",
+                  "devices",
+                  "examples"
+                ]
+              },
+              "vendor": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "board": {
+                "description": "examples: board id",
+                "type": "string"
+              },
+              "device": {
+                "description": "boards: pattern; examples: device id",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Default 20",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "what"
+            ]
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
           },
           "execution": {
             "taskSupport": "forbidden"
@@ -8750,8 +9135,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 49515,
-          "sha256": "947e2885c27d6d4aa89216486d343aa7711895fe5186d6a2f7f8113afe571dc1"
+          "bytes": 54226,
+          "sha256": "d61bb23583d34091a29ac2ac106de6fce3c55f87111eddc2c5f53a6dd46461d1"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -8772,7 +9157,7 @@
       },
       "calls": {
         "get_debug_instructions": {
-          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
+          "text": "# CMSIS Developer Assistant - Debugging Instructions Guide\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n\nOnly the user can lift a rule, by asking for the specific command.\n\n- Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.\n- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.\n- Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.\n- Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.\n- Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.\n- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.\n- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.\n- A running target rejects reads and steps: call `pause_execution` first.\n- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.\n<!-- cmsis-developer-assistant:rules:end -->\n\n## Work through these steps in order\n\n1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.\n2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.\n3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).\n4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.\n5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).\n6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.\n\n## 🐞 DEBUGGER FIRST — do not start by adding prints\n\nDo not begin a runtime investigation by editing the firmware to add `printf` over UART/ITM, LED toggles or trace macros. On a Cortex-M that costs a rebuild, a reflash and a reset per hypothesis, moves code and data around, and changes the timing of the thing you are observing. Set a breakpoint and inspect the live state instead (variables, registers, memory, peripherals). Use `add_logpoint` only knowing it still halts the core per hit (topic `breakpoints`); for hot paths prefer `read_cycle_counter` or a RAM buffer read back with `read_memory`. Add permanent logging only when observability itself is the requested change. If the debugger cannot be used, state the concrete blocker before falling back to another method.\n\n## Topics\n\nCall `get_debug_instructions` with `topic` for one section; the full guide is the `cmsis-developer-assistant://docs/debug_instructions` resource.\n\n- `bootstrap` — An empty VS Code window: what is missing, open_solution, the catalog, creating the project\n- `session` — The five session states and the right next action for each, several VS Code windows, leaving the session clean\n- `build` — Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line\n- `breakpoints` — Where to put breakpoints, conditions, logpoints and their cost on Cortex-M, the FPB comparator budget\n- `inspection` — Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output\n- `faults` — Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes\n- `troubleshooting` — Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist\n"
         },
         "start_debugging": {
           "isError": true,
@@ -9100,6 +9485,16 @@
           },
           "text": "[NO_WORKSPACE] CMSIS 'stop_run' not attempted: no folder is open in this VS Code window, so there is no CMSIS solution to act on.\nOpen the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. No project yet? get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
         },
+        "cmsis_query": {
+          "isError": true,
+          "structuredContent": {
+            "status": "error",
+            "error_code": "CMSIS_NO_SOLUTION",
+            "message": "cmsis_query {what:'boards'} not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) is not installed in this VS Code, so there is no active solution.",
+            "hint": "Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
+          },
+          "text": "[CMSIS_NO_SOLUTION] cmsis_query {what:'boards'} not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) is not installed in this VS Code, so there is no active solution.\nAsk the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board."
+        },
         "flash": {
           "isError": true,
           "structuredContent": {
@@ -9111,7 +9506,7 @@
           "text": "[INVALID_ARGUMENT] cbuild-run file not found: /nonexistent/x.cbuild-run.yml.\nPass an existing path, or omit cbuildRunFile to auto-resolve from launch.json / out/."
         },
         "get_session_status": {
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): 41 calls · <size> returned · <n>s in tools · 0 timeouts · 28 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_action <size> over 1 call · read_peripheral_register <size> over 1 call"
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nWorkspace: no folder is open in this VS Code window. Open the project with cmsis_action {action:'open_solution', path:'<folder or *.csolution.yml>'}. get_debug_instructions {topic:'bootstrap'} has the steps from an empty window to a debugged board.\nExtensions: CMSIS Solution (Arm.cmsis-csolution) and CMSIS Debugger (Arm.vscode-cmsis-debugger) not installed, so cmsis_action and gdbtarget sessions cannot work here. Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack) in VS Code and to reload the window.\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): 42 calls · <size> returned · <n>s in tools · 0 timeouts · 29 errors\n  largest: get_debug_instructions <size> over 1 call · cmsis_query <size> over 1 call · cmsis_action <size> over 1 call"
         },
         "get_recent_problems": {
           "structuredContent": {

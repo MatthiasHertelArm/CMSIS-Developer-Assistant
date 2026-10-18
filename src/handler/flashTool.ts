@@ -84,8 +84,10 @@ async function cbuildRunFromLaunchJson(folder: vscode.WorkspaceFolder): Promise<
 
 /**
  * The cbuild-run file to program: the explicit argument (relative to the
- * first workspace folder), else launch.json's `cmsis.cbuildRunFile`, else the
- * only `out/**` match. Only the first workspace folder is consulted.
+ * first workspace folder), else the one of the CMSIS Solution extension's
+ * active target when that file exists, else launch.json's
+ * `cmsis.cbuildRunFile`, else the only `out/**` match. Only the first
+ * workspace folder is consulted.
  */
 async function chooseCbuildRun(requested: string | undefined, host: HandlerHost): Promise<CbuildRunChoice> {
     const folder = host.workspaceFolders()[0];
@@ -100,6 +102,10 @@ async function chooseCbuildRun(requested: string | undefined, host: HandlerHost)
     }
     if (!folder) {
         return { noWorkspace: true };
+    }
+    const active = await host.activeCbuildRunFile();
+    if (active && fileExists(active)) {
+        return { file: active };
     }
     const fromLaunch = await cbuildRunFromLaunchJson(folder);
     if (fromLaunch) {

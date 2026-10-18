@@ -16,7 +16,7 @@
 
 import * as assert from 'assert';
 import * as path from 'path';
-import { defaultPackRoot, expandPackRoot, formatPackId, packDir, parseCbuildRun, parsePackId, parseQualifiedName } from '../core/packDocs/cbuildRun';
+import { cbuildRunDebugger, defaultPackRoot, expandPackRoot, formatPackId, packDir, parseCbuildRun, parsePackId, parseQualifiedName } from '../core/packDocs/cbuildRun';
 
 export const SAMPLE_CBUILD_RUN = `cbuild-run:
   generated-by: csolution version 2.8.0
@@ -48,6 +48,17 @@ suite('cbuildRun', () => {
     test('ignores nested keys with the same names', () => {
         const info = parseCbuildRun('cbuild-run:\n  output:\n    - file: x\n      device: nope\n  device: A::B\n', 'f');
         assert.deepStrictEqual(info.device, { vendor: 'A', name: 'B' });
+    });
+
+    test('the debugger name: the name of the top-level debugger node, nothing else', () => {
+        const withDebugger = `${SAMPLE_CBUILD_RUN}  debugger:\n    protocol: swd\n    name: "CMSIS-DAP@pyOCD"\n    clock: 10000000\n  debug-topology:\n    name: other\n`;
+        assert.strictEqual(cbuildRunDebugger(withDebugger), 'CMSIS-DAP@pyOCD');
+        assert.strictEqual(cbuildRunDebugger(withDebugger.replace(/\n/g, '\r\n')), 'CMSIS-DAP@pyOCD', 'Windows line ends');
+        assert.strictEqual(cbuildRunDebugger(SAMPLE_CBUILD_RUN), undefined, 'no debugger node');
+        assert.strictEqual(cbuildRunDebugger('cbuild-run:\n  debugger:\n    protocol: swd\n  device: A::B\n    name: late\n'), undefined,
+            'a name after the node ended is not the debugger\'s');
+        assert.strictEqual(cbuildRunDebugger('cbuild-run:\n  output:\n    - debugger:\n        name: nested\n'), undefined);
+        assert.strictEqual(cbuildRunDebugger('cbuild-run:\n  debugger:\n    name:\n'), undefined, 'an empty name');
     });
 
     test('pack ids and qualified names', () => {

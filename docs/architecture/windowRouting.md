@@ -47,7 +47,9 @@ owns the workspace or the board the call is about.
 Each window keeps `window-<pid>.json` in a directory under `os.tmpdir()`: the
 control port and token, the workspace folders, the window name, whether a
 debug session is active and with which configuration, the CMSIS solution
-path when the CMSIS Solution extension reports one, and its role (`router`
+path when the CMSIS Solution extension reports one (its `getSolutionFile`
+command, asked only while that extension is active, since running it would
+activate it; a changed answer is published at once), and its role (`router`
 or `worker`; windows of 2.5.0 and earlier write none). Since 2.5.1 it also
 holds the extension `version`, and from the first heartbeat on `lagMs`, the
 event-loop delay of the last 20 s, and `busy`, the agent calls running there
@@ -137,6 +139,22 @@ itself and reloads (`data.reloads`); when that window is the router, every
 session is gone for a few seconds and the clients reconnect to the same
 port once it is back, which Claude Code does without the agent noticing. A
 client inside the window never gets the reload (`src/core/clientHosting.ts`).
+
+`cmsis_action install_pack` carries no path. It goes through the ladder like
+any call, and a tie it would refuse runs in the router's own window
+(`resolveAnyWindow()`, shared with `open_solution`) without becoming the
+session's target: a pack is installed into the machine's pack root, whichever
+window runs the command.
+
+`cmsis_action create_solution` is routed by its path as well
+(`resolveForCreate()`), first to a window whose only folder is that path:
+CMSIS Solution opens the project it created in the window that created it,
+and only such a window stays as it is. Without one the call goes where
+`open_solution` would, and the worker refuses a window that would lose its
+folder; nothing is followed afterwards. `cmsis_query` reads CMSIS Solution's
+catalog, which every window answers alike, so it takes the ladder and, where
+the ladder would refuse a tie, the router's own window
+(`resolveAnyWindow()`, which `open_solution` uses for its tie too).
 
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take

@@ -216,7 +216,7 @@ itself (see [Results](#results)). `src/packDocsTools.ts` and
 
 | Group | Registered when | Answered by |
 | ----- | --------------- | ----------- |
-| Session, run control, breakpoints, variables, Cortex-M state, SVD lookups, stack and threads, `cmsis_action`, `flash`, `get_session_status`, `get_recent_problems` | always | the session's debugging handler |
+| Session, run control, breakpoints, variables, Cortex-M state, SVD lookups, stack and threads, `cmsis_action`, `cmsis_query`, `flash`, `get_session_status`, `get_recent_problems` | always | the session's debugging handler |
 | `get_debug_instructions` | always | `ShippedDocs` and the topic slicer, no handler |
 | The eleven `serial_*` tools | `serialEnabled` is not `false` | the `serial` dispatch, by op name |
 | Documentation (`registerPackDocsTools()`) | `packDocsEnabled`, and the session has a `packDocs` dispatch | `src/packDocsTools.ts`, then the dispatch |

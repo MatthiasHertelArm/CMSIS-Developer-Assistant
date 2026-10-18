@@ -9,6 +9,7 @@ allowed-tools:
   - check_target_connection
   - get_device_info
   - cmsis_action
+  - cmsis_query
   - flash
   - list_target_docs
   - search_target_docs

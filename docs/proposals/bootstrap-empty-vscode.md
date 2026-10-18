@@ -170,6 +170,8 @@ shell bypasses (the #50 metric) from an empty temp directory.
 - `cmsis_action create_solution {folder, board, compiler, debugger, template}`
   only if the CMSIS Solution team publishes `createSolution` as a contract
   (#41, an ask for #21). Until then the skill writes the files.
+  (2026-10-18: CMSIS Solution's public API v2 has `createNewSolution`, from an
+  example or template only; see [cmsis-solution-integration.md](cmsis-solution-integration.md) phase 3.)
 - `cmsis_action open_folder {path, newWindow}` around `vscode.openFolder`.
   It is the one action whose result the caller may never see (same-window open
   restarts the extension host and the MCP server), so its text says so and the

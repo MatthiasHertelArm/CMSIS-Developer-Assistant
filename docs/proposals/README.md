@@ -114,3 +114,7 @@ Nothing has landed upstream since 2.3.10 (`b37a526`); the board still shows ever
 ## Added 2026-10-04: knowledge base
 
 No issue yet. [knowledge-base.md](knowledge-base.md) covers the handover of the knowledge-base prototype (units in Markdown, one SQLite index, `knowledge_search` / `knowledge_get` / `knowledge_expand`): how the index is read inside the extension, behind a flag and parallel to the skills. Phases: 0 what the index has to guarantee (S, knowledge-base side), 1 the three tools (M), 2 the build result names the unit of a known message (S), 3 delivery in the VSIX and in packs (L), 4 benchmarks and retiring skills (M). Eight decisions.
+
+## Added 2026-10-18: CMSIS Solution integration
+
+No issue yet. [cmsis-solution-integration.md](cmsis-solution-integration.md) is a review of CMSIS Solution 1.72.0 against this extension: its public API v2 (boards, devices, examples, `createNewSolution`, `build`) and the commands `installPack`, `getCbuildRunFile`, `getDfpPath` and `getBspPath`. Phases: 0 the window listing names the solution (XS, done), 1 ask the extension instead of guessing the target and the pack folder, `path:` packs included (S), 2 `cmsis_action install_pack`, whose result names the pack's knowledge (M), 3 the catalog and the examples through API v2, with #41 (M), 4 hand-offs and `rebuild`/`clean`/`stop_build` (S). Five decisions. All five phases are in 2.7.0 with the recommended options, checked live once on the micro:bit V2 simulator; the knowledge-base side is open (see the proposal's implementation section).

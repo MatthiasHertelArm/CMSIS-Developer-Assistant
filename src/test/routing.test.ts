@@ -581,6 +581,67 @@ suite('Multi-window routing', () => {
         });
     });
 
+    suite('cmsis_action install_pack', () => {
+        const INSTALL = { action: 'install_pack', pack: 'Acme::Mini_BSP@0.2.0' };
+
+        test('a tie goes to the router\'s own window, which does not become the session\'s target', async () => {
+            await openWindow('own', { pid: process.pid, workspaceFolders: [folder('own')], role: 'router' });
+            await openWindow('other', { workspaceFolders: [folder('other')], role: 'worker' });
+            const router = newRouter();
+            assert.strictEqual(textOf(await router.handleCmsisCommand(INSTALL)), echo('own', 'debug', 'handleCmsisCommand', INSTALL));
+            assert.strictEqual(router.describeTarget(), undefined);
+            // Any other path-less call is still a tie.
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleCmsisCommand({ action: 'build' }));
+        });
+
+        test('it goes to the session\'s target and to the window it names, like any call', async () => {
+            await openWindow('own', { pid: process.pid, workspaceFolders: [folder('own')], role: 'router' });
+            const board = await openWindow('board', { workspaceFolders: [folder('board')], role: 'worker' });
+            const router = newRouter();
+            await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 3 });
+            assert.strictEqual(textOf(await router.handleCmsisCommand(INSTALL)), echo('board', 'debug', 'handleCmsisCommand', INSTALL));
+            const named = textOf(await newRouter().handleCmsisCommand({ ...INSTALL, window: String(board.pid) }));
+            assert.strictEqual(named, echo('board', 'debug', 'handleCmsisCommand', INSTALL));
+        });
+    });
+
+    suite('cmsis_query and cmsis_action create_solution', () => {
+
+        test('cmsis_query runs in any window: two idle windows are no tie for it, and an established target keeps it', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleGetDeviceInfo());
+            const answer = textOf(await router.handleCmsisQuery({ what: 'boards' }));
+            assert.match(answer, /^(alpha|beta)\|debug\|handleCmsisQuery\|\{"what":"boards"\}$/);
+
+            await router.handleStartDebugging({ workingDirectory: folder('beta') });
+            assertAnsweredBy(await router.handleCmsisQuery({ what: 'devices' }), 'beta');
+        });
+
+        test('create_solution runs in the window that has exactly that folder open, before one that holds its parent', async () => {
+            const project = path.join(folder('alpha'), 'blinky');
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('blinky', { workspaceFolders: [project] });
+            const router = newRouter();
+            const args = { action: 'create_solution' as const, path: project, board: 'B', draft: 'D' };
+            assert.strictEqual(textOf(await router.handleCmsisCommand(args)), echo('blinky', 'debug', 'handleCmsisCommand', args));
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'blinky');
+        });
+
+        test('create_solution for a folder no window has open goes where open_solution would, and waits for no window', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter({ openedWindowWaitMs: 5_000 });
+            const started = Date.now();
+            const answer = textOf(await router.handleCmsisCommand({ action: 'create_solution', path: folder('gamma'), draft: 'D' }));
+            assert.match(answer, /^(alpha|beta)\|debug\|handleCmsisCommand\|/);
+            assert.ok(Date.now() - started < 2_000, 'no wait for a new window');
+            const nested = path.join(folder('beta'), 'app');
+            assertAnsweredBy(await router.handleCmsisCommand({ action: 'create_solution', path: nested, draft: 'D' }), 'beta');
+        });
+    });
+
     suite('control server', () => {
 
         test('a wrong token is turned away', async () => {

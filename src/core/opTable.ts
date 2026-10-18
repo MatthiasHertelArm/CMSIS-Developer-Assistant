@@ -92,6 +92,7 @@ export const DEBUG_OPS = [
     'handleGetThreads',
     'handleGetFrameVariables',
     'handleCmsisCommand',
+    'handleCmsisQuery',
     'handleFlash',
 ] as const;
 

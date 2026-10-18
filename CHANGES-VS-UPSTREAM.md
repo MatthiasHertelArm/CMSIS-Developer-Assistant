@@ -6,7 +6,7 @@ Originally derived from [microsoft/DebugMCP](https://github.com/microsoft/DebugM
 
 Upstream baseline: forked at [`4422d8c`](https://github.com/microsoft/DebugMCP/commit/4422d8c) (2026-03-14), last synced against [`4051049`](https://github.com/microsoft/DebugMCP/commit/4051049) (upstream v2.3.0, 2026-08-05) in fork v2.0.0; individual changes cherry-picked through [`148cbb9a`](https://github.com/microsoft/DebugMCP/commit/148cbb9a) (upstream v2.3.1, 2026-08-20). See [§9](#9-upstream-work-deliberately-not-taken) for what was deliberately left behind.
 
-Current release: **v2.5.20** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
+Current release: **v2.7.0** — see [CHANGELOG.md](CHANGELOG.md) for the per-version detail.
 
 ---
 
@@ -104,6 +104,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 - `cmsis_action(action, target?, timeoutMs?, path?)` — `build` / `load` / `erase` / `run` (since 2.5.15: the GDB server without build or flash, for `attach`) / `load_and_run` / `load_and_debug` / `attach` / `detach` / `stop_run`, and since 2.5.9 `open_solution` with `path`, which opens the folder of a csolution in a VS Code window and works from an empty window; `target` (`type` or `type@set`) switches and verifies the active target first, results name the target they ran on. ⭐ Preferred entry point for embedded.
 - `flash(cbuildRunFile?, timeoutMs?)` — `pyocd load --cbuild-run` as a synchronous operation: bytes programmed + structured flash error; refuses under an active session.
+- `cmsis_query(what, vendor?, name?, board?, device?, limit?)` — the CMSIS Solution extension's catalog through its public API version 2 (Arm's web catalog merged with the installed packs): `boards`, `devices`, or the `examples` and templates of a board or device, each example with its source; no project or session needed (first slice of #41). `cmsis_action create_solution` with `board`/`device`, `draft`, `path` and `git?` creates a project from one through `createNewSolution`.
 
 **Documentation and build artefacts (both on by default since 2.5.3 — `packDocs.enabled` / `buildInfo.enabled`):**
 
