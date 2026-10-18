@@ -446,18 +446,20 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
         test('a window with another folder open is refused before CMSIS Solution is asked, since the folder would close', async () => {
             const handle = installed(catalogApi(), { active: false });
             const other = path.join(scratch, 'other');
+            // The window's folder as VS Code reports it: on Windows with a lower-case drive letter.
+            const shown = vscode.Uri.file(other).fsPath;
             const folder = path.join(scratch, 'app');
             const refused = await refusalOf(create(hostWith([other], handle),
                 { path: folder, board: 'STM32H735G-DK', draft: 'blinky-stm32h735g-dk', client: 'claude-code' }), 'INVALID_ARGUMENT');
             assert.strictEqual(errorDetail(refused), `CMSIS 'create_solution' not attempted: CMSIS Solution opens the new project in the window that creates it, `
-                + `and this window has ${other} open, which it would close.\n`
+                + `and this window has ${shown} open, which it would close.\n`
                 + `Give the project a window of its own first: create the folder, open it with cmsis_action {action:'open_solution', path:'${folder}'} `
                 + '(a new window, which this session follows), then repeat this call: it runs in that window.');
             assert.strictEqual(handle.activations, 0);
 
             const nested = path.join(other, 'app');
             const inside = await refusalOf(create(hostWith([other], handle), { path: nested, board: 'STM32H735G-DK', draft: 'x' }), 'INVALID_ARGUMENT');
-            assert.match(inside.hint ?? '', new RegExp(`It lies inside ${other.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}, so open_solution would use this window`));
+            assert.match(inside.hint ?? '', new RegExp(`It lies inside ${shown.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}, so open_solution would use this window`));
         });
 
         test('a window without a folder: refused for a chat inside the window, created for a client that survives the reload', async () => {
