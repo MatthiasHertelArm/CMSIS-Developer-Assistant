@@ -294,27 +294,10 @@
             "experimental"
           ]
         },
-        "cmsis-developer-assistant.knowledge.enabled": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "**Experimental, local use** — offer the knowledge tools to AI agents: `knowledge_search`, `knowledge_get`, `knowledge_expand` over the knowledge index named by `knowledge.indexPath` (procedures, rules, and the causes and fixes of csolution, packchk and svdconv messages). A failed `cmsis_action build` then also names the unit of an error message the index knows. Off by default; no index ships with the extension. Read once at activation: changing it needs a window reload.",
-          "tags": [
-            "experimental"
-          ]
-        },
         "cmsis-developer-assistant.knowledge.indexPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path of the base knowledge index (`knowledge.db`) the knowledge tools read: absolute, starting with `~`, or relative to the first workspace folder. Read with it: the `.knowledge/knowledge.db` of every installed pack under the pack root or in `.Local/local_repository.pidx`, whose units are offered only in projects that use the pack, and `.cmsis/knowledge.db` of each workspace folder. All opened read-only; a rebuilt, added or removed file is picked up on the next call.",
-          "tags": [
-            "experimental"
-          ]
-        },
-        "cmsis-developer-assistant.knowledge.replaceSkills": {
-          "type": "boolean",
-          "default": false,
-          "scope": "application",
-          "markdownDescription": "**Experimental, local use** — let the knowledge tools stand in for every Agent Skill but the core: the extension installs only `cmsis-debug-live` (how to use the tools), `cmsis-pack-docs` (the documentation) and `cmsis-help` (what there is, naming the knowledge units), with the hidden skills they hand over to, removes the other skills it installed, and its instructions say that the procedures of the other CMSIS tasks come from the knowledge tools. Skills this extension did not install are left alone. The removal applies at once; the instructions after a window reload.",
+          "markdownDescription": "Path of a knowledge index (`knowledge.db`) that replaces the core index the extension ships (`resources/knowledge/core.db`), for testing a rebuilt index. Empty uses the core index. Absolute, starting with `~`, or relative to the first workspace folder. Read on every call. The knowledge tools are always on.",
           "tags": [
             "experimental"
           ]

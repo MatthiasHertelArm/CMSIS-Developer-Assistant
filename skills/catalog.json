@@ -26,7 +26,8 @@
         "start-cmsis-project",
         "start-zephyr-project"
       ],
-      "invocable": true
+      "invocable": true,
+      "installed": false
     },
     {
       "name": "add-board-layer",
@@ -40,7 +41,8 @@
       "dependsOn": [
         "cmsis-debugger-setup"
       ],
-      "invocable": true
+      "invocable": true,
+      "installed": false
     },
     {
       "name": "add-cmsis-target",
@@ -52,7 +54,8 @@
       "displayName": "CMSIS: Add Target",
       "shortDescription": "Add a verified target and packaged board layer",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "check-cmsis-environment",
@@ -64,7 +67,8 @@
       "displayName": "CMSIS: Check Environment",
       "shortDescription": "Verify CMSIS build tools and compiler toolchains",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "check-zephyr-environment",
@@ -76,7 +80,8 @@
       "displayName": "CMSIS: Check Zephyr Environment",
       "shortDescription": "Verify a local Zephyr west environment",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "cmsis-bootstrap",
@@ -99,7 +104,8 @@
         "start-cmsis-project",
         "start-zephyr-project"
       ],
-      "invocable": true
+      "invocable": true,
+      "installed": false
     },
     {
       "name": "cmsis-debugger-setup",
@@ -114,7 +120,8 @@
         "debugger-troubleshooting",
         "fvp-debug-setup"
       ],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "identify-cmsis-board-layer",
@@ -126,7 +133,8 @@
       "displayName": "CMSIS: Identify Board Layer",
       "shortDescription": "Find compatible packaged CMSIS board layers",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "identify-cmsis-board-support",
@@ -138,7 +146,8 @@
       "displayName": "CMSIS: Identify Board Support",
       "shortDescription": "Resolve one board or device and find its BSP or DFP",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "identify-zephyr-board",
@@ -150,7 +159,8 @@
       "displayName": "CMSIS: Identify Zephyr Board",
       "shortDescription": "Resolve a physical board to a Zephyr target",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "start-cmsis-project",
@@ -168,7 +178,8 @@
         "cmsis-debugger-setup",
         "identify-cmsis-board-support"
       ],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "start-zephyr-project",
@@ -180,7 +191,8 @@
       "displayName": "CMSIS: Start Zephyr Project",
       "shortDescription": "Create a CMSIS solution for a Zephyr board",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "cmsis-pack-docs",
@@ -192,7 +204,8 @@
       "displayName": "CMSIS: Pack Documentation",
       "shortDescription": "Look up registers, peripherals, errata and board facts in the target's manuals, with page citations",
       "dependsOn": [],
-      "invocable": true
+      "invocable": true,
+      "installed": false
     },
     {
       "name": "cmsis-debug-live",
@@ -207,7 +220,8 @@
         "cmsis-pack-docs",
         "debugger-troubleshooting"
       ],
-      "invocable": true
+      "invocable": true,
+      "installed": false
     },
     {
       "name": "debugger-troubleshooting",
@@ -219,7 +233,8 @@
       "displayName": "CMSIS: Debugger Troubleshooting",
       "shortDescription": "Find out why a debug or flash session fails to start, connect or program",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "fvp-debug-setup",
@@ -231,7 +246,8 @@
       "displayName": "CMSIS: FVP Debug Setup",
       "shortDescription": "Make Load & Debug and Run work against an Arm FVP model",
       "dependsOn": [],
-      "invocable": false
+      "invocable": false,
+      "installed": false
     },
     {
       "name": "create-csolution-github-action",
@@ -243,19 +259,21 @@
       "displayName": "CMSIS: Create Csolution GitHub Action",
       "shortDescription": "Create build or FVP-test CI for a CMSIS solution",
       "dependsOn": [],
-      "invocable": true
+      "invocable": true,
+      "installed": false
     },
     {
       "name": "cmsis-help",
-      "description": "List what the CMSIS Developer Assistant offers and which part fits a task: the CMSIS slash commands (cmsis-bootstrap, cmsis-project, add-board-layer, cmsis-debug-live, cmsis-pack-docs, create-csolution-github-action) and the member skills behind each, the VS Code commands, the MCP tool groups for building, flashing and live Cortex-M debugging, and the settings. Use when the user asks what CMSIS skills, commands or tools are available, which skill or tool to use for a CMSIS task, or how the CMSIS Developer Assistant is configured. Not a workflow itself — it points to the skill or tool that does the work.",
+      "description": "Health check and entry point for the CMSIS Developer Assistant, and the first skill for any CMSIS or Cortex-M task. Use when firmware misbehaves on a board: faults, crashes, hangs, failing tests, wrong/null values, unexpected output, runtime bugs, a board that does not respond or a debug session that will not start. Also use to check whether the board, the debug session, the build or a serial port is ready, and for any other CMSIS task. It checks the session read-only, reads recent problems and names the debug topic or knowledge procedure that fits. Use it whenever live inspection is practical, instead of adding temporary printf/UART logging, LED toggles, or console output: halting the CPU and looking is cheaper and does not perturb the target.",
       "category": "help",
       "kind": "skill",
       "source": "bundled",
       "path": "skills/cmsis-help",
       "displayName": "CMSIS: Help",
-      "shortDescription": "List the CMSIS slash commands, VS Code commands, MCP tools and settings",
+      "shortDescription": "Health check of the CMSIS Developer Assistant and where to find each procedure",
       "dependsOn": [],
-      "invocable": true
+      "invocable": true,
+      "installed": true
     }
   ]
 }

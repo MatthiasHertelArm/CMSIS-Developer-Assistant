@@ -85,7 +85,7 @@ function sqliteModule(): SqliteModule {
     if (loaded === undefined) {
         throw new ToolError('TOOL_DISABLED',
             `The knowledge tools need the node:sqlite module, which this VS Code (Node ${process.versions.node}) does not have`,
-            'Update VS Code, or switch cmsis-developer-assistant.knowledge.enabled off.');
+            'Update VS Code to a version with the node:sqlite module.');
     }
     return loaded;
 }

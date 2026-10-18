@@ -114,18 +114,14 @@ extension's hidden skills, which another skill hands over to). Harnesses
 that honour the field keep hidden skills out of the `/` menu while the model
 still invokes them by description; the rest ignore it. `installSet()` splits
 the catalog by that flag; the installer gets the whole catalog every time.
-While `knowledge.replaceSkills` is on, `coreInstallSet()` wants only the core
-skills — `cmsis-debug-live`, `cmsis-pack-docs`, `cmsis-help` — and the hidden
-skills they hand over to; the sweep removes the rest.
-
-`cmsis-help` is itself generated (`src/utils/skillHelp.ts`) from the catalog,
-`package.json`, the `help` block of `scripts/skills.config.json` and the tool
-contract — twice: `skills/cmsis-help/` names the slash commands and member
-skills, `skills/cmsis-help-knowledge/` the knowledge units that stand in for
-them, and `syncAllScopes()` installs the latter under the skill's name while
-`knowledge.replaceSkills` is on (`catalogForInstall()`). The contract (`docs/agent-resources/tool-contract.md`, #50) is also
+The catalog marks the one installed skill: `cmsis-help`, whose `installed` flag
+comes from the `installed` list of `scripts/skills.config.json`. Every other
+entry is a unit of the knowledge index. The sweep removes what an earlier
+release installed, so an upgrade takes the old skills out of the personal
+directories. The contract (`docs/agent-resources/tool-contract.md`, #50) is
 copied between marker comments into the hand-written skills of the extension,
 which the installer then copies out like any other file. See
+`skills/README.md`.
 `skills/README.md`.
 
 ### A window without a folder
@@ -227,8 +223,7 @@ read.
   - rule files: `offerAgentRules()` (picker, `previewRuleChange()`), `refreshAgentRules()`
   - skills: `syncSkills()` / `installCatalog()`, `skillRoots()`
 - Atomic and concurrent-safe writes: `src/utils/atomicFile.ts`, `src/utils/jsonFileRewrite.ts`
-- Catalog model and the install set: `src/utils/skillCatalog.ts` (`installSet()`)
-- Help skill renderer (generator + tests only): `src/utils/skillHelp.ts`
+- Catalog model and the install set: `src/utils/skillCatalog.ts` (`installSet()`: the entries marked `installed`, today `cmsis-help`)
 - Copying, hiding, marker-guarded removal: `src/utils/skillInstaller.ts`
 - Rule files: `src/core/agentRules.ts` (the agent-to-file map with its vendor sources, the block text, `withRules()` / `withoutRules()`, the records), `src/utils/agentRuleFiles.ts` (`runRuleStep()`, `planRuleChanges()`, `applyRuleChange()`, `refreshRecordedRules()`, the node file system)
 - Generator: `scripts/sync-skills.ts` (`--offline` without a fetch), hand-authored input `scripts/skills.config.json` and `docs/agent-resources/tool-contract.md`; marker blocks: `src/utils/markerBlock.ts`

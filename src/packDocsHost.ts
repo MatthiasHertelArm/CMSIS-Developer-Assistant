@@ -53,19 +53,20 @@ export function readPackDocsGates(): { packDocsEnabled: boolean; buildInfoEnable
     };
 }
 
-/** The gate of the experimental knowledge tools, read once at activation; off unless the user switches it on. */
-export function readKnowledgeGate(): boolean {
-    return vscode.workspace.getConfiguration(CONFIG).get<boolean>('knowledge.enabled', false);
+/** The core knowledge index the extension ships, under its root. */
+export function bundledKnowledgeIndex(extensionPath: string): string {
+    return path.join(extensionPath, 'resources', 'knowledge', 'core.db');
 }
 
 /**
  * `knowledge.indexPath` as an absolute path: `~` is the home directory, a
- * relative path is under the first workspace folder; undefined when empty.
+ * relative path is under the first workspace folder. Empty means the core
+ * index the extension ships, which is what the knowledge tools read.
  */
-export function readKnowledgeIndexPath(): string | undefined {
+export function readKnowledgeIndexPath(bundledIndex: string): string | undefined {
     const setting = vscode.workspace.getConfiguration(CONFIG).get<string>('knowledge.indexPath', '').trim();
     if (setting.length === 0) {
-        return undefined;
+        return bundledIndex;
     }
     const expanded = setting === '~' || setting.startsWith('~/') || setting.startsWith('~\\') ? path.join(os.homedir(), setting.slice(1)) : setting;
     if (path.isAbsolute(expanded)) {
@@ -169,9 +170,9 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
 }
 
 /** The knowledge handler's window: the two settings read per call, the project from the other two hosts. */
-export function makeKnowledgeHost(docs: PackDocsHost, build: BuildInfoHost): KnowledgeHost {
+export function makeKnowledgeHost(docs: PackDocsHost, build: BuildInfoHost, bundledIndex: string): KnowledgeHost {
     return {
-        indexPath: readKnowledgeIndexPath,
+        indexPath: () => readKnowledgeIndexPath(bundledIndex),
         includeIncomplete: () => vscode.workspace.getConfiguration(CONFIG).get<boolean>('knowledge.includeIncomplete', false),
         packRoot: () => effectivePackRoot(docs),
         workspaceFolders,
@@ -202,11 +203,9 @@ export function createPackDocsHandlers(context: vscode.ExtensionContext, timeout
     const docs = new PackDocsHandler(host, { timeoutMs, workspaceRoot });
     const buildHost = makeBuildInfoHost();
     const build = new BuildInfoHandler(buildHost, { timeoutMs, workspaceRoot });
-    const knowledge = new KnowledgeHandler(makeKnowledgeHost(host, buildHost), { timeoutMs });
-    if (readKnowledgeGate()) {
-        // A failed build's result names the unit of a message the index knows.
-        setKnownMessageLookup((messages) => knowledge.knownMessageLines(messages));
-    }
+    const knowledge = new KnowledgeHandler(makeKnowledgeHost(host, buildHost, bundledKnowledgeIndex(context.extensionPath)), { timeoutMs });
+    // A failed build's result names the unit of a message the index knows.
+    setKnownMessageLookup((messages) => knowledge.knownMessageLines(messages));
 
     const s = readPackDocsSettings();
     logger.info(`Pack docs: default pack root ${host.packRoot}${process.env.CMSIS_PACK_ROOT ? ' (CMSIS_PACK_ROOT)' : ' (platform default)'}, ` +

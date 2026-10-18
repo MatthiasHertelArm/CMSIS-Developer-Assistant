@@ -73,6 +73,11 @@ export interface SkillCatalogEntry {
     /** Other catalog skills this one refers to with the `$name` sigil; for routers, every member. */
     dependsOn: string[];
     /**
+     * Installed by the extension (the `installed` list of the config; today
+     * `cmsis-help` alone). `false`: a unit of the knowledge index only.
+     */
+    installed: boolean;
+    /**
      * Installed visible, as a slash command: the extension's own skills, the
      * routers, and a skill of a category without a router. The members of a
      * router are installed with `user-invocable: false` (`false` here): the
@@ -93,22 +98,6 @@ export interface SkillCatalog {
 }
 
 export const SKILL_CATALOG_FILE = path.join('skills', 'catalog.json');
-
-/**
- * Setting key under `cmsis-developer-assistant.`, experimental: the knowledge
- * tools stand in for every skill but the core (`CORE_SKILLS`), so the
- * installer puts in those alone and removes the others it installed.
- */
-export const SKILLS_REPLACED_SETTING = 'knowledge.replaceSkills';
-
-/**
- * The skills that stay installed while the knowledge tools replace the
- * rest: how to use the tools (`cmsis-debug-live`), the documentation
- * (`cmsis-pack-docs`) and the knowledge (`cmsis-help`, in its knowledge
- * variant). Every other procedure is a unit of the index. Catalog order
- * decides the install order, not this list.
- */
-export const CORE_SKILLS: readonly string[] = ['cmsis-help', 'cmsis-debug-live', 'cmsis-pack-docs'];
 
 /** The extension's own skills, authored in this repository. */
 export function isBundledSkill(entry: SkillCatalogEntry): boolean {
@@ -143,36 +132,13 @@ export interface InstallSet {
 }
 
 /**
- * Every catalog skill is installed; `invocable` decides whether it shows up
- * in the `/` menu. There is no selection: the catalog is the set, and the
- * next sync after an upgrade brings existing installations in line with it.
+ * The installed entries of the catalog; `invocable` decides whether one shows
+ * up in the `/` menu. There is no selection: the catalog decides, and the next
+ * sync after an upgrade brings existing installations in line with it.
+ * Whatever else an earlier version installed is removed by the sweep.
  */
 export function installSet(catalog: SkillCatalog): InstallSet {
-    return {
-        visible: catalog.skills.filter(entry => entry.invocable).map(entry => entry.name),
-        hidden: catalog.skills.filter(entry => !entry.invocable).map(entry => entry.name),
-    };
-}
-
-/**
- * The install set while `knowledge.replaceSkills` is on: the `CORE_SKILLS`
- * the catalog has, visible, and the hidden skills they hand over to
- * (`dependsOn`, transitively), so no `$name` in an installed skill dangles.
- * A core skill missing from the catalog is left out, not an error.
- */
-export function coreInstallSet(catalog: SkillCatalog): InstallSet {
-    const byName = new Map(catalog.skills.map(entry => [entry.name, entry]));
-    const wanted = new Set<string>();
-    const walk = (name: string): void => {
-        const entry = byName.get(name);
-        if (!entry || wanted.has(name)) {
-            return;
-        }
-        wanted.add(name);
-        entry.dependsOn.forEach(walk);
-    };
-    CORE_SKILLS.forEach(walk);
-    const installed = catalog.skills.filter(entry => wanted.has(entry.name));
+    const installed = catalog.skills.filter(entry => entry.installed);
     return {
         visible: installed.filter(entry => entry.invocable).map(entry => entry.name),
         hidden: installed.filter(entry => !entry.invocable).map(entry => entry.name),

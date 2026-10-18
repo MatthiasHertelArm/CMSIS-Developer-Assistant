@@ -8,115 +8,27 @@ Markdown; the knowledge-base tooling builds them into one SQLite file,
 them. [docs/proposals/knowledge-base.md](../proposals/knowledge-base.md) has
 the reasons and the open decisions.
 
-This is a local experiment. No index ships with the extension, the gate
-`knowledge.enabled` is off by default, and the user names the base file in
-`knowledge.indexPath`. Packs and the workspace add their own indexes to it.
+The knowledge index is mandatory. The extension ships the core index
+(`resources/knowledge/core.db`, copied in from the knowledge-base repository
+before packaging, git-ignored) and the knowledge tools are always on.
+`knowledge.indexPath` replaces the core index, for testing a rebuilt one.
+Packs and the workspace add their own indexes to it.
 
-## What it is responsible for
-
-- Reading the index as it is, read-only, and refusing a file that is not one
-  or has another schema version.
-- Search that returns summaries within a token budget, with the exact error
-  message first, filtered by the project the window has active.
-- The whole unit on request, never clipped, and one hop in the graph.
-- Naming, in the result of a failed build, the unit of an error message the
-  index knows.
-
-It leaves to the knowledge base: the units, their review status, the index
-build and its checks. It does not read the vector table of the index;
-search is BM25 and exact symptoms.
-
-## Ideas needed to read the code
-
-- **A set of indexes, not one file.** `KnowledgeReader` is what search, the
-  tools and the browser read; `KnowledgeIndex` is one file, `KnowledgeSet`
-  several read as one: the base file of the setting, then the
-  `.knowledge/knowledge.db` every installed pack carries
-  (`<root>/<Vendor>/<Pack>/<version>/`, or a pack registered from a folder in
-  `.Local/local_repository.pidx`) and `.cmsis/knowledge.db` of the workspace
-  (`packIndexes.ts`). All are opened whatever the active target, and an
-  entity a pack names (its family) continues in the base graph. Ids are
-  looked up in order, so the base wins a clash; BM25 lists are merged by
-  rank, since scores of different files are not comparable; everything
-  else is the union. A hit and `knowledge_get` say which index a unit came
-  from. The set is reopened when any file changes, appears or goes.
-- **Pack knowledge.** A pack ships its units as Markdown in
-  `.knowledge/units/` and the index built from them, which `cmsis-knowledge`
-  of [cmsis-developer-assistant-tools](https://github.com/MatthiasHertelArm/cmsis-developer-assistant-tools)
-  writes; its `docs/format.md` is the contract with this reader. Other
-  places in a pack are not read. A unit's `path` is relative to the pack
-  folder, so the browser opens the file next to the index the unit came
-  from (`fileOf`).
-- **Scope.** Every unit of such a pack is `scoped_to` its pack: `inScope`
-  offers it only when the project's entities hold that pack, and without a
-  project not at all, which is stricter than `applies_to`, where a
-  dimension the project does not mention keeps the unit. The project's
-  packs are the device and board packs of the target and the `packs:` of
-  its cbuild files; a board also brings the pack it comes from through the
-  graph. The lines for a failed build use the project of the last search.
-- **Parts.** A board's `<mountedPart>` is a `part:` entity (`has_part`);
-  the context adds the parts of the active board, so a unit about a sensor
-  applies on every board that mounts it.
-- **`node:sqlite`.** The index is opened with the SQLite that Node brings,
-  loaded through `process.getBuiltinModule` on first use, so nothing native
-  ships and a VS Code without the module gets a typed refusal.
-- **The project is resolved, not passed.** The tools take no device,
-  compiler or file. `projectFacts` asks the documentation and build-artefact
-  cores for the active `*.cbuild-run.yml`, the cores in the device pack's
-  PDSC on disk, the compiler and the components. `contextEntities` turns
-  them into entity ids and adds what the index knows above a device or
-  board. So an index without the pack entities works, and so does a device
-  whose pack exists only locally.
-- **Applies-to filter.** A unit without targets holds everywhere. Otherwise
-  each dimension it targets (core, toolchain, family, …) needs one target in
-  the context; a dimension the context does not mention leaves the unit in,
-  marked `unverified`. The tool dimension is different: it belongs to the
-  question, so only the `tools` argument filters by it. A unit that
-  `refines` another replaces it.
-- **Ranking.** BM25 ranks are fused as in the prototype; the function
-  words of a question (*how*, *my*, *the*) do not take part. An exact
-  message outranks everything, and of several the one on the earliest line
-  leads: in tool output the first error is the cause, later ones follow
-  from it. A procedure gets a small prior, so that a task question finds
-  the procedure before reference text converted from the documentation,
-  while an API question still finds the API. Routing units get none; the
-  agent reads them by id. The knowledge base's golden set
-  (`tests/golden.json`, run by `tests/eval_search.js` against this code)
-  measures the effect of such changes.
-- **Incomplete units.** A unit whose cause or body is a placeholder is left
-  out of search and counted; `knowledge.includeIncomplete` shows it. A build
-  result never names one.
-- **Routing.** The three ops ride on the pack-docs dispatch
-  (`PackDocsHandlers.knowledge`), so the router forwards them to the window
-  that owns the workspace like a documentation op.
-- **Known messages.** The window sets a lookup in
-  `core/knowledge/knownMessageLookup.ts` when the gate is on; the build
-  diagnosis appends at most three lines to its text.
 
 - **Knowledge first.** A skill is loaded because its description matches
   the task; a knowledge unit is not. So with the gate on, the instructions
   open with one sentence that says it: before a CMSIS task, look the
   procedure up with `knowledge_search` and follow it (`KNOWLEDGE_FIRST`), and
   the first `get_session_status` repeats it in a line (`KNOWLEDGE_REMINDER`).
-- **Core skills only.** `knowledge.replaceSkills` makes the skill sync want
-  the core skills alone (`CORE_SKILLS`, `coreInstallSet()`): how to use the
-  tools (`cmsis-debug-live`), the documentation (`cmsis-pack-docs`) and the
-  knowledge (`cmsis-help`), plus the hidden skills they hand over to, so no
-  `$name` dangles. `cmsis-help` comes in its `knowledge` variant
-  (`skills/cmsis-help-knowledge/`, rendered by the same generator in the
-  other mode and put under the skill's name by `catalogForInstall()`), which
-  names the installed core skills as commands and every other procedure as
-  a unit of the index (`proc-<name>`, `route-<category>`), and says how to
-  work from the knowledge tools. One file for both modes, with a condition
-  for the agent to evaluate, did not hold: given a table of `/commands`, a
-  model repeats the table. The installer's sweep removes every other skill
-  it installed, and the instructions say that only the core skills are
-  installed and where the other procedures come from. The extension's
-  own skills are procedures of the index too: the knowledge-base tooling
-  reads them from this repository's `skills/` through `catalog.json`
-  (`skill2ku.py`), and writes one routing unit per category, `route-<domain>`,
-  from `scripts/skills.config.json` (`routes2ku.py`). The skills stay
-  authored here; the index is a build of them.
+- **One installed skill.** `cmsis-help` is the only skill the extension
+  installs. It is the health check and the router: the session state, the
+  debug windows and the recent problems, then the debug topic or the knowledge
+  procedure for the task. Every other procedure is a unit of the index. The
+  skills of the upstream categories and the extension's own skills stay in
+  `skills/` as the sources of those units (`skill2ku.py` reads the catalog,
+  and its `installed` flag is what the installer obeys).
+  The installer's sweep removes every other skill this extension installed.
+
 - **Files of a unit.** A skill's templates and scripts are `asset` entities
   with the file as body, referenced by their procedure. `knowledge_get` on a
   procedure lists them by the path its text uses, and returns one by its id

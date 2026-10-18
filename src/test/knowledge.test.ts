@@ -711,21 +711,15 @@ suite('knowledge tools', () => {
                 (failure: unknown) => failure instanceof ToolError && failure.code === 'TOOL_DISABLED');
         });
 
-        test('the instructions name the knowledge tools only when they are on', () => {
-            assert.doesNotMatch(composeInstructions({ packDocsEnabled: true, buildInfoEnabled: true }), /knowledge_search/);
-            assert.match(composeInstructions({ knowledgeEnabled: true }), /knowledge_search, knowledge_get, knowledge_expand/);
-            assert.match(composeInstructions({ knowledgeEnabled: true }), /invoke the Agent Skill "cmsis-debug-live"/);
-            const withoutSkills = composeInstructions({ knowledgeEnabled: true, skillsReplaced: true });
-            assert.match(withoutSkills, /invoke the Agent Skill "cmsis-debug-live"/);
-            assert.match(withoutSkills, /Only the core Agent Skills are installed: cmsis-debug-live, cmsis-pack-docs and cmsis-help\. There is no skill for the other CMSIS tasks: their procedures come from knowledge_search and knowledge_get\./);
-            assert.doesNotMatch(composeInstructions({ knowledgeEnabled: true }), /Only the core Agent Skills/);
+        test('the instructions name the knowledge tools, the one installed skill and the procedures behind the knowledge', () => {
+            const text = composeInstructions({ packDocsEnabled: true, buildInfoEnabled: true });
+            assert.match(text, /knowledge_search, knowledge_get, knowledge_expand/);
+            assert.match(text, /invoke the Agent Skill "cmsis-help"/);
+            assert.match(text, /The only Agent Skill installed is cmsis-help/);
             // What a skill's description did by itself has to be said: look the procedure up before the work, and first of all.
-            for (const text of [withoutSkills, composeInstructions({ knowledgeEnabled: true })]) {
-                assert.ok(text.startsWith('Knowledge first: before you start a CMSIS task'), text.slice(0, 80));
-                assert.match(text, /call knowledge_search with the task in a few words, read the procedure it finds with knowledge_get and follow it; do not work such a task from memory/);
-                assert.match(text, /route-project, route-bring-up, route-pack and route-debug/);
-            }
-            assert.doesNotMatch(composeInstructions({ packDocsEnabled: true }), /Knowledge first/);
+            assert.ok(text.startsWith('Knowledge first: before you start a CMSIS task'), text.slice(0, 80));
+            assert.match(text, /call knowledge_search with the task in a few words, read the procedure it finds with knowledge_get and follow it; do not work such a task from memory/);
+            assert.match(text, /route-project, route-bring-up, route-pack and route-debug/);
         });
 
         test('the components of a cbuild.yml are read from its component lines', () => {

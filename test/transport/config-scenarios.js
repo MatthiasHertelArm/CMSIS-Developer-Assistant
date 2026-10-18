@@ -970,6 +970,8 @@ function writeFixtureExtension() {
             ...(s.shortDescription ? { shortDescription: s.shortDescription } : {}),
             dependsOn: s.dependsOn,
             invocable: s.invocable,
+            // Only cmsis-help is installed; fx-broken stays installed so the missing-directory failure is still exercised.
+            installed: ['fx-help', 'fx-broken'].includes(s.name),
         };
         return entry;
     });

@@ -124,9 +124,9 @@ function materialise(spec: ScenarioSpec): string {
     if (spec.overlay) {
         fs.cpSync(path.join(fixture, spec.overlay), work, { recursive: true });
     }
-    const skillDir = path.join(work, '.agents', 'skills', 'cmsis-debug-live');
+    const skillDir = path.join(work, '.agents', 'skills', 'cmsis-help');
     fs.mkdirSync(path.dirname(skillDir), { recursive: true });
-    fs.cpSync(path.join(repoRoot, 'skills', 'cmsis-debug-live'), skillDir, { recursive: true });
+    fs.cpSync(path.join(repoRoot, 'skills', 'cmsis-help'), skillDir, { recursive: true });
     return work;
 }
 

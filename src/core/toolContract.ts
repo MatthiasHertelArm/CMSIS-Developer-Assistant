@@ -83,7 +83,7 @@ export function endOfTopic(name: string): BlockPlacement {
  */
 export const CONTRACT_COPIES: readonly ContractCopy[] = [
     {
-        file: 'skills/cmsis-debug-live/SKILL.md',
+        file: 'skills/cmsis-help/SKILL.md',
         blocks: [
             { id: RULES_BLOCK, placement: AFTER_HEADING_1 },
             { id: TABLE_BLOCK, placement: afterBlock(RULES_BLOCK) },

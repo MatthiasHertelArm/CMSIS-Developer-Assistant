@@ -22,7 +22,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { IDebuggingHandler } from '..';
 import { sliceTopic } from '../core/instructionTopics';
-import { TOOL_RULES_REMINDER, buildServerInstructions, composeInstructions } from '../core/serverInstructions';
+import { KNOWLEDGE_REMINDER, TOOL_RULES_REMINDER, buildServerInstructions, composeInstructions } from '../core/serverInstructions';
 import {
     AFTER_HEADING_1,
     CONTRACT_COPIES,
@@ -131,14 +131,12 @@ suite('Tool contract', () => {
         });
     }
 
-    test('the generated cmsis-help carries the rules first and the table after the MCP tools', () => {
+    test('cmsis-help carries the rules first, the table after them, and the health check after both', () => {
         const help = read('skills/cmsis-help/SKILL.md');
         const rules = help.indexOf(renderContractBlock(RULES_BLOCK, contract));
         const table = help.indexOf(renderContractBlock(TABLE_BLOCK, contract));
-        const tools = help.indexOf('\n## MCP tools\n');
         assert.ok(rules >= 0 && table >= 0, 'cmsis-help lacks a block — run `npm run skills:sync -- --offline`');
-        assert.ok(rules < help.indexOf('\n## Slash commands\n'), 'the rules come before the lists');
-        assert.ok(tools < table && table < help.indexOf('\n## Settings\n'), 'the table follows the MCP tools');
+        assert.ok(rules < table && table < help.indexOf('\n## Health check (read-only)\n'), 'the rules, then the table, then the health check');
     });
 
     test('in the skills and the guide the rules follow the H1 directly, and the table follows the rules in the debugging skill', () => {
@@ -147,7 +145,7 @@ suite('Tool contract', () => {
             const below = AFTER_HEADING_1(lines);
             assert.deepStrictEqual(lines.slice(below, below + 2), ['', beginMarker(RULES_BLOCK)], `${copy.file}: the rules are not right below the H1`);
         }
-        const skill = read('skills/cmsis-debug-live/SKILL.md');
+        const skill = read('skills/cmsis-help/SKILL.md');
         assert.ok(skill.includes(`${endMarker(RULES_BLOCK)}\n\n${beginMarker(TABLE_BLOCK)}\n`), 'the table does not follow the rules');
     });
 
@@ -213,7 +211,7 @@ suite('Tool contract', () => {
             try {
                 assert.ok(client.getInstructions()?.startsWith(`${RULES_HEADING}\n`));
                 const first = await statusText(client);
-                assert.ok(first.startsWith(`State: no-session\n\n${TOOL_RULES_REMINDER}\n\nTool stats (this session):`), first);
+                assert.ok(first.startsWith(`State: no-session\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}\n\nTool stats (this session):`), first);
                 const second = await statusText(client);
                 assert.ok(!second.includes(TOOL_RULES_REMINDER), second);
                 assert.ok(second.startsWith('State: no-session\n\nTool stats (this session):'), second);

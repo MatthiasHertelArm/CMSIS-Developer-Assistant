@@ -30,9 +30,6 @@
 export interface InstructionOptions {
     packDocsEnabled?: boolean;
     buildInfoEnabled?: boolean;
-    knowledgeEnabled?: boolean;
-    /** `knowledge.replaceSkills`: only the core skills are installed; the other procedures are knowledge units. */
-    skillsReplaced?: boolean;
 }
 
 /** What the tools are for. The problem kinds named here are what make an agent reach for them. */
@@ -43,15 +40,15 @@ const PURPOSE =
 
 /** The skill comes first; say what it brings and why that beats improvising. */
 const SKILL_FIRST =
-    'Before anything else in such an investigation, invoke the Agent Skill "cmsis-debug-live". It brings the ' +
-    'target-awareness checklist, the session-status gate, where to set breakpoints, the step-then-inspect loop, fault ' +
-    'decode and the way to the root cause, so the tools are used with a plan rather than by guesswork or temporary ' +
-    'printf/UART logging in the firmware.';
+    'Before anything else in such an investigation, invoke the Agent Skill "cmsis-help". It checks the session health ' +
+    '(the target, the debug windows, recent problems) and names the get_debug_instructions topic and the knowledge ' +
+    'procedure that fit the task, so the tools are used with a plan rather than by guesswork or temporary printf/UART ' +
+    'logging in the firmware.';
 
-/** After `SKILL_FIRST` while the knowledge tools replace the other skills: what is a skill and what is a unit. */
+/** After `SKILL_FIRST`: the one skill installed, and where every other procedure comes from. */
 const CORE_SKILLS_ONLY =
-    'Only the core Agent Skills are installed: cmsis-debug-live, cmsis-pack-docs and cmsis-help. There is no skill for the ' +
-    'other CMSIS tasks: their procedures come from knowledge_search and knowledge_get.';
+    'The only Agent Skill installed is cmsis-help. Every other CMSIS procedure is a unit of the knowledge index: ' +
+    'knowledge_search finds it, knowledge_get reads it.';
 
 const WITHOUT_SKILLS =
     'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
@@ -125,17 +122,12 @@ export const TOOL_RULES_REMINDER =
  * build-artefact tools go unmentioned while they are off.
  */
 export function composeInstructions(options: Readonly<InstructionOptions>): string {
-    const lead = options.knowledgeEnabled === true ? [KNOWLEDGE_FIRST, PURPOSE] : [PURPOSE];
-    const parts = options.skillsReplaced === true
-        ? [...lead, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS]
-        : [...lead, SKILL_FIRST, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
+    const parts = [KNOWLEDGE_FIRST, PURPOSE, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
     if (options.buildInfoEnabled === true) {
         parts.push(BUILD_ARTEFACTS_ON);
     }
-    if (options.knowledgeEnabled === true) {
-        parts.push(KNOWLEDGE_ON);
-    }
+    parts.push(KNOWLEDGE_ON);
     return parts.join(' ');
 }
 

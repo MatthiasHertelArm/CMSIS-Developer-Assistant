@@ -495,32 +495,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -531,7 +516,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -596,22 +581,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -814,32 +785,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -850,7 +806,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -918,22 +874,8 @@
         "appdata/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -1133,32 +1075,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -1169,7 +1096,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -1234,22 +1161,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -1452,32 +1365,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -1488,7 +1386,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -1553,22 +1451,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -1771,32 +1655,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -1807,7 +1676,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -1872,22 +1741,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.config/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
@@ -2090,32 +1945,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -2126,7 +1966,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -2194,22 +2034,8 @@
         "appdata/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "appdata/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -2411,40 +2237,18 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
               "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)",
-              "<w>/copilot-home/skills/fx-router",
-              "<w>/copilot-home/skills/fx-bundled-a",
-              "<w>/copilot-home/skills/fx-bundled-b",
-              "<w>/copilot-home/skills/fx-help",
-              "<w>/copilot-home/skills/fx-alpha (hidden)",
-              "<w>/copilot-home/skills/fx-beta (hidden)",
-              "<w>/copilot-home/skills/fx-gamma (hidden)",
-              "<w>/copilot-home/skills/fx-delta (hidden)"
+              "<w>/copilot-home/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -2456,7 +2260,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills, <w>/copilot-home/skills. 2 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills, <w>/copilot-home/skills. 2 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -2523,38 +2327,10 @@
       "files": {
         "codex-home/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "copilot-home/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
-        "copilot-home/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "copilot-home/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "copilot-home/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "copilot-home/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "copilot-home/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "copilot-home/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "copilot-home/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "copilot-home/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "copilot-home/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "copilot-home/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "copilot-home/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "copilot-home/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "copilot-home/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "copilot-home/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "copilot-home/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "copilot-home/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -2756,32 +2532,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -2792,7 +2553,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -2857,22 +2618,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -3075,32 +2822,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -3111,7 +2843,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -3176,22 +2908,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"numStartups\": 3,\n  \"projects\": {\n    \"/p\": {\n      \"allowedTools\": [],\n      \"history\": [\n        \"x\"\n      ]\n    }\n  },\n  \"mcpServers\": {\n    \"other\": {\n      \"type\": \"stdio\",\n      \"command\": \"x\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"userID\": \"abc\"\n}",
         "home/.codex/config.toml": "# Codex config\nmodel = \"o3\"\n\n[mcp_servers.other]\ncommand = \"npx\"\nargs = [\"-y\", \"other-mcp\"]\n\n[profiles.fast]\nmodel = \"o4-mini\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"a\": {\n      \"type\": \"http\",\n      \"url\": \"http://a/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"z\": {}\n  }\n}",
@@ -3395,32 +3113,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -3431,7 +3134,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -3496,22 +3199,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"numStartups\": 1,\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-debugmcp]\nurl = \"http://localhost:3001/sse\"\nstartup_timeout_sec = 30\n\n[mcp_servers.cmsis-debugmcp.env]\nX = \"1\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -3714,32 +3403,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -3750,7 +3424,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -3815,22 +3489,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\n  url = \"http://localhost:3001/mcp\"\nstartup_timeout_sec = 10\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -3989,32 +3649,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -4025,7 +3670,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -4090,22 +3735,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "<unchanged seed>",
@@ -4291,32 +3922,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -4327,7 +3943,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -4392,22 +4008,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex": "<unchanged seed>",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -4518,32 +4120,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -4554,7 +4141,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -4595,22 +4182,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "<unchanged seed>",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}"
       }
@@ -4752,32 +4325,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -4788,7 +4346,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -4829,22 +4387,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -5043,32 +4587,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -5079,7 +4608,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -5141,22 +4670,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:4555/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
@@ -5261,32 +4776,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -5297,7 +4797,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -5338,22 +4838,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n\n[other]\nk = 1\n"
       }
     },
@@ -5451,32 +4937,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -5487,7 +4958,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -5528,22 +4999,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.codex/config.toml": "[mcp_servers.\"cmsis-developer-assistant\"]\nurl = \"http://localhost:9999/mcp\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n"
       }
     },
@@ -5641,32 +5098,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -5677,7 +5119,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -5718,22 +5160,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.codex/config.toml": "model = \"x\"\n  [mcp_servers.cmsis-developer-assistant]  # ours\nurl = \"http://localhost:3001/mcp\"\nurls = \"x\"\n# url = \"y\"\n\n[mcp_servers.cmsis-developer-assistant.env]\nurl = \"keep\"\n"
       }
     },
@@ -5831,32 +5259,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -5867,7 +5280,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -5908,22 +5321,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.codex/config.toml": "model = \"x\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n"
       }
     },
@@ -6648,40 +6047,18 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
               "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)",
-              "<w>/home/.claude/skills/fx-router",
-              "<w>/home/.claude/skills/fx-bundled-a",
-              "<w>/home/.claude/skills/fx-bundled-b",
-              "<w>/home/.claude/skills/fx-help",
-              "<w>/home/.claude/skills/fx-alpha (hidden)",
-              "<w>/home/.claude/skills/fx-beta (hidden)",
-              "<w>/home/.claude/skills/fx-gamma (hidden)",
-              "<w>/home/.claude/skills/fx-delta (hidden)"
+              "<w>/home/.claude/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -6693,7 +6070,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills, ~/.claude/skills. 2 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills, ~/.claude/skills. 2 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -6737,38 +6114,10 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.claude/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.claude/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
@@ -7069,32 +6418,17 @@
             "<w>/wsB/.claude/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [
               "<w>/wsB/.agents/skills/fx-beta"
@@ -7107,7 +6441,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -7168,22 +6502,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "wsA/.agents/skills/fx-alpha/SKILL.md": "<unchanged seed>"
       },
@@ -7291,40 +6611,18 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
               "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)",
-              "<w>/home/.claude/skills/fx-router",
-              "<w>/home/.claude/skills/fx-bundled-a",
-              "<w>/home/.claude/skills/fx-bundled-b",
-              "<w>/home/.claude/skills/fx-help",
-              "<w>/home/.claude/skills/fx-alpha (hidden)",
-              "<w>/home/.claude/skills/fx-beta (hidden)",
-              "<w>/home/.claude/skills/fx-gamma (hidden)",
-              "<w>/home/.claude/skills/fx-delta (hidden)"
+              "<w>/home/.claude/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -7336,7 +6634,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills, ~/.claude/skills. 2 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills, ~/.claude/skills. 2 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -7387,39 +6685,11 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude/settings.json": "<unchanged seed>",
-        "home/.claude/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.claude/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.claude/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
@@ -7634,32 +6904,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -7670,7 +6925,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -7866,22 +7121,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude/CLAUDE.md": "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/AGENTS.md": "# My Codex notes\n\nUse tabs.\n\n<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
@@ -7983,32 +7224,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -8019,7 +7245,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -8095,22 +7321,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
@@ -8239,32 +7451,17 @@
             "<w>/wsA/.claude/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -8275,7 +7472,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -8418,22 +7615,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -8579,32 +7762,17 @@
             "<w>/wsA/.claude/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -8615,7 +7783,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -9020,22 +8188,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -9456,32 +8610,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -9492,7 +8631,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "globalState",
@@ -9504,22 +8643,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
       }
     },
@@ -9751,39 +8876,18 @@
             "<w>/wsB/.claude/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
               "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)",
-              "<w>/home/.claude/skills/fx-router",
-              "<w>/home/.claude/skills/fx-bundled-a",
-              "<w>/home/.claude/skills/fx-bundled-b",
-              "<w>/home/.claude/skills/fx-help",
-              "<w>/home/.claude/skills/fx-alpha (hidden)",
-              "<w>/home/.claude/skills/fx-beta (hidden)",
-              "<w>/home/.claude/skills/fx-gamma (hidden)",
-              "<w>/home/.claude/skills/fx-delta (hidden)"
+              "<w>/home/.claude/skills/fx-help"
             ],
             "removed": [
               "<w>/home/.agents/skills/old-skill",
@@ -9791,9 +8895,7 @@
               "<w>/wsB/.agents/skills/fx-beta",
               "<w>/wsB/.claude/skills/fx-router"
             ],
-            "skippedForeign": [
-              "<w>/home/.agents/skills/fx-gamma"
-            ],
+            "skippedForeign": [],
             "failed": [
               "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken",
               "<w>/home/.claude/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
@@ -9803,21 +8905,8 @@
       ],
       "result": {
         "installed": [
-          "<w>/home/.agents/skills/fx-router",
-          "<w>/home/.agents/skills/fx-bundled-a",
-          "<w>/home/.agents/skills/fx-bundled-b",
           "<w>/home/.agents/skills/fx-help",
-          "<w>/home/.agents/skills/fx-alpha (hidden)",
-          "<w>/home/.agents/skills/fx-beta (hidden)",
-          "<w>/home/.agents/skills/fx-delta (hidden)",
-          "<w>/home/.claude/skills/fx-router",
-          "<w>/home/.claude/skills/fx-bundled-a",
-          "<w>/home/.claude/skills/fx-bundled-b",
-          "<w>/home/.claude/skills/fx-help",
-          "<w>/home/.claude/skills/fx-alpha (hidden)",
-          "<w>/home/.claude/skills/fx-beta (hidden)",
-          "<w>/home/.claude/skills/fx-gamma (hidden)",
-          "<w>/home/.claude/skills/fx-delta (hidden)"
+          "<w>/home/.claude/skills/fx-help"
         ],
         "removed": [
           "<w>/home/.agents/skills/old-skill",
@@ -9825,9 +8914,7 @@
           "<w>/wsB/.agents/skills/fx-beta",
           "<w>/wsB/.claude/skills/fx-router"
         ],
-        "skippedForeign": [
-          "<w>/home/.agents/skills/fx-gamma"
-        ],
+        "skippedForeign": [],
         "failed": [
           "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken",
           "<w>/home/.claude/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
@@ -9835,37 +8922,11 @@
       },
       "globalState": {},
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-gamma/SKILL.md": "<unchanged seed>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.claude/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.claude/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.claude/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.claude/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.claude/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "wsA/.agents/skills/theirs/SKILL.md": "<unchanged seed>"
       },
       "emptyDirs": [
@@ -9898,32 +8959,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -9935,14 +8981,7 @@
       ],
       "result": {
         "installed": [
-          "<w>/home/.agents/skills/fx-router",
-          "<w>/home/.agents/skills/fx-bundled-a",
-          "<w>/home/.agents/skills/fx-bundled-b",
-          "<w>/home/.agents/skills/fx-help",
-          "<w>/home/.agents/skills/fx-alpha (hidden)",
-          "<w>/home/.agents/skills/fx-beta (hidden)",
-          "<w>/home/.agents/skills/fx-gamma (hidden)",
-          "<w>/home/.agents/skills/fx-delta (hidden)"
+          "<w>/home/.agents/skills/fx-help"
         ],
         "removed": [],
         "skippedForeign": [],
@@ -9952,22 +8991,8 @@
       },
       "globalState": {},
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"unknown\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"unknown\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"unknown\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"unknown\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"unknown\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"unknown\",\"extensionVersion\":\"unknown\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>"
+        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>"
       }
     },
     {
@@ -9984,18 +9009,10 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSync",
@@ -10007,32 +9024,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 2,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -10051,32 +9053,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 3,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -10093,14 +9080,7 @@
         {
           "fulfilled": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -10112,14 +9092,7 @@
         {
           "fulfilled": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -10131,22 +9104,8 @@
       ],
       "globalState": {},
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>"
+        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>"
       }
     },
     {
@@ -11698,20 +10657,9 @@
             ]
           },
           {
-            "key": "cmsis-developer-assistant.knowledge.enabled",
-            "type": "boolean",
-            "default": false
-          },
-          {
             "key": "cmsis-developer-assistant.knowledge.indexPath",
             "type": "string",
             "default": ""
-          },
-          {
-            "key": "cmsis-developer-assistant.knowledge.replaceSkills",
-            "type": "boolean",
-            "default": false,
-            "scope": "application"
           },
           {
             "key": "cmsis-developer-assistant.knowledge.includeIncomplete",
@@ -11812,32 +10760,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -12275,32 +11208,17 @@
             "<w>/wsA/.claude/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 2,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -12311,7 +11229,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: 4 CMSIS skills (+4 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
         },
         {
           "ev": "createQuickPick"
@@ -12561,14 +11479,6 @@
               "fallback": 10000
             },
             {
-              "key": "cmsis-developer-assistant.knowledge.enabled",
-              "fallback": false
-            },
-            {
-              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
-              "fallback": false
-            },
-            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -12712,22 +11622,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:<port>/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 60,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:<port>/mcp\"\n    }\n  }\n}"
       },
@@ -12823,32 +11719,17 @@
             "<w>/ws/.claude/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -13090,14 +11971,6 @@
               "fallback": 10000
             },
             {
-              "key": "cmsis-developer-assistant.knowledge.enabled",
-              "fallback": false
-            },
-            {
-              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
-              "fallback": false
-            },
-            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -13242,22 +12115,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:<port>/mcp\"\n    }\n  }\n}"
       },
       "emptyDirs": [
@@ -13350,32 +12209,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -13563,14 +12407,6 @@
               "fallback": 10000
             },
             {
-              "key": "cmsis-developer-assistant.knowledge.enabled",
-              "fallback": false
-            },
-            {
-              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
-              "fallback": false
-            },
-            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -13676,22 +12512,8 @@
       },
       "globalState": {},
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 7,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:<port>/mcp\"\n    }\n  }\n}"
       }
     },
@@ -13865,10 +12687,6 @@
             {
               "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
               "fallback": 10000
-            },
-            {
-              "key": "cmsis-developer-assistant.knowledge.enabled",
-              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
@@ -14063,32 +12881,17 @@
             "<w>/home/.copilot/skills"
           ],
           "explicit": [
-            "fx-router",
-            "fx-bundled-a",
-            "fx-bundled-b",
             "fx-broken",
             "fx-help"
           ],
-          "implied": [
-            "fx-alpha",
-            "fx-beta",
-            "fx-gamma",
-            "fx-delta"
-          ]
+          "implied": []
         },
         {
           "ev": "skillSyncDone",
           "call": 1,
           "report": {
             "installed": [
-              "<w>/home/.agents/skills/fx-router",
-              "<w>/home/.agents/skills/fx-bundled-a",
-              "<w>/home/.agents/skills/fx-bundled-b",
-              "<w>/home/.agents/skills/fx-help",
-              "<w>/home/.agents/skills/fx-alpha (hidden)",
-              "<w>/home/.agents/skills/fx-beta (hidden)",
-              "<w>/home/.agents/skills/fx-gamma (hidden)",
-              "<w>/home/.agents/skills/fx-delta (hidden)"
+              "<w>/home/.agents/skills/fx-help"
             ],
             "removed": [],
             "skippedForeign": [],
@@ -14329,14 +13132,6 @@
               "fallback": 10000
             },
             {
-              "key": "cmsis-developer-assistant.knowledge.enabled",
-              "fallback": false
-            },
-            {
-              "key": "cmsis-developer-assistant.knowledge.replaceSkills",
-              "fallback": false
-            },
-            {
               "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
               "fallback": 30000
             },
@@ -14480,22 +13275,8 @@
         "cmsis-developer-assistant.popupShown.v5": true
       },
       "files": {
-        "home/.agents/skills/fx-alpha/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-alpha\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-alpha/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-beta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-beta\",\"source\":\"cmsis-skills\",\"sha\":\"f1x7u4e0000000000000000000000000000000000\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-beta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-bundled-a/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-a\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-a/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-bundled-b/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-bundled-b\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-bundled-b/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-delta/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-delta\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-delta/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
-        "home/.agents/skills/fx-gamma/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-gamma\",\"source\":\"extension\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":true}",
-        "home/.agents/skills/fx-gamma/SKILL.md": "<fixture SKILL.md + user-invocable: false>",
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.agents/skills/fx-router/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-router\",\"source\":\"generated\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
-        "home/.agents/skills/fx-router/SKILL.md": "<fixture SKILL.md>"
+        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>"
       }
     }
   ]

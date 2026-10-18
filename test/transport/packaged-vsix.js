@@ -112,7 +112,7 @@ check('the bundle keeps serialport external',
 //    the upstream lock, and every SKILL.md the catalog points at.
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
-check('the help skill of the knowledge mode ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help-knowledge', 'SKILL.md')));
+check('the core knowledge index ships', fs.existsSync(path.join(root, 'resources', 'knowledge', 'core.db')));
 check('the pack-docs skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-pack-docs', 'SKILL.md')));
 check('the pdf.js worker thread entry ships beside the extension', fs.existsSync(path.join(root, 'dist', 'pdfWorker.js')));
 check('the pdf.js fake worker ships for that thread', fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'))
