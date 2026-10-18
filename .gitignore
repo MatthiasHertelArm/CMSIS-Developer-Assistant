@@ -39,3 +39,6 @@ __pycache__/
 # Credentials and operating-system clutter
 *.env
 .DS_Store
+
+# The core knowledge index, built from the knowledge base repository (scripts of cmsis-knowledge-base); copied in before packaging.
+resources/knowledge/*.db

@@ -53,14 +53,9 @@ import {
     extractSkillReferences,
     parseSkillFrontmatter,
 } from '../src/utils/skillCatalog.js';
-import {
-    HELP_SKILL_NAME,
-    HelpSkillConfig,
-    helpCatalogEntry,
-    readPackageContributions,
-    renderHelpOpenAiYaml,
-    renderHelpSkillMarkdown,
-} from '../src/utils/skillHelp.js';
+
+/** The one skill the extension installs: the health check and the entry point to the knowledge (see skills/cmsis-help). */
+const HELP_SKILL_NAME = 'cmsis-help';
 import { hashTree } from '../src/utils/treeHash.js';
 
 interface SkillLock {
@@ -86,13 +81,13 @@ interface SkillsConfig {
     /** The upstream categories that are vendored and installed; the others stay upstream. */
     upstreamCategories: SkillCategory[];
     /**
-     * The extension's own skills. `generated: true` marks one this script
-     * writes itself (the help skill). `hidden: true` marks one installed with
-     * `user-invocable: false`: a member of its category's router when that
-     * category has one, else a hand-over target of another skill.
+     * The extension's own skills, authored in skills/. `hidden: true` marks
+     * one with `user-invocable: false`: a member of its category's router when
+     * that category has one, else a hand-over target of another skill.
      */
-    bundled: { name: string; category: SkillCategory; generated?: boolean; hidden?: boolean }[];
-    help: HelpSkillConfig;
+    bundled: { name: string; category: SkillCategory; hidden?: boolean }[];
+    /** The skills the extension installs. Every other catalog entry is a unit of the knowledge index. */
+    installed: string[];
     categories: CategoryConfig[];
 }
 
@@ -307,11 +302,8 @@ function validateConfig(config: SkillsConfig): void {
             fail(`router ${category.router} description is ${category.description.length} chars; the Agent Skills limit is ${MAX_DESCRIPTION_LENGTH}`);
         }
     }
-    if (config.help.description.length > MAX_DESCRIPTION_LENGTH) {
-        fail(`${HELP_SKILL_NAME} description is ${config.help.description.length} chars; the Agent Skills limit is ${MAX_DESCRIPTION_LENGTH}`);
-    }
-    if (!config.bundled.some(bundled => bundled.name === HELP_SKILL_NAME && bundled.generated)) {
-        fail(`scripts/skills.config.json must list ${HELP_SKILL_NAME} under "bundled" with "generated": true`);
+    if (!config.installed.includes(HELP_SKILL_NAME) || !config.bundled.some(bundled => bundled.name === HELP_SKILL_NAME)) {
+        fail(`scripts/skills.config.json must install and list ${HELP_SKILL_NAME} under "bundled"`);
     }
 }
 
@@ -371,10 +363,6 @@ function writeGenerated(
     // Read first: the hidden ones are router members like the upstream skills.
     const knownNames = new Set<string>([...upstreamEntries.map(entry => entry.name), ...reservedNames(config)]);
     const bundledEntries: SkillCatalogEntry[] = config.bundled.map(bundled => {
-        if (bundled.generated) {
-            // Written below from the finished catalog; its description is the config's.
-            return helpCatalogEntry(config.help);
-        }
         const skillDir = path.join(skillsDir, bundled.name);
         const markdown = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
         const frontmatter = parseSkillFrontmatter(markdown);
@@ -455,7 +443,8 @@ function writeGenerated(
     // An upstream skill is a slash command of its own only where its category has no router.
     const routed = new Set(routerEntries.map(entry => entry.category));
     const placedUpstream = upstreamEntries.map(entry => ({ ...entry, invocable: !routed.has(entry.category) }));
-    const all = [...routerEntries, ...bundledEntries, ...placedUpstream];
+    const all = [...routerEntries, ...bundledEntries, ...placedUpstream]
+        .map(entry => ({ ...entry, installed: config.installed.includes(entry.name) }));
     all.sort((a, b) => {
         const categoryDelta = SKILL_CATEGORY_ORDER.indexOf(a.category) - SKILL_CATEGORY_ORDER.indexOf(b.category);
         if (categoryDelta !== 0) {
@@ -468,17 +457,6 @@ function writeGenerated(
     });
 
     const catalog: SkillCatalog = { schemaVersion: 1, source, skills: all };
-
-    // --- help skill ----------------------------------------------------------
-    // Rendered from the finished catalog plus package.json, so the list of
-    // slash commands, VS Code commands and settings cannot drift from what
-    // ships; src/test/skillCatalog.test.ts re-renders it and compares.
-    const helpDir = path.join(skillsDir, HELP_SKILL_NAME);
-    const contributions = readPackageContributions(readJson<unknown>(path.join(repoRoot, 'package.json')));
-    fs.rmSync(helpDir, { recursive: true, force: true });
-    fs.mkdirSync(path.join(helpDir, 'agents'), { recursive: true });
-    fs.writeFileSync(path.join(helpDir, 'SKILL.md'), renderHelpSkillMarkdown(catalog, contributions, config.help, contract), 'utf8');
-    fs.writeFileSync(path.join(helpDir, 'agents', 'openai.yaml'), renderHelpOpenAiYaml(config.help), 'utf8');
 
     writeJson(catalogPath, catalog);
 

@@ -218,7 +218,8 @@ async function main() {
     // rides along on every agent turn. 47 tools measured 30 104 bytes in
     // 2.5.0; the budget leaves room for the 2.5.1 additions
     // (get_recent_problems, serial_capture, the window argument).
-    const ROUTED_TOOLS_LIST_BUDGET_BYTES = 34_000;
+    // Raised from 34 000 for the knowledge tools, which are on in every session (35 301 measured).
+    const ROUTED_TOOLS_LIST_BUDGET_BYTES = 36_000;
     const routedList = await post(PORT, { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 90, method: 'tools/list', params: {} });
     const routedTools = parseSse(routedList.body)?.result?.tools ?? [];
     const routedBytes = Buffer.byteLength(JSON.stringify(routedTools));

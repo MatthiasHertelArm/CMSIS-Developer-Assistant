@@ -1,0 +1,116 @@
+# Fix proposals for the project board
+
+This folder has one proposal for each open issue: the 21 on the [CMSIS Developer Assistant board](https://github.com/orgs/Open-CMSIS-Pack/projects/26), plus #53, which is not on the board. They were written on 2026-09-23 against release 2.3.10 (`upstream/main` `b37a526`). Each proposal covers four things:
+
+- the problem as it stands in the current code (the issues cite 2.1.0 line numbers, which are all re-checked here);
+- the proposed fix;
+- the decisions that need an owner;
+- how to test it.
+
+## How to review
+
+- Each file ends with a **Review** section. Tick one box and add notes there, or edit the proposal text directly.
+- **Decisions for you** lists the real choices, each with a recommended option. Tick the ones you accept, or write the alternative you want.
+- The shared vocabulary is defined in [11-typed-tool-results.md](11-typed-tool-results.md): error codes, `ToolError`, `ToolReply` and control envelope v2. Most other proposals build on it, so review it first.
+- Work-package letters (WP-A …) refer to the overall release plan. Within a release, the order follows the dependencies.
+- The tool-list sizes quoted in the proposals were measured on the 2.3.10 build:
+  - 45 tools in the single-window list: 28 799 of 30 000 B;
+  - 47 tools in the routed list: 29 987 B, not tested today;
+  - all groups on: 40 527 of 42 000 B.
+
+## 2.3.11: tools that tell the truth
+
+| Issue | Proposal | WP | Size | Depends on | Decisions |
+|---|---|---|---|---|---|
+| #11 | [Typed tool results: isError, error codes, status](11-typed-tool-results.md) | A | L | none | 5 |
+| #47 | [Task completion detection and job tracking](47-task-completion-detection.md) | B | M | #11 | 4 |
+| #46 | [Probe busy: parallel CMSIS Run tasks, bundled pyOCD for flash](46-probe-busy-parallel-run-tasks.md) | B | M | #11, #47 | 4 |
+| #12 | [Long builds as jobs instead of a 60 s cap](12-long-builds-as-jobs.md) | B | M | #11, #47 | 4 |
+| #13 | ["Target is running" toasts: UI fallbacks and ungated breakpoint ops](13-target-running-toasts.md) | C | M | #11 | 4 |
+| #50 | [Tool contract against bypassing the MCP tools](50-tool-contract.md): part 1 (part 2 is in 2.3.12) | D | M | #11 | 6 |
+| #20 | [Skill and docs gaps: reset fallback](20-skill-docs-gaps.md) | D | XS | none | 3 |
+| #19 | [Registry file exposes the control token](19-registry-token-exposure.md) | E | S | none | 5 |
+| #49 | [Serial port release](49-serial-port-release.md): honest port state only | F | XS | none | see 2.3.12 |
+
+## 2.3.12: errors you can see, handles for humans
+
+| Issue | Proposal | WP | Size | Depends on | Decisions |
+|---|---|---|---|---|---|
+| (budget) | Tool-list budget groundwork. No issue; the costs are itemised in #48, #49 and #16 | G | S | none | none |
+| #48 | [One problem journal for agents](48-error-feed.md) (phases 1–2) | H | L | #11, #47 | 6 |
+| #15 | [Build error lines in the cmsis_action result](15-build-error-lines.md) | H | M | #47 | 4 |
+| #3 | [Probe reconnect after a wedge](03-reconnect-probe.md): phase 1, honest `PROBE_WEDGED` diagnosis | H | S | #11 | 4 |
+| #14 | [Control-channel watchdog](14-control-channel-watchdog.md) | I | M | #11 | 5 |
+| #16 | [Window selection for humans](16-window-selection-ui.md) | J | M | #11, #19, WP-G | 6 |
+| #49 | [Serial port release and serial_capture](49-serial-port-release.md) | K | L | #11, #48, WP-G | 6 |
+| #50 | [Tool contract](50-tool-contract.md): part 2, rule files and bypass evals | L | M | #48 | see 2.3.11 |
+| #45 | [pyocd called directly](45-pyocd-called-directly.md): closes with the rule files | D, B, L | S | #50, #46 | 3 |
+
+## Future: enabling hooks and proposals owned by others
+
+| Issue | Proposal | WP | Size | Depends on | Decisions |
+|---|---|---|---|---|---|
+| #41 | [Cross-extension commands for agents](41-cross-extension-commands.md) | M | L (our part M) | #11 | 5 |
+| #17 | [Toolchain information](17-toolchain-info.md) as `cmsis_query {what: 'toolchain'}` | M | S | #41 | 4 |
+| #3 | [Probe reconnect](03-reconnect-probe.md): phase 2, `cmsis_action reconnect` | N | M | #14, #48 | see 2.3.12 |
+| #44 | [SPDX SBOM from build information](44-spdx-sbom.md) | O | M (our part XS) | none | 4 |
+| #51 | [Performance optimization workflow](51-performance-optimization-workflow.md) | P | XXL (our part M) | none | 4 |
+| #52 | [Statistical PC profiler](52-statistical-profiler.md) | P | XXL (our part M) | none | 4 |
+| #50 | [Tool contract](50-tool-contract.md): part 3, process detection and hook pack | none | L | #48 | see 2.3.11 |
+
+## Across releases: owning the codebase
+
+Issue #53 is not on the board; it was added here on 2026-09-23. Its phases are placed so that each group of Microsoft-derived files is rewritten just before the proposals above change it.
+
+| Issue | Proposal | Phases | Size | Depends on | Decisions |
+|---|---|---|---|---|---|
+| #53 | [Rewrite the remaining MS-derived core (drop MIT lineage)](53-ms-derived-core-rewrite.md) | 0–1 with 2.3.11, 2 in the 2.3.12 cycle, 3–5 after 2.3.12, done as 2.4.0 | XXL | OSPO sign-off | 6 |
+
+## Not release-bound
+
+| Issue | Proposal | WP | Size | Decisions |
+|---|---|---|---|---|
+| #21 | [Forward sibling-tool findings to their owners](21-sibling-tool-findings.md), with draft issue texts | Q | S | 3 |
+
+## Found while writing these proposals
+
+These are defects in 2.3.10 that no board issue names. Some are fixed inside a proposal above; the rest need an issue of their own.
+
+| Finding | Where | Covered by |
+|---|---|---|
+| **GDB commands never reach GDB on `gdbtarget`.** `execGdbCommand` sends `-exec <cmd>`, but cdt-gdb-adapter 2.9.1 (the adapter behind the CMSIS Debugger) treats REPL input as a GDB command only when it starts with `>` (`GDBDebugSessionBase.js:1982`). Affected: GDB-native breakpoints and dprintf, `monitor reset` in `reset`, memory-read strategies 2–3, the peripheral reader, and the `-exec` passthrough the agent docs recommend. One live check confirms it. | [debuggingExecutor.ts:432-451](../../src/debuggingExecutor.ts#L432-L451) | **none, needs its own issue**; see #13 and #3 |
+| `add_logpoint` sets a model logpoint and a GDB `dprintf`, so a hit may print twice once the finding above is fixed | `debuggingHandler.ts` add_logpoint | none, fix together with the above |
+| Every handler error reaches the agent as "Could not reach the VS Code window …", and the router drops its target. Routing is always on, even to the router's own window | [routingDebuggingHandler.ts:123-141](../../src/routingDebuggingHandler.ts#L123-L141) | #11 |
+| `flash` cannot find the bundled pyOCD. The CMSIS Debugger adds it to PATH only for terminals and tasks | [flashController.ts](../../src/core/flashController.ts) | #46 |
+| The task waiter matches `cbuild setup` runs. A second `build` reports the first build's result. `load` on Arm Debugger adapters waits 57 s for nothing. The fence can fire before the waiter after a target switch | [debuggingHandler.ts](../../src/debuggingHandler.ts) cmsis_action | #47, #12 |
+| An unknown MCP session id gets 400 instead of the spec's 404, so clients cannot re-initialize after a failover | [debugMCPServer.ts:1236-1241](../../src/debugMCPServer.ts#L1236-L1241) | #14 |
+| `start_debugging` without `configurationName` opens a quick-pick with no timeout, invisible in a worker window | `debugConfigurationManager.ts:100-123` | #14 |
+| `WorkspaceRegistry.list()` deletes stale entries while their pid is alive, which hides a wedged router | [workspaceRegistry.ts:168-172](../../src/utils/workspaceRegistry.ts#L168-L172) | #14 |
+| Registry directory and files are world-readable on this Mac too (`TMPDIR` folder 0755, files 0644) | `workspaceRegistry.ts`, `atomicFile.ts` | #19 |
+| `npm run skills:sync -- --update` fails: upstream cmsis-skills added the `ethos-u` category, which `SkillCategory` rejects | [sync-skills.ts:163-166](../../scripts/sync-skills.ts#L163-L166) | none, small fix; prerequisite for #44 and #51 |
+| `read_cycle_counter` is annotated `readOnlyHint: true` but writes DEMCR and DWT_CTRL | [debugMCPServer.ts:631](../../src/debugMCPServer.ts#L631) | #51 (hook H5) |
+| The Serial Monitor bridge tells agents to use `serial_read_owned`, which does not exist | [serialMonitorBridge.ts:165](../../src/core/serialMonitorBridge.ts#L165) | none, one-line fix |
+| The Pack Docs panel runs any command id its webview posts. The panel is CSP-protected, so the risk is low, but the ids should be allowlisted | `packDocsPanel.ts:247-251` | none, small fix |
+| `armDocs.ts` points to `test/transport/arm-catalogue-check.js`, which does not exist | [armDocs.ts:117-123](../../src/core/packDocs/armDocs.ts#L117-L123) | none |
+| The `ensureStoppedSession` hints say "start_debugging" for CMSIS projects and never name `pause_execution` | [debuggingHandler.ts:378-384](../../src/debuggingHandler.ts#L378-L384) | #20 |
+| Stale counts in comments: the `opTable.ts` header, and the `session-lifecycle.js` "42/44 tools" | `opTable.ts`, `session-lifecycle.js` | WP-G |
+
+## Added 2026-09-28: bootstrap from an empty VS Code window
+
+No issue yet. [bootstrap-empty-vscode.md](bootstrap-empty-vscode.md) covers the state every other document skips: VS Code with no folder open and no project on disk. Phases: 0 documentation and one refusal shape (XS), 1 a bundled `cmsis-bootstrap` skill (M), 2 `cmsis_query`/`open_folder`/`create_solution` with #41 (M), 3 an eval scenario from an empty directory (S). Six decisions.
+
+## Status of the proposals above on 2026-09-28 (fork 2.5.2 + `1e4c50a`)
+
+Nothing has landed upstream since 2.3.10 (`b37a526`); the board still shows every item in Backlog or Triage. On the fork (`pr/2.5.2-tester-feedback`, 69 commits ahead of `upstream/main`):
+
+| Done on the fork, closable once merged | Partly done | Not started |
+|---|---|---|
+| #11, #12, #13, #14, #15, #16, #19, #20, #45, #46, #47, #49, #53, #56 | #3 (phase 1), #48 (phases 1–2), #50 (parts 1–2), #21 (one upstream ask written, nothing filed) | #17, #41, #44, #51, #52, #54 (license review, OSPO), #55 (guide review) |
+
+## Status on 2026-09-30 (fork 2.5.9)
+
+[bootstrap-empty-vscode.md](bootstrap-empty-vscode.md) phases 0 and 1 are in 2.5.9, with `cmsis_action open_solution`. The skill for creating a project waits as a prepared pull request for cmsis-skills: [cmsis-skills-start-cmsis-project-pr.md](cmsis-skills-start-cmsis-project-pr.md). The issue table above is unchanged.
+
+## Added 2026-10-04: knowledge base
+
+No issue yet. [knowledge-base.md](knowledge-base.md) covers the handover of the knowledge-base prototype (units in Markdown, one SQLite index, `knowledge_search` / `knowledge_get` / `knowledge_expand`): how the index is read inside the extension, behind a flag and parallel to the skills. Phases: 0 what the index has to guarantee (S, knowledge-base side), 1 the three tools (M), 2 the build result names the unit of a known message (S), 3 delivery in the VSIX and in packs (L), 4 benchmarks and retiring skills (M). Eight decisions.

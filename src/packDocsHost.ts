@@ -18,20 +18,26 @@
  * The VS Code side of the documentation and build-artefact tools: settings
  * under `cmsis-developer-assistant.packDocs.*` / `.buildInfo.*`, the host
  * objects the pure cores see (`PackDocsHost`, `BuildInfoHost`), and the two
- * handlers every window owns. Nothing under `core/packDocs` or
+ * handlers every window owns, with the experimental knowledge handler
+ * (`knowledge.*`) beside them. Nothing under `core/packDocs` or
  * `core/buildInfo` imports `vscode`; this file is where that ends.
  */
 
 import * as vscode from 'vscode';
+import * as os from 'os';
 import * as path from 'path';
 import { BuildInfoHost, BuildInfoSettings, defaultBuildInfoSettings } from './core/buildInfo/host';
 import { PackDocsHost, PackDocsSettings, defaultSettings } from './core/packDocs/host';
 import { defaultPackRoot, resolveUserDocsDir } from './core/packDocs';
+import { effectivePackRoot } from './core/packDocs/host';
 import { ActiveContextHint } from './core/packDocs/cbuildRun';
 import { withTimeout } from './utils/timeout';
 import { toolchainPackRoot } from './utils/toolchainPackRoot';
 import { PackDocsHandler } from './packDocsHandler';
 import { BuildInfoHandler } from './buildInfoHandler';
+import { projectFacts } from './core/knowledge/projectFacts';
+import { setKnownMessageLookup } from './core/knowledge/knownMessageLookup';
+import { KnowledgeHandler, KnowledgeHost } from './knowledgeHandler';
 import { PackDocsHandlers } from './packDocsDispatch';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { logger } from './utils/logger';
@@ -45,6 +51,29 @@ export function readPackDocsGates(): { packDocsEnabled: boolean; buildInfoEnable
         packDocsEnabled: c.get<boolean>('packDocs.enabled', true),
         buildInfoEnabled: c.get<boolean>('buildInfo.enabled', true),
     };
+}
+
+/** The core knowledge index the extension ships, under its root. */
+export function bundledKnowledgeIndex(extensionPath: string): string {
+    return path.join(extensionPath, 'resources', 'knowledge', 'core.db');
+}
+
+/**
+ * `knowledge.indexPath` as an absolute path: `~` is the home directory, a
+ * relative path is under the first workspace folder. Empty means the core
+ * index the extension ships, which is what the knowledge tools read.
+ */
+export function readKnowledgeIndexPath(bundledIndex: string): string | undefined {
+    const setting = vscode.workspace.getConfiguration(CONFIG).get<string>('knowledge.indexPath', '').trim();
+    if (setting.length === 0) {
+        return bundledIndex;
+    }
+    const expanded = setting === '~' || setting.startsWith('~/') || setting.startsWith('~\\') ? path.join(os.homedir(), setting.slice(1)) : setting;
+    if (path.isAbsolute(expanded)) {
+        return expanded;
+    }
+    const root = workspaceRoot();
+    return root ? path.join(root, expanded) : undefined;
 }
 
 /** Re-read on every call through `host.settings()`, so edits apply live. */
@@ -140,6 +169,18 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
     };
 }
 
+/** The knowledge handler's window: the two settings read per call, the project from the other two hosts. */
+export function makeKnowledgeHost(docs: PackDocsHost, build: BuildInfoHost, bundledIndex: string): KnowledgeHost {
+    return {
+        indexPath: () => readKnowledgeIndexPath(bundledIndex),
+        includeIncomplete: () => vscode.workspace.getConfiguration(CONFIG).get<boolean>('knowledge.includeIncomplete', false),
+        packRoot: () => effectivePackRoot(docs),
+        workspaceFolders,
+        projectFacts: () => projectFacts(docs, build),
+        log: logger,
+    };
+}
+
 export function makeBuildInfoHost(): BuildInfoHost {
     return {
         workspaceFolders,
@@ -160,7 +201,11 @@ export function createPackDocsHandlers(context: vscode.ExtensionContext, timeout
     const host = makePackDocsHost(context);
     const timeoutMs = timeoutInSeconds * 1000;
     const docs = new PackDocsHandler(host, { timeoutMs, workspaceRoot });
-    const build = new BuildInfoHandler(makeBuildInfoHost(), { timeoutMs, workspaceRoot });
+    const buildHost = makeBuildInfoHost();
+    const build = new BuildInfoHandler(buildHost, { timeoutMs, workspaceRoot });
+    const knowledge = new KnowledgeHandler(makeKnowledgeHost(host, buildHost, bundledKnowledgeIndex(context.extensionPath)), { timeoutMs });
+    // A failed build's result names the unit of a message the index knows.
+    setKnownMessageLookup((messages) => knowledge.knownMessageLines(messages));
 
     const s = readPackDocsSettings();
     logger.info(`Pack docs: default pack root ${host.packRoot}${process.env.CMSIS_PACK_ROOT ? ' (CMSIS_PACK_ROOT)' : ' (platform default)'}, ` +
@@ -175,5 +220,5 @@ export function createPackDocsHandlers(context: vscode.ExtensionContext, timeout
                 `set ${CONFIG}.packDocs.extractor to pdfjs (bundled), or install poppler / set ${CONFIG}.packDocs.pdftotextPath.`);
         }
     });
-    return { docs, build };
+    return { docs, build, knowledge };
 }

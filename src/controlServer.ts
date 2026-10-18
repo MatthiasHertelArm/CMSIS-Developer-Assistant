@@ -80,6 +80,7 @@ import {
     forwardTimeoutMs,
     isInternalOp,
     isKnownOp,
+    isKnowledgeOp,
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
@@ -592,6 +593,12 @@ export class ControlServer {
         if (this.packDocs === undefined) {
             throw new ToolError('TOOL_DISABLED',
                 `Control op ${op}: the documentation and build-artefact handlers are not available in this window`);
+        }
+        if (isKnowledgeOp(op)) {
+            if (this.packDocs.knowledge === undefined) {
+                throw new ToolError('TOOL_DISABLED', `Control op ${op}: the knowledge handler is not available in this window`);
+            }
+            return this.packDocs.knowledge;
         }
         return isPackDocsDocOp(op) ? this.packDocs.docs : this.packDocs.build;
     }

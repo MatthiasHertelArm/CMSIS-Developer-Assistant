@@ -223,6 +223,8 @@ Pass `condition` to `add_breakpoint` (e.g. `i == 100`, `p != 0`, `state == FSM_E
 
 ### Logpoints — useful, but not free on Cortex-M
 
+On Cortex-M a logpoint still stops the core briefly while GDB reads the values, so it is not free in a hot loop or an ISR: prefer `read_cycle_counter` around the region, or a RAM buffer the firmware fills and `read_memory` reads back.
+
 `add_logpoint` prints a message and resumes instead of pausing. Embed expressions in braces: `"adc={sample} state={fsm}"`. On the CMSIS Debugger the logpoint is a GDB `dprintf`: GDB fills in the values and prints to VS Code's Debug Console, which no tool returns — `list_breakpoints` shows how often each logpoint fired, and `remove_breakpoint` on its line deletes it.
 
 GDB infers nothing about types, so specifiers are explicit:
@@ -277,6 +279,8 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 **Cycle-accurate timing with `read_cycle_counter`.** Read the DWT cycle counter at point A, run to point B (`continue_execution` / `wait_for_stop`), read again, subtract mod 2^32. Caveats that bite: the 32-bit counter wraps (~10.7 s @ 400 MHz — accumulate over longer spans), and CYCCNT **stops while the core is halted and during WFE sleep** — it counts ACTIVE cycles only, so a delta excludes halted debug time and sleep.
 
 ## 🔬 Inspecting variables: discover, then read
+
+A running target rejects every read and step: call `pause_execution` first, then read.
 
 `list_variable_names` reports what is in scope by **name and type only**, reading no values. `get_variables_values` then reads them — pass `variableNames` to fetch just what you need, or omit it to dump the whole scope.
 

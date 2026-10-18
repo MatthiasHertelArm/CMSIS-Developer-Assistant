@@ -4,6 +4,16 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **The knowledge index is mandatory and ships with the extension.** The knowledge tools are always on; the core index is `resources/knowledge/core.db` (procedures, the error catalog, the documentation of Apache, MIT and BSD sources, reviewed issue digests). `knowledge.indexPath` replaces it for testing; `knowledge.enabled` and `knowledge.replaceSkills` are removed.
+- **One installed skill, `cmsis-help`.** It is the health check (session, debug windows, recent problems) and the router to the debug topics and the knowledge procedures. `cmsis-debug-live`, `cmsis-pack-docs`, the bootstrap, board-layer and debugger-setup skills are units of the index now, not installed skills.
+- **Knowledge engine (experimental).** The tools `knowledge_search`, `knowledge_get` and `knowledge_expand` over the knowledge index (`knowledge.indexPath`, `knowledge.includeIncomplete`), the **Open Knowledge Browser** panel, and the unit of a known error message in a failed build's result.
+- **Knowledge that packs ship.** A pack carries its knowledge in `.knowledge/`: the units as Markdown in `units/` and `knowledge.db`, which `cmsis-knowledge build` of the Python package `cmsis-developer-assistant-tools` writes. The extension reads `.knowledge/knowledge.db` of every installed pack and offers its units only in projects that use the pack, the build's `packs:` included; parts mounted on the active board (`<mountedPart>`) count as part of the project, and the knowledge browser opens a pack unit's Markdown file from the installed pack. A `knowledge.db` elsewhere in a pack is no longer read.
+
+### Changed
+
 ## [2.5.20] - 2026-10-12
 
 The README as VS Code renders it.

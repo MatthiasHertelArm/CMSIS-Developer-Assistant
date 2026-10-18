@@ -73,6 +73,11 @@ export interface SkillCatalogEntry {
     /** Other catalog skills this one refers to with the `$name` sigil; for routers, every member. */
     dependsOn: string[];
     /**
+     * Installed by the extension (the `installed` list of the config; today
+     * `cmsis-help` alone). `false`: a unit of the knowledge index only.
+     */
+    installed: boolean;
+    /**
      * Installed visible, as a slash command: the extension's own skills, the
      * routers, and a skill of a category without a router. The members of a
      * router are installed with `user-invocable: false` (`false` here): the
@@ -127,14 +132,16 @@ export interface InstallSet {
 }
 
 /**
- * Every catalog skill is installed; `invocable` decides whether it shows up
- * in the `/` menu. There is no selection: the catalog is the set, and the
- * next sync after an upgrade brings existing installations in line with it.
+ * The installed entries of the catalog; `invocable` decides whether one shows
+ * up in the `/` menu. There is no selection: the catalog decides, and the next
+ * sync after an upgrade brings existing installations in line with it.
+ * Whatever else an earlier version installed is removed by the sweep.
  */
 export function installSet(catalog: SkillCatalog): InstallSet {
+    const installed = catalog.skills.filter(entry => entry.installed);
     return {
-        visible: catalog.skills.filter(entry => entry.invocable).map(entry => entry.name),
-        hidden: catalog.skills.filter(entry => !entry.invocable).map(entry => entry.name),
+        visible: installed.filter(entry => entry.invocable).map(entry => entry.name),
+        hidden: installed.filter(entry => !entry.invocable).map(entry => entry.name),
     };
 }
 

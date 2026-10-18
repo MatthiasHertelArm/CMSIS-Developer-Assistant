@@ -47,13 +47,14 @@ import { WINDOW_ARGUMENT } from './core/opTable';
 import { journalLocally } from './core/problemFeed';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal } from './core/problemJournal';
 import { RELEASE_RULES } from './core/serialLease';
-import { TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
+import { KNOWLEDGE_REMINDER, TOOL_RULES_REMINDER, buildServerInstructions } from './core/serverInstructions';
 import { TOOL_CONTRACT_DOC, parseToolContract } from './core/toolContract';
 import type { ToolMetrics } from './core/toolMetrics';
 import { ToolText, textOf } from './core/toolResult';
 import { SERVER_VERSION } from './debuggingExecutor';
 import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
+import { registerKnowledgeTools } from './knowledgeTools';
 import { registerPackDocsTools } from './packDocsTools';
 import { logger } from './utils/logger';
 
@@ -67,12 +68,12 @@ const say = (...sentences: string[]): string => sentences.join(' ');
 
 const ABOUT = {
     get_debug_instructions: say(
-        'Debugging guide for harnesses that do not load the "cmsis-debug-live" Agent Skill.',
+        'Debugging guide for harnesses that do not load the "cmsis-help" Agent Skill.',
         'Default: a short overview plus the topic list; pass topic for one section (bootstrap, session, build, breakpoints, inspection, faults, troubleshooting).',
     ),
     start_debugging: say(
         'Start a debug session through the VS Code debug pipeline (launch.json).',
-        'Before using this tool, invoke the skill "cmsis-debug-live".',
+        'Before using this tool, invoke the skill "cmsis-help".',
         'For CMSIS / Cortex-M projects prefer cmsis_action load_and_debug (builds, flashes, attaches); start_debugging skips the ' +
         'flash step and suits non-CMSIS projects or attaching to an already-flashed target.',
         'Refuses while a session is active.',
@@ -779,6 +780,9 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     if (packDocs !== undefined && options.buildInfoEnabled === true) {
         registerBuildInfoTools(mcp, packDocs);
     }
+    if (packDocs !== undefined) {
+        registerKnowledgeTools(mcp, packDocs);
+    }
 
     // CMSIS Solution actions and programming.
     mcp.registerTool('cmsis_action', {
@@ -808,7 +812,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     let rulesRepeated = parts.toolRules === undefined;
     mcp.registerTool('get_session_status', { description: ABOUT.get_session_status, annotations: LOOK_ONLY }, async () => {
         const state = await debug.handleGetSessionStatus();
-        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER}`;
+        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}`;
         rulesRepeated = true;
         // Read after the handler: the totals cover this session's earlier calls, not this one.
         return reply(`${textOf(state)}${reminder}\n\n${ring.formatTotals()}`);

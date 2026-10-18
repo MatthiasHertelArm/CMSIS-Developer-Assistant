@@ -264,6 +264,28 @@ suite('build diagnosis (#15)', () => {
         return current;
     };
 
+    test('the result names the knowledge unit of an error message the index knows; a lookup that throws changes nothing', async () => {
+        const known = 'Known message: knowledge_get { id: "ts-x" } has its cause and fix.';
+        const w = make();
+        const asked: string[][] = [];
+        w.host.knownMessageLines = (messages) => {
+            asked.push([...messages]);
+            return [known, known, known, known];
+        };
+        const first = failBuild(w).job;
+        await until(() => w.children.length === 1, 'cbuild was spawned');
+        w.children[0].finish(1, GCC_LOG);
+        const text = (await diagnosed(w, first.id)).diagnosis?.text ?? '';
+        assert.ok(text.endsWith(`get_build_diagnostics reads it).\n${known}\n${known}\n${known}`), text);
+        assert.strictEqual(asked[0][0], '\'ledx\' undeclared (first use in this function)');
+
+        w.host.knownMessageLines = () => { throw new Error('index gone'); };
+        const second = failBuild(w).job;
+        await until(() => w.children.length === 2, 'cbuild was spawned again');
+        w.children[1].finish(1, GCC_LOG);
+        assert.ok((await diagnosed(w, second.id)).diagnosis?.text.endsWith('get_build_diagnostics reads it).'));
+    });
+
     test('a failed build is re-run once with --log and without --packs, and its log gives the lines', async () => {
         const w = make();
         const { job } = failBuild(w);

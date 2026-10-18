@@ -800,10 +800,13 @@ export class AgentConfigurationManager {
         if (!catalog) {
             return null;
         }
+        // The catalog marks the one skill installed (cmsis-help); every other procedure is a unit of the knowledge
+        // index. The installer's sweep removes what an earlier version installed.
         const wanted = installSet(catalog);
         const roots = skillRoots();
         const report = await this.installer.sync(roots, catalog, wanted.visible, wanted.hidden);
-        logger.info(`Skill install (${reason}) into ${roots.install.map(shortenHome).join(', ')}: ${summarizeSkillSync(report)}; `
+        logger.info(`Skill install (${reason}) into `
+            + `${roots.install.map(shortenHome).join(', ')}: ${summarizeSkillSync(report)}; `
             + `visible [${wanted.visible.join(', ')}], hidden [${wanted.hidden.join(', ')}]`);
         for (const failed of report.failed) {
             logger.warn(`Skill ${failed.name ?? '(root)'} in ${failed.root} failed: ${failed.error}`);

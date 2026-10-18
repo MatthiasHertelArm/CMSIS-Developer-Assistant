@@ -401,7 +401,8 @@ async function main() {
     const REMINDER = 'Tool rules: board, build, serial and documentation work goes through these tools, not the shell '
         + '(see the server instructions).';
     check('the first get_session_status of the session repeats the tool rules before its stats',
-        statusText.includes(`\n\n${REMINDER}\n\nTool stats (this session):`), statusText.split('\n').slice(-4).join(' | '));
+        statusText.includes(`\n\n${REMINDER} Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session):`),
+        statusText.split('\n').slice(-4).join(' | '));
     const again = await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
@@ -652,16 +653,18 @@ async function main() {
     const fnames = new Set(ftools.map((t) => t.name));
     const PACKDOCS_TOOLS = ['list_target_docs', 'search_target_docs', 'read_doc_pages', 'fetch_doc', 'get_peripheral_docs',
         'list_build_artifacts', 'get_memory_usage', 'lookup_symbol', 'get_section_layout', 'get_build_diagnostics'];
-    check('packDocs/buildInfo enabled adds exactly the ten documentation and build-artefact tools',
-        PACKDOCS_TOOLS.every((n) => fnames.has(n)) && ftools.length === tools.length + PACKDOCS_TOOLS.length,
+    check('packDocs/buildInfo enabled adds exactly the ten documentation and build-artefact tools and the three knowledge tools',
+        PACKDOCS_TOOLS.every((n) => fnames.has(n)) && ftools.length === tools.length + PACKDOCS_TOOLS.length + 3,
         `${ftools.length} tools`);
     check('the default list carries none of them', PACKDOCS_TOOLS.every((n) => !names.includes(n)));
     // Budget for the everything-on list; the default list keeps its own above.
     // 55 tools measured 40 644 bytes in 2.5.0: the ten documentation and
     // build-artefact tools cost ~11.7 kB, most of it the per-tool
     // target/pack/device/board arguments. Raised from 42 000 for the 2.5.1
-    // additions. A regression must be attributable to one tool, hence the cap.
-    const TOOLS_LIST_ALL_BUDGET_BYTES = 44_000;
+    // additions. Raised from 44 000 for the knowledge tools, which are on in
+    // every session (45 243 measured, before any trimming). A regression must be
+    // attributable to one tool, hence the cap.
+    const TOOLS_LIST_ALL_BUDGET_BYTES = 46_000;
     const ftoolsBytes = Buffer.byteLength(JSON.stringify(ftools));
     check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES} byte budget`,
         ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES, `${ftoolsBytes} bytes`);
@@ -683,6 +686,51 @@ async function main() {
         !lbuild.error && /cbuild-run|build/i.test(lbuild.text), lbuild.text.split('\n')[0]);
     await request(fport, 'DELETE', { 'mcp-session-id': fsid });
     await full.stop();
+
+    // 10. The experimental knowledge tools: in neither list above, and three
+    //     tools more through their own gate. Without an index they fail with
+    //     the setting to fill in.
+    const { KnowledgeHandler } = require(path.join(OUT, 'knowledgeHandler.js'));
+    const knowledgeDispatch = localPackDocsDispatch({
+        docs: new PackDocsHandler(docsHost, { timeoutMs: 30_000 }),
+        build: new BuildInfoHandler(buildHost, { timeoutMs: 30_000 }),
+        knowledge: new KnowledgeHandler(
+            { indexPath: () => undefined, includeIncomplete: () => false, packRoot: async () => undefined, workspaceFolders: () => [], projectFacts: async () => ({}), log: silentLog }, { timeoutMs: 30_000 }),
+    });
+    const withKnowledge = new DebugMCPServer(0, 30, undefined, () => ({ debug, serial: localSerialDispatch, packDocs: knowledgeDispatch }),
+        {});
+    await withKnowledge.initialize();
+    await withKnowledge.start();
+    const kport = withKnowledge.getActualPort();
+    const kinit = await request(kport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const ksid = kinit.headers['mcp-session-id'];
+    // The knowledge index is mandatory: every session with a documentation dispatch names the tools in its instructions.
+    check('the server instructions name the knowledge tools in every session',
+        /knowledge_search/.test(parseSse(kinit.body)?.result?.instructions ?? '') && /knowledge_search/.test(instructions) && /knowledge_search/.test(finstructions));
+    await request(kport, 'POST', { 'mcp-session-id': ksid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const klist = await request(kport, 'POST', { 'mcp-session-id': ksid }, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    const ktools = parseSse(klist.body)?.result?.tools ?? [];
+    const KNOWLEDGE_TOOLS = ['knowledge_search', 'knowledge_get', 'knowledge_expand'];
+    check('knowledge enabled adds exactly the three knowledge tools',
+        KNOWLEDGE_TOOLS.every((n) => ktools.some((t) => t.name === n)) && ktools.length === tools.length + KNOWLEDGE_TOOLS.length, `${ktools.length} tools`);
+    check('without a documentation dispatch the default list has no knowledge tools', KNOWLEDGE_TOOLS.every((n) => !names.includes(n)));
+    check('with the documentation dispatch every group on offers them', KNOWLEDGE_TOOLS.every((n) => fnames.has(n)));
+    // What the three tools add to every turn of a session that has them.
+    const KNOWLEDGE_TOOLS_BUDGET_BYTES = 2_000;
+    const knowledgeBytes = Buffer.byteLength(JSON.stringify(ktools)) - toolsBytes;
+    check(`the knowledge tools add at most ${KNOWLEDGE_TOOLS_BUDGET_BYTES} bytes to tools/list`,
+        knowledgeBytes > 0 && knowledgeBytes <= KNOWLEDGE_TOOLS_BUDGET_BYTES, `${knowledgeBytes} bytes`);
+    const ksearch = parseSse((await request(kport, 'POST', { 'mcp-session-id': ksid }, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'knowledge_search', arguments: { query: 'M302' } },
+    })).body);
+    const ksearchText = ksearch?.result?.content?.[0]?.text ?? '';
+    check('knowledge_search without an index fails with TOOL_DISABLED and names the setting',
+        ksearch?.result?.isError === true && /^\[TOOL_DISABLED\]/.test(ksearchText) && /knowledge\.indexPath/.test(ksearchText), ksearchText.split('\n')[0]);
+    await request(kport, 'DELETE', { 'mcp-session-id': ksid });
+    await withKnowledge.stop();
     fs.rmSync(docsDir, { recursive: true, force: true });
 
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

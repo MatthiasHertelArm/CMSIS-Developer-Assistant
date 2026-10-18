@@ -48,7 +48,7 @@ interface ToolEvent {
     data?: { toolName?: string; arguments?: { skill?: string } };
 }
 
-const SKILL = 'cmsis-debug-live';
+const SKILL = 'cmsis-help';
 const DEFAULT_PROMPT = 'The firmware HardFaults a few seconds after boot. adc_buffer[0] reads 0 on the board but has the right value on the FVP. Find out why.';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
