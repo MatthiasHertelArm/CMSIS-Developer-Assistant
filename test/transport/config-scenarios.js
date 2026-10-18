@@ -1734,22 +1734,43 @@ function agentScenarios() {
             extensionPath: '<w>/extension-without-contract', ui: { agents: ['Claude Code'] },
             run: async (h) => { const m = h.manager(); await m.runSetupFlow(); return { shouldShowPopupAfter: await m.shouldShowPopup() }; },
         },
-        {
-            id: 'agents/rules-refresh', about: 'activation: a recorded stale block is updated in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left',
-            folders: [{ name: 'wsA' }],
-            seed: () => ({
+        ...(() => {
+            const seed = () => ({
                 'home/.codex/AGENTS.md': `# Before\r\n\r\n${rulesBlock(OLDER_RULES, '\r\n')}\r\n\r\n# After\r\n`,
                 'home/.claude/CLAUDE.md': `${rulesBlock()}\n`,
                 'wsA/AGENTS.md': '# The user took the block out\n',
                 'home/.gemini/AGENTS.md': `${rulesBlock(OLDER_RULES)}\n`,
-            }),
-            state: (w) => ({
+            });
+            const records = (w) => ({
                 [RULES_KEY]: ['home/.codex/AGENTS.md', 'home/.claude/CLAUDE.md', 'wsA/AGENTS.md', 'home/.copilot/copilot-instructions.md'].map((rel) => ({
                     file: path.join(w.root, rel), scope: rel.startsWith('home/') ? 'user' : 'workspace', form: 'block', agents: ['codex'], created: false, createdDirs: [],
                 })),
-            }),
-            run: async (h) => { await h.manager().refreshAgentRules(); },
-        },
+            });
+            const refresh = { folders: [{ name: 'wsA' }], seed, run: async (h) => { await h.manager().refreshAgentRules(); } };
+            return [
+                {
+                    ...refresh, id: 'agents/rules-refresh',
+                    about: 'activation: Review, then Write updates a recorded stale block in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left',
+                    state: (w) => ({ ...popupDone, ...records(w) }), ui: { message: 0 },
+                },
+                {
+                    ...refresh, id: 'agents/rules-refresh-not-now',
+                    about: 'activation: Not Now writes nothing; the offer is not repeated for the same rules',
+                    state: (w) => ({ ...popupDone, ...records(w) }), ui: { message: 1 },
+                    run: async (h) => { const m = h.manager(); await m.refreshAgentRules(); await m.refreshAgentRules(); },
+                },
+                {
+                    ...refresh, id: 'agents/rules-refresh-declined',
+                    about: 'activation: Review, then the preview declined: the stale block stays',
+                    state: (w) => ({ ...popupDone, ...records(w) }), ui: { message: seq(0, undefined) },
+                },
+                {
+                    ...refresh, id: 'agents/rules-refresh-setup-due',
+                    about: 'activation while the setup is due: no offer, the setup step offers the update',
+                    state: records, ui: { message: 0 },
+                },
+            ];
+        })(),
         {
             id: 'agents/rules-refresh-never', about: 'agentRules.install "never": activation leaves a recorded stale block alone',
             seed: () => ({ 'home/.codex/AGENTS.md': `${rulesBlock(OLDER_RULES)}\n` }),

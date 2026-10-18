@@ -5916,6 +5916,11 @@
           "ev": "globalState",
           "key": "cmsis-developer-assistant.skillsPrompt.lastShownAt",
           "value": "<undefined>"
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.updateOffered",
+          "value": "<undefined>"
         }
       ],
       "result": {
@@ -8755,13 +8760,341 @@
     },
     {
       "id": "agents/rules-refresh",
-      "about": "activation: a recorded stale block is updated in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left",
+      "about": "activation: Review, then Write updates a recorded stale block in place (CRLF kept); a missing file and a deleted block are forgotten, not recreated; an unrecorded file is left",
       "events": [
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.codex/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/home/.claude/CLAUDE.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.updateOffered",
+          "value": "a81a462222ac9ec62c64b8eb48fa9ca54422b664a4e4ed8c027d7fd9f8d46267"
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: this release changes the tool rules it wrote to ~/.codex/AGENTS.md. Review the update? Configure Agent offers it later too.",
+          "items": [
+            "Review",
+            "Not Now"
+          ],
+          "answer": "Review"
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/home/.codex/AGENTS.md>",
+            "<uri cmsis-developer-assistant-rules:/1/AGENTS.md>",
+            "AGENTS.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "# Before\r\n\r\n<!-- cmsis-developer-assistant:rules:begin -->\r\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\r\n## CMSIS Developer Assistant tool rules\r\n\r\n- An older rule.\r\n<!-- cmsis-developer-assistant:rules:end -->\r\n\r\n# After\r\n",
+            "# Before\r\n\r\n<!-- cmsis-developer-assistant:rules:begin -->\r\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\r\n## CMSIS Developer Assistant tool rules\r\n\r\n- Fixture rule one.\r\n- Fixture rule two.\r\n<!-- cmsis-developer-assistant:rules:end -->\r\n\r\n# After\r\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Update the CMSIS Developer Assistant tool rules in ~/.codex/AGENTS.md?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Codex. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
         {
           "ev": "write",
           "path": "<w>/home/.codex/AGENTS.md",
           "atomic": true
         },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.claude/CLAUDE.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/home/.codex/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: the tool rules were written to 1 file(s)."
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v5": true,
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/home/.claude/CLAUDE.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          },
+          {
+            "file": "<w>/home/.codex/AGENTS.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          }
+        ],
+        "cmsis-developer-assistant.agentRules.updateOffered": "a81a462222ac9ec62c64b8eb48fa9ca54422b664a4e4ed8c027d7fd9f8d46267"
+      },
+      "files": {
+        "home/.claude/CLAUDE.md": "<unchanged seed>",
+        "home/.codex/AGENTS.md": "# Before\r\n\r\n<!-- cmsis-developer-assistant:rules:begin -->\r\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\r\n## CMSIS Developer Assistant tool rules\r\n\r\n- Fixture rule one.\r\n- Fixture rule two.\r\n<!-- cmsis-developer-assistant:rules:end -->\r\n\r\n# After\r\n",
+        "home/.gemini/AGENTS.md": "<unchanged seed>",
+        "wsA/AGENTS.md": "<unchanged seed>"
+      }
+    },
+    {
+      "id": "agents/rules-refresh-not-now",
+      "about": "activation: Not Now writes nothing; the offer is not repeated for the same rules",
+      "events": [
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.codex/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/home/.claude/CLAUDE.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.updateOffered",
+          "value": "a81a462222ac9ec62c64b8eb48fa9ca54422b664a4e4ed8c027d7fd9f8d46267"
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: this release changes the tool rules it wrote to ~/.codex/AGENTS.md. Review the update? Configure Agent offers it later too.",
+          "items": [
+            "Review",
+            "Not Now"
+          ],
+          "answer": "Not Now"
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v5": true,
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/home/.codex/AGENTS.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          },
+          {
+            "file": "<w>/home/.claude/CLAUDE.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          }
+        ],
+        "cmsis-developer-assistant.agentRules.updateOffered": "a81a462222ac9ec62c64b8eb48fa9ca54422b664a4e4ed8c027d7fd9f8d46267"
+      },
+      "files": {
+        "home/.claude/CLAUDE.md": "<unchanged seed>",
+        "home/.codex/AGENTS.md": "<unchanged seed>",
+        "home/.gemini/AGENTS.md": "<unchanged seed>",
+        "wsA/AGENTS.md": "<unchanged seed>"
+      }
+    },
+    {
+      "id": "agents/rules-refresh-declined",
+      "about": "activation: Review, then the preview declined: the stale block stays",
+      "events": [
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/home/.codex/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            },
+            {
+              "file": "<w>/home/.claude/CLAUDE.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "codex"
+              ],
+              "created": false,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.updateOffered",
+          "value": "a81a462222ac9ec62c64b8eb48fa9ca54422b664a4e4ed8c027d7fd9f8d46267"
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: this release changes the tool rules it wrote to ~/.codex/AGENTS.md. Review the update? Configure Agent offers it later too.",
+          "items": [
+            "Review",
+            "Not Now"
+          ],
+          "answer": "Review"
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri file://<w>/home/.codex/AGENTS.md>",
+            "<uri cmsis-developer-assistant-rules:/1/AGENTS.md>",
+            "AGENTS.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "# Before\r\n\r\n<!-- cmsis-developer-assistant:rules:begin -->\r\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\r\n## CMSIS Developer Assistant tool rules\r\n\r\n- An older rule.\r\n<!-- cmsis-developer-assistant:rules:end -->\r\n\r\n# After\r\n",
+            "# Before\r\n\r\n<!-- cmsis-developer-assistant:rules:begin -->\r\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\r\n## CMSIS Developer Assistant tool rules\r\n\r\n- Fixture rule one.\r\n- Fixture rule two.\r\n<!-- cmsis-developer-assistant:rules:end -->\r\n\r\n# After\r\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Update the CMSIS Developer Assistant tool rules in ~/.codex/AGENTS.md?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Codex. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "<dismissed>"
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v5": true,
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/home/.codex/AGENTS.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          },
+          {
+            "file": "<w>/home/.claude/CLAUDE.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "codex"
+            ],
+            "created": false,
+            "createdDirs": []
+          }
+        ],
+        "cmsis-developer-assistant.agentRules.updateOffered": "a81a462222ac9ec62c64b8eb48fa9ca54422b664a4e4ed8c027d7fd9f8d46267"
+      },
+      "files": {
+        "home/.claude/CLAUDE.md": "<unchanged seed>",
+        "home/.codex/AGENTS.md": "<unchanged seed>",
+        "home/.gemini/AGENTS.md": "<unchanged seed>",
+        "wsA/AGENTS.md": "<unchanged seed>"
+      }
+    },
+    {
+      "id": "agents/rules-refresh-setup-due",
+      "about": "activation while the setup is due: no offer, the setup step offers the update",
+      "events": [
         {
           "ev": "globalState",
           "key": "cmsis-developer-assistant.agentRules.files",
@@ -8815,7 +9148,7 @@
       },
       "files": {
         "home/.claude/CLAUDE.md": "<unchanged seed>",
-        "home/.codex/AGENTS.md": "# Before\r\n\r\n<!-- cmsis-developer-assistant:rules:begin -->\r\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\r\n## CMSIS Developer Assistant tool rules\r\n\r\n- Fixture rule one.\r\n- Fixture rule two.\r\n<!-- cmsis-developer-assistant:rules:end -->\r\n\r\n# After\r\n",
+        "home/.codex/AGENTS.md": "<unchanged seed>",
         "home/.gemini/AGENTS.md": "<unchanged seed>",
         "wsA/AGENTS.md": "<unchanged seed>"
       }
@@ -10942,11 +11275,6 @@
           "args": []
         },
         {
-          "ev": "settled",
-          "fn": "manager.refreshAgentRules",
-          "value": "<undefined>"
-        },
-        {
           "ev": "subscribe",
           "event": "workspace.onDidChangeConfiguration"
         },
@@ -10969,6 +11297,11 @@
         {
           "ev": "setTimeout",
           "ms": 2000
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
         },
         {
           "ev": "step",
@@ -11303,6 +11636,11 @@
         {
           "ev": "globalState",
           "key": "cmsis-developer-assistant.skillsPrompt.lastShownAt",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.updateOffered",
           "value": "<undefined>"
         },
         {
@@ -11893,11 +12231,6 @@
           "args": []
         },
         {
-          "ev": "settled",
-          "fn": "manager.refreshAgentRules",
-          "value": "<undefined>"
-        },
-        {
           "ev": "subscribe",
           "event": "workspace.onDidChangeConfiguration"
         },
@@ -11920,6 +12253,11 @@
         {
           "ev": "setTimeout",
           "ms": 2000
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
         },
         {
           "ev": "step",
@@ -12347,11 +12685,6 @@
           "args": []
         },
         {
-          "ev": "settled",
-          "fn": "manager.refreshAgentRules",
-          "value": "<undefined>"
-        },
-        {
           "ev": "subscribe",
           "event": "workspace.onDidChangeConfiguration"
         },
@@ -12374,6 +12707,11 @@
         {
           "ev": "setTimeout",
           "ms": 2000
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
         },
         {
           "ev": "step",
@@ -13054,11 +13392,6 @@
           "args": []
         },
         {
-          "ev": "settled",
-          "fn": "manager.refreshAgentRules",
-          "value": "<undefined>"
-        },
-        {
           "ev": "subscribe",
           "event": "workspace.onDidChangeConfiguration"
         },
@@ -13081,6 +13414,11 @@
         {
           "ev": "setTimeout",
           "ms": 2000
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
         },
         {
           "ev": "step",

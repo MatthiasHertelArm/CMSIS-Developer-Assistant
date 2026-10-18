@@ -308,11 +308,10 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
         } catch (failure) {
             logger.error('Migrating the agent configurations failed', failure);
         }
-        try {
-            await manager.refreshAgentRules();
-        } catch (failure) {
+        // Not awaited: an outdated rules block waits for the user's answer to a toast.
+        void manager.refreshAgentRules().catch((failure: unknown) => {
             logger.error('Updating the tool rules in the agents\' rule files failed', failure);
-        }
+        });
     }
 
     extensionContext.subscriptions.push(
