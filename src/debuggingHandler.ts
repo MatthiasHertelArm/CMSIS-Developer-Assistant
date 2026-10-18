@@ -1536,8 +1536,8 @@ export class DebuggingHandler
         return this.fence('read_memory', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read memory');
             const format = args.format ?? 'hex';
-            const bytes = await this.dbg.readMemory(args.address, args.length, args.timeoutMs);
-            return renderMemoryDump(args.address, args.length, bytes, format);
+            const read = await this.dbg.readMemory(args.address, args.length, args.timeoutMs);
+            return renderMemoryDump(args.address, args.length, read, format);
         });
     }
 

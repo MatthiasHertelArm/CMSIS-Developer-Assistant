@@ -211,7 +211,9 @@ target runs.
   registers `KEY` or `UNLOCK`. On the CMSIS Debugger the executor sends such
   a command in the adapter's `>` prefix and returns the text GDB printed.
 - The memory dump, the core-register table and the cycle-counter text come
-  from `src/handler/targetText.ts`.
+  from `src/handler/targetText.ts`. A dump labels its rows from the first
+  byte the read returned and, when part of the range could not be read,
+  says how much was read and which part was not.
 - `diagnose_fault` combines the decoded fault registers, the stacked
   exception frame chosen by `EXC_RETURN`, the top of the call stack and the
   SVD's view of the faulting address into one report with ranked hypotheses

@@ -67,12 +67,12 @@ import {
     sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
 } from './executor/common';
 import {
-    AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome,
-    RestartOutcome, SessionStatus,
+    AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, MemoryRead,
+    ResetOutcome, RestartOutcome, SessionStatus,
 } from './executor/contract';
 import { GdbReply, runGdbCommand } from './executor/gdbCommand';
 import {
-    attemptsOf, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
+    attemptsOf, bytesInRange, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
 } from './executor/gdbMemory';
 import type { DebugPortProbe, ReadAttempt } from './core/probeWedge';
 import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession } from './executor/sessionReports';
@@ -82,7 +82,7 @@ import { performReset, programCounterFrom } from './executor/targetReset';
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
 export type {
     BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, GdbLogpoint, GdbReply, HardwareTimeouts, IDebuggingExecutor,
-    ResetOutcome, RestartOutcome, SessionState, SessionStatus,
+    MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus,
 } from './executor/contract';
 
 /** The version the MCP server, the server definition and the HTTP user agent report. Equals package.json. */
@@ -586,7 +586,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     // ── Memory ─────────────────────────────────────────────────────────
 
-    async readMemory(address: string, length: number, overrideMs?: number): Promise<Buffer> {
+    async readMemory(address: string, length: number, overrideMs?: number): Promise<MemoryRead> {
         const session = sessionOrThrow();
         const start = withHexPrefix(address);
         try {
@@ -601,18 +601,19 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * `readMemory`, then the GDB ladder word by word. A failure carries the
      * cause of every strategy.
      */
-    private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<Buffer> {
+    private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<MemoryRead> {
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readMemory', this.budgets.operation(overrideMs), async () => {
             const attempts: ReadAttempt[] = [];
             try {
                 const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
                     { memoryReference: start, count: length }, budgetMs);
-                if (reply?.data) {
-                    // Returned as it came, even when shorter than asked (KB9).
-                    return Buffer.from(reply.data, 'base64');
+                // Where the reply says its bytes begin, even when that is later or they end sooner than asked (KB9).
+                const read = bytesInRange(reply, BigInt(start), length);
+                if (typeof read !== 'string') {
+                    return read;
                 }
-                attempts.push({ strategy: 'DAP readMemory', cause: 'no data in the reply' });
+                attempts.push({ strategy: 'DAP readMemory', cause: read });
             } catch (err) {
                 if (err instanceof HardwareTimeoutError) {
                     throw err;
@@ -620,7 +621,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 attempts.push({ strategy: 'DAP readMemory', cause: messageOf(err) });
             }
             try {
-                return await this.readWordsThroughGdb(session, start, length, budgetMs);
+                return { bytes: await this.readWordsThroughGdb(session, start, length, budgetMs), offset: 0 };
             } catch (err) {
                 throw withEarlierAttempts(err, attempts);
             }
@@ -705,7 +706,9 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     async readExceptionFrame(stackPointer: number, overrideMs?: number): Promise<Buffer> {
         // The request budget becomes the nested read's override, so it also bounds that read's fence.
-        return this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, EXCEPTION_FRAME_BYTES, this.budgets.request(overrideMs));
+        const read = await this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, EXCEPTION_FRAME_BYTES, this.budgets.request(overrideMs));
+        // Bytes that begin after the stack pointer are not the frame.
+        return read.offset === 0 ? read.bytes : Buffer.alloc(0);
     }
 
     // ── Core registers, DWT, peripherals, fault status ─────────────────
@@ -788,8 +791,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 try {
                     // The request budget is the nested read's override, fence included (KB10).
                     const block = await this.readMemoryOnce(session, FAULT_REGISTER_BLOCK.address, FAULT_REGISTER_BLOCK.bytes, budgetMs);
-                    if (block.length >= FAULT_REGISTER_BLOCK.bytes) {
-                        return faultRegistersFromBlock(block);
+                    if (block.offset === 0 && block.bytes.length >= FAULT_REGISTER_BLOCK.bytes) {
+                        return faultRegistersFromBlock(block.bytes);
                     }
                 } catch (err) {
                     if (err instanceof HardwareTimeoutError) {

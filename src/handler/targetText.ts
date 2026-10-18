@@ -25,6 +25,8 @@
  * numeric ones to one hex form. Pure: no `vscode` import.
  */
 
+import type { MemoryRead } from '../executor/contract';
+
 /** Rows of the general-purpose register table, four cells each. */
 const GENERAL_ROWS: readonly (readonly string[])[] = [
     ['r0', 'r1', 'r2', 'r3'],
@@ -97,22 +99,32 @@ export function renderCoreRegisters(registers: Record<string, string>): string {
 
 const hexByte = (byte: number): string => byte.toString(16).padStart(2, '0');
 
+/** An address as the dump labels its rows: `0x` and at least eight lower-case hex digits. */
+const dumpAddress = (address: bigint): string => `0x${address.toString(16).padStart(8, '0')}`;
+
 /**
- * The `read_memory` dump. The header states the requested length and the
- * address is parsed only here, after the read, and always as hex — so a
- * decimal address is shown as a different hex address and a malformed one
- * fails with BigInt's own error (KB13).
+ * The `read_memory` dump. The header states the requested range: the
+ * address as given, always taken as hex — so a decimal address is shown as a
+ * different hex address and a malformed one fails with BigInt's own error —
+ * and the requested length (KB13). The rows are labelled from the first byte
+ * the read returned; when part of the range could not be read, the line
+ * after the header says how much was read and which part was not.
  */
-export function renderMemoryDump(addressText: string, length: number, bytes: Buffer, format: string): string {
+export function renderMemoryDump(addressText: string, length: number, read: MemoryRead, format: string): string {
     const prefixed = /^0x/i.test(addressText) ? addressText : `0x${addressText}`;
     const base = BigInt(prefixed);
+    const { bytes, offset } = read;
     let text = `Memory at ${prefixed} (${length} bytes):\n`;
+    const unread = unreadRanges(base, length, offset, bytes.length);
+    if (unread.length > 0) {
+        text += `Read ${bytes.length} of ${length} bytes: ${unread.join(' and ')} could not be read.\n`;
+    }
     if (format === 'hex' || format === 'both') {
         text += '\nHex:\n';
-        for (let offset = 0; offset < bytes.length; offset += HEX_ROW_BYTES) {
-            const rowAddress = (base + BigInt(offset)).toString(16).padStart(8, '0');
-            const row = Array.from(bytes.subarray(offset, offset + HEX_ROW_BYTES), hexByte).join(' ');
-            text += `  0x${rowAddress}: ${row}\n`;
+        const first = base + BigInt(offset);
+        for (let at = 0; at < bytes.length; at += HEX_ROW_BYTES) {
+            const row = Array.from(bytes.subarray(at, at + HEX_ROW_BYTES), hexByte).join(' ');
+            text += `  ${dumpAddress(first + BigInt(at))}: ${row}\n`;
         }
     }
     if (format === 'ascii' || format === 'both') {
@@ -126,6 +138,19 @@ export function renderMemoryDump(addressText: string, length: number, bytes: Buf
         text += `\nASCII:\n  ${printable}\n`;
     }
     return text;
+}
+
+/** The parts of the `length` bytes from `base` that a read of `count` bytes at `offset` did not return, first and last address. */
+function unreadRanges(base: bigint, length: number, offset: number, count: number): string[] {
+    const span = (from: number, to: number): string => `${dumpAddress(base + BigInt(from))}–${dumpAddress(base + BigInt(to - 1))}`;
+    const ranges: string[] = [];
+    if (offset > 0) {
+        ranges.push(span(0, offset));
+    }
+    if (offset + count < length) {
+        ranges.push(span(offset + count, length));
+    }
+    return ranges;
 }
 
 /** What `readCycleCounter` reports. */

@@ -522,7 +522,10 @@ class FakeTarget {
             return Promise.reject(new Error(err.message));
         }
         if (command === 'evaluate') { log[at] = `${line} -> ${JSON.stringify(body.result)}`; }
-        if (command === 'readMemory' && body?.data) { log[at] = `${line} -> ${Buffer.from(body.data, 'base64').length} bytes`; }
+        if (command === 'readMemory' && body?.data) {
+            const late = body.address !== hex(Number(args.memoryReference) + (args.offset ?? 0)) ? ` from ${body.address}` : '';
+            log[at] = `${line} -> ${Buffer.from(body.data, 'base64').length} bytes${late}`;
+        }
         this.tracker?.send({ type: 'response', command, success: true, body });
         return Promise.resolve(body);
     }
@@ -569,6 +572,18 @@ class FakeTarget {
             out.push(this.byteAt(a));
         }
         return Buffer.from(out);
+    }
+    /** What GDB's -data-read-memory-bytes reads of a range: one block per readable stretch, each where it begins. */
+    readableBlocks(addr, count) {
+        const blocks = [];
+        let block = null;
+        for (let i = 0; i < count; i++) {
+            const a = (addr + i) >>> 0;
+            if (!this.readable(a)) { block = null; continue; }
+            if (!block) { block = { begin: a, bytes: [] }; blocks.push(block); }
+            block.bytes.push(this.byteAt(a));
+        }
+        return blocks.map((b) => ({ begin: b.begin, bytes: Buffer.from(b.bytes) }));
     }
     writeBytes(addr, buf) {
         for (let i = 0; i < buf.length; i++) {
@@ -654,9 +669,10 @@ class FakeTarget {
                 const addr = Number(args.memoryReference) + (args.offset ?? 0);
                 if (this.state !== 'stopped') { throw new Error(`${RUNNING_MSG} (@ ${hex(addr)})`); }
                 if (!args.count) { return undefined; }
-                const buf = this.readBytes(addr, args.count);
-                if (!buf) { throw new Error(`Unable to read memory. (@ ${hex(addr)})`); }
-                return { data: buf.toString('base64'), address: hex(addr) };
+                // cdt-gdb-adapter answers with GDB's first block and its begin, later than asked when the range starts in a hole.
+                const [block] = this.readableBlocks(addr, args.count);
+                if (!block) { throw new Error(`Unable to read memory. (@ ${hex(addr)})`); }
+                return { data: block.bytes.toString('base64'), address: hex(block.begin) };
             }
             case 'writeMemory': {
                 if (this.state !== 'stopped') { throw new Error(RUNNING_MSG); }
@@ -695,9 +711,14 @@ class FakeTarget {
             case '-data-read-memory-bytes': {
                 const addr = Number(args[0]);
                 const count = Number(args[1]);
-                const buf = this.readBytes(addr, count);
-                if (!buf) { throw new Error('Unable to read memory.'); }
-                return done({ memory: [{ begin: hex(addr), offset: '0x00000000', end: hex(addr + count), contents: buf.toString('hex') }] });
+                const blocks = this.readableBlocks(addr, count);
+                if (blocks.length === 0) { throw new Error('Unable to read memory.'); }
+                return done({
+                    memory: blocks.map((b) => ({
+                        begin: hex(b.begin), offset: `0x${(b.begin - addr).toString(16).padStart(8, '0')}`,
+                        end: hex(b.begin + b.bytes.length), contents: b.bytes.toString('hex'),
+                    })),
+                });
             }
             case '-dprintf-insert': {
                 // Options (-t, -f, -d, -c COND, -i N, -p THREAD) come before the location.
@@ -1148,13 +1169,16 @@ const SCENARIOS = [
     },
     {
         name: 'read-memory',
-        description: 'Halted: DAP readMemory in hex / ascii / both, an address without 0x, and an unmapped address where readMemory fails and every GDB fallback fails too.',
+        description: 'Halted: DAP readMemory in hex / ascii / both, an address without 0x, an unmapped address where readMemory fails and every GDB fallback fails too, '
+            + 'and ranges across the start and the end of SRAM: the adapter returns the mapped part from where it begins, and the dump says which part could not be read.',
         session: { initial: { at: 'main31', reason: 'breakpoint' } },
         calls: [
             { tool: 'read_memory', args: { address: '0x20000000', length: 16 } },
             { tool: 'read_memory', args: { address: '20000000', length: 20, format: 'ascii' } },
             { tool: 'read_memory', args: { address: '0x20000000', length: 70, format: 'both' } },
             { tool: 'read_memory', args: { address: '0x60000000', length: 8 } },
+            { tool: 'read_memory', args: { address: '0x1FFFFFF0', length: 64, format: 'both' } },
+            { tool: 'read_memory', args: { address: '0x20017FF0', length: 64 } },
         ],
     },
     {

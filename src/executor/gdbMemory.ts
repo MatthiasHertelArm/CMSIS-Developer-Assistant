@@ -15,9 +15,10 @@
  */
 
 /**
- * Memory helpers of the executor: how addresses are spelled, how one 32-bit
- * word is read through GDB when the adapter's `readMemory` request fails,
- * and what a failed read means (#3).
+ * Memory helpers of the executor: how addresses are spelled, where the bytes
+ * of a DAP `readMemory` reply lie, how one 32-bit word is read through GDB
+ * when the adapter's `readMemory` request fails, and what a failed read
+ * means (#3).
  *
  * The word read tries evaluate requests in turn and keeps the first answer it
  * can parse: a watch expression that dereferences the address, then raw GDB
@@ -42,10 +43,42 @@ import { bytesFromMiMemoryReply, CMSIS_DEBUGGER_TYPE, miReadMemoryCommand } from
 import { attemptsText, CANARY_MS, classifyReadFailure, DebugPortProbe, DHCSR_ADDRESS, ReadAttempt } from '../core/probeWedge';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout';
 import { EvaluateBody, FrameArg, messageOf, ReadMemoryBody } from './common';
+import type { MemoryRead } from './contract';
 
 /** An address written without `0x` gets it; anything else is used verbatim (no case change, no padding). */
 export function withHexPrefix(address: string): string {
     return /^0x/i.test(address) ? address : `0x${address}`;
+}
+
+/** The address of a DAP `readMemory` reply: hex after `0x`, decimal otherwise. */
+const REPLY_ADDRESS = /^(?:0x[0-9a-f]+|[0-9]+)$/i;
+
+/**
+ * The part of a DAP `readMemory` reply that lies in the `count` bytes from
+ * `first`, and how far after `first` it begins. The reply's `address` is
+ * that of its first byte (DAP). cdt-gdb-adapter sets it to where GDB's first
+ * readable block begins, which is later than asked when the start of the
+ * range cannot be read. A reply without an address begins at `first`;
+ * `unreadableBytes` counts bytes after the data and moves nothing. A string
+ * says why the reply holds no byte of the range.
+ */
+export function bytesInRange(reply: ReadMemoryBody | undefined, first: bigint, count: number): MemoryRead | string {
+    const data = reply?.data ? Buffer.from(reply.data, 'base64') : undefined;
+    if (!data || data.length === 0) {
+        return 'no data in the reply';
+    }
+    const spelled = String(reply?.address ?? '').trim();
+    if (spelled !== '' && !REPLY_ADDRESS.test(spelled)) {
+        return `the reply's address '${spelled}' is not a number`;
+    }
+    const begin = spelled === '' ? first : BigInt(spelled);
+    const end = first + BigInt(count);
+    const from = begin > first ? begin : first;
+    const to = begin + BigInt(data.length) < end ? begin + BigInt(data.length) : end;
+    if (to <= from) {
+        return `the reply's ${data.length} bytes at 0x${begin.toString(16)} lie outside the range`;
+    }
+    return { bytes: data.subarray(Number(from - begin), Number(to - begin)), offset: Number(from - first) };
 }
 
 /**

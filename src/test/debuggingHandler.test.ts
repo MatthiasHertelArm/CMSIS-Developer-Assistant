@@ -264,7 +264,7 @@ class ScriptedExecutor {
     };
     readMemory: IDebuggingExecutor['readMemory'] = async (address, length, ms) => {
         this.note('readMemory', address, length, ms);
-        return Buffer.alloc(length);
+        return { bytes: Buffer.alloc(length), offset: 0 };
     };
     readCycleCounter: IDebuggingExecutor['readCycleCounter'] = async () => ({ cycles: 0, enabledNow: false, present: true });
     readPeripheralRegister: IDebuggingExecutor['readPeripheralRegister'] = async () => 'peripheral text';
@@ -1491,20 +1491,36 @@ suite('DebuggingHandler', () => {
         test('memory dump: header, hex rows and ASCII block', async () => {
             const x = new ScriptedExecutor();
             const bytes = Buffer.from('Hello, Cortex-M!\x00\x01ab', 'latin1');
-            x.readMemory = async () => bytes;
+            x.readMemory = async () => ({ bytes, offset: 0 });
             const reply = await textAnswer(handlerFor(x).handleReadMemory({ address: '20000000', length: 20, format: 'both' }));
             assert.strictEqual(reply, 'Memory at 0x20000000 (20 bytes):\n'
                 + '\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 00 01 61 62\n'
                 + '\nASCII:\n  Hello, Cortex-M!..ab\n');
-            x.readMemory = async () => bytes.subarray(0, 4);
-            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x20000000', length: 20, format: 'hex' })),
-                'Memory at 0x20000000 (20 bytes):\n\nHex:\n  0x20000000: 48 65 6c 6c\n');
             await refusalOf(handlerFor(x).handleReadMemory({ address: 'zz', length: 4 }), 'INTERNAL');
+        });
+
+        test('a partial read labels its rows from the first byte read and names the part that could not be read', async () => {
+            const x = new ScriptedExecutor();
+            const bytes = Buffer.from('Hello, Cortex-M!\x00\x01ab', 'latin1');
+            x.readMemory = async () => ({ bytes: bytes.subarray(0, 4), offset: 0 });
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x20000000', length: 20, format: 'hex' })),
+                'Memory at 0x20000000 (20 bytes):\nRead 4 of 20 bytes: 0x20000004–0x20000013 could not be read.\n'
+                + '\nHex:\n  0x20000000: 48 65 6c 6c\n', 'the end of the range');
+            // cdt-gdb-adapter's reply when the range starts in a hole: GDB's first readable block, 16 bytes in.
+            x.readMemory = async () => ({ bytes, offset: 16 });
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x1FFFFFF0', length: 36, format: 'both' })),
+                'Memory at 0x1FFFFFF0 (36 bytes):\nRead 20 of 36 bytes: 0x1ffffff0–0x1fffffff could not be read.\n'
+                + '\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 00 01 61 62\n'
+                + '\nASCII:\n  Hello, Cortex-M!..ab\n', 'the start of the range');
+            x.readMemory = async () => ({ bytes: bytes.subarray(0, 16), offset: 16 });
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x1ffffff0', length: 64, format: 'ascii' })),
+                'Memory at 0x1ffffff0 (64 bytes):\nRead 16 of 64 bytes: 0x1ffffff0–0x1fffffff and 0x20000010–0x2000002f could not be read.\n'
+                + '\nASCII:\n  Hello, Cortex-M!\n', 'both ends');
         });
 
         test('a long ASCII block breaks after every 64 characters', async () => {
             const x = new ScriptedExecutor();
-            x.readMemory = async () => Buffer.alloc(70, 0x41);
+            x.readMemory = async () => ({ bytes: Buffer.alloc(70, 0x41), offset: 0 });
             assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x0', length: 70, format: 'ascii' })),
                 `Memory at 0x0 (70 bytes):\n\nASCII:\n  ${'A'.repeat(64)}\n  AAAAAA\n`);
         });

@@ -412,7 +412,7 @@
     },
     {
       "name": "read-memory",
-      "description": "Halted: DAP readMemory in hex / ascii / both, an address without 0x, and an unmapped address where readMemory fails and every GDB fallback fails too.",
+      "description": "Halted: DAP readMemory in hex / ascii / both, an address without 0x, an unmapped address where readMemory fails and every GDB fallback fails too, and ranges across the start and the end of SRAM: the adapter returns the mapped part from where it begins, and the dump says which part could not be read.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -471,6 +471,31 @@
             "dap: evaluate {\"expression\":\"*(unsigned int*)0x60000000\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
             "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0x60000000 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x1FFFFFF0",
+            "length": 64,
+            "format": "both"
+          },
+          "text": "Memory at 0x1FFFFFF0 (64 bytes):\nRead 48 of 64 bytes: 0x1ffffff0–0x1fffffff could not be read.\n\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 2a 00 00 00 55 41 52 54 32 20 72 65 61 64 79 0d\n  0x20000020: 0a 00 00 00 ef be ad de 54 68 65 20 71 75 69 63\n\nASCII:\n  Hello, Cortex-M!*...UART2 ready.........The quic\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x1FFFFFF0\",\"count\":64} -> 48 bytes from 0x20000000"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20017FF0",
+            "length": 64
+          },
+          "text": "Memory at 0x20017FF0 (64 bytes):\nRead 16 of 64 bytes: 0x20018000–0x2001802f could not be read.\n\nHex:\n  0x20017ff0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x20017FF0\",\"count\":64} -> 16 bytes"
           ]
         }
       ]

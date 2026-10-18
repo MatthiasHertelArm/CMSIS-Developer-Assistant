@@ -56,6 +56,8 @@ const never = () => new Promise(() => {});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const b64 = (bytes) => Buffer.from(bytes).toString('base64');
 const le = (w) => { const b = Buffer.alloc(4); b.writeUInt32LE(w >>> 0); return b; };
+/** What readMemory returned, as plain data: how far after the address its bytes begin, and the bytes. */
+const plain = (read) => ({ offset: read?.offset, bytes: read?.bytes ? [...read.bytes] : undefined });
 
 let seq = 0;
 const trackers = [];
@@ -571,9 +573,42 @@ async function main() {
         focusOn(session);
         const ex = new DebuggingExecutor();
         const buf = await ex.readMemory('20000000', 8);
-        check('M1 readMemory args', calls[0].json === '{"memoryReference":"0x20000000","count":8}' && eq([...buf], [1, 2, 3, 4, 5, 6, 7, 8]), calls[0].json);
+        check('M1 readMemory args', calls[0].json === '{"memoryReference":"0x20000000","count":8}' && eq(plain(buf), { offset: 0, bytes: [1, 2, 3, 4, 5, 6, 7, 8] }), calls[0].json);
         mem = () => ({ data: b64([1, 2, 3, 4]) });
-        check('M1 short reply returned', (await ex.readMemory('0X20000000', 8)).length === 4 && calls[1].json === '{"memoryReference":"0X20000000","count":8}');
+        check('M1 short reply returned', eq(plain(await ex.readMemory('0X20000000', 8)), { offset: 0, bytes: [1, 2, 3, 4] }) && calls[1].json === '{"memoryReference":"0X20000000","count":8}');
+    }
+    reset();
+    {
+        // The reply's address is that of its first byte (DAP). cdt-gdb-adapter answers with GDB's first
+        // readable block, which begins later than asked when the start of the range is in a hole.
+        let reply;
+        const { session, calls } = makeSession((c, a) => reply(c, a));
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        const sram = Array.from({ length: 48 }, (_, i) => i + 1);
+        reply = () => ({ address: '0x20000000', data: b64(sram) });
+        check('M7 a reply that begins later keeps its place: 16 bytes in, 48 bytes', eq(plain(await ex.readMemory('0x1FFFFFF0', 64)), { offset: 16, bytes: sram })
+            && eq(calls.map((c) => c.command + ' ' + c.json), ['readMemory {"memoryReference":"0x1FFFFFF0","count":64}']), calls.map((c) => c.json));
+        reply = () => ({ address: '0x20017ff0', data: b64([9, 8, 7, 6]), unreadableBytes: 60 });
+        check('M7 unreadableBytes counts after the data: nothing moves and nothing is added', eq(plain(await ex.readMemory('0x20017ff0', 64)), { offset: 0, bytes: [9, 8, 7, 6] }));
+        reply = () => ({ address: '536870916', data: b64([1, 2, 3, 4]) });
+        check('M7 a decimal address', eq(plain(await ex.readMemory('0x20000000', 8)), { offset: 4, bytes: [1, 2, 3, 4] }));
+        reply = () => ({ address: '0x1ffffffc', data: b64([0xa, 0xb, 0xc, 0xd, 1, 2, 3, 4, 5, 6, 7, 8, 9]) });
+        check('M7 bytes before or after the range are dropped', eq(plain(await ex.readMemory('0x20000000', 8)), { offset: 0, bytes: [1, 2, 3, 4, 5, 6, 7, 8] }));
+        let first = { address: '0x20000100', data: b64([1, 2, 3, 4]) };
+        let words = { '*(unsigned int*)0x20000000': '0x04030201', '*(unsigned int*)0x20000004': '0x08070605' };
+        reply = (c, a) => {
+            if (c === 'readMemory') { return a.memoryReference === '0xE000EDF0' ? { data: le(0x00030003).toString('base64') } : first; }
+            return { result: words[a.expression] ?? '' };
+        };
+        calls.length = 0;
+        check('M7 a reply that holds none of the range is not used: the GDB ladder reads it', eq(plain(await ex.readMemory('0x20000000', 8)), { offset: 0, bytes: [1, 2, 3, 4, 5, 6, 7, 8] })
+            && eq(calls.map((c) => c.command), ['readMemory', 'evaluate', 'evaluate']), calls.map((c) => c.command + ' ' + c.json));
+        first = { address: 'soon', data: b64([1, 2, 3, 4]) };
+        words = {};
+        const e = await rejects(ex.readMemory('0x20000000', 8));
+        check('M7 an address that is not a number is a cause, never a place', e && e.code === 'INVALID_ARGUMENT'
+            && e.message.includes('DAP readMemory: the reply\'s address \'soon\' is not a number; watch expression: empty result'), e && e.message);
     }
     reset();
     {
@@ -586,7 +621,7 @@ async function main() {
         focusOn(session);
         const ex = new DebuggingExecutor();
         const buf = await ex.readMemory('0x20000000', 6);
-        check('M2 fallback bytes', eq([...buf], [1, 2, 3, 4, 5, 6]), [...buf]);
+        check('M2 fallback bytes', eq(plain(buf), { offset: 0, bytes: [1, 2, 3, 4, 5, 6] }), plain(buf));
         check('M2 requests', eq(calls.map((c) => c.command + ' ' + c.json), [
             'readMemory {"memoryReference":"0x20000000","count":6}',
             'evaluate {"expression":"*(unsigned int*)0x20000000","context":"watch"}',
@@ -823,6 +858,23 @@ async function main() {
         reset();
         const e = await rejects(new DebuggingExecutor().readFaultRegisters());
         console.log(`       fault no session: ${e && e.message}`);
+    }
+    reset();
+    {
+        // The stacked frame and the fault block count only when they begin where they were asked for.
+        const { session, calls } = makeSession((c, a) => {
+            if (c !== 'readMemory') { throw new Error('?'); }
+            if (a.memoryReference === '0x1ffffff0') { return { address: '0x20000000', data: b64(Array(16).fill(0xaa)) }; }
+            if (a.count === 24) { return { address: '0xE000ED2C', data: b64(Array.from({ length: 24 }, (_, i) => i)) }; }
+            return { data: le(0x11).toString('base64') };
+        });
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        const frame = await ex.readExceptionFrame(0x1ffffff0);
+        check('F4 a stacked frame whose start cannot be read has no bytes, not those after the hole', frame.length === 0, [...frame]);
+        const regs = await ex.readFaultRegisters();
+        check('F4 a fault block that begins after 0xE000ED28 is not decoded: the six words are read', regs.CFSR === 0x11 && regs.AFSR === 0x11
+            && calls.filter((c) => c.args.count === 4).length === 6, regs);
     }
     reset();
     {

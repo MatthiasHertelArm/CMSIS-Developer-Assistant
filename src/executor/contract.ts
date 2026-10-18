@@ -230,6 +230,16 @@ export interface ProgramInspection {
 }
 
 /**
+ * What `readMemory` read: `bytes` begin `offset` bytes after the requested
+ * address. The offset is 0 unless the start of the range could not be read;
+ * fewer bytes than asked for after it mean the end could not be read either.
+ */
+export interface MemoryRead {
+    bytes: Buffer;
+    offset: number;
+}
+
+/**
  * Cortex-M target access: memory, core registers, DWT, fault status,
  * peripherals and reset. On the CMSIS Debugger a memory read that fails
  * rejects with `PROBE_WEDGED` when DHCSR cannot be read either, and with
@@ -237,9 +247,10 @@ export interface ProgramInspection {
  * cause.
  */
 export interface TargetAccess {
-    readMemory(address: string, length: number, overrideMs?: number): Promise<Buffer>;
+    readMemory(address: string, length: number, overrideMs?: number): Promise<MemoryRead>;
     readMemoryWord(address: string, overrideMs?: number): Promise<number>;
     writeMemoryWord(address: string, value: number, overrideMs?: number): Promise<void>;
+    /** The 32 bytes from the stack pointer on; fewer when the frame cannot be read whole, none when its start cannot. */
     readExceptionFrame(stackPointer: number, overrideMs?: number): Promise<Buffer>;
     /** Values are GDB's text, or `<timeout>` / `<unavailable>` for a register that could not be read. */
     readCoreRegisters(overrideMs?: number, names?: string[]): Promise<Record<string, string>>;

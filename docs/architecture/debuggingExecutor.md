@@ -122,7 +122,16 @@ can fake only the part a case drives.
   reading word by word through GDB (`readWordThroughGdb()` in
   `src/executor/gdbMemory.ts` tries a watch expression, then the raw GDB read
   whose answer comes back in the reply: MI `-data-read-memory-bytes` on the
-  CMSIS Debugger, `x/1xw` and `print/x` through `-exec` elsewhere);
+  CMSIS Debugger, `x/1xw` and `print/x` through `-exec` elsewhere). The
+  bytes of a DAP reply lie where its `address` says, which need not be the
+  address asked for: when the start of the range cannot be read,
+  cdt-gdb-adapter answers with the first block GDB could read. So
+  `readMemory()` returns its bytes with their offset from the requested
+  address (`MemoryRead`, placed by `bytesInRange()`), and fewer of them when
+  the end cannot be read; the `read_memory` dump labels its rows from there,
+  and the stacked exception frame and the fault-register block count only
+  when they begin at the address asked for. A one-word read needs all four
+  bytes, so a reply that begins late is a short one there.
   `writeMemoryWord()` falls back to GDB's `set` and checks its write by
   reading it back. Core registers are
   read as `$<name>` expressions, all at once, with `<timeout>` or
@@ -210,12 +219,12 @@ Code update needs a look at this.
 | File | Contents |
 | ---- | -------- |
 | `src/debuggingExecutor.ts` | `DebuggingExecutor`, `SERVER_VERSION`, the run-control table, GDB passthrough, memory, registers, DWT, peripherals, fault status, reset entry |
-| `src/executor/contract.ts` | `IDebuggingExecutor` and its six parts, `HardwareTimeouts`, `SessionStatus`, `DapThread`, `ResetOutcome` |
+| `src/executor/contract.ts` | `IDebuggingExecutor` and its six parts, `HardwareTimeouts`, `SessionStatus`, `DapThread`, `MemoryRead`, `ResetOutcome` |
 | `src/executor/common.ts` | `Budgets`, `DEFAULT_HARDWARE_TIMEOUTS`, DAP reply shapes, `sessionOrThrow()`, `focusedThreadId()`, `toStackFrame()` |
 | `src/executor/snapshot.ts` | `captureDebugState()` |
 | `src/executor/gdbCommand.ts` | `runGdbCommand()`: the adapter's prefix, output capture and settle |
 | `src/core/gdbDialect.ts` | GDB prefix per adapter, the agent's passthrough spellings, MI memory results, GDB's refusal of a run-control request |
-| `src/executor/gdbMemory.ts` | address helpers, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
+| `src/executor/gdbMemory.ts` | address helpers, `bytesInRange()` for a DAP `readMemory` reply, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
 | `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
 | `src/executor/sessionReports.ts` | `probeSession()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
@@ -227,7 +236,8 @@ Code update needs a look at this.
 - `test/transport/executor-cases.js`: the executor alone against scripted
   debug sessions — DAP requests and their arguments, workbench fallbacks and
   GDB refusals, restart, timeouts, reset verification, GDB command prefixes
-  and output capture, breakpoint bindings, the GDB word-read ladder and the
+  and output capture, breakpoint bindings, DAP `readMemory` replies that
+  begin later or end sooner than asked, the GDB word-read ladder and the
   DHCSR read after a failed read
 - `src/test/gdbMemory.test.ts`: the ladder's causes, `PROBE_WEDGED` and
   `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints

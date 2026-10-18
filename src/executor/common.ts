@@ -104,6 +104,8 @@ export interface EvaluateBody {
 }
 
 export interface ReadMemoryBody {
+    /** Where the first byte of `data` lies (DAP), which need not be the address asked for. */
+    address?: string;
     data?: string;
 }
 
