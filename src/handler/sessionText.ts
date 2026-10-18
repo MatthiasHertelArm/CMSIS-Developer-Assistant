@@ -46,7 +46,7 @@ const REFUSAL_HINTS: Record<SessionState, string> = {
     'no-session': 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.',
     initializing: 'The debug adapter is still starting. Wait briefly and retry; the session has not torn down.',
     running: 'The target is running: call pause_execution first, or set a breakpoint and wait_for_stop.',
-    unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm, then restart_debugging or stop_debugging.',
+    unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm.',
     stopped: 'Session reports stopped — please retry the operation.',
 };
 
@@ -59,8 +59,8 @@ const REFUSAL_CODES: Record<SessionState, ErrorCode> = {
     stopped: 'INTERNAL',
 };
 
-/** The closing hint of `get_session_status`, by state. */
-function statusHint(state: SessionState, liveSessions: number): string {
+/** The closing hint of `get_session_status`, by state; `request` is the session's, for the way to reconnect (#3). */
+function statusHint(state: SessionState, liveSessions: number, request: string | undefined): string {
     switch (state) {
         case 'no-session':
             return liveSessions === 0
@@ -78,7 +78,7 @@ function statusHint(state: SessionState, liveSessions: number): string {
         case 'stopped':
             return 'Hint: full inspection (variables, memory, registers) is available.';
         case 'unresponsive':
-            return 'Hint: probe/GDB server is hung. Try restart_debugging, stop_debugging, or check the physical connection.';
+            return `Hint: probe/GDB server is hung. ${wedgeHint(request)}`;
     }
 }
 
@@ -95,8 +95,11 @@ export function stoppedTargetRefusal(operation: string, state: SessionState, req
         `${REFUSAL_HINTS[state]}${reconnect} Use get_session_status for a definitive, never-failing classification.`);
 }
 
-/** The `get_session_status` text; `extraLines` (the CMSIS task line) go before the closing hint. */
-export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnostics, extraLines: readonly string[] = []): string {
+/**
+ * The `get_session_status` text; `extraLines` (the CMSIS task line) go before the closing hint, `request` is the
+ * session's `configuration.request`.
+ */
+export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnostics, extraLines: readonly string[] = [], request?: string): string {
     const lines = [`State: ${status.state}`];
     if (status.sessionName) {
         lines.push(`Session: ${status.sessionName}`);
@@ -117,7 +120,7 @@ export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnost
     lines.push(`Diagnostics: serverVersion=${diagnostics.serverVersion}, `
         + `liveSessionsInThisWindow=${diagnostics.liveSessionCount}${names}, vscodeActiveDebugSession=${focused}`);
     lines.push(...extraLines);
-    lines.push(statusHint(status.state, diagnostics.liveSessionCount));
+    lines.push(statusHint(status.state, diagnostics.liveSessionCount, request));
     return lines.join('\n');
 }
 

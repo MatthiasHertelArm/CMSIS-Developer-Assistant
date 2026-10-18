@@ -183,7 +183,7 @@ never throws.
 | `initializing` | Wait, ask again. Do **not** issue a second start. |
 | `stopped` | Inspect freely. |
 | `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. |
-| `unresponsive` | `check_target_connection`, then `restart_debugging`. More reads will only time out. |
+| `unresponsive` | `check_target_connection`; refusals are `PROBE_WEDGED` with the way to reconnect (below). `restart_debugging` re-flashes and resets: last. More reads will only time out. |
 
 `running` rejects `step_over`, `step_into`, `step_out`, `continue_execution`,
 `read_memory`, `read_core_registers`, `read_peripheral_register`,

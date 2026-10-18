@@ -74,7 +74,8 @@ const ROWS: readonly ProblemRow[] = [
         code: 'PROBE_BUSY',
         severity: 'error',
         source: 'gdb-server',
-        hint: 'Another task or session holds the probe: cmsis_action stop_run or stop_debugging, then retry.',
+        hint: 'pyOCD sees no free probe: another task or session holds it (cmsis_action stop_run or stop_debugging, then retry), '
+            + 'or the probe is not connected or lacks its USB driver (ask the user).',
     },
     {
         pattern: /\btarget is running\b/i,

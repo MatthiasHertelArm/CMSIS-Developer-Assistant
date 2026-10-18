@@ -68,6 +68,12 @@ suite('flashController parsePyocdLoadOutput', () => {
         assert.strictEqual(parsed.programmedBytes, null);
     });
 
+    test('--no-wait without a free probe: both of pyOCD\'s lines land in errorLines (#81)', () => {
+        // pyocd/core/helpers.py prints the first in red, load_cmd.py logs the second (pyOCD 0.45.1).
+        const parsed = parsePyocdLoadOutput('\u001b[31mNo connected debug probes\u001b[0m\n', '0000412 E No target device available [load_cmd]\n');
+        assert.deepStrictEqual(parsed.errorLines, ['\u001b[31mNo connected debug probes\u001b[0m', '0000412 E No target device available [load_cmd]']);
+    });
+
     test('errorLines keeps only the last 8 matches', () => {
         const stderr = Array.from({ length: 20 }, (_, i) => `error number ${i}`).join('\n');
         const parsed = parsePyocdLoadOutput('', stderr);
@@ -244,8 +250,9 @@ suite('pyOCD lookup (#46, #45)', () => {
         }) as unknown as typeof spawn;
         const bin = '/Users/me/Library/Application Support/ext/tools/pyocd/pyocd';
         const result = await flashWithPyocd('/w/out/x.cbuild-run.yml', 5_000, { spawn: fakeSpawn, bin });
-        assert.deepStrictEqual(seen, [{ command: bin, args: ['load', '--cbuild-run', '/w/out/x.cbuild-run.yml'] }]);
-        assert.strictEqual(result.commandLine, `"${bin}" load --cbuild-run /w/out/x.cbuild-run.yml`);
+        // --no-wait: without a free probe pyOCD ends at once instead of waiting until it is killed (#81).
+        assert.deepStrictEqual(seen, [{ command: bin, args: ['load', '--no-wait', '--cbuild-run', '/w/out/x.cbuild-run.yml'] }]);
+        assert.strictEqual(result.commandLine, `"${bin}" load --no-wait --cbuild-run /w/out/x.cbuild-run.yml`);
         assert.strictEqual(result.ok, true);
         assert.strictEqual(result.programmedBytes, 1024);
     });

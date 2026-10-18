@@ -186,6 +186,15 @@ async function findPyocd(cbuildRunFile: string, host: HandlerHost): Promise<{ fo
     return { unusable };
 }
 
+/** pyOCD's answer with `--no-wait` when it finds no free probe. */
+const NO_PROBE = /No (?:connected|available) debug probe/i;
+
+/** What a probe pyOCD cannot see means (#81): a serial port of the board does not prove that its probe is reachable. */
+const NO_PROBE_HINT = 'pyOCD sees no free debug probe. Another task or session may hold it: cmsis_action {action:\'status\'} lists '
+    + 'this window\'s CMSIS tasks, stop_run or stop_debugging frees it. Otherwise the board is not connected or its probe lacks the USB '
+    + 'driver: ask the user to check the cable and the driver — a serial port in serial_list_ports does not prove that the probe is reachable. '
+    + 'Do not retry until one of these changed.';
+
 /** The outcome of a pyOCD run: success as text, a killed run as status `timeout`, a failed one as `TASK_FAILED`. */
 function describeFlash(result: FlashResult, budgetMs: number, version: string): ToolText {
     if (result.timedOut) {
@@ -203,10 +212,11 @@ function describeFlash(result: FlashResult, budgetMs: number, version: string): 
             + 'Use cmsis_action attach or load_and_debug to start a debug session.';
     }
     const errors = result.errorLines.length > 0 ? `Errors:\n  ${result.errorLines.join('\n  ')}\n` : '';
+    const noProbe = result.outputTail.some((line) => NO_PROBE.test(line));
     throw new ToolError('TASK_FAILED',
         `❌ Flash FAILED (exit ${result.exitCode ?? 'unknown'}) — \`${result.commandLine}\`\n`
             + `${errors}Output tail:\n  ${tailBlock(result.outputTail)}`,
-        'This is a terminal result — fix the cause and re-run flash.');
+        noProbe ? NO_PROBE_HINT : 'This is a terminal result — fix the cause and re-run flash.');
 }
 
 /** The wait of a `flash` call: `timeoutMs` when positive (at most 600 s), else 60 s. */

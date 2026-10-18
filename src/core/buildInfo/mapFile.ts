@@ -397,7 +397,8 @@ function parseArmlink(text: string, file: string): MapFile {
             if (m && m[3] && m[3] !== 'Number' && m[3] !== 'Section') {
                 const { object } = objectDisplayName(m[5]);
                 const address = parseHex(m[2].slice(2));
-                map.symbols.push({ name: m[1], address: m[3] === 'Thumb Code' ? address & ~1 : address, object, section: m[6] });
+                // `>>> 0`: the Thumb bit cleared, an address from 0x80000000 up stays positive.
+                map.symbols.push({ name: m[1], address: m[3] === 'Thumb Code' ? (address & ~1) >>> 0 : address, object, section: m[6] });
             }
             continue;
         }

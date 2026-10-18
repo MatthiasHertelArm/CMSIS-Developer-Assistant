@@ -853,7 +853,7 @@ export class DebuggingHandler
     async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
         const gaps = status.state === 'no-session' ? this.bootstrapLines() : [];
-        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()]);
+        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()], this.sessionRequest());
     }
 
     /**
@@ -991,7 +991,8 @@ export class DebuggingHandler
             case 'stopped':
                 return `Target is already stopped (reason: ${status.detail ?? 'n/a'}). No pause needed — proceed with inspection tools.`;
             case 'unresponsive':
-                throw new ToolError('TIMEOUT', 'Cannot pause: probe/GDB server is unresponsive.', 'Call check_target_connection or restart_debugging.');
+                // As every gate answers it (#3): PROBE_WEDGED, and the way to reconnect that keeps the fault state.
+                throw stoppedTargetRefusal('pause', status.state, this.sessionRequest());
             case 'no-session':
                 throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION);
             case 'initializing':
@@ -1069,8 +1070,7 @@ export class DebuggingHandler
             throw new Refusal('NO_SESSION', `Cannot ${operation} yet: the session is still initializing.`, 'Wait briefly and retry.');
         }
         if (status.state === 'unresponsive') {
-            throw new Refusal('TIMEOUT', `Cannot ${operation}: the probe/GDB server is unresponsive.`,
-                'Call check_target_connection, then restart_debugging if needed.');
+            throw stoppedTargetRefusal(operation, status.state, this.sessionRequest());
         }
         const began = this.host().now();
         const paused = await this.pauseAndWait(CHANGE_PAUSE_MS);

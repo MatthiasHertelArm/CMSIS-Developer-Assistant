@@ -117,13 +117,13 @@ import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import { silentAttachEndpoints } from '../core/gdbServerPorts';
 import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
-import { withTimeout } from '../utils/timeout';
+import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
 import { survivesWindowReload } from '../core/clientHosting';
 import { logger } from '../utils/logger';
 import { failureText, LONG_LIMIT_CAP_MS } from './fence';
 import { createSolution, CreateRequest } from './createSolution';
 import type { HandlerHost } from './host';
-import { formatDuration, idleStatus, jobResult, MissingTasksNote, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
+import { flashFailedHint, formatDuration, idleStatus, jobResult, MissingTasksNote, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
 import { runInstallPack } from './installPack';
 
 export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach'
@@ -186,8 +186,18 @@ const SOLUTION_SEARCH_MS = 2_000;
 const OPEN_VERIFY_MS = 20_000;
 /** Where the workspace search does not look for a csolution. */
 const SOLUTION_SEARCH_EXCLUDE = '**/{node_modules,out,tmp,build}/**';
+/** How many csolution files the search for the one open_solution activates may return. */
+const SOLUTION_MATCH_MAX = 200;
 
 const SWITCH_BY_HAND = 'Switch it by hand in the CMSIS Solution panel (Manage Solution → Target) and repeat the call.';
+
+/** open_solution: the user selects the solution when the extension did not take it. */
+const SELECT_SOLUTION_BY_HAND = 'Ask the user to select it in the CMSIS view (Select as Active Solution), or to reload the window, '
+    + 'then repeat this call; get_recent_problems shows what the extension reported.';
+/** open_solution: the extension's activateSolution did not return; it waits in its picker when it does not know the path. */
+const PICKER_HINT = 'If VS Code shows the CMSIS Solution extension\'s "Select a solution" picker, the extension did not recognise the path: '
+    + 'ask the user to pick the solution there or in the CMSIS view (Select as Active Solution), then repeat this call. '
+    + 'get_recent_problems shows what the extension reported.';
 
 /** What the fence answers if the call itself does not answer in time. */
 export const CMSIS_FENCE_ADVICE = 'The CMSIS action may still go on in the CMSIS extension — '
@@ -897,22 +907,35 @@ async function loadAndDebug(issue: Issue): Promise<ToolText> {
         throw new ToolError('TASK_FAILED',
             `❌ CMSIS 'load_and_debug' FAILED${issue.tag} — its pre-launch task '${load.name}' ${ended} after `
                 + `${formatDuration(runtimeOf(load, host.now()))}; no debug session was started (job ${outcome.id}).`,
-            `Read the '${load.name}' terminal, or call flash, which returns pyOCD's own error lines. If it says "Waiting for a debug probe", `
-                + 'something else holds the probe — cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks.');
+            flashFailedHint(load.name));
     }
     const loadNote = `'${load.name}' exited 0 after ${formatDuration(runtimeOf(load, host.now()))} (job ${outcome.id})`;
     return sessionPhase(issue, 'load_and_debug', loadNote, false);
 }
 
-/** The csolution files of the open workspace, or undefined when the search failed or took too long. */
-async function workspaceSolutionFiles(host: HandlerHost): Promise<string[] | undefined> {
+/** The csolution files of the open workspace, at most `max`, or undefined when the search failed or took too long. */
+async function workspaceSolutionFiles(host: HandlerHost, max = 5): Promise<string[] | undefined> {
     try {
         const found = await withTimeout('csolution search', SOLUTION_SEARCH_MS,
-            () => Promise.resolve(host.findFiles('**/*.csolution.{yml,yaml}', SOLUTION_SEARCH_EXCLUDE, 5)));
+            () => Promise.resolve(host.findFiles('**/*.csolution.{yml,yaml}', SOLUTION_SEARCH_EXCLUDE, max)));
         return found.map((uri) => uri.fsPath).sort();
     } catch {
         return undefined;
     }
+}
+
+/**
+ * `file` spelled as the CMSIS Solution extension lists it. Its activateSolution
+ * takes a path only when it equals, character for character, an entry of the
+ * list it built from `vscode.workspace.findFiles` (`Uri.fsPath`: the names as
+ * on disk, on Windows the drive letter in lower case); for any other spelling
+ * it opens its "Select a solution" picker and waits for the user (#84, #99).
+ * The workspace search gives the same spelling; a file it does not find gets
+ * at least the drive letter `Uri.file` writes.
+ */
+async function solutionAsListed(file: string, host: HandlerHost): Promise<string> {
+    const found = await workspaceSolutionFiles(host, SOLUTION_MATCH_MAX);
+    return found?.find((listed) => samePath(listed, file)) ?? vscode.Uri.file(file).fsPath;
 }
 
 /**
@@ -988,25 +1011,32 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
     if (!host.toolEnvironment().extension(SOLUTION_EXTENSION_ID)) {
         throw missingSolutionExtensionRefusal('CMSIS \'open_solution\'');
     }
-    const wanted = place.named ?? (place.solutions.length === 1 ? place.solutions[0] : undefined);
+    const named = place.named ?? (place.solutions.length === 1 ? place.solutions[0] : undefined);
     let current = await activeSolution();
     const isActive = (file: string): boolean => current.active && current.solutionPath !== undefined && samePath(current.solutionPath, file);
-    if (wanted === undefined) {
+    if (named === undefined) {
         const active = current.active ? `Active solution: ${current.description}.` : 'None is active.';
         return `${here} ${solutionsNote(place)} ${active} Pass the path of one *.csolution.yml to activate it.`;
     }
-    if (!isActive(wanted)) {
+    let wanted = named;
+    if (!isActive(named)) {
         if (executor.hasDebugSession()) {
             throw new ToolError('PROBE_BUSY',
-                `CMSIS 'open_solution' not attempted: activating ${wanted} re-loads the solution, which is not done under a live debug session.`,
+                `CMSIS 'open_solution' not attempted: activating ${named} re-loads the solution, which is not done under a live debug session.`,
                 'Call stop_debugging first, then repeat this call.');
         }
+        wanted = await solutionAsListed(named, host);
         try {
             await withTimeout('cmsis activateSolution', ACTIVATION_MS,
                 () => Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.activateSolution', wanted)));
         } catch (caught) {
+            if (caught instanceof HardwareTimeoutError) {
+                throw new ToolError('TASK_FAILED',
+                    `CMSIS 'open_solution' failed: the CMSIS Solution extension did not activate ${wanted} within ${ACTIVATION_MS / 1000} s.`,
+                    PICKER_HINT);
+            }
             throw new ToolError('TASK_FAILED', `CMSIS 'open_solution' failed: the CMSIS Solution extension did not activate ${wanted} (${failureText(caught)}).`,
-                'Select it by hand in the CMSIS view (Select as Active Solution), or reload the window; get_recent_problems shows what the extension reported.');
+                SELECT_SOLUTION_BY_HAND);
         }
         const giveUpAt = Math.min(deadline - DEADLINE_MARGIN_MS, host.now() + OPEN_VERIFY_MS);
         for (;;) {
@@ -1017,20 +1047,29 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
             await host.sleep(SWITCH_POLL_MS);
         }
         if (!isActive(wanted)) {
+            if (current.active && current.solutionPath !== undefined) {
+                // The extension kept the solution it had: a build now would build that one (#99).
+                throw new ToolError('TASK_FAILED',
+                    `CMSIS 'open_solution' failed: the CMSIS Solution extension was asked to activate ${wanted} but still reports `
+                        + `${current.solutionPath} as the active solution, so CMSIS actions would run on that one.`,
+                    SELECT_SOLUTION_BY_HAND);
+            }
             return {
                 text: `${here} The CMSIS Solution extension was asked to activate ${wanted} but reports `
-                    + `'${current.description}' as the active solution so far. It may still be loading: call get_session_status, `
-                    + 'then cmsis_action build; get_recent_problems shows load errors.',
+                    + `'${current.description}' as the active solution so far. It may still be loading: repeat this call until it names `
+                    + 'the active solution, then cmsis_action build; get_recent_problems shows load errors.',
                 status: 'running',
                 data: { opened: place.folder, newWindow: false, solution: wanted },
             };
         }
     }
+    // The path as the extension reports it, whichever spelling the caller used.
+    const solution = current.solutionPath ?? wanted;
     const target = await activeTargetName();
     return {
-        text: `${here} Active solution: ${wanted}${target ? `, target ${target}` : ''}. Next: cmsis_action build, then load_and_debug.`,
+        text: `${here} Active solution: ${solution}${target ? `, target ${target}` : ''}. Next: cmsis_action build, then load_and_debug.`,
         status: 'ok',
-        data: { opened: place.folder, newWindow: false, solution: wanted },
+        data: { opened: place.folder, newWindow: false, solution },
     };
 }
 

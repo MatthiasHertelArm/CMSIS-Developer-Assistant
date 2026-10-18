@@ -670,7 +670,7 @@ suite('DebuggingHandler', () => {
                 'no-session': 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.',
                 initializing: 'The debug adapter is still starting. Wait briefly and retry; the session has not torn down.',
                 running: 'The target is running: call pause_execution first, or set a breakpoint and wait_for_stop.',
-                unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm, then restart_debugging or stop_debugging.',
+                unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm.',
                 stopped: 'Session reports stopped — please retry the operation.',
             };
             const codes: Record<StatusShape['state'], ErrorCode> = {
@@ -1009,9 +1009,11 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(await textAnswer(h.handlePause()), 'Target is already stopped (reason: breakpoint). No pause needed — proceed with inspection tools.');
             x.sessionStatus = status('stopped');
             assert.ok((await textAnswer(h.handlePause())).startsWith('Target is already stopped (reason: n/a).'));
+            // Unresponsive is PROBE_WEDGED, as at every gate, with the way to reconnect instead of a re-flash (#3).
             x.sessionStatus = status('unresponsive');
-            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'TIMEOUT')),
-                'Cannot pause: probe/GDB server is unresponsive.\nCall check_target_connection or restart_debugging.');
+            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'PROBE_WEDGED')),
+                'Cannot pause: session state is \'unresponsive\'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm. '
+                + `${wedgeHint('launch')} Use get_session_status for a definitive, never-failing classification.`);
             x.sessionStatus = status('initializing');
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
                 'Cannot pause yet: session is still initializing.\nWait briefly and retry.');
@@ -1196,7 +1198,7 @@ suite('DebuggingHandler', () => {
             test('initializing, unresponsive, a pause that does not stop and a session that ends are refused before any change, unwrapped', async () => {
                 const cases: Array<[StatusShape['state'], StopWaitResult | undefined, ErrorCode, string]> = [
                     ['initializing', undefined, 'NO_SESSION', 'Cannot add a breakpoint yet: the session is still initializing.'],
-                    ['unresponsive', undefined, 'TIMEOUT', 'Cannot add a breakpoint: the probe/GDB server is unresponsive.'],
+                    ['unresponsive', undefined, 'PROBE_WEDGED', 'Cannot add a breakpoint: session state is \'unresponsive\'.'],
                     ['running', { kind: 'timeout' }, 'TIMEOUT',
                         'Cannot add a breakpoint: the target did not stop within 5 s of the pause request.'],
                     ['running', { kind: 'ended' }, 'NO_SESSION',
@@ -1726,7 +1728,7 @@ suite('DebuggingHandler', () => {
                 ['no-session', 'Hint: call start_debugging or cmsis_action load_and_debug to attach.'],
                 ['initializing', 'Hint: the adapter is still starting — wait a moment and retry.'],
                 ['running', 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.'],
-                ['unresponsive', 'Hint: probe/GDB server is hung. Try restart_debugging, stop_debugging, or check the physical connection.'],
+                ['unresponsive', `Hint: probe/GDB server is hung. ${wedgeHint('launch')}`],
             ];
             const withFolder = { workspaceFolders: () => [{ uri: vscode.Uri.file('/w'), name: 'w', index: 0 }] };
             for (const [state, hint] of hints) {
@@ -2108,17 +2110,19 @@ suite('DebuggingHandler', () => {
                 const host: Partial<HandlerHost> = {
                     ...installed, workspaceFolders: () => [asFolder(scratch)], openFolder: async (folder) => void opened.push(folder),
                 };
+                // The extension is given, and the reply names, the path as VS Code writes it (on Windows: c:\, not C:\).
+                const listed = vscode.Uri.file(solution).fsPath;
                 const expected = {
-                    text: `${scratch} is open in this VS Code window. Active solution: ${solution}, target MPS3@debug. `
+                    text: `${scratch} is open in this VS Code window. Active solution: ${listed}, target MPS3@debug. `
                         + 'Next: cmsis_action build, then load_and_debug.',
                     status: 'ok',
-                    data: { opened: scratch, newWindow: false, solution },
+                    data: { opened: scratch, newWindow: false, solution: listed },
                 };
                 assert.deepStrictEqual(await open(handlerFor(x, host), scratch), expected);
-                assert.deepStrictEqual(activated, [solution]);
+                assert.deepStrictEqual(activated, [listed]);
                 // Already active: nothing is asked again, by folder or by file.
                 assert.deepStrictEqual(await open(handlerFor(x, host), solution), expected);
-                assert.deepStrictEqual(activated, [solution]);
+                assert.deepStrictEqual(activated, [listed]);
                 assert.deepStrictEqual(opened, [], 'no window is opened for a folder that is open here');
 
                 // Another solution under a live session is refused.
@@ -2130,7 +2134,79 @@ suite('DebuggingHandler', () => {
                 // Two files and none named: the extension's choice stands, the files are listed.
                 assert.strictEqual(textOf(await open(handlerFor(x, host), scratch)),
                     `${scratch} is open in this VS Code window. Solutions: demo.csolution.yml, other.csolution.yml. `
-                    + `Active solution: ${solution}. Pass the path of one *.csolution.yml to activate it.`);
+                    + `Active solution: ${listed}. Pass the path of one *.csolution.yml to activate it.`);
+            });
+
+            /**
+             * A stand-in that takes a path the way CMSIS Solution 1.72.0 does: only an exact entry of its list,
+             * the fsPaths of vscode.workspace.findFiles. Any other spelling leaves the active solution as it was,
+             * as when the user escapes its "Select a solution" picker.
+             */
+            const strictSolution = (listedFiles: string[], initial: string) => {
+                const state = { active: initial, activated: [] as unknown[] };
+                registrations = standIns({
+                    'cmsis-csolution.getSolutionFile': () => state.active,
+                    'cmsis-csolution.getActiveTargetSet': () => (state.active ? 'HE' : ''),
+                    'cmsis-csolution.activateSolution': (file) => {
+                        state.activated.push(file);
+                        if (typeof file === 'string' && listedFiles.includes(file)) {
+                            state.active = file;
+                        }
+                    },
+                });
+                return state;
+            };
+
+            test('the solution goes to the extension spelled as VS Code lists it, not as the caller wrote it (#84, #99)', async () => {
+                fs.mkdirSync(path.join(scratch, 'app'));
+                const first = path.join(scratch, 'first.csolution.yml');
+                const second = path.join(scratch, 'second.csolution.yml');
+                fs.writeFileSync(first, 'solution:\n');
+                fs.writeFileSync(second, 'solution:\n');
+                const listedFiles = [first, second].map((file) => vscode.Uri.file(file).fsPath);
+                const state = strictSolution(listedFiles, listedFiles[0]);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)],
+                    findFiles: async () => listedFiles.map((file) => vscode.Uri.file(file)),
+                };
+                // Another spelling of the second file (path.join would fold the '..'): the extension would not know it.
+                const typed = [scratch, 'app', '..', 'second.csolution.yml'].join(path.sep);
+                const reply = await open(handlerFor(x, host), typed);
+                assert.deepStrictEqual(state.activated, [listedFiles[1]]);
+                assert.strictEqual(state.active, listedFiles[1]);
+                assert.deepStrictEqual((reply as { status: string; data: unknown }).status, 'ok');
+                assert.deepStrictEqual((reply as { data: unknown }).data, { opened: path.dirname(typed), newWindow: false, solution: listedFiles[1] });
+            });
+
+            test('a solution the extension does not take is TASK_FAILED when another stays active, never "build next" (#99)', async () => {
+                const first = path.join(scratch, 'first.csolution.yml');
+                const hidden = path.join(scratch, 'hidden.csolution.yml');
+                fs.writeFileSync(first, 'solution:\n');
+                fs.writeFileSync(hidden, 'solution:\n');
+                const listedFirst = vscode.Uri.file(first).fsPath;
+                // The extension lists only the first one; the search finds nothing, as for a file in an excluded folder.
+                const state = strictSolution([listedFirst], listedFirst);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: async () => [],
+                };
+                const listedHidden = vscode.Uri.file(hidden).fsPath;
+                const refused = await refusalOf(open(handlerFor(x, host), hidden), 'TASK_FAILED');
+                assert.deepStrictEqual(state.activated, [listedHidden]);
+                assert.strictEqual(refused.message, `CMSIS 'open_solution' failed: the CMSIS Solution extension was asked to activate ${listedHidden} `
+                    + `but still reports ${listedFirst} as the active solution, so CMSIS actions would run on that one.`);
+                assert.strictEqual(refused.hint, 'Ask the user to select it in the CMSIS view (Select as Active Solution), or to reload the window, '
+                    + 'then repeat this call; get_recent_problems shows what the extension reported.');
+
+                // None active yet: it may still be loading, so the call is running and says to repeat it before a build.
+                state.active = '';
+                const pending = await replyAnswer(open(handlerFor(x, host), hidden), 'running');
+                assert.ok(pending.endsWith(`The CMSIS Solution extension was asked to activate ${listedHidden} but reports 'none' as the active solution so far. `
+                    + 'It may still be loading: repeat this call until it names the active solution, then cmsis_action build; '
+                    + 'get_recent_problems shows load errors.'), pending);
             });
 
             test('an open folder without the CMSIS Solution extension, or without a csolution, is reported as it is', async () => {
@@ -2692,7 +2768,8 @@ suite('DebuggingHandler', () => {
                 });
                 const failed = await refusalOf(failing.handler.handleCmsisCommand({ action: 'run' }), 'TASK_FAILED');
                 assert.match(failed.message, /^❌ CMSIS 'run' FAILED on HE — 'CMSIS Run' ended with code 1 after [\d.]+ s; it hosts the GDB server and must stay up \(job g-1\)\.$/);
-                assert.ok(failed.hint?.startsWith('Read the \'CMSIS Run\' terminal'), failed.hint);
+                assert.ok(failed.hint?.startsWith('A GDB server that ends at once usually finds the probe or its port taken, or no probe at all.'), failed.hint);
+                assert.ok(failed.hint?.includes('which no tool reads: ask the user for its last lines'), failed.hint);
             });
 
             test('load_and_debug: a failed pre-launch Load is the answer before any session probe; a good one leads the result', async () => {
@@ -3061,8 +3138,29 @@ suite('DebuggingHandler', () => {
                 const x = new ScriptedExecutor();
                 x.session = false;
                 assert.strictEqual(await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun })),
-                    `✅ Flash succeeded — programmed 4096 bytes at 52 kB/s (pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --cbuild-run ${cbuildRun}\`). `
+                    `✅ Flash succeeded — programmed 4096 bytes at 52 kB/s (pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --no-wait --cbuild-run ${cbuildRun}\`). `
                     + 'Use cmsis_action attach or load_and_debug to start a debug session.');
+            });
+
+            test('no free probe ends the flash at once, and the hint names a held probe, the cable and the driver, not a retry (#81)', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const extensionPath = path.join(dir, 'arm.vscode-cmsis-debugger-1.8.0-darwin-arm64');
+                const bin = path.join(extensionPath, 'tools', 'pyocd', 'pyocd');
+                fs.mkdirSync(path.dirname(bin), { recursive: true });
+                fs.writeFileSync(bin, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.45.1; exit 0; fi\n'
+                    + 'echo "No connected debug probes"\necho "0000412 E No target device available [load_cmd]" >&2\nexit 1\n');
+                fs.chmodSync(bin, 0o755);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const refused = await refusalOf(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }), 'TASK_FAILED');
+                assert.ok(refused.message.startsWith(`❌ Flash FAILED (exit 1) — \`${bin} load --no-wait --cbuild-run ${cbuildRun}\`\nErrors:\n  No connected debug probes`),
+                    refused.message);
+                assert.strictEqual(refused.hint, 'pyOCD sees no free debug probe. Another task or session may hold it: cmsis_action {action:\'status\'} lists '
+                    + 'this window\'s CMSIS tasks, stop_run or stop_debugging frees it. Otherwise the board is not connected or its probe lacks the USB '
+                    + 'driver: ask the user to check the cable and the driver — a serial port in serial_list_ports does not prove that the probe is reachable. '
+                    + 'Do not retry until one of these changed.');
             });
 
             test('flash notes a serial port the window holds, and one that went away while it programmed (#49)', async function () {
