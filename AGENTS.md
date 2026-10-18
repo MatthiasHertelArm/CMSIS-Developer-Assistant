@@ -125,7 +125,7 @@ checks a built package.
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the eleven `serial_*` tools |
 | `cmsis-developer-assistant.serial.idleCloseSeconds` | 300 | Release a serial port an agent opened after this many seconds without a serial tool call; 0 is off. Scope `window` |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off |
-| `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 2 of the setup offers to add the tool rules to the agents' rule files, each change shown as a diff and written only when confirmed, and activation updates the blocks it wrote; `never`: no rule file is touched. Scope `application` |
+| `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 2 of the setup offers to add the tool rules to the agents' rule files, each change shown as a diff and written only when confirmed, and activation offers to update the blocks it wrote when the rules change; `never`: no rule file is touched. Scope `application` |
 | `cmsis-developer-assistant.packDocs.enabled` | `true` | Offer the five documentation tools; off drops them from the tool list. PDF text comes from the bundled pdf.js, or from `pdftotext` when `packDocs.extractor` says so; `packDocs.*` also set the size limit, unlisted pack PDFs and the workspace and user document folders |
 | `cmsis-developer-assistant.buildInfo.enabled` | `true` | Offer the five build-artefact tools; off drops them from the tool list; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
 

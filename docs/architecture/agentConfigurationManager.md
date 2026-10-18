@@ -40,8 +40,8 @@ releases had one, with three settings and a monthly prompt).
   using the pure helpers in `skillCatalog.ts` (what is visible, what is
   hidden) and `skillInstaller.ts` (how to write it safely).
 - Offer the agents' rule files for the tool rules in step 2 of the setup,
-  preview and write each change the user confirms, and keep the blocks it
-  wrote current at activation (`refreshAgentRules()`), using
+  preview and write each change the user confirms, and offer at activation
+  to bring the blocks it wrote up to date (`refreshAgentRules()`), using
   `core/agentRules.ts` (which file, what text) and `agentRuleFiles.ts` (the
   step and the refresh, over an injected file system).
 
@@ -192,22 +192,31 @@ lists each file written, whether it was created for the rules and which
 directories were made for it. A removal restores the file to its earlier
 bytes, or deletes a file (and its empty directories) that was made for the
 rules or is the extension's own. At activation `refreshAgentRules()`
-updates every recorded block whose text differs from the current contract,
-in place, and logs it; a recorded file that is gone, or whose block the user
-deleted, is forgotten, never recreated. Activation under the extension test
-runner skips it, like the skill sync and the migration.
+finds every recorded block whose text differs from the current contract and
+offers, in one toast, to review the update; each file then gets the same
+diff and modal *Write* as the setup step. The rule files are the user's —
+hand-edited, versioned, sometimes symlinked from a dotfiles repository — so a
+release never rewrites them unasked. The toast comes once per version of the
+rules (a digest in `globalState`), and not while the setup is due, whose
+rules step offers the update itself; a declined update is offered again by
+*Configure Agent*. Activation does not wait for the answer. A recorded file
+that is gone, or whose block the user deleted, is forgotten, never
+recreated. Activation under the extension test runner skips it, like the
+skill sync and the migration.
 
 *Setting.* `agentRules.install`: `ask` (default) or `never`, which skips
 step 2 and the refresh.
 
 ### Popup state
 
-One `globalState` key, cleared by *Reset Popup State*:
+Two `globalState` keys, cleared by *Reset Popup State*:
 
 - `cmsis-developer-assistant.popupShown.v5` — the first-run setup. Accepting
   or dismissing any step marks it shown. The version suffix is bumped when
   the flow changes so existing users see it once more (v4: the tool rules
   step; v5: the skills step gone, the catalog installed with the agents).
+- `cmsis-developer-assistant.agentRules.updateOffered` — the SHA-256 of the
+  rules whose update activation last offered.
 
 `cmsis-developer-assistant.skillsPrompt.lastShownAt`, the time of the monthly
 skills prompt of earlier releases, is cleared by the same command and never
@@ -232,8 +241,8 @@ read.
 
 1. Extension activates; `syncSkills('activation')` installs the catalog into
    the personal skills directories and sweeps the project roots of 2.5.x.
-   After the migration, `refreshAgentRules()` brings recorded rule blocks up
-   to date.
+   After the migration, `refreshAgentRules()` offers to bring recorded rule
+   blocks up to date.
 2. If the setup was never shown (for this version of the flow) and the host
    does not manage MCP itself, after 2 s: step 1 multi-select of agents →
    config files written, then the skills installed again and a toast that

@@ -41,6 +41,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -63,6 +64,7 @@ import {
     RuleChoice,
     RuleLog,
     RuleRecordStore,
+    RuleRefreshUi,
     RuleStepDeps,
     RuleStepReport,
     RuleStepUi,
@@ -130,6 +132,8 @@ const SETTINGS_SECTION = 'cmsis-developer-assistant';
 const SETUP_ANSWERED_KEY = 'cmsis-developer-assistant.popupShown.v5';
 /** globalState of releases before 2.5.15: when the monthly skills prompt was last shown. Cleared, never read. */
 const LEGACY_SKILLS_PROMPT_KEY = 'cmsis-developer-assistant.skillsPrompt.lastShownAt';
+/** globalState: the digest of the rules whose update activation last offered, so that each version is offered once. */
+const RULES_UPDATE_OFFERED_KEY = 'cmsis-developer-assistant.agentRules.updateOffered';
 
 const PRODUCT = 'CMSIS Developer Assistant';
 const SETUP_TITLE = `${PRODUCT} Setup`;
@@ -139,6 +143,8 @@ const OPEN_FILE_BUTTON = 'View File';
 const RULES_PREVIEW_SCHEME = 'cmsis-developer-assistant-rules';
 const WRITE_BUTTON = 'Write';
 const REMOVE_BUTTON = 'Remove';
+const REVIEW_BUTTON = 'Review';
+const NOT_NOW_BUTTON = 'Not Now';
 /** Every rule-file message goes to the output channel. */
 const RULE_LOG: RuleLog = {
     info: (message) => logger.info(message),
@@ -570,9 +576,11 @@ export class AgentConfigurationManager {
     }
 
     /**
-     * At activation: update, in place, every recorded rules block whose text
-     * is not the current tool contract's, and log it. Never creates a block
-     * or a file; does nothing while `agentRules.install` is `never`.
+     * At activation: offer, once per version of the rules, to update every
+     * recorded rules block whose text is not the current tool contract's,
+     * and update each one the user confirms after its preview. Never creates
+     * a block or a file; does nothing while `agentRules.install` is `never`.
+     * Resolves only once the user has answered; activation does not await it.
      */
     async refreshAgentRules(): Promise<void> {
         const recorded = this.ruleRecords().read().length;
@@ -587,16 +595,23 @@ export class AgentConfigurationManager {
         if (rules === undefined) {
             return;
         }
-        const report = await refreshRecordedRules(rules, this.ruleDeps());
-        if (report.updated.length > 0 || report.forgotten.length > 0) {
-            logger.info(`Tool rules at activation: ${report.updated.length} file(s) updated, ${report.forgotten.length} forgotten`);
+        const ui: RuleRefreshUi = {
+            offer: (changes) => this.offerRuleUpdate(changes, rules),
+            confirm: (change) => this.previewRuleChange(change),
+        };
+        const report = await refreshRecordedRules(rules, ui, this.ruleDeps());
+        if (report.updated.length > 0 || report.postponed.length > 0 || report.forgotten.length > 0) {
+            logger.info(`Tool rules at activation: ${report.updated.length} file(s) updated, `
+                + `${report.postponed.length} left outdated, ${report.forgotten.length} forgotten`);
         }
+        this.reportRuleStep({ dismissed: false, applied: report.updated.map((file) => ({ file, kind: 'update' })), declined: [], failed: [] });
     }
 
-    /** Make the first-run setup due again. */
+    /** Make the first-run setup due again, and the offer of the current rules update. */
     async resetPopupState(): Promise<void> {
         await this.ctx.globalState.update(SETUP_ANSWERED_KEY, false);
         await this.ctx.globalState.update(LEGACY_SKILLS_PROMPT_KEY, undefined);
+        await this.ctx.globalState.update(RULES_UPDATE_OFFERED_KEY, undefined);
     }
 
     /**
@@ -948,6 +963,31 @@ export class AgentConfigurationManager {
             });
             fileList.show();
         });
+    }
+
+    /**
+     * Ask whether to review the update of outdated rules blocks: once per
+     * version of the rules, so that every window and every activation does
+     * not ask again, and not while the setup is due, whose rules step offers
+     * the update itself. True when the user chose Review.
+     */
+    private async offerRuleUpdate(changes: readonly RuleChange[], rules: string): Promise<boolean> {
+        if (await this.shouldShowPopup()) {
+            logger.info('Tool rules: the setup is due and offers the update of the outdated rule files');
+            return false;
+        }
+        const digest = crypto.createHash('sha256').update(rules).digest('hex');
+        if (this.ctx.globalState.get<string>(RULES_UPDATE_OFFERED_KEY) === digest) {
+            logger.info('Tool rules: the update of these rules was offered before');
+            return false;
+        }
+        await this.ctx.globalState.update(RULES_UPDATE_OFFERED_KEY, digest);
+        const where = changes.length === 1 ? ruleFileLabel(changes[0].target) : `${changes.length} rule files`;
+        const answer = await vscode.window.showInformationMessage(
+            `${PRODUCT}: this release changes the tool rules it wrote to ${where}. Review the update? `
+            + 'Configure Agent offers it later too.',
+            REVIEW_BUTTON, NOT_NOW_BUTTON);
+        return answer === REVIEW_BUTTON;
     }
 
     /** Where the preview texts come from; the provider is registered on first use. */
