@@ -4,6 +4,11 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The tool rules say what they are about.** They sit in user-level files that agents read in every project, so the lines that read as bans in general now name their subject: `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` and `openocd` are not run *against the board* from a shell, and the build-artefact tools answer *firmware* symbol, section, memory-usage and build-log questions. A `gdb` on a host program, or `nm` on a host binary, is no longer forbidden in passing. Two lines are shorter to keep the rules under 1 600 bytes. The server instructions, the skills, `debug_instructions.md` and `cmsis-help` carry the new text (surface snapshot updated).
+
 ## [2.5.20] - 2026-10-12
 
 The README as VS Code renders it.
