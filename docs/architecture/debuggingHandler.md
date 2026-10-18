@@ -353,16 +353,21 @@ there are the `bootstrap` topic of the agent guide and the skill
 `cmsis-bootstrap`.
 
 When `target` names a target-type or target-set that is not active, the
-selection is written into the solution folder's `.vscode/cmsis.json`, the
-solution is re-activated, and the switch is verified through the extension
-before anything runs. A switch is refused under a live debug session.
-`src/core/cmsisTarget.ts` reads the declared target-types and their sets
-from the csolution. There is no YAML parser among the dependencies, so it
-scans the lines and follows the block structure by column: the keys of an
-entry count in any order and a list may stand in its key's column, as YAML
-allows, and a `type:` in a nested list (`images:`, a debugger's `reset:`)
-declares no target-type. A set's index counts every entry of `target-set:`,
-as the CMSIS Solution extension's index into that list does.
+selection is written into `.vscode/cmsis.json`, the solution is
+re-activated, and the switch is verified through the extension before
+anything runs. The file is the one CMSIS Solution reads: that of the
+workspace's first folder, also for a solution in another folder of a
+multi-root workspace, keyed by the solution's path relative to that folder,
+a key the extension splits at every dot. The solution's `tasks.json` and
+`launch.json`, by contrast, are those of the folder that holds it. A switch
+is refused under a live debug session. `src/core/cmsisTarget.ts` reads the
+declared target-types and their sets from the csolution and edits the file.
+There is no YAML parser among the dependencies, so it scans the lines and
+follows the block structure by column: the keys of an entry count in any
+order and a list may stand in its key's column, as YAML allows, and a
+`type:` in a nested list (`images:`, a debugger's `reset:`) declares no
+target-type. A set's index counts every entry of `target-set:`, as the CMSIS
+Solution extension's index into that list does.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else the one of the CMSIS Solution extension's active target

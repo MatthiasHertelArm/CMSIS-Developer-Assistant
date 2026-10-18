@@ -275,12 +275,26 @@ export async function activeTargetName(): Promise<string | undefined> {
 /** A failed switch says why, with the code the refusal carries and, when there is one, what to do instead. */
 type SwitchResult = { switched: true; active: string } | { switched: false; code: ErrorCode; reason: string; hint?: string };
 
-/** The folder whose `.vscode/cmsis.json` the extension reads for this solution. */
+/**
+ * The workspace folder that holds the solution: where CMSIS Solution keeps its
+ * `.vscode/tasks.json` and `launch.json` (1.72.0 `solutionManager.workspaceFolder`).
+ */
 function selectionFolder(solutionPath: string, host: HandlerHost): string {
     const owner = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(solutionPath));
     if (owner) {
         return owner.uri.fsPath;
     }
+    const first = host.workspaceFolders()[0];
+    return first ? first.uri.fsPath : path.dirname(solutionPath);
+}
+
+/**
+ * The folder whose `.vscode/cmsis.json` CMSIS Solution reads the active target
+ * from: the workspace's first folder, whichever folder holds the solution
+ * (1.72.0 `CmsisSettingsJsonFile`); not `selectionFolder` when the solution
+ * lies in another folder of a multi-root workspace.
+ */
+function targetSettingsFolder(solutionPath: string, host: HandlerHost): string {
     const first = host.workspaceFolders()[0];
     return first ? first.uri.fsPath : path.dirname(solutionPath);
 }
@@ -324,7 +338,7 @@ async function switchActiveTarget(
         return { switched: false, code: 'INVALID_ARGUMENT', reason: `${resolution.reason}. Active target: '${was}'. Declared targets: ${choices}.` };
     }
 
-    const folder = selectionFolder(solutionPath, host);
+    const folder = targetSettingsFolder(solutionPath, host);
     const selectionFile = path.join(folder, '.vscode', 'cmsis.json');
     try {
         fs.mkdirSync(path.dirname(selectionFile), { recursive: true });

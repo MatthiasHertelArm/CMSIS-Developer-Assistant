@@ -51,6 +51,21 @@ solution:
     - project: app.cproject.yml
 `;
 
+/**
+ * How CMSIS Solution 1.72.0 looks a cmsis.json key up (`CmsisSettingsJsonFile.get`):
+ * the dotted key split at every '.', one level down per part.
+ */
+function extensionGet(json: unknown, dottedKey: string): unknown {
+    let node = json;
+    for (const key of dottedKey.split('.')) {
+        if (node === null || typeof node !== 'object') {
+            return undefined;
+        }
+        node = (node as Record<string, unknown>)[key];
+    }
+    return node;
+}
+
 suite('cmsis_action target helpers', () => {
 
     test('parseTargetRef reads type and type@set', () => {
@@ -205,6 +220,40 @@ solution:   # a comment after a key
         assert.strictEqual(solutionDisplayName('/ws', '/ws/Blinky.csolution.yml'), 'Blinky');
         assert.strictEqual(solutionDisplayName('/ws', '/ws/RockPaperScissors/AppKit-E8_USB/SDS.csolution.yml'),
             'RockPaperScissors/AppKit-E8_USB/SDS');
+        assert.strictEqual(solutionDisplayName('/ws', '/ws/v1.2/my.demo.csolution.yaml'), 'v1.2/my.demo');
+    });
+
+    test('solutionDisplayName of a solution in the second folder of a multi-root workspace goes up from the first', () => {
+        assert.strictEqual(solutionDisplayName('/ws/app', '/ws/fw/demo.csolution.yml'), '../fw/demo');
+    });
+
+    test('applyTargetSelection writes the key where the extension looks it up: the display name split at every dot', () => {
+        for (const name of ['demo', 'RockPaperScissors/AppKit-E8_USB/SDS', '../fw/demo', 'v1.2/my.demo', '../../a.b/c']) {
+            const json: unknown = JSON.parse(applyTargetSelection('', name, 'HP', 1));
+            assert.strictEqual(extensionGet(json, `targetSet.${name}.activeTargetType`), 'HP', name);
+            // getSelectedSet: the type's entry in the map at targetSet.<name>.
+            assert.strictEqual((extensionGet(json, `targetSet.${name}`) as Record<string, unknown> | undefined)?.HP, 1, name);
+        }
+        assert.deepStrictEqual(JSON.parse(applyTargetSelection('', '../fw/demo', 'HP', 1)),
+            { targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HP', HP: 1 } } } } });
+    });
+
+    test('applyTargetSelection updates the selection CMSIS Solution wrote for a solution in the second folder', () => {
+        const written = JSON.stringify({
+            targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HE' } } }, other: { activeTargetType: 'MPS3' } },
+            activeSolution: '../../fw/demo.csolution.yml',
+            activeTarget: 'HE',
+        }, null, 4);
+        assert.deepStrictEqual(JSON.parse(applyTargetSelection(written, '../fw/demo', 'HP', 0)), {
+            targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HP', HP: 0 } } }, other: { activeTargetType: 'MPS3' } },
+            activeSolution: '../../fw/demo.csolution.yml',
+            activeTarget: 'HE',
+        });
+    });
+
+    test('applyTargetSelection writes a name without dots as before, byte for byte', () => {
+        assert.strictEqual(applyTargetSelection('', 'demo', 'HP', 1),
+            '{\n    "targetSet": {\n        "demo": {\n            "activeTargetType": "HP",\n            "HP": 1\n        }\n    }\n}\n');
     });
 
     test('applyTargetSelection creates, updates and preserves cmsis.json content', () => {

@@ -2487,6 +2487,56 @@ suite('DebuggingHandler', () => {
                 }
             });
 
+            test('a target switch of a solution in the second folder writes the first folder\'s cmsis.json, where CMSIS Solution reads it', async () => {
+                const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-roots-'));
+                try {
+                    const first = path.join(root, 'app');
+                    const second = path.join(root, 'fw');
+                    fs.mkdirSync(first);
+                    fs.mkdirSync(second);
+                    const solution = path.join(second, 'demo.csolution.yml');
+                    fs.writeFileSync(solution, ['solution:', '  target-types:', '    - type: HE', '    - type: HP', '      target-set:',
+                        '        - set: debug', '        - set: release', ''].join('\n'));
+                    const w = jobWorld(20, {
+                        workspaceFolders: () => [
+                            { uri: vscode.Uri.file(first), name: 'app', index: 0 },
+                            { uri: vscode.Uri.file(second), name: 'fw', index: 1 },
+                        ],
+                    });
+                    // CMSIS Solution 1.72.0 reads only <first folder>/.vscode/cmsis.json, files the solution there
+                    // as '../fw/demo' and looks that key up split at every '.'.
+                    const selection = (): Record<string, unknown> | undefined => {
+                        let node: unknown;
+                        try {
+                            node = JSON.parse(fs.readFileSync(path.join(first, '.vscode', 'cmsis.json'), 'utf8'));
+                        } catch {
+                            return undefined;
+                        }
+                        for (const key of 'targetSet.../fw/demo'.split('.')) {
+                            node = node !== null && typeof node === 'object' ? (node as Record<string, unknown>)[key] : undefined;
+                        }
+                        return node !== null && typeof node === 'object' ? node as Record<string, unknown> : undefined;
+                    };
+                    let active = 'HE';
+                    registrations = standIns({
+                        'cmsis-csolution.getSolutionFile': () => solution,
+                        'cmsis-csolution.getActiveTargetSet': () => active,
+                        'cmsis-csolution.deactivateSolution': () => undefined,
+                        'cmsis-csolution.activateSolution': () => {
+                            const picked = selection();
+                            active = picked?.activeTargetType === 'HP' ? `HP@${picked.HP === 1 ? 'release' : 'debug'}` : 'HE';
+                        },
+                        'cmsis-csolution.cmsisDetachDebugger': () => undefined,
+                    });
+                    const text = await textAnswer(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }));
+                    assert.match(text, /^CMSIS 'detach' on HP@release, switched from HE issued/);
+                    assert.deepStrictEqual(selection(), { activeTargetType: 'HP', HP: 1 });
+                    assert.ok(!fs.existsSync(path.join(second, '.vscode', 'cmsis.json')), 'CMSIS Solution reads no cmsis.json in the second folder');
+                } finally {
+                    fs.rmSync(root, { recursive: true, force: true });
+                }
+            });
+
             test('the label pre-check refuses a task the debugger adapter does not offer before anything runs', async () => {
                 const w = jobWorld();
                 w.tasks.fetched = workspaceTasks('/w', ['CMSIS Load+Run']);

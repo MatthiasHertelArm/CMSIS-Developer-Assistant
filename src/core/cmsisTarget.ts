@@ -22,16 +22,20 @@
  * extension's `.vscode/cmsis.json` selection so a re-activated solution comes
  * up on the requested target.
  *
- * The cmsis.json layout mirrors what the CMSIS Solution extension (1.70)
- * writes itself:
+ * The cmsis.json layout mirrors what the CMSIS Solution extension (1.72.0,
+ * `CmsisSettingsJsonFile`) reads and writes itself:
  *
  *   { "targetSet": { "<solutionDisplayName>": {
  *         "activeTargetType": "<type>",
  *         "<type>": <index into that type's target-set list>   // optional
  *   } } }
  *
- * where `<solutionDisplayName>` is the csolution path relative to the
- * workspace folder with both extensions stripped, forward slashes.
+ * in the `.vscode/cmsis.json` of the workspace's first folder, whichever
+ * folder holds the solution. `<solutionDisplayName>` is the csolution path
+ * relative to that folder with both extensions stripped, forward slashes.
+ * The extension looks the key up as a dotted path, split at every `.`, so
+ * a name with dots nests: `../fw/app`, the name of a solution in a second
+ * folder, is `targetSet` → `""` → `""` → `"/fw/app"`.
  *
  * No `vscode` import here so the logic is unit-testable outside the host.
  */
@@ -189,7 +193,7 @@ export function resolveTargetSelection(types: TargetTypeInfo[], wanted: TargetRe
     return { ok: true, type: type.name, set: wanted.set, setIndex: index, name: formatTargetName(type.name, wanted.set) };
 }
 
-/** The key the extension files a solution under in cmsis.json. */
+/** The key the extension files a solution under in cmsis.json; `workspaceFolder` is the workspace's first folder. */
 export function solutionDisplayName(workspaceFolder: string, solutionPath: string): string {
     const relative = path.relative(workspaceFolder, solutionPath);
     const stripped = relative.replace(/\.[^./\\]+$/, '').replace(/\.[^./\\]+$/, '');
@@ -198,7 +202,8 @@ export function solutionDisplayName(workspaceFolder: string, solutionPath: strin
 
 /**
  * Return cmsis.json text with the solution's active target-type set (and the
- * set index when one was named). Existing content — other solutions, other
+ * set index when one was named), under the key path the extension reads:
+ * `displayName` split at every `.`. Existing content — other solutions, other
  * keys, comments — is preserved; formatting follows the extension (4 spaces).
  */
 export function applyTargetSelection(
@@ -208,10 +213,11 @@ export function applyTargetSelection(
     setIndex: number | undefined,
 ): string {
     const formattingOptions = { insertSpaces: true, tabSize: 4, eol: '\n' };
+    const selection = ['targetSet', ...displayName.split('.')];
     let text = cmsisJsonText.trim() ? cmsisJsonText : '{}';
-    text = applyEdits(text, modify(text, ['targetSet', displayName, 'activeTargetType'], type, { formattingOptions }));
+    text = applyEdits(text, modify(text, [...selection, 'activeTargetType'], type, { formattingOptions }));
     if (setIndex !== undefined) {
-        text = applyEdits(text, modify(text, ['targetSet', displayName, type], setIndex, { formattingOptions }));
+        text = applyEdits(text, modify(text, [...selection, type], setIndex, { formattingOptions }));
     }
     return text.endsWith('\n') ? text : `${text}\n`;
 }
