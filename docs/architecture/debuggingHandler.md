@@ -223,6 +223,15 @@ target runs.
   `S_LOCKUP` is set.
 - `lookup_peripheral` and `lookup_register` answer from the device SVD
   (`src/core/svdParser.ts`, `src/core/svdLookup.ts`) without a session.
+  During one, they and `diagnose_fault` take the SVD of the session the
+  executor acts on (`getActiveSession()`), focused or not, so they agree
+  with `read_peripheral_register`: the tool's `svdFile` when given, else
+  that session's launch `svdFile`, then its cbuild-run file, then the
+  workspace's. A launch `svdFile` describes the session's own core, so a
+  lookup that names a core with `pname` skips it and takes that core's
+  entry of the cbuild-run file. A cbuild-run file names its SVD under
+  `${CMSIS_PACK_ROOT}` or relative to its own folder, as csolution writes
+  it.
 
 ## CMSIS actions and flashing
 

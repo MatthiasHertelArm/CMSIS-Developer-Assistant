@@ -1521,7 +1521,7 @@ const SCENARIOS = [
     },
     {
         name: 'focus-elsewhere',
-        description: 'The session is tracked but not VS Code\'s active session (focus on another session): tools resolve it through the tracker, the SVD lookup and the active stack frame do not.',
+        description: 'The session is tracked but not VS Code\'s active session (focus on another session): tools resolve it through the tracker, the SVD of read_peripheral_register too; only the active stack frame is missing.',
         session: { initial: { at: 'main31', reason: 'breakpoint' }, focusElsewhere: true },
         calls: [
             { tool: 'get_session_status' },

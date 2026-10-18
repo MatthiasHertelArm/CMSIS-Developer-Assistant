@@ -1635,7 +1635,8 @@ export class DebuggingHandler
             let device: SvdDevice | null = null;
             let svdNote: string | undefined;
             try {
-                device = (await loadSvdForLookup({})).device;
+                // The SVD of the session the registers were read from.
+                device = (await loadSvdForLookup({ session: this.dbg.getActiveSession() })).device;
                 if (!device) {
                     svdNote = 'no SVD found — addresses are classified by the Cortex-M system map only; '
                         + 'pass svdFile to lookup_peripheral to resolve them';
@@ -1662,7 +1663,7 @@ export class DebuggingHandler
 
     handleLookupPeripheral(args?: PeripheralLookup): Answer {
         return this.fence('lookup_peripheral', args?.timeoutMs, 'error', async () => {
-            const loaded = await loadSvdForLookup({ svdFile: args?.svdFile, pname: args?.pname });
+            const loaded = await loadSvdForLookup({ svdFile: args?.svdFile, pname: args?.pname, session: this.dbg.getActiveSession() });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
             }
@@ -1689,7 +1690,7 @@ export class DebuggingHandler
 
     handleLookupRegister(args: RegisterLookup): Answer {
         return this.fence('lookup_register', args.timeoutMs, 'error', async () => {
-            const loaded = await loadSvdForLookup({ svdFile: args.svdFile, pname: args.pname });
+            const loaded = await loadSvdForLookup({ svdFile: args.svdFile, pname: args.pname, session: this.dbg.getActiveSession() });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
             }

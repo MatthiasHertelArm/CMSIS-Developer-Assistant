@@ -226,6 +226,19 @@ export function expandPackRoot(filePath: string, packRoot: string): string {
     return filePath.replace(/\$\{CMSIS_PACK_ROOT\}/g, packRoot).replace(/\$CMSIS_PACK_ROOT\b/g, packRoot);
 }
 
+/**
+ * A file a cbuild-run.yml names, as a path: csolution writes a file under
+ * the pack root with `${CMSIS_PACK_ROOT}`, any other one relative to the
+ * folder of the cbuild-run file (`out/`), or absolute when no relative path
+ * exists. Relative is resolved against that folder, never the working
+ * directory of the process. `${CMSIS_COMPILER_ROOT}`, which it writes for
+ * files under the compiler root (the toolbox's `etc/` by default), is not
+ * expanded: no SVD or image lives there.
+ */
+export function cbuildRunFilePath(entry: string, cbuildRunFile: string, packRoot: string): string {
+    return path.resolve(path.dirname(cbuildRunFile), expandPackRoot(entry, packRoot));
+}
+
 /** `<packRoot>/<Vendor>/<Name>/<version>` — the version is required. */
 export function packDir(packRoot: string, id: PackId): string | undefined {
     if (!id.version) { return undefined; }

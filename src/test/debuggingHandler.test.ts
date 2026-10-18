@@ -108,8 +108,8 @@ class ScriptedExecutor {
     restartOutcome: Awaited<ReturnType<IDebuggingExecutor['restart']>> = { via: 'workbench' };
     /** What the DHCSR read finds (#3): a halted core, not locked up. */
     debugPort: DebugPortProbe = { readable: true, dhcsr: 0x00030003 };
-    /** The session `getActiveSession` returns; its `configuration.request` picks the reconnect hint. */
-    activeSession: { configuration: { request: string } } | undefined = { configuration: { request: 'launch' } };
+    /** The session `getActiveSession` returns; its `configuration.request` picks the reconnect hint, its `svdFile` the SVD. */
+    activeSession: { name?: string; configuration: { request: string; svdFile?: string } } | undefined = { configuration: { request: 'launch' } };
 
     note(name: string, ...args: unknown[]): void {
         this.calls.push([name, ...args]);
@@ -1659,6 +1659,19 @@ suite('DebuggingHandler', () => {
             assert.ok(missing.endsWith('Pass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), '
                 + 'or build the solution so out/<context>.cbuild-run.yml names it, or add "svdFile" to the launch configuration. '
                 + 'For a multi-core device pass pname to pick the core.'), missing);
+        });
+
+        test('the lookups and diagnose_fault take the SVD of the executor\'s session, focused or not', async () => {
+            // The test host focuses no session; the executor acts on the tracked one, whose launch configuration names the SVD.
+            const x = new ScriptedExecutor();
+            x.activeSession = { name: 'CMSIS Debugger: pyOCD', configuration: { request: 'launch', svdFile: FIXTURE_SVD } };
+            x.readFaultRegisters = async () => ({ CFSR: 0x00008200, HFSR: 0x40000000, DFSR: 0, MMFAR: 0, BFAR: 0x40023800, AFSR: 0 });
+            const h = handlerFor(x);
+            assert.ok((await textAnswer(h.handleLookupPeripheral())).startsWith('TESTDEVICE: 5 peripherals'));
+            assert.ok((await textAnswer(h.handleLookupRegister({ peripheral: 'RCC', register: 'CR' }))).startsWith('=== RCC.CR @ 0x40023800'));
+            const diagnosis = await textAnswer(h.handleDiagnoseFault());
+            assert.ok(diagnosis.includes('\nFault address (BFAR): 0x40023800 = RCC.CR ('), diagnosis);
+            assert.ok(!diagnosis.includes('no SVD found'), diagnosis);
         });
     });
 

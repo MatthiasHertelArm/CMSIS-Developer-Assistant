@@ -139,8 +139,8 @@ export async function readPeripheralViaMemory(
     frameId?: number | null,
     dapTimeoutMs: number = DEFAULT_DAP_TIMEOUT_MS,
 ): Promise<string> {
-    // Try SVD-based read
-    const device = await loadSvd();
+    // The SVD of the session the read goes to, which need not be VS Code's focused one.
+    const device = await loadSvd(session);
     if (!device) {
         return noSvdFallback(peripheral);
     }

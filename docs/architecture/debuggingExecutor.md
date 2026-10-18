@@ -129,9 +129,10 @@ can fake only the part a case drives.
   `<unavailable>` for any that fail. The cycle counter enables the DWT
   (`DEMCR.TRCENA`, `CYCCNTENA`) on first use and reports a core without one.
   Peripheral reads ask the Peripheral Inspector extension first and otherwise
-  read memory at the SVD address (`src/core/peripheralReader.ts`). The fault
-  status registers are read as one block when possible, else word by word, and
-  decoded by `src/core/faultDecoder.ts`.
+  read memory at the SVD address (`src/core/peripheralReader.ts`), with the
+  SVD of the session the read goes to rather than of the one VS Code has
+  focused. The fault status registers are read as one block when possible,
+  else word by word, and decoded by `src/core/faultDecoder.ts`.
 - **A failed read.** A memory read that fails in every way keeps why each
   way failed (`MemoryReadFailure`, each cause cut to 200 characters). On the
   CMSIS Debugger each public read then reads DHCSR (0xE000EDF0) once — 4

@@ -2288,7 +2288,7 @@
     },
     {
       "name": "focus-elsewhere",
-      "description": "The session is tracked but not VS Code's active session (focus on another session): tools resolve it through the tracker, the SVD lookup and the active stack frame do not.",
+      "description": "The session is tracked but not VS Code's active session (focus on another session): tools resolve it through the tracker, the SVD of read_peripheral_register too; only the active stack frame is missing.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -2316,9 +2316,10 @@
             "peripheral": "RCC",
             "register": "CR"
           },
-          "text": "No SVD file found for the current debug session.\nTo read peripheral registers by name, the extension needs an SVD file.\n\nYou can:\n  1. Add \"svdFile\": \"/path/to/device.svd\" to your launch.json configuration\n  2. Use read_memory with the register address, e.g.: address=\"0x40020000\" length=4\n  3. Use evaluate_expression: \"*(unsigned int*)0x40020000\"\n\nTip: Peripheral base addresses can be found in the device datasheet.\n",
+          "text": "RCC.CR @ 0x40023800 = 0x03000083\n  clock control register\n  Fields:\n    HSION                    [0]      = 0x1 (1)  — Internal high-speed clock enable\n    HSIRDY                   [1]      = 0x1 (1)  — Internal high-speed clock ready flag\n    HSEON                    [16]     = 0x0 (0)  — HSE clock enable\n    PLLON                    [24]     = 0x1 (1)  — Main PLL (PLL) enable\n    PLLRDY                   [25]     = 0x1 (1)  — Main PLL (PLL) clock ready flag\n",
           "traffic": [
-            "dap: threads {}"
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0x40023800\",\"count\":4} -> 4 bytes"
           ]
         },
         {

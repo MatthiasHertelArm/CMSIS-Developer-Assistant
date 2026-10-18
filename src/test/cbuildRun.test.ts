@@ -17,7 +17,8 @@
 import * as assert from 'assert';
 import * as path from 'path';
 import {
-    cbuildRunDebugger, cbuildRunProbeId, defaultPackRoot, expandPackRoot, formatPackId, packDir, parseCbuildRun, parsePackId, parseQualifiedName,
+    cbuildRunDebugger, cbuildRunFilePath, cbuildRunProbeId, defaultPackRoot, expandPackRoot, formatPackId, packDir, parseCbuildRun, parsePackId,
+    parseQualifiedName,
 } from '../core/packDocs/cbuildRun';
 
 export const SAMPLE_CBUILD_RUN = `cbuild-run:
@@ -103,5 +104,14 @@ suite('cbuildRun', () => {
         assert.strictEqual(expandPackRoot('${CMSIS_PACK_ROOT}/Keil/X/1.0.0/a.svd', '/p'), '/p/Keil/X/1.0.0/a.svd');
         assert.strictEqual(packDir('/p', { vendor: 'Keil', name: 'X', version: '1.0.0' }), path.join('/p', 'Keil', 'X', '1.0.0'));
         assert.strictEqual(packDir('/p', { vendor: 'Keil', name: 'X' }), undefined);
+    });
+
+    test('a file the cbuild-run names is relative to its folder, not the working directory', () => {
+        // csolution writes the file of a local pack (packs: - path: ../DFP_machine) relative to out/.
+        const run = path.join('/ws', 'app', 'out', 'app+HW.cbuild-run.yml');
+        assert.strictEqual(cbuildRunFilePath('../../DFP_machine/Device/x.svd', run, '/p'), path.resolve('/ws', 'DFP_machine', 'Device', 'x.svd'));
+        assert.strictEqual(cbuildRunFilePath('app/HW/Debug/app.elf', run, '/p'), path.resolve('/ws', 'app', 'out', 'app', 'HW', 'Debug', 'app.elf'));
+        assert.strictEqual(cbuildRunFilePath('${CMSIS_PACK_ROOT}/Keil/X/1.0.0/a.svd', run, '/p'), path.resolve('/p', 'Keil', 'X', '1.0.0', 'a.svd'));
+        assert.strictEqual(cbuildRunFilePath(path.resolve('/elsewhere', 'b.svd'), run, '/p'), path.resolve('/elsewhere', 'b.svd'), 'an absolute file stays');
     });
 });
