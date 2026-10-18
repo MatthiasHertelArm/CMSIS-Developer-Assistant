@@ -87,6 +87,105 @@ suite('cmsis_action target helpers', () => {
         assert.deepStrictEqual(types, [{ name: 'MPS3', sets: [''] }]);
     });
 
+    test('listTargetTypes reads the keys of an entry in any order', () => {
+        const anyOrder = `
+solution:
+  target-types:
+    - device: STM32U585AIIx
+      type: B-U585I
+      target-set:
+        - debugger:
+            name: ST-Link@pyOCD
+          set: debug
+        - images:
+            - project-context: app.Release
+          info: release build
+          set: release
+    - board: NUCLEO-F401RE
+      target-set:
+        - set:
+      type: NUCLEO
+  build-types:
+    - type: Debug
+`;
+        const types = listTargetTypes(anyOrder);
+        assert.deepStrictEqual(types, [
+            { name: 'B-U585I', sets: ['debug', 'release'] },
+            { name: 'NUCLEO', sets: [''] },
+        ]);
+        assert.deepStrictEqual(resolveTargetSelection(types, { type: 'B-U585I', set: 'release' }),
+            { ok: true, type: 'B-U585I', set: 'release', setIndex: 1, name: 'B-U585I@release' });
+    });
+
+    test('listTargetTypes takes type: from the entries of solution: target-types: only', () => {
+        const nested = `
+solution:
+  description: |
+    target-types:
+      - type: InText
+  target-types:
+    - type: HP
+      target-set:
+        - set: debug
+          images:
+            - type: elf
+              image: ./build/app.elf
+          debugger:
+            name: J-Link Server
+            reset:
+              - type: system
+        - set: release
+`;
+        const types = listTargetTypes(nested);
+        assert.deepStrictEqual(types, [{ name: 'HP', sets: ['debug', 'release'] }]);
+        assert.deepStrictEqual(resolveTargetSelection(types, { type: 'HP', set: 'release' }),
+            { ok: true, type: 'HP', set: 'release', setIndex: 1, name: 'HP@release' });
+        // An entry without set: (the schema requires one) keeps its place: the extension's index counts every entry.
+        assert.deepStrictEqual(listTargetTypes('solution:\n  target-types:\n    - type: A\n      target-set:\n        - images: []\n        - set: s\n'),
+            [{ name: 'A', sets: ['', 's'] }]);
+    });
+
+    test('listTargetTypes reads lists in their key\'s column, CRLF line ends and a byte-order mark', () => {
+        // The layout of NXP's SDK examples.
+        const compact = [
+            '---',
+            'solution:',
+            '  target-types:',
+            '  - type: armgcc',
+            '    compiler: GCC',
+            '  - type: iar',
+            '    target-set:',
+            '    - set: flash',
+            '      debugger:',
+            '        name: J-Link Server',
+            '  build-types:',
+            '  - type: release',
+            '',
+        ].join('\r\n');
+        assert.deepStrictEqual(listTargetTypes(compact), [
+            { name: 'armgcc', sets: [] },
+            { name: 'iar', sets: ['flash'] },
+        ]);
+        assert.deepStrictEqual(listTargetTypes('\uFEFFsolution:\n  target-types:\n    - type: MPS3\n'), [{ name: 'MPS3', sets: [] }]);
+    });
+
+    test('listTargetTypes reads quoted keys and names and drops comments', () => {
+        const quoted = `
+solution:   # a comment after a key
+  target-types:   # and one after this key
+    # a comment line between entries
+    - "type": 'HE'   # a quoted key and name
+      target-set:
+        -   # the keys of this entry follow on the next lines
+          set:   # the unnamed set
+        - set: "debug # 2"   # a quoted name may hold ' #'
+        - set: 'it''s'
+        - set: v#3
+        - set: ~
+`;
+        assert.deepStrictEqual(listTargetTypes(quoted), [{ name: 'HE', sets: ['', 'debug # 2', 'it\'s', 'v#3', ''] }]);
+    });
+
     test('resolveTargetSelection names what to store and explains what does not exist', () => {
         const types = listTargetTypes(TWO_TARGETS);
         assert.deepStrictEqual(resolveTargetSelection(types, { type: 'HP' }),

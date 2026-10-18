@@ -355,8 +355,14 @@ there are the `bootstrap` topic of the agent guide and the skill
 When `target` names a target-type or target-set that is not active, the
 selection is written into the solution folder's `.vscode/cmsis.json`, the
 solution is re-activated, and the switch is verified through the extension
-before anything runs (`src/core/cmsisTarget.ts` reads the csolution). A
-switch is refused under a live debug session.
+before anything runs. A switch is refused under a live debug session.
+`src/core/cmsisTarget.ts` reads the declared target-types and their sets
+from the csolution. There is no YAML parser among the dependencies, so it
+scans the lines and follows the block structure by column: the keys of an
+entry count in any order and a list may stand in its key's column, as YAML
+allows, and a `type:` in a nested list (`images:`, a debugger's `reset:`)
+declares no target-type. A set's index counts every entry of `target-set:`,
+as the CMSIS Solution extension's index into that list does.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else the one of the CMSIS Solution extension's active target
