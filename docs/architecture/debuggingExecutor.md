@@ -75,8 +75,14 @@ can fake only the part a case drives.
   as `no-session`, `initializing`, `running`, `stopped` or `unresponsive`
   from the same probe and never rejects (`probeSession()` in
   `src/executor/sessionReports.ts`, which also writes the connection and
-  device reports). `getDiagnostics()` adds the server version and the live
-  sessions of the window.
+  device reports). On the CMSIS Debugger an answer is not enough:
+  cdt-gdb-adapter answers every request with an empty success, without a
+  body, until GDB has connected to the target and run the launch
+  configuration's commands, and again while the session shuts down. A
+  `threads` reply without a thread list is therefore `initializing` there,
+  and `hasActiveSession()` false (`takesRequests()`); the replies of other
+  adapters count as they are. `getDiagnostics()` adds the server version and
+  the live sessions of the window.
 - **Run control.** Steps, continue and pause send the DAP request (`next`,
   `stepIn`, `stepOut`, `continue`, `pause`) for the focused thread. When the
   request fails for any reason except a timeout, a CMSIS Debugger session
@@ -232,7 +238,7 @@ Code update needs a look at this.
 | `src/core/gdbDialect.ts` | GDB prefix per adapter, the agent's passthrough spellings, MI memory results, GDB's refusal of a run-control request |
 | `src/executor/gdbMemory.ts` | address helpers, `bytesInRange()` for a DAP `readMemory` reply, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
 | `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
-| `src/executor/sessionReports.ts` | `probeSession()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
+| `src/executor/sessionReports.ts` | `probeSession()`, `takesRequests()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
 | `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`) |
 | `src/utils/timeout.ts` | `withTimeout()`, `customRequestWithTimeout()`, `HardwareTimeoutError` |
@@ -241,14 +247,16 @@ Code update needs a look at this.
 
 - `test/transport/executor-cases.js`: the executor alone against scripted
   debug sessions — DAP requests and their arguments, workbench fallbacks and
-  GDB refusals, restart, timeouts, reset verification, GDB command prefixes
-  and output capture, breakpoint bindings, DAP `readMemory` replies that
-  begin later or end sooner than asked, the GDB word-read ladder and the
-  DHCSR read after a failed read
+  GDB refusals, restart, timeouts, the readiness probe on an adapter that
+  takes no requests, reset verification, GDB command prefixes and output
+  capture, breakpoint bindings, DAP `readMemory` replies that begin later or
+  end sooner than asked, the GDB word-read ladder and the DHCSR read after a
+  failed read
 - `src/test/gdbMemory.test.ts`: the ladder's causes, `PROBE_WEDGED` and
   `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints
 - `test/transport/dap-scenarios.js`: the executor behind the handler and the
-  server, 37 scripted `gdbtarget` sessions, a wedged probe among them
+  server in 40 scripted scenarios, mostly `gdbtarget` sessions, a wedged
+  probe and an adapter that is still connecting among them
 - `src/test/sessionStateTracker.test.ts`, `src/test/gdbDialect.test.ts`: the
   output capture, the `setBreakpoints` wait, the logpoint registry, the
   prefixes

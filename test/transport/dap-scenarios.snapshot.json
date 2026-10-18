@@ -2604,6 +2604,131 @@
           ]
         }
       ]
+    },
+    {
+      "name": "status-connecting",
+      "description": "A pyOCD launch whose adapter takes no requests for 3 s while GDB connects (cdt-gdb-adapter answers each one with an empty success): the status tools report initializing, reads, the pause and a breakpoint are refused with NO_SESSION before any request reaches the target, and wait_for_stop sees the session stop at main once it is up. Then the GDB server exits: while the adapter shuts down the status is initializing again, and after that there is no session.",
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting — wait a moment and retry.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "check_target_connection",
+          "args": {},
+          "text": "Session: CMSIS Debugger: pyOCD (type=gdbtarget)\nConfiguration: CMSIS Debugger: pyOCD\nDAP probe: NOT READY (<n>ms)\nThe adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0x20000000",
+            "length": 4
+          },
+          "isError": true,
+          "text": "[NO_SESSION] Cannot read memory: session state is 'initializing'.\nThe debug adapter is still starting. Wait briefly and retry; the session has not torn down. Use get_session_status for a definitive, never-failing classification.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)",
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {
+            "timeoutMs": 1000
+          },
+          "isError": true,
+          "text": "[NO_SESSION] Cannot pause yet: session is still initializing.\nWait briefly and retry.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 31
+          },
+          "isError": true,
+          "text": "[NO_SESSION] Cannot add a breakpoint yet: the session is still initializing.\nWait briefly and retry.",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "wait_for_stop",
+          "args": {
+            "timeoutMs": 5000
+          },
+          "text": "Target stopped (reason: breakpoint, threadId=1).\n\n{\n  \"sessionActive\": true,\n  \"frameName\": \"main\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 29,\n  \"currentLineContent\": \"counter++;\",\n  \"nextLines\": [\n    \"ledState = !ledState;\",\n    \"led_toggle();\",\n    \"delay_ms(config.period_ms);\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"main:29\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "event: initialized {}",
+            "adapter: response launch -> success",
+            "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+            "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: breakpoint\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting — wait a moment and retry.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "event: output [server] \"gdbserver exited with code 1\"",
+            "dap: threads {} -> empty success (adapter not ready)"
+          ],
+          "lateTraffic": [
+            "event: terminated {}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "cmsis-attach-connect-fails",
+      "description": "No session: cmsis_action attach starts a pyOCD attach session whose adapter takes no requests while GDB connects, and the connect fails after 600 ms: the call answers TASK_FAILED as soon as the session is gone, without probing it.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "attach"
+          },
+          "isError": true,
+          "text": "[TASK_FAILED] CMSIS 'attach' on NUCLEO-F401RE started a debug session but it did NOT survive the initial connect — it ended before it came up.\nFor 'attach' this almost always means no GDB server is listening on the configured port: start the GDB server first, or use 'load_and_debug' (which launches one). No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming (the pyOCD task resets the target first); load_and_run programs first. Confirm with get_session_status / check_target_connection.\nRecent problems:\n  #<seq> warning dap error response to 'attach': could not connect: Operation timed out.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.cmsisAttachDebugger",
+            "dap: threads {} -> empty success (adapter not ready)",
+            "adapter: response attach -> error: \"could not connect: Operation timed out.\""
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": []
+        }
+      ]
     }
   ]
 }

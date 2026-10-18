@@ -75,7 +75,7 @@ import {
     attemptsOf, bytesInRange, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
 } from './executor/gdbMemory';
 import type { DebugPortProbe, ReadAttempt } from './core/probeWedge';
-import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession } from './executor/sessionReports';
+import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession, takesRequests } from './executor/sessionReports';
 import { captureDebugState } from './executor/snapshot';
 import { performReset, programCounterFrom } from './executor/targetReset';
 
@@ -261,15 +261,20 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         if (!session) {
             return false;
         }
+        let reply: unknown;
         try {
-            // Only whether it answers matters; the thread list is not looked at.
-            await customRequestWithTimeout(session, 'threads', {}, this.budgets.probe());
+            // Whether it answers, and on the CMSIS Debugger whether it takes requests; the threads are not looked at.
+            reply = await customRequestWithTimeout(session, 'threads', {}, this.budgets.probe());
         } catch (err) {
             if (err instanceof HardwareTimeoutError) {
                 logger.info('hasActiveSession: threads probe timed out — probe or target may be unresponsive');
             } else {
                 logger.debug('hasActiveSession: threads probe failed', err);
             }
+            return false;
+        }
+        if (!takesRequests(session, reply)) {
+            logger.debug('hasActiveSession: the adapter answered the threads probe without a thread list; it takes no requests yet or any more');
             return false;
         }
         return isSessionStopped(session);

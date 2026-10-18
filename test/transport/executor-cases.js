@@ -352,6 +352,43 @@ async function main() {
     }
     reset();
     {
+        // cdt-gdb-adapter answers every request with an empty success, no body, while GDB connects and while the session shuts down.
+        let reply;
+        const { session } = makeSession(() => reply, { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
+        focusOn(session);
+        event(trackerFor(session), 'stopped', { reason: 'breakpoint', threadId: 1 });
+        const ex = new DebuggingExecutor();
+        const gated = 'The adapter answered the threads probe without a thread list: it takes no requests until GDB '
+            + 'has connected to the target and run the launch configuration\'s commands, nor while the session shuts down.';
+        for (const [label, answer] of [['no body', undefined], ['a body without threads', {}]]) {
+            reply = answer;
+            const st = await ex.getSessionStatus();
+            check(`SS7 gdbtarget, ${label} → initializing`, st.state === 'initializing' && st.dapResponsive === true
+                && typeof st.dapProbeMs === 'number' && st.detail === gated, st);
+            check(`SS7 gdbtarget, ${label} → hasActiveSession false despite the stop`, (await ex.hasActiveSession()) === false);
+        }
+        reply = undefined;
+        const txt = (await ex.checkTargetConnection()).replace(/NOT READY \(\d+ms\)/, 'NOT READY (<n>ms)');
+        check('SS7 check text', txt === `Session: Sess (type=gdbtarget)\nConfiguration: Cfg\nDAP probe: NOT READY (<n>ms)\n${gated}`, txt);
+        reply = { threads: [{ id: 1, name: 'main' }] };
+        const st = await ex.getSessionStatus();
+        check('SS7 gdbtarget, thread list → stopped', st.state === 'stopped' && st.detail === 'Stopped reason: breakpoint', st);
+        check('SS7 gdbtarget, thread list → hasActiveSession', (await ex.hasActiveSession()) === true);
+    }
+    reset();
+    {
+        // Other adapters keep their answers: a reply without a body is a session that answers.
+        const { session } = makeSession(() => undefined, { type: 'python', name: 'Py' }, 'Py');
+        focusOn(session);
+        const t = trackerFor(session);
+        const ex = new DebuggingExecutor();
+        event(t, 'continued', {});
+        check('SS7 python, no body → running', (await ex.getSessionStatus()).state === 'running');
+        event(t, 'stopped', { reason: 'step', threadId: 1 });
+        check('SS7 python, no body → stopped', (await ex.getSessionStatus()).state === 'stopped' && (await ex.hasActiveSession()) === true);
+    }
+    reset();
+    {
         const { session } = makeSession(() => undefined, { type: 'gdbtarget' }, 'Live');
         trackerFor(session);
         const d = new DebuggingExecutor().getDiagnostics();

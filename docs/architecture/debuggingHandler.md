@@ -262,9 +262,13 @@ window's CMSIS job tracker (next section):
 - `load_and_debug` waits for its pre-launch `CMSIS Load` when the launch
   configuration has one (a failed Load is the answer, before any session
   probe); then it and `attach` wait for a live session and probe its threads
-  twice (`probeSchedule()`). A session object without threads yet is
+  twice (`probeSchedule()`). The CMSIS Solution command returns before the
+  session is up, so the wait sees GDB connect: until the adapter takes
+  requests the session is `initializing`, not live. A session still
+  connecting when the wait runs out, or one without threads yet, is
   answered with status `running`; `TASK_FAILED` is kept for a session that
-  is gone.
+  is gone, and one that ends before it came up ends the wait at once, where
+  a start or a restart waits on (`awaitLiveSession()`).
 - `attach` connects to a GDB server it does not start, so before the
   command it checks only what the window knows
   (`refuseAttachToBareModel()`, `src/core/gdbServerPorts.ts`): while the

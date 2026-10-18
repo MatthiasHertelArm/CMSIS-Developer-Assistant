@@ -46,7 +46,12 @@ export interface HardwareTimeouts {
     memoryReadMs: number;
 }
 
-/** Where a session stands, judged by the `threads` probe and the stop tracker. */
+/**
+ * Where a session stands, judged by the `threads` probe and the stop tracker.
+ * `initializing` is an adapter that does not take requests: the probe failed
+ * without a timeout, or the CMSIS Debugger's adapter answered without a
+ * thread list while GDB connects or the session shuts down.
+ */
 export type SessionState = 'no-session' | 'initializing' | 'running' | 'stopped' | 'unresponsive';
 
 export interface SessionStatus {
@@ -58,7 +63,7 @@ export interface SessionStatus {
     dapResponsive: boolean;
     /** Round trip of the probe in whole milliseconds; null unless it answered. */
     dapProbeMs: number | null;
-    /** Why the probe failed, or why the target is stopped. */
+    /** Why the probe failed or the adapter takes no requests, or why the target is stopped. */
     detail?: string;
 }
 
@@ -119,7 +124,7 @@ export interface SessionLifecycle {
 
 /** Whether the adapter answers and the target can be inspected. */
 export interface Readiness {
-    /** A session exists, answers the `threads` probe, and its target is stopped. */
+    /** A session exists, answers the `threads` probe (on the CMSIS Debugger with a thread list), and its target is stopped. */
     hasActiveSession(): Promise<boolean>;
     /** Never rejects. */
     getSessionStatus(): Promise<SessionStatus>;

@@ -911,6 +911,18 @@ suite('DebuggingHandler', () => {
                 + 'within 7 s. The probe or target may be unresponsive.');
         });
 
+        test('restart waits on through a moment without a session', async () => {
+            const x = new ScriptedExecutor();
+            // The status before the restart, then what the wait finds.
+            const states: Array<StatusShape['state']> = ['stopped', 'initializing', 'no-session', 'stopped'];
+            x.getSessionStatus = async () => {
+                x.note('getSessionStatus');
+                return status(states.length > 1 ? states.shift() as StatusShape['state'] : states[0]);
+            };
+            assert.strictEqual(await textAnswer(handlerFor(x, fastClock(50)).handleRestart()), 'The debug session has been restarted.');
+            assert.strictEqual(x.argsOf('getSessionStatus').length, 4, 'the status before the restart, then three polls');
+        });
+
         test('restart pauses a running CMSIS Debugger target first and says how it restarted', async () => {
             const x = new ScriptedExecutor();
             x.sessionStatus = status('running');
@@ -3439,6 +3451,51 @@ suite('DebuggingHandler', () => {
             const never = await replyAnswer(attach(undefined), 'running');
             assert.ok(never.startsWith('CMSIS \'attach\' on HE issued via \'cmsis-csolution.cmsisAttachDebugger\'. '
                 + 'The flash/connect pipeline is running in the CMSIS extension'), never);
+        });
+
+        test('attach waits while the adapter takes no requests; a session that ends before it comes up fails the call at once', async () => {
+            // The states the session probe reports one after the other, the last one repeated.
+            const attach = async (states: Array<StatusShape['state']>): Promise<{ answer: ToolText | ToolError; x: ScriptedExecutor }> => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                x.getSessionStatus = async () => {
+                    x.note('getSessionStatus');
+                    const state = states.length > 1 ? states.shift() as StatusShape['state'] : states[0];
+                    x.session = state !== 'no-session';
+                    return status(state);
+                };
+                x.getThreads = async () => {
+                    x.note('getThreads');
+                    return [{ id: 1, name: 't' }];
+                };
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisAttachDebugger': () => {
+                        x.session = true;
+                    },
+                });
+                try {
+                    return { answer: await handlerFor(x, fastClock(50)).handleCmsisCommand({ action: 'attach' }), x };
+                } catch (caught) {
+                    assert.ok(caught instanceof ToolError, String(caught));
+                    return { answer: caught, x };
+                } finally {
+                    registrations?.dispose();
+                    registrations = undefined;
+                }
+            };
+
+            const late = await attach(['initializing', 'initializing', 'running']);
+            assert.ok(typeof late.answer === 'string' && late.answer.startsWith('CMSIS \'attach\' completed on HE — debug session survived the connect '
+                + '(t+3s: 1 thread(s), t+6s: 1 thread(s) — target threads present).'), JSON.stringify(late.answer));
+            assert.strictEqual(late.x.argsOf('getSessionStatus').length, 3, 'two polls found the adapter taking no requests');
+
+            const lost = await attach(['initializing', 'no-session']);
+            assert.ok(lost.answer instanceof ToolError && lost.answer.code === 'TASK_FAILED', JSON.stringify(lost.answer));
+            assert.strictEqual(lost.answer.message, 'CMSIS \'attach\' on HE started a debug session but it did NOT survive the initial connect — '
+                + 'it ended before it came up.');
+            assert.ok(lost.answer.hint?.startsWith('For \'attach\' this almost always means no GDB server is listening'), lost.answer.hint);
+            assert.deepStrictEqual(lost.x.argsOf('getThreads'), [], 'a session that is gone is not probed');
+            assert.strictEqual(lost.x.argsOf('getSessionStatus').length, 2, 'the wait ends with the session');
         });
 
         test('the fence honours the long cap for cmsis_action and flash only', async () => {

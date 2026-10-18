@@ -83,7 +83,7 @@ import {
     renderVariableNames,
     selectVariables,
 } from './core/variableView';
-import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, runCmsisAction } from './handler/cmsisAction';
+import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction } from './handler/cmsisAction';
 import { CatalogQuery, queryCatalog } from './core/catalogQuery';
 import { acquireSolutionApi } from './core/solutionApi';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
@@ -507,21 +507,34 @@ export class DebuggingHandler
         return this.host().workspaceFolders().map((folder) => folder.uri.fsPath);
     }
 
-    /** Poll until the session is running or stopped. The last backoff can overshoot the budget (KB10). */
-    private async awaitLiveSession(overrideMs?: number): Promise<boolean> {
+    /**
+     * Poll until the session is running or stopped. With `endWhenGone`, a
+     * session that showed up during the wait and is gone again ends it: it
+     * ended before it came up. Without, the wait goes on until the budget is
+     * spent, as for a start or a restart. The last backoff can overshoot the
+     * budget (KB10).
+     */
+    private async awaitLiveSession(overrideMs?: number, endWhenGone = false): Promise<LiveSessionWait> {
         const clock = this.host();
         const budgetMs = waitLimitMs(this.configuredSeconds, overrideMs);
         const began = clock.now();
+        let seen = false;
         for (let attempt = 0; clock.now() - began < budgetMs; attempt++) {
             const { state } = await this.dbg.getSessionStatus();
             if (state === 'running' || state === 'stopped') {
                 logger.info(`Debug session is live (state: ${state})`);
-                return true;
+                return 'live';
+            }
+            if (state !== 'no-session') {
+                seen = true;
+            } else if (seen && endWhenGone) {
+                logger.info('The debug session ended before it came up');
+                return 'gone';
             }
             logger.debug(`Waiting for the debug session to come up (attempt ${attempt}, state: ${state})`);
             await clock.sleep(Math.min(1000 * 2 ** attempt, 10_000) + Math.random() * 200);
         }
-        return false;
+        return 'timeout';
     }
 
     /**
@@ -713,7 +726,7 @@ export class DebuggingHandler
     }
 
     private async requireLiveStart(): Promise<void> {
-        if (!(await this.awaitLiveSession())) {
+        if ((await this.awaitLiveSession()) !== 'live') {
             throw new Error('Debug session started but failed to become active within timeout period');
         }
     }
@@ -801,7 +814,7 @@ export class DebuggingHandler
             }
             const logpoints = this.dbg.gdbLogpoints().length;
             const how = await this.dbg.restart();
-            if (!(await this.awaitLiveSession())) {
+            if ((await this.awaitLiveSession()) !== 'live') {
                 throw new Error(`Debug session restart issued but target did not become ready within ${durationText(waitLimitMs(this.configuredSeconds, undefined))}. `
                     + 'The probe or target may be unresponsive.');
             }
@@ -1749,7 +1762,7 @@ export class DebuggingHandler
         const run = (): Answer => this.fence('cmsis_action', waitMs, 'reply', () => runCmsisAction({
             executor: this.dbg,
             host: this.host(),
-            awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
+            awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs, true),
             renderFullState: (state) => this.fullState(state),
         }, args.action, args.target, waitMs, args.path, args.client, args.pack, args), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
         return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();

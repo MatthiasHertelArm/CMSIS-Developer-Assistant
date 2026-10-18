@@ -209,12 +209,19 @@ const UNLISTED_HINT = 'It lists only files whose names end in .csolution.yml or 
 export const CMSIS_FENCE_ADVICE = 'The CMSIS action may still go on in the CMSIS extension — '
     + 'call cmsis_action {action:\'status\'} to see its job; do not start it again.';
 
+/**
+ * How the handler's wait for a live session ended: `live` (running or
+ * stopped), `gone` (a session showed up and ended before it came up), or
+ * `timeout`.
+ */
+export type LiveSessionWait = 'live' | 'gone' | 'timeout';
+
 /** What `cmsis_action` needs from the handler that runs it. */
 export interface CmsisActionContext {
     readonly executor: IDebuggingExecutor;
     readonly host: HandlerHost;
-    /** The handler's session wait with an 8 s override. */
-    awaitLiveSession(overrideMs: number): Promise<boolean>;
+    /** The handler's session wait with an 8 s override, ended early by a session that ends before it comes up. */
+    awaitLiveSession(overrideMs: number): Promise<LiveSessionWait>;
     /** The full state rendering, which also records the breakpoint list. */
     renderFullState(state: DebugState): string;
 }
@@ -415,6 +422,9 @@ async function probeThreads(
         return { healthy: false, present: executor.hasDebugSession(), detail: `${label}: thread probe failed — ${failureText(caught)}` };
     }
 }
+
+/** The verdict on a session that ended before it came up, which leaves nothing to probe. */
+const ENDED_BEFORE_UP = { stable: false, present: false, detail: 'it ended before it came up' };
 
 /** Two probes on the probe schedule; only the second one decides, and says whether the session object is still there. */
 async function checkSurvival(executor: IDebuggingExecutor, host: HandlerHost): Promise<{ stable: boolean; present: boolean; detail: string }> {
@@ -767,11 +777,15 @@ async function writeCmsisTasks(issue: Pick<Issue, 'context' | 'tracker' | 'deadl
     return { labels, missing: { reason: `Update Debug Tasks (cmsis-csolution.updateDebugTasks) ran for the debugger '${debuggerName}' but wrote none` } };
 }
 
-/** The last step of load_and_debug and attach: wait for the session, then probe it twice. */
+/**
+ * The last step of load_and_debug and attach: wait for the session, then
+ * probe it twice. A session that ended before it came up is not probed.
+ */
 async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean): Promise<ToolText> {
     const { executor, host } = issue.context;
     const tag = issue.tag;
-    if (!(await issue.context.awaitLiveSession(SESSION_WAIT_MS))) {
+    const wait = await issue.context.awaitLiveSession(SESSION_WAIT_MS);
+    if (wait === 'timeout') {
         return {
             text: `CMSIS '${action}'${tag} issued via '${issue.command}'.${loadNote ? ` ${loadNote}` : ''} `
                 + 'The flash/connect pipeline is running in the CMSIS extension '
@@ -783,7 +797,7 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
             status: 'running',
         };
     }
-    const survival = await checkSurvival(executor, host);
+    const survival = wait === 'gone' ? ENDED_BEFORE_UP : await checkSurvival(executor, host);
     const loaded = loadNote ? `${loadNote}; ` : '';
     if (survival.stable) {
         const state = await executor.getCurrentDebugState(3);

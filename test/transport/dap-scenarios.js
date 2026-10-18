@@ -66,6 +66,11 @@
 //     answers "No line N in file".
 //   - the GDB server's own output (pyOCD's log) is category `server`, as
 //     cdt-gdb-adapter 1.10 forwards the server's stdout and stderr.
+//   - a session with `connectMs` takes no requests while GDB connects, and
+//     none after `serverExits` while it shuts down: cdt-gdb-adapter answers
+//     every request then with an empty success that carries no body. Once
+//     connected it sends `initialized` and answers the launch or attach
+//     request, or answers it with GDB's error (`connectFails`).
 // VS Code itself is modelled only as far as the code under test can see it:
 // after a stopped event `activeStackItem` becomes frame 1000 of the focused
 // session at once, a continued event clears it; a change of the breakpoint
@@ -410,6 +415,8 @@ class FakeTarget {
         for (const [a, v] of Object.entries(spec.memory ?? {})) { this.words.set(Number(a), v >>> 0); }
         this.hung = false;
         this.dead = false;
+        /** cdt-gdb-adapter takes requests from its launch or attach answer until the session shuts down (`connectMs`, `serverExits`). */
+        this.ready = true;
         this.tracker = null;
         this.seq = 1;
         // GDB's breakpoint table; a launch configuration's initCommands set `break main` first.
@@ -496,6 +503,13 @@ class FakeTarget {
     /** Stop the running target after `delayMs`, as a breakpoint hit would. */
     scheduleStop(delayMs, at, reason) { setTimeout(() => this.stopAt(at, reason), delayMs); }
 
+    /** The GDB server exits: the adapter takes no more requests while it shuts down, and the session ends `afterMs` later. */
+    serverExits(afterMs) {
+        this.output('server', 'gdbserver exited with code 1\n');
+        this.ready = false;
+        setTimeout(() => this.sc.endSession(this.session), afterMs);
+    }
+
     // ── requests ──
 
     request(command, args) {
@@ -508,6 +522,12 @@ class FakeTarget {
         if (this.hung) {
             this.sc.record(`${line} -> no answer`);
             return new Promise(() => {});
+        }
+        if (!this.ready) {
+            // Its request gate: every request is skipped with a success that carries no body.
+            this.sc.record(`${line} -> empty success (adapter not ready)`);
+            this.tracker?.send({ type: 'response', command, success: true });
+            return Promise.resolve(undefined);
         }
         // Logged before answering: events the adapter emits while it works come after the request.
         const log = this.sc.log;
@@ -1005,7 +1025,11 @@ class ScenarioContext {
 
     get target() { return this.targets[this.targets.length - 1]; }
 
-    /** Bring a fake session up the way VS Code would; `spec.initial` is a stop, 'running', or nothing. */
+    /**
+     * Bring a fake session up the way VS Code would; `spec.initial` is a stop, 'running', or nothing. With
+     * `spec.connectMs` the adapter takes no requests for that long while GDB connects; then it answers the start
+     * and VS Code configures the session, or, with `spec.connectFails` (GDB's error), the start fails.
+     */
     launch(spec) {
         const config = sessionConfig(this.env, spec.config ?? 'pyocd');
         const session = {
@@ -1025,6 +1049,35 @@ class ScenarioContext {
             bus.didChangeActiveSession.fire(session);
         }
         bus.didStart.fire(session);
+        if (spec.connectMs) {
+            target.ready = false;
+            setTimeout(() => this.connect(target, spec), spec.connectMs);
+            return session;
+        }
+        this.configure(target, spec);
+        return session;
+    }
+
+    /** The connect ends: the adapter announces itself and answers the start, or answers it with GDB's error. */
+    connect(target, spec) {
+        if (target.dead) { return; }
+        const request = target.session.configuration.request;
+        if (spec.connectFails) {
+            this.record(`adapter: response ${request} -> error: ${JSON.stringify(spec.connectFails)}`);
+            target.tracker.send({ type: 'response', command: request, success: false, message: spec.connectFails,
+                body: { error: { id: 1, format: spec.connectFails } } });
+            this.endSession(target.session, { quiet: true });
+            return;
+        }
+        target.ready = true;
+        target.emit('initialized', {});
+        this.record(`adapter: response ${request} -> success`);
+        target.tracker.send({ type: 'response', command: request, success: true });
+        this.configure(target, spec);
+    }
+
+    /** VS Code configures the session: its breakpoints, configurationDone, then the initial stop or run. */
+    configure(target, spec) {
         // VS Code sends its breakpoints while the adapter configures the session.
         this.syncBreakpoints(stub.debug.breakpoints);
         // cdt-gdb-adapter prints this at configurationDone, which a failed launch never reaches.
@@ -1039,14 +1092,14 @@ class ScenarioContext {
             target.stopAt(spec.initial.at, spec.initial.reason);
         }
         if (spec.hangAfterStart) { target.hung = true; }
-        return session;
     }
 
     /** VS Code sends `setBreakpoints` for each file of these breakpoints to the live session a moment later. */
     syncBreakpoints(bps) {
         const target = this.target;
         const files = [...new Set(bps.filter((bp) => bp instanceof stub.SourceBreakpoint).map((bp) => bp.location.uri.fsPath))];
-        if (!target || target.dead || files.length === 0) { return; }
+        // Only to an adapter that takes requests: VS Code sends them once the adapter has announced itself.
+        if (!target || target.dead || !target.ready || files.length === 0) { return; }
         setTimeout(() => { for (const file of files) { target.setBreakpointsFromVsCode(file); } }, 2);
     }
 
@@ -1674,6 +1727,39 @@ const SCENARIOS = [
             { tool: 'cmsis_action', args: { action: 'load_and_debug' } },
             { tool: 'flash', args: {} },
             { tool: 'stop_debugging' },
+        ],
+    },
+    {
+        name: 'status-connecting',
+        description: 'A pyOCD launch whose adapter takes no requests for 3 s while GDB connects (cdt-gdb-adapter answers each one with an empty success): '
+            + 'the status tools report initializing, reads, the pause and a breakpoint are refused with NO_SESSION before any request reaches the target, '
+            + 'and wait_for_stop sees the session stop at main once it is up. Then the GDB server exits: while the adapter shuts down the status is '
+            + 'initializing again, and after that there is no session.',
+        session: { connectMs: 3000, initial: { at: 'main29', reason: 'breakpoint' } },
+        calls: [
+            { tool: 'get_session_status' },
+            { tool: 'check_target_connection' },
+            { tool: 'read_memory', args: { address: '0x20000000', length: 4 } },
+            { tool: 'pause_execution', args: { timeoutMs: 1000 } },
+            { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 31 } },
+            { tool: 'wait_for_stop', args: { timeoutMs: 5000 } },
+            { tool: 'get_session_status' },
+            { tool: 'get_session_status', before: (sc) => sc.target.serverExits(1000), settleMs: 1500 },
+            { tool: 'get_session_status' },
+        ],
+    },
+    {
+        name: 'cmsis-attach-connect-fails',
+        description: 'No session: cmsis_action attach starts a pyOCD attach session whose adapter takes no requests while GDB connects, and the connect '
+            + 'fails after 600 ms: the call answers TASK_FAILED as soon as the session is gone, without probing it.',
+        commands: {
+            'cmsis-csolution.cmsisAttachDebugger': (sc) => {
+                sc.launch({ config: 'pyocd-attach', connectMs: 600, connectFails: 'could not connect: Operation timed out.' });
+            },
+        },
+        calls: [
+            { tool: 'cmsis_action', args: { action: 'attach' } },
+            { tool: 'get_session_status' },
         ],
     },
 ];
