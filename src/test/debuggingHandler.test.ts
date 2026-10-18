@@ -3478,14 +3478,29 @@ suite('DebuggingHandler', () => {
             });
             teardown(() => fs.rmSync(dir, { force: true, recursive: true }));
 
-            const flashHost = (extensionPath: string | undefined): Partial<HandlerHost> => ({
+            const flashHost = (extensionPath: string | undefined, probeId?: string): Partial<HandlerHost> => ({
                 workspaceFolders: () => [folder(dir)],
                 toolEnvironment: () => ({
                     extension: (id) => (id === 'Arm.vscode-cmsis-debugger' && extensionPath ? { path: extensionPath, version: '1.8.0' } : undefined),
                     pathEnv: '',
                     platform: process.platform,
                 }),
+                solutionProbeId: () => probeId,
             });
+
+            /** The CMSIS Debugger's pyOCD as a script: `--version` says 0.45.1, `load` writes its arguments to argv.txt and runs `body`. */
+            const fakePyocd = (body: string): { extensionPath: string; bin: string; argv: () => string } => {
+                const extensionPath = path.join(dir, 'arm.vscode-cmsis-debugger-1.8.0-darwin-arm64');
+                const bin = path.join(extensionPath, 'tools', 'pyocd', 'pyocd');
+                const argvFile = path.join(dir, 'argv.txt');
+                fs.mkdirSync(path.dirname(bin), { recursive: true });
+                fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.45.1; exit 0; fi\necho "$*" > "${argvFile}"\n${body}`);
+                fs.chmodSync(bin, 0o755);
+                return { extensionPath, bin, argv: () => fs.readFileSync(argvFile, 'utf8').trim() };
+            };
+            /** The cbuild-run file with this `debugger:` node. */
+            const withDebugger = (node: string): void => fs.writeFileSync(cbuildRun,
+                `cbuild-run:\n  generated-by: csolution\n  solution: ../demo.csolution.yml\n  target-type: HE\n  debugger:\n${node}`);
 
             test('without any pyOCD the answer is TOOL_DISABLED and names the CMSIS Debugger, with no pip', async () => {
                 const x = new ScriptedExecutor();
@@ -3534,6 +3549,132 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(refused.hint, 'pyOCD sees no free debug probe. Another task or session may hold it: cmsis_action {action:\'status\'} lists '
                     + 'this window\'s CMSIS tasks, stop_run or stop_debugging frees it. Otherwise the board is not connected or its probe lacks the USB '
                     + 'driver: ask the user to check the cable and the driver — a serial port in serial_list_ports does not prove that the probe is reachable. '
+                    + 'Do not retry until one of these changed.');
+            });
+
+            test('a load that exits 0 succeeds although its log names a path with "Error" in it, and lists what pyOCD warned of', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                // pyOCD logs to stderr: each file at INFO (load_cmd.py:169), and session.py:285 warns with "Error".
+                const { extensionPath, bin } = fakePyocd('echo "0000123 I Loading /proj/out/ErrorHandling/Debug/app.hex [load_cmd]" >&2\n'
+                    + 'echo "0000150 W Error attempting to access config file \'/proj/pyocd.yaml\': [Errno 13] Permission denied [session]" >&2\n'
+                    + 'echo "0002345 I Erased 4096 bytes (1 sector), programmed 4096 bytes (16 pages), identical 0 bytes (0 pages) at 52.00 kB/s [loader]" >&2\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                assert.strictEqual(await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun })),
+                    `✅ Flash succeeded — programmed 4096 bytes at 52 kB/s (pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --no-wait --cbuild-run ${cbuildRun}\`).\n`
+                    + 'pyOCD warned:\n'
+                    + '  0000150 W Error attempting to access config file \'/proj/pyocd.yaml\': [Errno 13] Permission denied [session]\n'
+                    + 'Use cmsis_action attach or load_and_debug to start a debug session.');
+            });
+
+            test('a data chunk pyOCD could not add: still no failure, but ⚠️ with the warning, and the target does not hold the image as built', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                // file_programmer.py:252-257 warns for an ELF segment loader.py:237 refuses, goes on, and load_cmd.py:205 returns 0.
+                const { extensionPath, bin } = fakePyocd('echo "0000310 I Loading /w/out/app/Debug/app.elf [load_cmd]" >&2\n'
+                    + 'echo "0000420 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]" >&2\n'
+                    + 'echo "0002345 I Erased 65536 bytes (2 sectors), programmed 65536 bytes (256 pages), identical 0 bytes (0 pages) at 52.00 kB/s [loader]" >&2\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                assert.strictEqual(await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun })),
+                    '⚠️ Flash exited 0, but pyOCD could not add a data chunk of the image — programmed 65536 bytes at 52 kB/s '
+                    + `(pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --no-wait --cbuild-run ${cbuildRun}\`).\n`
+                    + 'pyOCD warned:\n'
+                    + '  0000420 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]\n'
+                    + 'So the target does not hold the image as built. Check which sections load at the addresses pyOCD names, for example with '
+                    + 'get_section_layout or lookup_symbol {address}, before you debug it. Use cmsis_action attach or load_and_debug to start a debug session.');
+                // Two chunks and nothing else to program (loader.py:335-366), and an error pyOCD logged without failing
+                // (session.py:228): the success lists the error first.
+                const several = fakePyocd('echo "0000200 E Failed to initialize ctrace-run support: cannot access file: No such file or directory [session]" >&2\n'
+                    + 'echo "0000301 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]" >&2\n'
+                    + 'echo "0000302 W Failed to add data chunk: memory region at address 0x1fff7800 is not writable [file_programmer]" >&2\n'
+                    + 'echo "0002345 I Erased 0 bytes (0 sectors), programmed 0 bytes (0 pages), identical 0 bytes (0 pages) at 0.00 kB/s [loader]" >&2\n');
+                const text = await textAnswer(handlerFor(x, flashHost(several.extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.ok(text.startsWith('⚠️ Flash exited 0, but pyOCD could not add 2 data chunks of the image — programmed 0 bytes at 0 kB/s (pyOCD 0.45.1'), text);
+                assert.ok(text.includes('pyOCD warned:\n'
+                    + '  0000200 E Failed to initialize ctrace-run support: cannot access file: No such file or directory [session]\n'
+                    + '  0000301 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]\n'
+                    + '  0000302 W Failed to add data chunk: memory region at address 0x1fff7800 is not writable [file_programmer]\n'
+                    + 'So the target does not hold the image as built.'), text);
+            });
+
+            test('the probe is the one CMSIS Load selects: --probe by the debugger, --uid by the cbuild-run\'s probe-id, else by cmsis-csolution.probe-id', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const { extensionPath, bin, argv } = fakePyocd('echo "programmed 1024 bytes (4 pages) at 10.00 kB/s"\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                // ULINKplus@pyOCD has CMSIS-DAP-pyOCD.adapter.json: its CMSIS Load passes --probe cmsisdap: and the setting's probe ID.
+                withDebugger('    name: ULINKplus@pyOCD\n    clock: 10000000\n');
+                const text = await textAnswer(handlerFor(x, flashHost(extensionPath, 'DAP_T1n4che')).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.ok(text.includes(`(pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --no-wait --probe cmsisdap: --uid DAP_T1n4che --cbuild-run ${cbuildRun}\`)`), text);
+                assert.strictEqual(argv(), `load --no-wait --probe cmsisdap: --uid DAP_T1n4che --cbuild-run ${cbuildRun}`);
+                // The cbuild-run file's probe-id comes before the setting, as in CMSIS Solution; ST-Link@pyOCD passes --probe stlink:.
+                withDebugger('    name: ST-Link@pyOCD\n    probe-id: 066DFF555654725187084543\n');
+                await textAnswer(handlerFor(x, flashHost(extensionPath, 'DAP_T1n4che')).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.strictEqual(argv(), `load --no-wait --probe stlink: --uid 066DFF555654725187084543 --cbuild-run ${cbuildRun}`);
+                // An adapter without a probe type and no probe ID: pyOCD looks at every probe, as before.
+                withDebugger('    name: Arm-FVP\n');
+                await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.strictEqual(argv(), `load --no-wait --cbuild-run ${cbuildRun}`);
+            });
+
+            test('several probes and none selected: TASK_FAILED names them and where the user picks one', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const hint = 'Ask the user which of them is connected to the board to program, and to set its unique ID in the setting cmsis-csolution.probe-id; '
+                    + 'CMSIS Solution\'s Load, Run and Debug select the probe by it as well. Then call flash again; do not choose a probe yourself.';
+                const x = new ScriptedExecutor();
+                x.session = false;
+                // With --probe cmsisdap: pyOCD lists the CMSIS-DAP probes and chooses none (helpers.py:164-173), then logs (load_cmd.py:107).
+                const typed = fakePyocd('echo "More than one debug probe matches unique ID \'cmsisdap:\':"\n'
+                    + 'echo "Arm DAPLink CMSIS-DAP | 9904360258994e45002e0012a6e1000038a1000097969900"\n'
+                    + 'echo "NXP Semiconductors LPC-LINK2 CMSIS-DAP V5.460 | jsaqcqiq"\n'
+                    + 'echo "0000412 E No target device available [load_cmd]" >&2\nexit 1\n');
+                withDebugger('    name: CMSIS-DAP@pyOCD\n');
+                const refused = await refusalOf(handlerFor(x, flashHost(typed.extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }), 'TASK_FAILED');
+                assert.strictEqual(refused.message, `❌ Flash FAILED (exit 1) — \`${typed.bin} load --no-wait --probe cmsisdap: --cbuild-run ${cbuildRun}\`\n`
+                    + 'pyOCD found 2 debug probes of the type cmsisdap and chose none:\n'
+                    + '  9904360258994e45002e0012a6e1000038a1000097969900 (Arm DAPLink CMSIS-DAP)\n'
+                    + '  jsaqcqiq (NXP Semiconductors LPC-LINK2 CMSIS-DAP V5.460)');
+                assert.strictEqual(refused.hint, hint);
+                // No probe type: pyOCD prints its table and asks (helpers.py:188-195); the closed stdin ends that (__main__.py:174-176).
+                const untyped = fakePyocd('echo "  #   Probe/Board                               Unique ID                                          Target"\n'
+                    + 'echo "---------------------------------------------------------------------------------------------------------------"\n'
+                    + 'echo "  0   Arm DAPLink CMSIS-DAP                     9904360258994e45002e0012a6e1000038a1000097969900   n/a"\n'
+                    + 'echo "  1   Segger J-Link OB-SAM3U128-V2-NordicSemi   000683000000                                       n/a"\n'
+                    + 'printf "\\nEnter the number of the debug probe or \'q\' to quit> "\n'
+                    + 'echo "0000921 C Error: EOF when reading a line [__main__]" >&2\nexit 1\n');
+                fs.writeFileSync(cbuildRun, 'cbuild-run:\n  generated-by: csolution\n  solution: ../demo.csolution.yml\n  target-type: HE\n');
+                const asked = await refusalOf(handlerFor(x, flashHost(untyped.extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }), 'TASK_FAILED');
+                assert.strictEqual(asked.message, `❌ Flash FAILED (exit 1) — \`${untyped.bin} load --no-wait --cbuild-run ${cbuildRun}\`\n`
+                    + 'pyOCD found 2 debug probes and chose none:\n'
+                    + '  9904360258994e45002e0012a6e1000038a1000097969900 (Arm DAPLink CMSIS-DAP)\n'
+                    + '  000683000000 (Segger J-Link OB-SAM3U128-V2-NordicSemi)');
+                assert.strictEqual(asked.hint, hint);
+            });
+
+            test('a probe ID that no free probe matches: the hint names the ID and where it is set', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const { extensionPath, bin } = fakePyocd('echo "No connected debug probe matches unique ID \'DAP_T1n4che\'"\n'
+                    + 'echo "0000412 E No target device available [load_cmd]" >&2\nexit 1\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                withDebugger('    name: CMSIS-DAP@pyOCD\n');
+                const refused = await refusalOf(handlerFor(x, flashHost(extensionPath, 'DAP_T1n4che')).handleFlash({ cbuildRunFile: cbuildRun }), 'TASK_FAILED');
+                assert.ok(refused.message.startsWith(`❌ Flash FAILED (exit 1) — \`${bin} load --no-wait --probe cmsisdap: --uid DAP_T1n4che --cbuild-run ${cbuildRun}\`\n`
+                    + 'Errors:\n  No connected debug probe matches unique ID \'DAP_T1n4che\'\n  0000412 E No target device available [load_cmd]\n'), refused.message);
+                assert.strictEqual(refused.hint, 'pyOCD sees no free debug probe whose unique ID contains \'DAP_T1n4che\' (the setting cmsis-csolution.probe-id). '
+                    + 'Another task or session may hold it: cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks, stop_run or stop_debugging frees it. '
+                    + 'Otherwise that probe is not connected or lacks its USB driver, or the ID names another one: ask the user to check the cable, the driver and '
+                    + 'the setting cmsis-csolution.probe-id — a serial port in serial_list_ports does not prove that the probe is reachable. '
                     + 'Do not retry until one of these changed.');
             });
 

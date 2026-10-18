@@ -19,8 +19,8 @@
  * executor: a clock, VS Code's focused stack frame, the window's CMSIS job
  * tracker, its owned serial port, the workspace folders, the active target's
  * cbuild-run file (for `flash` and `cmsis_action`), where `flash` looks for
- * pyOCD, what `cmsis_action install_pack` asks, and the CMSIS Solution
- * extension behind `cmsis_query`.
+ * pyOCD and which probe it selects, what `cmsis_action install_pack` asks,
+ * and the CMSIS Solution extension behind `cmsis_query`.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
@@ -78,6 +78,13 @@ export interface HandlerHost {
     activeCbuildRunFile(): Promise<string | undefined>;
     /** What the pyOCD lookup of `flash` reads. */
     toolEnvironment(): ToolEnvironment;
+    /**
+     * The setting `cmsis-csolution.probe-id`, read as CMSIS Solution reads it
+     * (the window's value, at each call): the probe its CMSIS tasks and
+     * `flash` select when the cbuild-run file names none. Undefined when unset
+     * or blank.
+     */
+    solutionProbeId(): string | undefined;
     /** `vscode.openFolder`: open `folder` in a new VS Code window, or in this one. */
     openFolder(folder: string, newWindow: boolean): Thenable<unknown>;
     /** The CMSIS Solution extension's pack install, the pack root and the licence question of `install_pack`. */
@@ -117,6 +124,10 @@ export const VSCODE_HOST: HandlerHost = {
         pathEnv: process.env.PATH,
         platform: process.platform,
     }),
+    solutionProbeId: () => {
+        const value: unknown = vscode.workspace.getConfiguration('cmsis-csolution').get('probe-id');
+        return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+    },
     openFolder: (folder, newWindow) => vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: newWindow }),
     packInstall: () => VSCODE_PACK_INSTALL_HOST,
     solutionExtension: () => {

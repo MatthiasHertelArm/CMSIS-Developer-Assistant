@@ -403,7 +403,19 @@ refuses while a session or a CMSIS task holds the probe,
 and runs `pyocd load --no-wait --cbuild-run` through `src/core/flashController.ts`
 with the pyOCD the CMSIS tasks use: the CMSIS Debugger extension's bundled
 one, else the one the solution's `.cmsis/tools-environment.yml` names, else
-one on PATH (`resolvePyocd()`). A refusal is `PROBE_BUSY`, a file that
+one on PATH (`resolvePyocd()`). pyOCD's cbuild-run support selects no probe,
+so `flash` passes the selection of CMSIS Solution's CMSIS Load task: `--probe`
+by the debug adapter the cbuild-run file names (`pyocdProbeType()`), `--uid`
+by that file's `debugger: probe-id`, else by the setting
+`cmsis-csolution.probe-id` (`HandlerHost.solutionProbeId`). Whether a run
+worked is pyOCD's exit status; its output explains the result. A failure
+shows the error and critical log lines and tracebacks, or the probes pyOCD
+lists when several match and it chooses none, which the result names with the
+place the user selects one. A success lists the warnings and errors pyOCD
+logged anyway. A data chunk of the image that pyOCD could not add (no writable
+memory at its address, or overlapping data) does not fail the run, since
+pyOCD goes on and exits 0, but it turns the success into a ⚠️: the target
+does not hold the image as built. A refusal is `PROBE_BUSY`, a file that
 cannot be chosen `INVALID_ARGUMENT`, no runnable pyOCD `TOOL_DISABLED`, a
 failing run `TASK_FAILED`, and a run killed at its budget is answered with
 status `timeout`.
