@@ -728,9 +728,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         }
     }
 
-    async readExceptionFrame(stackPointer: number, overrideMs?: number): Promise<Buffer> {
+    async readExceptionFrame(stackPointer: number, overrideMs?: number, stateOffset: number = 0): Promise<Buffer> {
         // The request budget becomes the nested read's override, so it also bounds that read's fence.
-        const read = await this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, EXCEPTION_FRAME_BYTES, this.budgets.request(overrideMs));
+        const read = await this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, stateOffset + EXCEPTION_FRAME_BYTES,
+            this.budgets.request(overrideMs));
         // Bytes that begin after the stack pointer are not the frame.
         return read.offset === 0 ? read.bytes : Buffer.alloc(0);
     }

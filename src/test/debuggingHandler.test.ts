@@ -1691,6 +1691,41 @@ suite('DebuggingHandler', () => {
             assert.ok((await textAnswer(handlerFor(x).handleDiagnoseFault())).includes('Exception frame: short read at MSP'));
             x.registers = { lr: '0xfffffffd', msp: '0x20001000' };
             assert.ok((await textAnswer(handlerFor(x).handleDiagnoseFault())).includes('Exception frame: PSP unavailable — read_core_registers'));
+            assert.deepStrictEqual(x.argsOf('readCoreRegisters').map(([, names]) => (names as string[])[0]), ['sp', 'sp', 'sp'],
+                'a frame on the current state\'s stack reads no banked register');
+        });
+
+        test('a frame on the other Security state\'s stack is read through that state\'s banked stack pointer', async () => {
+            const x = new ScriptedExecutor();
+            // A Non-secure handler whose frame Secure thread code pushed on PSP_S; MSP and PSP are the Non-secure ones.
+            x.registers = {
+                sp: '0x20001000', lr: '0xfffffff8', pc: '0x080001a4', msp: '0x20001000', psp: '0x0',
+                msp_s: '0x30000f00', psp_s: '0x3000ff00', control_s: '2',
+            };
+            const stacked = Buffer.alloc(0x48);
+            stacked.writeUInt32LE(0xFEFA125B, 0);
+            stacked.writeUInt32LE(0x10000a3c, 0x28 + 24);
+            x.readExceptionFrame = async (sp, ms, stateOffset) => {
+                x.note('readExceptionFrame', sp, ms, stateOffset);
+                return stacked;
+            };
+            const reply = await textAnswer(handlerFor(x).handleDiagnoseFault());
+            assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [
+                [undefined, ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim']],
+                [undefined, ['msp_s', 'psp_s', 'control_s']],
+            ]);
+            assert.deepStrictEqual(x.argsOf('readExceptionFrame'), [[0x3000ff00, undefined, 0x28]]);
+            assert.ok(reply.includes('Exception frame: PSP_S @ 0x3000ff00, R0 at +0x28 after the integrity signature and R4–R11 (EXC_RETURN 0xfffffff8)'), reply);
+            assert.ok(reply.includes('  PC=0x10000a3c ← faulting instruction'), reply);
+            assert.ok(!reply.includes('Integrity signature'), reply);
+
+            // A GDB server without the banked registers: the frame is not read from the wrong state's MSP or PSP.
+            const y = new ScriptedExecutor();
+            y.registers = { sp: '0x20001000', lr: '0xfffffff8', pc: '0x080001a4', msp: '0x20001000', psp: '0x0', msp_s: 'void', psp_s: 'void', control_s: 'void' };
+            const unreported = await textAnswer(handlerFor(y).handleDiagnoseFault());
+            assert.deepStrictEqual(y.argsOf('readExceptionFrame'), []);
+            assert.ok(unreported.includes('Exception frame: on MSP_S or PSP_S, as CONTROL_S selects, which the GDB server did not report — '
+                + 'MSP and PSP are the Non-secure state\'s (EXC_RETURN 0xfffffff8)'), unreported);
         });
 
         test('lookup_peripheral: address first, then name, then the list', async () => {

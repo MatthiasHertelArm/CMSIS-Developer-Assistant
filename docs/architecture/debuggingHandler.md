@@ -220,8 +220,14 @@ target runs.
 - `diagnose_fault` combines the decoded fault registers, the stacked
   exception frame chosen by `EXC_RETURN`, the top of the call stack and the
   SVD's view of the faulting address into one report with ranked hypotheses
-  (`src/core/faultTriage.ts`). Each read after the fault registers turns into
-  a note when it fails, instead of failing the call — except a wedged probe:
+  (`src/core/faultTriage.ts`). With TrustZone, `EXC_RETURN` can put the frame
+  on the stack of the Security state the core is not in, and the integrity
+  signature and R4–R11 below the stacked R0 (`selectExceptionFrame()`). The
+  other state's banked stack pointers are read only for such a frame
+  (`bankedStackRegisters()`); a server that does not report them gets a note,
+  never a frame read from the current state's MSP or PSP. Each read after the
+  fault registers turns into a note when it fails, instead of failing the
+  call — except a wedged probe:
   `get_fault_info` and `diagnose_fault` answer the executor's `PROBE_WEDGED`
   itself rather than a diagnosis built on registers that were not read (#3).
   Both read DHCSR once more (`probeDebugPort()`) and add a lockup note when

@@ -877,6 +877,42 @@
       ]
     },
     {
+      "name": "fault-trustzone-secure-stack",
+      "description": "A BusFault in Secure code taken to the Non-secure HardFault handler (TrustZone, AIRCR.BFHFNMINS=1): EXC_RETURN 0xfffffff8 puts the frame on a Secure stack behind the integrity signature and R4–R11, CONTROL_S picks the process stack, so diagnose_fault reads PSP_S, not the Non-secure MSP.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: PSP_S @ 0x20016f00, R0 at +0x28 after the integrity signature and R4–R11 (EXC_RETURN 0xfffffff8)\n  R0=0x60000000 R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"0xfffffff8\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$msp_s\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20016fe0\"",
+            "dap: evaluate {\"expression\":\"$psp_s\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20016f00\"",
+            "dap: evaluate {\"expression\":\"$control_s\",\"context\":\"watch\",\"frameId\":1000} -> \"2\"",
+            "dap: readMemory {\"memoryReference\":\"0x20016f00\",\"count\":72} -> 72 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        }
+      ]
+    },
+    {
       "name": "fault-lockup",
       "description": "The same fault, with the core in lockup (DHCSR.S_LOCKUP): get_fault_info and diagnose_fault say so (#3).",
       "setup": [

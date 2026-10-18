@@ -61,7 +61,7 @@ import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/
 import { HardwareTimeoutError } from './utils/timeout';
 import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
-import { classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
+import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
 import { isLockedUp, LOCKUP_NOTE } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
@@ -1624,7 +1624,20 @@ export class DebuggingHandler
                 psplim: registerNumber(raw.psplim),
             };
 
-            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp);
+            // A frame on the other Security state's stack needs that state's banked registers, read only then.
+            const bankedNames = bankedStackRegisters(regs.lr);
+            const banked: Record<string, number | undefined> = {};
+            if (bankedNames.length > 0) {
+                try {
+                    const values = await this.dbg.readCoreRegisters(timeoutMs, bankedNames);
+                    for (const name of bankedNames) {
+                        banked[name] = registerNumber(values[name]);
+                    }
+                } catch {
+                    // Left undefined: the frame note says which register is missing.
+                }
+            }
+            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp, banked);
             let frame: StackedFrame | null = null;
             let frameNote: string | undefined;
             if (!selection.isExcReturn) {
@@ -1632,10 +1645,10 @@ export class DebuggingHandler
                     ? 'LR unavailable — read_core_registers, then read_memory at PSP/MSP'
                     : 'LR is not an EXC_RETURN value — halted deeper inside the handler; get_call_stack has the frames';
             } else if (selection.sp === null) {
-                frameNote = `${selection.source} unavailable — read_core_registers`;
+                frameNote = selection.note ?? `${selection.source} unavailable — read_core_registers`;
             } else {
                 try {
-                    frame = parseStackedFrame(await this.dbg.readExceptionFrame(selection.sp, timeoutMs));
+                    frame = parseStackedFrame(await this.dbg.readExceptionFrame(selection.sp, timeoutMs, selection.stateOffset), selection.stateOffset);
                     if (!frame) {
                         frameNote = `short read at ${selection.source}`;
                     }

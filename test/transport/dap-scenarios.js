@@ -52,8 +52,9 @@
 //     allocation after a stop; they are invalid while the target runs;
 //   - registers evaluate in GDB's natural format for pyOCD's target
 //     description: r0-r12, lr, xpsr, control, ... are `int` (signed decimal,
-//     so EXC_RETURN 0xfffffff9 reads "-7"), sp/msp/psp are `void *`, pc is a
-//     code pointer "0x80002fe <main+22>", an unknown `$name` is `void`;
+//     so EXC_RETURN 0xfffffff9 reads "-7"), sp/msp/psp and the Security
+//     Extension's msp_s/psp_s/msp_ns/psp_ns are `void *`, pc is a code
+//     pointer "0x80002fe <main+22>", an unknown `$name` is `void`;
 //   - an inaccessible -data-read-memory-bytes fails "Unable to read memory.";
 //     a wedged probe (`wedged`) makes every address inaccessible, DHCSR
 //     included, while threads, stack and registers still answer from GDB's
@@ -307,6 +308,11 @@ const LOCATIONS = {
         frame('HardFault_Handler', null, 0, 0x080001a4), frame('<signal handler called>', null, 0, 0xfffffff9),
         frame('led_toggle', 'led.c', 18, 0x0800027a), frame('main', 'main.c', 31, 0x08000302),
     ],
+    // The Non-secure HardFault handler, entered from Secure Thread code (TrustZone, AIRCR.BFHFNMINS=1).
+    hardFaultFromSecure: [
+        frame('HardFault_Handler', null, 0, 0x080001a4), frame('<signal handler called>', null, 0, 0xfffffff8),
+        frame('led_toggle', 'led.c', 18, 0x0800027a), frame('main', 'main.c', 31, 0x08000302),
+    ],
     resetHandler: [frame('Reset_Handler', null, 0, 0x08000198)],
 };
 
@@ -320,6 +326,11 @@ const REG_OVERRIDES = {
     ledToggle18: { sp: 0x20017fc8, r7: 0x20017fc8, lr: 0x08000303, r3: 0x20 },
     delayLoop: { sp: 0x20017fc0, r7: 0x20017fc0, lr: 0x08000307, r3: 0x3039, r2: 0x7a120 },
     hardFault: { r0: 0x5fffffec, r1: 0x20, r2: 0, r3: 0x20000010, r12: 0, sp: 0x20017fa8, r7: 0x20017fc8, lr: 0xfffffff9, xpsr: 0x61000003 },
+    // MSP and PSP are the Non-secure ones; the frame is on PSP_S, which CONTROL_S.SPSEL selects.
+    hardFaultFromSecure: {
+        r0: 0, r1: 0, r2: 0, r3: 0, r12: 0, sp: 0x20017fa8, r7: 0x20017fc8, lr: 0xfffffff8, xpsr: 0x61000003,
+        msp_s: 0x20016fe0, psp_s: 0x20016f00, control_s: 2,
+    },
     resetHandler: { r0: 0, r1: 0, r2: 0, r3: 0, r4: 0, r7: 0, r12: 0, sp: 0x20018000, lr: 0xffffffff, xpsr: 0x01000000 },
 };
 const REGISTER_ORDER = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12',
@@ -399,6 +410,14 @@ function baseMemory() {
     return words;
 }
 const FAULT_WORDS = { 0xe000ed28: 0x00008200, 0xe000ed2c: 0x40000000, 0xe000ed30: 0x00000008, 0xe000ed34: 0x60000000, 0xe000ed38: 0x60000000 };
+/**
+ * The frame on PSP_S of `hardFaultFromSecure`: integrity signature, reserved word, R4–R11, then R0–xPSR at
+ * +0x28. Its R0 differs from the frame the base memory holds at the Non-secure MSP.
+ */
+const SECURE_FRAME_WORDS = Object.fromEntries([
+    0xfefa125b, 0, 0x1f4, 0, 0, 0x20016f48, 0, 0, 0, 0,
+    0x60000000, 0x20, 0, 0x20000010, 0, 0x08000303, 0x0800027a, 0x21000000,
+].map((w, i) => [0x20016f00 + 4 * i, w]));
 
 class FakeTarget {
     constructor(sc, spec, session) {
@@ -577,7 +596,7 @@ class FakeTarget {
         if (v === undefined) { return { value: 'void', type: 'void' }; }
         if (name === 'pc') { return { value: symbolise(v), type: 'void (*)()' }; }
         if (name === 'lr' && this.spec.lrAsHex) { return { value: hex(v), type: 'void (*)()' }; }
-        if (name === 'sp' || name === 'msp' || name === 'psp') { return { value: hex(v), type: 'void *' }; }
+        if (['sp', 'msp', 'psp', 'msp_s', 'psp_s', 'msp_ns', 'psp_ns'].includes(name)) { return { value: hex(v), type: 'void *' }; }
         return { value: String(v | 0), type: 'int' };
     }
 
@@ -1320,6 +1339,16 @@ const SCENARIOS = [
         session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, lrAsHex: true },
         calls: [
             { tool: 'diagnose_fault', args: { levels: 4 } },
+        ],
+    },
+    {
+        name: 'fault-trustzone-secure-stack',
+        description: 'A BusFault in Secure code taken to the Non-secure HardFault handler (TrustZone, AIRCR.BFHFNMINS=1): EXC_RETURN 0xfffffff8 puts '
+            + 'the frame on a Secure stack behind the integrity signature and R4–R11, CONTROL_S picks the process stack, so diagnose_fault reads PSP_S, '
+            + 'not the Non-secure MSP.',
+        session: { initial: { at: 'hardFaultFromSecure', reason: 'SIGSEGV' }, memory: { ...FAULT_WORDS, ...SECURE_FRAME_WORDS }, lrAsHex: true },
+        calls: [
+            { tool: 'diagnose_fault' },
         ],
     },
     {

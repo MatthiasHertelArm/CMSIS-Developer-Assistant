@@ -890,6 +890,10 @@ async function main() {
         calls.length = 0;
         await ex.readExceptionFrame(0x20001000);
         check('F3 exception frame', calls[0].json === '{"memoryReference":"0x20001000","count":32}');
+        calls.length = 0;
+        await ex.readExceptionFrame(0x30000f00, undefined, 0x28);
+        check('F3 exception frame behind the additional state context: 0x28 + 32 bytes from SP up',
+            calls[0].json === '{"memoryReference":"0x30000f00","count":72}', calls.map((c) => c.json));
         const info = await ex.getFaultInfo();
         check('F getFaultInfo text', info.startsWith('=== Cortex-M Fault Analysis ==='));
         reset();

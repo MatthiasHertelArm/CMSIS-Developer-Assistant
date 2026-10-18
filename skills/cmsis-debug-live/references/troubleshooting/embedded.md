@@ -91,7 +91,7 @@ The session-status output includes a hint for each state. If state is `running` 
 - Read program counter: `$pc`
 - Read stack pointer: `$sp`
 - Read link register: `$lr`
-- Exception frame: `read_memory` at `$sp` (from `read_core_registers`), 32 bytes: R0,R1,R2,R3,R12,LR,PC,xPSR; `diagnose_fault` decodes it
+- Exception frame: `read_memory` 32 bytes at the stack pointer `EXC_RETURN` in LR names (bit 2 set: `$psp`, clear: `$msp`), R0,R1,R2,R3,R12,LR,PC,xPSR; `diagnose_fault` decodes it, TrustZone's banked stacks and the integrity signature included
 - Disassembly around PC: `evaluate_expression` cannot run GDB's `-exec` commands; `lookup_symbol` names the function at the PC
 
 ### Multi-Core Debugging (Alif AppKit)

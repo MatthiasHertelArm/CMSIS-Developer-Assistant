@@ -262,8 +262,14 @@ export interface TargetAccess {
     readMemory(address: string, length: number, overrideMs?: number): Promise<MemoryRead>;
     readMemoryWord(address: string, overrideMs?: number): Promise<number>;
     writeMemoryWord(address: string, value: number, overrideMs?: number): Promise<void>;
-    /** The 32 bytes from the stack pointer on; fewer when the frame cannot be read whole, none when its start cannot. */
-    readExceptionFrame(stackPointer: number, overrideMs?: number): Promise<Buffer>;
+    /**
+     * The stacked state context (R0–R3, R12, LR, PC, xPSR) and the
+     * `stateOffset` bytes below it, read from the stack pointer up: 0x28 when
+     * Armv8-M put the additional state context there, else 0 (the default).
+     * Fewer bytes when the frame cannot be read whole, none when its start
+     * cannot.
+     */
+    readExceptionFrame(stackPointer: number, overrideMs?: number, stateOffset?: number): Promise<Buffer>;
     /** Values are GDB's text, or `<timeout>` / `<unavailable>` for a register that could not be read. */
     readCoreRegisters(overrideMs?: number, names?: string[]): Promise<Record<string, string>>;
     readCycleCounter(overrideMs?: number): Promise<{ cycles: number; enabledNow: boolean; present: boolean }>;
