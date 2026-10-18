@@ -83,7 +83,11 @@ there, and deletes the old file when nothing but our entry was in it.
 ### Safety rules for config files
 
 Atomic write (temp file + rename, per-process unique temp name —
-`src/utils/atomicFile.ts`, for JSON and Codex TOML alike); JSON files are
+`src/utils/atomicFile.ts`, for JSON and Codex TOML alike); a file that is a
+symbolic link, often one into a dotfiles repository, is written through it
+as a plain write would be (the rename replaces the linked file, from a temp
+file beside that file, and the link stays; where a plain write would fail,
+so does this one); JSON files are
 re-read immediately before the write and the update retried when another
 process changed the file in between (`src/utils/jsonFileRewrite.ts` —
 `~/.claude.json` is rewritten by Claude Code all the time); never recreate an
@@ -187,7 +191,7 @@ remove. Each change opens `vscode.diff` between the file as it is — or an
 empty document — and the proposed text, served by a content provider for the
 `cmsis-developer-assistant-rules` scheme, then a modal dialog; only *Write* or
 *Remove* changes the file. The file is read again right before the write,
-which is atomic.
+which is atomic and, through a symbolic link, changes the linked file.
 
 *Records.* `globalState` key `cmsis-developer-assistant.agentRules.files`
 lists each file written, whether it was created for the rules and which
@@ -236,7 +240,7 @@ read.
 - Copying, hiding, marker-guarded removal: `src/utils/skillInstaller.ts`
 - Rule files: `src/core/agentRules.ts` (the agent-to-file map with its vendor sources, the block text, `withRules()` / `withoutRules()`, the records), `src/utils/agentRuleFiles.ts` (`runRuleStep()`, `planRuleChanges()`, `applyRuleChange()`, `refreshRecordedRules()`, the node file system)
 - Generator: `scripts/sync-skills.ts` (`--offline` without a fetch), hand-authored input `scripts/skills.config.json` and `docs/agent-resources/tool-contract.md`; marker blocks: `src/utils/markerBlock.ts`
-- Tests: `src/test/skillCatalog.test.ts` (catalog ↔ disk ↔ lock ↔ help skill, the install set), `src/test/skillInstaller.test.ts` (temp-dir behaviour, the sweep of 2.5.x project roots), `src/test/agentRules.test.ts` (the rule-file map and the step against an in-memory file system), `test/transport/config-scenarios.js` (the files written for each agent per platform, migration, popup state, the setup with its skill install, the rule-file step with its previews, `syncSkills()`, against `config-scenarios.snapshot.json`)
+- Tests: `src/test/skillCatalog.test.ts` (catalog ↔ disk ↔ lock ↔ help skill, the install set), `src/test/skillInstaller.test.ts` (temp-dir behaviour, the sweep of 2.5.x project roots), `src/test/agentRules.test.ts` (the rule-file map and the step against an in-memory file system), `src/test/atomicFile.test.ts` (the atomic writers: kept permission bits, symbolic links written through), `test/transport/config-scenarios.js` (the files written for each agent per platform, migration, popup state, the setup with its skill install, the rule-file step with its previews, `syncSkills()`, against `config-scenarios.snapshot.json`)
 
 ## User Flow
 
