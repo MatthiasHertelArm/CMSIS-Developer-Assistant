@@ -47,7 +47,9 @@ owns the workspace or the board the call is about.
 Each window keeps `window-<pid>.json` in a directory under `os.tmpdir()`: the
 control port and token, the workspace folders, the window name, whether a
 debug session is active and with which configuration, the CMSIS solution
-path when the CMSIS Solution extension reports one, and its role (`router`
+path when the CMSIS Solution extension reports one (its `getSolutionFile`
+command, asked only while that extension is active, since running it would
+activate it; a changed answer is published at once), and its role (`router`
 or `worker`; windows of 2.5.0 and earlier write none). Since 2.5.1 it also
 holds the extension `version`, and from the first heartbeat on `lagMs`, the
 event-loop delay of the last 20 s, and `busy`, the agent calls running there

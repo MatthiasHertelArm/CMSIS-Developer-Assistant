@@ -28,6 +28,7 @@ import {
     noSolutionRefusal,
     noWorkspaceRefusal,
     samePath,
+    solutionFileOf,
 } from '../core/bootstrapState';
 import { errorDetail, isErrorCode } from '../core/toolResult';
 import { findSolutionFiles } from '../utils/solutionFiles';
@@ -78,6 +79,13 @@ suite('Bootstrap state', () => {
         assert.ok(isSolutionFile('C:\\w\\Blinky.CSOLUTION.YAML'));
         assert.ok(!isSolutionFile('/w/Blinky.cproject.yml'));
         assert.ok(!isSolutionFile('/w/csolution.yml.bak'));
+        assert.strictEqual(solutionFileOf('/w/Blinky.csolution.yml'), '/w/Blinky.csolution.yml');
+        assert.strictEqual(solutionFileOf({ solutionFile: '/w/Blinky.csolution.yml' }), '/w/Blinky.csolution.yml');
+        assert.strictEqual(solutionFileOf({ uri: { fsPath: '/w/Blinky.csolution.yml' } }), '/w/Blinky.csolution.yml');
+        assert.strictEqual(solutionFileOf(''), undefined, 'no solution loaded');
+        assert.strictEqual(solutionFileOf({}), undefined);
+        assert.strictEqual(solutionFileOf(null), undefined);
+        assert.strictEqual(solutionFileOf(undefined), undefined);
         const base = path.join(os.tmpdir(), 'Project');
         assert.ok(samePath(base, `${base}${path.sep}`));
         assert.ok(samePath(base, base.toUpperCase(), 'win32'));

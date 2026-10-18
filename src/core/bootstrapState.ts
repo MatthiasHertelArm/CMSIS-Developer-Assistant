@@ -137,6 +137,20 @@ export function isSolutionFile(file: string): boolean {
     return /\.csolution\.ya?ml$/i.test(file);
 }
 
+/**
+ * The csolution file in an answer of `cmsis-csolution.getSolutionFile`: the
+ * path the command returns, or the one an object answer names. Undefined for
+ * `""` (no solution loaded) and for an answer that names no path.
+ */
+export function solutionFileOf(answer: unknown): string | undefined {
+    if (typeof answer === 'string') {
+        return answer.trim() || undefined;
+    }
+    const fields = answer as { solutionFile?: unknown; fsPath?: unknown; path?: unknown; uri?: { fsPath?: unknown } } | null | undefined;
+    const named = fields?.solutionFile ?? fields?.fsPath ?? fields?.uri?.fsPath ?? fields?.path;
+    return typeof named === 'string' && named.length > 0 ? named : undefined;
+}
+
 /** `a` and `b` name the same file or folder; case-insensitive where the platform's file names are. */
 export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
     const fold = (p: string): string => {

@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **The tool rules say what they are about.** They sit in user-level files that agents read in every project, so the lines that read as bans in general now name their subject: `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` and `openocd` are not run *against the board* from a shell, and the build-artefact tools answer *firmware* symbol, section, memory-usage and build-log questions. A `gdb` on a host program, or `nm` on a host binary, is no longer forbidden in passing. Two lines are shorter to keep the rules under 1 600 bytes. The server instructions, the skills, `debug_instructions.md` and `cmsis-help` carry the new text (surface snapshot updated).
 - **A release no longer rewrites your rule files unasked.** When the rules change, activation offers once, in a toast, to review the update of the blocks it wrote earlier; **Review** shows each file as a diff with the modal **Write** of the setup step, **Not Now** leaves the files alone and **Configure Agent** offers the update again. Until now activation rewrote the blocks in place and only logged it. The toast is not repeated for the same rules, waits while the first-run setup is due (its rules step offers the update itself), and activation does not wait for the answer. *Reset Popup State* makes the offer due again.
 
+### Fixed
+- **The window listing names the CMSIS solution.** `list_debug_windows`, `select_debug_window`, the routing errors and the window picker show `cmsis=<file>.csolution.yml` for a window with an active solution. The registry entry read an `activeSolution` field from the CMSIS Solution extension's exports, which that extension does not have (it exports only `getApi(version)`), so the field was always empty. It now asks the extension's `getSolutionFile` command, only while that extension is active, and publishes a changed answer at once.
+
 ## [2.5.20] - 2026-10-12
 
 The README as VS Code renders it.
