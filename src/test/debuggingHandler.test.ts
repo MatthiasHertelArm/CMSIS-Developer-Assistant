@@ -1413,6 +1413,34 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(none, 'None of the requested variables are in scope: nope, other.\nCall list_variable_names to see what is available here.');
         });
 
+        test('a listing names the scopes left unread; a read by name only when a name was not found', async () => {
+            const unread = 'Registers: not read here (expensive over the probe) — read_core_registers reads the core registers.';
+            const x = new ScriptedExecutor();
+            x.getVariables = async (frameId, scope, ms) => {
+                x.note('getVariables', frameId, scope, ms);
+                return scope === 'global' ? { scopes: [] } : { scopes: localScope, skipped: ['Registers'] };
+            };
+            const h = handlerFor(x, focusedOn(7));
+            assert.strictEqual(await textAnswer(h.handleListVariableNames({})),
+                `Variables in scope (names and types only — use get_variables_values to read values):\n\nLocal:\n  count: int\n\n${unread}\n`);
+            assert.strictEqual(await textAnswer(h.handleGetVariables({})), `Variables:\n==========\n\nLocal:\n  count: 3 (int)\n\n${unread}\n`);
+            const widened = await textAnswer(h.handleGetVariables({ scope: 'global' }));
+            assert.ok(widened.startsWith('Note: No dedicated "Global" scope') && widened.endsWith(`  count: 3 (int)\n\n${unread}\n`), widened);
+            assert.strictEqual(await textAnswer(h.handleGetVariables({ variableNames: ['count'] })), 'Variables:\n==========\n\nLocal:\n  count: 3 (int)\n\n',
+                'every name found: no line');
+            assert.strictEqual(await textAnswer(h.handleGetVariables({ variableNames: ['pc'] })),
+                `None of the requested variables are in scope: pc.\nCall list_variable_names to see what is available here.\n${unread}`);
+            const some = await textAnswer(h.handleGetVariables({ variableNames: ['count', 'pc'] }));
+            assert.ok(some.includes('  count: 3 (int)\n') && some.endsWith(`struct members that are not top-level locals.\n${unread}\n`), some);
+
+            x.getVariablesForFrame = async () => ({ scopes: localScope, skipped: ['Registers'] });
+            assert.strictEqual(await textAnswer(h.handleGetFrameVariables({ frameId: 12 })),
+                `Variables for frameId=12:\n==========\n\nLocal:\n  count: 3 (int)\n\n${unread}\n`);
+            assert.strictEqual(await textAnswer(h.handleGetFrameVariables({ frameId: 12, variableNames: ['xpsr'] })),
+                `None of the requested variables are in scope at frameId=12: xpsr.\n${unread}`);
+            assert.ok(!(await textAnswer(h.handleGetFrameVariables({ frameId: 12, variableNames: ['count'] }))).includes('not read here'));
+        });
+
         test('the variable tools need a focused frame and scopes', async () => {
             const x = new ScriptedExecutor();
             const unfocused = await refusalOf(handlerFor(x, focusedOn(undefined)).handleListVariableNames({}), 'TARGET_RUNNING');

@@ -1133,7 +1133,8 @@ const SCENARIOS = [
     },
     {
         name: 'variables',
-        description: 'Halted in led_toggle (caller main has a struct, arrays and secret-named locals): the adapter has Local and Registers scopes only.',
+        description: 'Halted in led_toggle (caller main has a struct, arrays and secret-named locals): the adapter has Local and Registers scopes only, '
+            + 'Registers marked expensive, so a listing reads Local alone and names Registers as not read.',
         session: { initial: { at: 'ledToggle18', reason: 'breakpoint' } },
         calls: [
             { tool: 'list_variable_names' },

@@ -1127,6 +1127,46 @@ async function main() {
     }
     reset();
     {
+        // cdt-gdb-adapter marks its Registers scope expensive: every core and FPU register, read over the probe.
+        let scopes = [{ name: 'Local', variablesReference: 1, expensive: false }, { name: 'Registers', variablesReference: 2, expensive: true }];
+        const answer = (c, a) => {
+            if (c === 'scopes') { return { scopes: scopes.map((s) => ({ ...s })) }; }
+            if (c === 'variables') { return { variables: [{ name: 'v' + a.variablesReference }] }; }
+            throw new Error('?');
+        };
+        const { session, calls } = makeSession(answer);
+        focusOn(session);
+        const ex = new DebuggingExecutor();
+        const reads = () => calls.filter((c) => c.command === 'variables').map((c) => c.args.variablesReference);
+        const r = await ex.getVariables(3);
+        check('V4 all on the CMSIS Debugger: the expensive Registers scope is not read, and named', eq(reads(), [1])
+            && eq(r, { scopes: [{ name: 'Local', variablesReference: 1, expensive: false, variables: [{ name: 'v1' }] }], skipped: ['Registers'] }), r);
+        calls.length = 0;
+        const r2 = await ex.getVariablesForFrame(3, 'all');
+        check('V4 get_frame_variables\' all leaves it out too', eq(reads(), [1]) && eq(r2.skipped, ['Registers']), r2);
+        scopes = [...scopes, { name: 'Global', variablesReference: 4, expensive: true }];
+        calls.length = 0;
+        const r3 = await ex.getVariables(3, 'global');
+        check('V4 an explicit scope is read although expensive', eq(reads(), [4]) && r3.scopes.length === 1 && r3.skipped === undefined, r3);
+        calls.length = 0;
+        const r4 = await ex.getVariables(3, 'all');
+        check('V4 every expensive scope is named', eq(reads(), [1]) && eq(r4.skipped, ['Registers', 'Global']), r4);
+        scopes = [{ name: 'Registers', variablesReference: 2, expensive: true }];
+        calls.length = 0;
+        const r5 = await ex.getVariables(3);
+        check('V4 nothing but expensive scopes: all are read', eq(reads(), [2]) && r5.scopes.length === 1 && r5.skipped === undefined, r5);
+
+        // js-debug marks Global and Module expensive; other adapters keep every scope.
+        scopes = [{ name: 'Local', variablesReference: 1, expensive: false }, { name: 'Module', variablesReference: 5, expensive: true },
+            { name: 'Global', variablesReference: 6, expensive: true }];
+        const node = makeSession(answer, { type: 'pwa-node', name: 'Node' });
+        focusOn(node.session);
+        const r6 = await ex.getVariables(3);
+        check('V4 other adapters: all reads every scope, expensive or not', eq(node.calls.filter((c) => c.command === 'variables').map((c) => c.args.variablesReference), [1, 5, 6])
+            && r6.scopes.length === 3 && r6.skipped === undefined, r6);
+    }
+    reset();
+    {
         const body = { result: '42', type: 'int', variablesReference: 0 };
         const { session, calls } = makeSession(() => body);
         focusOn(session);

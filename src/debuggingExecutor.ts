@@ -63,8 +63,8 @@ import {
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
 import {
-    Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, NO_SESSION_TEXT, ReadMemoryBody, ScopesBody,
-    sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
+    Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, NO_SESSION_TEXT, ReadMemoryBody, ScopeBody,
+    ScopesBody, sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
 } from './executor/common';
 import {
     AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, MemoryRead,
@@ -146,6 +146,27 @@ function rootSessionOf(session: vscode.DebugSession): vscode.DebugSession {
 function sourceFilesOf(breakpoints: readonly vscode.Breakpoint[]): string[] {
     const files = breakpoints.flatMap((entry) => entry instanceof vscode.SourceBreakpoint ? [entry.location.uri.fsPath] : []);
     return [...new Set(files)];
+}
+
+/**
+ * The scopes a variables read covers, and the names of those it leaves out.
+ * `local` and `global` keep each scope whose name contains the word, expensive
+ * or not. `all` keeps every scope, except on the CMSIS Debugger: there it
+ * leaves out the scopes the adapter marks expensive, which VS Code, too, reads
+ * only once the user opens them — cdt-gdb-adapter's Registers scope, every
+ * core and FPU register read over the probe — unless nothing else would be
+ * left. Other adapters keep theirs: js-debug marks Global and Module
+ * expensive, and Module holds an ES module's top-level variables.
+ */
+function scopesToRead(offered: ScopeBody[], scope: 'local' | 'global' | 'all' | undefined, sessionType: string): { kept: ScopeBody[]; skipped: string[] } {
+    if (scope === 'local' || scope === 'global') {
+        return { kept: offered.filter((candidate) => candidate.name.toLowerCase().includes(scope)), skipped: [] };
+    }
+    const expensive = offered.filter((candidate) => candidate.expensive === true);
+    if (sessionType !== CMSIS_DEBUGGER_TYPE || expensive.length === 0 || expensive.length === offered.length) {
+        return { kept: offered, skipped: [] };
+    }
+    return { kept: offered.filter((candidate) => candidate.expensive !== true), skipped: expensive.map((candidate) => candidate.name) };
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
@@ -529,9 +550,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             if (!offered || offered.length === 0) {
                 return { scopes: [] };
             }
-            const kept = scope === 'local' || scope === 'global'
-                ? offered.filter((candidate) => candidate.name.toLowerCase().includes(scope))
-                : offered;
+            const { kept, skipped } = scopesToRead(offered, scope, session.type);
             // One scope after the other; the adapter's scope objects are extended in place.
             for (const entry of kept) {
                 try {
@@ -543,7 +562,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                     entry.error = messageOf(err);
                 }
             }
-            return { scopes: kept };
+            return skipped.length > 0 ? { scopes: kept, skipped } : { scopes: kept };
         } catch (err) {
             // Also flattens a `scopes` timeout (KB14): no longer a HardwareTimeoutError, though its code stays TIMEOUT.
             throw wrapError('Reading the variables failed', err);

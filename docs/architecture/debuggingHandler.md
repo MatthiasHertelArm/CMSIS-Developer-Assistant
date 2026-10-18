@@ -195,7 +195,10 @@ target runs.
   on another session, or the target resumed without the adapter saying so:
   a `TARGET_RUNNING` refusal whose hint is `wait_for_stop` or
   `pause_execution`. `src/core/variableView.ts` renders them, with caps unless the
-  agent names the variables it wants.
+  agent names the variables it wants. A scope the executor left unread (the
+  CMSIS Debugger's Registers) is named in one line that points to
+  `read_core_registers`; a read by name shows it only when a name was not
+  found.
 - An expression whose value has children — a struct, an array, a pointer —
   lists them under its `Result:` as `Fields:`, one level unless the call
   asks for `depth` 2 or 3. An agent that gets only `{...}` reads the fields

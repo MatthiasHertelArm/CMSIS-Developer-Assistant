@@ -77,6 +77,7 @@ import {
     DEFAULT_NAME_LISTING_LIMIT,
     expandFields,
     formatMissingNames,
+    noteSkippedScopes,
     renderFields,
     renderScopes,
     renderVariableNames,
@@ -304,7 +305,8 @@ interface StopOutcome {
     reason?: string | null;
 }
 
-type VariablesReply = { scopes?: DapScope[] } | undefined | null;
+/** What `getVariables` resolves: the scopes read and the names of those it left out (the CMSIS Debugger's Registers). */
+type VariablesReply = { scopes?: DapScope[]; skipped?: string[] } | undefined | null;
 type EvaluateReply = { result?: unknown; type?: string; variablesReference?: number } | undefined | null;
 type RedactCallback = (name: string, value: string) => { value: string; redacted: boolean };
 
@@ -407,6 +409,11 @@ function narrowScopes(scopes: DapScope[], names: string[] | undefined): { scopes
 
 function requestedNames(names: string[] | undefined): string[] | undefined {
     return names && names.length > 0 ? names : undefined;
+}
+
+/** The left-out scopes a reply names: those of a listing, none for a read that found every name it was given. */
+function unreadScopes(skipped: string[], names: string[] | undefined, missing: string[]): string[] {
+    return names && missing.length === 0 ? [] : skipped;
 }
 
 // ── The handler ────────────────────────────────────────────────────────────
@@ -645,8 +652,8 @@ export class DebuggingHandler
         return frameId;
     }
 
-    /** Scopes of the focused frame; a missing `global` scope widens to `all`. */
-    private async focusedScopes(scope: VariableScope, timeoutMs: number | undefined): Promise<{ scopes: DapScope[]; widened: boolean }> {
+    /** Scopes of the focused frame and those left unread; a missing `global` scope widens to `all`. */
+    private async focusedScopes(scope: VariableScope, timeoutMs: number | undefined): Promise<{ scopes: DapScope[]; widened: boolean; skipped: string[] }> {
         const frameId = this.focusedFrame();
         const hasScopes = (reply: VariablesReply): reply is { scopes: DapScope[] } =>
             Array.isArray(reply?.scopes) && reply.scopes.length > 0;
@@ -656,7 +663,7 @@ export class DebuggingHandler
             reply = await this.dbg.getVariables(frameId, 'all', timeoutMs);
             widened = true;
         }
-        return { scopes: hasScopes(reply) ? reply.scopes : [], widened };
+        return { scopes: hasScopes(reply) ? reply.scopes : [], widened, skipped: reply?.skipped ?? [] };
     }
 
     private variableRedactor(): RedactCallback | undefined {
@@ -1426,37 +1433,38 @@ export class DebuggingHandler
     handleListVariableNames(args: ScopeRequest): Answer {
         return this.fence('list_variable_names', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('list variable names');
-            const { scopes } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
+            const { scopes, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
                 return NO_SCOPES_HERE;
             }
-            return renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT });
+            return noteSkippedScopes(renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT }), skipped);
         });
     }
 
     handleGetVariables(args: ValuesRequest): Answer {
         return this.fence('get_variables_values', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read variables');
-            const { scopes, widened } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
+            const { scopes, widened, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
                 return NO_SCOPES_HERE;
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
+            const unread = unreadScopes(skipped, names, picked.missing);
             const note = widened
                 ? 'Note: No dedicated "Global" scope is available from this debug adapter. Showing all available scopes instead. '
                     + 'Use evaluate_expression to inspect specific global variables by name.\n\n'
                 : '';
             if (names && picked.scopes.length === 0) {
-                return `${note}None of the requested variables are in scope: ${names.join(', ')}.\n`
-                    + 'Call list_variable_names to see what is available here.';
+                return noteSkippedScopes(`${note}None of the requested variables are in scope: ${names.join(', ')}.\n`
+                    + 'Call list_variable_names to see what is available here.', unread);
             }
             const listing = renderScopes(picked.scopes, {
                 header: 'Variables',
                 redact: this.variableRedactor(),
                 limits: names ? undefined : DEFAULT_LISTING_LIMITS,
             });
-            return note + listing + formatMissingNames(picked.missing);
+            return noteSkippedScopes(note + listing + formatMissingNames(picked.missing), unread);
         });
     }
 
@@ -1471,15 +1479,16 @@ export class DebuggingHandler
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
+            const unread = unreadScopes(reply?.skipped ?? [], names, picked.missing);
             if (names && picked.scopes.length === 0) {
-                return `None of the requested variables are in scope at frameId=${args.frameId}: ${names.join(', ')}.`;
+                return noteSkippedScopes(`None of the requested variables are in scope at frameId=${args.frameId}: ${names.join(', ')}.`, unread);
             }
             const listing = renderScopes(picked.scopes, {
                 header: `Variables for frameId=${args.frameId}`,
                 redact: this.variableRedactor(),
                 limits: names ? undefined : DEFAULT_LISTING_LIMITS,
             });
-            return listing + formatMissingNames(picked.missing);
+            return noteSkippedScopes(listing + formatMissingNames(picked.missing), unread);
         });
     }
 
