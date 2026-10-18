@@ -1578,6 +1578,39 @@
       ]
     },
     {
+      "name": "reset-hardware-jlink",
+      "description": "J-Link, halted in main, reset with method hardware: `monitor halt` and `monitor reset 2`, J-Link's reset-pin strategy, reach GDB; the cache flush shows the core at the reset vector and the reset verifies.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "reset",
+          "args": {
+            "method": "hardware"
+          },
+          "text": "Target reset verified. PC=0x08000198 matches the reset vector (0x08000198, vector table at 0x08000000). Method(s) tried: hardware. Commands: 'monitor halt', 'monitor reset 2' (server: jlink). Target is halted at the reset vector — use continue_execution to run.",
+          "traffic": [
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">monitor halt\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">monitor reset 2\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Resetting target\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush register-cache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"Register cache flushed.\"",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\">maintenance flush dcache\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED08\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0x08000004\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x8000198 <Reset_Handler>\""
+          ]
+        }
+      ]
+    },
+    {
       "name": "restart-and-stop",
       "description": "restart_debugging on a halted gdbtarget session stops it and starts its launch configuration again through the debug API (the new session stops at main 500 ms later), then stop_debugging ends it.",
       "setup": [

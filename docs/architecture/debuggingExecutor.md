@@ -156,12 +156,15 @@ can fake only the part a case drives.
   and memory caches are flushed, since GDB does not see a reset done by a
   monitor command (the CMSIS Solution launch templates do the same); the
   reset counts only when the PC afterwards equals the reset vector of the
-  table VTOR points to. The
-  method `auto` escalates from `system` to `core` to `hardware` until one
-  verifies, and the target is resumed only after a verified reset with
-  `halt: false`. When none verifies, the reply (`renderResetOutcome()`)
-  says the target is halted and names a next step that needs no one at the
-  board: `stop_debugging`, then `cmsis_action load_and_debug`, which brings
+  table VTOR points to. A method means the same reset on every server:
+  `system` is SYSRESETREQ, `core` VECTRESET and `hardware` the reset line,
+  which J-Link knows as its normal, core and reset-pin strategies, numbered
+  as in the CMSIS Solution launch templates. The method `auto` escalates
+  from `system` to `core` to `hardware` until one verifies, and the target
+  is resumed only after a verified reset with `halt: false`. When none
+  verifies, the reply (`renderResetOutcome()`) says the target is halted
+  and names a next step that needs no one at the board:
+  `stop_debugging`, then `cmsis_action load_and_debug`, which brings
   back J-Link targets and secure-boot parts whose core nSRST alone does not
   re-vector; power-cycling comes only after that (#20).
 

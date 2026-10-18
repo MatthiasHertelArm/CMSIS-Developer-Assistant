@@ -829,7 +829,8 @@ class FakeTarget {
         let reset;
         if (jlink) {
             if (command === 'halt') { return; }
-            reset = /^reset\s+[01]$/.test(command);
+            // J-Link's Cortex-M reset strategies: 0 normal, 1 core, 2 reset pin.
+            reset = /^reset\s+[012]$/.test(command);
             if (reset) { print('Resetting target\n'); }
         } else {
             reset = /^reset\s+halt\s+(system|core|hardware)$/.exec(command);
@@ -1382,6 +1383,14 @@ const SCENARIOS = [
         calls: [
             { tool: 'reset', args: { halt: false } },
             { tool: 'get_session_status' },
+        ],
+    },
+    {
+        name: 'reset-hardware-jlink',
+        description: 'J-Link, halted in main, reset with method hardware: `monitor halt` and `monitor reset 2`, J-Link\'s reset-pin strategy, reach GDB; the cache flush shows the core at the reset vector and the reset verifies.',
+        session: { config: 'jlink', initial: { at: 'main31', reason: 'breakpoint' } },
+        calls: [
+            { tool: 'reset', args: { method: 'hardware' } },
         ],
     },
     {

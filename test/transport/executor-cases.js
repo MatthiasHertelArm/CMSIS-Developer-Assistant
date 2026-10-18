@@ -976,6 +976,17 @@ async function main() {
         const { out } = await resetCase('S', { method: 'system', words: { '0x00000004': 0x08000101 } });
         check('RS VTOR failure → base 0 silently', out.verified === true && out.verificationDetail.endsWith('vector table at 0x00000000)'), out.verificationDetail);
     }
+    {
+        // A J-Link part that only a pull of its reset pin re-vectors: the last step of `auto` is J-Link's reset-pin strategy (2), not its normal reset (0) again.
+        let pinPulled = false;
+        const { out } = await resetCase('J-Link S', {
+            config: { target: { server: 'JLinkGDBServer' } }, method: 'auto', words: { '0xE000ED08': 0, '0x00000004': 0x08000101 },
+            monitorReply: (cmd) => { pinPulled = pinPulled || cmd === 'monitor reset 2'; return { result: '' }; },
+            pc: () => (pinPulled ? '0x08000100 <Reset_Handler>' : '0x08000256 <delay_ms+14>'),
+        });
+        check('RS7 jlink auto: normal, core, then the reset pin, which verifies', eq(out.methodsTried, ['system', 'core', 'hardware']) && out.verified === true
+            && eq(out.commandsIssued, ['monitor halt', 'monitor reset 0', 'monitor halt', 'monitor reset 1', 'monitor halt', 'monitor reset 2']), out);
+    }
 
     // ── Threads, stack, variables, evaluate, device info ──
     reset();
