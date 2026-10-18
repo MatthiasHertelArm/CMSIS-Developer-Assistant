@@ -49,7 +49,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 | [`src/core/peripheralReader.ts`](src/core/peripheralReader.ts) | Peripheral register reader: locate the SVD referenced by the active CMSIS `cbuild-run.yml`, parse it, and read via DAP `readMemory` / GDB `evaluate`. Per-call timeout via `withTimeout`. |
 | [`src/core/svdParser.ts`](src/core/svdParser.ts) | Minimal SVD XML parser. Resolves `derivedFrom`, computes field ranges, exposes `listPeripheralNames()` / `findPeripheral()` / `findRegister()` / `decodeFields()`. |
 | [`src/core/serialController.ts`](src/core/serialController.ts) | OWNED serial backend. `SerialPort` (from the `serialport` package) wrapped in a singleton with a 1 MB RX ring. Powers `serial_open` / `serial_close` / `serial_read` / `serial_write` / `serial_list_ports`. |
-| [`src/core/serialMonitorBridge.ts`](src/core/serialMonitorBridge.ts) | MS Serial Monitor BRIDGE. Probes `vscode.extensions.getExtension('ms-vscode.vscode-serial-monitor').exports` for any of `onDidReceiveData` / `onDataReceived` / `onData` / `onSerialData` / `onDidReadData` / `subscribeData`. Today the public API (v0.1.7) only exposes port enumeration; bridge falls back with a clear "data event not available" message and **auto-lights-up** when MS ships a data event. |
+| [`src/core/serialMonitorBridge.ts`](src/core/serialMonitorBridge.ts) | MS Serial Monitor BRIDGE. Asks `ms-vscode.vscode-serial-monitor` for its API with `getApi(0, context)` (its exports hold only `getApi`) and looks there for any of `onDidReceiveData` / `onDataReceived` / `onData` / `onSerialData` / `onDidReadData` / `subscribeData`. The API of version 0 lists ports and starts or stops monitoring but has no data event, so the bridge refuses a subscription with that reason and **lights up** when a build's API has one. |
 | [`src/core/resetAssist.ts`](src/core/resetAssist.ts) | Pure reset-command mapping: pyOCD OpenOCD-style vs J-Link numeric `monitor reset` dialects, server-kind detection, unsupported-reply classification. No vscode imports — unit-testable. |
 | [`src/core/dwt.ts`](src/core/dwt.ts) | DWT register map (CPUID/DEMCR/DWT_CTRL/DWT_CYCCNT + TRCENA/CYCCNTENA/NOCYCCNT bits) and the CPUID test for Armv6-M and Armv8-M Baseline, which have no cycle counter, for `read_cycle_counter`. |
 | [`src/core/flashController.ts`](src/core/flashController.ts) | `pyocd load --cbuild-run` process control + output parsing (bytes programmed, rate, error lines, tail). Node builtins only — testable outside the extension host. |
@@ -136,7 +136,7 @@ All paths are relative to the extension root (`DebugMCP/`).
 
 **Serial:**
 
-- `serial_list_ports()` — MS Serial Monitor API → `serialport` fallback
+- `serial_list_ports()` — `serialport`, with the friendly name Windows gives a port
 - `serial_capture(path, durationMs, baudRate?, until?, write?)` — one call: open, read until the regex matches or the deadline, close (#49)
 - `serial_open(path, baudRate?, dataBits?, parity?, stopBits?, rtscts?, releaseOn?)` — OWNED port, released after idle time or when the session ends (#49)
 - `serial_close()` / `serial_status()` / `serial_clear_buffer(from?)` / `serial_write(data, encoding?, appendNewline?)` / `serial_read(maxBytes?, waitMs?, consume?, format?, from?)`

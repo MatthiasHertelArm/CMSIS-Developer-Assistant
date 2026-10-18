@@ -75,6 +75,8 @@ export interface HoldTerms {
 
 export interface SerialPortInfo {
     path: string;
+    /** Windows' name of the port, such as "USB Serial Device (COM7)"; serialport has none elsewhere. */
+    friendlyName?: string;
     manufacturer?: string;
     serialNumber?: string;
     pnpId?: string;
@@ -161,10 +163,10 @@ const MAX_BUFFER_BYTES = 1 * 1024 * 1024;
  * binding's "Port is locked".
  */
 const HELD_ELSEWHERE = /Access denied|\bEBUSY\b|resource busy|Cannot lock port|Port is locked/i;
-/** The next step when another program holds the port. */
-export const PORT_HELD_HINT = 'Another program holds it (the Serial Monitor, a terminal): close it there, '
-    + 'or read the Serial Monitor\'s session with serial_subscribe_monitor.';
-const OPEN_FAILED_HINT = 'serial_list_ports lists the ports; if another program holds this one, close it or use serial_subscribe_monitor.';
+/** The next step when another program holds the port; no Serial Monitor API passes on what it receives. */
+export const PORT_HELD_HINT = 'Another program holds it (the Serial Monitor, a terminal): ask the user to close the port there; '
+    + 'serial_open_monitor shows the Serial Monitor.';
+const OPEN_FAILED_HINT = 'serial_list_ports lists the ports; if another program holds this one, ask the user to close it there.';
 const GONE_HINT = 'Reopen it with serial_open once the adapter is back; the bytes received before stay readable.';
 
 /** How each release is journaled: an unplug and the user's release are warnings, a rule doing its job is info. */
@@ -185,6 +187,12 @@ function isDisconnect(err: Error | null | undefined): boolean {
 /** True when an open failed because another program holds the port. */
 export function isHeldElsewhere(message: string): boolean {
     return HELD_ELSEWHERE.test(message);
+}
+
+/** The friendly name serialport's list gives a port on Windows; its `PortInfo` type leaves the field out. */
+function friendlyNameOf(port: object): string | undefined {
+    const name: unknown = Reflect.get(port, 'friendlyName');
+    return typeof name === 'string' && name !== '' ? name : undefined;
 }
 
 /** `10:42:07`: local wall-clock time, as the user reads it next to the board. */
@@ -249,6 +257,7 @@ export class SerialController {
         const ports = await SerialPort.list();
         return ports.map(p => ({
             path: p.path,
+            friendlyName: friendlyNameOf(p),
             manufacturer: p.manufacturer,
             serialNumber: p.serialNumber,
             pnpId: p.pnpId,

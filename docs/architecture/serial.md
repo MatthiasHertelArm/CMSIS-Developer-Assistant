@@ -9,11 +9,11 @@ its own serial state.
 
 - **Two backends.** The owned port (`src/core/serialController.ts`) opens the
   device through the `serialport` package and buffers what arrives, up to
-  1 MiB. The Serial Monitor bridge (`src/core/serialMonitorBridge.ts`) taps
-  the Microsoft Serial Monitor extension, so an agent can read the user's
-  session without taking the port; it lights up only once that extension's
-  API offers a data event. `src/serialHandler.ts` turns both into the tool
-  answers.
+  1 MiB. The Serial Monitor bridge (`src/core/serialMonitorBridge.ts`) would
+  let an agent read the user's Serial Monitor session without taking the
+  port, but the Serial Monitor's API has no data event yet (see
+  [The Serial Monitor bridge](#the-serial-monitor-bridge)).
+  `src/serialHandler.ts` turns both into the tool answers.
 - **One owned port per window.** Several ports would need an owner per port
   and a `path` on every serial tool. A second `serial_open` while a port is
   held is `PORT_HELD`.
@@ -74,6 +74,35 @@ teardown) and with the user's Release command.
 - **The bridge.** A Serial Monitor subscription follows the same idle and
   owner rules; its end unsubscribes and drops its buffer, since those bytes
   belong to the user's session.
+
+## The Serial Monitor bridge
+
+The CMSIS Debugger's extension pack installs the Microsoft Serial Monitor
+(`ms-vscode.vscode-serial-monitor`); the CMSIS Solution extension uses it for
+the Telnet ports of a cbuild-run file.
+
+- **How the API is obtained.** The extension's exports are not its API: they
+  hold `getApi(version, context)`, which hands out the API for version 0 (the
+  only version of `@microsoft/vscode-serial-monitor-api`) and refuses a call
+  without the caller's extension context. CMSIS Solution asks the same way.
+  So `activate()` hands the window's bridge the extension context
+  (`attach()`) before the coordinator serves any tool, and the bridge asks
+  once and keeps the API.
+- **What the API offers.** Version 0 lists ports, starts and stops
+  monitoring a serial port or a TCP connection, and clears the output. It has
+  no event for the bytes the monitor receives, so no other extension can read
+  the user's session. `serial_subscribe_monitor` is refused with that reason,
+  and the guide and the `PORT_HELD` hint tell the agent to ask the user to
+  stop monitoring the port instead. The bridge still looks for a data event
+  on the API object and subscribes when a later build has one;
+  `serial_status` lists the API's methods.
+- **Ports are listed with serialport.** The API's port list is serialport's
+  own, without the serial numbers, so `serial_list_ports` does not ask it; it
+  shows the friendly name that serialport gives a port on Windows instead.
+- **Not the Eclipse CDT Serial Monitor.** `eclipse-cdt.serial-monitor`,
+  which the Arm Device Manager requires, has another id and API (`getApi(1)`
+  or `getApi(2)`: open, reveal, pause and resume a port, list ports) and no
+  data event either; the bridge does not use it.
 
 ## One read in one call
 
@@ -158,8 +187,9 @@ Nothing in VS Code said who held a port the Serial Monitor could not open.
 
 - `PORT_HELD`: the window's slot is taken, or the OS refuses the open because
   another program holds the device (Windows "Access denied", POSIX `EBUSY`,
-  serialport's "Cannot lock port"). The hint names the Serial Monitor and
-  `serial_subscribe_monitor`. The refused open is journaled with the code.
+  serialport's "Cannot lock port"). The hint says to ask the user to close
+  the port there and names `serial_open_monitor`. The refused open is
+  journaled with the code.
 - `PORT_CLOSED`: a write without an open port, with the reason when a release
   took it. Windows of 2.5.0 do not know the code and read it as `INTERNAL`.
 
@@ -171,8 +201,9 @@ Nothing in VS Code said who held a port the Serial Monitor could not open.
   `HoldTerms`, `hold()`, `touch()`, `during()`, `sessionEnded()`,
   `debugSessionEnded()`, `releaseForUser()`, `onDidChange()`),
   `describeRelease()`, `reopenAdvice()`, `isHeldElsewhere()`
-- `src/core/serialMonitorBridge.ts`: `SerialMonitorBridge`, its
-  subscription's lease
+- `src/core/serialMonitorBridge.ts`: `SerialMonitorBridge` (`attach()`,
+  `getApi()`, `status()`, `subscribeIfAvailable()`), its subscription's
+  lease
 - `src/core/serialText.ts`: what the tools, `get_session_status`, the
   programming tools and the status-bar item say about a held port
 - `src/serialStatus.ts`: `SerialStatus`, `releaseSerialPort()`,
@@ -182,7 +213,8 @@ Nothing in VS Code said who held a port the Serial Monitor could not open.
 - `src/serialHandler.ts`: the tools, the setting, `handleCapture()`,
   `sessionEnded()`
 - `src/extension.ts`: a debug session's end reaches `debugSessionEnded()`;
-  the item and the command are registered
+  the bridge gets the extension context; the item and the command are
+  registered
 - `src/debuggingHandler.ts`: `serialLines()`, `noteHeldSerialPort()`
 - `src/windowCoordinator.ts`: teardown within 2 s
 
@@ -195,6 +227,9 @@ Nothing in VS Code said who held a port the Serial Monitor could not open.
   a device the OS locks until its close ends)
 - `src/test/serialHandler.test.ts`: what `serial_open` and `serial_status`
   say, the setting read at each open, `sessionEnded()`, the bridge's rules;
+  the Serial Monitor's API asked as `getApi(0, context)`, its methods in
+  `serial_status`, each refusal and its reason, `serial_list_ports` without
+  it;
   `serial_capture` closing the port on a match, at the deadline, on a read
   that throws and on an unplug, its refusals (invalid regex, taken slot,
   another program), the 16 kB answer and every path spelling; the session
@@ -204,10 +239,14 @@ Nothing in VS Code said who held a port the Serial Monitor could not open.
 - `src/test/debuggingHandler.test.ts`: the serial line of
   `get_session_status`, the note of `flash` and `cmsis_action load_and_run`
 - `src/test/serialFixtures.ts`: the hand-moved clock, the scripted port, the
-  Serial Monitor with a data event, the path fixtures
+  Serial Monitor that hands out its API through `getApi` as 0.13 does, with
+  or without a data event, the path fixtures
 - `src/test/routing.test.ts`: the session id in the envelope, `sessionEnded`
   to the windows a session reached, an old window passed by, the control
   server's own answer
 - `test/transport/session-lifecycle.js`: `serial_capture` over MCP on a mock
   port; `DELETE` and the expiry release a mock port through the local serial
   handler
+- `test/transport/config-scenarios.js` (`extension/activate-router`): the
+  window's bridge, asked as the coordinator starts, reaches a fake Serial
+  Monitor's API with `getApi(0, context)` and this extension's context

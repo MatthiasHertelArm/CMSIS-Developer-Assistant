@@ -223,7 +223,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |
-| `screen /dev/tty…`, `cat /dev/tty…`, PuTTY or `type COM3` on Windows, a pyserial script | `serial_capture` for one read; `serial_open`, `serial_read`, `serial_write`; `serial_subscribe_monitor` while the Serial Monitor holds the port |
+| `screen /dev/tty…`, `cat /dev/tty…`, PuTTY or `type COM3` on Windows, a pyserial script | `serial_capture` for one read; `serial_open`, `serial_read`, `serial_write` |
 | `curl localhost:<port>` with the registry token | `list_debug_windows`, `select_debug_window` |
 | reading a PDF, a web search for a register | `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs`, `lookup_register` |
 <!-- cmsis-developer-assistant:shell-to-tool:end -->
@@ -340,7 +340,7 @@ This is tuned for firmware and should rarely get in your way:
 - To see what the board prints, call `serial_capture` with `durationMs`, and `until` when you know what to wait for: one call opens the port, reads, and closes it again.
 - For the output around a reset: `serial_open`, `reset`, `serial_read {waitMs}`, `serial_close`.
 - Close a port as soon as you have read it: while you hold it, the user's Serial Monitor cannot open it. It is released after 300 s without a serial call and when your MCP session ends; `serial_read` then says why.
-- `PORT_HELD` means another program has the port. When it is the Serial Monitor, read its session with `serial_subscribe_monitor`.
+- `PORT_HELD` means another program has the port. When it is the Serial Monitor, ask the user to stop monitoring it there (`serial_open_monitor` shows it): its API does not pass on what it receives, so `serial_subscribe_monitor` cannot read that session.
 <!-- /topic -->
 
 <!-- topic: faults | Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes -->

@@ -25,7 +25,9 @@
 //   how it reads `.vscode/launch.json`, and its configuration quick-pick.
 // - `extension`: activate() and deactivate() under the stub — the order of
 //   the major calls, the settings read, the registered commands, the MCP
-//   server definition provider, the listeners, the setup timer.
+//   server definition provider, the listeners, the setup timer, and the
+//   Serial Monitor's API as the window's bridge gets it when the coordinator
+//   starts.
 //
 // Only public entry points are driven; private methods are never called, so
 // the same script runs against a rewrite of any of the three files.
@@ -2145,12 +2147,56 @@ function packageContributions() {
     };
 }
 
+/**
+ * The Serial Monitor (ms-vscode.vscode-serial-monitor 0.13), active: its
+ * exports hold only getApi(version, context), which accepts version 0 and
+ * throws without the caller's extension context. Every request is recorded.
+ */
+function fakeSerialMonitor() {
+    const requests = [];
+    const extension = {
+        id: 'ms-vscode.vscode-serial-monitor',
+        isActive: true,
+        exports: {
+            getApi(version, context) {
+                requests.push({ version: u(version), context: context === S.context ? '<context>' : explicit(context), extensionId: u(context?.extension?.id) });
+                if (version !== 0) { throw new Error('Invalid serial monitor API version.'); }
+                if (!context) { throw new Error('In order to use this API, you must pass your extension\'s extensionContext.'); }
+                return { listAvailablePorts: async () => [], startMonitoringPort: async () => undefined, stopMonitoringPort: async () => true, dispose() {} };
+            },
+        },
+        activate: async () => extension.exports,
+    };
+    return { extension, requests };
+}
+
+/**
+ * Ask the window's Serial Monitor bridge for its status when the coordinator
+ * is first started, that is before the MCP server serves the serial tools.
+ */
+function probeSerialMonitorAtStart(m, monitor) {
+    const bridge = load('core/serialMonitorBridge.js').serialMonitorBridge;
+    const startServing = m.wc.WindowCoordinator.prototype.start;
+    const probe = {};
+    let probed = false;
+    m.wc.WindowCoordinator.prototype.start = function (...a) {
+        if (probed) { return startServing.apply(this, a); }
+        probed = true;
+        return bridge.status().then((status) => {
+            probe.status = explicit(status);
+            probe.getApi = monitor.requests.slice();
+            return startServing.apply(this, a);
+        });
+    };
+    return probe;
+}
+
 function extensionScenarios() {
     const fakeSession = { id: 'session-1', name: 'fake', type: 'gdbtarget', configuration: { name: 'fake', type: 'gdbtarget', request: 'launch' }, customRequest: async () => ({}) };
     return [
         { id: 'extension/package-contributions', about: 'package.json: entry point, provider id, commands, palette, settings defaults', run: async () => packageContributions() },
         {
-            id: 'extension/activate-router', about: 'fallback settings except the port; first run; the listeners, commands and timer driven afterwards',
+            id: 'extension/activate-router', about: 'fallback settings except the port; first run; the Serial Monitor\'s API as the coordinator starts; the listeners, commands and timer driven afterwards',
             seed: agentSeeds({ cline: json({ mcpServers: { [LEGACY]: { type: 'streamableHttp', url: URL_3001 } } }) }),
             ui: {
                 agents: seq(['Claude Code'], null),
@@ -2161,8 +2207,12 @@ function extensionScenarios() {
                 const port = await freePort();
                 PORTS.add(port);
                 S.settings.global.set(SETTING('serverPort'), port);
+                const monitor = fakeSerialMonitor();
+                S.ui = { ...S.ui, extension: (id) => (id === monitor.extension.id ? monitor.extension : undefined) };
                 const { ext, m } = loadExtension();
-                const out = { activation: await activateRecorded(h, ext, m) };
+                // F14: the bridge reaches the API only with this extension's context, handed over before the tools are served.
+                const serialMonitorAtCoordinatorStart = probeSerialMonitorAtStart(m, monitor);
+                const out = { activation: await activateRecorded(h, ext, m), serialMonitorAtCoordinatorStart };
                 step('debug session terminates');
                 await fire('debug.onDidTerminateDebugSession', fakeSession);
                 for (const keys of [

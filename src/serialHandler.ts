@@ -99,10 +99,10 @@ function slotTaken(owned: SerialController, caller: string | undefined): ToolErr
  *      Use when the user is NOT running an MS Serial Monitor session for the
  *      same device path (one OS-level reader per tty).
  *
- *   2) `serialMonitorBridge` — taps the MS Serial Monitor extension's public
- *      API via runtime probing. Today the public API only exposes port
- *      enumeration and port-set events; if MS adds a data-subscription event
- *      the bridge picks it up automatically with no further changes.
+ *   2) `serialMonitorBridge` — asks the MS Serial Monitor extension for its
+ *      API (`getApi` version 0). That API has no data event, so
+ *      `serial_subscribe_monitor` is refused, saying so; a build whose API
+ *      has one is subscribed with no further changes.
  *
  * The agent picks: `serial_open` (own port) vs `serial_subscribe_monitor`
  * (tap user's UI session). The owned port is the `serialController`
@@ -127,25 +127,18 @@ export class SerialHandler {
 
     // ── Backend-agnostic helpers ────────────────────────────────────
 
+    /**
+     * `serial_list_ports`: the ports serialport finds, with the friendly name
+     * Windows gives a port, the manufacturer, the serial number and VID:PID.
+     * The Serial Monitor's API lists the same ports without the serial
+     * numbers, so it is not asked.
+     */
     async handleListPorts(): Promise<string> {
-        // Prefer the MS Serial Monitor API for listing — it tends to give
-        // friendlier names — falling back to our serialport when not available.
-        const fromBridge = await this.bridge.listPorts();
-        if (fromBridge && fromBridge.length > 0) {
-            const lines = [`Available serial ports (${fromBridge.length}, via Serial Monitor API):`];
-            for (const p of fromBridge) {
-                const id = [p.friendlyName, p.vid && p.pid ? `${p.vid}:${p.pid}` : null]
-                    .filter(Boolean).join(' / ');
-                lines.push(`  ${p.portName}${id ? `  — ${id}` : ''}`);
-            }
-            return lines.join('\n');
-        }
-
         const fromOwn = await this.owned.listPorts();
         if (fromOwn.length === 0) { return 'No serial ports detected.'; }
         const lines = [`Available serial ports (${fromOwn.length}, via serialport):`];
         for (const p of fromOwn) {
-            const id = [p.manufacturer, p.serialNumber].filter(Boolean).join(' / ');
+            const id = [p.friendlyName, p.manufacturer, p.serialNumber].filter(Boolean).join(' / ');
             const usb = p.vendorId && p.productId ? ` [VID:PID ${p.vendorId}:${p.productId}]` : '';
             lines.push(`  ${p.path}${id ? `  — ${id}` : ''}${usb}`);
         }

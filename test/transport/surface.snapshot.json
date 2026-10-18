@@ -898,7 +898,7 @@
         },
         {
           "name": "serial_list_ports",
-          "description": "List available serial ports. Tries the MS Serial Monitor API first (friendly names), falls back to the bundled serialport library.",
+          "description": "List available serial ports: path, friendly name (Windows), manufacturer, serial number, VID:PID.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1162,7 +1162,7 @@
         },
         {
           "name": "serial_subscribe_monitor",
-          "description": "Subscribe to the MS Serial Monitor extension's data event to read the bytes the user's UI session receives — no port fight. Errors clearly when the installed build exposes no data event (then serial_open). Read with serial_read from='monitor'.",
+          "description": "Read the bytes the user's MS Serial Monitor session receives, without taking the port, via a data event of its API; then serial_read from='monitor'. Its API (version 0) has no such event: the call fails and says what to do instead.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1184,7 +1184,7 @@
         },
         {
           "name": "serial_open_monitor",
-          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Pair with serial_subscribe_monitor to also feed bytes back to the agent.",
+          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Stopping its monitor there frees the port for serial_capture.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1449,8 +1449,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56538,
-          "sha256": "af239e3052657beaf3ae4198ae1d919dd72d36ef4fe15438d1f5f158510c2a51"
+          "bytes": 56594,
+          "sha256": "36384b205f3d8eb2f9b4461478408066fed6eb8f3312ec30bcc41550622cb2bd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -2965,8 +2965,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56538,
-          "sha256": "af239e3052657beaf3ae4198ae1d919dd72d36ef4fe15438d1f5f158510c2a51"
+          "bytes": 56594,
+          "sha256": "36384b205f3d8eb2f9b4461478408066fed6eb8f3312ec30bcc41550622cb2bd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -3884,7 +3884,7 @@
         },
         {
           "name": "serial_list_ports",
-          "description": "List available serial ports. Tries the MS Serial Monitor API first (friendly names), falls back to the bundled serialport library.",
+          "description": "List available serial ports: path, friendly name (Windows), manufacturer, serial number, VID:PID.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -4148,7 +4148,7 @@
         },
         {
           "name": "serial_subscribe_monitor",
-          "description": "Subscribe to the MS Serial Monitor extension's data event to read the bytes the user's UI session receives — no port fight. Errors clearly when the installed build exposes no data event (then serial_open). Read with serial_read from='monitor'.",
+          "description": "Read the bytes the user's MS Serial Monitor session receives, without taking the port, via a data event of its API; then serial_read from='monitor'. Its API (version 0) has no such event: the call fails and says what to do instead.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -4170,7 +4170,7 @@
         },
         {
           "name": "serial_open_monitor",
-          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Pair with serial_subscribe_monitor to also feed bytes back to the agent.",
+          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Stopping its monitor there frees the port for serial_capture.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -5017,8 +5017,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56538,
-          "sha256": "af239e3052657beaf3ae4198ae1d919dd72d36ef4fe15438d1f5f158510c2a51"
+          "bytes": 56594,
+          "sha256": "36384b205f3d8eb2f9b4461478408066fed6eb8f3312ec30bcc41550622cb2bd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -6325,7 +6325,7 @@
         },
         {
           "name": "serial_list_ports",
-          "description": "List available serial ports. Tries the MS Serial Monitor API first (friendly names), falls back to the bundled serialport library.",
+          "description": "List available serial ports: path, friendly name (Windows), manufacturer, serial number, VID:PID.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -6597,7 +6597,7 @@
         },
         {
           "name": "serial_subscribe_monitor",
-          "description": "Subscribe to the MS Serial Monitor extension's data event to read the bytes the user's UI session receives — no port fight. Errors clearly when the installed build exposes no data event (then serial_open). Read with serial_read from='monitor'.",
+          "description": "Read the bytes the user's MS Serial Monitor session receives, without taking the port, via a data event of its API; then serial_read from='monitor'. Its API (version 0) has no such event: the call fails and says what to do instead.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -6619,7 +6619,7 @@
         },
         {
           "name": "serial_open_monitor",
-          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Pair with serial_subscribe_monitor to also feed bytes back to the agent.",
+          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Stopping its monitor there frees the port for serial_capture.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -7033,8 +7033,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56538,
-          "sha256": "af239e3052657beaf3ae4198ae1d919dd72d36ef4fe15438d1f5f158510c2a51"
+          "bytes": 56594,
+          "sha256": "36384b205f3d8eb2f9b4461478408066fed6eb8f3312ec30bcc41550622cb2bd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -8427,7 +8427,7 @@
         },
         {
           "name": "serial_list_ports",
-          "description": "List available serial ports. Tries the MS Serial Monitor API first (friendly names), falls back to the bundled serialport library.",
+          "description": "List available serial ports: path, friendly name (Windows), manufacturer, serial number, VID:PID.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -8699,7 +8699,7 @@
         },
         {
           "name": "serial_subscribe_monitor",
-          "description": "Subscribe to the MS Serial Monitor extension's data event to read the bytes the user's UI session receives — no port fight. Errors clearly when the installed build exposes no data event (then serial_open). Read with serial_read from='monitor'.",
+          "description": "Read the bytes the user's MS Serial Monitor session receives, without taking the port, via a data event of its API; then serial_read from='monitor'. Its API (version 0) has no such event: the call fails and says what to do instead.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -8721,7 +8721,7 @@
         },
         {
           "name": "serial_open_monitor",
-          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Pair with serial_subscribe_monitor to also feed bytes back to the agent.",
+          "description": "Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session. UI-only — does not open or read a port. Stopping its monitor there frees the port for serial_capture.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -9135,8 +9135,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56538,
-          "sha256": "af239e3052657beaf3ae4198ae1d919dd72d36ef4fe15438d1f5f158510c2a51"
+          "bytes": 56594,
+          "sha256": "36384b205f3d8eb2f9b4461478408066fed6eb8f3312ec30bcc41550622cb2bd"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,

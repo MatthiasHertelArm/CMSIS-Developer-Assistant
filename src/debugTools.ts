@@ -199,10 +199,7 @@ const ABOUT = {
         'Lets you walk up the call stack and examine caller-frame state without changing the editor\'s active frame.',
         'Without variableNames the listing is capped (40 per scope, 200 chars per value); with it, uncapped.',
     ),
-    serial_list_ports: say(
-        'List available serial ports.',
-        'Tries the MS Serial Monitor API first (friendly names), falls back to the bundled serialport library.',
-    ),
+    serial_list_ports: 'List available serial ports: path, friendly name (Windows), manufacturer, serial number, VID:PID.',
     serial_capture: say(
         'Capture serial output in one call: open the port, send write if given, read until the regex until matches or ' +
         'durationMs ends, close.',
@@ -237,15 +234,15 @@ const ABOUT = {
         'from=\'owned\' (default) or \'monitor\'.',
     ),
     serial_subscribe_monitor: say(
-        'Subscribe to the MS Serial Monitor extension\'s data event to read the bytes the user\'s UI session receives — no port fight.',
-        'Errors clearly when the installed build exposes no data event (then serial_open).',
-        'Read with serial_read from=\'monitor\'.',
+        'Read the bytes the user\'s MS Serial Monitor session receives, without taking the port, via a data event of its API; ' +
+        'then serial_read from=\'monitor\'.',
+        'Its API (version 0) has no such event: the call fails and says what to do instead.',
     ),
     serial_unsubscribe_monitor: 'Stop the Serial Monitor data subscription (the user\'s UI session is unaffected).',
     serial_open_monitor: say(
         'Focus the Microsoft Serial Monitor panel so the user can see / drive their existing session.',
         'UI-only — does not open or read a port.',
-        'Pair with serial_subscribe_monitor to also feed bytes back to the agent.',
+        'Stopping its monitor there frees the port for serial_capture.',
     ),
     cmsis_action: say(
         'The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, ' +
