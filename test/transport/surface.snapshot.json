@@ -588,7 +588,7 @@
         },
         {
           "name": "read_peripheral_register",
-          "description": "Read named peripheral registers using SVD data from the Peripheral Inspector extension. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. If the Peripheral Inspector is not available, provides guidance on using read_memory instead.",
+          "description": "Read named peripheral registers from the target, decoded with the device SVD. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. Without an SVD file, provides guidance on using read_memory instead.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2401,7 +2401,7 @@
         },
         {
           "name": "read_peripheral_register",
-          "description": "Read named peripheral registers using SVD data from the Peripheral Inspector extension. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. If the Peripheral Inspector is not available, provides guidance on using read_memory instead.",
+          "description": "Read named peripheral registers from the target, decoded with the device SVD. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. Without an SVD file, provides guidance on using read_memory instead.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -3574,7 +3574,7 @@
         },
         {
           "name": "read_peripheral_register",
-          "description": "Read named peripheral registers using SVD data from the Peripheral Inspector extension. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. If the Peripheral Inspector is not available, provides guidance on using read_memory instead.",
+          "description": "Read named peripheral registers from the target, decoded with the device SVD. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. Without an SVD file, provides guidance on using read_memory instead.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6015,7 +6015,7 @@
         },
         {
           "name": "read_peripheral_register",
-          "description": "Read named peripheral registers using SVD data from the Peripheral Inspector extension. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. If the Peripheral Inspector is not available, provides guidance on using read_memory instead.",
+          "description": "Read named peripheral registers from the target, decoded with the device SVD. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. Without an SVD file, provides guidance on using read_memory instead.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8117,7 +8117,7 @@
         },
         {
           "name": "read_peripheral_register",
-          "description": "Read named peripheral registers using SVD data from the Peripheral Inspector extension. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. If the Peripheral Inspector is not available, provides guidance on using read_memory instead.",
+          "description": "Read named peripheral registers from the target, decoded with the device SVD. Provide a peripheral name (e.g. \"GPIOA\", \"UART0\", \"SPI1\") and optionally a register name. Without an SVD file, provides guidance on using read_memory instead.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",

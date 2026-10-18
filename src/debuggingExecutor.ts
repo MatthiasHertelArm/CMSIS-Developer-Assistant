@@ -51,7 +51,7 @@ import * as vscode from 'vscode';
 import { DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
 import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, FaultRegisters, faultRegistersFromBlock } from './core/faultDecoder';
 import { CMSIS_DEBUGGER_TYPE, gdbRequestRefusal, miQuoted, passthroughCommand } from './core/gdbDialect';
-import { readPeripheralViaMemory, tryReadPeripheralViaExtension } from './core/peripheralReader';
+import { readPeripheralViaMemory } from './core/peripheralReader';
 import { ResetMethod } from './core/resetAssist';
 import { type DapVariable, isDapVariable } from './core/variableView';
 import { DebugState, StackFrame } from './debugState';
@@ -763,11 +763,6 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     async readPeripheralRegister(peripheral: string, register?: string, overrideMs?: number): Promise<string> {
-        // The Peripheral Inspector is asked before the session is checked (KB13).
-        const inspected = await tryReadPeripheralViaExtension(peripheral, register);
-        if (inspected !== null) {
-            return inspected;
-        }
         const session = sessionOrThrow();
         const frameId = await this.focusedFrameId();
         const budgetMs = this.budgets.request(overrideMs);

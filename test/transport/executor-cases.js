@@ -810,6 +810,43 @@ async function main() {
             && e.message.startsWith('Memory reads time out and the debug port does not answer (DHCSR at 0xE000EDF0 timed out). Reading 0xE000ED28'), String(e));
     }
 
+    // ── Peripheral registers: the SVD gives the address, no other extension is asked ──
+    reset();
+    {
+        // The Peripheral Inspector as the CMSIS Debugger's extension pack installs it, not yet active.
+        // Its API (1.10.0) registers SVD files and parsers and reloads its view; nothing in it reads a register.
+        const PERIPHERAL_INSPECTOR = 'eclipse-cdt.peripheral-inspector';
+        const api = {
+            registerSVDFile() {}, getSVDFile: () => undefined, getSVDFileFromCortexDebug: async () => undefined,
+            registerPeripheralsProvider() {}, getInterruptTable: () => undefined, loadPeripheralsForSession: async () => {},
+        };
+        const inspector = { id: PERIPHERAL_INSPECTOR, isActive: false, exports: undefined };
+        let activations = 0;
+        inspector.activate = async () => { activations++; inspector.isActive = true; inspector.exports = api; return api; };
+        const asked = [];
+        stub.extensions.getExtension = (id) => { asked.push(id); return id === PERIPHERAL_INSPECTOR ? inspector : undefined; };
+        try {
+            const e = await rejects(new DebuggingExecutor().readPeripheralRegister('RCC', 'CR'));
+            check('P1 no session: the no-session error before anything else; the Peripheral Inspector is not asked',
+                e && e.message === 'No debug session is running in this window' && !asked.includes(PERIPHERAL_INSPECTOR) && activations === 0,
+                { error: e && e.message, asked, activations });
+            asked.length = 0; activations = 0; inspector.isActive = false; inspector.exports = undefined;
+            const svdFile = path.resolve(__dirname, '..', '..', 'src', 'test', 'fixtures', 'test-device.svd');
+            const { session, calls } = makeSession((c, a) => {
+                if (c === 'readMemory' && a.memoryReference === '0x40023800') { return { data: b64(le(0x03000083)) }; }
+                throw new Error(`unexpected ${c}`);
+            }, { type: 'gdbtarget', name: 'Cfg', svdFile });
+            focusOn(session);
+            const text = await new DebuggingExecutor().readPeripheralRegister('RCC', 'CR');
+            check('P2 the word at the SVD address, fields decoded; the Peripheral Inspector is neither asked nor activated',
+                text.startsWith('RCC.CR @ 0x40023800 = 0x03000083\n') && text.includes('HSION') && !asked.includes(PERIPHERAL_INSPECTOR) && activations === 0
+                && eq(calls.map((c) => c.command + ' ' + c.json), ['readMemory {"memoryReference":"0x40023800","count":4}']),
+                { text, asked, activations, calls: calls.map((c) => c.command + ' ' + c.json) });
+        } finally {
+            stub.extensions.getExtension = () => undefined;
+        }
+    }
+
     // ── A wedged probe told apart from an unreadable address (#3) ──
     reset();
     {

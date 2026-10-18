@@ -146,9 +146,9 @@ const ABOUT = {
         'Enables DWT/CYCCNT on first use; reports cores without one.',
     ),
     read_peripheral_register: say(
-        'Read named peripheral registers using SVD data from the Peripheral Inspector extension.',
+        'Read named peripheral registers from the target, decoded with the device SVD.',
         'Provide a peripheral name (e.g. "GPIOA", "UART0", "SPI1") and optionally a register name.',
-        'If the Peripheral Inspector is not available, provides guidance on using read_memory instead.',
+        'Without an SVD file, provides guidance on using read_memory instead.',
     ),
     get_fault_info: say(
         'Read and decode the Cortex-M fault status registers (CFSR, HFSR, BFAR, MMFAR, DFSR, AFSR) bit by bit.',
