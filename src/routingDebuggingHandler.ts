@@ -55,7 +55,13 @@
  * window that has the folder open, else to the session's target, and when
  * that is a tie to the router's own window, since any window can open a
  * folder. When the worker opened a new window, the router waits for it to
- * register and makes it the session's target; a pin stays.
+ * register and makes it the session's target; a pin stays. `cmsis_action
+ * install_pack` goes to the session's target too, and a tie to the router's
+ * own window: a pack is installed for the machine, not for a window.
+ * `create_solution` is routed by its path too, first to a window that has
+ * exactly that folder open: CMSIS Solution opens the folder it created in
+ * the window that created it. `cmsis_query` asks the catalog, which every
+ * window can answer, so a tie runs it in the router's own window.
  *
  * The session remembers the windows it forwarded to. When it ends, the MCP
  * server calls `sessionEnded`, which tells each of them with the internal op
@@ -79,7 +85,7 @@ import {
     forwardTimeoutMs,
     targetHintOf,
 } from './core/opTable';
-import { liesInside } from './core/bootstrapState';
+import { liesInside, samePath } from './core/bootstrapState';
 import { ProblemNotices } from './core/problemFeed';
 import type { JournalCounters } from './core/problemJournal';
 import {
@@ -132,6 +138,12 @@ const WATCHDOG_MISSES = 2;
 /** The op and action of `cmsis_action open_solution`, which the router routes by its `path` and follows to the new window. */
 const CMSIS_OP = 'handleCmsisCommand';
 const OPEN_SOLUTION = 'open_solution';
+/** The action of `cmsis_action install_pack`, which any window can run. */
+const INSTALL_PACK = 'install_pack';
+/** `cmsis_action create_solution`, routed by its `path` as well; nothing to follow. */
+const CREATE_SOLUTION = 'create_solution';
+/** The op of `cmsis_query`, which any window can answer. */
+const QUERY_OP = 'handleCmsisQuery';
 /** How long, and how often, the router looks for the window `open_solution` opened. */
 const OPENED_WINDOW_WAIT_MS = 30_000;
 const OPENED_WINDOW_POLL_MS = 500;
@@ -254,13 +266,26 @@ function withoutWindow(args: unknown): unknown {
     return rest;
 }
 
-/** The `path` of a `cmsis_action open_solution` call; undefined for every other call. */
-function openSolutionPath(op: string, args: unknown): string | undefined {
+/** The action and `path` of a `cmsis_action open_solution` or `create_solution` call; undefined for every other call. */
+function routedPathOf(op: string, args: unknown): { action: string; path: string } | undefined {
     if (op !== CMSIS_OP || typeof args !== 'object' || args === null) {
         return undefined;
     }
     const { action, path: given } = args as { action?: unknown; path?: unknown };
-    return action === OPEN_SOLUTION && typeof given === 'string' && given.length > 0 ? given : undefined;
+    return (action === OPEN_SOLUTION || action === CREATE_SOLUTION) && typeof given === 'string' && given.length > 0
+        ? { action, path: given }
+        : undefined;
+}
+
+/** Whether the window has exactly `folder` open, as its only folder. */
+function hasOnly(entry: WindowRegistration, folder: string): boolean {
+    const folders = Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
+    return folders.length === 1 && samePath(folders[0], folder);
+}
+
+/** Whether the call is a `cmsis_action install_pack`. */
+function installsPack(op: string, args: unknown): boolean {
+    return op === CMSIS_OP && typeof args === 'object' && args !== null && (args as { action?: unknown }).action === INSTALL_PACK;
 }
 
 /** Whether one of the window's folders is `target` or contains it; a window without folders holds nothing. */
@@ -453,10 +478,17 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
      */
     private async relay(op: string, args: unknown): Promise<ToolText> {
         const given = args === undefined ? {} : args;
-        const opening = openSolutionPath(op, given);
-        const { entry, reason } = opening === undefined
-            ? this.resolveTarget(targetHintOf(given))
-            : this.resolveForOpen(opening, targetHintOf(given));
+        const routed = routedPathOf(op, given);
+        const hint = targetHintOf(given);
+        let resolved: Resolved;
+        if (routed !== undefined) {
+            resolved = routed.action === CREATE_SOLUTION ? this.resolveForCreate(routed.path, hint) : this.resolveForOpen(routed.path, hint);
+        } else if (op === QUERY_OP || installsPack(op, given)) {
+            resolved = this.resolveAnyWindow(hint);
+        } else {
+            resolved = this.resolveTarget(hint);
+        }
+        const { entry, reason } = resolved;
         const sent = withoutWindow(given);
         logger.debug(`Routing ${op} → pid=${entry.pid} port=${entry.controlPort} (via ${reason})`);
         this.forwardedTo.add(entry.pid);
@@ -479,14 +511,13 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (noticed instanceof ToolError) {
             throw noticed;
         }
-        return opening === undefined ? noticed : this.followOpened(noticed);
+        return routed?.action === OPEN_SOLUTION ? this.followOpened(noticed) : noticed;
     }
 
     /**
      * The window `open_solution` runs in: the one a `window` argument names,
-     * else the one that has the path open, else this session's target as for
-     * any call. A tie goes to the router's own window, or the first listed:
-     * any window can open a folder.
+     * else the one that has the path open, else any window
+     * (`resolveAnyWindow`).
      */
     private resolveForOpen(solutionPath: string, hint: TargetHint | undefined): Resolved {
         if (hint !== undefined && hint.source === 'window') {
@@ -496,8 +527,35 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (holder !== undefined) {
             return this.pinnedPid === undefined ? this.settle(holder, 'path') : { entry: holder, reason: 'path' };
         }
+        return this.resolveAnyWindow(undefined);
+    }
+
+    /**
+     * The window `create_solution` runs in: the one a `window` argument
+     * names, else one that has exactly that folder open (the window CMSIS
+     * Solution can open the new project in without a reload), else as for
+     * `open_solution`.
+     */
+    private resolveForCreate(folder: string, hint: TargetHint | undefined): Resolved {
+        if (hint !== undefined && hint.source === 'window') {
+            return this.resolveTarget(hint);
+        }
+        const owner = this.registry.list().find((w) => hasOnly(w, folder));
+        if (owner !== undefined) {
+            return this.pinnedPid === undefined ? this.settle(owner, 'path') : { entry: owner, reason: 'path' };
+        }
+        return this.resolveForOpen(folder, hint);
+    }
+
+    /**
+     * For a call any window can run (`open_solution` of a folder no window
+     * has open, `install_pack`, `cmsis_query`): this session's target as for
+     * any call, and on a tie the router's own window, or the first listed,
+     * without making it the session's target.
+     */
+    private resolveAnyWindow(hint: TargetHint | undefined): Resolved {
         try {
-            return this.resolveTarget(undefined);
+            return this.resolveTarget(hint);
         } catch (failure) {
             if (!(failure instanceof ToolError) || failure.code !== 'AMBIGUOUS_WINDOW') {
                 throw failure;

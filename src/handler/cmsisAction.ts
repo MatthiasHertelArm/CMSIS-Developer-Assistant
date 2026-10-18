@@ -25,20 +25,30 @@
  * task, its exit code, how long it ran and the job id. load_and_run is done
  * once Load ended 0 and CMSIS Run, which hosts the GDB server, stayed up for
  * 2 s. load_and_debug waits for its pre-launch Load, then, like attach, for a
- * session that it probes twice.
+ * session that it probes twice. rebuild and clean run CMSIS Solution's
+ * Rebuild and Clean (1.72.0), the build task type with `--rebuild` or
+ * `--clean`, as jobs of their own; stop_build ends the build-type tasks of
+ * the window and says whether one was running.
  *
  * One deadline per call (#12): the wait (60 s by default, up to 600 s) counts
  * from the call, so the solution checks and a target switch come out of it,
  * and the call answers before its fence. A job still going at the deadline is
  * answered with status `running`; `status` waits for it, and a repeated build,
- * load, erase or load_and_run attaches to the job in flight instead of
- * starting a second one.
+ * rebuild, clean, load, erase or load_and_run attaches to the job in flight
+ * instead of starting a second one. A build, rebuild or clean while another
+ * of the three is in flight is refused: CMSIS Solution would start it only
+ * after that one ended.
  *
  * Before anything is issued (#46): a debug session refuses load_and_debug and
  * attach, the probe guard refuses what CMSIS Run, a Load, an Erase, `flash` or
  * a session blocks, a target that is not active is switched through
  * `.vscode/cmsis.json` and verified, and a task the debugger adapter does not
  * offer is refused by its label. stop_run waits until the CMSIS tasks ended.
+ * A tasks.json with no CMSIS task at all, while the active target's
+ * cbuild-run.yml names a debugger, is written once through
+ * `cmsis-csolution.updateDebugTasks` (what CMSIS Solution runs after each
+ * successful convert) and the labels are read again; otherwise, or when that
+ * did not help, the refusal names Manage Solution Settings.
  *
  * Refusals and failed tasks reject with a `ToolError` (`PROBE_BUSY`,
  * `CMSIS_NO_SOLUTION`, `NO_WORKSPACE`, `INVALID_ARGUMENT`, `TASK_FAILED`); an
@@ -51,6 +61,10 @@
  * the folder of a csolution in a new VS Code window, or, when that folder is
  * already open here, makes the solution the extension's active one. The
  * router then aims the session at the window that holds the folder.
+ * `install_pack` needs none either: it installs one pack version through the
+ * extension, after the user accepted its licence (`./installPack.ts`).
+ * `create_solution` needs none either: CMSIS Solution's API creates the
+ * project from an example or template (`createSolution.ts`).
  *
  * Known gaps kept on purpose (fixed separately): late command failures are
  * dropped (KB11), and an unknown action is noticed only after the solution
@@ -63,7 +77,21 @@ import * as path from 'path';
 import type { DebugState } from '../debugState';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
 import type { CmsisJobTracker, ExecutionLike } from '../cmsisJobTracker';
-import { ACTION_PHASES, executionIn, guardProbe, GuardedAction, isSettled, Job, JobAction, runtimeOf } from '../core/cmsisTasks';
+import {
+    ACTION_PHASES,
+    BUILD_ACTIONS,
+    executionIn,
+    guardProbe,
+    GuardedAction,
+    hasCmsisTasks,
+    isBuildAction,
+    isSettled,
+    Job,
+    JobAction,
+    runtimeOf,
+} from '../core/cmsisTasks';
+import { DIAGNOSTIC_RERUN_CAP_MS } from '../core/buildFailure';
+import { cbuildRunDebugger } from '../core/packDocs/cbuildRun';
 import {
     applyTargetSelection,
     formatTargetChoices,
@@ -84,6 +112,7 @@ import {
     samePath,
     SOLUTION_EXTENSION_ID,
 } from '../core/bootstrapState';
+import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import { silentAttachEndpoints } from '../core/gdbServerPorts';
 import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
@@ -92,15 +121,20 @@ import { withTimeout } from '../utils/timeout';
 import { survivesWindowReload } from '../core/clientHosting';
 import { logger } from '../utils/logger';
 import { failureText, LONG_LIMIT_CAP_MS } from './fence';
+import { createSolution, CreateRequest } from './createSolution';
 import type { HandlerHost } from './host';
-import { formatDuration, idleStatus, jobResult, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
+import { formatDuration, idleStatus, jobResult, MissingTasksNote, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
+import { runInstallPack } from './installPack';
 
-export type CmsisAction = 'build' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach' | 'stop_run'
-    | 'status' | 'open_solution';
+export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach'
+    | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
 
 /** The CMSIS Solution command behind each action. A Map, so `constructor` and friends are not actions. */
 const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['build', 'cmsis-csolution.build'],
+    ['rebuild', 'cmsis-csolution.rebuild'],
+    ['clean', 'cmsis-csolution.clean'],
+    ['stop_build', 'cmsis-csolution.stopBuild'],
     ['load', 'cmsis-csolution.cmsisLoad'],
     ['erase', 'cmsis-csolution.cmsisErase'],
     ['run', 'cmsis-csolution.cmsisRun'],
@@ -112,10 +146,11 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
 ]);
 
 /** Actions that run a CMSIS task and end with its result; a repeated one attaches to the job in flight. */
-const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'run', 'load_and_run']);
+const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run']);
 const SESSION_ACTIONS: ReadonlySet<string> = new Set(['load_and_debug', 'attach']);
 /** Actions whose default wait is the long one: they wait for a task. */
-const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'status']);
+const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'status',
+    'install_pack', 'create_solution']);
 
 /** Waits without a positive `timeoutMs`: 60 s for the task actions and status (#12), 30 s for the rest. */
 const LONG_WAIT_DEFAULT_MS = 60_000;
@@ -130,7 +165,7 @@ const SESSION_WAIT_MS = 8_000;
 const SURVIVAL_BUDGET_MS = 8_000;
 /** How often load_and_debug looks for its pre-launch Load or a session. */
 const LOAD_OR_SESSION_POLL_MS = 250;
-/** stop_run: the CMSIS Solution's own terminate gets this long, the whole stop this long. */
+/** stop_run and stop_build: the CMSIS Solution's own terminate gets this long, the whole stop this long. */
 const STOP_GRACE_MS = 3_000;
 const STOP_TOTAL_MS = 10_000;
 /** Budgets of the extension queries. */
@@ -139,6 +174,11 @@ const ACTIVATION_MS = 10_000;
 /** How long, and how often, a switched target is checked. */
 const SWITCH_VERIFY_MS = 15_000;
 const SWITCH_POLL_MS = 500;
+
+/** How long Update Debug Tasks may take, and how long its tasks then get to show in VS Code's task list. */
+const UPDATE_TASKS_MS = 10_000;
+const TASKS_APPEAR_MS = 5_000;
+const TASKS_POLL_MS = 500;
 
 /** How long the workspace search for csolution files may take before the refusal goes without it. */
 const SOLUTION_SEARCH_MS = 2_000;
@@ -163,7 +203,7 @@ export interface CmsisActionContext {
     renderFullState(state: DebugState): string;
 }
 
-/** Whether the action runs a CMSIS task (build, load, erase, run, load_and_run). */
+/** Whether the action runs a CMSIS task (build, rebuild, clean, load, erase, run, load_and_run). */
 export function isTaskAction(action: string): boolean {
     return TASK_ACTIONS.has(action);
 }
@@ -201,18 +241,11 @@ async function activeSolution(): Promise<SolutionAnswer> {
     try {
         const answer: unknown = await withTimeout('cmsis getSolutionFile', QUERY_MS,
             () => Promise.resolve(vscode.commands.executeCommand<unknown>('cmsis-csolution.getSolutionFile')));
-        if (!answer) {
+        const { active, file } = solutionAnswerOf(answer);
+        if (!active) {
             return { active: false, description: 'none' };
         }
-        if (typeof answer === 'string') {
-            return { active: true, solutionPath: answer, description: answer };
-        }
-        if (typeof answer === 'object') {
-            const fields = answer as { solutionFile?: string; fsPath?: string; path?: string; uri?: { fsPath?: string; path?: string } };
-            const solutionPath = fields.solutionFile ?? fields.fsPath ?? fields.path ?? fields.uri?.fsPath ?? fields.uri?.path;
-            return { active: true, solutionPath, description: solutionPath ?? '<active, path unknown>' };
-        }
-        return { active: true, description: '<active, path unknown>' };
+        return { active: true, solutionPath: file, description: file ?? '<active, path unknown>' };
     } catch (caught) {
         return { active: false, description: `query failed: ${failureText(caught)}` };
     }
@@ -223,8 +256,7 @@ export async function activeTargetName(): Promise<string | undefined> {
     try {
         const answer: unknown = await withTimeout('cmsis getActiveTargetSet', QUERY_MS,
             () => Promise.resolve(vscode.commands.executeCommand<unknown>('cmsis-csolution.getActiveTargetSet')));
-        const name = typeof answer === 'string' ? answer.trim() : '';
-        return name.length > 0 ? name : undefined;
+        return activeTargetSetOf(answer);
     } catch {
         return undefined;
     }
@@ -439,22 +471,27 @@ async function issueCommand(issue: Issue, action: string, returned?: (value: unk
     }
 }
 
-/** build, load, erase, run, load_and_run: arm a job, issue the command, wait for the job until the deadline. */
-async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<string> | undefined): Promise<ToolText> {
+/**
+ * build, rebuild, clean, load, erase, run, load_and_run: arm a job, issue the
+ * command, wait for the job until the deadline. The build commands return
+ * their task's execution, which is the job's task. `preface` goes before the
+ * result.
+ */
+async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<string> | undefined, preface?: string): Promise<ToolText> {
     const { tracker } = issue;
     const job = tracker.begin(action, issue.target);
     try {
-        await issueCommand(issue, action, action === 'build' ? (value) => tracker.identify(job.id, value) : undefined);
+        await issueCommand(issue, action, isBuildAction(action) ? (value) => tracker.identify(job.id, value) : undefined);
     } catch (caught) {
         tracker.settle(job.id, 'not-started', 'Its command failed.');
         throw caught;
     }
     tracker.issued(job.id);
     const outcome = await tracker.waitFor(job.id, answerBy(issue)) ?? job;
-    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels });
+    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface });
 }
 
-/** A repeated build, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
+/** A repeated build, rebuild, clean, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
 async function attachToJob(
     context: CmsisActionContext,
     job: Job,
@@ -554,6 +591,175 @@ async function stopRun(issue: Issue): Promise<ToolText> {
         : 'the probe is free';
     return `CMSIS 'stop_run'${tag}: stopped ${nameList(snapshot)} (ended ${formatDuration(endedLast - requestedAt)} `
         + `after the stop request${pushed}); ${probe}.`;
+}
+
+/**
+ * stop_build: end the window's build-type tasks — a build, rebuild or clean,
+ * or the cbuild setup CMSIS Solution runs after loading a solution —
+ * through `cmsis-csolution.stopBuild`, which ends one of them; give it 3 s,
+ * terminate what is left ourselves, and report only what has ended within
+ * 10 s. Their jobs count as stopped. With none running nothing is issued,
+ * and the answer says so, also when a build's result is still being checked:
+ * that check is no task, and `status` waits for it.
+ */
+async function stopBuild(issue: Issue): Promise<ToolText> {
+    const { tracker } = issue;
+    const { host } = issue.context;
+    const tag = issue.tag;
+    const running = tracker.buildExecutions();
+    if (running.length === 0) {
+        const checking = tracker.recent().filter((job) => tracker.isCompleting(job.id)).map((job) => `${job.action} job ${job.id}`);
+        const note = checking.length > 0
+            ? ` The result of ${checking.join(' and ')} is still being checked (a diagnostic re-run of cbuild, at most `
+                + `${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s); that is no CMSIS task and ends by itself — cmsis_action {action:'status'} waits for it.`
+            : '';
+        return `CMSIS 'stop_build'${tag}: nothing to stop — no build is running in this window.${note}`;
+    }
+    const jobs = tracker.requestStop(running);
+    let direct = '';
+    try {
+        await issueCommand(issue, 'stop_build');
+    } catch (caught) {
+        direct = `; '${issue.command}' failed (${failureText(caught)}), so they were terminated directly`;
+    }
+    const requestedAt = host.now();
+    const totalMs = Math.max(0, Math.min(STOP_TOTAL_MS, answerBy(issue) - requestedAt));
+    const first = await tracker.waitForEnd(running, direct ? 0 : Math.min(STOP_GRACE_MS, totalMs));
+    let alive = first.alive;
+    const insisted = direct ? [] : [...alive];
+    if (alive.length > 0) {
+        for (const execution of alive) {
+            try {
+                execution.terminate();
+            } catch {
+                // It may have ended in the meantime.
+            }
+        }
+        const second = await tracker.waitForEnd(alive, Math.max(0, totalMs - (host.now() - requestedAt)));
+        for (const [execution, at] of second.endedAt) {
+            first.endedAt.set(execution, at);
+        }
+        alive = second.alive;
+    }
+    if (alive.length > 0) {
+        throw new ToolError('TASK_FAILED',
+            `CMSIS 'stop_build'${tag}: ${nameList(alive)} ${alive.length === 1 ? 'is' : 'are'} still running `
+                + `${formatDuration(host.now() - requestedAt)} after the stop request, although terminated${direct ? '' : ' twice'}.`,
+            'Stop it with the trash icon of its terminal in the Terminal panel, then call cmsis_action {action:\'status\'}.');
+    }
+    const endedLast = Math.max(requestedAt, ...first.endedAt.values());
+    const pushed = insisted.length > 0 ? `; ${nameList(insisted)} needed a second terminate` : '';
+    const ids = jobs.length > 0 ? `; job ${jobs.map((job) => job.id).join(', ')}` : '';
+    return `CMSIS 'stop_build'${tag}: stopped ${nameList(running)} (ended ${formatDuration(endedLast - requestedAt)} after the stop request`
+        + `${pushed}${direct}${ids}). Its outputs are incomplete: cmsis_action build before load or flash.`;
+}
+
+/** The cbuild-run.yml of the active target: CMSIS Solution's answer, else `out/<solution>+<target>.cbuild-run.yml`; undefined when neither exists. */
+async function activeCbuildRunFile(solutionPath: string, active: string | undefined): Promise<string | undefined> {
+    const solutionDir = path.dirname(solutionPath);
+    try {
+        const answer: unknown = await withTimeout('cmsis getCbuildRunFile', QUERY_MS,
+            () => Promise.resolve(vscode.commands.executeCommand<unknown>('cmsis-csolution.getCbuildRunFile')));
+        if (typeof answer === 'string' && answer.trim().length > 0) {
+            const named = path.resolve(solutionDir, answer.trim());
+            if (fs.existsSync(named)) {
+                return named;
+            }
+        }
+    } catch {
+        // A CMSIS Solution without the command: the conventional place.
+    }
+    const type = active?.split('@')[0];
+    if (!type) {
+        return undefined;
+    }
+    const stem = path.basename(solutionPath).replace(/\.csolution\.ya?ml$/i, '');
+    const conventional = path.join(solutionDir, 'out', `${stem}+${type}.cbuild-run.yml`);
+    return fs.existsSync(conventional) ? conventional : undefined;
+}
+
+/** `cmsis-csolution.autoDebugLaunch` is off: CMSIS Solution then writes no launch.json or tasks.json. Never throws. */
+function autoDebugLaunchOff(folder: string): boolean {
+    try {
+        return vscode.workspace.getConfiguration('cmsis-csolution', vscode.Uri.file(folder)).get<boolean>('autoDebugLaunch', true) === false;
+    } catch {
+        return false;
+    }
+}
+
+/** What the one run of Update Debug Tasks did for a tasks.json without CMSIS tasks: the labels after it, and what the result or the refusal says. */
+interface TasksRepair {
+    labels?: ReadonlySet<string>;
+    /** Set when the CMSIS tasks are there now: the sentence the result starts with. */
+    wrote?: string;
+    /** Set when they are not: why, for the refusal. */
+    missing?: MissingTasksNote;
+}
+
+const BUILD_FIRST_HINT = 'cmsis_action build first: its convert writes the cbuild-run.yml, and CMSIS Solution then writes the CMSIS tasks '
+    + 'when the target set names a debugger. If it names none, ask the user to choose one in Manage Solution Settings '
+    + '(command cmsis-csolution.manageSolution) on its Debugger page. Until then, flash programs the target.';
+
+/**
+ * A tasks.json without CMSIS tasks while the active target's cbuild-run.yml
+ * names a debugger: run `cmsis-csolution.updateDebugTasks` once — what CMSIS
+ * Solution runs after each successful convert; it rewrites only the CMSIS
+ * tasks and the launch configurations it generated — and read the labels
+ * again until they show, for at most 5 s. Not when no debugger is named (the
+ * command does nothing then) or `cmsis-csolution.autoDebugLaunch` is off (it
+ * writes no file then). At most once per call: the caller then proceeds or
+ * refuses.
+ */
+async function writeCmsisTasks(
+    issue: Pick<Issue, 'context' | 'tracker' | 'deadline'>,
+    folder: string,
+    solutionPath: string,
+    active: string | undefined,
+): Promise<TasksRepair> {
+    const { host } = issue.context;
+    if (autoDebugLaunchOff(folder)) {
+        return {
+            missing: {
+                reason: 'the setting cmsis-csolution.autoDebugLaunch is off, so CMSIS Solution writes no tasks.json',
+                hint: 'Ask the user to turn on cmsis-csolution.autoDebugLaunch (in Settings, or in Manage Solution Settings, command '
+                    + 'cmsis-csolution.manageSolution); CMSIS Solution then writes the CMSIS tasks. Until then, flash programs the target.',
+            },
+        };
+    }
+    const runFile = await activeCbuildRunFile(solutionPath, active);
+    if (!runFile) {
+        return { missing: { reason: 'the active target has no cbuild-run.yml yet', hint: BUILD_FIRST_HINT } };
+    }
+    let debuggerName: string | undefined;
+    try {
+        debuggerName = cbuildRunDebugger(fs.readFileSync(runFile, 'utf8'));
+    } catch {
+        // Unreadable: no debugger is known.
+    }
+    if (!debuggerName) {
+        return { missing: { reason: `${path.basename(runFile)} names no debugger` } };
+    }
+    const updateMs = Math.max(1, Math.min(UPDATE_TASKS_MS, issue.deadline - DEADLINE_MARGIN_MS - host.now()));
+    try {
+        await withTimeout('cmsis updateDebugTasks', updateMs,
+            () => Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.updateDebugTasks')));
+    } catch (caught) {
+        return { missing: { reason: `Update Debug Tasks (cmsis-csolution.updateDebugTasks) for the debugger '${debuggerName}' failed: ${failureText(caught)}` } };
+    }
+    logger.info(`cmsis_action: tasks.json had no CMSIS tasks; ran cmsis-csolution.updateDebugTasks for '${debuggerName}'`);
+    const giveUpAt = Math.min(issue.deadline - DEADLINE_MARGIN_MS, host.now() + TASKS_APPEAR_MS);
+    let labels: ReadonlySet<string> | undefined;
+    for (;;) {
+        labels = await issue.tracker.taskLabels(folder, true);
+        if (labels && hasCmsisTasks(labels)) {
+            return { labels, wrote: `tasks.json had no CMSIS tasks; Update Debug Tasks wrote them for the debugger '${debuggerName}'.` };
+        }
+        if (host.now() >= giveUpAt) {
+            break;
+        }
+        await host.sleep(TASKS_POLL_MS);
+    }
+    return { labels, missing: { reason: `Update Debug Tasks (cmsis-csolution.updateDebugTasks) ran for the debugger '${debuggerName}' but wrote none` } };
 }
 
 /** The last step of load_and_debug and attach: wait for the session, then probe it twice. */
@@ -903,7 +1109,9 @@ function openHere(context: CmsisActionContext, place: SolutionPlace): ToolText {
 /**
  * The body of `cmsis_action`, run inside the handler's fence. `waitMs` is
  * the call's whole wait; everything, the checks and a target switch
- * included, comes out of it. `openPath` is the path of `open_solution`.
+ * included, comes out of it. `openPath` is the path of `open_solution`,
+ * `pack` the pack of `install_pack`, `creation` the arguments of
+ * `create_solution`.
  */
 export async function runCmsisAction(
     context: CmsisActionContext,
@@ -912,6 +1120,8 @@ export async function runCmsisAction(
     waitMs: number,
     openPath?: string,
     client?: string,
+    pack?: string,
+    creation?: CreateRequest,
 ): Promise<ToolText> {
     const { executor, host } = context;
     const deadline = host.now() + waitMs;
@@ -921,6 +1131,12 @@ export async function runCmsisAction(
     }
     if (action === 'open_solution') {
         return openSolution(context, openPath, deadline, client);
+    }
+    if (action === 'install_pack') {
+        return runInstallPack(host, pack, deadline);
+    }
+    if (action === 'create_solution') {
+        return createSolution(host, { ...creation, path: openPath, client }, deadline - DEADLINE_MARGIN_MS);
     }
     if (SESSION_ACTIONS.has(action) && executor.hasDebugSession()) {
         const status = await executor.getSessionStatus();
@@ -935,6 +1151,10 @@ export async function runCmsisAction(
     }
 
     let active = await activeTargetName();
+    if (action === 'stop_build') {
+        // It stops whatever builds, whichever target: never a target switch first.
+        return stopBuild({ context, tracker, deadline, command: ACTION_COMMANDS.get(action) as string, tag: onTarget(active), target: active });
+    }
     let wanted: TargetRef | undefined;
     if (target !== undefined && target !== null) {
         wanted = parseTargetRef(target);
@@ -947,6 +1167,15 @@ export async function runCmsisAction(
     const inFlight = TASK_ACTIONS.has(action) ? tracker.inFlight(action as JobAction) : undefined;
     if (inFlight) {
         return attachToJob(context, inFlight, wanted, active, deadline);
+    }
+    if (isBuildAction(action)) {
+        const other = BUILD_ACTIONS.map((kind) => tracker.inFlight(kind)).find((job): job is Job => job !== undefined);
+        if (other) {
+            throw new ToolError('TASK_FAILED',
+                `CMSIS '${action}'${onTarget(active)} not started: the ${other.action} started ${formatDuration(host.now() - other.armedAt)} ago `
+                    + `(job ${other.id}) is still running, and CMSIS Solution would start the ${action} only after it.`,
+                'Wait for it with cmsis_action {action:\'status\'}, or end it with cmsis_action {action:\'stop_build\'}; then repeat the call.');
+        }
     }
     if (ACTION_COMMANDS.has(action)) {
         const verdict = guardProbe(action as GuardedAction, tracker.probeOwners(), executor.hasDebugSession());
@@ -980,16 +1209,26 @@ export async function runCmsisAction(
     }
 
     // The label pre-check: a task the debugger adapter does not offer is refused before anything runs.
+    const issue: Issue = { context, tracker, deadline, command, tag, target: active };
     let labels: ReadonlySet<string> | undefined;
+    let preface: string | undefined;
     const label = TASK_ACTIONS.has(action) ? ACTION_PHASES[action as JobAction].label : undefined;
     if (label !== undefined && solution.solutionPath) {
-        labels = await tracker.taskLabels(selectionFolder(solution.solutionPath, host));
+        const folder = selectionFolder(solution.solutionPath, host);
+        labels = await tracker.taskLabels(folder);
+        if (labels && !hasCmsisTasks(labels)) {
+            const repair = await writeCmsisTasks(issue, folder, solution.solutionPath, active);
+            labels = repair.labels ?? labels;
+            if (repair.wrote === undefined) {
+                throw missingTaskRefusal(action as JobAction, tag, label, labels, repair.missing);
+            }
+            preface = `${repair.wrote} `;
+        }
         if (labels && !labels.has(label)) {
             throw missingTaskRefusal(action as JobAction, tag, label, labels);
         }
     }
 
-    const issue: Issue = { context, tracker, deadline, command, tag, target: active };
     switch (action) {
         case 'stop_run':
             return stopRun(issue);
@@ -1006,6 +1245,6 @@ export async function runCmsisAction(
         case 'load_and_debug':
             return loadAndDebug(issue);
         default:
-            return runJob(issue, action as JobAction, labels);
+            return runJob(issue, action as JobAction, labels, preface);
     }
 }

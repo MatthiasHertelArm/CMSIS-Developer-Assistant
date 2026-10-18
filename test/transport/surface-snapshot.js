@@ -67,6 +67,7 @@ const ARGS = {
     evaluate_expression: { expression: 'SystemCoreClock' },
     get_variables_values: { variableNames: ['x'] },
     cmsis_action: { action: 'stop_run' },
+    cmsis_query: { what: 'boards' },
     flash: { cbuildRunFile: '/nonexistent/x.cbuild-run.yml' },
     serial_open: { path: '/nonexistent/tty.none', baudRate: 115200 },
     serial_capture: { path: '/nonexistent/tty.none', durationMs: 100 },

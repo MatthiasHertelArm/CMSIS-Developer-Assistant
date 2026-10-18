@@ -140,6 +140,22 @@ session is gone for a few seconds and the clients reconnect to the same
 port once it is back, which Claude Code does without the agent noticing. A
 client inside the window never gets the reload (`src/core/clientHosting.ts`).
 
+`cmsis_action install_pack` carries no path. It goes through the ladder like
+any call, and a tie it would refuse runs in the router's own window
+(`resolveAnyWindow()`, shared with `open_solution`) without becoming the
+session's target: a pack is installed into the machine's pack root, whichever
+window runs the command.
+
+`cmsis_action create_solution` is routed by its path as well
+(`resolveForCreate()`), first to a window whose only folder is that path:
+CMSIS Solution opens the project it created in the window that created it,
+and only such a window stays as it is. Without one the call goes where
+`open_solution` would, and the worker refuses a window that would lose its
+folder; nothing is followed afterwards. `cmsis_query` reads CMSIS Solution's
+catalog, which every window answers alike, so it takes the ladder and, where
+the ladder would refuse a tie, the router's own window
+(`resolveAnyWindow()`, which `open_solution` uses for its tie too).
+
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take
 effect at once all the same, every session remembers the `setAt` of the

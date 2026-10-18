@@ -15,7 +15,8 @@
  */
 
 /**
- * The few lines of a `*.cbuild-run.yml` that identify the target's packs:
+ * The few lines of a `*.cbuild-run.yml` that identify the target's packs
+ * (and, in `cbuildRunDebugger`, the name of its debugger):
  *
  *   cbuild-run:
  *     solution: TFLiteRT_HelloWorld.csolution.yml
@@ -158,6 +159,30 @@ export function parseCbuildRun(content: string, file: string): CbuildRunInfo {
         }
     }
     return info;
+}
+
+/**
+ * The `name:` of the `debugger:` node of a cbuild-run.yml (`CMSIS-DAP@pyOCD`,
+ * `J-Link Server`, …), which csolution writes from the target set: the
+ * debugger CMSIS Solution writes the CMSIS tasks and launch configurations
+ * for. Undefined when the file names none.
+ *
+ *   cbuild-run:
+ *     debugger:
+ *       name: CMSIS-DAP@pyOCD
+ *       protocol: swd
+ */
+export function cbuildRunDebugger(content: string): string | undefined {
+    const lines = content.split(/\r?\n/);
+    const start = lines.findIndex((line) => /^ {2}debugger:\s*$/.test(line));
+    if (start < 0) { return undefined; }
+    for (const line of lines.slice(start + 1)) {
+        // The next key at the debugger's level or above ends its node.
+        if (/^ {0,2}\S/.test(line)) { break; }
+        const m = line.match(/^ {4}name:\s*(.*?)\s*$/);
+        if (m) { return unquote(m[1]) || undefined; }
+    }
+    return undefined;
 }
 
 /**

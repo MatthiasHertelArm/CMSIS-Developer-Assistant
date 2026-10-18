@@ -627,6 +627,24 @@ suite('knowledge tools', () => {
             live.dispose();
         });
 
+        test('the index of the active target\'s pack in a folder outside the pack root is read, labelled like a local pack', async () => {
+            const outside = path.join(dir, 'dev-pack');
+            fs.mkdirSync(path.join(outside, '.knowledge'), { recursive: true });
+            fs.copyFileSync(packFile, path.join(outside, '.knowledge', 'knowledge.db'));
+            const hostWith = (packFolders: () => Promise<{ pack: string; dir: string }[]>): KnowledgeHandler => new KnowledgeHandler({
+                indexPath: () => file, includeIncomplete: () => false, packRoot: async () => undefined,
+                workspaceFolders: () => [], projectFacts: async () => ({ note: 'no folder is open' }), packFolders, log: silentLog,
+            }, { timeoutMs: 5_000 });
+            const live = hostWith(async () => [{ pack: 'MyVendor::MYCHIP_DFP@1.3.0-dev', dir: outside }]);
+            const text = textOf(await live.handleKnowledgeSearch({ query: 'image not signed' }));
+            assert.match(text, /Indexes: base and MyVendor::MYCHIP_DFP@1\.3\.0-dev \(local\) \(2 units\)\./);
+            assert.match(textOf(await live.handleKnowledgeGet({ id: 'ts-pack-boot' })), / · from MyVendor::MYCHIP_DFP@1\.3\.0-dev \(local\)\n/);
+            live.dispose();
+            const failing = hostWith(async () => { throw new Error('the extension went away'); });
+            assert.ok(!textOf(await failing.handleKnowledgeSearch({ query: 'image not signed' })).includes('(local)'), 'a failing host adds nothing');
+            failing.dispose();
+        });
+
         test('an unreadable pack index fails the call with its file named', async () => {
             const bad = path.join(dir, 'bad-root', 'V', 'P', '1.0.0', '.knowledge');
             fs.mkdirSync(bad, { recursive: true });

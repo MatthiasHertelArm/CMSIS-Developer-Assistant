@@ -1564,6 +1564,50 @@ const SCENARIOS = [
         ],
     },
     {
+        name: 'cmsis-rebuild-clean',
+        description: 'No session: cmsis_action rebuild and clean run their CMSIS Solution commands as jobs of their own (the build task type with '
+            + 'rebuild or clean set); the rebuild writes the image, the clean names the image it removed; stop_build with no build running issues nothing.',
+        commands: {
+            'cmsis-csolution.rebuild': (sc) => {
+                fs.writeFileSync(path.join(sc.env.project, 'out', 'Blinky', 'NUCLEO-F401RE', 'Debug', 'Blinky.elf'), 'ELF');
+                const task = {
+                    name: 'cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE', source: 'cmsis-csolution.build',
+                    definition: { type: 'cmsis-csolution.build', rebuild: true },
+                };
+                setTimeout(() => {
+                    sc.record(`task: start ${JSON.stringify(task.name)}`);
+                    bus.taskStart.fire({ execution: { task } });
+                    setTimeout(() => {
+                        sc.record(`task: end ${JSON.stringify(task.name)} exitCode=0`);
+                        bus.taskEnd.fire({ execution: { task }, exitCode: 0 });
+                    }, 20);
+                }, 20);
+            },
+            'cmsis-csolution.clean': (sc) => {
+                const task = {
+                    name: 'cbuild Blinky.csolution.yml --clean --target all', source: 'cmsis-csolution.build',
+                    definition: { type: 'cmsis-csolution.build', clean: true, solution: path.join(sc.env.project, 'Blinky.csolution.yml'), active: 'NUCLEO-F401RE' },
+                };
+                setTimeout(() => {
+                    sc.record(`task: start ${JSON.stringify(task.name)}`);
+                    bus.taskStart.fire({ execution: { task } });
+                    setTimeout(() => {
+                        // cbuild --clean removes the image; the workspace is as before the scenario.
+                        fs.rmSync(path.join(sc.env.project, 'out', 'Blinky', 'NUCLEO-F401RE', 'Debug', 'Blinky.elf'), { force: true });
+                        sc.record(`task: end ${JSON.stringify(task.name)} exitCode=0`);
+                        bus.taskEnd.fire({ execution: { task }, exitCode: 0 });
+                    }, 20);
+                }, 20);
+            },
+            'cmsis-csolution.stopBuild': () => undefined,
+        },
+        calls: [
+            { tool: 'cmsis_action', args: { action: 'rebuild' } },
+            { tool: 'cmsis_action', args: { action: 'clean' } },
+            { tool: 'cmsis_action', args: { action: 'stop_build' } },
+        ],
+    },
+    {
         name: 'cmsis-attach',
         description: 'No session: cmsis_action attach starts a running pyOCD attach session that survives both probes; with it active, load_and_debug and flash are refused.',
         commands: {

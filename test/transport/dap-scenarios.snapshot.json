@@ -2401,6 +2401,53 @@
       ]
     },
     {
+      "name": "cmsis-rebuild-clean",
+      "description": "No session: cmsis_action rebuild and clean run their CMSIS Solution commands as jobs of their own (the build task type with rebuild or clean set); the rebuild writes the image, the clean names the image it removed; stop_build with no build running issues nothing.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "rebuild"
+          },
+          "text": "✅ CMSIS 'rebuild' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE' exited 0 after <n>s, job rb-4). The firmware is rebuilt from scratch — use cmsis_action load or load_and_debug to flash it.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.rebuild",
+            "task: start \"cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE\"",
+            "task: end \"cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE\" exitCode=0",
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "clean"
+          },
+          "text": "✅ CMSIS 'clean' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml --clean --target all' exited 0 after <n>s, job c-5). Removed: out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf. It covers the whole solution (CMSIS Solution: \"Clean All 'out' and 'tmp' Directories\"), not only this target: cmsis_action build before load or flash.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.clean",
+            "task: start \"cbuild Blinky.csolution.yml --clean --target all\"",
+            "task: end \"cbuild Blinky.csolution.yml --clean --target all\" exitCode=0"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "stop_build"
+          },
+          "text": "CMSIS 'stop_build' on NUCLEO-F401RE: nothing to stop — no build is running in this window.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet"
+          ]
+        }
+      ]
+    },
+    {
       "name": "cmsis-attach",
       "description": "No session: cmsis_action attach starts a running pyOCD attach session that survives both probes; with it active, load_and_debug and flash are refused.",
       "calls": [

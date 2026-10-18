@@ -3,8 +3,8 @@
 `DebuggingHandler` (`src/debuggingHandler.ts`, with helper modules in
 `src/handler/`) decides what an agent is told. Every debugging tool has one
 `handle*` method. The method checks the state of the debug session, asks the
-executor — and, for `cmsis_action` and `flash`, the CMSIS Solution extension
-or pyOCD — and answers with one text: what happened, the state that
+executor — and, for `cmsis_action`, `cmsis_query` and `flash`, the CMSIS
+Solution extension or pyOCD — and answers with one text: what happened, the state that
 resulted, and the next useful call when something stands in the way. A
 failure is not an answer but a rejection with an error code (#11).
 
@@ -36,7 +36,7 @@ cannot be left out of the routing (see [windowRouting.md](windowRouting.md)).
 
 | Tools | Failure | Too slow |
 | ----- | ------- | -------- |
-| Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads | rejected with the body's `ToolError`; a plain error gets a code from `classifyError()` | rejected with `TIMEOUT`: a read that returned nothing has failed |
+| Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads, `cmsis_query` | rejected with the body's `ToolError`; a plain error gets a code from `classifyError()` | rejected with `TIMEOUT`: a read that returned nothing has failed |
 | `reset`, `wait_for_stop`, `cmsis_action`, `flash` | as above | answered with status `timeout` and the notice that the call did not complete within its limit |
 | Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint; a `Refusal` passes as it is | bounded by the executor's request deadlines and by the stop and session waits below; the configuration picker of `start_debugging` fails with `INVALID_ARGUMENT` after its limit, and `stop_debugging` answers with status `timeout` after 10 s (#14). What stays unbounded here, the window's fence answers (see [windowRouting.md](windowRouting.md#fences-and-health-checks)) |
 
@@ -238,7 +238,12 @@ window's CMSIS job tracker (next section):
   result says what the task did to the target, because the adapters differ:
   the pyOCD task resets and runs, the J-Link task leaves the core as it was,
   and the FVP task starts the model with the last-built image and hosts no
-  GDB server, so `attach` has nothing to reach there.
+  GDB server, so `attach` has nothing to reach there. `rebuild` and `clean`
+  (CMSIS Solution 1.72.0's Rebuild and Clean, the build task type with
+  `--rebuild` or `--clean`) are jobs of their own, `rb-<n>` and `c-<n>`. A
+  build, rebuild or clean while another of the three is in flight is
+  refused: CMSIS Solution would start it only after that one ended, too late
+  for the job's not-started window.
 - `load_and_debug` waits for its pre-launch `CMSIS Load` when the launch
   configuration has one (a failed Load is the answer, before any session
   probe); then it and `attach` wait for a live session and probe its threads
@@ -251,6 +256,14 @@ window's CMSIS job tracker (next section):
 - `stop_run` waits until the CMSIS tasks it stops have ended, terminates
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
   alive after 10 s. `detach` returns at once.
+- `stop_build` does the same for the build-type tasks of the window (build,
+  rebuild, clean, or the `cbuild setup` CMSIS Solution runs after loading a
+  solution), over `cmsis-csolution.stopBuild`, which ends only one of them.
+  It marks their jobs first (`CmsisJobTracker.requestStop`), so they read as
+  stopped whatever code the task closes with. With no build running it
+  issues nothing and says so, and names a build result that is still being
+  checked: that check is no task, and `status` waits for it. It never
+  switches the target.
 
 - `open_solution` needs no active solution either. It takes the path of a
   csolution or of its folder. A folder this window has open is activated
@@ -267,12 +280,61 @@ window's CMSIS job tracker (next section):
   with another folder, the folder opens in a new VS Code window and the
   window that answers keeps running; the result's `data.newWindow` tells
   the router to follow (see windowRouting.md).
+- `install_pack` needs no active solution or folder either
+  (`src/handler/installPack.ts`, the pure parts in `src/core/packInstall.ts`).
+  It exists so that a pack's knowledge units can be read before the project
+  that needs the pack is written, without a `cpackget add` in the shell. It
+  calls the CMSIS Solution extension's hidden `installPack` command, which
+  answers only a folder or nothing, so the call checks what it can first:
+  `Vendor::Name@version` with the version required, the extension installed,
+  and the command present once the extension is activated (a window without
+  a csolution has not activated it). The licence gate reads the `<license>`
+  of the pack's PDSC in the pack root's `.Web/` and asks the user in a modal
+  before anything is installed; without that PDSC it installs and says that
+  the licence was not checked. After the command the folder is checked, a
+  failure is journaled with a pointer to the "CMSIS Solution" output
+  channel, and the result names the pack's knowledge units as a
+  `knowledge_expand` call, which lists them although `knowledge_search`
+  scopes them to projects that use the pack. One install per pack runs at
+  a time (question included): a repeated call waits for it, and the call
+  answers by its deadline, `running` while cpackget runs. Everything that
+  touches VS Code is the host's `packInstall()`.
+- `create_solution` needs no active solution either
+  (`src/handler/createSolution.ts`). It creates a project from an example,
+  reference application or template of CMSIS Solution's catalog through
+  that extension's API (next section): the board, device and draft are
+  looked up by the ids `cmsis_query` lists, and the API's
+  `createNewSolution` gets the objects it listed. After it has copied the
+  files, CMSIS Solution writes `.vscode/cmsis.json`, may add a
+  `vcpkg-configuration.json` through the Arm Tools Environment Manager, and
+  opens the folder in the window that created it, without asking and
+  without waiting for us. A window that has exactly that folder open stays,
+  any other reloads into it. So the call runs only in such a window, or in
+  a window without a folder for a client that survives the reload
+  (`clientHosting.ts`, as for `open_solution`); a window with another folder
+  would lose it and is refused, and so is an empty window for a chat inside
+  it. The reply says what CMSIS Solution does next (`data.reloads`), and a
+  creation that outlasts the wait (a web example downloads first) is
+  answered with status `running`.
 
 Before any command: a debug session refuses `load_and_debug` and `attach`,
 the probe guard refuses what another owner blocks (`PROBE_BUSY`), a window
 without an active solution is refused, an unknown target or action is
 `INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does not
 have (`load` on an Arm Debugger adapter, for example).
+
+A `tasks.json` without any CMSIS task is a hand-off to the CMSIS Solution
+extension rather than a dead end: when the active target's cbuild-run.yml
+names a debugger (`cbuildRunDebugger()` in
+`src/core/packDocs/cbuildRun.ts`), `writeCmsisTasks()` runs
+`cmsis-csolution.updateDebugTasks` once — what that extension runs itself
+after each successful convert; it renders the debugger adapter's template
+into the CMSIS tasks and launch configurations and leaves other tasks alone
+— reads the labels again for up to 5 s and goes on. It is not run when no
+debugger is named (the command does nothing then) or when
+`cmsis-csolution.autoDebugLaunch` is off (it writes no file then). Otherwise,
+or when it wrote nothing, the refusal says why and that the user chooses
+the debugger in Manage Solution Settings.
 
 A window without an active solution is an ordinary state for an agent that
 starts in an empty VS Code, so the refusal says which part is missing
@@ -292,8 +354,11 @@ before anything runs (`src/core/cmsisTarget.ts` reads the csolution). A
 switch is refused under a live debug session.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
-the argument, else `cmsis.cbuildRunFile` from `launch.json`, else the only
-match under `out/` — refuses while a session or a CMSIS task holds the probe,
+the argument, else the one of the CMSIS Solution extension's active target
+when that file exists (`HandlerHost.activeCbuildRunFile`, the extension's
+`getCbuildRunFile`, asked only while the extension is active), else
+`cmsis.cbuildRunFile` from `launch.json`, else the only match under `out/` —
+refuses while a session or a CMSIS task holds the probe,
 and runs `pyocd load --cbuild-run` through `src/core/flashController.ts`
 with the pyOCD the CMSIS tasks use: the CMSIS Debugger extension's bundled
 one, else the one the solution's `.cmsis/tools-environment.yml` names, else
@@ -301,6 +366,40 @@ one on PATH (`resolvePyocd()`). A refusal is `PROBE_BUSY`, a file that
 cannot be chosen `INVALID_ARGUMENT`, no runnable pyOCD `TOOL_DISABLED`, a
 failing run `TASK_FAILED`, and a run killed at its budget is answered with
 status `timeout`.
+
+### The catalog: `cmsis_query`
+
+CMSIS Solution publishes a versioned API (`exports.getApi(2)`, the types of
+`@arm-software/vscode-cmsis-csolution`). Its catalog merges Arm's web
+catalog with the installed packs, so it knows a board's examples before any
+of its packs is installed, which `csolution list examples` does not.
+`handleCmsisQuery` serves the first slice of #41's `cmsis_query`: `what` is
+`boards`, `devices` or `examples`, and `context` and `toolchain` are meant to
+join it as further kinds (`QUERY_KINDS` in `src/core/catalogQuery.ts`).
+
+Two pure modules carry it. `src/core/solutionApi.ts` holds the part of the
+API this extension calls, as types of its own, and `acquireSolutionApi()`,
+the seam: the extension missing is the bootstrap refusal
+`CMSIS_NO_SOLUTION`, an inactive one is activated (`TIMEOUT` after 20 s,
+`TASK_FAILED` when it fails), and no `getApi`, no version 2 or a version 2
+without a method is `TOOL_DISABLED`; one API object is kept per extension,
+since `getApi` makes a new one per call. It also finds a board, device or
+draft by id, case-insensitively, with near ids when none matches.
+`src/core/catalogQuery.ts` applies the filters itself, as case-insensitive
+regular expressions (the API's name filter is case-sensitive and its vendor
+filter exact), sorts boards and devices by id, caps the list at `limit`
+(20, at most 100) and counts the rest. The pack, devices and cores of an
+entry can cost the web catalog one request each, so they are read for the
+listed entries only, in parallel, and left out with a note when they do not
+arrive within 10 s. The answer is a text and the same as `data`.
+
+The API keeps a source's failure to itself. Only a draft says where it came
+from (`draftSource`: web or installed pack). Whether the web catalog was
+reachable is read from the API object's data manager (`dataManager.errors`,
+"Web service could not be reached"), a field outside the published API,
+used when it is there (`catalogErrorsOf()`); without it, examples of which
+none came from the web are answered with a note that says the cause is not
+known.
 
 Programming can make the probe's virtual COM port re-enumerate, which closes
 a serial port the window holds. So `flash` and the programming actions of
@@ -316,7 +415,9 @@ The CMSIS Solution extension runs builds as its own task type and the
 panel's Load, Run, Load+Run and Erase as tasks it writes into `tasks.json`.
 `src/core/cmsisTasks.ts` knows those shapes: `classifyCmsisTask()` names a
 task's kind by the rules the extension itself applies (the build type, the
-Arm Debugger's flash task, exact labels from `tasks.json`), `reduceJob()`
+Arm Debugger's flash task, exact labels from `tasks.json`); the build type
+splits into build, rebuild, clean and setup by its definition's flags, so
+that none answers for another. `reduceJob()`
 folds task events into a job's state (`armed`, `started`, then `ok`,
 `failed`, `cancelled`, `running-ok` or `not-started`), and `guardProbe()` is
 the matrix of which action may touch the probe beside which owner.
@@ -335,8 +436,12 @@ the panel are seen too. It keeps the live CMSIS executions and the jobs:
   Run alone stayed up that long, and a Run that ends earlier is `failed`
   with its exit code;
 - nothing expected starting within 10 s of the command is `not-started`;
-- a build, load or erase started elsewhere is adopted as a job of its own,
-  so that a repeated call attaches to it instead of starting another;
+- a build-type task that closes with 130 (CMSIS Solution's Stop Build) or
+  that `stop_build` asked to end is `cancelled` and reads as stopped, never
+  as a failed build, so no diagnosis runs for it;
+- a build, rebuild, clean, load or erase started elsewhere is adopted as a
+  job of its own, so that a repeated call attaches to it instead of
+  starting another;
 - settled jobs are kept for 10 minutes, in memory only; `get_session_status`
   shows one line from them and the live tasks.
 
@@ -349,7 +454,7 @@ out of it, and a job still going when it passes is answered with status
 The CMSIS Solution extension runs cbuild in a pseudoterminal no other
 extension can read and keeps no log, so a failed build job knows only its
 exit code. `src/cmsisBuildDiagnosis.ts` completes such a job's result
-(#15). The tracker calls its `onDidFinishJob` listener before it wakes the
+(#15); a rebuild is treated as a build. The tracker calls its `onDidFinishJob` listener before it wakes the
 job's waiters, and `completeWith` makes them wait for the work as well: the
 job carries a pending `diagnosis` until it is done.
 
@@ -382,6 +487,12 @@ The check's verdict is `diagnosis.check`: `rebuilt` and `up-to-date` are
 successes, `failed` turns the job into a failed one (`withDiagnosis` in
 `src/core/cmsisTasks.ts`), and `unverified` — an image not rewritten and no
 re-run possible — is answered as a warning, not as ✅.
+
+A clean that exited 0 has a check of its own, since exit 0 proves nothing
+there either: when its task starts, before cbuild gets to work,
+`BuildDiagnosisRunner.onStarted` notes which images of the active target
+exist; at its end, `checkClean` names those it removed (`cleaned`), or the
+one still there (`unverified`). A failed clean is never re-run.
 
 The `diagnosis` holds the errors and warnings with file and line, which
 `onDidDiagnoseJob` announces for the problem journal (#48), and the short
@@ -469,7 +580,11 @@ once when errors arrived that the agent has not seen, and
 Everything else the handler needs comes from a `HandlerHost`
 (`src/handler/host.ts`): clock, timers, VS Code's focused frame, the
 window's CMSIS job tracker, its owned serial port, workspace folders, file
-search, and where `flash` looks for pyOCD. `get_session_status` adds a line
+search, where `flash` looks for pyOCD, what `install_pack` asks of VS
+Code and the CMSIS Solution extension (`packInstall()`), and the CMSIS
+Solution extension behind `cmsis_query` and `create_solution`
+(`solutionExtension()`, its activation state and exports read at each
+use). `get_session_status` adds a line
 on the serial port from it (#49): the port held, for whom and how long idle,
 or why it was released, seen from the MCP session that asks. `VSCODE_HOST` looks each of them up in VS Code at the
 moment of the call. Unit tests override `host()` with a scaled clock, so a
@@ -506,11 +621,15 @@ by #56.
 | `src/handler/problemText.ts` | the `get_recent_problems` reply |
 | `src/windowProblems.ts` | the output-channel mirror (`mirrorProblem()`, debug level), the `logger.error` sink, "Copy Recent Problems", failed jobs and build lines, the Problems panel |
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
-| `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check, jobs, session waits, verified `stop_run`, `status`, `open_solution`, why no solution is active |
+| `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check and the Update Debug Tasks hand-off, jobs, session waits, verified `stop_run` and `stop_build`, `status`, `open_solution`, the dispatch of `install_pack` and `create_solution`, why no solution is active |
+| `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
+| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data |
+| `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
 | `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; the csolution files below a folder that is not open yet |
+| `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
-| `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0 |
+| `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build or rebuild: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0, and of a clean |
 | `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
 | `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
 | `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, probe guard, pyOCD lookup |
@@ -542,5 +661,9 @@ by #56.
   line; `src/test/windowProblems.test.ts`: failed jobs, build lines, the
   Problems panel and the copied text; the adapter tracker's records in
   `src/test/sessionStateTracker.test.ts`
+- `src/test/solutionCatalog.test.ts`: `cmsis_query` and `create_solution`
+  against a stub of CMSIS Solution's API: filters, caps, sources, the web
+  catalog unreachable, the extension missing, inactive or without API
+  version 2, unknown ids, the window checks
 - `test/transport/surface-snapshot.js`: every tool's reply without a session
 - `test/realboard/run.ts`: every tool against a real board, run by hand

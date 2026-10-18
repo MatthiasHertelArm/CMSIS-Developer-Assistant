@@ -211,8 +211,9 @@ async function main() {
     // 28 916 bytes in 2.5.0. Raised from 30 000 for the 2.5.1 additions
     // (get_recent_problems, serial_capture); two-window-routing.js budgets the
     // routed list, which is what agents see. A regression must be attributable
-    // to one tool, hence the per-description cap.
-    const TOOLS_LIST_BUDGET_BYTES = 32_000;
+    // to one tool, hence the per-description cap. Raised from 32 000 for
+    // cmsis_query and cmsis_action create_solution (32 724 measured).
+    const TOOLS_LIST_BUDGET_BYTES = 33_000;
     const DESCRIPTION_CAP_CHARS = 700;
     const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
     check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);
@@ -662,9 +663,10 @@ async function main() {
     // build-artefact tools cost ~11.7 kB, most of it the per-tool
     // target/pack/device/board arguments. Raised from 42 000 for the 2.5.1
     // additions. Raised from 44 000 for the knowledge tools, which are on in
-    // every session (45 243 measured, before any trimming). A regression must be
-    // attributable to one tool, hence the cap.
-    const TOOLS_LIST_ALL_BUDGET_BYTES = 46_000;
+    // every session (45 243 measured, before any trimming). Raised from 46 000
+    // for cmsis_query and cmsis_action create_solution (46 315 measured). A
+    // regression must be attributable to one tool, hence the cap.
+    const TOOLS_LIST_ALL_BUDGET_BYTES = 47_000;
     const ftoolsBytes = Buffer.byteLength(JSON.stringify(ftools));
     check(`tools/list with every group on stays under the ${TOOLS_LIST_ALL_BUDGET_BYTES} byte budget`,
         ftoolsBytes <= TOOLS_LIST_ALL_BUDGET_BYTES, `${ftoolsBytes} bytes`);

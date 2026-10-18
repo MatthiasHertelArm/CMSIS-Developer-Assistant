@@ -2434,6 +2434,179 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(loads, 0);
             });
 
+            test('rebuild and clean are jobs of their own over their commands; a repeat attaches, another build-type action is refused', async () => {
+                const w = jobWorld();
+                const rebuildTask: FixtureTask = {
+                    name: 'cbuild demo.csolution.yml --target all --rebuild --active HE', source: 'cmsis-csolution.build',
+                    definition: { type: 'cmsis-csolution.build', rebuild: true },
+                };
+                const cleanTask: FixtureTask = {
+                    name: 'cbuild demo.csolution.yml --clean --target all', source: 'cmsis-csolution.build',
+                    definition: { type: 'cmsis-csolution.build', clean: true },
+                };
+                solutionOn('HE', { 'cmsis-csolution.rebuild': runs(w.tasks, rebuildTask, 0, true) });
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'rebuild' })),
+                    /^✅ CMSIS 'rebuild' succeeded on HE \(task 'cbuild demo\.csolution\.yml --target all --rebuild --active HE' exited 0 after [\d.]+ s, job rb-1\)\. The firmware is rebuilt from scratch — use cmsis_action load or load_and_debug to flash it\.$/);
+                again();
+                solutionOn('HE', { 'cmsis-csolution.clean': runs(w.tasks, cleanTask, 0, true) });
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'clean' })),
+                    /^✅ CMSIS 'clean' succeeded on HE \(task 'cbuild demo\.csolution\.yml --clean --target all' exited 0 after [\d.]+ s, job c-2\)\. It covers the whole solution \(CMSIS Solution: "Clean All 'out' and 'tmp' Directories"\), not only this target: cmsis_action build before load or flash\.$/);
+
+                again();
+                let cleans = 0;
+                solutionOn('HE', {
+                    'cmsis-csolution.clean': () => {
+                        cleans++;
+                        return w.tasks.start(w.tasks.execution(cleanTask));
+                    },
+                    'cmsis-csolution.build': () => assert.fail('no build while the clean runs'),
+                    'cmsis-csolution.rebuild': () => assert.fail('no rebuild while the clean runs'),
+                });
+                await replyAnswer(w.handler.handleCmsisCommand({ action: 'clean', timeoutMs: 4_000 }), 'running');
+                const attached = await replyAnswer(w.handler.handleCmsisCommand({ action: 'clean', timeoutMs: 4_000 }), 'running');
+                assert.match(attached, /^Attached to the clean started [\d.]+ s ago \(job c-3, not started again\)\. CMSIS 'clean' on HE is still running .* do not start another clean\.$/);
+                assert.strictEqual(cleans, 1);
+                for (const action of ['build', 'rebuild'] as const) {
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action }), 'TASK_FAILED');
+                    assert.match(errorDetail(refused), new RegExp(`^CMSIS '${action}' on HE not started: the clean started [\\d.]+ s ago \\(job c-3\\) is still running, `
+                        + `and CMSIS Solution would start the ${action} only after it\\.\\nWait for it with cmsis_action \\{action:'status'\\}, or end it with `
+                        + 'cmsis_action \\{action:\'stop_build\'\\}; then repeat the call\\.$'));
+                }
+            });
+
+            test('stop_build ends a running build and says so; with none running it issues nothing and says that', async () => {
+                const w = jobWorld();
+                let stops = 0;
+                solutionOn('HE', {
+                    'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 'never', true),
+                    // CMSIS Solution's stopBuildTask: the task runner's terminateProcess closes the task with 130.
+                    'cmsis-csolution.stopBuild': () => {
+                        stops++;
+                        const running = w.tasks.taskExecutions()[0] as FakeExecution;
+                        setTimeout(() => w.tasks.finish(running, 130), 5);
+                    },
+                });
+                await replyAnswer(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'running');
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                    /^CMSIS 'stop_build' on HE: stopped 'cbuild demo\.csolution\.yml --active HE' \(ended [\d.]+ s after the stop request; job b-1\)\. Its outputs are incomplete: cmsis_action build before load or flash\.$/);
+                assert.strictEqual(stops, 1);
+                assert.strictEqual(w.tracker.last('build')?.state, 'cancelled');
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
+                    /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE stopped [\d.]+ s ago \(job b-1, 'cbuild demo\.csolution\.yml --active HE'\)\.\nNo CMSIS task is running in this window\.$/);
+
+                assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                    'CMSIS \'stop_build\' on HE: nothing to stop — no build is running in this window.');
+                assert.strictEqual(stops, 1, 'nothing was issued');
+            });
+
+            test('stop_build terminates what the command left, counts it as stopped whatever its exit code, and says when one survives', async () => {
+                const w = jobWorld();
+                let execution: FakeExecution | undefined;
+                solutionOn('HE', {
+                    'cmsis-csolution.build': () => {
+                        execution = w.tasks.start(w.tasks.execution(BUILD_TASK));
+                        return execution;
+                    },
+                    'cmsis-csolution.stopBuild': () => undefined,
+                });
+                await replyAnswer(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'running');
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                    /^CMSIS 'stop_build' on HE: stopped 'cbuild demo\.csolution\.yml --active HE' \(ended [\d.]+ s after the stop request; 'cbuild demo\.csolution\.yml --active HE' needed a second terminate; job b-1\)\./);
+                assert.strictEqual(execution?.terminateCalls, 1);
+                const stopped = w.tracker.last('build');
+                assert.strictEqual(stopped?.state, 'cancelled', 'ended without an exit code after the stop request: stopped');
+                assert.strictEqual(stopped?.executions[0].stopRequested, true);
+
+                again();
+                const s = jobWorld();
+                const stubborn = s.tasks.start(s.tasks.execution(BUILD_TASK, true));
+                solutionOn('HE', { 'cmsis-csolution.stopBuild': () => undefined });
+                const refused = await refusalOf(s.handler.handleCmsisCommand({ action: 'stop_build' }), 'TASK_FAILED');
+                assert.match(errorDetail(refused), /^CMSIS 'stop_build' on HE: 'cbuild demo\.csolution\.yml --active HE' is still running 1\d s after the stop request, although terminated twice\.\nStop it with the trash icon of its terminal in the Terminal panel/);
+                assert.strictEqual(stubborn.terminateCalls, 1);
+            });
+
+            suite('a tasks.json without CMSIS tasks', () => {
+                let dir: string;
+                setup(() => {
+                    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-tasks-'));
+                });
+                teardown(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+                /** A cbuild-run.yml for HE, with a debugger node when `debuggerName` is given. */
+                const cbuildRun = (debuggerName?: string): string => {
+                    const file = path.join(dir, 'demo+HE.cbuild-run.yml');
+                    fs.writeFileSync(file, ['cbuild-run:', '  target-type: HE', ...(debuggerName ? ['  debugger:', `    name: ${debuggerName}`, '    protocol: swd'] : []), ''].join('\n'));
+                    return file;
+                };
+                const LOAD_LABELS = ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase'];
+
+                test('the debugger is named: Update Debug Tasks runs once, the labels are read again, and the action goes on', async () => {
+                    const w = jobWorld();
+                    w.tasks.fetched = [];
+                    const file = cbuildRun('CMSIS-DAP@pyOCD');
+                    let updates = 0;
+                    solutionOn('HE', {
+                        'cmsis-csolution.getCbuildRunFile': () => file,
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            updates++;
+                            setTimeout(() => {
+                                w.tasks.fetched = workspaceTasks('/w', LOAD_LABELS);
+                            }, 30);
+                        },
+                        'cmsis-csolution.cmsisLoad': runs(w.tasks, shellTask('CMSIS Load'), 0),
+                    });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'load' })),
+                        /^tasks\.json had no CMSIS tasks; Update Debug Tasks wrote them for the debugger 'CMSIS-DAP@pyOCD'\. ✅ CMSIS 'load' succeeded on HE \(task 'CMSIS Load' exited 0 after [\d.]+ s, job l-1\)\./);
+                    assert.strictEqual(updates, 1);
+                });
+
+                test('Update Debug Tasks that writes none: run once, never again, and the refusal says so', async () => {
+                    const w = jobWorld();
+                    w.tasks.fetched = [];
+                    const file = cbuildRun('J-Link Server');
+                    let updates = 0;
+                    solutionOn('HE', {
+                        'cmsis-csolution.getCbuildRunFile': () => file,
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            updates++;
+                        },
+                        'cmsis-csolution.cmsisErase': () => assert.fail('nothing runs without the task'),
+                    });
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'erase' }), 'INVALID_ARGUMENT');
+                    assert.strictEqual(errorDetail(refused), 'CMSIS \'erase\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
+                        + 'so there is no \'CMSIS Erase\' to run; Update Debug Tasks (cmsis-csolution.updateDebugTasks) ran for the debugger '
+                        + '\'J-Link Server\' but wrote none.\n'
+                        + 'Ask the user to open Manage Solution Settings (command cmsis-csolution.manageSolution) and choose a debugger on its '
+                        + 'Debugger page; CMSIS Solution then writes the CMSIS tasks. Until then, flash programs the target.');
+                    assert.strictEqual(updates, 1);
+                    assert.ok(w.tasks.fetchCount >= 2, 'the labels were read again');
+                });
+
+                test('no debugger named, or no cbuild-run.yml yet: Update Debug Tasks is not run, and the refusal names the next step', async () => {
+                    const w = jobWorld();
+                    w.tasks.fetched = [];
+                    const file = cbuildRun();
+                    let updates = 0;
+                    const update = (): void => {
+                        updates++;
+                    };
+                    solutionOn('HE', { 'cmsis-csolution.getCbuildRunFile': () => file, 'cmsis-csolution.updateDebugTasks': update });
+                    const unnamed = await refusalOf(w.handler.handleCmsisCommand({ action: 'run' }), 'INVALID_ARGUMENT');
+                    assert.strictEqual(unnamed.message, 'CMSIS \'run\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
+                        + 'so there is no \'CMSIS Run\' to run; demo+HE.cbuild-run.yml names no debugger.');
+                    assert.ok(unnamed.hint?.startsWith('Ask the user to open Manage Solution Settings (command cmsis-csolution.manageSolution)'), unnamed.hint);
+
+                    again();
+                    solutionOn('HE', { 'cmsis-csolution.getCbuildRunFile': () => '', 'cmsis-csolution.updateDebugTasks': update });
+                    const unbuilt = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_run' }), 'INVALID_ARGUMENT');
+                    assert.strictEqual(unbuilt.message, 'CMSIS \'load_and_run\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
+                        + 'so there is no \'CMSIS Load+Run\' to run; the active target has no cbuild-run.yml yet.');
+                    assert.ok(unbuilt.hint?.startsWith('cmsis_action build first: its convert writes the cbuild-run.yml'), unbuilt.hint);
+                    assert.strictEqual(updates, 0);
+                });
+            });
+
             test('load_and_run notes a serial port the window holds; build does not (#49)', async () => {
                 SerialPortMock.binding.reset();
                 SerialPortMock.binding.createPort('/dev/cu.usbmodem1102');
@@ -2810,6 +2983,35 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(await refused(noMatch.handleFlash({})),
                 'No cbuild-run file found (launch.json has no resolvable cmsis.cbuildRunFile and out/ has none).\n'
                 + 'Build first (cmsis_action build), or pass cbuildRunFile explicitly.');
+        });
+
+        test('the cbuild-run file of the CMSIS Solution extension\'s active target comes before launch.json and out/', async () => {
+            const x = new ScriptedExecutor();
+            x.session = false;
+            const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cda-flash-active-')));
+            try {
+                const active = path.join(dir, 'demo+HE.cbuild-run.yml');
+                fs.writeFileSync(active, 'cbuild-run:\n  generated-by: csolution\n  target-type: HE\n');
+                const found = [vscode.Uri.file('/ws/out/a.cbuild-run.yml'), vscode.Uri.file('/ws/out/b.cbuild-run.yml')];
+                const base: Partial<HandlerHost> = {
+                    workspaceFolders: () => [folder(dir)],
+                    findFiles: async () => found,
+                    toolEnvironment: () => ({ extension: () => undefined, pathEnv: '', platform: process.platform }),
+                };
+                // Chosen without the out/ search: the call goes on to the pyOCD lookup, which finds none here.
+                await refusalOf(handlerFor(x, { ...base, activeCbuildRunFile: async () => active }).handleFlash({}), 'TOOL_DISABLED');
+                // No answer, or a file that is gone: launch.json and out/ decide, as before.
+                for (const answer of [undefined, path.join(dir, 'gone+HE.cbuild-run.yml')]) {
+                    const refused = await refusalOf(handlerFor(x, { ...base, activeCbuildRunFile: async () => answer }).handleFlash({}), 'INVALID_ARGUMENT');
+                    assert.match(errorDetail(refused), /^Found 2 cbuild-run files under out\//);
+                }
+                // An explicit cbuildRunFile is never replaced by the answer.
+                const named = await refusalOf(handlerFor(x, { ...base, activeCbuildRunFile: async () => active })
+                    .handleFlash({ cbuildRunFile: 'missing.cbuild-run.yml' }), 'INVALID_ARGUMENT');
+                assert.match(errorDetail(named), /^cbuild-run file not found: /);
+            } finally {
+                fs.rmSync(dir, { force: true, recursive: true });
+            }
         });
 
         suite('pyOCD: the CMSIS Debugger\'s, never "pip install" (#46, #45)', () => {

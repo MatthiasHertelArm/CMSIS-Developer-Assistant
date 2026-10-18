@@ -41,6 +41,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
+import { QUERY_KINDS } from './core/catalogQuery';
 import { TOPICS, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
@@ -248,12 +249,16 @@ const ABOUT = {
     ),
     cmsis_action: say(
         'The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, ' +
-        'like the panel buttons; every result names the target it ran on.',
-        'build / load / erase / load_and_run wait for their task and end with ✅ or ❌ plus the exit code.',
+        'like the panel buttons; each result names its target.',
+        'build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code.',
         'A task still running at the wait returns status running: call action status, never start it again.',
         'run: CMSIS Run alone, no build or flash — a probe\'s GDB server, then attach; an FVP hosts none.',
-        'load_and_debug (flash + debug) and attach return with the session state; stop_run waits until the CMSIS tasks ended.',
+        'load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended.',
         'open_solution opens a csolution\'s folder (path) in a VS Code window and activates it; needs no open project.',
+    ),
+    cmsis_query: say(
+        'Boards, devices, or the examples and templates of a board or device, from CMSIS Solution\'s catalog (web and installed packs);',
+        'no project needed. Patterns are case-insensitive regexes.',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +
@@ -788,16 +793,34 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run', 'status', 'open_solution'])
+            action: z.enum(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
+                'stop_build', 'status', 'open_solution', 'install_pack', 'create_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
-            path: z.string().optional().describe('open_solution only: absolute path of a *.csolution.yml or of its folder.'),
+            path: z.string().optional().describe('Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project\'s folder.'),
+            pack: z.string().optional().describe('install_pack only: the Vendor::Name@version to install; needs no open project.'),
+            board: z.string().optional(),
+            device: z.string().optional(),
+            draft: z.string().optional().describe('create_solution: example or template; it, board and device are ids from cmsis_query'),
+            git: z.boolean().optional().describe('create_solution: git init, default off'),
             target: z.string().optional().describe('Target-type or type@set from the csolution (e.g. "MPS3", "HP@debug"). ' +
                 'Switched and verified when it differs from the active one; omit to use the panel selection.'),
             timeoutMs: z.number().int().min(100).max(600_000).optional()
                 .describe(`${LONG_TIMEOUT_DESC} For load_and_debug / attach: the session-readiness wait.`),
         },
-    // The client's name decides whether open_solution may reload this window (src/core/clientHosting.ts).
+    // The client's name decides whether open_solution and create_solution may reload this window (src/core/clientHosting.ts).
     }, (args) => debug.handleCmsisCommand({ ...args, client: mcp.server.getClientVersion()?.name }).then(reply));
+    mcp.registerTool('cmsis_query', {
+        description: ABOUT.cmsis_query,
+        inputSchema: {
+            what: z.enum(QUERY_KINDS),
+            vendor: z.string().optional(),
+            name: z.string().optional(),
+            board: z.string().optional().describe('examples: board id'),
+            device: z.string().optional().describe('boards: pattern; examples: device id'),
+            limit: z.number().int().min(1).max(100).optional().describe('Default 20'),
+        },
+        annotations: LOOK_ONLY,
+    }, (args) => debug.handleCmsisQuery(args).then(reply));
     mcp.registerTool('flash', {
         description: ABOUT.flash,
         inputSchema: {

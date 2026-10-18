@@ -17,7 +17,8 @@
 /**
  * What a knowledge search knows about the project without being told: the
  * device, board and packs of the active `*.cbuild-run.yml`, the cores from
- * the device pack's PDSC on disk, the compiler, the components and the
+ * the device pack's PDSC on disk (in the folder the CMSIS Solution extension
+ * names for it when there is one, else under the pack root), the compiler, the components and the
  * other packs from the cbuild files. The documentation and build-artefact cores already resolve
  * all of it; this module only puts their answers together.
  *
@@ -92,7 +93,7 @@ export async function projectFacts(docs: PackDocsHost, build: BuildInfoHost): Pr
         let note: string | undefined;
         if (target.devicePack) {
             const notes: string[] = [];
-            const located = locatePack(target.packRoot, target.devicePack, notes);
+            const located = locatePack(target.packRoot, target.devicePack, notes, target.packDirs?.devicePack);
             const pdsc = located ? findPdscFile(located.dir, located.id) : undefined;
             if (located && pdsc) {
                 facts.cores = [...new Set(collectProcessors(loadPdsc(pdsc, located.id, docs.log), target.device?.name).map((p) => p.core))];
