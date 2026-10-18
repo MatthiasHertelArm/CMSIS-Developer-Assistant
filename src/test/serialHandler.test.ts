@@ -363,7 +363,7 @@ suite('the human handle and what agents are told (#49)', () => {
         assert.strictEqual(serialSessionLine(idle.controller, SESSION_B), 'Serial: COM7 open (another MCP session (aaaaaaaa), idle 0 s of 300 s)');
         idle.time.advanceSeconds(42);
         assert.strictEqual(serialSessionLine(idle.controller, SESSION_A), 'Serial: COM7 open (this session, idle 42 s of 300 s)');
-        idle.controller.sessionEnded(SESSION_A);
+        await idle.controller.sessionEnded(SESSION_A);
         assert.strictEqual(serialSessionLine(idle.controller, SESSION_A),
             'Serial: COM7 released at 10:42:49: the MCP session that opened it ended');
         await idle.controller.close();
@@ -445,5 +445,52 @@ suite('the human handle and what agents are told (#49)', () => {
         } finally {
             item.dispose();
         }
+    });
+});
+
+/**
+ * Calls that arrive while `serial_open` is still opening the port, from
+ * another MCP session or as the session ends: each waits for the open and
+ * then answers as it would once the port was open. Mock ports, whose open
+ * ends on the next tick.
+ */
+suite('serial calls while serial_open is in flight', () => {
+    setup(() => SerialPortMock.binding.reset());
+    teardown(() => SerialPortMock.binding.reset());
+
+    test('serial_close closes the port once it is open, and says so', async () => {
+        const w = world();
+        SerialPortMock.binding.createPort('COM7');
+        const opened = asSession(SESSION_A, () => w.handler.handleOpen({ path: 'COM7' }));
+        const closed = asSession(SESSION_B, () => w.handler.handleClose());
+        assert.match(await opened, /^Owned serial port opened: COM7 @ 115200 baud\. /);
+        assert.strictEqual(await closed, 'Owned serial port closed.');
+        assert.ok(!w.serial.controller.isOpen() && w.serial.ports.every((port) => !port.isOpen), 'no port stays open');
+        assert.strictEqual(w.serial.time.armed(), 0, 'nor its idle timer');
+    });
+
+    test('the end of the session that is opening the port releases it once it is open', async () => {
+        const w = world();
+        SerialPortMock.binding.createPort('COM7');
+        const opened = asSession(SESSION_A, () => w.handler.handleOpen({ path: 'COM7', releaseOn: 'debug-session-end' }));
+        const ended = w.handler.sessionEnded(SESSION_A);
+        assert.match(await opened, /^Owned serial port opened: COM7 @ 115200 baud\. /);
+        assert.strictEqual(await ended, 'MCP session aaaaaaaa ended: released COM7.');
+        assert.strictEqual(w.serial.controller.status().lastRelease?.reason, 'owner-gone');
+    });
+
+    test('serial_capture is refused as when the port was open already, and opens nothing', async () => {
+        const w = world();
+        SerialPortMock.binding.createPort('COM7');
+        SerialPortMock.binding.createPort('COM8');
+        const opened = asSession(SESSION_A, () => w.handler.handleOpen({ path: 'COM7' }));
+        const capture = asSession(SESSION_B, () => w.handler.handleCapture({ path: 'COM8', durationMs: 1_000 }));
+        await opened;
+        await assert.rejects(capture, (failure: unknown) =>
+            failure instanceof ToolError && failure.code === 'PORT_HELD'
+                && failure.message === 'COM7 is open in this window (held by another MCP session (aaaaaaaa)), so serial_capture cannot take the port.'
+                && failure.hint === 'serial_read {waitMs} reads the open port; serial_close it to use serial_capture.');
+        assert.deepStrictEqual(w.serial.ports.map((port) => port.path), ['COM7']);
+        assert.strictEqual(w.serial.controller.hold()?.owner, SESSION_A);
     });
 });

@@ -84,6 +84,14 @@ function closedText(status: SerialStatus): string {
     return `closed (${released})${status.bufferedBytes > 0 ? `, ${status.bufferedBytes} byte(s) still buffered` : ''}`;
 }
 
+/** The refusal of a capture while the window holds a port: which one, and who holds it as `caller` sees it. */
+function slotTaken(owned: SerialController, caller: string | undefined): ToolError {
+    const hold = owned.hold();
+    const who = hold ? ` (held by ${holderWords(hold.owner, caller)})` : '';
+    return new ToolError('PORT_HELD',
+        `${owned.status().path} is open in this window${who}, so serial_capture cannot take the port.`, SLOT_HELD_HINT);
+}
+
 /**
  * Serial-tool handlers. Two backends:
  *
@@ -167,14 +175,10 @@ export class SerialHandler {
     async handleCapture(args: CaptureRequest): Promise<ToolText> {
         const until = untilPattern(args.until);
         const durationMs = captureDurationMs(args.durationMs);
-        if (this.owned.isOpen()) {
-            const hold = this.owned.hold();
-            const who = hold ? ` (held by ${holderWords(hold.owner, callingSession())})` : '';
-            throw new ToolError('PORT_HELD',
-                `${this.owned.status().path} is open in this window${who}, so serial_capture cannot take the port.`, SLOT_HELD_HINT);
-        }
+        const caller = callingSession();
+        // The slot is looked at in the open's turn, so a capture that waited for another open finds its port.
         const generation = await this.owned.open({ path: args.path, baudRate: args.baudRate },
-            { owner: callingSession(), rule: 'idle', idleSeconds: 0, capture: true });
+            { owner: caller, rule: 'idle', idleSeconds: 0, capture: true }, () => slotTaken(this.owned, caller));
         const opened = Date.now();
         const record = new CaptureRecord();
         // Set inside the read loop's closure, so it is typed as the union rather than narrowed to its first value.
@@ -213,12 +217,11 @@ export class SerialHandler {
     }
 
     async handleClose(): Promise<string> {
-        const wasOpen = this.owned.isOpen();
-        const released = releaseNote(this.owned.status());
-        await this.owned.close();
-        if (wasOpen) {
+        // Whether a port was open is answered in the close's turn, after an open in flight, whose port is closed too.
+        if (await this.owned.close()) {
             return 'Owned serial port closed.';
         }
+        const released = releaseNote(this.owned.status());
         return released ? `No owned serial port was open (${released}).` : 'No owned serial port was open.';
     }
 
@@ -346,7 +349,7 @@ export class SerialHandler {
      * directly. Never throws.
      */
     async sessionEnded(sessionId: string): Promise<string> {
-        const port = this.owned.sessionEnded(sessionId);
+        const port = await this.owned.sessionEnded(sessionId);
         const subscription = this.bridge.sessionEnded(sessionId);
         const done = [...(port ? [`released ${port}`] : []), ...(subscription ? ['ended the Serial Monitor subscription'] : [])];
         return `MCP session ${sessionId.slice(0, 8)} ended: ${done.length > 0 ? done.join(' and ') : 'it held no serial port in this window'}.`;

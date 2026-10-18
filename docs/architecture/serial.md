@@ -17,6 +17,14 @@ its own serial state.
 - **One owned port per window.** Several ports would need an owner per port
   and a `path` on every serial tool. A second `serial_open` while a port is
   held is `PORT_HELD`.
+- **Opens and closes take turns.** Several MCP sessions share the window's
+  port, and opening a device takes a while. The controller runs its opens
+  and closes one at a time (`inTurn()`): a `serial_open` or `serial_capture`
+  that arrives while another open is in flight waits for it and answers as
+  it would afterwards, instead of opening a second device that nothing
+  closes. A `serial_close` that arrives meanwhile closes the port once it is
+  open, and an open after a close or a release waits until the device is let
+  go, so the OS does not refuse it as held by another program.
 - **A port is exclusive, and agents forget.** On Windows a COM port has one
   holder; a port an agent left open makes the Serial Monitor or a terminal
   fail with "Access denied" until the window reloads. Nothing on the agent's
@@ -60,8 +68,9 @@ teardown) and with the user's Release command.
   line to the output channel and one record to the window's problem journal
   (source `serial`, without payload: a warning for an unplug and for the
   user's release, info for a rule doing its job), and closes the device in
-  the background. The next `serial_read` returns the bytes with the reason,
-  `serial_write` fails with `PORT_CLOSED` and the same text.
+  the background, in turn with the opens. The next `serial_read` returns
+  the bytes with the reason, `serial_write` fails with `PORT_CLOSED` and the
+  same text.
 - **The bridge.** A Serial Monitor subscription follows the same idle and
   owner rules; its end unsubscribes and drops its buffer, since those bytes
   belong to the user's session.
@@ -113,7 +122,9 @@ the session's `ended` handler:
 - A server without a router calls the local `serialHandler.sessionEnded()`.
 
 `sessionEnded()` releases the owned port and ends the subscription the
-session held, unless the port's rule is `manual`.
+session held, unless the port's rule is `manual`. It takes its turn after
+the open or close in flight, so a port the session was still opening as it
+ended goes too.
 
 ## Telling the user and the agent
 
@@ -179,13 +190,17 @@ Nothing in VS Code said who held a port the Serial Monitor could not open.
 
 - `src/test/serialController.test.ts`: the port's own end, the lease on a
   hand-moved clock, the `releaseOn` matrix, the end of a session, the journal
-  records, `PORT_HELD` for every OS refusal and path spelling, `PORT_CLOSED`
+  records, `PORT_HELD` for every OS refusal and path spelling, `PORT_CLOSED`;
+  opens and closes taking turns (two opens at once, a first open that fails,
+  a device the OS locks until its close ends)
 - `src/test/serialHandler.test.ts`: what `serial_open` and `serial_status`
   say, the setting read at each open, `sessionEnded()`, the bridge's rules;
   `serial_capture` closing the port on a match, at the deadline, on a read
   that throws and on an unplug, its refusals (invalid regex, taken slot,
   another program), the 16 kB answer and every path spelling; the session
-  line, the programming note, the status-bar item and Release Serial Port
+  line, the programming note, the status-bar item and Release Serial Port;
+  `serial_close`, the end of a session and `serial_capture` while
+  `serial_open` is in flight
 - `src/test/debuggingHandler.test.ts`: the serial line of
   `get_session_status`, the note of `flash` and `cmsis_action load_and_run`
 - `src/test/serialFixtures.ts`: the hand-moved clock, the scripted port, the
