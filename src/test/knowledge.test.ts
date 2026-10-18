@@ -101,10 +101,14 @@ const ENTITIES: [id: string, type: string, title: string][] = [
     ['tool:csolution', 'tool', 'csolution'], ['tool:packchk', 'tool', 'packchk'], ['tool:svdconv', 'tool', 'svdconv'],
 ];
 
-/** Write an index file the way the prototype's build does; `info` rows are optional. */
+/**
+ * Write an index file the way the prototype's build does; `info` rows are optional. One
+ * transaction: a commit per row takes seconds on a Windows runner and runs a test out of time.
+ */
 function writeIndex(file: string, info: Record<string, string> = {}): void {
     const db = new DatabaseSync(file);
     db.exec(`
+        BEGIN;
         CREATE TABLE nodes(id TEXT PRIMARY KEY, kind TEXT, type TEXT, domain TEXT, title TEXT, summary TEXT, body TEXT, meta JSON);
         CREATE TABLE edges(src TEXT, rel TEXT, dst TEXT, qual JSON, PRIMARY KEY(src, rel, dst));
         CREATE VIRTUAL TABLE nodes_fts USING fts5(id UNINDEXED, title, summary, body, symptoms, triggers, tokenize='porter unicode61');
@@ -144,6 +148,7 @@ function writeIndex(file: string, info: Record<string, string> = {}): void {
     for (const [key, value] of Object.entries(info)) {
         infoRow.run(key, value);
     }
+    db.exec('COMMIT');
     db.close();
 }
 
@@ -369,15 +374,18 @@ suite('knowledge tools', () => {
         test('a file that is no index, and an index of another schema version, are refused', async () => {
             const text = path.join(dir, 'notes.db');
             fs.writeFileSync(text, 'not a database');
-            await refusedAs('INVALID_ARGUMENT', handlerFor({ indexPath: text }).handleKnowledgeGet({ id: 'x' }), /is not a knowledge index/);
             const later = path.join(dir, 'later.db');
             writeIndex(later, { schema_version: '2' });
-            await refusedAs('INVALID_ARGUMENT', handlerFor({ indexPath: later }).handleKnowledgeGet({ id: 'x' }), /schema version 2; this extension reads version 1/);
             const stated = path.join(dir, 'stated.db');
             writeIndex(stated, { schema_version: '1.2' });
-            const fine = handlerFor({ indexPath: stated });
-            assert.match(textOf(await fine.handleKnowledgeGet({ id: 'fx-generic' })), /^fx-generic/);
-            fine.dispose();
+            const handlers = [text, later, stated].map((indexPath) => handlerFor({ indexPath }));
+            try {
+                await refusedAs('INVALID_ARGUMENT', handlers[0].handleKnowledgeGet({ id: 'x' }), /is not a knowledge index/);
+                await refusedAs('INVALID_ARGUMENT', handlers[1].handleKnowledgeGet({ id: 'x' }), /schema version 2; this extension reads version 1/);
+                assert.match(textOf(await handlers[2].handleKnowledgeGet({ id: 'fx-generic' })), /^fx-generic/);
+            } finally {
+                handlers.forEach((each) => each.dispose());
+            }
         });
 
         test('a rebuilt index file is picked up on the next call', async () => {
@@ -517,6 +525,7 @@ suite('knowledge tools', () => {
         function writePackIndex(file: string): void {
             const db = new DatabaseSync(file);
             db.exec(`
+                BEGIN;
                 CREATE TABLE nodes(id TEXT PRIMARY KEY, kind TEXT, type TEXT, domain TEXT, title TEXT, summary TEXT, body TEXT, meta JSON);
                 CREATE TABLE edges(src TEXT, rel TEXT, dst TEXT, qual JSON, PRIMARY KEY(src, rel, dst));
                 CREATE VIRTUAL TABLE nodes_fts USING fts5(id UNINDEXED, title, summary, body, symptoms, triggers, tokenize='porter unicode61');
@@ -533,6 +542,7 @@ suite('knowledge tools', () => {
             edge.run('device:MYCHIP', 'has_core', 'core:Cortex-M55');
             edge.run('pk-errata-dma', 'applies_to', 'device:MYCHIP');
             edge.run('pk-errata-dma', 'refines', 'fx-generic');
+            db.exec('COMMIT');
             db.close();
         }
 
