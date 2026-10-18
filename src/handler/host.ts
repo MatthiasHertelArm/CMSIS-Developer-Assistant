@@ -65,8 +65,8 @@ export interface HandlerHost {
     ownedSerial(): SerialController;
     /** The open workspace folders, in VS Code's order. */
     workspaceFolders(): readonly vscode.WorkspaceFolder[];
-    /** `vscode.workspace.findFiles`. */
-    findFiles(include: string, exclude: string, maxResults: number): Thenable<vscode.Uri[]>;
+    /** `vscode.workspace.findFiles`; without `maxResults`, every match. */
+    findFiles(include: string, exclude: string, maxResults?: number): Thenable<vscode.Uri[]>;
     /**
      * The `cbuild-run.yml` of the CMSIS Solution extension's active target
      * (`getCbuildRunFile`); undefined when the extension is not active, lacks

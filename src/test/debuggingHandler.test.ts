@@ -1979,6 +1979,42 @@ suite('DebuggingHandler', () => {
             const open = (handler: DebuggingHandler, given?: string): Promise<ToolText> =>
                 handler.handleCmsisCommand({ action: 'open_solution', path: given, client: 'claude-code' });
 
+            /**
+             * vscode.workspace.findFiles over the workspace folder `root` as VS Code answers the csolution searches made here:
+             * the files below it whose names end in .csolution.yml or .csolution.yaml (in lower case), `root` as spelled
+             * with the names below it as on disk; without the folders the exclude leaves out (the names of a brace list,
+             * or every hidden folder for the hidden-folder glob); links followed unless `followLinks` is false; at most
+             * `maxResults`, in the order of the walk. `calls` records the arguments.
+             */
+            const searchLike = (root: string, options: { followLinks?: boolean; calls?: unknown[][] } = {}): HandlerHost['findFiles'] =>
+                async (include, exclude, maxResults) => {
+                    options.calls?.push([include, exclude, maxResults]);
+                    const named = /^\*\*\/\{([^}]*)\}\/\*\*$/.exec(exclude)?.[1].split(',') ?? [];
+                    const leftOut = (name: string): boolean => (exclude === '**/.*/**' ? name.startsWith('.') : named.includes(name));
+                    const found: vscode.Uri[] = [];
+                    const walk = (folder: string): void => {
+                        const entries = fs.readdirSync(folder, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+                        for (const entry of entries) {
+                            const full = path.join(folder, entry.name);
+                            if (entry.isSymbolicLink() && options.followLinks === false) {
+                                continue;
+                            }
+                            if (fs.statSync(full).isDirectory()) {
+                                if (!leftOut(entry.name)) {
+                                    walk(full);
+                                }
+                            } else if (/\.csolution\.(yaml|yml)$/.test(entry.name)) {
+                                found.push(vscode.Uri.file(full));
+                            }
+                        }
+                    };
+                    walk(root);
+                    return found.slice(0, maxResults ?? found.length);
+                };
+            /** The csolution files the CMSIS Solution extension lists for the workspace folder `root`, as it spells them. */
+            const extensionList = async (root: string, followLinks?: boolean): Promise<string[]> =>
+                (await searchLike(root, { followLinks })('**/*.csolution.{yaml,yml}', '**/.*/**')).map((uri) => uri.fsPath);
+
             test('a missing, relative, absent or foreign path is INVALID_ARGUMENT, and nothing is opened', async () => {
                 const x = new ScriptedExecutor();
                 x.session = false;
@@ -2109,7 +2145,7 @@ suite('DebuggingHandler', () => {
                 x.session = false;
                 const opened: string[] = [];
                 const host: Partial<HandlerHost> = {
-                    ...installed, workspaceFolders: () => [asFolder(scratch)], openFolder: async (folder) => void opened.push(folder),
+                    ...installed, workspaceFolders: () => [asFolder(scratch)], openFolder: async (folder) => void opened.push(folder), findFiles: searchLike(scratch),
                 };
                 // The extension is given, and the reply names, the path as VS Code writes it (on Windows: c:\, not C:\).
                 const listed = vscode.Uri.file(solution).fsPath;
@@ -2144,13 +2180,13 @@ suite('DebuggingHandler', () => {
              * as when the user escapes its "Select a solution" picker.
              */
             const strictSolution = (listedFiles: string[], initial: string) => {
-                const state = { active: initial, activated: [] as unknown[] };
+                const state = { active: initial, activated: [] as unknown[], listed: listedFiles };
                 registrations = standIns({
                     'cmsis-csolution.getSolutionFile': () => state.active,
                     'cmsis-csolution.getActiveTargetSet': () => (state.active ? 'HE' : ''),
                     'cmsis-csolution.activateSolution': (file) => {
                         state.activated.push(file);
-                        if (typeof file === 'string' && listedFiles.includes(file)) {
+                        if (typeof file === 'string' && state.listed.includes(file)) {
                             state.active = file;
                         }
                     },
@@ -2183,31 +2219,200 @@ suite('DebuggingHandler', () => {
 
             test('a solution the extension does not take is TASK_FAILED when another stays active, never "build next" (#99)', async () => {
                 const first = path.join(scratch, 'first.csolution.yml');
-                const hidden = path.join(scratch, 'hidden.csolution.yml');
+                const fresh = path.join(scratch, 'fresh.csolution.yml');
                 fs.writeFileSync(first, 'solution:\n');
-                fs.writeFileSync(hidden, 'solution:\n');
+                fs.writeFileSync(fresh, 'solution:\n');
                 const listedFirst = vscode.Uri.file(first).fsPath;
-                // The extension lists only the first one; the search finds nothing, as for a file in an excluded folder.
+                // The search finds both, the extension's list still has only the first one, as for a file written a moment ago.
                 const state = strictSolution([listedFirst], listedFirst);
                 const x = new ScriptedExecutor();
                 x.session = false;
                 const host: Partial<HandlerHost> = {
-                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: async () => [],
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch),
                 };
-                const listedHidden = vscode.Uri.file(hidden).fsPath;
-                const refused = await refusalOf(open(handlerFor(x, host), hidden), 'TASK_FAILED');
-                assert.deepStrictEqual(state.activated, [listedHidden]);
-                assert.strictEqual(refused.message, `CMSIS 'open_solution' failed: the CMSIS Solution extension was asked to activate ${listedHidden} `
+                const listedFresh = vscode.Uri.file(fresh).fsPath;
+                const refused = await refusalOf(open(handlerFor(x, host), fresh), 'TASK_FAILED');
+                assert.deepStrictEqual(state.activated, [listedFresh]);
+                assert.strictEqual(refused.message, `CMSIS 'open_solution' failed: the CMSIS Solution extension was asked to activate ${listedFresh} `
                     + `but still reports ${listedFirst} as the active solution, so CMSIS actions would run on that one.`);
                 assert.strictEqual(refused.hint, 'Ask the user to select it in the CMSIS view (Select as Active Solution), or to reload the window, '
                     + 'then repeat this call; get_recent_problems shows what the extension reported.');
 
                 // None active yet: it may still be loading, so the call is running and says to repeat it before a build.
                 state.active = '';
-                const pending = await replyAnswer(open(handlerFor(x, host), hidden), 'running');
-                assert.ok(pending.endsWith(`The CMSIS Solution extension was asked to activate ${listedHidden} but reports 'none' as the active solution so far. `
+                const pending = await replyAnswer(open(handlerFor(x, host), fresh), 'running');
+                assert.ok(pending.endsWith(`The CMSIS Solution extension was asked to activate ${listedFresh} but reports 'none' as the active solution so far. `
                     + 'It may still be loading: repeat this call until it names the active solution, then cmsis_action build; '
                     + 'get_recent_problems shows load errors.'), pending);
+
+                // Without a search result the path goes in as Uri.file writes it.
+                state.activated.length = 0;
+                const unsearched = { ...host, findFiles: (): Promise<vscode.Uri[]> => Promise.reject(new Error('no search')) };
+                await replyAnswer(open(handlerFor(x, unsearched), fresh), 'running');
+                assert.deepStrictEqual(state.activated, [listedFresh]);
+            });
+
+            /** Write the csolution `file`, with its folders. */
+            const writeSolution = (file: string): string => {
+                fs.mkdirSync(path.dirname(file), { recursive: true });
+                fs.writeFileSync(file, 'solution:\n');
+                return file;
+            };
+
+            test('another letter case, other separators, the folder\'s path: activated here, spelled as the extension lists it', async function () {
+                // A file system that ignores letter case (APFS and NTFS by default); Linux keeps the spellings apart.
+                if (!fs.existsSync(scratch.toUpperCase()) || !fs.existsSync(scratch.toLowerCase())) {
+                    this.skip();
+                }
+                const root = path.join(scratch, 'Work');
+                const solution = writeSolution(path.join(root, 'App', 'Blinky.csolution.yml'));
+                const listed = vscode.Uri.file(solution).fsPath;
+                const state = strictSolution(await extensionList(root), '');
+                assert.deepStrictEqual(state.listed, [listed]);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const opened: string[] = [];
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(root)], findFiles: searchLike(root),
+                    openFolder: async (folder) => void opened.push(folder),
+                };
+                // As an agent may type it on Windows: forward slashes, the drive letter in upper case. Elsewhere it stays as it is.
+                const typed = (file: string): string => (process.platform === 'win32'
+                    ? file.replace(/\\/g, '/').replace(/^[a-z]:/, (drive) => drive.toUpperCase()) : file);
+                const spellings = [
+                    path.join(root, 'APP', 'blinky.csolution.yml'),
+                    path.join(scratch, 'WORK', 'app', 'BLINKY.csolution.yml'),
+                    path.join(scratch, 'work', 'APP'),
+                ].map(typed);
+                for (const given of spellings) {
+                    state.active = '';
+                    state.activated.length = 0;
+                    const reply = await open(handlerFor(x, host), given);
+                    assert.deepStrictEqual(state.activated, [listed], given);
+                    assert.strictEqual((reply as { status: string }).status, 'ok', given);
+                    const opening = fs.statSync(given).isDirectory() ? given : path.dirname(given);
+                    assert.deepStrictEqual((reply as { data: unknown }).data, { opened: opening, newWindow: false, solution: listed }, given);
+                }
+                assert.deepStrictEqual(opened, [], 'no window is opened for a folder that is open here');
+            });
+
+            test('the extension\'s own search decides: a csolution in build/ is found, one it does not list is refused before it is asked', async () => {
+                const app = writeSolution(path.join(scratch, 'App.csolution.yml'));
+                const generated = writeSolution(path.join(scratch, 'build', 'Gen.csolution.yml'));
+                const hidden = writeSolution(path.join(scratch, '.cmsis', 'Hidden.csolution.yml'));
+                const state = strictSolution(await extensionList(scratch), vscode.Uri.file(app).fsPath);
+                assert.deepStrictEqual(state.listed, [app, generated].map((file) => vscode.Uri.file(file).fsPath));
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const calls: unknown[][] = [];
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch, { calls }),
+                };
+
+                // The one in build/, which the extension lists, under another spelling: activated as listed.
+                const reply = await open(handlerFor(x, host), [scratch, 'build', '..', 'build', 'Gen.csolution.yml'].join(path.sep));
+                assert.deepStrictEqual(state.activated, [state.listed[1]]);
+                assert.strictEqual((reply as { status: string }).status, 'ok');
+                assert.deepStrictEqual(calls, [['**/*.csolution.{yaml,yml}', '**/.*/**', undefined]]);
+
+                // One in a hidden folder, or with a name the extension's search does not match: refused, the extension is not asked,
+                // and that comes before the refusal under a live session, which stopping the session would not help.
+                const upper = writeSolution(path.join(scratch, 'Upper.CSOLUTION.YML'));
+                for (const [unlisted, executor] of [[hidden, x], [upper, x], [hidden, new ScriptedExecutor()]] as const) {
+                    const refused = await refusalOf(open(handlerFor(executor, host), unlisted), 'INVALID_ARGUMENT');
+                    assert.strictEqual(refused.message, `CMSIS 'open_solution' not attempted: the CMSIS Solution extension does not list ${unlisted} `
+                        + 'as a solution of this window, so it would ask the user to pick another one instead.');
+                    assert.strictEqual(refused.hint, 'It lists only files whose names end in .csolution.yml or .csolution.yaml, that ending in lower case, '
+                        + 'outside hidden folders and outside what the settings cmsis-csolution.exclude and files.exclude exclude. '
+                        + 'Ask the user to rename or move the file, or to change the setting, then repeat this call.');
+                }
+                assert.deepStrictEqual(state.activated, [state.listed[1]]);
+            });
+
+            test('a path through a link: the folder open through one, the solution named through one, or one the search does not follow', async function () {
+                const real = path.join(scratch, 'real');
+                const solution = writeSolution(path.join(real, 'Blinky.csolution.yml'));
+                const link = path.join(scratch, 'link');
+                try {
+                    // A junction on Windows, which needs no privilege; elsewhere the type is ignored.
+                    fs.symlinkSync(real, link, 'junction');
+                } catch {
+                    this.skip();
+                }
+                const viaLink = path.join(link, 'Blinky.csolution.yml');
+                const state = strictSolution([], '');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const opened: string[] = [];
+                const cases: Array<{ folder: string; followLinks?: boolean; given: string; listed: string }> = [
+                    { folder: link, given: solution, listed: vscode.Uri.file(viaLink).fsPath },
+                    { folder: real, given: viaLink, listed: vscode.Uri.file(solution).fsPath },
+                    { folder: scratch, followLinks: false, given: viaLink, listed: vscode.Uri.file(solution).fsPath },
+                ];
+                for (const { folder, followLinks, given, listed } of cases) {
+                    state.listed = await extensionList(folder, followLinks);
+                    assert.deepStrictEqual(state.listed, [listed], given);
+                    state.active = '';
+                    state.activated.length = 0;
+                    const host: Partial<HandlerHost> = {
+                        ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(folder)], findFiles: searchLike(folder, { followLinks }),
+                        openFolder: async (opening) => void opened.push(opening),
+                    };
+                    const reply = await open(handlerFor(x, host), given);
+                    assert.deepStrictEqual(state.activated, [listed], given);
+                    assert.strictEqual((reply as { status: string }).status, 'ok', given);
+                }
+                assert.deepStrictEqual(opened, [], 'no window is opened for a folder that is open here');
+
+                // Active already, under the other spelling: the answer says so, with no refusal for the live session.
+                state.active = vscode.Uri.file(solution).fsPath;
+                const live = { ...installed, workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch, { followLinks: false }) };
+                assert.strictEqual(textOf(await open(handlerFor(new ScriptedExecutor(), live), viaLink)),
+                    `${link} is open in this VS Code window. Active solution: ${state.active}, target HE. Next: cmsis_action build, then load_and_debug.`);
+            });
+
+            test('every csolution the extension lists counts, however many the workspace has', async () => {
+                for (let index = 0; index < 250; index++) {
+                    writeSolution(path.join(scratch, 'examples', `a${String(index).padStart(3, '0')}.csolution.yml`));
+                }
+                const last = writeSolution(path.join(scratch, 'examples', 'z.csolution.yml'));
+                const state = strictSolution(await extensionList(scratch), '');
+                assert.strictEqual(state.listed.length, 251);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch),
+                };
+                await open(handlerFor(x, host), [scratch, 'examples', '..', 'examples', 'z.csolution.yml'].join(path.sep));
+                assert.deepStrictEqual(state.activated, [vscode.Uri.file(last).fsPath]);
+            });
+
+            test('the path a new window or a reload hands over is activated there, spelled as the extension lists it', async () => {
+                const solution = writeSolution(path.join(scratch, 'Blinky', 'Blinky.csolution.yml'));
+                const elsewhere = path.join(scratch, 'Elsewhere');
+                fs.mkdirSync(elsewhere);
+                const typed = [scratch, 'Blinky', '..', 'Blinky', 'Blinky.csolution.yml'].join(path.sep);
+                const state = strictSolution([], '');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const branches: Array<Partial<HandlerHost>> = [
+                    { workspaceFolders: () => [asFolder(elsewhere)], openFolder: async () => undefined },
+                    { workspaceFolders: () => [], openFolder: async () => undefined, sleep: async () => undefined },
+                ];
+                for (const branch of branches) {
+                    const handedOver = (await open(handlerFor(x, branch), typed) as { data: unknown }).data as { opened: string; solution: string };
+                    assert.deepStrictEqual([handedOver.opened, handedOver.solution], [path.dirname(typed), typed]);
+                    // The window that then has the folder open (VS Code opens it resolved) is given the path back.
+                    const folder = path.resolve(handedOver.opened);
+                    state.listed = await extensionList(folder);
+                    state.active = '';
+                    state.activated.length = 0;
+                    const there: Partial<HandlerHost> = {
+                        ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(folder)], findFiles: searchLike(folder),
+                    };
+                    await open(handlerFor(x, there), handedOver.solution);
+                    assert.deepStrictEqual(state.activated, [vscode.Uri.file(solution).fsPath]);
+                }
             });
 
             test('an open folder without the CMSIS Solution extension, or without a csolution, is reported as it is', async () => {

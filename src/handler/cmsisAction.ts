@@ -106,6 +106,8 @@ import {
 import {
     isSolutionFile,
     liesInside,
+    LISTED_SOLUTION_GLOB,
+    listedSolutionExclude,
     missingSolutionExtensionRefusal,
     noSolutionRefusal,
     noWorkspaceRefusal,
@@ -186,8 +188,8 @@ const SOLUTION_SEARCH_MS = 2_000;
 const OPEN_VERIFY_MS = 20_000;
 /** Where the workspace search does not look for a csolution. */
 const SOLUTION_SEARCH_EXCLUDE = '**/{node_modules,out,tmp,build}/**';
-/** How many csolution files the search for the one open_solution activates may return. */
-const SOLUTION_MATCH_MAX = 200;
+/** How long open_solution's search for the csolution files the CMSIS Solution extension lists may take; it returns all of them. */
+const SOLUTION_LIST_MS = 5_000;
 
 const SWITCH_BY_HAND = 'Switch it by hand in the CMSIS Solution panel (Manage Solution → Target) and repeat the call.';
 
@@ -198,6 +200,10 @@ const SELECT_SOLUTION_BY_HAND = 'Ask the user to select it in the CMSIS view (Se
 const PICKER_HINT = 'If VS Code shows the CMSIS Solution extension\'s "Select a solution" picker, the extension did not recognise the path: '
     + 'ask the user to pick the solution there or in the CMSIS view (Select as Active Solution), then repeat this call. '
     + 'get_recent_problems shows what the extension reported.';
+/** open_solution: which csolution files the CMSIS Solution extension lists, and so can activate. */
+const UNLISTED_HINT = 'It lists only files whose names end in .csolution.yml or .csolution.yaml, that ending in lower case, outside hidden folders '
+    + 'and outside what the settings cmsis-csolution.exclude and files.exclude exclude. Ask the user to rename or move the file, '
+    + 'or to change the setting, then repeat this call.';
 
 /** What the fence answers if the call itself does not answer in time. */
 export const CMSIS_FENCE_ADVICE = 'The CMSIS action may still go on in the CMSIS extension — '
@@ -902,11 +908,11 @@ async function loadAndDebug(issue: Issue): Promise<ToolText> {
     return sessionPhase(issue, 'load_and_debug', loadNote, false);
 }
 
-/** The csolution files of the open workspace, at most `max`, or undefined when the search failed or took too long. */
-async function workspaceSolutionFiles(host: HandlerHost, max = 5): Promise<string[] | undefined> {
+/** The csolution files of the open workspace, at most five, or undefined when the search failed or took too long. */
+async function workspaceSolutionFiles(host: HandlerHost): Promise<string[] | undefined> {
     try {
         const found = await withTimeout('csolution search', SOLUTION_SEARCH_MS,
-            () => Promise.resolve(host.findFiles('**/*.csolution.{yml,yaml}', SOLUTION_SEARCH_EXCLUDE, max)));
+            () => Promise.resolve(host.findFiles('**/*.csolution.{yml,yaml}', SOLUTION_SEARCH_EXCLUDE, 5)));
         return found.map((uri) => uri.fsPath).sort();
     } catch {
         return undefined;
@@ -914,17 +920,66 @@ async function workspaceSolutionFiles(host: HandlerHost, max = 5): Promise<strin
 }
 
 /**
- * `file` spelled as the CMSIS Solution extension lists it. Its activateSolution
- * takes a path only when it equals, character for character, an entry of the
- * list it built from `vscode.workspace.findFiles` (`Uri.fsPath`: the names as
- * on disk, on Windows the drive letter in lower case); for any other spelling
- * it opens its "Select a solution" picker and waits for the user (#84, #99).
- * The workspace search gives the same spelling; a file it does not find gets
- * at least the drive letter `Uri.file` writes.
+ * The csolution files the CMSIS Solution extension lists for this window, as
+ * it spells them: its own search (1.72.0 `getSolutionPaths`), every workspace
+ * folder with its include and exclude, no limit, `Uri.fsPath` of each.
+ * Undefined when the search failed or took too long.
  */
-async function solutionAsListed(file: string, host: HandlerHost): Promise<string> {
-    const found = await workspaceSolutionFiles(host, SOLUTION_MATCH_MAX);
-    return found?.find((listed) => samePath(listed, file)) ?? vscode.Uri.file(file).fsPath;
+async function listedSolutions(host: HandlerHost): Promise<string[] | undefined> {
+    try {
+        const exclude = listedSolutionExclude(vscode.workspace.getConfiguration('cmsis-csolution').get<unknown>('exclude'));
+        const found = await withTimeout('csolution list', SOLUTION_LIST_MS,
+            () => Promise.resolve(host.findFiles(LISTED_SOLUTION_GLOB, exclude)));
+        return found.map((uri) => uri.fsPath);
+    } catch {
+        return undefined;
+    }
+}
+
+/** The real path of an existing file or folder: links resolved, the names as the file system stores them; undefined when it cannot be resolved. */
+function realPathOf(file: string): string | undefined {
+    try {
+        return fs.realpathSync.native(file);
+    } catch {
+        return undefined;
+    }
+}
+
+/** Whether `a` and `b` are the same file: the same real path when both resolve, else the same path (`samePath`). */
+function sameFile(a: string, b: string): boolean {
+    const realA = realPathOf(a);
+    const realB = realA === undefined ? undefined : realPathOf(b);
+    return realA !== undefined && realB !== undefined ? realA === realB : samePath(a, b);
+}
+
+/** Whether `target` is `folder` or lies below it, as written or once both are resolved to real paths. */
+function liesInFolder(target: string, folder: string): boolean {
+    if (liesInside(target, folder)) {
+        return true;
+    }
+    const realTarget = realPathOf(target);
+    const realFolder = realTarget === undefined ? undefined : realPathOf(folder);
+    return realTarget !== undefined && realFolder !== undefined && liesInside(realTarget, realFolder);
+}
+
+/**
+ * `file` spelled as the CMSIS Solution extension lists it, or undefined when
+ * the extension does not list it. Its activateSolution takes a path only when
+ * it equals, character for character, an entry of its list (`Uri.fsPath`:
+ * the workspace folder as VS Code has it, the names below it as on disk, on
+ * Windows the drive letter in lower case); for any other path it opens its
+ * "Select a solution" picker and waits for the user (#84, #99). The entry is
+ * the same file by real path, so another letter case, other separators or a
+ * path through a link find it; one spelled as given comes first. Without the
+ * list, the path goes in as `Uri.file` writes it.
+ */
+async function solutionAsListed(file: string, host: HandlerHost): Promise<string | undefined> {
+    const listed = await listedSolutions(host);
+    if (listed === undefined) {
+        return vscode.Uri.file(file).fsPath;
+    }
+    const same = listed.filter((entry) => sameFile(entry, file));
+    return same.find((entry) => samePath(entry, file)) ?? same[0];
 }
 
 /**
@@ -1002,19 +1057,27 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
     }
     const named = place.named ?? (place.solutions.length === 1 ? place.solutions[0] : undefined);
     let current = await activeSolution();
-    const isActive = (file: string): boolean => current.active && current.solutionPath !== undefined && samePath(current.solutionPath, file);
+    const isActive = (file: string): boolean => current.active && current.solutionPath !== undefined && sameFile(current.solutionPath, file);
     if (named === undefined) {
         const active = current.active ? `Active solution: ${current.description}.` : 'None is active.';
         return `${here} ${solutionsNote(place)} ${active} Pass the path of one *.csolution.yml to activate it.`;
     }
     let wanted = named;
     if (!isActive(named)) {
+        const listed = await solutionAsListed(named, host);
+        if (listed === undefined) {
+            // Asked for a path it does not list, the extension would only open its picker.
+            throw new ToolError('INVALID_ARGUMENT',
+                `CMSIS 'open_solution' not attempted: the CMSIS Solution extension does not list ${named} as a solution of this window, `
+                    + 'so it would ask the user to pick another one instead.',
+                UNLISTED_HINT);
+        }
         if (executor.hasDebugSession()) {
             throw new ToolError('PROBE_BUSY',
                 `CMSIS 'open_solution' not attempted: activating ${named} re-loads the solution, which is not done under a live debug session.`,
                 'Call stop_debugging first, then repeat this call.');
         }
-        wanted = await solutionAsListed(named, host);
+        wanted = listed;
         try {
             await withTimeout('cmsis activateSolution', ACTIVATION_MS,
                 () => Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.activateSolution', wanted)));
@@ -1082,7 +1145,7 @@ async function openSolution(context: CmsisActionContext, given: string | undefin
     const place = placeOf(given);
     const probe = place.named ?? place.folder;
     const folders = host.workspaceFolders();
-    if (folders.some((folder) => liesInside(probe, folder.uri.fsPath))) {
+    if (folders.some((folder) => liesInFolder(probe, folder.uri.fsPath))) {
         return activateHere(context, place, deadline);
     }
     const empty = folders.length === 0;

@@ -267,13 +267,20 @@ window's CMSIS job tracker (next section):
   switches the target.
 
 - `open_solution` needs no active solution either. It takes the path of a
-  csolution or of its folder. A folder this window has open is activated
-  here (`cmsis-csolution.activateSolution`, verified, refused under a live
+  csolution or of its folder. A folder this window has open, by its path
+  or by its real path (links resolved, letter case as on disk;
+  `liesInFolder()`), is activated here
+  (`cmsis-csolution.activateSolution`, verified, refused under a live
   session). The extension takes only a path spelled exactly as in its list,
   which it builds from `vscode.workspace.findFiles`, and otherwise waits in
-  its own picker; so the path goes in as the workspace search spells it
-  (`solutionAsListed()`), and a solution it did not take while another
-  stays active is `TASK_FAILED`, not a hint to build. A window without any folder opens it in itself
+  its own picker. So open_solution runs the extension's own search
+  (`listedSolutions()`: its include and its exclude of hidden folders and
+  `cmsis-csolution.exclude`, from `src/core/bootstrapState.ts`, without a
+  limit) and hands over the entry that is the same file as the path given,
+  compared by real path (`solutionAsListed()`), whatever the letter case,
+  the separators or the links on the way. A csolution the extension does
+  not list is refused before it is asked, and one it did not take while
+  another stays active is `TASK_FAILED`, not a hint to build. A window without any folder opens it in itself
   (`openHere()`) when the client runs outside the window — the tool passes
   the client's `initialize` name, `src/core/clientHosting.ts` knows the
   CLIs: VS Code reloads the window for that, the MCP server with it, so the
@@ -645,7 +652,7 @@ by #56.
 | `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
 | `src/core/solutionApi.ts`, `src/core/catalogQuery.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data |
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
-| `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; the csolution files below a folder that is not open yet |
+| `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
