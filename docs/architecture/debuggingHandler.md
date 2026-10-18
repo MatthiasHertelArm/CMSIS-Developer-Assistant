@@ -339,7 +339,11 @@ into the CMSIS tasks and launch configurations and leaves other tasks alone
 debugger is named (the command does nothing then) or when
 `cmsis-csolution.autoDebugLaunch` is off (it writes no file then). Otherwise,
 or when it wrote nothing, the refusal says why and that the user chooses
-the debugger in Manage Solution Settings.
+the debugger in Manage Solution Settings. The cbuild-run.yml is the one the
+extension names, through the lookup `flash` uses
+(`HandlerHost.activeCbuildRunFile`): Update Debug Tasks reads that file and
+no other, so a file found on disk by convention would not predict what it
+does.
 
 A window without an active solution is an ordinary state for an agent that
 starts in an empty VS Code, so the refusal says which part is missing

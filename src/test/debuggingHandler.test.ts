@@ -26,6 +26,7 @@ import { PickerCancelled, type IDebugConfigurationManager } from '../utils/debug
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
 import type { StopWaitResult } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
+import { activeCbuildRunFile, GET_CBUILD_RUN_FILE, type SolutionCommands } from '../utils/solutionQueries';
 import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from '../core/toolResult';
@@ -2654,26 +2655,32 @@ suite('DebuggingHandler', () => {
 
             suite('a tasks.json without CMSIS tasks', () => {
                 let dir: string;
+                /** The active target's cbuild-run.yml as the host's lookup, the one flash takes, answers it. */
+                let named: string | undefined;
                 setup(() => {
                     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-tasks-'));
+                    named = undefined;
                 });
                 teardown(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-                /** A cbuild-run.yml for HE, with a debugger node when `debuggerName` is given. */
-                const cbuildRun = (debuggerName?: string): string => {
-                    const file = path.join(dir, 'demo+HE.cbuild-run.yml');
+                /** A cbuild-run.yml for HE at `file`, with a debugger node when `debuggerName` is given. */
+                const cbuildRun = (debuggerName?: string, file = path.join(dir, 'demo+HE.cbuild-run.yml')): string => {
                     fs.writeFileSync(file, ['cbuild-run:', '  target-type: HE', ...(debuggerName ? ['  debugger:', `    name: ${debuggerName}`, '    protocol: swd'] : []), ''].join('\n'));
                     return file;
+                };
+                /** A job world with no CMSIS task in tasks.json, whose host names `named` as the active cbuild-run.yml. */
+                const tasksWorld = (more: Partial<HandlerHost> = {}): ReturnType<typeof jobWorld> => {
+                    const w = jobWorld(20, { activeCbuildRunFile: async () => named, ...more });
+                    w.tasks.fetched = [];
+                    return w;
                 };
                 const LOAD_LABELS = ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase'];
 
                 test('the debugger is named: Update Debug Tasks runs once, the labels are read again, and the action goes on', async () => {
-                    const w = jobWorld();
-                    w.tasks.fetched = [];
-                    const file = cbuildRun('CMSIS-DAP@pyOCD');
+                    const w = tasksWorld();
+                    named = cbuildRun('CMSIS-DAP@pyOCD');
                     let updates = 0;
                     solutionOn('HE', {
-                        'cmsis-csolution.getCbuildRunFile': () => file,
                         'cmsis-csolution.updateDebugTasks': () => {
                             updates++;
                             setTimeout(() => {
@@ -2688,12 +2695,10 @@ suite('DebuggingHandler', () => {
                 });
 
                 test('Update Debug Tasks that writes none: run once, never again, and the refusal says so', async () => {
-                    const w = jobWorld();
-                    w.tasks.fetched = [];
-                    const file = cbuildRun('J-Link Server');
+                    const w = tasksWorld();
+                    named = cbuildRun('J-Link Server');
                     let updates = 0;
                     solutionOn('HE', {
-                        'cmsis-csolution.getCbuildRunFile': () => file,
                         'cmsis-csolution.updateDebugTasks': () => {
                             updates++;
                         },
@@ -2710,26 +2715,70 @@ suite('DebuggingHandler', () => {
                 });
 
                 test('no debugger named, or no cbuild-run.yml yet: Update Debug Tasks is not run, and the refusal names the next step', async () => {
-                    const w = jobWorld();
-                    w.tasks.fetched = [];
-                    const file = cbuildRun();
+                    const w = tasksWorld();
+                    named = cbuildRun();
                     let updates = 0;
                     const update = (): void => {
                         updates++;
                     };
-                    solutionOn('HE', { 'cmsis-csolution.getCbuildRunFile': () => file, 'cmsis-csolution.updateDebugTasks': update });
+                    solutionOn('HE', { 'cmsis-csolution.updateDebugTasks': update });
                     const unnamed = await refusalOf(w.handler.handleCmsisCommand({ action: 'run' }), 'INVALID_ARGUMENT');
                     assert.strictEqual(unnamed.message, 'CMSIS \'run\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
                         + 'so there is no \'CMSIS Run\' to run; demo+HE.cbuild-run.yml names no debugger.');
                     assert.ok(unnamed.hint?.startsWith('Ask the user to open Manage Solution Settings (command cmsis-csolution.manageSolution)'), unnamed.hint);
 
-                    again();
-                    solutionOn('HE', { 'cmsis-csolution.getCbuildRunFile': () => '', 'cmsis-csolution.updateDebugTasks': update });
+                    named = undefined;
                     const unbuilt = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_run' }), 'INVALID_ARGUMENT');
                     assert.strictEqual(unbuilt.message, 'CMSIS \'load_and_run\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
                         + 'so there is no \'CMSIS Load+Run\' to run; the active target has no cbuild-run.yml yet.');
                     assert.ok(unbuilt.hint?.startsWith('cmsis_action build first: its convert writes the cbuild-run.yml'), unbuilt.hint);
                     assert.strictEqual(updates, 0);
+                });
+
+                test('one lookup with flash: a relative answer, a file that is gone and out/<solution>+<target> are no cbuild-run.yml', async () => {
+                    // The extension answers through the host's lookup, as flash asks it, and its command answers the same.
+                    // A relative answer resolved against the solution's folder, and the out/ convention, would both find a
+                    // file that names a debugger: Update Debug Tasks reads neither of them.
+                    const solution = path.join(dir, 'demo.csolution.yml');
+                    const relative = 'demo+HE.cbuild-run.yml';
+                    cbuildRun('CMSIS-DAP@pyOCD', path.join(dir, relative));
+                    fs.mkdirSync(path.join(dir, 'out'));
+                    cbuildRun('CMSIS-DAP@pyOCD', path.join(dir, 'out', relative));
+                    let answer = relative;
+                    const extension: SolutionCommands = {
+                        extensionActive: () => true,
+                        commands: async () => [GET_CBUILD_RUN_FILE],
+                        execute: async () => answer,
+                    };
+                    const w = tasksWorld({
+                        activeCbuildRunFile: () => activeCbuildRunFile(extension),
+                        workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'demo', index: 0 }],
+                        findFiles: async () => [],
+                        // No pyOCD can be found: flash never programs anything here.
+                        toolEnvironment: () => ({ extension: () => undefined, pathEnv: '', platform: process.platform }),
+                    });
+                    let asked = 0;
+                    let updates = 0;
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solution,
+                        [GET_CBUILD_RUN_FILE]: () => {
+                            asked++;
+                            return answer;
+                        },
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            updates++;
+                        },
+                    });
+                    for (const said of [relative, '', path.join(dir, 'gone+HE.cbuild-run.yml')]) {
+                        answer = said;
+                        const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'load' }), 'INVALID_ARGUMENT');
+                        assert.strictEqual(refused.message, 'CMSIS \'load\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
+                            + 'so there is no \'CMSIS Load\' to run; the active target has no cbuild-run.yml yet.', `cmsis_action, answer ${JSON.stringify(said)}`);
+                        const flashed = await refusalOf(w.handler.handleFlash({}), 'INVALID_ARGUMENT');
+                        assert.match(errorDetail(flashed), /^No cbuild-run file found /, `flash, answer ${JSON.stringify(said)}`);
+                    }
+                    assert.strictEqual(updates, 0, 'Update Debug Tasks is not run for a file it would not read');
+                    assert.strictEqual(asked, 0, 'cmsis_action asks through the host, not with a getCbuildRunFile of its own');
                 });
             });
 

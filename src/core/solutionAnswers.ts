@@ -27,8 +27,11 @@
  * - `getSolutionFile`: the path of the active csolution, or undefined;
  * - `getActiveTargetSet`: `<target-type>@<set>`, `<target-type>`, or `""`;
  * - `getCbuildRunFile`: `cbuildRunYml.fileName` of the loaded solution, the
- *   `cbuild-run:` entry of its `cbuild-idx.yml` resolved against that file's
- *   folder (so absolute), or `""`;
+ *   `cbuild-run:` entry of the `<solution>.cbuild-idx.yml` beside the
+ *   csolution, `path.resolve`d against that file's folder (so absolute, in
+ *   the platform's spelling) whether or not the file exists; `""` without a
+ *   loaded solution, that index or that entry. Update Debug Tasks reads the
+ *   same file;
  * - `getDfpPath`, `getBspPath`: the `path:` the active context's cbuild.yml
  *   gives the target's device or board pack, with `${CMSIS_PACK_ROOT}`
  *   replaced, else `"<not found>"`. A pack the csolution names with `path:`
@@ -111,10 +114,11 @@ export function targetTypeOf(answer: unknown): string | undefined {
 }
 
 /**
- * An answer of `cmsis-csolution.getCbuildRunFile`. The extension resolves the
- * entry of `cbuild-idx.yml` to an absolute path; a relative answer has no
- * known base, so it counts as none, like `""`. Whether the file exists is
- * the caller's check.
+ * An answer of `cmsis-csolution.getCbuildRunFile`, for `flash`, `cmsis_action`
+ * and the documentation tools alike. The extension resolves the entry of
+ * `cbuild-idx.yml` to an absolute path; a relative answer has no known base,
+ * so it counts as none, like `""`. Whether the file exists is the caller's
+ * check.
  */
 export function cbuildRunFileOf(answer: unknown): string | undefined {
     const file = nonEmpty(answer);

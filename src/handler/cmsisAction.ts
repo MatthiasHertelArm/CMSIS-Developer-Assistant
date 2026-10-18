@@ -678,30 +678,6 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
         + `${pushed}${direct}${ids}). Its outputs are incomplete: cmsis_action build before load or flash.`;
 }
 
-/** The cbuild-run.yml of the active target: CMSIS Solution's answer, else `out/<solution>+<target>.cbuild-run.yml`; undefined when neither exists. */
-async function activeCbuildRunFile(solutionPath: string, active: string | undefined): Promise<string | undefined> {
-    const solutionDir = path.dirname(solutionPath);
-    try {
-        const answer: unknown = await withTimeout('cmsis getCbuildRunFile', QUERY_MS,
-            () => Promise.resolve(vscode.commands.executeCommand<unknown>('cmsis-csolution.getCbuildRunFile')));
-        if (typeof answer === 'string' && answer.trim().length > 0) {
-            const named = path.resolve(solutionDir, answer.trim());
-            if (fs.existsSync(named)) {
-                return named;
-            }
-        }
-    } catch {
-        // A CMSIS Solution without the command: the conventional place.
-    }
-    const type = active?.split('@')[0];
-    if (!type) {
-        return undefined;
-    }
-    const stem = path.basename(solutionPath).replace(/\.csolution\.ya?ml$/i, '');
-    const conventional = path.join(solutionDir, 'out', `${stem}+${type}.cbuild-run.yml`);
-    return fs.existsSync(conventional) ? conventional : undefined;
-}
-
 /** `cmsis-csolution.autoDebugLaunch` is off: CMSIS Solution then writes no launch.json or tasks.json. Never throws. */
 function autoDebugLaunchOff(folder: string): boolean {
     try {
@@ -733,13 +709,12 @@ const BUILD_FIRST_HINT = 'cmsis_action build first: its convert writes the cbuil
  * command does nothing then) or `cmsis-csolution.autoDebugLaunch` is off (it
  * writes no file then). At most once per call: the caller then proceeds or
  * refuses.
+ *
+ * The cbuild-run.yml is the one the extension names (the host's lookup, as
+ * for `flash`): Update Debug Tasks reads that file and no other, so another
+ * one found on disk would not predict what it does.
  */
-async function writeCmsisTasks(
-    issue: Pick<Issue, 'context' | 'tracker' | 'deadline'>,
-    folder: string,
-    solutionPath: string,
-    active: string | undefined,
-): Promise<TasksRepair> {
+async function writeCmsisTasks(issue: Pick<Issue, 'context' | 'tracker' | 'deadline'>, folder: string): Promise<TasksRepair> {
     const { host } = issue.context;
     if (autoDebugLaunchOff(folder)) {
         return {
@@ -750,8 +725,8 @@ async function writeCmsisTasks(
             },
         };
     }
-    const runFile = await activeCbuildRunFile(solutionPath, active);
-    if (!runFile) {
+    const runFile = await host.activeCbuildRunFile();
+    if (!runFile || !fs.existsSync(runFile)) {
         return { missing: { reason: 'the active target has no cbuild-run.yml yet', hint: BUILD_FIRST_HINT } };
     }
     let debuggerName: string | undefined;
@@ -1270,7 +1245,7 @@ export async function runCmsisAction(
         const folder = selectionFolder(solution.solutionPath, host);
         labels = await tracker.taskLabels(folder);
         if (labels && !hasCmsisTasks(labels)) {
-            const repair = await writeCmsisTasks(issue, folder, solution.solutionPath, active);
+            const repair = await writeCmsisTasks(issue, folder);
             labels = repair.labels ?? labels;
             if (repair.wrote === undefined) {
                 throw missingTaskRefusal(action as JobAction, tag, label, labels, repair.missing);

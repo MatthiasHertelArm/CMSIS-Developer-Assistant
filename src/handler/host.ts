@@ -17,9 +17,10 @@
 /**
  * What the debugging handler takes from its surroundings apart from the
  * executor: a clock, VS Code's focused stack frame, the window's CMSIS job
- * tracker, its owned serial port, the workspace folders, where `flash`
- * looks for its cbuild-run file and for pyOCD, what `cmsis_action
- * install_pack` asks, and the CMSIS Solution extension behind `cmsis_query`.
+ * tracker, its owned serial port, the workspace folders, the active target's
+ * cbuild-run file (for `flash` and `cmsis_action`), where `flash` looks for
+ * pyOCD, what `cmsis_action install_pack` asks, and the CMSIS Solution
+ * extension behind `cmsis_query`.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
@@ -69,7 +70,10 @@ export interface HandlerHost {
     /**
      * The `cbuild-run.yml` of the CMSIS Solution extension's active target
      * (`getCbuildRunFile`); undefined when the extension is not active, lacks
-     * the command, answers `""` or not within 3 s. `flash` takes it first.
+     * the command, answers `""`, a relative path or not within 3 s. Whether
+     * the file exists is the caller's check. `flash` takes it first, and
+     * `cmsis_action` reads the debugger from it before it runs Update Debug
+     * Tasks: one lookup for both.
      */
     activeCbuildRunFile(): Promise<string | undefined>;
     /** What the pyOCD lookup of `flash` reads. */
