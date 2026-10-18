@@ -724,23 +724,46 @@ async function main() {
     }
     reset();
     {
-        const words = new Map([['0xE000EDFC', 0], ['0xE0001000', 0], ['0xE0001004', 1234]]);
+        // A Cortex-M4 first. Writes to a `readOnly` address are ignored, as by Armv6-M's DWT_CTRL.
+        const words = new Map([['0xE000ED00', 0x410fc241], ['0xE000EDFC', 0], ['0xE0001000', 0], ['0xE0001004', 1234]]);
+        const readOnly = new Set();
         const { session, calls } = makeSession((c, a) => {
-            if (c === 'writeMemory') { words.set(a.memoryReference, Buffer.from(a.data, 'base64').readUInt32LE(0)); return undefined; }
+            if (c === 'writeMemory') { if (!readOnly.has(a.memoryReference)) { words.set(a.memoryReference, Buffer.from(a.data, 'base64').readUInt32LE(0)); } return undefined; }
             if (c === 'readMemory') { return { data: le(words.get(a.memoryReference) ?? 0).toString('base64') }; }
             throw new Error('?');
         });
         focusOn(session);
         const ex = new DebuggingExecutor();
+        const seqs = () => calls.map((c) => `${c.command} ${c.args.memoryReference}${c.args.data ? ' ' + Buffer.from(c.args.data, 'base64').readUInt32LE(0).toString(16) : ''}`);
+        const absent = { present: false, cycles: 0, enabledNow: false };
         const r = await ex.readCycleCounter();
-        const seqs = calls.map((c) => `${c.command} ${c.args.memoryReference}${c.args.data ? ' ' + Buffer.from(c.args.data, 'base64').readUInt32LE(0).toString(16) : ''}`);
-        check('M6 cycle counter enable', r.present === true && r.enabledNow === true && r.cycles === 1234 && eq(seqs, [
+        check('M6 cycle counter enable', r.present === true && r.enabledNow === true && r.cycles === 1234 && eq(seqs(), [
+            'readMemory 0xE000ED00',
             'readMemory 0xE000EDFC', 'writeMemory 0xE000EDFC 1000000', 'readMemory 0xE000EDFC',
-            'readMemory 0xE0001000', 'writeMemory 0xE0001000 1', 'readMemory 0xE0001000', 'readMemory 0xE0001004']), seqs);
-        words.set('0xE0001000', 1 << 28);
+            'readMemory 0xE0001000', 'writeMemory 0xE0001000 1', 'readMemory 0xE0001000', 'readMemory 0xE0001004']), seqs());
+        // NOCYCCNT is bit 25; bit 28 is the lowest bit of NUMCOMP (here 2).
+        words.set('0xE0001000', 0x2b000000);
         calls.length = 0;
-        const r2 = await ex.readCycleCounter();
-        check('M6 absent', eq(r2, { present: false, cycles: 0, enabledNow: false }) && !calls.some((c) => c.args.memoryReference === '0xE0001004'), r2);
+        const r2 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 absent by DWT_CTRL.NOCYCCNT: no DWT_CTRL write, no CYCCNT read', eq(r2, absent)
+            && eq(seqs(), ['readMemory 0xE000ED00', 'readMemory 0xE000EDFC', 'readMemory 0xE0001000']), [r2, seqs()]);
+        words.set('0xE0001000', 0x10000000);
+        calls.length = 0;
+        const r3 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 one comparator (NUMCOMP=1) and a cycle counter: enabled', r3.present === true && r3.enabledNow === true && r3.cycles === 1234
+            && eq(seqs(), ['readMemory 0xE000ED00', 'readMemory 0xE000EDFC', 'readMemory 0xE0001000', 'writeMemory 0xE0001000 10000001',
+                'readMemory 0xE0001000', 'readMemory 0xE0001004']), [r3, seqs()]);
+        // Cortex-M0+: a read-only DWT_CTRL with NUMCOMP alone, nothing at CYCCNT.
+        words.set('0xE000ED00', 0x410cc601); words.set('0xE000EDFC', 0); words.set('0xE0001000', 0x20000000); words.set('0xE0001004', 0);
+        readOnly.add('0xE0001000');
+        calls.length = 0;
+        const r4 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 Armv6-M (Cortex-M0+) absent by CPUID, nothing written', eq(r4, absent) && eq(seqs(), ['readMemory 0xE000ED00']), [r4, seqs()]);
+        // Cortex-M23: Armv8-M Baseline, NOCYCCNT reads 1 and CYCCNTENA 0.
+        words.set('0xE000ED00', 0x411cd200); words.set('0xE000EDFC', 0); words.set('0xE0001000', 0x4b000000);
+        calls.length = 0;
+        const r5 = await ex.readCycleCounter().catch((e) => e.message);
+        check('M6 Armv8-M Baseline (Cortex-M23) absent by CPUID, nothing written', eq(r5, absent) && eq(seqs(), ['readMemory 0xE000ED00']), [r5, seqs()]);
     }
 
     // ── Registers and faults ──

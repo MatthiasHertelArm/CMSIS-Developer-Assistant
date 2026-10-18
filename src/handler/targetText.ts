@@ -138,7 +138,8 @@ export interface CycleCounterReading {
 /** The `read_cycle_counter` text. */
 export function renderCycleCounter(reading: CycleCounterReading): string {
     if (!reading.present) {
-        return 'This core reports no DWT cycle counter (DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. '
+        return 'This core has no DWT cycle counter (none on Armv6-M and Armv8-M Baseline cores such as Cortex-M0, M0+ and M23; '
+            + 'elsewhere DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. '
             + 'Use an RTOS tick or a timer peripheral for timing instead.';
     }
     const parts = [`DWT cycle counter: ${reading.cycles} (0x${reading.cycles.toString(16).padStart(8, '0')})\n`];

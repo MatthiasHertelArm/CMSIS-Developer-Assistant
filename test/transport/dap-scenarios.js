@@ -663,7 +663,8 @@ class FakeTarget {
                 const addr = Number(args.memoryReference);
                 const buf = Buffer.from(args.data, 'base64');
                 if (!this.readBytes(addr, buf.length)) { throw new Error(`Could not write memory at ${hex(addr)}`); }
-                this.writeBytes(addr, buf);
+                // A read-only register (`readOnly` addresses) ignores the write.
+                if (!(this.spec.readOnly ?? []).includes(addr)) { this.writeBytes(addr, buf); }
                 return undefined;
             }
             case 'next': case 'stepIn': case 'stepOut': case 'continue':
@@ -1197,8 +1198,28 @@ const SCENARIOS = [
     },
     {
         name: 'cycle-counter-absent',
-        description: 'A core whose DWT_CTRL reports NOCYCCNT.',
+        description: 'An Armv7-M core whose DWT_CTRL reports NOCYCCNT (bit 25): two comparators, no trace packets, no cycle or profiling counters.',
+        session: { initial: { at: 'main31', reason: 'breakpoint' }, memory: { 0xe0001000: 0x2b000000, 0xe000edfc: 0x01000000 } },
+        calls: [
+            { tool: 'read_cycle_counter' },
+        ],
+    },
+    {
+        name: 'cycle-counter-one-comparator',
+        description: 'DWT_CTRL 0x10000000: one comparator (NUMCOMP, bits 31:28) and a cycle counter, which the read enables.',
         session: { initial: { at: 'main31', reason: 'breakpoint' }, memory: { 0xe0001000: 0x10000000, 0xe000edfc: 0x01000000 } },
+        calls: [
+            { tool: 'read_cycle_counter' },
+        ],
+    },
+    {
+        name: 'cycle-counter-armv6m',
+        description: 'A Cortex-M0+ (CPUID 0x410CC601): Armv6-M has no cycle counter, and its read-only DWT_CTRL holds NUMCOMP alone. Nothing is written.',
+        session: {
+            initial: { at: 'main31', reason: 'breakpoint' },
+            memory: { 0xe000ed00: 0x410cc601, 0xe0001000: 0x20000000, 0xe0001004: 0 },
+            readOnly: [0xe0001000],
+        },
         calls: [
             { tool: 'read_cycle_counter' },
         ],

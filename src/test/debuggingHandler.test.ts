@@ -1532,7 +1532,8 @@ suite('DebuggingHandler', () => {
             const x = new ScriptedExecutor();
             x.readCycleCounter = async () => ({ cycles: 0, enabledNow: false, present: false });
             assert.strictEqual(await textAnswer(handlerFor(x).handleReadCycleCounter()),
-                'This core reports no DWT cycle counter (DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. '
+                'This core has no DWT cycle counter (none on Armv6-M and Armv8-M Baseline cores such as Cortex-M0, M0+ and M23; '
+                + 'elsewhere DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. '
                 + 'Use an RTOS tick or a timer peripheral for timing instead.');
             x.readCycleCounter = async () => ({ cycles: 255, enabledNow: true, present: true });
             assert.strictEqual(await textAnswer(handlerFor(x).handleReadCycleCounter()), 'DWT cycle counter: 255 (0x000000ff)\n'

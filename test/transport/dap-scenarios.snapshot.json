@@ -647,6 +647,7 @@
           "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nDWT was enabled during this call — deltas are valid from now.\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
           "traffic": [
             "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
             "dap: writeMemory {\"memoryReference\":\"0xE000EDFC\",\"data\":\"AAAAAQ==\"}",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
@@ -662,6 +663,7 @@
           "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
           "traffic": [
             "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE0001004\",\"count\":4} -> 4 bytes"
@@ -671,7 +673,7 @@
     },
     {
       "name": "cycle-counter-absent",
-      "description": "A core whose DWT_CTRL reports NOCYCCNT.",
+      "description": "An Armv7-M core whose DWT_CTRL reports NOCYCCNT (bit 25): two comparators, no trace packets, no cycle or profiling counters.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -680,11 +682,55 @@
         {
           "tool": "read_cycle_counter",
           "args": {},
-          "text": "This core reports no DWT cycle counter (DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. Use an RTOS tick or a timer peripheral for timing instead.",
+          "text": "This core has no DWT cycle counter (none on Armv6-M and Armv8-M Baseline cores such as Cortex-M0, M0+ and M23; elsewhere DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. Use an RTOS tick or a timer peripheral for timing instead.",
           "traffic": [
             "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cycle-counter-one-comparator",
+      "description": "DWT_CTRL 0x10000000: one comparator (NUMCOMP, bits 31:28) and a cycle counter, which the read enables.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_cycle_counter",
+          "args": {},
+          "text": "DWT cycle counter: 10732021 (0x00a3c1f5)\nDWT was enabled during this call — deltas are valid from now.\nWrap: 32-bit, wraps every 2^32 cycles (~<n>s @ 400 MHz) — for longer spans, sample repeatedly and accumulate.\nNote: CYCCNT stops while the core is halted and during WFE sleep — it counts ACTIVE cycles only.\nTo time a region: read here, continue_execution / wait_for_stop to the end point, read again, subtract (mod 2^32).",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDFC\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
+            "dap: writeMemory {\"memoryReference\":\"0xE0001000\",\"data\":\"AQAAEA==\"}",
+            "dap: readMemory {\"memoryReference\":\"0xE0001000\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE0001004\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cycle-counter-armv6m",
+      "description": "A Cortex-M0+ (CPUID 0x410CC601): Armv6-M has no cycle counter, and its read-only DWT_CTRL holds NUMCOMP alone. Nothing is written.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "read_cycle_counter",
+          "args": {},
+          "text": "This core has no DWT cycle counter (none on Armv6-M and Armv8-M Baseline cores such as Cortex-M0, M0+ and M23; elsewhere DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. Use an RTOS tick or a timer peripheral for timing instead.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED00\",\"count\":4} -> 4 bytes"
           ]
         }
       ]

@@ -127,7 +127,10 @@ can fake only the part a case drives.
   reading it back. Core registers are
   read as `$<name>` expressions, all at once, with `<timeout>` or
   `<unavailable>` for any that fail. The cycle counter enables the DWT
-  (`DEMCR.TRCENA`, `CYCCNTENA`) on first use and reports a core without one.
+  (`DEMCR.TRCENA`, `CYCCNTENA`) on first use and reports a core without one:
+  Armv6-M and Armv8-M Baseline by `CPUID`, before anything is written, since
+  Armv6-M has no `NOCYCCNT` bit to say so; other cores by `DWT_CTRL.NOCYCCNT`
+  (`src/core/dwt.ts`).
   A peripheral register is read at the address the device SVD gives and its
   fields decoded (`src/core/peripheralReader.ts`), with the SVD of the session
   the read goes to rather than of the one VS Code has focused; the Peripheral

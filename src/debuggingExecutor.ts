@@ -48,7 +48,7 @@
  */
 
 import * as vscode from 'vscode';
-import { DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
+import { architectureHasCycleCounter, DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
 import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, FaultRegisters, faultRegistersFromBlock } from './core/faultDecoder';
 import { CMSIS_DEBUGGER_TYPE, gdbRequestRefusal, miQuoted, passthroughCommand } from './core/gdbDialect';
 import { readPeripheralViaMemory } from './core/peripheralReader';
@@ -744,6 +744,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         sessionOrThrow();
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readCycleCounter', this.budgets.operation(overrideMs), async () => {
+            // Armv6-M and Armv8-M Baseline never have one; nothing is written to them.
+            if (!architectureHasCycleCounter(await this.readMemoryWord(DWT_ADDRESSES.CPUID, budgetMs))) {
+                return { present: false, cycles: 0, enabledNow: false };
+            }
             const demcr = await this.readMemoryWord(DWT_ADDRESSES.DEMCR, budgetMs);
             if ((demcr & DEMCR_TRCENA) === 0) {
                 await this.writeMemoryWord(DWT_ADDRESSES.DEMCR, (demcr | DEMCR_TRCENA) >>> 0, budgetMs);
