@@ -33,6 +33,8 @@ export interface FixtureTask {
     name: string;
     source: string;
     definition: { type: string; setup?: boolean; clean?: boolean; rebuild?: boolean; [key: string]: unknown };
+    /** `vscode.Task.execution`: what a shell task runs (`command` and `args`). */
+    execution?: unknown;
 }
 
 export interface FixtureEvent {

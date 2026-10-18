@@ -15,20 +15,27 @@
  */
 
 /**
- * Where a CMSIS attach would connect, and whether anything listens there.
+ * Where a CMSIS attach would connect, and whether the window's CMSIS Run
+ * task can be what serves it there.
  *
  * An attach configuration of the CMSIS Debugger (`gdbtarget`, `request:
  * attach`) starts no GDB server; GDB's `target remote` connects to
  * `target.host:target.port`. When nothing listens there, GDB retries for its
- * connect timeout (15 s) and fails with "could not connect: Operation timed
- * out.", which VS Code shows as a modal dialog. Checking the port first turns
- * that into an immediate refusal with the next step.
+ * connect timeout (15 s) and the session ends with "could not connect".
  *
- * No `vscode`: the launch.json text comes in, sockets go out.
+ * Nothing here connects to such a port to find out: a GDB server takes every
+ * connection as a client. pyOCD halts the target when a client connects and
+ * resumes it when the client leaves, and without `--persist` it shuts down
+ * then; the J-Link GDB server started with `-singlerun` closes with its last
+ * client. What is known without a connection is the command line of the
+ * window's CMSIS Run task: the FVP adapter's Run is the model without its
+ * GDBServer plugin, which belongs to the launch configuration, so while it
+ * runs nothing the window started serves an attach.
+ *
+ * No `vscode`: the launch.json text and the task come in.
  */
 
 import * as fs from 'fs';
-import * as net from 'net';
 import * as path from 'path';
 import { parse as parseJsonc } from 'jsonc-parser';
 
@@ -39,8 +46,26 @@ export interface AttachEndpoint {
     port: number;
 }
 
-/** How long one connection attempt may take; a local server answers at once. */
-const PROBE_TIMEOUT_MS = 1_000;
+/**
+ * What a CMSIS Run task's command line says about the attach: it loads a GDB
+ * server, it is an FVP model without one, or it does not tell (no command
+ * line, or a program that is neither, such as a model shim).
+ */
+export type RunCommandKind = 'gdbServer' | 'bareModel' | 'unknown';
+
+/** The cbuild-run.yml debugger of the FVP adapter, whose CMSIS Run is the model without the GDBServer plugin. */
+const FVP_DEBUGGER = 'Arm-FVP';
+
+/**
+ * A word of a GDB server's command line: pyOCD's `gdbserver` subcommand, the
+ * J-Link `JLinkGDBServerCL`, the FVP's `GDBServer.so` / `GDBServer.dll`
+ * plugin and its `GDBServer.port` parameter.
+ */
+const GDB_SERVER_WORD = /gdbserver/i;
+/** The executable of an Arm FVP model (`FVP_Corstone_SSE-300`, `FVP_MPS2_Cortex-M3.exe`; `VHT_…` for the older AVH models). */
+const FVP_MODEL = /^(?:FVP|VHT)_/;
+/** A word of a command line: double-quoted, single-quoted or bare. */
+const COMMAND_LINE_WORD = /"([^"]*)"|'([^']*)'|(\S+)/g;
 
 /** A TCP port given as a number or as digits; anything else is none. */
 function portOf(value: unknown): number | undefined {
@@ -76,38 +101,63 @@ export function attachEndpoints(launchJson: string): AttachEndpoint[] {
     return endpoints;
 }
 
-/** True when a TCP connection to `host:port` opens within `timeoutMs`. Never rejects. */
-export function isListening(host: string, port: number, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<boolean> {
-    return new Promise((answer) => {
-        const socket = net.connect({ host, port });
-        const finish = (listening: boolean): void => {
-            socket.removeAllListeners();
-            socket.on('error', () => undefined);
-            socket.destroy();
-            answer(listening);
-        };
-        socket.setTimeout(timeoutMs, () => finish(false));
-        socket.once('connect', () => finish(true));
-        socket.once('error', () => finish(false));
-    });
+/** The attach endpoints of `folder/.vscode/launch.json`; none when the file cannot be read. Reads the file only. */
+export async function launchAttachEndpoints(folder: string): Promise<AttachEndpoint[]> {
+    try {
+        return attachEndpoints(await fs.promises.readFile(path.join(folder, '.vscode', 'launch.json'), 'utf8'));
+    } catch {
+        return [];
+    }
+}
+
+/** The text of a `string` or a `ShellQuotedString` (`{ value }`). */
+function wordOf(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+        return value;
+    }
+    const quoted = (value as { value?: unknown } | undefined)?.value;
+    return typeof quoted === 'string' ? quoted : undefined;
 }
 
 /**
- * The attach endpoints of `folder/.vscode/launch.json` when none of them
- * accepts a connection; undefined when one does, or when there is nothing to
- * check (no launch.json, no attach configuration with a port).
+ * The program and arguments a task runs: its `ShellExecution` (`command` and
+ * `args`, or one `commandLine`) or `ProcessExecution` (`process` and `args`),
+ * as `vscode.Task.execution` holds them for a tasks.json task. Undefined for
+ * anything else (no execution, a `CustomExecution`).
  */
-export async function silentAttachEndpoints(folder: string, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<AttachEndpoint[] | undefined> {
-    let text: string;
-    try {
-        text = await fs.promises.readFile(path.join(folder, '.vscode', 'launch.json'), 'utf8');
-    } catch {
+export function taskCommandWords(task: unknown): string[] | undefined {
+    const execution = (task as { execution?: unknown } | undefined)?.execution as
+        { commandLine?: unknown; command?: unknown; process?: unknown; args?: unknown } | undefined;
+    if (typeof execution?.commandLine === 'string') {
+        const words = [...execution.commandLine.matchAll(COMMAND_LINE_WORD)].map((match) => match[1] ?? match[2] ?? match[3]);
+        return words.length > 0 ? words : undefined;
+    }
+    const program = wordOf(execution?.command) ?? wordOf(execution?.process);
+    if (program === undefined || program.trim() === '') {
         return undefined;
     }
-    const endpoints = attachEndpoints(text);
-    if (endpoints.length === 0) {
-        return undefined;
+    const args = Array.isArray(execution?.args) ? execution.args.map(wordOf).filter((word): word is string => word !== undefined) : [];
+    return [program, ...args];
+}
+
+/**
+ * What a CMSIS Run task's command line says: any word that names a GDB server
+ * makes it `gdbServer`; otherwise an FVP model executable is the bare model
+ * (the FVP adapter's Run: the model, its configuration file and the images);
+ * anything else is `unknown`.
+ */
+export function runCommandKind(words: readonly string[] | undefined): RunCommandKind {
+    if (!words || words.length === 0) {
+        return 'unknown';
     }
-    const answers = await Promise.all(endpoints.map((endpoint) => isListening(endpoint.host, endpoint.port, timeoutMs)));
-    return answers.some(Boolean) ? undefined : endpoints;
+    if (words.some((word) => GDB_SERVER_WORD.test(word))) {
+        return 'gdbServer';
+    }
+    const program = words[0].split(/[\\/]/).pop() ?? words[0];
+    return FVP_MODEL.test(program) ? 'bareModel' : 'unknown';
+}
+
+/** True for the FVP adapter's debugger name as a cbuild-run.yml writes it (`Arm-FVP`), in any case. */
+export function isFvpDebugger(name: string | undefined): boolean {
+    return name !== undefined && name.trim().toLowerCase() === FVP_DEBUGGER.toLowerCase();
 }

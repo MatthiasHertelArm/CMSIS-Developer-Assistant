@@ -17,6 +17,7 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
@@ -3149,58 +3150,127 @@ suite('DebuggingHandler', () => {
                 assert.deepStrictEqual(w.issued, ['attach', 'build']);
             });
 
-            test('attach with every launch.json endpoint silent: refused before the command, and the hint depends on whether a CMSIS Run is alive', async () => {
+            /**
+             * A solution folder whose launch.json attach configuration points at a stand-in GDB server that
+             * counts its clients: pyOCD halts the target for each one and, without --persist, shuts down when
+             * it leaves, so the attach check must never be one of them. The stand-in attach command connects
+             * nowhere; every connection the server sees comes from the check.
+             */
+            const attachWorld = async (attachName: string) => {
                 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-attach-'));
-                try {
-                    // A port nobody listens on: bound once, released at once.
-                    const net = await import('net');
-                    const free = net.createServer();
-                    await new Promise<void>((done) => free.listen(0, '127.0.0.1', done));
-                    const port = (free.address() as { port: number }).port;
-                    await new Promise<void>((done) => free.close(() => done()));
-                    fs.mkdirSync(path.join(dir, '.vscode'));
-                    fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({
-                        configurations: [{ name: 'Arm-FVP@GDB (attach)', type: 'gdbtarget', request: 'attach', target: { host: '127.0.0.1', port } }],
-                    }));
-                    const folders = () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }];
-                    const world = (alive: boolean) => {
-                        again();
-                        const clock = fastClock(20);
-                        const tasks = new FakeTasks();
-                        tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
-                        const tracker = new CmsisJobTracker(tasks, clock);
-                        if (alive) {
-                            tasks.start(tasks.execution(shellTask('CMSIS Run')));
-                        }
-                        const x = new ScriptedExecutor();
-                        x.session = false;
-                        const issued: string[] = [];
-                        registrations = standIns({
-                            'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
-                            'cmsis-csolution.getActiveTargetSet': () => 'HE',
-                            'cmsis-csolution.cmsisAttachDebugger': () => {
-                                issued.push('attach');
-                            },
-                        });
-                        return { handler: handlerFor(x, { ...clock, cmsisJobs: () => tracker, workspaceFolders: folders }), issued };
-                    };
-
-                    const withRun = world(true);
-                    const refusedWithRun = await refusalOf(withRun.handler.handleCmsisCommand({ action: 'attach', timeoutMs: 2_000 }), 'NO_SESSION');
-                    assert.strictEqual(refusedWithRun.message,
-                        `CMSIS 'attach' on HE not started: a CMSIS Run task is alive in this window, but no GDB server listens on 127.0.0.1:${port} ('Arm-FVP@GDB (attach)').`);
-                    assert.ok(refusedWithRun.hint?.startsWith('This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one;'), refusedWithRun.hint);
-                    assert.ok(refusedWithRun.hint?.includes('Use load_and_debug'), refusedWithRun.hint);
-                    assert.deepStrictEqual(withRun.issued, [], 'the attach command was not issued');
-
-                    const withoutRun = world(false);
-                    const refused = await refusalOf(withoutRun.handler.handleCmsisCommand({ action: 'attach', timeoutMs: 2_000 }), 'NO_SESSION');
-                    assert.strictEqual(refused.message,
-                        `CMSIS 'attach' on HE not started: no GDB server listens on 127.0.0.1:${port} ('Arm-FVP@GDB (attach)'), and no CMSIS Run task is alive in this window.`);
-                    assert.ok(refused.hint?.startsWith('cmsis_action run starts CMSIS Run, which hosts the GDB server with a probe adapter (pyOCD resets the target and lets it run)'), refused.hint);
-                    assert.deepStrictEqual(withoutRun.issued, []);
-                } finally {
+                let connections = 0;
+                const server = net.createServer((socket) => {
+                    connections++;
+                    socket.destroy();
+                });
+                await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+                const port = (server.address() as net.AddressInfo).port;
+                fs.mkdirSync(path.join(dir, '.vscode'));
+                fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({
+                    configurations: [{ name: attachName, type: 'gdbtarget', request: 'attach', target: { host: '127.0.0.1', port } }],
+                }));
+                const folders = () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }];
+                /** One call: `run` is the CMSIS Run task alive in the window, if any; `debuggerName` the cbuild-run.yml's debugger. */
+                const attach = (run: FixtureTask | undefined, debuggerName?: string): { answer: Promise<ToolText>; issued: string[] } => {
+                    again();
+                    fs.rmSync(path.join(dir, 'out'), { recursive: true, force: true });
+                    const runFile = path.join(dir, 'out', 'demo+HE.cbuild-run.yml');
+                    if (debuggerName) {
+                        fs.mkdirSync(path.join(dir, 'out'));
+                        fs.writeFileSync(runFile, `cbuild-run:\n  debugger:\n    name: ${debuggerName}\n`);
+                    }
+                    const clock = fastClock(20);
+                    const tasks = new FakeTasks();
+                    tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
+                    const tracker = new CmsisJobTracker(tasks, clock);
+                    if (run) {
+                        tasks.start(tasks.execution(run));
+                    }
+                    const x = new ScriptedExecutor();
+                    x.session = false;
+                    x.sessionStatus = status('initializing');
+                    const issued: string[] = [];
+                    registrations = standIns({
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.getActiveTargetSet': () => 'HE',
+                        'cmsis-csolution.cmsisAttachDebugger': () => {
+                            issued.push('attach');
+                        },
+                    });
+                    const handler = handlerFor(x, {
+                        ...clock, cmsisJobs: () => tracker, workspaceFolders: folders,
+                        // The active target's cbuild-run.yml as CMSIS Solution names it, through the host's lookup.
+                        activeCbuildRunFile: async () => (debuggerName ? runFile : undefined),
+                    });
+                    return { answer: handler.handleCmsisCommand({ action: 'attach' }), issued };
+                };
+                /** The clients the stand-in server saw, once a connection made by the call would have arrived. */
+                const clients = async (): Promise<number> => {
+                    await delay(50);
+                    return connections;
+                };
+                const close = async (): Promise<void> => {
+                    await new Promise<void>((done) => server.close(() => done()));
                     fs.rmSync(dir, { recursive: true, force: true });
+                };
+                return { attach, clients, close, port };
+            };
+            const runTask = (execution: unknown): FixtureTask => ({ ...shellTask('CMSIS Run'), execution });
+            const PYOCD_RUN = { command: 'pyocd', args: ['gdbserver', '--probe', 'cmsisdap:', '--persist', '--reset-run', '--cbuild-run',
+                '${command:cmsis-csolution.getCbuildRunFile}', '--quiet', '--log', '*.cbuild_run,*server=info'] };
+            const FVP_RUN = { command: 'FVP_Corstone_SSE-300_Ethos-U55', args: ['-f', 'board/fvp_config.txt', '-a', 'out/Blinky/HE/Debug/Blinky.axf'] };
+
+            test('attach never connects to the attach port first: a CMSIS Run of pyOCD, or none at all, and the attach goes ahead', async () => {
+                const w = await attachWorld('CMSIS_DAP@pyOCD (attach)');
+                try {
+                    const withRun = w.attach(runTask(PYOCD_RUN));
+                    const ran = await replyAnswer(withRun.answer, 'running');
+                    assert.deepStrictEqual(withRun.issued, ['attach']);
+                    assert.ok(!ran.includes('No CMSIS Run task is alive'), ran);
+                    assert.strictEqual(await w.clients(), 0, 'the GDB server of the CMSIS Run saw a client before the attach');
+
+                    // A GDB server the user started by hand, as the reconnect hints ask: no CMSIS Run task, no refusal.
+                    const byHand = w.attach(undefined);
+                    const text = await replyAnswer(byHand.answer, 'running');
+                    assert.deepStrictEqual(byHand.issued, ['attach']);
+                    assert.ok(text.startsWith('CMSIS \'attach\' on HE issued via \'cmsis-csolution.cmsisAttachDebugger\'.'), text);
+                    assert.ok(text.endsWith(' No CMSIS Run task is alive in this window, so only a GDB server started outside it can serve '
+                        + `127.0.0.1:${w.port} ('CMSIS_DAP@pyOCD (attach)'); without one the session ends at GDB's 15 s connect timeout. `
+                        + 'With a probe adapter, cmsis_action run starts the server without programming; load_and_debug starts a session of its own.'), text);
+                    assert.strictEqual(await w.clients(), 0, 'a server started without --persist would have shut down');
+                } finally {
+                    await w.close();
+                }
+            });
+
+            test('attach while the CMSIS Run task is an FVP model without its plugin: refused without a connection', async () => {
+                const w = await attachWorld('Arm-FVP@GDB (attach)');
+                try {
+                    const bare = w.attach(runTask(FVP_RUN));
+                    const refused = await refusalOf(bare.answer, 'NO_SESSION');
+                    assert.strictEqual(refused.message, 'CMSIS \'attach\' on HE not started: a CMSIS Run task is alive in this window, but it runs '
+                        + `the FVP model without the GDB server plugin: nothing it started listens on 127.0.0.1:${w.port} ('Arm-FVP@GDB (attach)').`);
+                    assert.ok(refused.hint?.startsWith('This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one;'), refused.hint);
+                    assert.ok(refused.hint?.includes('Use load_and_debug'), refused.hint);
+                    assert.deepStrictEqual(bare.issued, [], 'the attach command was not issued');
+
+                    // A model shim (the fvp-debug-setup skill's fvp.sh) does not say what it runs: the target's Arm-FVP debugger does.
+                    const shim = runTask({ command: '/w/.vscode/fvp.sh', args: ['-f', 'board/fvp_config.txt', '-a', 'x.axf'] });
+                    const shimmed = w.attach(shim, 'Arm-FVP');
+                    assert.match((await refusalOf(shimmed.answer, 'NO_SESSION')).message, /but it runs the FVP model without the GDB server plugin/);
+                    assert.deepStrictEqual(shimmed.issued, []);
+                    const otherDebugger = w.attach(shim, 'CMSIS-DAP@pyOCD');
+                    await replyAnswer(otherDebugger.answer, 'running');
+                    assert.deepStrictEqual(otherDebugger.issued, ['attach']);
+
+                    // The model with its GDBServer plugin on the command line serves the attach.
+                    const plugin = w.attach(runTask({ command: 'FVP_Corstone_SSE-320',
+                        args: ['-D', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3333', '-a', 'x.axf'] }), 'Arm-FVP');
+                    await replyAnswer(plugin.answer, 'running');
+                    assert.deepStrictEqual(plugin.issued, ['attach']);
+                    assert.strictEqual(await w.clients(), 0);
+                } finally {
+                    await w.close();
                 }
             });
 

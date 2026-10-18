@@ -116,7 +116,7 @@ import {
 } from '../core/bootstrapState';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
-import { silentAttachEndpoints } from '../core/gdbServerPorts';
+import { AttachEndpoint, isFvpDebugger, launchAttachEndpoints, runCommandKind, taskCommandWords } from '../core/gdbServerPorts';
 import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
@@ -843,36 +843,69 @@ function expectSessionOf(issue: Issue): void {
     expectAgentStart(Math.max(AGENT_START_WINDOW_MS, answerBy(issue) - issue.context.host.now() + 60_000));
 }
 
+/** The attach endpoints as the refusal and the note name them: `localhost:3333 ('… (attach)')`. */
+function endpointList(endpoints: readonly AttachEndpoint[]): string {
+    return endpoints.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
+}
+
+/** The debugger the active target's cbuild-run.yml names; undefined when there is none or it cannot be read. */
+async function activeDebuggerName(host: HandlerHost): Promise<string | undefined> {
+    const runFile = await host.activeCbuildRunFile();
+    if (!runFile) {
+        return undefined;
+    }
+    try {
+        return cbuildRunDebugger(await fs.promises.readFile(runFile, 'utf8'));
+    } catch {
+        return undefined;
+    }
+}
+
 /**
- * Before an attach with no CMSIS Run task alive: when the attach
- * configurations' GDB server ports all stay silent, refuse at once. Otherwise
- * GDB tries for 15 s, fails with "could not connect: Operation timed out.",
- * and VS Code shows it as a modal dialog.
+ * Before an attach while a CMSIS Run task is alive: refuse it when that task
+ * is an FVP model without its GDB server plugin (the FVP adapter's Run; the
+ * plugin belongs to the launch configuration), so that nothing the window
+ * started listens on the attach configurations' ports and load_and_debug is
+ * the way. The task's command line tells; where it does not (a model shim),
+ * the target's Arm-FVP debugger does. The ports are never tried: a GDB server
+ * takes a connection as a client (`src/core/gdbServerPorts.ts`).
  */
-/**
- * Refuse an attach whose launch.json endpoints all stay silent. With no CMSIS Run alive, the
- * next step is to start one; with one alive, the task is no GDB server (the FVP adapter's CMSIS
- * Run is the bare model, the plugin lives in the launch configuration), so the way is load_and_debug.
- */
-async function refuseAttachWithoutServer(issue: Issue, solutionPath: string | undefined, runAlive: boolean): Promise<void> {
-    if (!solutionPath) {
+async function refuseAttachToBareModel(issue: Issue, endpoints: readonly AttachEndpoint[]): Promise<void> {
+    if (endpoints.length === 0) {
         return;
     }
-    const silent = await silentAttachEndpoints(selectionFolder(solutionPath, issue.context.host));
-    if (!silent) {
+    const kinds = issue.tracker.liveExecutions().filter((live) => live.kind === 'run')
+        .map((live) => runCommandKind(taskCommandWords(live.execution.task)));
+    if (kinds.includes('gdbServer')) {
         return;
     }
-    const where = silent.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
-    if (runAlive) {
-        throw new ToolError('NO_SESSION',
-            `CMSIS 'attach'${issue.tag} not started: a CMSIS Run task is alive in this window, but no GDB server listens on ${where}.`,
-            'This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one; the plugin belongs to the launch configuration). '
-                + 'Use load_and_debug, which launches the server with the session; cmsis_action stop_run ends the running task first.');
+    const bareModel = (kinds.length > 0 && kinds.every((kind) => kind === 'bareModel'))
+        || isFvpDebugger(await activeDebuggerName(issue.context.host));
+    if (!bareModel) {
+        return;
     }
     throw new ToolError('NO_SESSION',
-        `CMSIS 'attach'${issue.tag} not started: no GDB server listens on ${where}, and no CMSIS Run task is alive in this window.`,
-        'cmsis_action run starts CMSIS Run, which hosts the GDB server with a probe adapter (pyOCD resets the target and lets it run), '
-            + 'without building or programming; attach after it. load_and_run programs the built image first; load_and_debug starts a session of its own.');
+        `CMSIS 'attach'${issue.tag} not started: a CMSIS Run task is alive in this window, but it runs the FVP model without the `
+            + `GDB server plugin: nothing it started listens on ${endpointList(endpoints)}.`,
+        'This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one; the plugin belongs to the launch configuration). '
+            + 'Use load_and_debug, which launches the server with the session; cmsis_action stop_run ends the running task first.');
+}
+
+/**
+ * An attach with no CMSIS Run task alive goes ahead unchecked: a GDB server
+ * started outside the window may listen, and GDB's own connect finds out. A
+ * reply that is still `running` says what happens when none does.
+ */
+function withoutRunNote(answer: ToolText, endpoints: readonly AttachEndpoint[]): ToolText {
+    if (typeof answer === 'string' || answer.status !== 'running' || endpoints.length === 0) {
+        return answer;
+    }
+    return {
+        ...answer,
+        text: `${answer.text} No CMSIS Run task is alive in this window, so only a GDB server started outside it can serve `
+            + `${endpointList(endpoints)}; without one the session ends at GDB's 15 s connect timeout. With a probe adapter, `
+            + 'cmsis_action run starts the server without programming; load_and_debug starts a session of its own.',
+    };
 }
 
 async function loadAndDebug(issue: Issue): Promise<ToolText> {
@@ -1328,10 +1361,14 @@ export async function runCmsisAction(
             return `CMSIS '${action}'${tag} issued via '${command}'. It runs in the CMSIS extension — check the CMSIS output channel if you need to confirm.`;
         case 'attach': {
             const runAlive = tracker.probeOwners().some((owner) => owner.kind === 'run' || owner.kind === 'loadRun');
-            await refuseAttachWithoutServer(issue, solution.solutionPath, runAlive);
+            const endpoints = solution.solutionPath ? await launchAttachEndpoints(selectionFolder(solution.solutionPath, host)) : [];
+            if (runAlive && solution.solutionPath) {
+                await refuseAttachToBareModel(issue, endpoints);
+            }
             expectSessionOf(issue);
             await issueCommand(issue, action);
-            return sessionPhase(issue, action, '', runAlive);
+            const answer = await sessionPhase(issue, action, '', runAlive);
+            return runAlive ? answer : withoutRunNote(answer, endpoints);
         }
         case 'load_and_debug':
             return loadAndDebug(issue);

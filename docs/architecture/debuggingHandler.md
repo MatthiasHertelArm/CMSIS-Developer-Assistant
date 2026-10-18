@@ -251,6 +251,20 @@ window's CMSIS job tracker (next section):
   twice (`probeSchedule()`). A session object without threads yet is
   answered with status `running`; `TASK_FAILED` is kept for a session that
   is gone.
+- `attach` connects to a GDB server it does not start, so before the
+  command it checks only what the window knows
+  (`refuseAttachToBareModel()`, `src/core/gdbServerPorts.ts`): while the
+  window's CMSIS Run task is an FVP model without its GDB server plugin —
+  the task's command line says so, or, for a model shim, the target's
+  `Arm-FVP` debugger — nothing the window started serves the attach
+  configurations' ports, and the call is refused with `load_and_debug` as
+  the way. It never connects to such a port to find out: a GDB server takes
+  any connection as a client (pyOCD halts the target for it, resumes it
+  afterwards and, without `--persist`, shuts down; a J-Link server started
+  with `-singlerun` closes with its last client). With no CMSIS Run alive
+  the attach goes ahead, since a server started outside the window may
+  listen, and GDB's own connect decides; a reply still `running` then says
+  what happens when none does.
 - `status` launches nothing and needs no solution: it waits for the job in
   flight, or lists the recent results and the live CMSIS tasks, with the
   error lines of a failed build once they are in.
