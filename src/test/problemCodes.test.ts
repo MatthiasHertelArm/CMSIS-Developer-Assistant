@@ -34,13 +34,14 @@ suite('Problem codes', () => {
         });
     });
 
-    test('PROBE_BUSY: pyOCD waits for a probe another task holds', () => {
+    test('PROBE_BUSY: pyOCD waits for a probe another task holds, or one it cannot see', () => {
         // Captured: issue #46, the user's report with ULINKplus while several CMSIS Run tasks were alive.
         const fixture = 'Waiting for a debug probe matching unique ID \'cmsisdap:\' to be connected...';
         assert.deepStrictEqual(classifyProblem(fixture, 'dap'), {
             code: 'PROBE_BUSY',
             severity: 'error',
-            hint: 'Another task or session holds the probe: cmsis_action stop_run or stop_debugging, then retry.',
+            hint: 'pyOCD sees no free probe: another task or session holds it (cmsis_action stop_run or stop_debugging, then retry), '
+                + 'or the probe is not connected or lacks its USB driver (ask the user).',
             source: 'gdb-server',
         });
     });

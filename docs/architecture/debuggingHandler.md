@@ -62,8 +62,9 @@ Refusals reject too: a second `start_debugging` while a session exists, or
 with the step that frees the probe in the hint. `pause_execution` on a
 halted target is an answer, since there is
 nothing to do; it is neither fenced nor wrapped, so its refusals keep their
-own text and code (`TIMEOUT` for an unresponsive probe, `NO_SESSION` while
-the session starts or after it ended). `get_session_status` and
+own text and code (`PROBE_WEDGED` for an unresponsive probe, built by
+`stoppedTargetRefusal()` like every gate's, `NO_SESSION` while the session
+starts or after it ended). `get_session_status` and
 `check_target_connection` never reject for the state they report:
 `check_target_connection` answers a hardware timeout as text.
 
@@ -268,7 +269,11 @@ window's CMSIS job tracker (next section):
 - `open_solution` needs no active solution either. It takes the path of a
   csolution or of its folder. A folder this window has open is activated
   here (`cmsis-csolution.activateSolution`, verified, refused under a live
-  session). A window without any folder opens it in itself
+  session). The extension takes only a path spelled exactly as in its list,
+  which it builds from `vscode.workspace.findFiles`, and otherwise waits in
+  its own picker; so the path goes in as the workspace search spells it
+  (`solutionAsListed()`), and a solution it did not take while another
+  stays active is `TASK_FAILED`, not a hint to build. A window without any folder opens it in itself
   (`openHere()`) when the client runs outside the window — the tool passes
   the client's `initialize` name, `src/core/clientHosting.ts` knows the
   CLIs: VS Code reloads the window for that, the MCP server with it, so the
@@ -359,7 +364,7 @@ when that file exists (`HandlerHost.activeCbuildRunFile`, the extension's
 `getCbuildRunFile`, asked only while the extension is active), else
 `cmsis.cbuildRunFile` from `launch.json`, else the only match under `out/` —
 refuses while a session or a CMSIS task holds the probe,
-and runs `pyocd load --cbuild-run` through `src/core/flashController.ts`
+and runs `pyocd load --no-wait --cbuild-run` through `src/core/flashController.ts`
 with the pyOCD the CMSIS tasks use: the CMSIS Debugger extension's bundled
 one, else the one the solution's `.cmsis/tools-environment.yml` names, else
 one on PATH (`resolvePyocd()`). A refusal is `PROBE_BUSY`, a file that

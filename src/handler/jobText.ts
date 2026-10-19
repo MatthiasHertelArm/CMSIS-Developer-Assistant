@@ -104,14 +104,19 @@ const CHOOSE_DEBUGGER_HINT = 'Ask the user to open Manage Solution Settings (com
 /** Messages of a diagnosis that go into `data`, of each kind. */
 const DATA_MESSAGES = 10;
 
-/** The hint after a failed Load, Erase or single Load+Run task. */
-function flashFailedHint(task: string): string {
-    return `Read the '${task}' terminal, or call flash, which returns pyOCD's own error lines. If it says "Waiting for a debug probe", `
-        + 'something else holds the probe — cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks. '
+/** What "Waiting for a debug probe" in a task's output means: pyOCD prints it for a probe that is taken and for one it cannot see. */
+const PROBE_WAIT_MEANING = '"Waiting for a debug probe" there means pyOCD sees no free probe: another task or session holds it '
+    + '(cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB driver (ask the user).';
+
+/** The hint after a failed Load, Erase, single Load+Run task, or the Load before a debug session. No tool reads a task terminal (#69). */
+export function flashFailedHint(task: string): string {
+    return `Its output is in the '${task}' terminal, which no tool reads: call flash, which returns pyOCD's own error lines, `
+        + `or ask the user for the terminal's last lines. ${PROBE_WAIT_MEANING} `
         + 'This is a terminal result — do not wait for an output file.';
 }
 
-const RUN_FAILED_HINT = 'Read the \'CMSIS Run\' terminal: a GDB server that ends at once usually finds the probe or its port taken. '
+const RUN_FAILED_HINT = 'A GDB server that ends at once usually finds the probe or its port taken, or no probe at all. Its output is in the '
+    + '\'CMSIS Run\' terminal, which no tool reads: ask the user for its last lines when the cause is not clear. '
     + 'cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks; cmsis_action {action:\'stop_run\'} ends them.';
 
 /**

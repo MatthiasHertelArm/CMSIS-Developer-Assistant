@@ -203,6 +203,22 @@ suite('buildInfo/mapFile', () => {
         assert.deepStrictEqual(usageRegions([], m).regions.map(r => r.name), ['LR_ROM0']);
     });
 
+    test('armlink: Thumb code from 0x80000000 up keeps a positive address once its Thumb bit is cleared', () => {
+        const m = parseMapFile([
+            'Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]',
+            '',
+            'Image Symbol Table',
+            '',
+            '    Global Symbols',
+            '',
+            '    Symbol Name                              Value     Ov Type        Size  Object(Section)',
+            '',
+            '    main                                     0x80000011   Thumb Code    32  main.o(.text.main)',
+            '',
+        ].join('\n'), 'Blinky.axf.map');
+        assert.deepStrictEqual(m.symbols.map(s => [s.name, s.address]), [['main', 0x80000010]]);
+    });
+
     test('armlink map with only the Component line (cbuild default) is armlink with nothing in it', () => {
         const m = parseMapFile('Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]\n', 'Blinky.axf.map');
         assert.strictEqual(m.format, 'armlink');

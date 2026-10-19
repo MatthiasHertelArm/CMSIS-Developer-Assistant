@@ -69,7 +69,7 @@ export function parsePyocdLoadOutput(stdout: string, stderr: string): {
     const rateMatch = text.match(/at ([\d.]+) kB\/s/i);
     const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
     const errorLines = lines
-        .filter(l => /error|traceback|failed|exception|no probe|no target|not connected/i.test(l))
+        .filter(l => /error|traceback|failed|exception|no probe|no target|not connected|no (?:connected|available) debug probe/i.test(l))
         .filter(l => !/\b0 errors?\b/i.test(l)) // benign "0 errors" summaries are not failures
         .slice(-8);
     return {
@@ -223,7 +223,9 @@ export async function probePyocd(bin = 'pyocd', timeoutMs = 5_000): Promise<stri
 /**
  * Program all images listed under `output:` in a cbuild-run file via pyOCD
  * (`bin`, as `resolvePyocd` found it; `pyocd` from PATH by default).
- * spawn without a shell — no quoting or injection surface. The process is
+ * spawn without a shell — no quoting or injection surface. `--no-wait`:
+ * without a free probe pyOCD would wait for one until killed (#81); it ends
+ * at once with "No connected debug probes" instead. The process is
  * SIGTERMed at the deadline (SIGKILL 2 s later) so a wedged probe cannot
  * hang the tool call.
  */
@@ -233,7 +235,7 @@ export async function flashWithPyocd(
     deps: { spawn?: typeof spawn; killGraceMs?: number; bin?: string } = {},
 ): Promise<FlashResult> {
     const bin = deps.bin ?? 'pyocd';
-    const args = ['load', '--cbuild-run', cbuildRunFile];
+    const args = ['load', '--no-wait', '--cbuild-run', cbuildRunFile];
     const commandLine = commandText(bin, args);
     const spawnFn = deps.spawn ?? spawn;
     const killGraceMs = deps.killGraceMs ?? 2_000;
