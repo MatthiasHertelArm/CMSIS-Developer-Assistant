@@ -2099,17 +2099,17 @@ suite('DebuggingHandler', () => {
                     const leftOut = (name: string): boolean => (exclude === '**/.*/**' ? name.startsWith('.') : named.includes(name));
                     const found: vscode.Uri[] = [];
                     const walk = (folder: string): void => {
-                        const entries = fs.readdirSync(folder, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
-                        for (const entry of entries) {
-                            const full = path.join(folder, entry.name);
-                            if (entry.isSymbolicLink() && options.followLinks === false) {
+                        const dirents = fs.readdirSync(folder, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+                        for (const dirent of dirents) {
+                            const full = path.join(folder, dirent.name);
+                            if (dirent.isSymbolicLink() && options.followLinks === false) {
                                 continue;
                             }
                             if (fs.statSync(full).isDirectory()) {
-                                if (!leftOut(entry.name)) {
+                                if (!leftOut(dirent.name)) {
                                     walk(full);
                                 }
-                            } else if (/\.csolution\.(yaml|yml)$/.test(entry.name)) {
+                            } else if (/\.csolution\.(yaml|yml)$/.test(dirent.name)) {
                                 found.push(vscode.Uri.file(full));
                             }
                         }
