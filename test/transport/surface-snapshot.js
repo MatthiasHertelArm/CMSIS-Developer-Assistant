@@ -119,8 +119,8 @@ function normalise(text, ctx) {
         .replace(/\b\d+(\.\d+)?\s?(ms|s)\b/g, '<n>$2')
         .replace(/\b(pid|port)[=: ]\s*\d+/gi, '$1=<n>')
         .replace(/\b127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
-        // The release number, so that a version bump leaves the snapshot alone.
-        .replace(/\bserverVersion=\d+\.\d+\.\d+\b/g, 'serverVersion=<version>');
+        // The release number (with a pre-release suffix when CI set one), so that a version bump leaves the snapshot alone.
+        .replace(/\bserverVersion=\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/g, 'serverVersion=<version>');
 }
 
 /**

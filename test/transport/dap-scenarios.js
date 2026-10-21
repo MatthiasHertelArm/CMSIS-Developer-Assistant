@@ -2027,8 +2027,8 @@ function normalise(text, ctx) {
         .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, '<time>')
         .replace(/\b\d+(\.\d+)?\s?(ms|s)\b/g, '<n>$2')
         .replace(/\b127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
-        // The release number, so that a version bump leaves the snapshot alone.
-        .replace(/\bserverVersion=\d+\.\d+\.\d+\b/g, 'serverVersion=<version>')
+        // The release number (with a pre-release suffix when CI set one), so that a version bump leaves the snapshot alone.
+        .replace(/\bserverVersion=\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/g, 'serverVersion=<version>')
         // Problem-journal numbers count on across scenarios, so they depend on every scenario before.
         .replace(/(^|\n) {2}#\d+ (error|warning|info) /g, '$1  #<seq> $2 ')
         .replace(/\b(sinceSeq: |nextSeq=| since #)\d+/g, '$1<seq>');

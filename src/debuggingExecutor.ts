@@ -43,8 +43,9 @@
  * The contract types live in src/executor/contract.ts and are re-exported
  * here. The snapshot, the GDB command and word read, the reset and the
  * session reports have modules of their own under src/executor/.
- * `SERVER_VERSION` stays in this file because the release recipe edits its
- * literal with `npm version`.
+ * `SERVER_VERSION` is read from package.json when the code is compiled or
+ * bundled, so `npm version` (locally or in CI, from the release tag) is the
+ * only place a version is set.
  */
 
 import * as vscode from 'vscode';
@@ -78,6 +79,7 @@ import type { DebugPortProbe, ReadAttempt } from './core/probeWedge';
 import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession, takesRequests } from './executor/sessionReports';
 import { captureDebugState } from './executor/snapshot';
 import { performReset, programCounterFrom } from './executor/targetReset';
+import { version as PACKAGE_VERSION } from '../package.json';
 
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
 export type {
@@ -85,8 +87,8 @@ export type {
     MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus,
 } from './executor/contract';
 
-/** The version the MCP server, the server definition and the HTTP user agent report. Equals package.json. */
-export const SERVER_VERSION = '2.7.0';
+/** The version the MCP server, the server definition and the HTTP user agent report: package.json's `version` at build time. */
+export const SERVER_VERSION: string = PACKAGE_VERSION;
 
 type Motion = 'stepOver' | 'stepInto' | 'stepOut' | 'continue' | 'pause';
 

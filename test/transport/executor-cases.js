@@ -97,7 +97,7 @@ async function rejects(p) { try { await p; return undefined; } catch (e) { retur
 
 async function main() {
     console.log(`SERVER_VERSION ${SERVER_VERSION} package ${pkg.version}`);
-    check('SERVER_VERSION equals package.json', SERVER_VERSION === pkg.version);
+    check('SERVER_VERSION is package.json\'s version', SERVER_VERSION === pkg.version);
     check('DEFAULT_HARDWARE_TIMEOUTS', eq(DEFAULT_HARDWARE_TIMEOUTS, { dapRequestMs: 10000, memoryReadMs: 30000 }));
 
     // Budgets

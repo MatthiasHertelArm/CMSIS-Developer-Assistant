@@ -198,8 +198,10 @@ can fake only the part a case drives.
   back J-Link targets and secure-boot parts whose core nSRST alone does not
   re-vector; power-cycling comes only after that (#20).
 
-`SERVER_VERSION` is defined in `src/debuggingExecutor.ts` and must equal the
-version in `package.json`; the release steps update it with `npm version`.
+`SERVER_VERSION` is exported by `src/debuggingExecutor.ts` and is the
+`version` of `package.json` as it was when the code was compiled or bundled,
+so `npm version` (locally, or in CI from the release tag) is the only place a
+version is set; `test/transport/executor-cases.js` checks the two agree.
 
 ## Known deviations
 
