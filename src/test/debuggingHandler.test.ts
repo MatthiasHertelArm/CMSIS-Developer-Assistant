@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { SerialPortMock } from 'serialport';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
 import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
@@ -26,6 +28,7 @@ import { PickerCancelled, type IDebugConfigurationManager } from '../utils/debug
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
 import type { StopWaitResult } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
+import { activeCbuildRunFile, GET_CBUILD_RUN_FILE, type SolutionCommands } from '../utils/solutionQueries';
 import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from '../core/toolResult';
@@ -34,7 +37,6 @@ import type { HandlerHost } from '../handler/host';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
-import { SerialPortMock } from 'serialport';
 import { FakeExecution, FakeTasks, FixtureTask, workspaceTasks } from './cmsisTaskFixtures';
 import { MockSerial, mockSerial } from './serialFixtures';
 
@@ -106,8 +108,8 @@ class ScriptedExecutor {
     restartOutcome: Awaited<ReturnType<IDebuggingExecutor['restart']>> = { via: 'workbench' };
     /** What the DHCSR read finds (#3): a halted core, not locked up. */
     debugPort: DebugPortProbe = { readable: true, dhcsr: 0x00030003 };
-    /** The session `getActiveSession` returns; its `configuration.request` picks the reconnect hint. */
-    activeSession: { configuration: { request: string } } | undefined = { configuration: { request: 'launch' } };
+    /** The session `getActiveSession` returns; its `configuration.request` picks the reconnect hint, its `svdFile` the SVD. */
+    activeSession: { name?: string; configuration: { request: string; svdFile?: string } } | undefined = { configuration: { request: 'launch' } };
 
     note(name: string, ...args: unknown[]): void {
         this.calls.push([name, ...args]);
@@ -262,7 +264,7 @@ class ScriptedExecutor {
     };
     readMemory: IDebuggingExecutor['readMemory'] = async (address, length, ms) => {
         this.note('readMemory', address, length, ms);
-        return Buffer.alloc(length);
+        return { bytes: Buffer.alloc(length), offset: 0 };
     };
     readCycleCounter: IDebuggingExecutor['readCycleCounter'] = async () => ({ cycles: 0, enabledNow: false, present: true });
     readPeripheralRegister: IDebuggingExecutor['readPeripheralRegister'] = async () => 'peripheral text';
@@ -909,6 +911,18 @@ suite('DebuggingHandler', () => {
                 + 'within 7 s. The probe or target may be unresponsive.');
         });
 
+        test('restart waits on through a moment without a session', async () => {
+            const x = new ScriptedExecutor();
+            // The status before the restart, then what the wait finds.
+            const states: Array<StatusShape['state']> = ['stopped', 'initializing', 'no-session', 'stopped'];
+            x.getSessionStatus = async () => {
+                x.note('getSessionStatus');
+                return status(states.length > 1 ? states.shift() as StatusShape['state'] : states[0]);
+            };
+            assert.strictEqual(await textAnswer(handlerFor(x, fastClock(50)).handleRestart()), 'The debug session has been restarted.');
+            assert.strictEqual(x.argsOf('getSessionStatus').length, 4, 'the status before the restart, then three polls');
+        });
+
         test('restart pauses a running CMSIS Debugger target first and says how it restarted', async () => {
             const x = new ScriptedExecutor();
             x.sessionStatus = status('running');
@@ -1411,6 +1425,34 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(none, 'None of the requested variables are in scope: nope, other.\nCall list_variable_names to see what is available here.');
         });
 
+        test('a listing names the scopes left unread; a read by name only when a name was not found', async () => {
+            const unread = 'Registers: not read here (expensive over the probe) — read_core_registers reads the core registers.';
+            const x = new ScriptedExecutor();
+            x.getVariables = async (frameId, scope, ms) => {
+                x.note('getVariables', frameId, scope, ms);
+                return scope === 'global' ? { scopes: [] } : { scopes: localScope, skipped: ['Registers'] };
+            };
+            const h = handlerFor(x, focusedOn(7));
+            assert.strictEqual(await textAnswer(h.handleListVariableNames({})),
+                `Variables in scope (names and types only — use get_variables_values to read values):\n\nLocal:\n  count: int\n\n${unread}\n`);
+            assert.strictEqual(await textAnswer(h.handleGetVariables({})), `Variables:\n==========\n\nLocal:\n  count: 3 (int)\n\n${unread}\n`);
+            const widened = await textAnswer(h.handleGetVariables({ scope: 'global' }));
+            assert.ok(widened.startsWith('Note: No dedicated "Global" scope') && widened.endsWith(`  count: 3 (int)\n\n${unread}\n`), widened);
+            assert.strictEqual(await textAnswer(h.handleGetVariables({ variableNames: ['count'] })), 'Variables:\n==========\n\nLocal:\n  count: 3 (int)\n\n',
+                'every name found: no line');
+            assert.strictEqual(await textAnswer(h.handleGetVariables({ variableNames: ['pc'] })),
+                `None of the requested variables are in scope: pc.\nCall list_variable_names to see what is available here.\n${unread}`);
+            const some = await textAnswer(h.handleGetVariables({ variableNames: ['count', 'pc'] }));
+            assert.ok(some.includes('  count: 3 (int)\n') && some.endsWith(`struct members that are not top-level locals.\n${unread}\n`), some);
+
+            x.getVariablesForFrame = async () => ({ scopes: localScope, skipped: ['Registers'] });
+            assert.strictEqual(await textAnswer(h.handleGetFrameVariables({ frameId: 12 })),
+                `Variables for frameId=12:\n==========\n\nLocal:\n  count: 3 (int)\n\n${unread}\n`);
+            assert.strictEqual(await textAnswer(h.handleGetFrameVariables({ frameId: 12, variableNames: ['xpsr'] })),
+                `None of the requested variables are in scope at frameId=12: xpsr.\n${unread}`);
+            assert.ok(!(await textAnswer(h.handleGetFrameVariables({ frameId: 12, variableNames: ['count'] }))).includes('not read here'));
+        });
+
         test('the variable tools need a focused frame and scopes', async () => {
             const x = new ScriptedExecutor();
             const unfocused = await refusalOf(handlerFor(x, focusedOn(undefined)).handleListVariableNames({}), 'TARGET_RUNNING');
@@ -1489,20 +1531,36 @@ suite('DebuggingHandler', () => {
         test('memory dump: header, hex rows and ASCII block', async () => {
             const x = new ScriptedExecutor();
             const bytes = Buffer.from('Hello, Cortex-M!\x00\x01ab', 'latin1');
-            x.readMemory = async () => bytes;
+            x.readMemory = async () => ({ bytes, offset: 0 });
             const reply = await textAnswer(handlerFor(x).handleReadMemory({ address: '20000000', length: 20, format: 'both' }));
             assert.strictEqual(reply, 'Memory at 0x20000000 (20 bytes):\n'
                 + '\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 00 01 61 62\n'
                 + '\nASCII:\n  Hello, Cortex-M!..ab\n');
-            x.readMemory = async () => bytes.subarray(0, 4);
-            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x20000000', length: 20, format: 'hex' })),
-                'Memory at 0x20000000 (20 bytes):\n\nHex:\n  0x20000000: 48 65 6c 6c\n');
             await refusalOf(handlerFor(x).handleReadMemory({ address: 'zz', length: 4 }), 'INTERNAL');
+        });
+
+        test('a partial read labels its rows from the first byte read and names the part that could not be read', async () => {
+            const x = new ScriptedExecutor();
+            const bytes = Buffer.from('Hello, Cortex-M!\x00\x01ab', 'latin1');
+            x.readMemory = async () => ({ bytes: bytes.subarray(0, 4), offset: 0 });
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x20000000', length: 20, format: 'hex' })),
+                'Memory at 0x20000000 (20 bytes):\nRead 4 of 20 bytes: 0x20000004–0x20000013 could not be read.\n'
+                + '\nHex:\n  0x20000000: 48 65 6c 6c\n', 'the end of the range');
+            // cdt-gdb-adapter's reply when the range starts in a hole: GDB's first readable block, 16 bytes in.
+            x.readMemory = async () => ({ bytes, offset: 16 });
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x1FFFFFF0', length: 36, format: 'both' })),
+                'Memory at 0x1FFFFFF0 (36 bytes):\nRead 20 of 36 bytes: 0x1ffffff0–0x1fffffff could not be read.\n'
+                + '\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 00 01 61 62\n'
+                + '\nASCII:\n  Hello, Cortex-M!..ab\n', 'the start of the range');
+            x.readMemory = async () => ({ bytes: bytes.subarray(0, 16), offset: 16 });
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x1ffffff0', length: 64, format: 'ascii' })),
+                'Memory at 0x1ffffff0 (64 bytes):\nRead 16 of 64 bytes: 0x1ffffff0–0x1fffffff and 0x20000010–0x2000002f could not be read.\n'
+                + '\nASCII:\n  Hello, Cortex-M!\n', 'both ends');
         });
 
         test('a long ASCII block breaks after every 64 characters', async () => {
             const x = new ScriptedExecutor();
-            x.readMemory = async () => Buffer.alloc(70, 0x41);
+            x.readMemory = async () => ({ bytes: Buffer.alloc(70, 0x41), offset: 0 });
             assert.strictEqual(await textAnswer(handlerFor(x).handleReadMemory({ address: '0x0', length: 70, format: 'ascii' })),
                 `Memory at 0x0 (70 bytes):\n\nASCII:\n  ${'A'.repeat(64)}\n  AAAAAA\n`);
         });
@@ -1530,7 +1588,8 @@ suite('DebuggingHandler', () => {
             const x = new ScriptedExecutor();
             x.readCycleCounter = async () => ({ cycles: 0, enabledNow: false, present: false });
             assert.strictEqual(await textAnswer(handlerFor(x).handleReadCycleCounter()),
-                'This core reports no DWT cycle counter (DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. '
+                'This core has no DWT cycle counter (none on Armv6-M and Armv8-M Baseline cores such as Cortex-M0, M0+ and M23; '
+                + 'elsewhere DWT_CTRL.NOCYCCNT=1) — read_cycle_counter is unavailable. '
                 + 'Use an RTOS tick or a timer peripheral for timing instead.');
             x.readCycleCounter = async () => ({ cycles: 255, enabledNow: true, present: true });
             assert.strictEqual(await textAnswer(handlerFor(x).handleReadCycleCounter()), 'DWT cycle counter: 255 (0x000000ff)\n'
@@ -1632,6 +1691,41 @@ suite('DebuggingHandler', () => {
             assert.ok((await textAnswer(handlerFor(x).handleDiagnoseFault())).includes('Exception frame: short read at MSP'));
             x.registers = { lr: '0xfffffffd', msp: '0x20001000' };
             assert.ok((await textAnswer(handlerFor(x).handleDiagnoseFault())).includes('Exception frame: PSP unavailable — read_core_registers'));
+            assert.deepStrictEqual(x.argsOf('readCoreRegisters').map(([, names]) => (names as string[])[0]), ['sp', 'sp', 'sp'],
+                'a frame on the current state\'s stack reads no banked register');
+        });
+
+        test('a frame on the other Security state\'s stack is read through that state\'s banked stack pointer', async () => {
+            const x = new ScriptedExecutor();
+            // A Non-secure handler whose frame Secure thread code pushed on PSP_S; MSP and PSP are the Non-secure ones.
+            x.registers = {
+                sp: '0x20001000', lr: '0xfffffff8', pc: '0x080001a4', msp: '0x20001000', psp: '0x0',
+                msp_s: '0x30000f00', psp_s: '0x3000ff00', control_s: '2',
+            };
+            const stacked = Buffer.alloc(0x48);
+            stacked.writeUInt32LE(0xFEFA125B, 0);
+            stacked.writeUInt32LE(0x10000a3c, 0x28 + 24);
+            x.readExceptionFrame = async (sp, ms, stateOffset) => {
+                x.note('readExceptionFrame', sp, ms, stateOffset);
+                return stacked;
+            };
+            const reply = await textAnswer(handlerFor(x).handleDiagnoseFault());
+            assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [
+                [undefined, ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim']],
+                [undefined, ['msp_s', 'psp_s', 'control_s']],
+            ]);
+            assert.deepStrictEqual(x.argsOf('readExceptionFrame'), [[0x3000ff00, undefined, 0x28]]);
+            assert.ok(reply.includes('Exception frame: PSP_S @ 0x3000ff00, R0 at +0x28 after the integrity signature and R4–R11 (EXC_RETURN 0xfffffff8)'), reply);
+            assert.ok(reply.includes('  PC=0x10000a3c ← faulting instruction'), reply);
+            assert.ok(!reply.includes('Integrity signature'), reply);
+
+            // A GDB server without the banked registers: the frame is not read from the wrong state's MSP or PSP.
+            const y = new ScriptedExecutor();
+            y.registers = { sp: '0x20001000', lr: '0xfffffff8', pc: '0x080001a4', msp: '0x20001000', psp: '0x0', msp_s: 'void', psp_s: 'void', control_s: 'void' };
+            const unreported = await textAnswer(handlerFor(y).handleDiagnoseFault());
+            assert.deepStrictEqual(y.argsOf('readExceptionFrame'), []);
+            assert.ok(unreported.includes('Exception frame: on MSP_S or PSP_S, as CONTROL_S selects, which the GDB server did not report — '
+                + 'MSP and PSP are the Non-secure state\'s (EXC_RETURN 0xfffffff8)'), unreported);
         });
 
         test('lookup_peripheral: address first, then name, then the list', async () => {
@@ -1657,6 +1751,19 @@ suite('DebuggingHandler', () => {
             assert.ok(missing.endsWith('Pass svdFile (the device .svd from the DFP; ${CMSIS_PACK_ROOT} is expanded), '
                 + 'or build the solution so out/<context>.cbuild-run.yml names it, or add "svdFile" to the launch configuration. '
                 + 'For a multi-core device pass pname to pick the core.'), missing);
+        });
+
+        test('the lookups and diagnose_fault take the SVD of the executor\'s session, focused or not', async () => {
+            // The test host focuses no session; the executor acts on the tracked one, whose launch configuration names the SVD.
+            const x = new ScriptedExecutor();
+            x.activeSession = { name: 'CMSIS Debugger: pyOCD', configuration: { request: 'launch', svdFile: FIXTURE_SVD } };
+            x.readFaultRegisters = async () => ({ CFSR: 0x00008200, HFSR: 0x40000000, DFSR: 0, MMFAR: 0, BFAR: 0x40023800, AFSR: 0 });
+            const h = handlerFor(x);
+            assert.ok((await textAnswer(h.handleLookupPeripheral())).startsWith('TESTDEVICE: 5 peripherals'));
+            assert.ok((await textAnswer(h.handleLookupRegister({ peripheral: 'RCC', register: 'CR' }))).startsWith('=== RCC.CR @ 0x40023800'));
+            const diagnosis = await textAnswer(h.handleDiagnoseFault());
+            assert.ok(diagnosis.includes('\nFault address (BFAR): 0x40023800 = RCC.CR ('), diagnosis);
+            assert.ok(!diagnosis.includes('no SVD found'), diagnosis);
         });
     });
 
@@ -1978,6 +2085,42 @@ suite('DebuggingHandler', () => {
             const open = (handler: DebuggingHandler, given?: string): Promise<ToolText> =>
                 handler.handleCmsisCommand({ action: 'open_solution', path: given, client: 'claude-code' });
 
+            /**
+             * vscode.workspace.findFiles over the workspace folder `root` as VS Code answers the csolution searches made here:
+             * the files below it whose names end in .csolution.yml or .csolution.yaml (in lower case), `root` as spelled
+             * with the names below it as on disk; without the folders the exclude leaves out (the names of a brace list,
+             * or every hidden folder for the hidden-folder glob); links followed unless `followLinks` is false; at most
+             * `maxResults`, in the order of the walk. `calls` records the arguments.
+             */
+            const searchLike = (root: string, options: { followLinks?: boolean; calls?: unknown[][] } = {}): HandlerHost['findFiles'] =>
+                async (include, exclude, maxResults) => {
+                    options.calls?.push([include, exclude, maxResults]);
+                    const named = /^\*\*\/\{([^}]*)\}\/\*\*$/.exec(exclude)?.[1].split(',') ?? [];
+                    const leftOut = (name: string): boolean => (exclude === '**/.*/**' ? name.startsWith('.') : named.includes(name));
+                    const found: vscode.Uri[] = [];
+                    const walk = (folder: string): void => {
+                        const dirents = fs.readdirSync(folder, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
+                        for (const dirent of dirents) {
+                            const full = path.join(folder, dirent.name);
+                            if (dirent.isSymbolicLink() && options.followLinks === false) {
+                                continue;
+                            }
+                            if (fs.statSync(full).isDirectory()) {
+                                if (!leftOut(dirent.name)) {
+                                    walk(full);
+                                }
+                            } else if (/\.csolution\.(yaml|yml)$/.test(dirent.name)) {
+                                found.push(vscode.Uri.file(full));
+                            }
+                        }
+                    };
+                    walk(root);
+                    return found.slice(0, maxResults ?? found.length);
+                };
+            /** The csolution files the CMSIS Solution extension lists for the workspace folder `root`, as it spells them. */
+            const extensionList = async (root: string, followLinks?: boolean): Promise<string[]> =>
+                (await searchLike(root, { followLinks })('**/*.csolution.{yaml,yml}', '**/.*/**')).map((uri) => uri.fsPath);
+
             test('a missing, relative, absent or foreign path is INVALID_ARGUMENT, and nothing is opened', async () => {
                 const x = new ScriptedExecutor();
                 x.session = false;
@@ -2108,7 +2251,7 @@ suite('DebuggingHandler', () => {
                 x.session = false;
                 const opened: string[] = [];
                 const host: Partial<HandlerHost> = {
-                    ...installed, workspaceFolders: () => [asFolder(scratch)], openFolder: async (folder) => void opened.push(folder),
+                    ...installed, workspaceFolders: () => [asFolder(scratch)], openFolder: async (folder) => void opened.push(folder), findFiles: searchLike(scratch),
                 };
                 // The extension is given, and the reply names, the path as VS Code writes it (on Windows: c:\, not C:\).
                 const listed = vscode.Uri.file(solution).fsPath;
@@ -2143,13 +2286,13 @@ suite('DebuggingHandler', () => {
              * as when the user escapes its "Select a solution" picker.
              */
             const strictSolution = (listedFiles: string[], initial: string) => {
-                const state = { active: initial, activated: [] as unknown[] };
+                const state = { active: initial, activated: [] as unknown[], listed: listedFiles };
                 registrations = standIns({
                     'cmsis-csolution.getSolutionFile': () => state.active,
                     'cmsis-csolution.getActiveTargetSet': () => (state.active ? 'HE' : ''),
                     'cmsis-csolution.activateSolution': (file) => {
                         state.activated.push(file);
-                        if (typeof file === 'string' && listedFiles.includes(file)) {
+                        if (typeof file === 'string' && state.listed.includes(file)) {
                             state.active = file;
                         }
                     },
@@ -2182,31 +2325,200 @@ suite('DebuggingHandler', () => {
 
             test('a solution the extension does not take is TASK_FAILED when another stays active, never "build next" (#99)', async () => {
                 const first = path.join(scratch, 'first.csolution.yml');
-                const hidden = path.join(scratch, 'hidden.csolution.yml');
+                const fresh = path.join(scratch, 'fresh.csolution.yml');
                 fs.writeFileSync(first, 'solution:\n');
-                fs.writeFileSync(hidden, 'solution:\n');
+                fs.writeFileSync(fresh, 'solution:\n');
                 const listedFirst = vscode.Uri.file(first).fsPath;
-                // The extension lists only the first one; the search finds nothing, as for a file in an excluded folder.
+                // The search finds both, the extension's list still has only the first one, as for a file written a moment ago.
                 const state = strictSolution([listedFirst], listedFirst);
                 const x = new ScriptedExecutor();
                 x.session = false;
                 const host: Partial<HandlerHost> = {
-                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: async () => [],
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch),
                 };
-                const listedHidden = vscode.Uri.file(hidden).fsPath;
-                const refused = await refusalOf(open(handlerFor(x, host), hidden), 'TASK_FAILED');
-                assert.deepStrictEqual(state.activated, [listedHidden]);
-                assert.strictEqual(refused.message, `CMSIS 'open_solution' failed: the CMSIS Solution extension was asked to activate ${listedHidden} `
+                const listedFresh = vscode.Uri.file(fresh).fsPath;
+                const refused = await refusalOf(open(handlerFor(x, host), fresh), 'TASK_FAILED');
+                assert.deepStrictEqual(state.activated, [listedFresh]);
+                assert.strictEqual(refused.message, `CMSIS 'open_solution' failed: the CMSIS Solution extension was asked to activate ${listedFresh} `
                     + `but still reports ${listedFirst} as the active solution, so CMSIS actions would run on that one.`);
                 assert.strictEqual(refused.hint, 'Ask the user to select it in the CMSIS view (Select as Active Solution), or to reload the window, '
                     + 'then repeat this call; get_recent_problems shows what the extension reported.');
 
                 // None active yet: it may still be loading, so the call is running and says to repeat it before a build.
                 state.active = '';
-                const pending = await replyAnswer(open(handlerFor(x, host), hidden), 'running');
-                assert.ok(pending.endsWith(`The CMSIS Solution extension was asked to activate ${listedHidden} but reports 'none' as the active solution so far. `
+                const pending = await replyAnswer(open(handlerFor(x, host), fresh), 'running');
+                assert.ok(pending.endsWith(`The CMSIS Solution extension was asked to activate ${listedFresh} but reports 'none' as the active solution so far. `
                     + 'It may still be loading: repeat this call until it names the active solution, then cmsis_action build; '
                     + 'get_recent_problems shows load errors.'), pending);
+
+                // Without a search result the path goes in as Uri.file writes it.
+                state.activated.length = 0;
+                const unsearched = { ...host, findFiles: (): Promise<vscode.Uri[]> => Promise.reject(new Error('no search')) };
+                await replyAnswer(open(handlerFor(x, unsearched), fresh), 'running');
+                assert.deepStrictEqual(state.activated, [listedFresh]);
+            });
+
+            /** Write the csolution `file`, with its folders. */
+            const writeSolution = (file: string): string => {
+                fs.mkdirSync(path.dirname(file), { recursive: true });
+                fs.writeFileSync(file, 'solution:\n');
+                return file;
+            };
+
+            test('another letter case, other separators, the folder\'s path: activated here, spelled as the extension lists it', async function () {
+                // A file system that ignores letter case (APFS and NTFS by default); Linux keeps the spellings apart.
+                if (!fs.existsSync(scratch.toUpperCase()) || !fs.existsSync(scratch.toLowerCase())) {
+                    this.skip();
+                }
+                const root = path.join(scratch, 'Work');
+                const solution = writeSolution(path.join(root, 'App', 'Blinky.csolution.yml'));
+                const listed = vscode.Uri.file(solution).fsPath;
+                const state = strictSolution(await extensionList(root), '');
+                assert.deepStrictEqual(state.listed, [listed]);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const opened: string[] = [];
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(root)], findFiles: searchLike(root),
+                    openFolder: async (folder) => void opened.push(folder),
+                };
+                // As an agent may type it on Windows: forward slashes, the drive letter in upper case. Elsewhere it stays as it is.
+                const typed = (file: string): string => (process.platform === 'win32'
+                    ? file.replace(/\\/g, '/').replace(/^[a-z]:/, (drive) => drive.toUpperCase()) : file);
+                const spellings = [
+                    path.join(root, 'APP', 'blinky.csolution.yml'),
+                    path.join(scratch, 'WORK', 'app', 'BLINKY.csolution.yml'),
+                    path.join(scratch, 'work', 'APP'),
+                ].map(typed);
+                for (const given of spellings) {
+                    state.active = '';
+                    state.activated.length = 0;
+                    const reply = await open(handlerFor(x, host), given);
+                    assert.deepStrictEqual(state.activated, [listed], given);
+                    assert.strictEqual((reply as { status: string }).status, 'ok', given);
+                    const opening = fs.statSync(given).isDirectory() ? given : path.dirname(given);
+                    assert.deepStrictEqual((reply as { data: unknown }).data, { opened: opening, newWindow: false, solution: listed }, given);
+                }
+                assert.deepStrictEqual(opened, [], 'no window is opened for a folder that is open here');
+            });
+
+            test('the extension\'s own search decides: a csolution in build/ is found, one it does not list is refused before it is asked', async () => {
+                const app = writeSolution(path.join(scratch, 'App.csolution.yml'));
+                const generated = writeSolution(path.join(scratch, 'build', 'Gen.csolution.yml'));
+                const hidden = writeSolution(path.join(scratch, '.cmsis', 'Hidden.csolution.yml'));
+                const state = strictSolution(await extensionList(scratch), vscode.Uri.file(app).fsPath);
+                assert.deepStrictEqual(state.listed, [app, generated].map((file) => vscode.Uri.file(file).fsPath));
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const calls: unknown[][] = [];
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch, { calls }),
+                };
+
+                // The one in build/, which the extension lists, under another spelling: activated as listed.
+                const reply = await open(handlerFor(x, host), [scratch, 'build', '..', 'build', 'Gen.csolution.yml'].join(path.sep));
+                assert.deepStrictEqual(state.activated, [state.listed[1]]);
+                assert.strictEqual((reply as { status: string }).status, 'ok');
+                assert.deepStrictEqual(calls, [['**/*.csolution.{yaml,yml}', '**/.*/**', undefined]]);
+
+                // One in a hidden folder, or with a name the extension's search does not match: refused, the extension is not asked,
+                // and that comes before the refusal under a live session, which stopping the session would not help.
+                const upper = writeSolution(path.join(scratch, 'Upper.CSOLUTION.YML'));
+                for (const [unlisted, executor] of [[hidden, x], [upper, x], [hidden, new ScriptedExecutor()]] as const) {
+                    const refused = await refusalOf(open(handlerFor(executor, host), unlisted), 'INVALID_ARGUMENT');
+                    assert.strictEqual(refused.message, `CMSIS 'open_solution' not attempted: the CMSIS Solution extension does not list ${unlisted} `
+                        + 'as a solution of this window, so it would ask the user to pick another one instead.');
+                    assert.strictEqual(refused.hint, 'It lists only files whose names end in .csolution.yml or .csolution.yaml, that ending in lower case, '
+                        + 'outside hidden folders and outside what the settings cmsis-csolution.exclude and files.exclude exclude. '
+                        + 'Ask the user to rename or move the file, or to change the setting, then repeat this call.');
+                }
+                assert.deepStrictEqual(state.activated, [state.listed[1]]);
+            });
+
+            test('a path through a link: the folder open through one, the solution named through one, or one the search does not follow', async function () {
+                const real = path.join(scratch, 'real');
+                const solution = writeSolution(path.join(real, 'Blinky.csolution.yml'));
+                const link = path.join(scratch, 'link');
+                try {
+                    // A junction on Windows, which needs no privilege; elsewhere the type is ignored.
+                    fs.symlinkSync(real, link, 'junction');
+                } catch {
+                    this.skip();
+                }
+                const viaLink = path.join(link, 'Blinky.csolution.yml');
+                const state = strictSolution([], '');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const opened: string[] = [];
+                const cases: Array<{ folder: string; followLinks?: boolean; given: string; listed: string }> = [
+                    { folder: link, given: solution, listed: vscode.Uri.file(viaLink).fsPath },
+                    { folder: real, given: viaLink, listed: vscode.Uri.file(solution).fsPath },
+                    { folder: scratch, followLinks: false, given: viaLink, listed: vscode.Uri.file(solution).fsPath },
+                ];
+                for (const { folder, followLinks, given, listed } of cases) {
+                    state.listed = await extensionList(folder, followLinks);
+                    assert.deepStrictEqual(state.listed, [listed], given);
+                    state.active = '';
+                    state.activated.length = 0;
+                    const host: Partial<HandlerHost> = {
+                        ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(folder)], findFiles: searchLike(folder, { followLinks }),
+                        openFolder: async (opening) => void opened.push(opening),
+                    };
+                    const reply = await open(handlerFor(x, host), given);
+                    assert.deepStrictEqual(state.activated, [listed], given);
+                    assert.strictEqual((reply as { status: string }).status, 'ok', given);
+                }
+                assert.deepStrictEqual(opened, [], 'no window is opened for a folder that is open here');
+
+                // Active already, under the other spelling: the answer says so, with no refusal for the live session.
+                state.active = vscode.Uri.file(solution).fsPath;
+                const live = { ...installed, workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch, { followLinks: false }) };
+                assert.strictEqual(textOf(await open(handlerFor(new ScriptedExecutor(), live), viaLink)),
+                    `${link} is open in this VS Code window. Active solution: ${state.active}, target HE. Next: cmsis_action build, then load_and_debug.`);
+            });
+
+            test('every csolution the extension lists counts, however many the workspace has', async () => {
+                for (let index = 0; index < 250; index++) {
+                    writeSolution(path.join(scratch, 'examples', `a${String(index).padStart(3, '0')}.csolution.yml`));
+                }
+                const last = writeSolution(path.join(scratch, 'examples', 'z.csolution.yml'));
+                const state = strictSolution(await extensionList(scratch), '');
+                assert.strictEqual(state.listed.length, 251);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const host: Partial<HandlerHost> = {
+                    ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(scratch)], findFiles: searchLike(scratch),
+                };
+                await open(handlerFor(x, host), [scratch, 'examples', '..', 'examples', 'z.csolution.yml'].join(path.sep));
+                assert.deepStrictEqual(state.activated, [vscode.Uri.file(last).fsPath]);
+            });
+
+            test('the path a new window or a reload hands over is activated there, spelled as the extension lists it', async () => {
+                const solution = writeSolution(path.join(scratch, 'Blinky', 'Blinky.csolution.yml'));
+                const elsewhere = path.join(scratch, 'Elsewhere');
+                fs.mkdirSync(elsewhere);
+                const typed = [scratch, 'Blinky', '..', 'Blinky', 'Blinky.csolution.yml'].join(path.sep);
+                const state = strictSolution([], '');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const branches: Array<Partial<HandlerHost>> = [
+                    { workspaceFolders: () => [asFolder(elsewhere)], openFolder: async () => undefined },
+                    { workspaceFolders: () => [], openFolder: async () => undefined, sleep: async () => undefined },
+                ];
+                for (const branch of branches) {
+                    const handedOver = (await open(handlerFor(x, branch), typed) as { data: unknown }).data as { opened: string; solution: string };
+                    assert.deepStrictEqual([handedOver.opened, handedOver.solution], [path.dirname(typed), typed]);
+                    // The window that then has the folder open (VS Code opens it resolved) is given the path back.
+                    const folder = path.resolve(handedOver.opened);
+                    state.listed = await extensionList(folder);
+                    state.active = '';
+                    state.activated.length = 0;
+                    const there: Partial<HandlerHost> = {
+                        ...installed, ...fastClock(1_000), workspaceFolders: () => [asFolder(folder)], findFiles: searchLike(folder),
+                    };
+                    await open(handlerFor(x, there), handedOver.solution);
+                    assert.deepStrictEqual(state.activated, [vscode.Uri.file(solution).fsPath]);
+                }
             });
 
             test('an open folder without the CMSIS Solution extension, or without a csolution, is reported as it is', async () => {
@@ -2487,6 +2799,56 @@ suite('DebuggingHandler', () => {
                 }
             });
 
+            test('a target switch of a solution in the second folder writes the first folder\'s cmsis.json, where CMSIS Solution reads it', async () => {
+                const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-roots-'));
+                try {
+                    const first = path.join(root, 'app');
+                    const second = path.join(root, 'fw');
+                    fs.mkdirSync(first);
+                    fs.mkdirSync(second);
+                    const solution = path.join(second, 'demo.csolution.yml');
+                    fs.writeFileSync(solution, ['solution:', '  target-types:', '    - type: HE', '    - type: HP', '      target-set:',
+                        '        - set: debug', '        - set: release', ''].join('\n'));
+                    const w = jobWorld(20, {
+                        workspaceFolders: () => [
+                            { uri: vscode.Uri.file(first), name: 'app', index: 0 },
+                            { uri: vscode.Uri.file(second), name: 'fw', index: 1 },
+                        ],
+                    });
+                    // CMSIS Solution 1.72.0 reads only <first folder>/.vscode/cmsis.json, files the solution there
+                    // as '../fw/demo' and looks that key up split at every '.'.
+                    const selection = (): Record<string, unknown> | undefined => {
+                        let node: unknown;
+                        try {
+                            node = JSON.parse(fs.readFileSync(path.join(first, '.vscode', 'cmsis.json'), 'utf8'));
+                        } catch {
+                            return undefined;
+                        }
+                        for (const key of 'targetSet.../fw/demo'.split('.')) {
+                            node = node !== null && typeof node === 'object' ? (node as Record<string, unknown>)[key] : undefined;
+                        }
+                        return node !== null && typeof node === 'object' ? node as Record<string, unknown> : undefined;
+                    };
+                    let active = 'HE';
+                    registrations = standIns({
+                        'cmsis-csolution.getSolutionFile': () => solution,
+                        'cmsis-csolution.getActiveTargetSet': () => active,
+                        'cmsis-csolution.deactivateSolution': () => undefined,
+                        'cmsis-csolution.activateSolution': () => {
+                            const picked = selection();
+                            active = picked?.activeTargetType === 'HP' ? `HP@${picked.HP === 1 ? 'release' : 'debug'}` : 'HE';
+                        },
+                        'cmsis-csolution.cmsisDetachDebugger': () => undefined,
+                    });
+                    const text = await textAnswer(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }));
+                    assert.match(text, /^CMSIS 'detach' on HP@release, switched from HE issued/);
+                    assert.deepStrictEqual(selection(), { activeTargetType: 'HP', HP: 1 });
+                    assert.ok(!fs.existsSync(path.join(second, '.vscode', 'cmsis.json')), 'CMSIS Solution reads no cmsis.json in the second folder');
+                } finally {
+                    fs.rmSync(root, { recursive: true, force: true });
+                }
+            });
+
             test('the label pre-check refuses a task the debugger adapter does not offer before anything runs', async () => {
                 const w = jobWorld();
                 w.tasks.fetched = workspaceTasks('/w', ['CMSIS Load+Run']);
@@ -2604,26 +2966,32 @@ suite('DebuggingHandler', () => {
 
             suite('a tasks.json without CMSIS tasks', () => {
                 let dir: string;
+                /** The active target's cbuild-run.yml as the host's lookup, the one flash takes, answers it. */
+                let named: string | undefined;
                 setup(() => {
                     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-tasks-'));
+                    named = undefined;
                 });
                 teardown(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-                /** A cbuild-run.yml for HE, with a debugger node when `debuggerName` is given. */
-                const cbuildRun = (debuggerName?: string): string => {
-                    const file = path.join(dir, 'demo+HE.cbuild-run.yml');
+                /** A cbuild-run.yml for HE at `file`, with a debugger node when `debuggerName` is given. */
+                const cbuildRun = (debuggerName?: string, file = path.join(dir, 'demo+HE.cbuild-run.yml')): string => {
                     fs.writeFileSync(file, ['cbuild-run:', '  target-type: HE', ...(debuggerName ? ['  debugger:', `    name: ${debuggerName}`, '    protocol: swd'] : []), ''].join('\n'));
                     return file;
+                };
+                /** A job world with no CMSIS task in tasks.json, whose host names `named` as the active cbuild-run.yml. */
+                const tasksWorld = (more: Partial<HandlerHost> = {}): ReturnType<typeof jobWorld> => {
+                    const w = jobWorld(20, { activeCbuildRunFile: async () => named, ...more });
+                    w.tasks.fetched = [];
+                    return w;
                 };
                 const LOAD_LABELS = ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase'];
 
                 test('the debugger is named: Update Debug Tasks runs once, the labels are read again, and the action goes on', async () => {
-                    const w = jobWorld();
-                    w.tasks.fetched = [];
-                    const file = cbuildRun('CMSIS-DAP@pyOCD');
+                    const w = tasksWorld();
+                    named = cbuildRun('CMSIS-DAP@pyOCD');
                     let updates = 0;
                     solutionOn('HE', {
-                        'cmsis-csolution.getCbuildRunFile': () => file,
                         'cmsis-csolution.updateDebugTasks': () => {
                             updates++;
                             setTimeout(() => {
@@ -2638,12 +3006,10 @@ suite('DebuggingHandler', () => {
                 });
 
                 test('Update Debug Tasks that writes none: run once, never again, and the refusal says so', async () => {
-                    const w = jobWorld();
-                    w.tasks.fetched = [];
-                    const file = cbuildRun('J-Link Server');
+                    const w = tasksWorld();
+                    named = cbuildRun('J-Link Server');
                     let updates = 0;
                     solutionOn('HE', {
-                        'cmsis-csolution.getCbuildRunFile': () => file,
                         'cmsis-csolution.updateDebugTasks': () => {
                             updates++;
                         },
@@ -2660,26 +3026,70 @@ suite('DebuggingHandler', () => {
                 });
 
                 test('no debugger named, or no cbuild-run.yml yet: Update Debug Tasks is not run, and the refusal names the next step', async () => {
-                    const w = jobWorld();
-                    w.tasks.fetched = [];
-                    const file = cbuildRun();
+                    const w = tasksWorld();
+                    named = cbuildRun();
                     let updates = 0;
                     const update = (): void => {
                         updates++;
                     };
-                    solutionOn('HE', { 'cmsis-csolution.getCbuildRunFile': () => file, 'cmsis-csolution.updateDebugTasks': update });
+                    solutionOn('HE', { 'cmsis-csolution.updateDebugTasks': update });
                     const unnamed = await refusalOf(w.handler.handleCmsisCommand({ action: 'run' }), 'INVALID_ARGUMENT');
                     assert.strictEqual(unnamed.message, 'CMSIS \'run\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
                         + 'so there is no \'CMSIS Run\' to run; demo+HE.cbuild-run.yml names no debugger.');
                     assert.ok(unnamed.hint?.startsWith('Ask the user to open Manage Solution Settings (command cmsis-csolution.manageSolution)'), unnamed.hint);
 
-                    again();
-                    solutionOn('HE', { 'cmsis-csolution.getCbuildRunFile': () => '', 'cmsis-csolution.updateDebugTasks': update });
+                    named = undefined;
                     const unbuilt = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_run' }), 'INVALID_ARGUMENT');
                     assert.strictEqual(unbuilt.message, 'CMSIS \'load_and_run\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
                         + 'so there is no \'CMSIS Load+Run\' to run; the active target has no cbuild-run.yml yet.');
                     assert.ok(unbuilt.hint?.startsWith('cmsis_action build first: its convert writes the cbuild-run.yml'), unbuilt.hint);
                     assert.strictEqual(updates, 0);
+                });
+
+                test('one lookup with flash: a relative answer, a file that is gone and out/<solution>+<target> are no cbuild-run.yml', async () => {
+                    // The extension answers through the host's lookup, as flash asks it, and its command answers the same.
+                    // A relative answer resolved against the solution's folder, and the out/ convention, would both find a
+                    // file that names a debugger: Update Debug Tasks reads neither of them.
+                    const solution = path.join(dir, 'demo.csolution.yml');
+                    const relative = 'demo+HE.cbuild-run.yml';
+                    cbuildRun('CMSIS-DAP@pyOCD', path.join(dir, relative));
+                    fs.mkdirSync(path.join(dir, 'out'));
+                    cbuildRun('CMSIS-DAP@pyOCD', path.join(dir, 'out', relative));
+                    let answer = relative;
+                    const extension: SolutionCommands = {
+                        extensionActive: () => true,
+                        commands: async () => [GET_CBUILD_RUN_FILE],
+                        execute: async () => answer,
+                    };
+                    const w = tasksWorld({
+                        activeCbuildRunFile: () => activeCbuildRunFile(extension),
+                        workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'demo', index: 0 }],
+                        findFiles: async () => [],
+                        // No pyOCD can be found: flash never programs anything here.
+                        toolEnvironment: () => ({ extension: () => undefined, pathEnv: '', platform: process.platform }),
+                    });
+                    let asked = 0;
+                    let updates = 0;
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solution,
+                        [GET_CBUILD_RUN_FILE]: () => {
+                            asked++;
+                            return answer;
+                        },
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            updates++;
+                        },
+                    });
+                    for (const said of [relative, '', path.join(dir, 'gone+HE.cbuild-run.yml')]) {
+                        answer = said;
+                        const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'load' }), 'INVALID_ARGUMENT');
+                        assert.strictEqual(refused.message, 'CMSIS \'load\' on HE not started: the solution\'s .vscode/tasks.json has no CMSIS tasks, '
+                            + 'so there is no \'CMSIS Load\' to run; the active target has no cbuild-run.yml yet.', `cmsis_action, answer ${JSON.stringify(said)}`);
+                        const flashed = await refusalOf(w.handler.handleFlash({}), 'INVALID_ARGUMENT');
+                        assert.match(errorDetail(flashed), /^No cbuild-run file found /, `flash, answer ${JSON.stringify(said)}`);
+                    }
+                    assert.strictEqual(updates, 0, 'Update Debug Tasks is not run for a file it would not read');
+                    assert.strictEqual(asked, 0, 'cmsis_action asks through the host, not with a getCbuildRunFile of its own');
                 });
             });
 
@@ -2845,58 +3255,127 @@ suite('DebuggingHandler', () => {
                 assert.deepStrictEqual(w.issued, ['attach', 'build']);
             });
 
-            test('attach with every launch.json endpoint silent: refused before the command, and the hint depends on whether a CMSIS Run is alive', async () => {
+            /**
+             * A solution folder whose launch.json attach configuration points at a stand-in GDB server that
+             * counts its clients: pyOCD halts the target for each one and, without --persist, shuts down when
+             * it leaves, so the attach check must never be one of them. The stand-in attach command connects
+             * nowhere; every connection the server sees comes from the check.
+             */
+            const attachWorld = async (attachName: string) => {
                 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-attach-'));
-                try {
-                    // A port nobody listens on: bound once, released at once.
-                    const net = await import('net');
-                    const free = net.createServer();
-                    await new Promise<void>((done) => free.listen(0, '127.0.0.1', done));
-                    const port = (free.address() as { port: number }).port;
-                    await new Promise<void>((done) => free.close(() => done()));
-                    fs.mkdirSync(path.join(dir, '.vscode'));
-                    fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({
-                        configurations: [{ name: 'Arm-FVP@GDB (attach)', type: 'gdbtarget', request: 'attach', target: { host: '127.0.0.1', port } }],
-                    }));
-                    const folders = () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }];
-                    const world = (alive: boolean) => {
-                        again();
-                        const clock = fastClock(20);
-                        const tasks = new FakeTasks();
-                        tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
-                        const tracker = new CmsisJobTracker(tasks, clock);
-                        if (alive) {
-                            tasks.start(tasks.execution(shellTask('CMSIS Run')));
-                        }
-                        const x = new ScriptedExecutor();
-                        x.session = false;
-                        const issued: string[] = [];
-                        registrations = standIns({
-                            'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
-                            'cmsis-csolution.getActiveTargetSet': () => 'HE',
-                            'cmsis-csolution.cmsisAttachDebugger': () => {
-                                issued.push('attach');
-                            },
-                        });
-                        return { handler: handlerFor(x, { ...clock, cmsisJobs: () => tracker, workspaceFolders: folders }), issued };
-                    };
-
-                    const withRun = world(true);
-                    const refusedWithRun = await refusalOf(withRun.handler.handleCmsisCommand({ action: 'attach', timeoutMs: 2_000 }), 'NO_SESSION');
-                    assert.strictEqual(refusedWithRun.message,
-                        `CMSIS 'attach' on HE not started: a CMSIS Run task is alive in this window, but no GDB server listens on 127.0.0.1:${port} ('Arm-FVP@GDB (attach)').`);
-                    assert.ok(refusedWithRun.hint?.startsWith('This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one;'), refusedWithRun.hint);
-                    assert.ok(refusedWithRun.hint?.includes('Use load_and_debug'), refusedWithRun.hint);
-                    assert.deepStrictEqual(withRun.issued, [], 'the attach command was not issued');
-
-                    const withoutRun = world(false);
-                    const refused = await refusalOf(withoutRun.handler.handleCmsisCommand({ action: 'attach', timeoutMs: 2_000 }), 'NO_SESSION');
-                    assert.strictEqual(refused.message,
-                        `CMSIS 'attach' on HE not started: no GDB server listens on 127.0.0.1:${port} ('Arm-FVP@GDB (attach)'), and no CMSIS Run task is alive in this window.`);
-                    assert.ok(refused.hint?.startsWith('cmsis_action run starts CMSIS Run, which hosts the GDB server with a probe adapter (pyOCD resets the target and lets it run)'), refused.hint);
-                    assert.deepStrictEqual(withoutRun.issued, []);
-                } finally {
+                let connections = 0;
+                const server = net.createServer((socket) => {
+                    connections++;
+                    socket.destroy();
+                });
+                await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+                const port = (server.address() as net.AddressInfo).port;
+                fs.mkdirSync(path.join(dir, '.vscode'));
+                fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({
+                    configurations: [{ name: attachName, type: 'gdbtarget', request: 'attach', target: { host: '127.0.0.1', port } }],
+                }));
+                const folders = () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }];
+                /** One call: `run` is the CMSIS Run task alive in the window, if any; `debuggerName` the cbuild-run.yml's debugger. */
+                const attach = (run: FixtureTask | undefined, debuggerName?: string): { answer: Promise<ToolText>; issued: string[] } => {
+                    again();
+                    fs.rmSync(path.join(dir, 'out'), { recursive: true, force: true });
+                    const runFile = path.join(dir, 'out', 'demo+HE.cbuild-run.yml');
+                    if (debuggerName) {
+                        fs.mkdirSync(path.join(dir, 'out'));
+                        fs.writeFileSync(runFile, `cbuild-run:\n  debugger:\n    name: ${debuggerName}\n`);
+                    }
+                    const clock = fastClock(20);
+                    const tasks = new FakeTasks();
+                    tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
+                    const tracker = new CmsisJobTracker(tasks, clock);
+                    if (run) {
+                        tasks.start(tasks.execution(run));
+                    }
+                    const x = new ScriptedExecutor();
+                    x.session = false;
+                    x.sessionStatus = status('initializing');
+                    const issued: string[] = [];
+                    registrations = standIns({
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.getActiveTargetSet': () => 'HE',
+                        'cmsis-csolution.cmsisAttachDebugger': () => {
+                            issued.push('attach');
+                        },
+                    });
+                    const handler = handlerFor(x, {
+                        ...clock, cmsisJobs: () => tracker, workspaceFolders: folders,
+                        // The active target's cbuild-run.yml as CMSIS Solution names it, through the host's lookup.
+                        activeCbuildRunFile: async () => (debuggerName ? runFile : undefined),
+                    });
+                    return { answer: handler.handleCmsisCommand({ action: 'attach' }), issued };
+                };
+                /** The clients the stand-in server saw, once a connection made by the call would have arrived. */
+                const clients = async (): Promise<number> => {
+                    await delay(50);
+                    return connections;
+                };
+                const close = async (): Promise<void> => {
+                    await new Promise<void>((done) => server.close(() => done()));
                     fs.rmSync(dir, { recursive: true, force: true });
+                };
+                return { attach, clients, close, port };
+            };
+            const runTask = (execution: unknown): FixtureTask => ({ ...shellTask('CMSIS Run'), execution });
+            const PYOCD_RUN = { command: 'pyocd', args: ['gdbserver', '--probe', 'cmsisdap:', '--persist', '--reset-run', '--cbuild-run',
+                '${command:cmsis-csolution.getCbuildRunFile}', '--quiet', '--log', '*.cbuild_run,*server=info'] };
+            const FVP_RUN = { command: 'FVP_Corstone_SSE-300_Ethos-U55', args: ['-f', 'board/fvp_config.txt', '-a', 'out/Blinky/HE/Debug/Blinky.axf'] };
+
+            test('attach never connects to the attach port first: a CMSIS Run of pyOCD, or none at all, and the attach goes ahead', async () => {
+                const w = await attachWorld('CMSIS_DAP@pyOCD (attach)');
+                try {
+                    const withRun = w.attach(runTask(PYOCD_RUN));
+                    const ran = await replyAnswer(withRun.answer, 'running');
+                    assert.deepStrictEqual(withRun.issued, ['attach']);
+                    assert.ok(!ran.includes('No CMSIS Run task is alive'), ran);
+                    assert.strictEqual(await w.clients(), 0, 'the GDB server of the CMSIS Run saw a client before the attach');
+
+                    // A GDB server the user started by hand, as the reconnect hints ask: no CMSIS Run task, no refusal.
+                    const byHand = w.attach(undefined);
+                    const text = await replyAnswer(byHand.answer, 'running');
+                    assert.deepStrictEqual(byHand.issued, ['attach']);
+                    assert.ok(text.startsWith('CMSIS \'attach\' on HE issued via \'cmsis-csolution.cmsisAttachDebugger\'.'), text);
+                    assert.ok(text.endsWith(' No CMSIS Run task is alive in this window, so only a GDB server started outside it can serve '
+                        + `127.0.0.1:${w.port} ('CMSIS_DAP@pyOCD (attach)'); without one the session ends at GDB's 15 s connect timeout. `
+                        + 'With a probe adapter, cmsis_action run starts the server without programming; load_and_debug starts a session of its own.'), text);
+                    assert.strictEqual(await w.clients(), 0, 'a server started without --persist would have shut down');
+                } finally {
+                    await w.close();
+                }
+            });
+
+            test('attach while the CMSIS Run task is an FVP model without its plugin: refused without a connection', async () => {
+                const w = await attachWorld('Arm-FVP@GDB (attach)');
+                try {
+                    const bare = w.attach(runTask(FVP_RUN));
+                    const refused = await refusalOf(bare.answer, 'NO_SESSION');
+                    assert.strictEqual(refused.message, 'CMSIS \'attach\' on HE not started: a CMSIS Run task is alive in this window, but it runs '
+                        + `the FVP model without the GDB server plugin: nothing it started listens on 127.0.0.1:${w.port} ('Arm-FVP@GDB (attach)').`);
+                    assert.ok(refused.hint?.startsWith('This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one;'), refused.hint);
+                    assert.ok(refused.hint?.includes('Use load_and_debug'), refused.hint);
+                    assert.deepStrictEqual(bare.issued, [], 'the attach command was not issued');
+
+                    // A model shim (the fvp-debug-setup skill's fvp.sh) does not say what it runs: the target's Arm-FVP debugger does.
+                    const shim = runTask({ command: '/w/.vscode/fvp.sh', args: ['-f', 'board/fvp_config.txt', '-a', 'x.axf'] });
+                    const shimmed = w.attach(shim, 'Arm-FVP');
+                    assert.match((await refusalOf(shimmed.answer, 'NO_SESSION')).message, /but it runs the FVP model without the GDB server plugin/);
+                    assert.deepStrictEqual(shimmed.issued, []);
+                    const otherDebugger = w.attach(shim, 'CMSIS-DAP@pyOCD');
+                    await replyAnswer(otherDebugger.answer, 'running');
+                    assert.deepStrictEqual(otherDebugger.issued, ['attach']);
+
+                    // The model with its GDBServer plugin on the command line serves the attach.
+                    const plugin = w.attach(runTask({ command: 'FVP_Corstone_SSE-320',
+                        args: ['-D', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3333', '-a', 'x.axf'] }), 'Arm-FVP');
+                    await replyAnswer(plugin.answer, 'running');
+                    assert.deepStrictEqual(plugin.issued, ['attach']);
+                    assert.strictEqual(await w.clients(), 0);
+                } finally {
+                    await w.close();
                 }
             });
 
@@ -3009,6 +3488,51 @@ suite('DebuggingHandler', () => {
                 + 'The flash/connect pipeline is running in the CMSIS extension'), never);
         });
 
+        test('attach waits while the adapter takes no requests; a session that ends before it comes up fails the call at once', async () => {
+            // The states the session probe reports one after the other, the last one repeated.
+            const attach = async (states: Array<StatusShape['state']>): Promise<{ answer: ToolText | ToolError; x: ScriptedExecutor }> => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                x.getSessionStatus = async () => {
+                    x.note('getSessionStatus');
+                    const state = states.length > 1 ? states.shift() as StatusShape['state'] : states[0];
+                    x.session = state !== 'no-session';
+                    return status(state);
+                };
+                x.getThreads = async () => {
+                    x.note('getThreads');
+                    return [{ id: 1, name: 't' }];
+                };
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisAttachDebugger': () => {
+                        x.session = true;
+                    },
+                });
+                try {
+                    return { answer: await handlerFor(x, fastClock(50)).handleCmsisCommand({ action: 'attach' }), x };
+                } catch (caught) {
+                    assert.ok(caught instanceof ToolError, String(caught));
+                    return { answer: caught, x };
+                } finally {
+                    registrations?.dispose();
+                    registrations = undefined;
+                }
+            };
+
+            const late = await attach(['initializing', 'initializing', 'running']);
+            assert.ok(typeof late.answer === 'string' && late.answer.startsWith('CMSIS \'attach\' completed on HE — debug session survived the connect '
+                + '(t+3s: 1 thread(s), t+6s: 1 thread(s) — target threads present).'), JSON.stringify(late.answer));
+            assert.strictEqual(late.x.argsOf('getSessionStatus').length, 3, 'two polls found the adapter taking no requests');
+
+            const lost = await attach(['initializing', 'no-session']);
+            assert.ok(lost.answer instanceof ToolError && lost.answer.code === 'TASK_FAILED', JSON.stringify(lost.answer));
+            assert.strictEqual(lost.answer.message, 'CMSIS \'attach\' on HE started a debug session but it did NOT survive the initial connect — '
+                + 'it ended before it came up.');
+            assert.ok(lost.answer.hint?.startsWith('For \'attach\' this almost always means no GDB server is listening'), lost.answer.hint);
+            assert.deepStrictEqual(lost.x.argsOf('getThreads'), [], 'a session that is gone is not probed');
+            assert.strictEqual(lost.x.argsOf('getSessionStatus').length, 2, 'the wait ends with the session');
+        });
+
         test('the fence honours the long cap for cmsis_action and flash only', async () => {
             const timers: number[] = [];
             const x = new ScriptedExecutor();
@@ -3104,14 +3628,29 @@ suite('DebuggingHandler', () => {
             });
             teardown(() => fs.rmSync(dir, { force: true, recursive: true }));
 
-            const flashHost = (extensionPath: string | undefined): Partial<HandlerHost> => ({
+            const flashHost = (extensionPath: string | undefined, probeId?: string): Partial<HandlerHost> => ({
                 workspaceFolders: () => [folder(dir)],
                 toolEnvironment: () => ({
                     extension: (id) => (id === 'Arm.vscode-cmsis-debugger' && extensionPath ? { path: extensionPath, version: '1.8.0' } : undefined),
                     pathEnv: '',
                     platform: process.platform,
                 }),
+                solutionProbeId: () => probeId,
             });
+
+            /** The CMSIS Debugger's pyOCD as a script: `--version` says 0.45.1, `load` writes its arguments to argv.txt and runs `body`. */
+            const fakePyocd = (body: string): { extensionPath: string; bin: string; argv: () => string } => {
+                const extensionPath = path.join(dir, 'arm.vscode-cmsis-debugger-1.8.0-darwin-arm64');
+                const bin = path.join(extensionPath, 'tools', 'pyocd', 'pyocd');
+                const argvFile = path.join(dir, 'argv.txt');
+                fs.mkdirSync(path.dirname(bin), { recursive: true });
+                fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.45.1; exit 0; fi\necho "$*" > "${argvFile}"\n${body}`);
+                fs.chmodSync(bin, 0o755);
+                return { extensionPath, bin, argv: () => fs.readFileSync(argvFile, 'utf8').trim() };
+            };
+            /** The cbuild-run file with this `debugger:` node. */
+            const withDebugger = (node: string): void => fs.writeFileSync(cbuildRun,
+                `cbuild-run:\n  generated-by: csolution\n  solution: ../demo.csolution.yml\n  target-type: HE\n  debugger:\n${node}`);
 
             test('without any pyOCD the answer is TOOL_DISABLED and names the CMSIS Debugger, with no pip', async () => {
                 const x = new ScriptedExecutor();
@@ -3160,6 +3699,132 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(refused.hint, 'pyOCD sees no free debug probe. Another task or session may hold it: cmsis_action {action:\'status\'} lists '
                     + 'this window\'s CMSIS tasks, stop_run or stop_debugging frees it. Otherwise the board is not connected or its probe lacks the USB '
                     + 'driver: ask the user to check the cable and the driver — a serial port in serial_list_ports does not prove that the probe is reachable. '
+                    + 'Do not retry until one of these changed.');
+            });
+
+            test('a load that exits 0 succeeds although its log names a path with "Error" in it, and lists what pyOCD warned of', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                // pyOCD logs to stderr: each file at INFO (load_cmd.py:169), and session.py:285 warns with "Error".
+                const { extensionPath, bin } = fakePyocd('echo "0000123 I Loading /proj/out/ErrorHandling/Debug/app.hex [load_cmd]" >&2\n'
+                    + 'echo "0000150 W Error attempting to access config file \'/proj/pyocd.yaml\': [Errno 13] Permission denied [session]" >&2\n'
+                    + 'echo "0002345 I Erased 4096 bytes (1 sector), programmed 4096 bytes (16 pages), identical 0 bytes (0 pages) at 52.00 kB/s [loader]" >&2\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                assert.strictEqual(await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun })),
+                    `✅ Flash succeeded — programmed 4096 bytes at 52 kB/s (pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --no-wait --cbuild-run ${cbuildRun}\`).\n`
+                    + 'pyOCD warned:\n'
+                    + '  0000150 W Error attempting to access config file \'/proj/pyocd.yaml\': [Errno 13] Permission denied [session]\n'
+                    + 'Use cmsis_action attach or load_and_debug to start a debug session.');
+            });
+
+            test('a data chunk pyOCD could not add: still no failure, but ⚠️ with the warning, and the target does not hold the image as built', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                // file_programmer.py:252-257 warns for an ELF segment loader.py:237 refuses, goes on, and load_cmd.py:205 returns 0.
+                const { extensionPath, bin } = fakePyocd('echo "0000310 I Loading /w/out/app/Debug/app.elf [load_cmd]" >&2\n'
+                    + 'echo "0000420 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]" >&2\n'
+                    + 'echo "0002345 I Erased 65536 bytes (2 sectors), programmed 65536 bytes (256 pages), identical 0 bytes (0 pages) at 52.00 kB/s [loader]" >&2\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                assert.strictEqual(await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun })),
+                    '⚠️ Flash exited 0, but pyOCD could not add a data chunk of the image — programmed 65536 bytes at 52 kB/s '
+                    + `(pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --no-wait --cbuild-run ${cbuildRun}\`).\n`
+                    + 'pyOCD warned:\n'
+                    + '  0000420 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]\n'
+                    + 'So the target does not hold the image as built. Check which sections load at the addresses pyOCD names, for example with '
+                    + 'get_section_layout or lookup_symbol {address}, before you debug it. Use cmsis_action attach or load_and_debug to start a debug session.');
+                // Two chunks and nothing else to program (loader.py:335-366), and an error pyOCD logged without failing
+                // (session.py:228): the success lists the error first.
+                const several = fakePyocd('echo "0000200 E Failed to initialize ctrace-run support: cannot access file: No such file or directory [session]" >&2\n'
+                    + 'echo "0000301 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]" >&2\n'
+                    + 'echo "0000302 W Failed to add data chunk: memory region at address 0x1fff7800 is not writable [file_programmer]" >&2\n'
+                    + 'echo "0002345 I Erased 0 bytes (0 sectors), programmed 0 bytes (0 pages), identical 0 bytes (0 pages) at 0.00 kB/s [loader]" >&2\n');
+                const text = await textAnswer(handlerFor(x, flashHost(several.extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.ok(text.startsWith('⚠️ Flash exited 0, but pyOCD could not add 2 data chunks of the image — programmed 0 bytes at 0 kB/s (pyOCD 0.45.1'), text);
+                assert.ok(text.includes('pyOCD warned:\n'
+                    + '  0000200 E Failed to initialize ctrace-run support: cannot access file: No such file or directory [session]\n'
+                    + '  0000301 W Failed to add data chunk: no memory region defined for address 0x90000000 [file_programmer]\n'
+                    + '  0000302 W Failed to add data chunk: memory region at address 0x1fff7800 is not writable [file_programmer]\n'
+                    + 'So the target does not hold the image as built.'), text);
+            });
+
+            test('the probe is the one CMSIS Load selects: --probe by the debugger, --uid by the cbuild-run\'s probe-id, else by cmsis-csolution.probe-id', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const { extensionPath, bin, argv } = fakePyocd('echo "programmed 1024 bytes (4 pages) at 10.00 kB/s"\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                // ULINKplus@pyOCD has CMSIS-DAP-pyOCD.adapter.json: its CMSIS Load passes --probe cmsisdap: and the setting's probe ID.
+                withDebugger('    name: ULINKplus@pyOCD\n    clock: 10000000\n');
+                const text = await textAnswer(handlerFor(x, flashHost(extensionPath, 'DAP_T1n4che')).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.ok(text.includes(`(pyOCD 0.45.1 from CMSIS Debugger 1.8.0: \`${bin} load --no-wait --probe cmsisdap: --uid DAP_T1n4che --cbuild-run ${cbuildRun}\`)`), text);
+                assert.strictEqual(argv(), `load --no-wait --probe cmsisdap: --uid DAP_T1n4che --cbuild-run ${cbuildRun}`);
+                // The cbuild-run file's probe-id comes before the setting, as in CMSIS Solution; ST-Link@pyOCD passes --probe stlink:.
+                withDebugger('    name: ST-Link@pyOCD\n    probe-id: 066DFF555654725187084543\n');
+                await textAnswer(handlerFor(x, flashHost(extensionPath, 'DAP_T1n4che')).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.strictEqual(argv(), `load --no-wait --probe stlink: --uid 066DFF555654725187084543 --cbuild-run ${cbuildRun}`);
+                // An adapter without a probe type and no probe ID: pyOCD looks at every probe, as before.
+                withDebugger('    name: Arm-FVP\n');
+                await textAnswer(handlerFor(x, flashHost(extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }));
+                assert.strictEqual(argv(), `load --no-wait --cbuild-run ${cbuildRun}`);
+            });
+
+            test('several probes and none selected: TASK_FAILED names them and where the user picks one', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const hint = 'Ask the user which of them is connected to the board to program, and to set its unique ID in the setting cmsis-csolution.probe-id; '
+                    + 'CMSIS Solution\'s Load, Run and Debug select the probe by it as well. Then call flash again; do not choose a probe yourself.';
+                const x = new ScriptedExecutor();
+                x.session = false;
+                // With --probe cmsisdap: pyOCD lists the CMSIS-DAP probes and chooses none (helpers.py:164-173), then logs (load_cmd.py:107).
+                const typed = fakePyocd('echo "More than one debug probe matches unique ID \'cmsisdap:\':"\n'
+                    + 'echo "Arm DAPLink CMSIS-DAP | 9904360258994e45002e0012a6e1000038a1000097969900"\n'
+                    + 'echo "NXP Semiconductors LPC-LINK2 CMSIS-DAP V5.460 | jsaqcqiq"\n'
+                    + 'echo "0000412 E No target device available [load_cmd]" >&2\nexit 1\n');
+                withDebugger('    name: CMSIS-DAP@pyOCD\n');
+                const refused = await refusalOf(handlerFor(x, flashHost(typed.extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }), 'TASK_FAILED');
+                assert.strictEqual(refused.message, `❌ Flash FAILED (exit 1) — \`${typed.bin} load --no-wait --probe cmsisdap: --cbuild-run ${cbuildRun}\`\n`
+                    + 'pyOCD found 2 debug probes of the type cmsisdap and chose none:\n'
+                    + '  9904360258994e45002e0012a6e1000038a1000097969900 (Arm DAPLink CMSIS-DAP)\n'
+                    + '  jsaqcqiq (NXP Semiconductors LPC-LINK2 CMSIS-DAP V5.460)');
+                assert.strictEqual(refused.hint, hint);
+                // No probe type: pyOCD prints its table and asks (helpers.py:188-195); the closed stdin ends that (__main__.py:174-176).
+                const untyped = fakePyocd('echo "  #   Probe/Board                               Unique ID                                          Target"\n'
+                    + 'echo "---------------------------------------------------------------------------------------------------------------"\n'
+                    + 'echo "  0   Arm DAPLink CMSIS-DAP                     9904360258994e45002e0012a6e1000038a1000097969900   n/a"\n'
+                    + 'echo "  1   Segger J-Link OB-SAM3U128-V2-NordicSemi   000683000000                                       n/a"\n'
+                    + 'printf "\\nEnter the number of the debug probe or \'q\' to quit> "\n'
+                    + 'echo "0000921 C Error: EOF when reading a line [__main__]" >&2\nexit 1\n');
+                fs.writeFileSync(cbuildRun, 'cbuild-run:\n  generated-by: csolution\n  solution: ../demo.csolution.yml\n  target-type: HE\n');
+                const asked = await refusalOf(handlerFor(x, flashHost(untyped.extensionPath)).handleFlash({ cbuildRunFile: cbuildRun }), 'TASK_FAILED');
+                assert.strictEqual(asked.message, `❌ Flash FAILED (exit 1) — \`${untyped.bin} load --no-wait --cbuild-run ${cbuildRun}\`\n`
+                    + 'pyOCD found 2 debug probes and chose none:\n'
+                    + '  9904360258994e45002e0012a6e1000038a1000097969900 (Arm DAPLink CMSIS-DAP)\n'
+                    + '  000683000000 (Segger J-Link OB-SAM3U128-V2-NordicSemi)');
+                assert.strictEqual(asked.hint, hint);
+            });
+
+            test('a probe ID that no free probe matches: the hint names the ID and where it is set', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const { extensionPath, bin } = fakePyocd('echo "No connected debug probe matches unique ID \'DAP_T1n4che\'"\n'
+                    + 'echo "0000412 E No target device available [load_cmd]" >&2\nexit 1\n');
+                const x = new ScriptedExecutor();
+                x.session = false;
+                withDebugger('    name: CMSIS-DAP@pyOCD\n');
+                const refused = await refusalOf(handlerFor(x, flashHost(extensionPath, 'DAP_T1n4che')).handleFlash({ cbuildRunFile: cbuildRun }), 'TASK_FAILED');
+                assert.ok(refused.message.startsWith(`❌ Flash FAILED (exit 1) — \`${bin} load --no-wait --probe cmsisdap: --uid DAP_T1n4che --cbuild-run ${cbuildRun}\`\n`
+                    + 'Errors:\n  No connected debug probe matches unique ID \'DAP_T1n4che\'\n  0000412 E No target device available [load_cmd]\n'), refused.message);
+                assert.strictEqual(refused.hint, 'pyOCD sees no free debug probe whose unique ID contains \'DAP_T1n4che\' (the setting cmsis-csolution.probe-id). '
+                    + 'Another task or session may hold it: cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks, stop_run or stop_debugging frees it. '
+                    + 'Otherwise that probe is not connected or lacks its USB driver, or the ID names another one: ask the user to check the cable, the driver and '
+                    + 'the setting cmsis-csolution.probe-id — a serial port in serial_list_ports does not prove that the probe is reachable. '
                     + 'Do not retry until one of these changed.');
             });
 

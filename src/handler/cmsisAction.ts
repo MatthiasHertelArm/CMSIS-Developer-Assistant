@@ -106,6 +106,8 @@ import {
 import {
     isSolutionFile,
     liesInside,
+    LISTED_SOLUTION_GLOB,
+    listedSolutionExclude,
     missingSolutionExtensionRefusal,
     noSolutionRefusal,
     noWorkspaceRefusal,
@@ -114,7 +116,7 @@ import {
 } from '../core/bootstrapState';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
-import { silentAttachEndpoints } from '../core/gdbServerPorts';
+import { AttachEndpoint, isFvpDebugger, launchAttachEndpoints, runCommandKind, taskCommandWords } from '../core/gdbServerPorts';
 import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
@@ -186,8 +188,8 @@ const SOLUTION_SEARCH_MS = 2_000;
 const OPEN_VERIFY_MS = 20_000;
 /** Where the workspace search does not look for a csolution. */
 const SOLUTION_SEARCH_EXCLUDE = '**/{node_modules,out,tmp,build}/**';
-/** How many csolution files the search for the one open_solution activates may return. */
-const SOLUTION_MATCH_MAX = 200;
+/** How long open_solution's search for the csolution files the CMSIS Solution extension lists may take; it returns all of them. */
+const SOLUTION_LIST_MS = 5_000;
 
 const SWITCH_BY_HAND = 'Switch it by hand in the CMSIS Solution panel (Manage Solution → Target) and repeat the call.';
 
@@ -198,17 +200,28 @@ const SELECT_SOLUTION_BY_HAND = 'Ask the user to select it in the CMSIS view (Se
 const PICKER_HINT = 'If VS Code shows the CMSIS Solution extension\'s "Select a solution" picker, the extension did not recognise the path: '
     + 'ask the user to pick the solution there or in the CMSIS view (Select as Active Solution), then repeat this call. '
     + 'get_recent_problems shows what the extension reported.';
+/** open_solution: which csolution files the CMSIS Solution extension lists, and so can activate. */
+const UNLISTED_HINT = 'It lists only files whose names end in .csolution.yml or .csolution.yaml, that ending in lower case, outside hidden folders '
+    + 'and outside what the settings cmsis-csolution.exclude and files.exclude exclude. Ask the user to rename or move the file, '
+    + 'or to change the setting, then repeat this call.';
 
 /** What the fence answers if the call itself does not answer in time. */
 export const CMSIS_FENCE_ADVICE = 'The CMSIS action may still go on in the CMSIS extension — '
     + 'call cmsis_action {action:\'status\'} to see its job; do not start it again.';
 
+/**
+ * How the handler's wait for a live session ended: `live` (running or
+ * stopped), `gone` (a session showed up and ended before it came up), or
+ * `timeout`.
+ */
+export type LiveSessionWait = 'live' | 'gone' | 'timeout';
+
 /** What `cmsis_action` needs from the handler that runs it. */
 export interface CmsisActionContext {
     readonly executor: IDebuggingExecutor;
     readonly host: HandlerHost;
-    /** The handler's session wait with an 8 s override. */
-    awaitLiveSession(overrideMs: number): Promise<boolean>;
+    /** The handler's session wait with an 8 s override, ended early by a session that ends before it comes up. */
+    awaitLiveSession(overrideMs: number): Promise<LiveSessionWait>;
     /** The full state rendering, which also records the breakpoint list. */
     renderFullState(state: DebugState): string;
 }
@@ -275,12 +288,26 @@ export async function activeTargetName(): Promise<string | undefined> {
 /** A failed switch says why, with the code the refusal carries and, when there is one, what to do instead. */
 type SwitchResult = { switched: true; active: string } | { switched: false; code: ErrorCode; reason: string; hint?: string };
 
-/** The folder whose `.vscode/cmsis.json` the extension reads for this solution. */
+/**
+ * The workspace folder that holds the solution: where CMSIS Solution keeps its
+ * `.vscode/tasks.json` and `launch.json` (1.72.0 `solutionManager.workspaceFolder`).
+ */
 function selectionFolder(solutionPath: string, host: HandlerHost): string {
     const owner = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(solutionPath));
     if (owner) {
         return owner.uri.fsPath;
     }
+    const first = host.workspaceFolders()[0];
+    return first ? first.uri.fsPath : path.dirname(solutionPath);
+}
+
+/**
+ * The folder whose `.vscode/cmsis.json` CMSIS Solution reads the active target
+ * from: the workspace's first folder, whichever folder holds the solution
+ * (1.72.0 `CmsisSettingsJsonFile`); not `selectionFolder` when the solution
+ * lies in another folder of a multi-root workspace.
+ */
+function targetSettingsFolder(solutionPath: string, host: HandlerHost): string {
     const first = host.workspaceFolders()[0];
     return first ? first.uri.fsPath : path.dirname(solutionPath);
 }
@@ -324,7 +351,7 @@ async function switchActiveTarget(
         return { switched: false, code: 'INVALID_ARGUMENT', reason: `${resolution.reason}. Active target: '${was}'. Declared targets: ${choices}.` };
     }
 
-    const folder = selectionFolder(solutionPath, host);
+    const folder = targetSettingsFolder(solutionPath, host);
     const selectionFile = path.join(folder, '.vscode', 'cmsis.json');
     try {
         fs.mkdirSync(path.dirname(selectionFile), { recursive: true });
@@ -395,6 +422,9 @@ async function probeThreads(
         return { healthy: false, present: executor.hasDebugSession(), detail: `${label}: thread probe failed — ${failureText(caught)}` };
     }
 }
+
+/** The verdict on a session that ended before it came up, which leaves nothing to probe. */
+const ENDED_BEFORE_UP = { stable: false, present: false, detail: 'it ended before it came up' };
 
 /** Two probes on the probe schedule; only the second one decides, and says whether the session object is still there. */
 async function checkSurvival(executor: IDebuggingExecutor, host: HandlerHost): Promise<{ stable: boolean; present: boolean; detail: string }> {
@@ -664,30 +694,6 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
         + `${pushed}${direct}${ids}). Its outputs are incomplete: cmsis_action build before load or flash.`;
 }
 
-/** The cbuild-run.yml of the active target: CMSIS Solution's answer, else `out/<solution>+<target>.cbuild-run.yml`; undefined when neither exists. */
-async function activeCbuildRunFile(solutionPath: string, active: string | undefined): Promise<string | undefined> {
-    const solutionDir = path.dirname(solutionPath);
-    try {
-        const answer: unknown = await withTimeout('cmsis getCbuildRunFile', QUERY_MS,
-            () => Promise.resolve(vscode.commands.executeCommand<unknown>('cmsis-csolution.getCbuildRunFile')));
-        if (typeof answer === 'string' && answer.trim().length > 0) {
-            const named = path.resolve(solutionDir, answer.trim());
-            if (fs.existsSync(named)) {
-                return named;
-            }
-        }
-    } catch {
-        // A CMSIS Solution without the command: the conventional place.
-    }
-    const type = active?.split('@')[0];
-    if (!type) {
-        return undefined;
-    }
-    const stem = path.basename(solutionPath).replace(/\.csolution\.ya?ml$/i, '');
-    const conventional = path.join(solutionDir, 'out', `${stem}+${type}.cbuild-run.yml`);
-    return fs.existsSync(conventional) ? conventional : undefined;
-}
-
 /** `cmsis-csolution.autoDebugLaunch` is off: CMSIS Solution then writes no launch.json or tasks.json. Never throws. */
 function autoDebugLaunchOff(folder: string): boolean {
     try {
@@ -719,13 +725,12 @@ const BUILD_FIRST_HINT = 'cmsis_action build first: its convert writes the cbuil
  * command does nothing then) or `cmsis-csolution.autoDebugLaunch` is off (it
  * writes no file then). At most once per call: the caller then proceeds or
  * refuses.
+ *
+ * The cbuild-run.yml is the one the extension names (the host's lookup, as
+ * for `flash`): Update Debug Tasks reads that file and no other, so another
+ * one found on disk would not predict what it does.
  */
-async function writeCmsisTasks(
-    issue: Pick<Issue, 'context' | 'tracker' | 'deadline'>,
-    folder: string,
-    solutionPath: string,
-    active: string | undefined,
-): Promise<TasksRepair> {
+async function writeCmsisTasks(issue: Pick<Issue, 'context' | 'tracker' | 'deadline'>, folder: string): Promise<TasksRepair> {
     const { host } = issue.context;
     if (autoDebugLaunchOff(folder)) {
         return {
@@ -736,8 +741,8 @@ async function writeCmsisTasks(
             },
         };
     }
-    const runFile = await activeCbuildRunFile(solutionPath, active);
-    if (!runFile) {
+    const runFile = await host.activeCbuildRunFile();
+    if (!runFile || !fs.existsSync(runFile)) {
         return { missing: { reason: 'the active target has no cbuild-run.yml yet', hint: BUILD_FIRST_HINT } };
     }
     let debuggerName: string | undefined;
@@ -772,11 +777,15 @@ async function writeCmsisTasks(
     return { labels, missing: { reason: `Update Debug Tasks (cmsis-csolution.updateDebugTasks) ran for the debugger '${debuggerName}' but wrote none` } };
 }
 
-/** The last step of load_and_debug and attach: wait for the session, then probe it twice. */
+/**
+ * The last step of load_and_debug and attach: wait for the session, then
+ * probe it twice. A session that ended before it came up is not probed.
+ */
 async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean): Promise<ToolText> {
     const { executor, host } = issue.context;
     const tag = issue.tag;
-    if (!(await issue.context.awaitLiveSession(SESSION_WAIT_MS))) {
+    const wait = await issue.context.awaitLiveSession(SESSION_WAIT_MS);
+    if (wait === 'timeout') {
         return {
             text: `CMSIS '${action}'${tag} issued via '${issue.command}'.${loadNote ? ` ${loadNote}` : ''} `
                 + 'The flash/connect pipeline is running in the CMSIS extension '
@@ -788,7 +797,7 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
             status: 'running',
         };
     }
-    const survival = await checkSurvival(executor, host);
+    const survival = wait === 'gone' ? ENDED_BEFORE_UP : await checkSurvival(executor, host);
     const loaded = loadNote ? `${loadNote}; ` : '';
     if (survival.stable) {
         const state = await executor.getCurrentDebugState(3);
@@ -848,36 +857,69 @@ function expectSessionOf(issue: Issue): void {
     expectAgentStart(Math.max(AGENT_START_WINDOW_MS, answerBy(issue) - issue.context.host.now() + 60_000));
 }
 
+/** The attach endpoints as the refusal and the note name them: `localhost:3333 ('… (attach)')`. */
+function endpointList(endpoints: readonly AttachEndpoint[]): string {
+    return endpoints.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
+}
+
+/** The debugger the active target's cbuild-run.yml names; undefined when there is none or it cannot be read. */
+async function activeDebuggerName(host: HandlerHost): Promise<string | undefined> {
+    const runFile = await host.activeCbuildRunFile();
+    if (!runFile) {
+        return undefined;
+    }
+    try {
+        return cbuildRunDebugger(await fs.promises.readFile(runFile, 'utf8'));
+    } catch {
+        return undefined;
+    }
+}
+
 /**
- * Before an attach with no CMSIS Run task alive: when the attach
- * configurations' GDB server ports all stay silent, refuse at once. Otherwise
- * GDB tries for 15 s, fails with "could not connect: Operation timed out.",
- * and VS Code shows it as a modal dialog.
+ * Before an attach while a CMSIS Run task is alive: refuse it when that task
+ * is an FVP model without its GDB server plugin (the FVP adapter's Run; the
+ * plugin belongs to the launch configuration), so that nothing the window
+ * started listens on the attach configurations' ports and load_and_debug is
+ * the way. The task's command line tells; where it does not (a model shim),
+ * the target's Arm-FVP debugger does. The ports are never tried: a GDB server
+ * takes a connection as a client (`src/core/gdbServerPorts.ts`).
  */
-/**
- * Refuse an attach whose launch.json endpoints all stay silent. With no CMSIS Run alive, the
- * next step is to start one; with one alive, the task is no GDB server (the FVP adapter's CMSIS
- * Run is the bare model, the plugin lives in the launch configuration), so the way is load_and_debug.
- */
-async function refuseAttachWithoutServer(issue: Issue, solutionPath: string | undefined, runAlive: boolean): Promise<void> {
-    if (!solutionPath) {
+async function refuseAttachToBareModel(issue: Issue, endpoints: readonly AttachEndpoint[]): Promise<void> {
+    if (endpoints.length === 0) {
         return;
     }
-    const silent = await silentAttachEndpoints(selectionFolder(solutionPath, issue.context.host));
-    if (!silent) {
+    const kinds = issue.tracker.liveExecutions().filter((live) => live.kind === 'run')
+        .map((live) => runCommandKind(taskCommandWords(live.execution.task)));
+    if (kinds.includes('gdbServer')) {
         return;
     }
-    const where = silent.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
-    if (runAlive) {
-        throw new ToolError('NO_SESSION',
-            `CMSIS 'attach'${issue.tag} not started: a CMSIS Run task is alive in this window, but no GDB server listens on ${where}.`,
-            'This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one; the plugin belongs to the launch configuration). '
-                + 'Use load_and_debug, which launches the server with the session; cmsis_action stop_run ends the running task first.');
+    const bareModel = (kinds.length > 0 && kinds.every((kind) => kind === 'bareModel'))
+        || isFvpDebugger(await activeDebuggerName(issue.context.host));
+    if (!bareModel) {
+        return;
     }
     throw new ToolError('NO_SESSION',
-        `CMSIS 'attach'${issue.tag} not started: no GDB server listens on ${where}, and no CMSIS Run task is alive in this window.`,
-        'cmsis_action run starts CMSIS Run, which hosts the GDB server with a probe adapter (pyOCD resets the target and lets it run), '
-            + 'without building or programming; attach after it. load_and_run programs the built image first; load_and_debug starts a session of its own.');
+        `CMSIS 'attach'${issue.tag} not started: a CMSIS Run task is alive in this window, but it runs the FVP model without the `
+            + `GDB server plugin: nothing it started listens on ${endpointList(endpoints)}.`,
+        'This adapter\'s CMSIS Run hosts no GDB server (an FVP runs the image without one; the plugin belongs to the launch configuration). '
+            + 'Use load_and_debug, which launches the server with the session; cmsis_action stop_run ends the running task first.');
+}
+
+/**
+ * An attach with no CMSIS Run task alive goes ahead unchecked: a GDB server
+ * started outside the window may listen, and GDB's own connect finds out. A
+ * reply that is still `running` says what happens when none does.
+ */
+function withoutRunNote(answer: ToolText, endpoints: readonly AttachEndpoint[]): ToolText {
+    if (typeof answer === 'string' || answer.status !== 'running' || endpoints.length === 0) {
+        return answer;
+    }
+    return {
+        ...answer,
+        text: `${answer.text} No CMSIS Run task is alive in this window, so only a GDB server started outside it can serve `
+            + `${endpointList(endpoints)}; without one the session ends at GDB's 15 s connect timeout. With a probe adapter, `
+            + 'cmsis_action run starts the server without programming; load_and_debug starts a session of its own.',
+    };
 }
 
 async function loadAndDebug(issue: Issue): Promise<ToolText> {
@@ -913,11 +955,11 @@ async function loadAndDebug(issue: Issue): Promise<ToolText> {
     return sessionPhase(issue, 'load_and_debug', loadNote, false);
 }
 
-/** The csolution files of the open workspace, at most `max`, or undefined when the search failed or took too long. */
-async function workspaceSolutionFiles(host: HandlerHost, max = 5): Promise<string[] | undefined> {
+/** The csolution files of the open workspace, at most five, or undefined when the search failed or took too long. */
+async function workspaceSolutionFiles(host: HandlerHost): Promise<string[] | undefined> {
     try {
         const found = await withTimeout('csolution search', SOLUTION_SEARCH_MS,
-            () => Promise.resolve(host.findFiles('**/*.csolution.{yml,yaml}', SOLUTION_SEARCH_EXCLUDE, max)));
+            () => Promise.resolve(host.findFiles('**/*.csolution.{yml,yaml}', SOLUTION_SEARCH_EXCLUDE, 5)));
         return found.map((uri) => uri.fsPath).sort();
     } catch {
         return undefined;
@@ -925,17 +967,66 @@ async function workspaceSolutionFiles(host: HandlerHost, max = 5): Promise<strin
 }
 
 /**
- * `file` spelled as the CMSIS Solution extension lists it. Its activateSolution
- * takes a path only when it equals, character for character, an entry of the
- * list it built from `vscode.workspace.findFiles` (`Uri.fsPath`: the names as
- * on disk, on Windows the drive letter in lower case); for any other spelling
- * it opens its "Select a solution" picker and waits for the user (#84, #99).
- * The workspace search gives the same spelling; a file it does not find gets
- * at least the drive letter `Uri.file` writes.
+ * The csolution files the CMSIS Solution extension lists for this window, as
+ * it spells them: its own search (1.72.0 `getSolutionPaths`), every workspace
+ * folder with its include and exclude, no limit, `Uri.fsPath` of each.
+ * Undefined when the search failed or took too long.
  */
-async function solutionAsListed(file: string, host: HandlerHost): Promise<string> {
-    const found = await workspaceSolutionFiles(host, SOLUTION_MATCH_MAX);
-    return found?.find((listed) => samePath(listed, file)) ?? vscode.Uri.file(file).fsPath;
+async function listedSolutions(host: HandlerHost): Promise<string[] | undefined> {
+    try {
+        const exclude = listedSolutionExclude(vscode.workspace.getConfiguration('cmsis-csolution').get<unknown>('exclude'));
+        const found = await withTimeout('csolution list', SOLUTION_LIST_MS,
+            () => Promise.resolve(host.findFiles(LISTED_SOLUTION_GLOB, exclude)));
+        return found.map((uri) => uri.fsPath);
+    } catch {
+        return undefined;
+    }
+}
+
+/** The real path of an existing file or folder: links resolved, the names as the file system stores them; undefined when it cannot be resolved. */
+function realPathOf(file: string): string | undefined {
+    try {
+        return fs.realpathSync.native(file);
+    } catch {
+        return undefined;
+    }
+}
+
+/** Whether `a` and `b` are the same file: the same real path when both resolve, else the same path (`samePath`). */
+function sameFile(a: string, b: string): boolean {
+    const realA = realPathOf(a);
+    const realB = realA === undefined ? undefined : realPathOf(b);
+    return realA !== undefined && realB !== undefined ? realA === realB : samePath(a, b);
+}
+
+/** Whether `target` is `folder` or lies below it, as written or once both are resolved to real paths. */
+function liesInFolder(target: string, folder: string): boolean {
+    if (liesInside(target, folder)) {
+        return true;
+    }
+    const realTarget = realPathOf(target);
+    const realFolder = realTarget === undefined ? undefined : realPathOf(folder);
+    return realTarget !== undefined && realFolder !== undefined && liesInside(realTarget, realFolder);
+}
+
+/**
+ * `file` spelled as the CMSIS Solution extension lists it, or undefined when
+ * the extension does not list it. Its activateSolution takes a path only when
+ * it equals, character for character, an entry of its list (`Uri.fsPath`:
+ * the workspace folder as VS Code has it, the names below it as on disk, on
+ * Windows the drive letter in lower case); for any other path it opens its
+ * "Select a solution" picker and waits for the user (#84, #99). The entry is
+ * the same file by real path, so another letter case, other separators or a
+ * path through a link find it; one spelled as given comes first. Without the
+ * list, the path goes in as `Uri.file` writes it.
+ */
+async function solutionAsListed(file: string, host: HandlerHost): Promise<string | undefined> {
+    const listed = await listedSolutions(host);
+    if (listed === undefined) {
+        return vscode.Uri.file(file).fsPath;
+    }
+    const same = listed.filter((entry) => sameFile(entry, file));
+    return same.find((entry) => samePath(entry, file)) ?? same[0];
 }
 
 /**
@@ -1013,19 +1104,27 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
     }
     const named = place.named ?? (place.solutions.length === 1 ? place.solutions[0] : undefined);
     let current = await activeSolution();
-    const isActive = (file: string): boolean => current.active && current.solutionPath !== undefined && samePath(current.solutionPath, file);
+    const isActive = (file: string): boolean => current.active && current.solutionPath !== undefined && sameFile(current.solutionPath, file);
     if (named === undefined) {
         const active = current.active ? `Active solution: ${current.description}.` : 'None is active.';
         return `${here} ${solutionsNote(place)} ${active} Pass the path of one *.csolution.yml to activate it.`;
     }
     let wanted = named;
     if (!isActive(named)) {
+        const listed = await solutionAsListed(named, host);
+        if (listed === undefined) {
+            // Asked for a path it does not list, the extension would only open its picker.
+            throw new ToolError('INVALID_ARGUMENT',
+                `CMSIS 'open_solution' not attempted: the CMSIS Solution extension does not list ${named} as a solution of this window, `
+                    + 'so it would ask the user to pick another one instead.',
+                UNLISTED_HINT);
+        }
         if (executor.hasDebugSession()) {
             throw new ToolError('PROBE_BUSY',
                 `CMSIS 'open_solution' not attempted: activating ${named} re-loads the solution, which is not done under a live debug session.`,
                 'Call stop_debugging first, then repeat this call.');
         }
-        wanted = await solutionAsListed(named, host);
+        wanted = listed;
         try {
             await withTimeout('cmsis activateSolution', ACTIVATION_MS,
                 () => Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.activateSolution', wanted)));
@@ -1093,7 +1192,7 @@ async function openSolution(context: CmsisActionContext, given: string | undefin
     const place = placeOf(given);
     const probe = place.named ?? place.folder;
     const folders = host.workspaceFolders();
-    if (folders.some((folder) => liesInside(probe, folder.uri.fsPath))) {
+    if (folders.some((folder) => liesInFolder(probe, folder.uri.fsPath))) {
         return activateHere(context, place, deadline);
     }
     const empty = folders.length === 0;
@@ -1256,7 +1355,7 @@ export async function runCmsisAction(
         const folder = selectionFolder(solution.solutionPath, host);
         labels = await tracker.taskLabels(folder);
         if (labels && !hasCmsisTasks(labels)) {
-            const repair = await writeCmsisTasks(issue, folder, solution.solutionPath, active);
+            const repair = await writeCmsisTasks(issue, folder);
             labels = repair.labels ?? labels;
             if (repair.wrote === undefined) {
                 throw missingTaskRefusal(action as JobAction, tag, label, labels, repair.missing);
@@ -1276,10 +1375,14 @@ export async function runCmsisAction(
             return `CMSIS '${action}'${tag} issued via '${command}'. It runs in the CMSIS extension — check the CMSIS output channel if you need to confirm.`;
         case 'attach': {
             const runAlive = tracker.probeOwners().some((owner) => owner.kind === 'run' || owner.kind === 'loadRun');
-            await refuseAttachWithoutServer(issue, solution.solutionPath, runAlive);
+            const endpoints = solution.solutionPath ? await launchAttachEndpoints(selectionFolder(solution.solutionPath, host)) : [];
+            if (runAlive && solution.solutionPath) {
+                await refuseAttachToBareModel(issue, endpoints);
+            }
             expectSessionOf(issue);
             await issueCommand(issue, action);
-            return sessionPhase(issue, action, '', runAlive);
+            const answer = await sessionPhase(issue, action, '', runAlive);
+            return runAlive ? answer : withoutRunNote(answer, endpoints);
         }
         case 'load_and_debug':
             return loadAndDebug(issue);

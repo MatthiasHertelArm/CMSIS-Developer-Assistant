@@ -16,7 +16,8 @@
 
 /**
  * The few lines of a `*.cbuild-run.yml` that identify the target's packs
- * (and, in `cbuildRunDebugger`, the name of its debugger):
+ * (and, in `cbuildRunDebugger` and `cbuildRunProbeId`, the name of its
+ * debugger and the probe it selects):
  *
  *   cbuild-run:
  *     solution: TFLiteRT_HelloWorld.csolution.yml
@@ -161,6 +162,20 @@ export function parseCbuildRun(content: string, file: string): CbuildRunInfo {
     return info;
 }
 
+/** A key of the `debugger:` node itself (four spaces in), unquoted; undefined when absent or empty. */
+function debuggerKey(content: string, key: string): string | undefined {
+    const lines = content.split(/\r?\n/);
+    const start = lines.findIndex((line) => /^ {2}debugger:\s*$/.test(line));
+    if (start < 0) { return undefined; }
+    for (const line of lines.slice(start + 1)) {
+        // The next key at the debugger's level or above ends its node.
+        if (/^ {0,2}\S/.test(line)) { break; }
+        const m = line.match(/^ {4}([a-z-]+):\s*(.*?)\s*$/);
+        if (m && m[1] === key) { return unquote(m[2]) || undefined; }
+    }
+    return undefined;
+}
+
 /**
  * The `name:` of the `debugger:` node of a cbuild-run.yml (`CMSIS-DAP@pyOCD`,
  * `J-Link Server`, …), which csolution writes from the target set: the
@@ -173,16 +188,17 @@ export function parseCbuildRun(content: string, file: string): CbuildRunInfo {
  *       protocol: swd
  */
 export function cbuildRunDebugger(content: string): string | undefined {
-    const lines = content.split(/\r?\n/);
-    const start = lines.findIndex((line) => /^ {2}debugger:\s*$/.test(line));
-    if (start < 0) { return undefined; }
-    for (const line of lines.slice(start + 1)) {
-        // The next key at the debugger's level or above ends its node.
-        if (/^ {0,2}\S/.test(line)) { break; }
-        const m = line.match(/^ {4}name:\s*(.*?)\s*$/);
-        if (m) { return unquote(m[1]) || undefined; }
-    }
-    return undefined;
+    return debuggerKey(content, 'name');
+}
+
+/**
+ * The `probe-id:` of the `debugger:` node: a key of the target set's
+ * debugger that csolution copies into the cbuild-run file, and the first
+ * place CMSIS Solution takes the `--uid` of its CMSIS tasks from, before the
+ * setting `cmsis-csolution.probe-id`. Undefined when the file has none.
+ */
+export function cbuildRunProbeId(content: string): string | undefined {
+    return debuggerKey(content, 'probe-id');
 }
 
 /**
@@ -208,6 +224,19 @@ export function defaultPackRoot(
 
 export function expandPackRoot(filePath: string, packRoot: string): string {
     return filePath.replace(/\$\{CMSIS_PACK_ROOT\}/g, packRoot).replace(/\$CMSIS_PACK_ROOT\b/g, packRoot);
+}
+
+/**
+ * A file a cbuild-run.yml names, as a path: csolution writes a file under
+ * the pack root with `${CMSIS_PACK_ROOT}`, any other one relative to the
+ * folder of the cbuild-run file (`out/`), or absolute when no relative path
+ * exists. Relative is resolved against that folder, never the working
+ * directory of the process. `${CMSIS_COMPILER_ROOT}`, which it writes for
+ * files under the compiler root (the toolbox's `etc/` by default), is not
+ * expanded: no SVD or image lives there.
+ */
+export function cbuildRunFilePath(entry: string, cbuildRunFile: string, packRoot: string): string {
+    return path.resolve(path.dirname(cbuildRunFile), expandPackRoot(entry, packRoot));
 }
 
 /** `<packRoot>/<Vendor>/<Name>/<version>` — the version is required. */

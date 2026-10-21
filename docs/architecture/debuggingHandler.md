@@ -195,7 +195,10 @@ target runs.
   on another session, or the target resumed without the adapter saying so:
   a `TARGET_RUNNING` refusal whose hint is `wait_for_stop` or
   `pause_execution`. `src/core/variableView.ts` renders them, with caps unless the
-  agent names the variables it wants.
+  agent names the variables it wants. A scope the executor left unread (the
+  CMSIS Debugger's Registers) is named in one line that points to
+  `read_core_registers`; a read by name shows it only when a name was not
+  found.
 - An expression whose value has children — a struct, an array, a pointer —
   lists them under its `Result:` as `Fields:`, one level unless the call
   asks for `depth` 2 or 3. An agent that gets only `{...}` reads the fields
@@ -211,18 +214,35 @@ target runs.
   registers `KEY` or `UNLOCK`. On the CMSIS Debugger the executor sends such
   a command in the adapter's `>` prefix and returns the text GDB printed.
 - The memory dump, the core-register table and the cycle-counter text come
-  from `src/handler/targetText.ts`.
+  from `src/handler/targetText.ts`. A dump labels its rows from the first
+  byte the read returned and, when part of the range could not be read,
+  says how much was read and which part was not.
 - `diagnose_fault` combines the decoded fault registers, the stacked
   exception frame chosen by `EXC_RETURN`, the top of the call stack and the
   SVD's view of the faulting address into one report with ranked hypotheses
-  (`src/core/faultTriage.ts`). Each read after the fault registers turns into
-  a note when it fails, instead of failing the call — except a wedged probe:
+  (`src/core/faultTriage.ts`). With TrustZone, `EXC_RETURN` can put the frame
+  on the stack of the Security state the core is not in, and the integrity
+  signature and R4–R11 below the stacked R0 (`selectExceptionFrame()`). The
+  other state's banked stack pointers are read only for such a frame
+  (`bankedStackRegisters()`); a server that does not report them gets a note,
+  never a frame read from the current state's MSP or PSP. Each read after the
+  fault registers turns into a note when it fails, instead of failing the
+  call — except a wedged probe:
   `get_fault_info` and `diagnose_fault` answer the executor's `PROBE_WEDGED`
   itself rather than a diagnosis built on registers that were not read (#3).
   Both read DHCSR once more (`probeDebugPort()`) and add a lockup note when
   `S_LOCKUP` is set.
 - `lookup_peripheral` and `lookup_register` answer from the device SVD
   (`src/core/svdParser.ts`, `src/core/svdLookup.ts`) without a session.
+  During one, they and `diagnose_fault` take the SVD of the session the
+  executor acts on (`getActiveSession()`), focused or not, so they agree
+  with `read_peripheral_register`: the tool's `svdFile` when given, else
+  that session's launch `svdFile`, then its cbuild-run file, then the
+  workspace's. A launch `svdFile` describes the session's own core, so a
+  lookup that names a core with `pname` skips it and takes that core's
+  entry of the cbuild-run file. A cbuild-run file names its SVD under
+  `${CMSIS_PACK_ROOT}` or relative to its own folder, as csolution writes
+  it.
 
 ## CMSIS actions and flashing
 
@@ -248,9 +268,27 @@ window's CMSIS job tracker (next section):
 - `load_and_debug` waits for its pre-launch `CMSIS Load` when the launch
   configuration has one (a failed Load is the answer, before any session
   probe); then it and `attach` wait for a live session and probe its threads
-  twice (`probeSchedule()`). A session object without threads yet is
+  twice (`probeSchedule()`). The CMSIS Solution command returns before the
+  session is up, so the wait sees GDB connect: until the adapter takes
+  requests the session is `initializing`, not live. A session still
+  connecting when the wait runs out, or one without threads yet, is
   answered with status `running`; `TASK_FAILED` is kept for a session that
-  is gone.
+  is gone, and one that ends before it came up ends the wait at once, where
+  a start or a restart waits on (`awaitLiveSession()`).
+- `attach` connects to a GDB server it does not start, so before the
+  command it checks only what the window knows
+  (`refuseAttachToBareModel()`, `src/core/gdbServerPorts.ts`): while the
+  window's CMSIS Run task is an FVP model without its GDB server plugin —
+  the task's command line says so, or, for a model shim, the target's
+  `Arm-FVP` debugger — nothing the window started serves the attach
+  configurations' ports, and the call is refused with `load_and_debug` as
+  the way. It never connects to such a port to find out: a GDB server takes
+  any connection as a client (pyOCD halts the target for it, resumes it
+  afterwards and, without `--persist`, shuts down; a J-Link server started
+  with `-singlerun` closes with its last client). With no CMSIS Run alive
+  the attach goes ahead, since a server started outside the window may
+  listen, and GDB's own connect decides; a reply still `running` then says
+  what happens when none does.
 - `status` launches nothing and needs no solution: it waits for the job in
   flight, or lists the recent results and the live CMSIS tasks, with the
   error lines of a failed build once they are in.
@@ -267,13 +305,20 @@ window's CMSIS job tracker (next section):
   switches the target.
 
 - `open_solution` needs no active solution either. It takes the path of a
-  csolution or of its folder. A folder this window has open is activated
-  here (`cmsis-csolution.activateSolution`, verified, refused under a live
+  csolution or of its folder. A folder this window has open, by its path
+  or by its real path (links resolved, letter case as on disk;
+  `liesInFolder()`), is activated here
+  (`cmsis-csolution.activateSolution`, verified, refused under a live
   session). The extension takes only a path spelled exactly as in its list,
   which it builds from `vscode.workspace.findFiles`, and otherwise waits in
-  its own picker; so the path goes in as the workspace search spells it
-  (`solutionAsListed()`), and a solution it did not take while another
-  stays active is `TASK_FAILED`, not a hint to build. A window without any folder opens it in itself
+  its own picker. So open_solution runs the extension's own search
+  (`listedSolutions()`: its include and its exclude of hidden folders and
+  `cmsis-csolution.exclude`, from `src/core/bootstrapState.ts`, without a
+  limit) and hands over the entry that is the same file as the path given,
+  compared by real path (`solutionAsListed()`), whatever the letter case,
+  the separators or the links on the way. A csolution the extension does
+  not list is refused before it is asked, and one it did not take while
+  another stays active is `TASK_FAILED`, not a hint to build. A window without any folder opens it in itself
   (`openHere()`) when the client runs outside the window — the tool passes
   the client's `initialize` name, `src/core/clientHosting.ts` knows the
   CLIs: VS Code reloads the window for that, the MCP server with it, so the
@@ -339,7 +384,11 @@ into the CMSIS tasks and launch configurations and leaves other tasks alone
 debugger is named (the command does nothing then) or when
 `cmsis-csolution.autoDebugLaunch` is off (it writes no file then). Otherwise,
 or when it wrote nothing, the refusal says why and that the user chooses
-the debugger in Manage Solution Settings.
+the debugger in Manage Solution Settings. The cbuild-run.yml is the one the
+extension names, through the lookup `flash` uses
+(`HandlerHost.activeCbuildRunFile`): Update Debug Tasks reads that file and
+no other, so a file found on disk by convention would not predict what it
+does.
 
 A window without an active solution is an ordinary state for an agent that
 starts in an empty VS Code, so the refusal says which part is missing
@@ -353,10 +402,21 @@ there are the `bootstrap` topic of the agent guide and the skill
 `cmsis-bootstrap`.
 
 When `target` names a target-type or target-set that is not active, the
-selection is written into the solution folder's `.vscode/cmsis.json`, the
-solution is re-activated, and the switch is verified through the extension
-before anything runs (`src/core/cmsisTarget.ts` reads the csolution). A
-switch is refused under a live debug session.
+selection is written into `.vscode/cmsis.json`, the solution is
+re-activated, and the switch is verified through the extension before
+anything runs. The file is the one CMSIS Solution reads: that of the
+workspace's first folder, also for a solution in another folder of a
+multi-root workspace, keyed by the solution's path relative to that folder,
+a key the extension splits at every dot. The solution's `tasks.json` and
+`launch.json`, by contrast, are those of the folder that holds it. A switch
+is refused under a live debug session. `src/core/cmsisTarget.ts` reads the
+declared target-types and their sets from the csolution and edits the file.
+There is no YAML parser among the dependencies, so it scans the lines and
+follows the block structure by column: the keys of an entry count in any
+order and a list may stand in its key's column, as YAML allows, and a
+`type:` in a nested list (`images:`, a debugger's `reset:`) declares no
+target-type. A set's index counts every entry of `target-set:`, as the CMSIS
+Solution extension's index into that list does.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else the one of the CMSIS Solution extension's active target
@@ -367,7 +427,19 @@ refuses while a session or a CMSIS task holds the probe,
 and runs `pyocd load --no-wait --cbuild-run` through `src/core/flashController.ts`
 with the pyOCD the CMSIS tasks use: the CMSIS Debugger extension's bundled
 one, else the one the solution's `.cmsis/tools-environment.yml` names, else
-one on PATH (`resolvePyocd()`). A refusal is `PROBE_BUSY`, a file that
+one on PATH (`resolvePyocd()`). pyOCD's cbuild-run support selects no probe,
+so `flash` passes the selection of CMSIS Solution's CMSIS Load task: `--probe`
+by the debug adapter the cbuild-run file names (`pyocdProbeType()`), `--uid`
+by that file's `debugger: probe-id`, else by the setting
+`cmsis-csolution.probe-id` (`HandlerHost.solutionProbeId`). Whether a run
+worked is pyOCD's exit status; its output explains the result. A failure
+shows the error and critical log lines and tracebacks, or the probes pyOCD
+lists when several match and it chooses none, which the result names with the
+place the user selects one. A success lists the warnings and errors pyOCD
+logged anyway. A data chunk of the image that pyOCD could not add (no writable
+memory at its address, or overlapping data) does not fail the run, since
+pyOCD goes on and exits 0, but it turns the success into a ⚠️: the target
+does not hold the image as built. A refusal is `PROBE_BUSY`, a file that
 cannot be chosen `INVALID_ARGUMENT`, no runnable pyOCD `TOOL_DISABLED`, a
 failing run `TASK_FAILED`, and a run killed at its budget is answered with
 status `timeout`.
@@ -630,7 +702,7 @@ by #56.
 | `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
 | `src/core/solutionApi.ts`, `src/core/catalogQuery.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data |
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
-| `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; the csolution files below a folder that is not open yet |
+| `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |

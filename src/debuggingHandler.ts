@@ -61,7 +61,7 @@ import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/
 import { HardwareTimeoutError } from './utils/timeout';
 import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
-import { classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
+import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
 import { isLockedUp, LOCKUP_NOTE } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
@@ -77,12 +77,13 @@ import {
     DEFAULT_NAME_LISTING_LIMIT,
     expandFields,
     formatMissingNames,
+    noteSkippedScopes,
     renderFields,
     renderScopes,
     renderVariableNames,
     selectVariables,
 } from './core/variableView';
-import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, runCmsisAction } from './handler/cmsisAction';
+import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction } from './handler/cmsisAction';
 import { CatalogQuery, queryCatalog } from './core/catalogQuery';
 import { acquireSolutionApi } from './core/solutionApi';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
@@ -304,7 +305,8 @@ interface StopOutcome {
     reason?: string | null;
 }
 
-type VariablesReply = { scopes?: DapScope[] } | undefined | null;
+/** What `getVariables` resolves: the scopes read and the names of those it left out (the CMSIS Debugger's Registers). */
+type VariablesReply = { scopes?: DapScope[]; skipped?: string[] } | undefined | null;
 type EvaluateReply = { result?: unknown; type?: string; variablesReference?: number } | undefined | null;
 type RedactCallback = (name: string, value: string) => { value: string; redacted: boolean };
 
@@ -409,6 +411,11 @@ function requestedNames(names: string[] | undefined): string[] | undefined {
     return names && names.length > 0 ? names : undefined;
 }
 
+/** The left-out scopes a reply names: those of a listing, none for a read that found every name it was given. */
+function unreadScopes(skipped: string[], names: string[] | undefined, missing: string[]): string[] {
+    return names && missing.length === 0 ? [] : skipped;
+}
+
 // ── The handler ────────────────────────────────────────────────────────────
 
 export class DebuggingHandler
@@ -500,21 +507,34 @@ export class DebuggingHandler
         return this.host().workspaceFolders().map((folder) => folder.uri.fsPath);
     }
 
-    /** Poll until the session is running or stopped. The last backoff can overshoot the budget (KB10). */
-    private async awaitLiveSession(overrideMs?: number): Promise<boolean> {
+    /**
+     * Poll until the session is running or stopped. With `endWhenGone`, a
+     * session that showed up during the wait and is gone again ends it: it
+     * ended before it came up. Without, the wait goes on until the budget is
+     * spent, as for a start or a restart. The last backoff can overshoot the
+     * budget (KB10).
+     */
+    private async awaitLiveSession(overrideMs?: number, endWhenGone = false): Promise<LiveSessionWait> {
         const clock = this.host();
         const budgetMs = waitLimitMs(this.configuredSeconds, overrideMs);
         const began = clock.now();
+        let seen = false;
         for (let attempt = 0; clock.now() - began < budgetMs; attempt++) {
             const { state } = await this.dbg.getSessionStatus();
             if (state === 'running' || state === 'stopped') {
                 logger.info(`Debug session is live (state: ${state})`);
-                return true;
+                return 'live';
+            }
+            if (state !== 'no-session') {
+                seen = true;
+            } else if (seen && endWhenGone) {
+                logger.info('The debug session ended before it came up');
+                return 'gone';
             }
             logger.debug(`Waiting for the debug session to come up (attempt ${attempt}, state: ${state})`);
             await clock.sleep(Math.min(1000 * 2 ** attempt, 10_000) + Math.random() * 200);
         }
-        return false;
+        return 'timeout';
     }
 
     /**
@@ -645,8 +665,8 @@ export class DebuggingHandler
         return frameId;
     }
 
-    /** Scopes of the focused frame; a missing `global` scope widens to `all`. */
-    private async focusedScopes(scope: VariableScope, timeoutMs: number | undefined): Promise<{ scopes: DapScope[]; widened: boolean }> {
+    /** Scopes of the focused frame and those left unread; a missing `global` scope widens to `all`. */
+    private async focusedScopes(scope: VariableScope, timeoutMs: number | undefined): Promise<{ scopes: DapScope[]; widened: boolean; skipped: string[] }> {
         const frameId = this.focusedFrame();
         const hasScopes = (reply: VariablesReply): reply is { scopes: DapScope[] } =>
             Array.isArray(reply?.scopes) && reply.scopes.length > 0;
@@ -656,7 +676,7 @@ export class DebuggingHandler
             reply = await this.dbg.getVariables(frameId, 'all', timeoutMs);
             widened = true;
         }
-        return { scopes: hasScopes(reply) ? reply.scopes : [], widened };
+        return { scopes: hasScopes(reply) ? reply.scopes : [], widened, skipped: reply?.skipped ?? [] };
     }
 
     private variableRedactor(): RedactCallback | undefined {
@@ -706,7 +726,7 @@ export class DebuggingHandler
     }
 
     private async requireLiveStart(): Promise<void> {
-        if (!(await this.awaitLiveSession())) {
+        if ((await this.awaitLiveSession()) !== 'live') {
             throw new Error('Debug session started but failed to become active within timeout period');
         }
     }
@@ -794,7 +814,7 @@ export class DebuggingHandler
             }
             const logpoints = this.dbg.gdbLogpoints().length;
             const how = await this.dbg.restart();
-            if (!(await this.awaitLiveSession())) {
+            if ((await this.awaitLiveSession()) !== 'live') {
                 throw new Error(`Debug session restart issued but target did not become ready within ${durationText(waitLimitMs(this.configuredSeconds, undefined))}. `
                     + 'The probe or target may be unresponsive.');
             }
@@ -1426,37 +1446,38 @@ export class DebuggingHandler
     handleListVariableNames(args: ScopeRequest): Answer {
         return this.fence('list_variable_names', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('list variable names');
-            const { scopes } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
+            const { scopes, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
                 return NO_SCOPES_HERE;
             }
-            return renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT });
+            return noteSkippedScopes(renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT }), skipped);
         });
     }
 
     handleGetVariables(args: ValuesRequest): Answer {
         return this.fence('get_variables_values', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read variables');
-            const { scopes, widened } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
+            const { scopes, widened, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
                 return NO_SCOPES_HERE;
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
+            const unread = unreadScopes(skipped, names, picked.missing);
             const note = widened
                 ? 'Note: No dedicated "Global" scope is available from this debug adapter. Showing all available scopes instead. '
                     + 'Use evaluate_expression to inspect specific global variables by name.\n\n'
                 : '';
             if (names && picked.scopes.length === 0) {
-                return `${note}None of the requested variables are in scope: ${names.join(', ')}.\n`
-                    + 'Call list_variable_names to see what is available here.';
+                return noteSkippedScopes(`${note}None of the requested variables are in scope: ${names.join(', ')}.\n`
+                    + 'Call list_variable_names to see what is available here.', unread);
             }
             const listing = renderScopes(picked.scopes, {
                 header: 'Variables',
                 redact: this.variableRedactor(),
                 limits: names ? undefined : DEFAULT_LISTING_LIMITS,
             });
-            return note + listing + formatMissingNames(picked.missing);
+            return noteSkippedScopes(note + listing + formatMissingNames(picked.missing), unread);
         });
     }
 
@@ -1471,15 +1492,16 @@ export class DebuggingHandler
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
+            const unread = unreadScopes(reply?.skipped ?? [], names, picked.missing);
             if (names && picked.scopes.length === 0) {
-                return `None of the requested variables are in scope at frameId=${args.frameId}: ${names.join(', ')}.`;
+                return noteSkippedScopes(`None of the requested variables are in scope at frameId=${args.frameId}: ${names.join(', ')}.`, unread);
             }
             const listing = renderScopes(picked.scopes, {
                 header: `Variables for frameId=${args.frameId}`,
                 redact: this.variableRedactor(),
                 limits: names ? undefined : DEFAULT_LISTING_LIMITS,
             });
-            return listing + formatMissingNames(picked.missing);
+            return noteSkippedScopes(listing + formatMissingNames(picked.missing), unread);
         });
     }
 
@@ -1536,8 +1558,8 @@ export class DebuggingHandler
         return this.fence('read_memory', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read memory');
             const format = args.format ?? 'hex';
-            const bytes = await this.dbg.readMemory(args.address, args.length, args.timeoutMs);
-            return renderMemoryDump(args.address, args.length, bytes, format);
+            const read = await this.dbg.readMemory(args.address, args.length, args.timeoutMs);
+            return renderMemoryDump(args.address, args.length, read, format);
         });
     }
 
@@ -1602,7 +1624,20 @@ export class DebuggingHandler
                 psplim: registerNumber(raw.psplim),
             };
 
-            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp);
+            // A frame on the other Security state's stack needs that state's banked registers, read only then.
+            const bankedNames = bankedStackRegisters(regs.lr);
+            const banked: Record<string, number | undefined> = {};
+            if (bankedNames.length > 0) {
+                try {
+                    const values = await this.dbg.readCoreRegisters(timeoutMs, bankedNames);
+                    for (const name of bankedNames) {
+                        banked[name] = registerNumber(values[name]);
+                    }
+                } catch {
+                    // Left undefined: the frame note says which register is missing.
+                }
+            }
+            const selection = selectExceptionFrame(regs.lr, regs.msp, regs.psp, banked);
             let frame: StackedFrame | null = null;
             let frameNote: string | undefined;
             if (!selection.isExcReturn) {
@@ -1610,10 +1645,10 @@ export class DebuggingHandler
                     ? 'LR unavailable — read_core_registers, then read_memory at PSP/MSP'
                     : 'LR is not an EXC_RETURN value — halted deeper inside the handler; get_call_stack has the frames';
             } else if (selection.sp === null) {
-                frameNote = `${selection.source} unavailable — read_core_registers`;
+                frameNote = selection.note ?? `${selection.source} unavailable — read_core_registers`;
             } else {
                 try {
-                    frame = parseStackedFrame(await this.dbg.readExceptionFrame(selection.sp, timeoutMs));
+                    frame = parseStackedFrame(await this.dbg.readExceptionFrame(selection.sp, timeoutMs, selection.stateOffset), selection.stateOffset);
                     if (!frame) {
                         frameNote = `short read at ${selection.source}`;
                     }
@@ -1635,7 +1670,8 @@ export class DebuggingHandler
             let device: SvdDevice | null = null;
             let svdNote: string | undefined;
             try {
-                device = (await loadSvdForLookup({})).device;
+                // The SVD of the session the registers were read from.
+                device = (await loadSvdForLookup({ session: this.dbg.getActiveSession() })).device;
                 if (!device) {
                     svdNote = 'no SVD found — addresses are classified by the Cortex-M system map only; '
                         + 'pass svdFile to lookup_peripheral to resolve them';
@@ -1662,7 +1698,7 @@ export class DebuggingHandler
 
     handleLookupPeripheral(args?: PeripheralLookup): Answer {
         return this.fence('lookup_peripheral', args?.timeoutMs, 'error', async () => {
-            const loaded = await loadSvdForLookup({ svdFile: args?.svdFile, pname: args?.pname });
+            const loaded = await loadSvdForLookup({ svdFile: args?.svdFile, pname: args?.pname, session: this.dbg.getActiveSession() });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
             }
@@ -1689,7 +1725,7 @@ export class DebuggingHandler
 
     handleLookupRegister(args: RegisterLookup): Answer {
         return this.fence('lookup_register', args.timeoutMs, 'error', async () => {
-            const loaded = await loadSvdForLookup({ svdFile: args.svdFile, pname: args.pname });
+            const loaded = await loadSvdForLookup({ svdFile: args.svdFile, pname: args.pname, session: this.dbg.getActiveSession() });
             if (!loaded.device) {
                 return missingSvdText(loaded.tried);
             }
@@ -1739,7 +1775,7 @@ export class DebuggingHandler
         const run = (): Answer => this.fence('cmsis_action', waitMs, 'reply', () => runCmsisAction({
             executor: this.dbg,
             host: this.host(),
-            awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs),
+            awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs, true),
             renderFullState: (state) => this.fullState(state),
         }, args.action, args.target, waitMs, args.path, args.client, args.pack, args), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
         return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();

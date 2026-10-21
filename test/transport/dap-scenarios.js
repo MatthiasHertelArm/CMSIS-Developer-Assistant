@@ -52,8 +52,9 @@
 //     allocation after a stop; they are invalid while the target runs;
 //   - registers evaluate in GDB's natural format for pyOCD's target
 //     description: r0-r12, lr, xpsr, control, ... are `int` (signed decimal,
-//     so EXC_RETURN 0xfffffff9 reads "-7"), sp/msp/psp are `void *`, pc is a
-//     code pointer "0x80002fe <main+22>", an unknown `$name` is `void`;
+//     so EXC_RETURN 0xfffffff9 reads "-7"), sp/msp/psp and the Security
+//     Extension's msp_s/psp_s/msp_ns/psp_ns are `void *`, pc is a code
+//     pointer "0x80002fe <main+22>", an unknown `$name` is `void`;
 //   - an inaccessible -data-read-memory-bytes fails "Unable to read memory.";
 //     a wedged probe (`wedged`) makes every address inaccessible, DHCSR
 //     included, while threads, stack and registers still answer from GDB's
@@ -66,6 +67,11 @@
 //     answers "No line N in file".
 //   - the GDB server's own output (pyOCD's log) is category `server`, as
 //     cdt-gdb-adapter 1.10 forwards the server's stdout and stderr.
+//   - a session with `connectMs` takes no requests while GDB connects, and
+//     none after `serverExits` while it shuts down: cdt-gdb-adapter answers
+//     every request then with an empty success that carries no body. Once
+//     connected it sends `initialized` and answers the launch or attach
+//     request, or answers it with GDB's error (`connectFails`).
 // VS Code itself is modelled only as far as the code under test can see it:
 // after a stopped event `activeStackItem` becomes frame 1000 of the focused
 // session at once, a continued event clears it; a change of the breakpoint
@@ -302,6 +308,11 @@ const LOCATIONS = {
         frame('HardFault_Handler', null, 0, 0x080001a4), frame('<signal handler called>', null, 0, 0xfffffff9),
         frame('led_toggle', 'led.c', 18, 0x0800027a), frame('main', 'main.c', 31, 0x08000302),
     ],
+    // The Non-secure HardFault handler, entered from Secure Thread code (TrustZone, AIRCR.BFHFNMINS=1).
+    hardFaultFromSecure: [
+        frame('HardFault_Handler', null, 0, 0x080001a4), frame('<signal handler called>', null, 0, 0xfffffff8),
+        frame('led_toggle', 'led.c', 18, 0x0800027a), frame('main', 'main.c', 31, 0x08000302),
+    ],
     resetHandler: [frame('Reset_Handler', null, 0, 0x08000198)],
 };
 
@@ -315,6 +326,11 @@ const REG_OVERRIDES = {
     ledToggle18: { sp: 0x20017fc8, r7: 0x20017fc8, lr: 0x08000303, r3: 0x20 },
     delayLoop: { sp: 0x20017fc0, r7: 0x20017fc0, lr: 0x08000307, r3: 0x3039, r2: 0x7a120 },
     hardFault: { r0: 0x5fffffec, r1: 0x20, r2: 0, r3: 0x20000010, r12: 0, sp: 0x20017fa8, r7: 0x20017fc8, lr: 0xfffffff9, xpsr: 0x61000003 },
+    // MSP and PSP are the Non-secure ones; the frame is on PSP_S, which CONTROL_S.SPSEL selects.
+    hardFaultFromSecure: {
+        r0: 0, r1: 0, r2: 0, r3: 0, r12: 0, sp: 0x20017fa8, r7: 0x20017fc8, lr: 0xfffffff8, xpsr: 0x61000003,
+        msp_s: 0x20016fe0, psp_s: 0x20016f00, control_s: 2,
+    },
     resetHandler: { r0: 0, r1: 0, r2: 0, r3: 0, r4: 0, r7: 0, r12: 0, sp: 0x20018000, lr: 0xffffffff, xpsr: 0x01000000 },
 };
 const REGISTER_ORDER = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11', 'r12',
@@ -394,6 +410,14 @@ function baseMemory() {
     return words;
 }
 const FAULT_WORDS = { 0xe000ed28: 0x00008200, 0xe000ed2c: 0x40000000, 0xe000ed30: 0x00000008, 0xe000ed34: 0x60000000, 0xe000ed38: 0x60000000 };
+/**
+ * The frame on PSP_S of `hardFaultFromSecure`: integrity signature, reserved word, R4–R11, then R0–xPSR at
+ * +0x28. Its R0 differs from the frame the base memory holds at the Non-secure MSP.
+ */
+const SECURE_FRAME_WORDS = Object.fromEntries([
+    0xfefa125b, 0, 0x1f4, 0, 0, 0x20016f48, 0, 0, 0, 0,
+    0x60000000, 0x20, 0, 0x20000010, 0, 0x08000303, 0x0800027a, 0x21000000,
+].map((w, i) => [0x20016f00 + 4 * i, w]));
 
 class FakeTarget {
     constructor(sc, spec, session) {
@@ -410,6 +434,8 @@ class FakeTarget {
         for (const [a, v] of Object.entries(spec.memory ?? {})) { this.words.set(Number(a), v >>> 0); }
         this.hung = false;
         this.dead = false;
+        /** cdt-gdb-adapter takes requests from its launch or attach answer until the session shuts down (`connectMs`, `serverExits`). */
+        this.ready = true;
         this.tracker = null;
         this.seq = 1;
         // GDB's breakpoint table; a launch configuration's initCommands set `break main` first.
@@ -496,6 +522,13 @@ class FakeTarget {
     /** Stop the running target after `delayMs`, as a breakpoint hit would. */
     scheduleStop(delayMs, at, reason) { setTimeout(() => this.stopAt(at, reason), delayMs); }
 
+    /** The GDB server exits: the adapter takes no more requests while it shuts down, and the session ends `afterMs` later. */
+    serverExits(afterMs) {
+        this.output('server', 'gdbserver exited with code 1\n');
+        this.ready = false;
+        setTimeout(() => this.sc.endSession(this.session), afterMs);
+    }
+
     // ── requests ──
 
     request(command, args) {
@@ -508,6 +541,12 @@ class FakeTarget {
         if (this.hung) {
             this.sc.record(`${line} -> no answer`);
             return new Promise(() => {});
+        }
+        if (!this.ready) {
+            // Its request gate: every request is skipped with a success that carries no body.
+            this.sc.record(`${line} -> empty success (adapter not ready)`);
+            this.tracker?.send({ type: 'response', command, success: true });
+            return Promise.resolve(undefined);
         }
         // Logged before answering: events the adapter emits while it works come after the request.
         const log = this.sc.log;
@@ -522,7 +561,10 @@ class FakeTarget {
             return Promise.reject(new Error(err.message));
         }
         if (command === 'evaluate') { log[at] = `${line} -> ${JSON.stringify(body.result)}`; }
-        if (command === 'readMemory' && body?.data) { log[at] = `${line} -> ${Buffer.from(body.data, 'base64').length} bytes`; }
+        if (command === 'readMemory' && body?.data) {
+            const late = body.address !== hex(Number(args.memoryReference) + (args.offset ?? 0)) ? ` from ${body.address}` : '';
+            log[at] = `${line} -> ${Buffer.from(body.data, 'base64').length} bytes${late}`;
+        }
         this.tracker?.send({ type: 'response', command, success: true, body });
         return Promise.resolve(body);
     }
@@ -554,7 +596,7 @@ class FakeTarget {
         if (v === undefined) { return { value: 'void', type: 'void' }; }
         if (name === 'pc') { return { value: symbolise(v), type: 'void (*)()' }; }
         if (name === 'lr' && this.spec.lrAsHex) { return { value: hex(v), type: 'void (*)()' }; }
-        if (name === 'sp' || name === 'msp' || name === 'psp') { return { value: hex(v), type: 'void *' }; }
+        if (['sp', 'msp', 'psp', 'msp_s', 'psp_s', 'msp_ns', 'psp_ns'].includes(name)) { return { value: hex(v), type: 'void *' }; }
         return { value: String(v | 0), type: 'int' };
     }
 
@@ -569,6 +611,18 @@ class FakeTarget {
             out.push(this.byteAt(a));
         }
         return Buffer.from(out);
+    }
+    /** What GDB's -data-read-memory-bytes reads of a range: one block per readable stretch, each where it begins. */
+    readableBlocks(addr, count) {
+        const blocks = [];
+        let block = null;
+        for (let i = 0; i < count; i++) {
+            const a = (addr + i) >>> 0;
+            if (!this.readable(a)) { block = null; continue; }
+            if (!block) { block = { begin: a, bytes: [] }; blocks.push(block); }
+            block.bytes.push(this.byteAt(a));
+        }
+        return blocks.map((b) => ({ begin: b.begin, bytes: Buffer.from(b.bytes) }));
     }
     writeBytes(addr, buf) {
         for (let i = 0; i < buf.length; i++) {
@@ -654,16 +708,18 @@ class FakeTarget {
                 const addr = Number(args.memoryReference) + (args.offset ?? 0);
                 if (this.state !== 'stopped') { throw new Error(`${RUNNING_MSG} (@ ${hex(addr)})`); }
                 if (!args.count) { return undefined; }
-                const buf = this.readBytes(addr, args.count);
-                if (!buf) { throw new Error(`Unable to read memory. (@ ${hex(addr)})`); }
-                return { data: buf.toString('base64'), address: hex(addr) };
+                // cdt-gdb-adapter answers with GDB's first block and its begin, later than asked when the range starts in a hole.
+                const [block] = this.readableBlocks(addr, args.count);
+                if (!block) { throw new Error(`Unable to read memory. (@ ${hex(addr)})`); }
+                return { data: block.bytes.toString('base64'), address: hex(block.begin) };
             }
             case 'writeMemory': {
                 if (this.state !== 'stopped') { throw new Error(RUNNING_MSG); }
                 const addr = Number(args.memoryReference);
                 const buf = Buffer.from(args.data, 'base64');
                 if (!this.readBytes(addr, buf.length)) { throw new Error(`Could not write memory at ${hex(addr)}`); }
-                this.writeBytes(addr, buf);
+                // A read-only register (`readOnly` addresses) ignores the write.
+                if (!(this.spec.readOnly ?? []).includes(addr)) { this.writeBytes(addr, buf); }
                 return undefined;
             }
             case 'next': case 'stepIn': case 'stepOut': case 'continue':
@@ -694,9 +750,14 @@ class FakeTarget {
             case '-data-read-memory-bytes': {
                 const addr = Number(args[0]);
                 const count = Number(args[1]);
-                const buf = this.readBytes(addr, count);
-                if (!buf) { throw new Error('Unable to read memory.'); }
-                return done({ memory: [{ begin: hex(addr), offset: '0x00000000', end: hex(addr + count), contents: buf.toString('hex') }] });
+                const blocks = this.readableBlocks(addr, count);
+                if (blocks.length === 0) { throw new Error('Unable to read memory.'); }
+                return done({
+                    memory: blocks.map((b) => ({
+                        begin: hex(b.begin), offset: `0x${(b.begin - addr).toString(16).padStart(8, '0')}`,
+                        end: hex(b.begin + b.bytes.length), contents: b.bytes.toString('hex'),
+                    })),
+                });
             }
             case '-dprintf-insert': {
                 // Options (-t, -f, -d, -c COND, -i N, -p THREAD) come before the location.
@@ -829,7 +890,8 @@ class FakeTarget {
         let reset;
         if (jlink) {
             if (command === 'halt') { return; }
-            reset = /^reset\s+[01]$/.test(command);
+            // J-Link's Cortex-M reset strategies: 0 normal, 1 core, 2 reset pin.
+            reset = /^reset\s+[012]$/.test(command);
             if (reset) { print('Resetting target\n'); }
         } else {
             reset = /^reset\s+halt\s+(system|core|hardware)$/.exec(command);
@@ -982,7 +1044,11 @@ class ScenarioContext {
 
     get target() { return this.targets[this.targets.length - 1]; }
 
-    /** Bring a fake session up the way VS Code would; `spec.initial` is a stop, 'running', or nothing. */
+    /**
+     * Bring a fake session up the way VS Code would; `spec.initial` is a stop, 'running', or nothing. With
+     * `spec.connectMs` the adapter takes no requests for that long while GDB connects; then it answers the start
+     * and VS Code configures the session, or, with `spec.connectFails` (GDB's error), the start fails.
+     */
     launch(spec) {
         const config = sessionConfig(this.env, spec.config ?? 'pyocd');
         const session = {
@@ -1002,6 +1068,35 @@ class ScenarioContext {
             bus.didChangeActiveSession.fire(session);
         }
         bus.didStart.fire(session);
+        if (spec.connectMs) {
+            target.ready = false;
+            setTimeout(() => this.connect(target, spec), spec.connectMs);
+            return session;
+        }
+        this.configure(target, spec);
+        return session;
+    }
+
+    /** The connect ends: the adapter announces itself and answers the start, or answers it with GDB's error. */
+    connect(target, spec) {
+        if (target.dead) { return; }
+        const request = target.session.configuration.request;
+        if (spec.connectFails) {
+            this.record(`adapter: response ${request} -> error: ${JSON.stringify(spec.connectFails)}`);
+            target.tracker.send({ type: 'response', command: request, success: false, message: spec.connectFails,
+                body: { error: { id: 1, format: spec.connectFails } } });
+            this.endSession(target.session, { quiet: true });
+            return;
+        }
+        target.ready = true;
+        target.emit('initialized', {});
+        this.record(`adapter: response ${request} -> success`);
+        target.tracker.send({ type: 'response', command: request, success: true });
+        this.configure(target, spec);
+    }
+
+    /** VS Code configures the session: its breakpoints, configurationDone, then the initial stop or run. */
+    configure(target, spec) {
         // VS Code sends its breakpoints while the adapter configures the session.
         this.syncBreakpoints(stub.debug.breakpoints);
         // cdt-gdb-adapter prints this at configurationDone, which a failed launch never reaches.
@@ -1016,14 +1111,14 @@ class ScenarioContext {
             target.stopAt(spec.initial.at, spec.initial.reason);
         }
         if (spec.hangAfterStart) { target.hung = true; }
-        return session;
     }
 
     /** VS Code sends `setBreakpoints` for each file of these breakpoints to the live session a moment later. */
     syncBreakpoints(bps) {
         const target = this.target;
         const files = [...new Set(bps.filter((bp) => bp instanceof stub.SourceBreakpoint).map((bp) => bp.location.uri.fsPath))];
-        if (!target || target.dead || files.length === 0) { return; }
+        // Only to an adapter that takes requests: VS Code sends them once the adapter has announced itself.
+        if (!target || target.dead || !target.ready || files.length === 0) { return; }
         setTimeout(() => { for (const file of files) { target.setBreakpointsFromVsCode(file); } }, 2);
     }
 
@@ -1110,7 +1205,8 @@ const SCENARIOS = [
     },
     {
         name: 'variables',
-        description: 'Halted in led_toggle (caller main has a struct, arrays and secret-named locals): the adapter has Local and Registers scopes only.',
+        description: 'Halted in led_toggle (caller main has a struct, arrays and secret-named locals): the adapter has Local and Registers scopes only, '
+            + 'Registers marked expensive, so a listing reads Local alone and names Registers as not read.',
         session: { initial: { at: 'ledToggle18', reason: 'breakpoint' } },
         calls: [
             { tool: 'list_variable_names' },
@@ -1146,13 +1242,16 @@ const SCENARIOS = [
     },
     {
         name: 'read-memory',
-        description: 'Halted: DAP readMemory in hex / ascii / both, an address without 0x, and an unmapped address where readMemory fails and every GDB fallback fails too.',
+        description: 'Halted: DAP readMemory in hex / ascii / both, an address without 0x, an unmapped address where readMemory fails and every GDB fallback fails too, '
+            + 'and ranges across the start and the end of SRAM: the adapter returns the mapped part from where it begins, and the dump says which part could not be read.',
         session: { initial: { at: 'main31', reason: 'breakpoint' } },
         calls: [
             { tool: 'read_memory', args: { address: '0x20000000', length: 16 } },
             { tool: 'read_memory', args: { address: '20000000', length: 20, format: 'ascii' } },
             { tool: 'read_memory', args: { address: '0x20000000', length: 70, format: 'both' } },
             { tool: 'read_memory', args: { address: '0x60000000', length: 8 } },
+            { tool: 'read_memory', args: { address: '0x1FFFFFF0', length: 64, format: 'both' } },
+            { tool: 'read_memory', args: { address: '0x20017FF0', length: 64 } },
         ],
     },
     {
@@ -1196,8 +1295,28 @@ const SCENARIOS = [
     },
     {
         name: 'cycle-counter-absent',
-        description: 'A core whose DWT_CTRL reports NOCYCCNT.',
+        description: 'An Armv7-M core whose DWT_CTRL reports NOCYCCNT (bit 25): two comparators, no trace packets, no cycle or profiling counters.',
+        session: { initial: { at: 'main31', reason: 'breakpoint' }, memory: { 0xe0001000: 0x2b000000, 0xe000edfc: 0x01000000 } },
+        calls: [
+            { tool: 'read_cycle_counter' },
+        ],
+    },
+    {
+        name: 'cycle-counter-one-comparator',
+        description: 'DWT_CTRL 0x10000000: one comparator (NUMCOMP, bits 31:28) and a cycle counter, which the read enables.',
         session: { initial: { at: 'main31', reason: 'breakpoint' }, memory: { 0xe0001000: 0x10000000, 0xe000edfc: 0x01000000 } },
+        calls: [
+            { tool: 'read_cycle_counter' },
+        ],
+    },
+    {
+        name: 'cycle-counter-armv6m',
+        description: 'A Cortex-M0+ (CPUID 0x410CC601): Armv6-M has no cycle counter, and its read-only DWT_CTRL holds NUMCOMP alone. Nothing is written.',
+        session: {
+            initial: { at: 'main31', reason: 'breakpoint' },
+            memory: { 0xe000ed00: 0x410cc601, 0xe0001000: 0x20000000, 0xe0001004: 0 },
+            readOnly: [0xe0001000],
+        },
         calls: [
             { tool: 'read_cycle_counter' },
         ],
@@ -1220,6 +1339,16 @@ const SCENARIOS = [
         session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, lrAsHex: true },
         calls: [
             { tool: 'diagnose_fault', args: { levels: 4 } },
+        ],
+    },
+    {
+        name: 'fault-trustzone-secure-stack',
+        description: 'A BusFault in Secure code taken to the Non-secure HardFault handler (TrustZone, AIRCR.BFHFNMINS=1): EXC_RETURN 0xfffffff8 puts '
+            + 'the frame on a Secure stack behind the integrity signature and R4–R11, CONTROL_S picks the process stack, so diagnose_fault reads PSP_S, '
+            + 'not the Non-secure MSP.',
+        session: { initial: { at: 'hardFaultFromSecure', reason: 'SIGSEGV' }, memory: { ...FAULT_WORDS, ...SECURE_FRAME_WORDS }, lrAsHex: true },
+        calls: [
+            { tool: 'diagnose_fault' },
         ],
     },
     {
@@ -1385,6 +1514,14 @@ const SCENARIOS = [
         ],
     },
     {
+        name: 'reset-hardware-jlink',
+        description: 'J-Link, halted in main, reset with method hardware: `monitor halt` and `monitor reset 2`, J-Link\'s reset-pin strategy, reach GDB; the cache flush shows the core at the reset vector and the reset verifies.',
+        session: { config: 'jlink', initial: { at: 'main31', reason: 'breakpoint' } },
+        calls: [
+            { tool: 'reset', args: { method: 'hardware' } },
+        ],
+    },
+    {
         name: 'restart-and-stop',
         description: 'restart_debugging on a halted gdbtarget session stops it and starts its launch configuration again through the debug API (the new session stops at main 500 ms later), then stop_debugging ends it.',
         session: { initial: { at: 'main31', reason: 'breakpoint' } },
@@ -1521,7 +1658,7 @@ const SCENARIOS = [
     },
     {
         name: 'focus-elsewhere',
-        description: 'The session is tracked but not VS Code\'s active session (focus on another session): tools resolve it through the tracker, the SVD lookup and the active stack frame do not.',
+        description: 'The session is tracked but not VS Code\'s active session (focus on another session): tools resolve it through the tracker, the SVD of read_peripheral_register too; only the active stack frame is missing.',
         session: { initial: { at: 'main31', reason: 'breakpoint' }, focusElsewhere: true },
         calls: [
             { tool: 'get_session_status' },
@@ -1619,6 +1756,39 @@ const SCENARIOS = [
             { tool: 'cmsis_action', args: { action: 'load_and_debug' } },
             { tool: 'flash', args: {} },
             { tool: 'stop_debugging' },
+        ],
+    },
+    {
+        name: 'status-connecting',
+        description: 'A pyOCD launch whose adapter takes no requests for 3 s while GDB connects (cdt-gdb-adapter answers each one with an empty success): '
+            + 'the status tools report initializing, reads, the pause and a breakpoint are refused with NO_SESSION before any request reaches the target, '
+            + 'and wait_for_stop sees the session stop at main once it is up. Then the GDB server exits: while the adapter shuts down the status is '
+            + 'initializing again, and after that there is no session.',
+        session: { connectMs: 3000, initial: { at: 'main29', reason: 'breakpoint' } },
+        calls: [
+            { tool: 'get_session_status' },
+            { tool: 'check_target_connection' },
+            { tool: 'read_memory', args: { address: '0x20000000', length: 4 } },
+            { tool: 'pause_execution', args: { timeoutMs: 1000 } },
+            { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 31 } },
+            { tool: 'wait_for_stop', args: { timeoutMs: 5000 } },
+            { tool: 'get_session_status' },
+            { tool: 'get_session_status', before: (sc) => sc.target.serverExits(1000), settleMs: 1500 },
+            { tool: 'get_session_status' },
+        ],
+    },
+    {
+        name: 'cmsis-attach-connect-fails',
+        description: 'No session: cmsis_action attach starts a pyOCD attach session whose adapter takes no requests while GDB connects, and the connect '
+            + 'fails after 600 ms: the call answers TASK_FAILED as soon as the session is gone, without probing it.',
+        commands: {
+            'cmsis-csolution.cmsisAttachDebugger': (sc) => {
+                sc.launch({ config: 'pyocd-attach', connectMs: 600, connectFails: 'could not connect: Operation timed out.' });
+            },
+        },
+        calls: [
+            { tool: 'cmsis_action', args: { action: 'attach' } },
+            { tool: 'get_session_status' },
         ],
     },
 ];

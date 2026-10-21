@@ -11009,7 +11009,7 @@
     },
     {
       "id": "extension/activate-router",
-      "about": "fallback settings except the port; first run; the listeners, commands and timer driven afterwards",
+      "about": "fallback settings except the port; first run; the Serial Monitor's API as the coordinator starts; the listeners, commands and timer driven afterwards",
       "events": [
         {
           "ev": "step",
@@ -11189,6 +11189,14 @@
               "packDocs": "<handlers returned by createPackDocsHandlers>"
             }
           ]
+        },
+        {
+          "ev": "getExtension",
+          "id": "ms-vscode.vscode-serial-monitor"
+        },
+        {
+          "ev": "getExtension",
+          "id": "ms-vscode.vscode-serial-monitor"
         },
         {
           "ev": "call",
@@ -11946,6 +11954,29 @@
               "updatedAt": "<time>"
             }
           }
+        },
+        "serialMonitorAtCoordinatorStart": {
+          "status": {
+            "extensionInstalled": true,
+            "extensionId": "ms-vscode.vscode-serial-monitor",
+            "activated": true,
+            "apiKeysDiscovered": [
+              "listAvailablePorts",
+              "startMonitoringPort",
+              "stopMonitoringPort",
+              "dispose"
+            ],
+            "dataSubscriptionAvailable": false,
+            "subscribed": false,
+            "bufferedBytes": 0
+          },
+          "getApi": [
+            {
+              "version": 0,
+              "context": "<context>",
+              "extensionId": "arm.cmsis-developer-assistant"
+            }
+          ]
         },
         "deactivation": {
           "resolved": "<undefined>",

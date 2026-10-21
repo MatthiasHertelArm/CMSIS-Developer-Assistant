@@ -52,7 +52,7 @@ flowchart LR
         cdt --> gdb["arm-none-eabi-gdb"]
         gdb --> server["pyOCD / J-Link GDB Server"]
         server -- "SWD / JTAG" --> target["Cortex-M target"]
-        api -.-> svd["Peripheral Inspector API /<br/>SVD parser"]
+        api -.-> svd["SVD parser"]
     end
 
     subgraph docs["Documentation retrieval (per window)"]

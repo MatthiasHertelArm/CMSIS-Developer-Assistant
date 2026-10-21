@@ -98,7 +98,7 @@ Only the user can lift a rule, by asking for the specific command.
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |
-| `screen /dev/tty…`, `cat /dev/tty…`, PuTTY or `type COM3` on Windows, a pyserial script | `serial_capture` for one read; `serial_open`, `serial_read`, `serial_write`; `serial_subscribe_monitor` while the Serial Monitor holds the port |
+| `screen /dev/tty…`, `cat /dev/tty…`, PuTTY or `type COM3` on Windows, a pyserial script | `serial_capture` for one read; `serial_open`, `serial_read`, `serial_write` |
 | `curl localhost:<port>` with the registry token | `list_debug_windows`, `select_debug_window` |
 | reading a PDF, a web search for a register | `list_target_docs`, `search_target_docs`, `read_doc_pages`, `fetch_doc`, `get_peripheral_docs`, `lookup_register` |
 <!-- cmsis-developer-assistant:shell-to-tool:end -->
@@ -367,8 +367,9 @@ immediately.
 
 `serial_open` takes the port directly; `serial_read` drains a buffered ring. If
 the user has the MS Serial Monitor open on the same device, the OS will not give
-you the tty — use `serial_subscribe_monitor` instead, which taps the extension
-rather than the kernel.
+you the tty (`PORT_HELD`): ask the user to stop monitoring it there. The Serial
+Monitor's API does not pass on what it receives, so `serial_subscribe_monitor`
+cannot read that session.
 
 - To see what the board prints, prefer `serial_capture`: one call opens the
   port, reads until your `until` regex matches or `durationMs` ends, and closes it.

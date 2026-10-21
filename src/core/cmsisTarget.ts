@@ -22,16 +22,20 @@
  * extension's `.vscode/cmsis.json` selection so a re-activated solution comes
  * up on the requested target.
  *
- * The cmsis.json layout mirrors what the CMSIS Solution extension (1.70)
- * writes itself:
+ * The cmsis.json layout mirrors what the CMSIS Solution extension (1.72.0,
+ * `CmsisSettingsJsonFile`) reads and writes itself:
  *
  *   { "targetSet": { "<solutionDisplayName>": {
  *         "activeTargetType": "<type>",
  *         "<type>": <index into that type's target-set list>   // optional
  *   } } }
  *
- * where `<solutionDisplayName>` is the csolution path relative to the
- * workspace folder with both extensions stripped, forward slashes.
+ * in the `.vscode/cmsis.json` of the workspace's first folder, whichever
+ * folder holds the solution. `<solutionDisplayName>` is the csolution path
+ * relative to that folder with both extensions stripped, forward slashes.
+ * The extension looks the key up as a dotted path, split at every `.`, so
+ * a name with dots nests: `../fw/app`, the name of a solution in a second
+ * folder, is `targetSet` → `""` → `""` → `"/fw/app"`.
  *
  * No `vscode` import here so the logic is unit-testable outside the host.
  */
@@ -86,45 +90,72 @@ export function targetMatches(active: string | undefined, wanted: TargetRef): bo
     return wanted.set === undefined || wanted.set === current.set;
 }
 
+/** A node of the csolution's block structure that the following lines may still belong to. */
+interface OpenNode {
+    /** Column of the key, or of the entry's `-`. */
+    column: number;
+    /** The mapping key; undefined for a sequence entry. */
+    key?: string;
+    /** On an entry of `solution: target-types:`, the target-type it declares. */
+    targetType?: TargetTypeInfo;
+    /** On an entry of that target-type's `target-set:`, its index in the type's sets. */
+    setIndex?: number;
+}
+
 /**
- * The target-types a csolution declares, with their target-set names, from a
- * line scan of the YAML (the repo carries no YAML parser; the csolution
- * schema keeps `target-types:` a flat list so a scan is enough).
+ * The target-types a csolution declares and the names of their target-sets,
+ * in file order. The YAML is read line by line (the repo carries no YAML
+ * parser), following its block structure by column: the keys of a list entry
+ * may come in any order, and a list may stand in its key's own column
+ * (`target-types:` above `- type:`, as in NXP's examples). A target-type is an
+ * entry of `solution: target-types:` with a `type:`; the `type:` keys of
+ * deeper lists (`images:`, a debugger's `reset:`) are not. Every entry of its
+ * `target-set:` counts as a set, named by its `set:` ('' when empty or
+ * missing), as in the list the CMSIS Solution extension's cmsis.json index
+ * points into. Comments, quotes, CRLF and a byte-order mark are read; flow
+ * collections (`[...]`, `{...}`), anchors and tags are not.
  */
 export function listTargetTypes(csolutionText: string): TargetTypeInfo[] {
-    const types: TargetTypeInfo[] = [];
-    const lines = csolutionText.split(/\r?\n/);
-    let blockIndent = -1;
-    let inSets = false;
+    const declared: TargetTypeInfo[] = [];
+    const open: OpenNode[] = [];
+    /** Are the open nodes exactly these keys, `undefined` standing for a sequence entry? */
+    const openPathIs = (...keys: (string | undefined)[]): boolean =>
+        open.length === keys.length && keys.every((key, depth) => open[depth].key === key);
 
-    for (const raw of lines) {
-        const line = raw.replace(/\s+#.*$/, '').replace(/^\s*#.*$/, '');
-        if (!line.trim()) { continue; }
-        const indent = line.length - line.trimStart().length;
-
-        if (blockIndent < 0) {
-            if (/^\s*target-types:\s*$/.test(line)) { blockIndent = indent; }
+    for (const raw of csolutionText.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)) {
+        const line = yamlLine(raw);
+        if (!line) {
             continue;
         }
-        if (indent <= blockIndent) { break; } // left the target-types block
-
-        const typeMatch = /^\s*-\s*type:\s*(.+?)\s*$/.exec(line);
-        if (typeMatch) {
-            types.push({ name: unquote(typeMatch[1]), sets: [] });
-            inSets = false;
+        for (const column of line.entries) {
+            // An entry ends the deeper nodes and the previous entry of its list; a key in
+            // the same column stays open: its list is written without indentation.
+            closeWhile(open, (node) => node.column > column || (node.column === column && node.key === undefined));
+            const entry: OpenNode = { column };
+            if (openPathIs('solution', 'target-types')) {
+                entry.targetType = { name: '', sets: [] };
+                declared.push(entry.targetType);
+            } else if (openPathIs('solution', 'target-types', undefined, 'target-set') && open[2].targetType) {
+                entry.setIndex = open[2].targetType.sets.push('') - 1;
+            }
+            open.push(entry);
+        }
+        if (line.key === undefined) {
             continue;
         }
-        const current = types[types.length - 1];
-        if (!current) { continue; }
-        if (/^\s*target-set:\s*$/.test(line)) { inSets = true; continue; }
-        // `- set:` list items only occur under target-set:; a set's own keys
-        // (debugger:, images:) and the type's other keys are skipped.
-        const setMatch = /^\s*-\s*set:\s*(.*?)\s*$/.exec(line);
-        if (inSets && setMatch) {
-            current.sets.push(unquote(setMatch[1]));
+        // A key ends its earlier siblings and everything deeper.
+        closeWhile(open, (node) => node.column >= line.column);
+        const targetType = open[2]?.targetType;
+        const setIndex = open[4]?.setIndex;
+        if (targetType && line.key === 'type' && openPathIs('solution', 'target-types', undefined)) {
+            targetType.name = line.value;
+        } else if (targetType && setIndex !== undefined && line.key === 'set'
+            && openPathIs('solution', 'target-types', undefined, 'target-set', undefined)) {
+            targetType.sets[setIndex] = line.value;
         }
+        open.push({ column: line.column, key: line.key });
     }
-    return types;
+    return declared.filter((type) => type.name !== '');
 }
 
 /** The choices to offer when a request does not resolve: `MPS3, HE@debug, HE@release`. */
@@ -162,7 +193,7 @@ export function resolveTargetSelection(types: TargetTypeInfo[], wanted: TargetRe
     return { ok: true, type: type.name, set: wanted.set, setIndex: index, name: formatTargetName(type.name, wanted.set) };
 }
 
-/** The key the extension files a solution under in cmsis.json. */
+/** The key the extension files a solution under in cmsis.json; `workspaceFolder` is the workspace's first folder. */
 export function solutionDisplayName(workspaceFolder: string, solutionPath: string): string {
     const relative = path.relative(workspaceFolder, solutionPath);
     const stripped = relative.replace(/\.[^./\\]+$/, '').replace(/\.[^./\\]+$/, '');
@@ -171,7 +202,8 @@ export function solutionDisplayName(workspaceFolder: string, solutionPath: strin
 
 /**
  * Return cmsis.json text with the solution's active target-type set (and the
- * set index when one was named). Existing content — other solutions, other
+ * set index when one was named), under the key path the extension reads:
+ * `displayName` split at every `.`. Existing content — other solutions, other
  * keys, comments — is preserved; formatting follows the extension (4 spaces).
  */
 export function applyTargetSelection(
@@ -181,18 +213,99 @@ export function applyTargetSelection(
     setIndex: number | undefined,
 ): string {
     const formattingOptions = { insertSpaces: true, tabSize: 4, eol: '\n' };
+    const selection = ['targetSet', ...displayName.split('.')];
     let text = cmsisJsonText.trim() ? cmsisJsonText : '{}';
-    text = applyEdits(text, modify(text, ['targetSet', displayName, 'activeTargetType'], type, { formattingOptions }));
+    text = applyEdits(text, modify(text, [...selection, 'activeTargetType'], type, { formattingOptions }));
     if (setIndex !== undefined) {
-        text = applyEdits(text, modify(text, ['targetSet', displayName, type], setIndex, { formattingOptions }));
+        text = applyEdits(text, modify(text, [...selection, type], setIndex, { formattingOptions }));
     }
     return text.endsWith('\n') ? text : `${text}\n`;
 }
 
-function unquote(value: string): string {
-    const v = value.trim();
-    if (v.length >= 2 && ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))) {
-        return v.slice(1, -1);
+/** Close the innermost open nodes as long as `ends` says the current line ends them. */
+function closeWhile(open: OpenNode[], ends: (node: OpenNode) => boolean): void {
+    for (let node = open.at(-1); node && ends(node); node = open.at(-1)) {
+        open.pop();
     }
-    return v;
+}
+
+/** The structure of one line of block YAML. */
+interface YamlLine {
+    /** Columns of the `- ` sequence entries the line opens, outermost first (`- - x` opens two). */
+    entries: number[];
+    /** The mapping key that follows the entries, if the line holds one. */
+    key?: string;
+    /** Column of that key. */
+    column: number;
+    /** The scalar after the key's colon, unquoted and without its comment; '' for none and for null. */
+    value: string;
+}
+
+/** A YAML indicator, which a plain mapping key cannot start with: comment, quote, flow, anchor, alias, tag, block scalar, reserved. */
+const INDICATOR_FIRST = /^[#'"{}[\],&*!|>%@`]/;
+
+/**
+ * The entries and the key of one line; undefined for a line that opens
+ * neither (blank, a comment, a document marker, a scalar that continues the
+ * line before, a flow collection).
+ */
+function yamlLine(raw: string): YamlLine | undefined {
+    const entries: number[] = [];
+    let column = raw.length - raw.trimStart().length;
+    while (raw.charAt(column) === '-' && [' ', '\t', ''].includes(raw.charAt(column + 1))) {
+        entries.push(column);
+        column++;
+        while (raw.charAt(column) === ' ' || raw.charAt(column) === '\t') {
+            column++;
+        }
+    }
+    const entry = mappingEntry(raw.slice(column).trimEnd());
+    if (!entry) {
+        return entries.length > 0 ? { entries, column, value: '' } : undefined;
+    }
+    return { entries, key: entry.key, column, value: scalarValue(entry.rest) };
+}
+
+/** The key of a `key: value` text and what follows its colon; undefined when the text is no mapping entry. */
+function mappingEntry(text: string): { key: string; rest: string } | undefined {
+    const quoted = readQuoted(text);
+    if (quoted) {
+        const colon = /^\s*:(?=\s|$)/.exec(text.slice(quoted.end));
+        return colon ? { key: quoted.value, rest: text.slice(quoted.end + colon[0].length).trim() } : undefined;
+    }
+    // A plain key ends at the first `:` followed by a blank; text with ` #` before it is a scalar and a comment.
+    const colon = text.search(/:(?=\s|$)/);
+    const key = text.slice(0, Math.max(colon, 0)).trimEnd();
+    if (key === '' || INDICATOR_FIRST.test(key) || /\s#/.test(key)) {
+        return undefined;
+    }
+    return { key, rest: text.slice(colon + 1).trim() };
+}
+
+/** A scalar as written after a key's colon: unquoted, its comment removed; '' for none and for YAML's null. */
+function scalarValue(text: string): string {
+    const quoted = readQuoted(text);
+    if (quoted) {
+        return quoted.value;
+    }
+    const plain = text.replace(/(?:^|\s)#.*$/, '').trim();
+    return /^(?:~|null|Null|NULL)$/.test(plain) ? '' : plain;
+}
+
+/** The quoted scalar `text` starts with, and its length; undefined unless one starts and ends there. */
+function readQuoted(text: string): { value: string; end: number } | undefined {
+    const single = /^'((?:[^']|'')*)'/.exec(text);
+    if (single) {
+        return { value: single[1].replace(/''/g, '\''), end: single[0].length };
+    }
+    const double = /^"((?:[^"\\]|\\.)*)"/.exec(text);
+    if (!double) {
+        return undefined;
+    }
+    try {
+        // JSON's escapes are a subset of YAML's; any other escape keeps the escaped character.
+        return { value: String(JSON.parse(double[0])), end: double[0].length };
+    } catch {
+        return { value: double[1].replace(/\\(.)/g, '$1'), end: double[0].length };
+    }
 }

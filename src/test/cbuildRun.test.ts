@@ -16,7 +16,10 @@
 
 import * as assert from 'assert';
 import * as path from 'path';
-import { cbuildRunDebugger, defaultPackRoot, expandPackRoot, formatPackId, packDir, parseCbuildRun, parsePackId, parseQualifiedName } from '../core/packDocs/cbuildRun';
+import {
+    cbuildRunDebugger, cbuildRunFilePath, cbuildRunProbeId, defaultPackRoot, expandPackRoot, formatPackId, packDir, parseCbuildRun, parsePackId,
+    parseQualifiedName,
+} from '../core/packDocs/cbuildRun';
 
 export const SAMPLE_CBUILD_RUN = `cbuild-run:
   generated-by: csolution version 2.8.0
@@ -61,6 +64,19 @@ suite('cbuildRun', () => {
         assert.strictEqual(cbuildRunDebugger('cbuild-run:\n  debugger:\n    name:\n'), undefined, 'an empty name');
     });
 
+    test('the probe ID: probe-id of the debugger node, which csolution copies from the target set\'s debugger', () => {
+        // ProjMgrYamlParser.cpp:653 keeps unknown debugger keys, ProjMgrCbuildRun.cpp:194 writes them under debugger:.
+        const withProbe = `${SAMPLE_CBUILD_RUN}  debugger:\n    name: CMSIS-DAP@pyOCD\n    probe-id: "0240000034544e45"\n    clock: 10000000\n`
+            + '  debug-topology:\n    probe-id: other\n';
+        assert.strictEqual(cbuildRunProbeId(withProbe), '0240000034544e45');
+        assert.strictEqual(cbuildRunDebugger(withProbe), 'CMSIS-DAP@pyOCD');
+        assert.strictEqual(cbuildRunProbeId(withProbe.replace(/\n/g, '\r\n')), '0240000034544e45', 'Windows line ends');
+        assert.strictEqual(cbuildRunProbeId(`${SAMPLE_CBUILD_RUN}  debugger:\n    name: CMSIS-DAP@pyOCD\n`), undefined, 'none set');
+        assert.strictEqual(cbuildRunProbeId('cbuild-run:\n  debugger:\n    name: X\n    gdbserver:\n      - port: 3333\n        probe-id: nested\n'), undefined,
+            'not a key of a nested node');
+        assert.strictEqual(cbuildRunProbeId(SAMPLE_CBUILD_RUN), undefined, 'no debugger node');
+    });
+
     test('pack ids and qualified names', () => {
         assert.deepStrictEqual(parsePackId('AlifSemiconductor::Ensemble@2.0.0-rc1.29'), { vendor: 'AlifSemiconductor', name: 'Ensemble', version: '2.0.0-rc1.29' });
         assert.deepStrictEqual(parsePackId('Keil::STM32F7xx_DFP'), { vendor: 'Keil', name: 'STM32F7xx_DFP', version: undefined });
@@ -88,5 +104,14 @@ suite('cbuildRun', () => {
         assert.strictEqual(expandPackRoot('${CMSIS_PACK_ROOT}/Keil/X/1.0.0/a.svd', '/p'), '/p/Keil/X/1.0.0/a.svd');
         assert.strictEqual(packDir('/p', { vendor: 'Keil', name: 'X', version: '1.0.0' }), path.join('/p', 'Keil', 'X', '1.0.0'));
         assert.strictEqual(packDir('/p', { vendor: 'Keil', name: 'X' }), undefined);
+    });
+
+    test('a file the cbuild-run names is relative to its folder, not the working directory', () => {
+        // csolution writes the file of a local pack (packs: - path: ../DFP_machine) relative to out/.
+        const run = path.join('/ws', 'app', 'out', 'app+HW.cbuild-run.yml');
+        assert.strictEqual(cbuildRunFilePath('../../DFP_machine/Device/x.svd', run, '/p'), path.resolve('/ws', 'DFP_machine', 'Device', 'x.svd'));
+        assert.strictEqual(cbuildRunFilePath('app/HW/Debug/app.elf', run, '/p'), path.resolve('/ws', 'app', 'out', 'app', 'HW', 'Debug', 'app.elf'));
+        assert.strictEqual(cbuildRunFilePath('${CMSIS_PACK_ROOT}/Keil/X/1.0.0/a.svd', run, '/p'), path.resolve('/p', 'Keil', 'X', '1.0.0', 'a.svd'));
+        assert.strictEqual(cbuildRunFilePath(path.resolve('/elsewhere', 'b.svd'), run, '/p'), path.resolve('/elsewhere', 'b.svd'), 'an absolute file stays');
     });
 });

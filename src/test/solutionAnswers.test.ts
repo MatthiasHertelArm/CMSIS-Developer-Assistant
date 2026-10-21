@@ -17,8 +17,8 @@
 // What the CMSIS Solution extension's getter answers mean, and when they are not asked:
 // an inactive extension, a missing command, an empty answer, a timeout, "<not found>".
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import * as path from 'path';
 import {
     activeTargetSetOf,

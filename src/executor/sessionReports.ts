@@ -22,15 +22,37 @@
  */
 
 import * as vscode from 'vscode';
+import { CMSIS_DEBUGGER_TYPE } from '../core/gdbDialect';
 import { getStoppedReason, isSessionStopped, resolveActiveSession } from '../utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout';
 import { messageOf } from './common';
 import { SessionStatus } from './contract';
 
+/** The probe's detail when the CMSIS Debugger's adapter answers without a thread list. */
+const NOT_TAKING_REQUESTS = 'The adapter answered the threads probe without a thread list: it takes no requests until GDB '
+    + 'has connected to the target and run the launch configuration\'s commands, nor while the session shuts down.';
+
+/**
+ * Whether the successful `threads` reply `reply` of `session` comes from an
+ * adapter that takes requests. cdt-gdb-adapter, the CMSIS Debugger's adapter
+ * (`gdbtarget`), answers every request with an empty success, without a
+ * body, until GDB has connected to the target and run the launch
+ * configuration's commands, and again once the session shuts down; while it
+ * takes requests, its `threads` reply carries the thread list. The replies of
+ * other adapters count as they are.
+ */
+export function takesRequests(session: vscode.DebugSession, reply: unknown): boolean {
+    if (session.type !== CMSIS_DEBUGGER_TYPE) {
+        return true;
+    }
+    return Array.isArray((reply as { threads?: unknown } | null | undefined)?.threads);
+}
+
 /**
  * Probes the session with one `threads` request. A timeout means the probe
  * or target is hung; any other failure usually means the adapter is still
- * starting. Never rejects.
+ * starting, and so does a CMSIS Debugger reply without a thread list
+ * (`takesRequests`). Never rejects.
  */
 export async function probeSession(probeMs: number): Promise<SessionStatus> {
     const session = resolveActiveSession();
@@ -50,8 +72,9 @@ export async function probeSession(probeMs: number): Promise<SessionStatus> {
         configurationName: session.configuration?.name ?? null,
     };
     const sentAt = Date.now();
+    let reply: unknown;
     try {
-        await customRequestWithTimeout(session, 'threads', {}, probeMs);
+        reply = await customRequestWithTimeout(session, 'threads', {}, probeMs);
     } catch (err) {
         const hung = err instanceof HardwareTimeoutError;
         return {
@@ -65,6 +88,15 @@ export async function probeSession(probeMs: number): Promise<SessionStatus> {
         };
     }
     const roundTripMs = Date.now() - sentAt;
+    if (!takesRequests(session, reply)) {
+        return {
+            state: 'initializing',
+            ...identity,
+            dapResponsive: true,
+            dapProbeMs: roundTripMs,
+            detail: NOT_TAKING_REQUESTS,
+        };
+    }
     const halted = isSessionStopped(session);
     const reason = halted ? getStoppedReason(session) : null;
     return {
@@ -90,7 +122,9 @@ export function connectionReport(status: SessionStatus): string {
         case 'initializing':
             report.push(status.state === 'unresponsive'
                 ? 'DAP probe: TIMEOUT — probe/target unresponsive'
-                : 'DAP probe: FAILED — adapter likely still initializing');
+                : status.dapResponsive
+                    ? `DAP probe: NOT READY (${status.dapProbeMs}ms)`
+                    : 'DAP probe: FAILED — adapter likely still initializing');
             if (status.detail) {
                 report.push(status.detail);
             }

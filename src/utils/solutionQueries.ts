@@ -81,7 +81,11 @@ export async function askSolution(command: string, source: SolutionCommands = VS
     }
 }
 
-/** The `cbuild-run.yml` of the extension's active target as it answers; whether it exists is the caller's check. */
+/**
+ * The `cbuild-run.yml` of the extension's active target as it answers;
+ * whether it exists is the caller's check. The one lookup of it: `flash`,
+ * `cmsis_action` and the documentation tools ask here, through their hosts.
+ */
 export async function activeCbuildRunFile(source: SolutionCommands = VSCODE_SOLUTION_COMMANDS): Promise<string | undefined> {
     return cbuildRunFileOf(await askSolution(GET_CBUILD_RUN_FILE, source));
 }

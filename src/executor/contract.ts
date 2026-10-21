@@ -46,7 +46,12 @@ export interface HardwareTimeouts {
     memoryReadMs: number;
 }
 
-/** Where a session stands, judged by the `threads` probe and the stop tracker. */
+/**
+ * Where a session stands, judged by the `threads` probe and the stop tracker.
+ * `initializing` is an adapter that does not take requests: the probe failed
+ * without a timeout, or the CMSIS Debugger's adapter answered without a
+ * thread list while GDB connects or the session shuts down.
+ */
 export type SessionState = 'no-session' | 'initializing' | 'running' | 'stopped' | 'unresponsive';
 
 export interface SessionStatus {
@@ -58,7 +63,7 @@ export interface SessionStatus {
     dapResponsive: boolean;
     /** Round trip of the probe in whole milliseconds; null unless it answered. */
     dapProbeMs: number | null;
-    /** Why the probe failed, or why the target is stopped. */
+    /** Why the probe failed or the adapter takes no requests, or why the target is stopped. */
     detail?: string;
 }
 
@@ -119,7 +124,7 @@ export interface SessionLifecycle {
 
 /** Whether the adapter answers and the target can be inspected. */
 export interface Readiness {
-    /** A session exists, answers the `threads` probe, and its target is stopped. */
+    /** A session exists, answers the `threads` probe (on the CMSIS Debugger with a thread list), and its target is stopped. */
     hasActiveSession(): Promise<boolean>;
     /** Never rejects. */
     getSessionStatus(): Promise<SessionStatus>;
@@ -214,6 +219,13 @@ export interface ProgramInspection {
     getCurrentDebugState(lookahead: number): Promise<DebugState>;
     getCallStack(threadId?: number, levels?: number, overrideMs?: number): Promise<StackFrame[]>;
     getThreads(overrideMs?: number): Promise<DapThread[]>;
+    /**
+     * `{ scopes }`: the frame's scopes, each with its `variables` or the
+     * `error` of their read. `local` and `global` read the scopes whose name
+     * contains the word; `all` reads every scope, but on the CMSIS Debugger
+     * not those the adapter marks expensive (its Registers scope), whose
+     * names come back in `skipped`.
+     */
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all', overrideMs?: number): Promise<any>;
     getVariablesForFrame(frameId: number, scope?: 'local' | 'global' | 'all', overrideMs?: number): Promise<any>;
     /**
@@ -230,6 +242,16 @@ export interface ProgramInspection {
 }
 
 /**
+ * What `readMemory` read: `bytes` begin `offset` bytes after the requested
+ * address. The offset is 0 unless the start of the range could not be read;
+ * fewer bytes than asked for after it mean the end could not be read either.
+ */
+export interface MemoryRead {
+    bytes: Buffer;
+    offset: number;
+}
+
+/**
  * Cortex-M target access: memory, core registers, DWT, fault status,
  * peripherals and reset. On the CMSIS Debugger a memory read that fails
  * rejects with `PROBE_WEDGED` when DHCSR cannot be read either, and with
@@ -237,10 +259,17 @@ export interface ProgramInspection {
  * cause.
  */
 export interface TargetAccess {
-    readMemory(address: string, length: number, overrideMs?: number): Promise<Buffer>;
+    readMemory(address: string, length: number, overrideMs?: number): Promise<MemoryRead>;
     readMemoryWord(address: string, overrideMs?: number): Promise<number>;
     writeMemoryWord(address: string, value: number, overrideMs?: number): Promise<void>;
-    readExceptionFrame(stackPointer: number, overrideMs?: number): Promise<Buffer>;
+    /**
+     * The stacked state context (R0–R3, R12, LR, PC, xPSR) and the
+     * `stateOffset` bytes below it, read from the stack pointer up: 0x28 when
+     * Armv8-M put the additional state context there, else 0 (the default).
+     * Fewer bytes when the frame cannot be read whole, none when its start
+     * cannot.
+     */
+    readExceptionFrame(stackPointer: number, overrideMs?: number, stateOffset?: number): Promise<Buffer>;
     /** Values are GDB's text, or `<timeout>` / `<unavailable>` for a register that could not be read. */
     readCoreRegisters(overrideMs?: number, names?: string[]): Promise<Record<string, string>>;
     readCycleCounter(overrideMs?: number): Promise<{ cycles: number; enabledNow: boolean; present: boolean }>;

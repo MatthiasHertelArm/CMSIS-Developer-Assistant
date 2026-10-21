@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+import * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import type { CmsisJobTracker } from '../cmsisJobTracker';
 import type { BuildMessage, Job, JobDiagnosis } from '../core/cmsisTasks';
 import { ProblemJournal } from '../core/problemJournal';

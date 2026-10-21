@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import * as assert from 'assert';
 import * as vscode from 'vscode';
+import * as assert from 'assert';
 import { ProblemJournal, type ProblemRecord } from '../core/problemJournal';
 import {
     awaitBreakpointsApplied,

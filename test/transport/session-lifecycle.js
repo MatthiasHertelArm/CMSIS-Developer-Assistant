@@ -327,6 +327,39 @@ async function main() {
     const unverified = await cmsisAction({ action: 'detach', target: 'HP', timeoutMs: 20_000 }, 10);
     check('cmsis_action refuses when the switch cannot be verified',
         /not attempted: wrote 'HP' to .*still reports 'HE'.*Manage Solution/s.test(unverified), unverified.split('\n')[0]);
+    // A multi-root workspace with the solution in its second folder: CMSIS
+    // Solution (1.72.0) reads only the first folder's cmsis.json, files the
+    // solution there as '../fw/demo' and looks that key up split at every '.'.
+    const rootsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-roots-'));
+    const firstDir = path.join(rootsDir, 'app');
+    const secondDir = path.join(rootsDir, 'fw');
+    fs.mkdirSync(firstDir);
+    fs.mkdirSync(secondDir);
+    const secondSolution = path.join(secondDir, 'demo.csolution.yml');
+    fs.copyFileSync(solutionFile, secondSolution);
+    const firstSelection = () => {
+        let node;
+        try {
+            node = JSON.parse(fs.readFileSync(path.join(firstDir, '.vscode', 'cmsis.json'), 'utf8'));
+        } catch {
+            return undefined;
+        }
+        for (const key of 'targetSet.../fw/demo'.split('.')) { node = node && typeof node === 'object' ? node[key] : undefined; }
+        return node;
+    };
+    activeTarget = 'HE';
+    stub.workspace.workspaceFolders = [{ uri: { fsPath: firstDir } }, { uri: { fsPath: secondDir } }];
+    stub.commandHandlers['cmsis-csolution.getSolutionFile'] = async () => secondSolution;
+    stub.commandHandlers['cmsis-csolution.activateSolution'] = async () => {
+        const sel = firstSelection();
+        activeTarget = sel?.activeTargetType === 'HP' ? (sel.HP === 1 ? 'HP@release' : 'HP@debug') : 'HE';
+    };
+    const multiRoot = await cmsisAction({ action: 'detach', target: 'HP@release' }, 11);
+    check('cmsis_action switches a solution in the second folder through the first folder\'s cmsis.json',
+        /CMSIS 'detach' on HP@release, switched from HE issued/.test(multiRoot)
+            && !fs.existsSync(path.join(secondDir, '.vscode', 'cmsis.json')),
+        `${multiRoot.split('\n')[0]} | ${JSON.stringify(firstSelection() ?? null)}`);
+    fs.rmSync(rootsDir, { recursive: true, force: true });
     stub.commandHandlers = {};
     stub.workspace.workspaceFolders = [];
     fs.rmSync(solDir, { recursive: true, force: true });
@@ -390,7 +423,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 15 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 16 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

@@ -22,9 +22,9 @@
  * not the MCP tools are enabled — the handlers exist in every window.
  */
 
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { BookCategory, DocRef, UserScope, importUserDoc, resolveUserDocsDir } from './core/packDocs';
 import { errorText, textOf, toToolError } from './core/toolResult';
 import { PackDocsHandlers } from './packDocsDispatch';

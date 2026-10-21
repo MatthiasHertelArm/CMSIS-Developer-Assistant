@@ -51,6 +51,21 @@ solution:
     - project: app.cproject.yml
 `;
 
+/**
+ * How CMSIS Solution 1.72.0 looks a cmsis.json key up (`CmsisSettingsJsonFile.get`):
+ * the dotted key split at every '.', one level down per part.
+ */
+function extensionGet(json: unknown, dottedKey: string): unknown {
+    let node = json;
+    for (const key of dottedKey.split('.')) {
+        if (node === null || typeof node !== 'object') {
+            return undefined;
+        }
+        node = (node as Record<string, unknown>)[key];
+    }
+    return node;
+}
+
 suite('cmsis_action target helpers', () => {
 
     test('parseTargetRef reads type and type@set', () => {
@@ -87,6 +102,105 @@ suite('cmsis_action target helpers', () => {
         assert.deepStrictEqual(types, [{ name: 'MPS3', sets: [''] }]);
     });
 
+    test('listTargetTypes reads the keys of an entry in any order', () => {
+        const anyOrder = `
+solution:
+  target-types:
+    - device: STM32U585AIIx
+      type: B-U585I
+      target-set:
+        - debugger:
+            name: ST-Link@pyOCD
+          set: debug
+        - images:
+            - project-context: app.Release
+          info: release build
+          set: release
+    - board: NUCLEO-F401RE
+      target-set:
+        - set:
+      type: NUCLEO
+  build-types:
+    - type: Debug
+`;
+        const types = listTargetTypes(anyOrder);
+        assert.deepStrictEqual(types, [
+            { name: 'B-U585I', sets: ['debug', 'release'] },
+            { name: 'NUCLEO', sets: [''] },
+        ]);
+        assert.deepStrictEqual(resolveTargetSelection(types, { type: 'B-U585I', set: 'release' }),
+            { ok: true, type: 'B-U585I', set: 'release', setIndex: 1, name: 'B-U585I@release' });
+    });
+
+    test('listTargetTypes takes type: from the entries of solution: target-types: only', () => {
+        const nested = `
+solution:
+  description: |
+    target-types:
+      - type: InText
+  target-types:
+    - type: HP
+      target-set:
+        - set: debug
+          images:
+            - type: elf
+              image: ./build/app.elf
+          debugger:
+            name: J-Link Server
+            reset:
+              - type: system
+        - set: release
+`;
+        const types = listTargetTypes(nested);
+        assert.deepStrictEqual(types, [{ name: 'HP', sets: ['debug', 'release'] }]);
+        assert.deepStrictEqual(resolveTargetSelection(types, { type: 'HP', set: 'release' }),
+            { ok: true, type: 'HP', set: 'release', setIndex: 1, name: 'HP@release' });
+        // An entry without set: (the schema requires one) keeps its place: the extension's index counts every entry.
+        assert.deepStrictEqual(listTargetTypes('solution:\n  target-types:\n    - type: A\n      target-set:\n        - images: []\n        - set: s\n'),
+            [{ name: 'A', sets: ['', 's'] }]);
+    });
+
+    test('listTargetTypes reads lists in their key\'s column, CRLF line ends and a byte-order mark', () => {
+        // The layout of NXP's SDK examples.
+        const compact = [
+            '---',
+            'solution:',
+            '  target-types:',
+            '  - type: armgcc',
+            '    compiler: GCC',
+            '  - type: iar',
+            '    target-set:',
+            '    - set: flash',
+            '      debugger:',
+            '        name: J-Link Server',
+            '  build-types:',
+            '  - type: release',
+            '',
+        ].join('\r\n');
+        assert.deepStrictEqual(listTargetTypes(compact), [
+            { name: 'armgcc', sets: [] },
+            { name: 'iar', sets: ['flash'] },
+        ]);
+        assert.deepStrictEqual(listTargetTypes('\uFEFFsolution:\n  target-types:\n    - type: MPS3\n'), [{ name: 'MPS3', sets: [] }]);
+    });
+
+    test('listTargetTypes reads quoted keys and names and drops comments', () => {
+        const quoted = `
+solution:   # a comment after a key
+  target-types:   # and one after this key
+    # a comment line between entries
+    - "type": 'HE'   # a quoted key and name
+      target-set:
+        -   # the keys of this entry follow on the next lines
+          set:   # the unnamed set
+        - set: "debug # 2"   # a quoted name may hold ' #'
+        - set: 'it''s'
+        - set: v#3
+        - set: ~
+`;
+        assert.deepStrictEqual(listTargetTypes(quoted), [{ name: 'HE', sets: ['', 'debug # 2', 'it\'s', 'v#3', ''] }]);
+    });
+
     test('resolveTargetSelection names what to store and explains what does not exist', () => {
         const types = listTargetTypes(TWO_TARGETS);
         assert.deepStrictEqual(resolveTargetSelection(types, { type: 'HP' }),
@@ -106,6 +220,40 @@ suite('cmsis_action target helpers', () => {
         assert.strictEqual(solutionDisplayName('/ws', '/ws/Blinky.csolution.yml'), 'Blinky');
         assert.strictEqual(solutionDisplayName('/ws', '/ws/RockPaperScissors/AppKit-E8_USB/SDS.csolution.yml'),
             'RockPaperScissors/AppKit-E8_USB/SDS');
+        assert.strictEqual(solutionDisplayName('/ws', '/ws/v1.2/my.demo.csolution.yaml'), 'v1.2/my.demo');
+    });
+
+    test('solutionDisplayName of a solution in the second folder of a multi-root workspace goes up from the first', () => {
+        assert.strictEqual(solutionDisplayName('/ws/app', '/ws/fw/demo.csolution.yml'), '../fw/demo');
+    });
+
+    test('applyTargetSelection writes the key where the extension looks it up: the display name split at every dot', () => {
+        for (const name of ['demo', 'RockPaperScissors/AppKit-E8_USB/SDS', '../fw/demo', 'v1.2/my.demo', '../../a.b/c']) {
+            const json: unknown = JSON.parse(applyTargetSelection('', name, 'HP', 1));
+            assert.strictEqual(extensionGet(json, `targetSet.${name}.activeTargetType`), 'HP', name);
+            // getSelectedSet: the type's entry in the map at targetSet.<name>.
+            assert.strictEqual((extensionGet(json, `targetSet.${name}`) as Record<string, unknown> | undefined)?.HP, 1, name);
+        }
+        assert.deepStrictEqual(JSON.parse(applyTargetSelection('', '../fw/demo', 'HP', 1)),
+            { targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HP', HP: 1 } } } } });
+    });
+
+    test('applyTargetSelection updates the selection CMSIS Solution wrote for a solution in the second folder', () => {
+        const written = JSON.stringify({
+            targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HE' } } }, other: { activeTargetType: 'MPS3' } },
+            activeSolution: '../../fw/demo.csolution.yml',
+            activeTarget: 'HE',
+        }, null, 4);
+        assert.deepStrictEqual(JSON.parse(applyTargetSelection(written, '../fw/demo', 'HP', 0)), {
+            targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HP', HP: 0 } } }, other: { activeTargetType: 'MPS3' } },
+            activeSolution: '../../fw/demo.csolution.yml',
+            activeTarget: 'HE',
+        });
+    });
+
+    test('applyTargetSelection writes a name without dots as before, byte for byte', () => {
+        assert.strictEqual(applyTargetSelection('', 'demo', 'HP', 1),
+            '{\n    "targetSet": {\n        "demo": {\n            "activeTargetType": "HP",\n            "HP": 1\n        }\n    }\n}\n');
     });
 
     test('applyTargetSelection creates, updates and preserves cmsis.json content', () => {

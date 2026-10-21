@@ -48,10 +48,10 @@
  */
 
 import * as vscode from 'vscode';
-import { DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
+import { architectureHasCycleCounter, DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
 import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, FaultRegisters, faultRegistersFromBlock } from './core/faultDecoder';
 import { CMSIS_DEBUGGER_TYPE, gdbRequestRefusal, miQuoted, passthroughCommand } from './core/gdbDialect';
-import { readPeripheralViaMemory, tryReadPeripheralViaExtension } from './core/peripheralReader';
+import { readPeripheralViaMemory } from './core/peripheralReader';
 import { ResetMethod } from './core/resetAssist';
 import { type DapVariable, isDapVariable } from './core/variableView';
 import { DebugState, StackFrame } from './debugState';
@@ -63,26 +63,26 @@ import {
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
 import {
-    Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, NO_SESSION_TEXT, ReadMemoryBody, ScopesBody,
-    sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
+    Budgets, DEFAULT_HARDWARE_TIMEOUTS, EvaluateBody, FrameArg, frameArgOf, focusedThreadId, hex8, messageOf, NO_SESSION_TEXT, ReadMemoryBody, ScopeBody,
+    ScopesBody, sessionOrThrow, StackTraceBody, ThreadsBody, toStackFrame, VariablesBody,
 } from './executor/common';
 import {
-    AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, ResetOutcome,
-    RestartOutcome, SessionStatus,
+    AlreadyStopped, BreakpointBinding, BreakpointRemoval, DapThread, ExecutorDiagnostics, HardwareTimeouts, IDebuggingExecutor, MemoryRead,
+    ResetOutcome, RestartOutcome, SessionStatus,
 } from './executor/contract';
 import { GdbReply, runGdbCommand } from './executor/gdbCommand';
 import {
-    attemptsOf, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
+    attemptsOf, bytesInRange, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
 } from './executor/gdbMemory';
 import type { DebugPortProbe, ReadAttempt } from './core/probeWedge';
-import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession } from './executor/sessionReports';
+import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession, takesRequests } from './executor/sessionReports';
 import { captureDebugState } from './executor/snapshot';
 import { performReset, programCounterFrom } from './executor/targetReset';
 
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
 export type {
     BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, GdbLogpoint, GdbReply, HardwareTimeouts, IDebuggingExecutor,
-    ResetOutcome, RestartOutcome, SessionState, SessionStatus,
+    MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus,
 } from './executor/contract';
 
 /** The version the MCP server, the server definition and the HTTP user agent report. Equals package.json. */
@@ -146,6 +146,27 @@ function rootSessionOf(session: vscode.DebugSession): vscode.DebugSession {
 function sourceFilesOf(breakpoints: readonly vscode.Breakpoint[]): string[] {
     const files = breakpoints.flatMap((entry) => entry instanceof vscode.SourceBreakpoint ? [entry.location.uri.fsPath] : []);
     return [...new Set(files)];
+}
+
+/**
+ * The scopes a variables read covers, and the names of those it leaves out.
+ * `local` and `global` keep each scope whose name contains the word, expensive
+ * or not. `all` keeps every scope, except on the CMSIS Debugger: there it
+ * leaves out the scopes the adapter marks expensive, which VS Code, too, reads
+ * only once the user opens them — cdt-gdb-adapter's Registers scope, every
+ * core and FPU register read over the probe — unless nothing else would be
+ * left. Other adapters keep theirs: js-debug marks Global and Module
+ * expensive, and Module holds an ES module's top-level variables.
+ */
+function scopesToRead(offered: ScopeBody[], scope: 'local' | 'global' | 'all' | undefined, sessionType: string): { kept: ScopeBody[]; skipped: string[] } {
+    if (scope === 'local' || scope === 'global') {
+        return { kept: offered.filter((candidate) => candidate.name.toLowerCase().includes(scope)), skipped: [] };
+    }
+    const expensive = offered.filter((candidate) => candidate.expensive === true);
+    if (sessionType !== CMSIS_DEBUGGER_TYPE || expensive.length === 0 || expensive.length === offered.length) {
+        return { kept: offered, skipped: [] };
+    }
+    return { kept: offered.filter((candidate) => candidate.expensive !== true), skipped: expensive.map((candidate) => candidate.name) };
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
@@ -240,15 +261,20 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         if (!session) {
             return false;
         }
+        let reply: unknown;
         try {
-            // Only whether it answers matters; the thread list is not looked at.
-            await customRequestWithTimeout(session, 'threads', {}, this.budgets.probe());
+            // Whether it answers, and on the CMSIS Debugger whether it takes requests; the threads are not looked at.
+            reply = await customRequestWithTimeout(session, 'threads', {}, this.budgets.probe());
         } catch (err) {
             if (err instanceof HardwareTimeoutError) {
                 logger.info('hasActiveSession: threads probe timed out — probe or target may be unresponsive');
             } else {
                 logger.debug('hasActiveSession: threads probe failed', err);
             }
+            return false;
+        }
+        if (!takesRequests(session, reply)) {
+            logger.debug('hasActiveSession: the adapter answered the threads probe without a thread list; it takes no requests yet or any more');
             return false;
         }
         return isSessionStopped(session);
@@ -529,9 +555,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
             if (!offered || offered.length === 0) {
                 return { scopes: [] };
             }
-            const kept = scope === 'local' || scope === 'global'
-                ? offered.filter((candidate) => candidate.name.toLowerCase().includes(scope))
-                : offered;
+            const { kept, skipped } = scopesToRead(offered, scope, session.type);
             // One scope after the other; the adapter's scope objects are extended in place.
             for (const entry of kept) {
                 try {
@@ -543,7 +567,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                     entry.error = messageOf(err);
                 }
             }
-            return { scopes: kept };
+            return skipped.length > 0 ? { scopes: kept, skipped } : { scopes: kept };
         } catch (err) {
             // Also flattens a `scopes` timeout (KB14): no longer a HardwareTimeoutError, though its code stays TIMEOUT.
             throw wrapError('Reading the variables failed', err);
@@ -586,7 +610,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     // ── Memory ─────────────────────────────────────────────────────────
 
-    async readMemory(address: string, length: number, overrideMs?: number): Promise<Buffer> {
+    async readMemory(address: string, length: number, overrideMs?: number): Promise<MemoryRead> {
         const session = sessionOrThrow();
         const start = withHexPrefix(address);
         try {
@@ -601,18 +625,19 @@ export class DebuggingExecutor implements IDebuggingExecutor {
      * `readMemory`, then the GDB ladder word by word. A failure carries the
      * cause of every strategy.
      */
-    private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<Buffer> {
+    private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<MemoryRead> {
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readMemory', this.budgets.operation(overrideMs), async () => {
             const attempts: ReadAttempt[] = [];
             try {
                 const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
                     { memoryReference: start, count: length }, budgetMs);
-                if (reply?.data) {
-                    // Returned as it came, even when shorter than asked (KB9).
-                    return Buffer.from(reply.data, 'base64');
+                // Where the reply says its bytes begin, even when that is later or they end sooner than asked (KB9).
+                const read = bytesInRange(reply, BigInt(start), length);
+                if (typeof read !== 'string') {
+                    return read;
                 }
-                attempts.push({ strategy: 'DAP readMemory', cause: 'no data in the reply' });
+                attempts.push({ strategy: 'DAP readMemory', cause: read });
             } catch (err) {
                 if (err instanceof HardwareTimeoutError) {
                     throw err;
@@ -620,7 +645,7 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 attempts.push({ strategy: 'DAP readMemory', cause: messageOf(err) });
             }
             try {
-                return await this.readWordsThroughGdb(session, start, length, budgetMs);
+                return { bytes: await this.readWordsThroughGdb(session, start, length, budgetMs), offset: 0 };
             } catch (err) {
                 throw withEarlierAttempts(err, attempts);
             }
@@ -703,9 +728,12 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         }
     }
 
-    async readExceptionFrame(stackPointer: number, overrideMs?: number): Promise<Buffer> {
+    async readExceptionFrame(stackPointer: number, overrideMs?: number, stateOffset: number = 0): Promise<Buffer> {
         // The request budget becomes the nested read's override, so it also bounds that read's fence.
-        return this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, EXCEPTION_FRAME_BYTES, this.budgets.request(overrideMs));
+        const read = await this.readMemory(`0x${(stackPointer >>> 0).toString(16)}`, stateOffset + EXCEPTION_FRAME_BYTES,
+            this.budgets.request(overrideMs));
+        // Bytes that begin after the stack pointer are not the frame.
+        return read.offset === 0 ? read.bytes : Buffer.alloc(0);
     }
 
     // ── Core registers, DWT, peripherals, fault status ─────────────────
@@ -744,6 +772,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         sessionOrThrow();
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readCycleCounter', this.budgets.operation(overrideMs), async () => {
+            // Armv6-M and Armv8-M Baseline never have one; nothing is written to them.
+            if (!architectureHasCycleCounter(await this.readMemoryWord(DWT_ADDRESSES.CPUID, budgetMs))) {
+                return { present: false, cycles: 0, enabledNow: false };
+            }
             const demcr = await this.readMemoryWord(DWT_ADDRESSES.DEMCR, budgetMs);
             if ((demcr & DEMCR_TRCENA) === 0) {
                 await this.writeMemoryWord(DWT_ADDRESSES.DEMCR, (demcr | DEMCR_TRCENA) >>> 0, budgetMs);
@@ -763,11 +795,6 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     async readPeripheralRegister(peripheral: string, register?: string, overrideMs?: number): Promise<string> {
-        // The Peripheral Inspector is asked before the session is checked (KB13).
-        const inspected = await tryReadPeripheralViaExtension(peripheral, register);
-        if (inspected !== null) {
-            return inspected;
-        }
         const session = sessionOrThrow();
         const frameId = await this.focusedFrameId();
         const budgetMs = this.budgets.request(overrideMs);
@@ -789,8 +816,8 @@ export class DebuggingExecutor implements IDebuggingExecutor {
                 try {
                     // The request budget is the nested read's override, fence included (KB10).
                     const block = await this.readMemoryOnce(session, FAULT_REGISTER_BLOCK.address, FAULT_REGISTER_BLOCK.bytes, budgetMs);
-                    if (block.length >= FAULT_REGISTER_BLOCK.bytes) {
-                        return faultRegistersFromBlock(block);
+                    if (block.offset === 0 && block.bytes.length >= FAULT_REGISTER_BLOCK.bytes) {
+                        return faultRegistersFromBlock(block.bytes);
                     }
                 } catch (err) {
                     if (err instanceof HardwareTimeoutError) {

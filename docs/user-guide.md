@@ -137,7 +137,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 |------|-------------|
 | `read_memory` | Reads a range of bytes (up to 4096) from the target as hex, ASCII, or both. |
 | `read_core_registers` | Reads R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, and PRIMASK. |
-| `read_peripheral_register` | Reads and decodes a peripheral register, or all registers of a peripheral, using the CMSIS-SVD description of the device (via the Peripheral Inspector or a built-in SVD parser). |
+| `read_peripheral_register` | Reads and decodes a peripheral register, or all registers of a peripheral, using the CMSIS-SVD description of the device (read by a built-in SVD parser). |
 | `get_fault_info` | Reads CFSR, HFSR, DFSR, MMFAR, BFAR, and AFSR and decodes them bit by bit for HardFault analysis. |
 | `diagnose_fault` | One-call fault triage: decoded fault registers, the stacked exception frame (faulting PC and its caller), the top frames, the faulting address resolved against the SVD, and up to three ranked hypotheses each with the next tool call. |
 | `lookup_peripheral` | Answers from the SVD without touching the target, with or without a session: the peripheral list, a peripheral's register map, or which peripheral and register sit at an address (resolve a BFAR). |
@@ -150,7 +150,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 
 | Tool | Description |
 |------|-------------|
-| `serial_list_ports` | Lists the serial ports (via the Serial Monitor extension, falling back to the bundled `serialport` package). |
+| `serial_list_ports` | Lists the serial ports with the bundled `serialport` package: path, friendly name (Windows), manufacturer, serial number and VID:PID. |
 | `serial_capture` | Shows what the board prints, in one call: opens the port, sends `write` if given, reads until the regex `until` matches or `durationMs` (up to 60 s) runs out, and closes the port again, also when something fails. Answers with at most 16 kB, the first and the last 8 kB, why it stopped and how long it took. Refused with `PORT_HELD` while the window holds a port or another program holds this one. It does not reset the target. |
 | `serial_open`, `serial_close`, `serial_write`, `serial_read`, `serial_status`, `serial_clear_buffer` | Owns a serial connection from the MCP server, one port per window. Use these when no Serial Monitor session holds the same port; if another program holds it, `serial_open` fails with `PORT_HELD`. When the adapter is unplugged the port is released: `serial_status`, `serial_read` and `serial_write` say so and when, and the bytes received before stay readable. |
 | `serial_open_monitor` | Opens the Serial Monitor panel for the user. |
@@ -416,7 +416,7 @@ Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the 
 
 ### Serial Monitor data is not readable through the bridge
 
-The Serial Monitor extension API (v0.1.7) only exposes port enumeration. `serial_subscribe_monitor` therefore reports that no data event is available. Use `serial_open` and `serial_read` instead, which own the port from the MCP server, or read the output in the Serial Monitor panel.
+The Serial Monitor extension (0.13) gives other extensions an API (version 0) that lists ports and starts or stops monitoring a port, but has no event for the data it receives. `serial_subscribe_monitor` therefore reports that no data event is available. Stop monitoring the port in the Serial Monitor so that the agent can read it with `serial_capture`, or `serial_open` and `serial_read`, which own the port from the MCP server; or read the output in the Serial Monitor panel yourself.
 
 ### Claude Desktop cannot connect
 

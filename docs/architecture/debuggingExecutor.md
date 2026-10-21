@@ -75,8 +75,14 @@ can fake only the part a case drives.
   as `no-session`, `initializing`, `running`, `stopped` or `unresponsive`
   from the same probe and never rejects (`probeSession()` in
   `src/executor/sessionReports.ts`, which also writes the connection and
-  device reports). `getDiagnostics()` adds the server version and the live
-  sessions of the window.
+  device reports). On the CMSIS Debugger an answer is not enough:
+  cdt-gdb-adapter answers every request with an empty success, without a
+  body, until GDB has connected to the target and run the launch
+  configuration's commands, and again while the session shuts down. A
+  `threads` reply without a thread list is therefore `initializing` there,
+  and `hasActiveSession()` false (`takesRequests()`); the replies of other
+  adapters count as they are. `getDiagnostics()` adds the server version and
+  the live sessions of the window.
 - **Run control.** Steps, continue and pause send the DAP request (`next`,
   `stepIn`, `stepOut`, `continue`, `pause`) for the focused thread. When the
   request fails for any reason except a timeout, a CMSIS Debugger session
@@ -117,21 +123,41 @@ can fake only the part a case drives.
   command or register read. Call stacks, the thread list (with the top frame
   of the first 32 threads, fetched four at a time), variables per scope,
   expression evaluation and the children of a structured value
-  (`getVariableChildren()`) are plain DAP requests.
+  (`getVariableChildren()`) are plain DAP requests. A read of all scopes
+  leaves out, on the CMSIS Debugger, the scopes the adapter marks expensive,
+  which VS Code too reads only once the user opens them: cdt-gdb-adapter's
+  Registers scope reads every core and FPU register over the probe. Their
+  names go back to the handler; `local` and `global` read whatever scope
+  matches, and other adapters keep every scope, since js-debug marks an ES
+  module's top-level variables expensive (`scopesToRead()`).
 - **Target access.** `readMemory()` uses DAP `readMemory` and falls back to
   reading word by word through GDB (`readWordThroughGdb()` in
   `src/executor/gdbMemory.ts` tries a watch expression, then the raw GDB read
   whose answer comes back in the reply: MI `-data-read-memory-bytes` on the
-  CMSIS Debugger, `x/1xw` and `print/x` through `-exec` elsewhere);
+  CMSIS Debugger, `x/1xw` and `print/x` through `-exec` elsewhere). The
+  bytes of a DAP reply lie where its `address` says, which need not be the
+  address asked for: when the start of the range cannot be read,
+  cdt-gdb-adapter answers with the first block GDB could read. So
+  `readMemory()` returns its bytes with their offset from the requested
+  address (`MemoryRead`, placed by `bytesInRange()`), and fewer of them when
+  the end cannot be read; the `read_memory` dump labels its rows from there,
+  and the stacked exception frame and the fault-register block count only
+  when they begin at the address asked for. A one-word read needs all four
+  bytes, so a reply that begins late is a short one there.
   `writeMemoryWord()` falls back to GDB's `set` and checks its write by
   reading it back. Core registers are
   read as `$<name>` expressions, all at once, with `<timeout>` or
   `<unavailable>` for any that fail. The cycle counter enables the DWT
-  (`DEMCR.TRCENA`, `CYCCNTENA`) on first use and reports a core without one.
-  Peripheral reads ask the Peripheral Inspector extension first and otherwise
-  read memory at the SVD address (`src/core/peripheralReader.ts`). The fault
-  status registers are read as one block when possible, else word by word, and
-  decoded by `src/core/faultDecoder.ts`.
+  (`DEMCR.TRCENA`, `CYCCNTENA`) on first use and reports a core without one:
+  Armv6-M and Armv8-M Baseline by `CPUID`, before anything is written, since
+  Armv6-M has no `NOCYCCNT` bit to say so; other cores by `DWT_CTRL.NOCYCCNT`
+  (`src/core/dwt.ts`).
+  A peripheral register is read at the address the device SVD gives and its
+  fields decoded (`src/core/peripheralReader.ts`), with the SVD of the session
+  the read goes to rather than of the one VS Code has focused; the Peripheral
+  Inspector extension is not asked, as its API has no register read. The
+  fault status registers are read as one block when possible, else word by
+  word, and decoded by `src/core/faultDecoder.ts`.
 - **A failed read.** A memory read that fails in every way keeps why each
   way failed (`MemoryReadFailure`, each cause cut to 200 characters). On the
   CMSIS Debugger each public read then reads DHCSR (0xE000EDF0) once — 4
@@ -154,12 +180,15 @@ can fake only the part a case drives.
   and memory caches are flushed, since GDB does not see a reset done by a
   monitor command (the CMSIS Solution launch templates do the same); the
   reset counts only when the PC afterwards equals the reset vector of the
-  table VTOR points to. The
-  method `auto` escalates from `system` to `core` to `hardware` until one
-  verifies, and the target is resumed only after a verified reset with
-  `halt: false`. When none verifies, the reply (`renderResetOutcome()`)
-  says the target is halted and names a next step that needs no one at the
-  board: `stop_debugging`, then `cmsis_action load_and_debug`, which brings
+  table VTOR points to. A method means the same reset on every server:
+  `system` is SYSRESETREQ, `core` VECTRESET and `hardware` the reset line,
+  which J-Link knows as its normal, core and reset-pin strategies, numbered
+  as in the CMSIS Solution launch templates. The method `auto` escalates
+  from `system` to `core` to `hardware` until one verifies, and the target
+  is resumed only after a verified reset with `halt: false`. When none
+  verifies, the reply (`renderResetOutcome()`) says the target is halted
+  and names a next step that needs no one at the board:
+  `stop_debugging`, then `cmsis_action load_and_debug`, which brings
   back J-Link targets and secure-boot parts whose core nSRST alone does not
   re-vector; power-cycling comes only after that (#20).
 
@@ -202,14 +231,14 @@ Code update needs a look at this.
 | File | Contents |
 | ---- | -------- |
 | `src/debuggingExecutor.ts` | `DebuggingExecutor`, `SERVER_VERSION`, the run-control table, GDB passthrough, memory, registers, DWT, peripherals, fault status, reset entry |
-| `src/executor/contract.ts` | `IDebuggingExecutor` and its six parts, `HardwareTimeouts`, `SessionStatus`, `DapThread`, `ResetOutcome` |
+| `src/executor/contract.ts` | `IDebuggingExecutor` and its six parts, `HardwareTimeouts`, `SessionStatus`, `DapThread`, `MemoryRead`, `ResetOutcome` |
 | `src/executor/common.ts` | `Budgets`, `DEFAULT_HARDWARE_TIMEOUTS`, DAP reply shapes, `sessionOrThrow()`, `focusedThreadId()`, `toStackFrame()` |
 | `src/executor/snapshot.ts` | `captureDebugState()` |
 | `src/executor/gdbCommand.ts` | `runGdbCommand()`: the adapter's prefix, output capture and settle |
 | `src/core/gdbDialect.ts` | GDB prefix per adapter, the agent's passthrough spellings, MI memory results, GDB's refusal of a run-control request |
-| `src/executor/gdbMemory.ts` | address helpers, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
+| `src/executor/gdbMemory.ts` | address helpers, `bytesInRange()` for a DAP `readMemory` reply, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
 | `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
-| `src/executor/sessionReports.ts` | `probeSession()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
+| `src/executor/sessionReports.ts` | `probeSession()`, `takesRequests()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
 | `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`) |
 | `src/utils/timeout.ts` | `withTimeout()`, `customRequestWithTimeout()`, `HardwareTimeoutError` |
@@ -218,13 +247,16 @@ Code update needs a look at this.
 
 - `test/transport/executor-cases.js`: the executor alone against scripted
   debug sessions — DAP requests and their arguments, workbench fallbacks and
-  GDB refusals, restart, timeouts, reset verification, GDB command prefixes
-  and output capture, breakpoint bindings, the GDB word-read ladder and the
-  DHCSR read after a failed read
+  GDB refusals, restart, timeouts, the readiness probe on an adapter that
+  takes no requests, reset verification, GDB command prefixes and output
+  capture, breakpoint bindings, DAP `readMemory` replies that begin later or
+  end sooner than asked, the GDB word-read ladder and the DHCSR read after a
+  failed read
 - `src/test/gdbMemory.test.ts`: the ladder's causes, `PROBE_WEDGED` and
   `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints
 - `test/transport/dap-scenarios.js`: the executor behind the handler and the
-  server, 37 scripted `gdbtarget` sessions, a wedged probe among them
+  server in 40 scripted scenarios, mostly `gdbtarget` sessions, a wedged
+  probe and an adapter that is still connecting among them
 - `src/test/sessionStateTracker.test.ts`, `src/test/gdbDialect.test.ts`: the
   output capture, the `setBreakpoints` wait, the logpoint registry, the
   prefixes

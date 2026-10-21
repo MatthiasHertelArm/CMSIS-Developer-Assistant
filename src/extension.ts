@@ -19,7 +19,8 @@
  *
  * `activate` wires the modules together in a fixed order: settings read once
  * for this activation, the problem journal's output mirror, error sink and
- * copy command (#48), the debug-session and CMSIS task trackers, the agent and skill
+ * copy command (#48), the debug-session and CMSIS task trackers, the extension
+ * context for the Serial Monitor bridge (its `getApi` requires one), the agent and skill
  * manager, the documentation handlers and their commands, this window's
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
  * for in-editor Copilot, agent-configuration migration, the update of the tool
@@ -44,6 +45,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { registerCmsisJobTracker } from './cmsisJobTracker';
 import { serialController } from './core/serialController';
+import { serialMonitorBridge } from './core/serialMonitorBridge';
 import { clearSvdCache } from './core/svdParser';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { registerPackDocsCommands } from './packDocsCommands';
@@ -282,6 +284,8 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
         clearSvdCache();
         serialController.debugSessionEnded();
     }));
+    // Before the coordinator serves the serial tools: the Serial Monitor hands its API only to a caller with a context.
+    serialMonitorBridge.attach(extensionContext);
 
     const hostsTests = hostedByTestRunner(extensionContext);
     const manager = new AgentConfigurationManager(extensionContext, active.timeoutInSeconds, active.serverPort);
