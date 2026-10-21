@@ -25,7 +25,7 @@ import type { IDebuggingHandler } from '../debuggingHandler';
 import type { PackDocsHandlers } from '../packDocsDispatch';
 import { RoutingDebuggingHandler, RoutingOptions } from '../routingDebuggingHandler';
 import { runInCallContext } from '../core/callContext';
-import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
+import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, KNOWLEDGE_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
 import { newErrorsNote, newErrorsStatusLine } from '../core/problemFeed';
 import { ProblemJournal } from '../core/problemJournal';
 import { ErrorCode, JsonObject, ToolError, ToolText, errorDetail, textOf, toToolError } from '../core/toolResult';
@@ -40,7 +40,7 @@ const JSON_TYPE: http.OutgoingHttpHeaders = { 'Content-Type': 'application/json'
 /** A reply header that marks the typed envelope (#11). */
 const TYPED_JSON: http.OutgoingHttpHeaders = { ...JSON_TYPE, [CONTROL_ENVELOPE_HEADER]: '2' };
 
-type Role = 'debug' | 'docs' | 'build';
+type Role = 'debug' | 'docs' | 'build' | 'knowledge';
 
 /** Every fake handler answers with who it is, its role, the op and the args it got. */
 function echo(label: string, role: Role, op: string, args: unknown): string {
@@ -57,6 +57,7 @@ function echoingPackDocs(label: string): PackDocsHandlers {
     return {
         docs: echoing(label, 'docs', PACKDOCS_DOC_OPS),
         build: echoing(label, 'build', PACKDOCS_BUILD_OPS),
+        knowledge: echoing(label, 'knowledge', KNOWLEDGE_OPS),
     };
 }
 
@@ -198,11 +199,14 @@ suite('Multi-window routing', () => {
         return { label, pid: entry.pid, port, token, entry, journal, close };
     }
 
-    /** A window: a real control server over echoing handlers and a journal of its own, registered by hand. */
+    /**
+     * A window: a real control server over echoing handlers and a journal of its own, registered by hand.
+     * `withPackDocs`: the echoing documentation handlers, none, or handlers of the test's own.
+     */
     async function openWindow(
         label: string,
         overrides: Partial<WindowRegistration> = {},
-        withPackDocs = true,
+        withPackDocs: boolean | PackDocsHandlers = true,
         ops: OpOverrides = {},
         serverOptions: ControlServerOptions = {},
     ): Promise<FakeWindow> {
@@ -211,7 +215,7 @@ suite('Multi-window routing', () => {
         const control = new ControlServer(
             { ...echoing<IDebuggingHandler>(label, 'debug', DEBUG_OPS), ...ops } as IDebuggingHandler,
             token,
-            withPackDocs ? echoingPackDocs(label) : undefined,
+            withPackDocs === false ? undefined : withPackDocs === true ? echoingPackDocs(label) : withPackDocs,
             journal,
             serverOptions);
         const port = await control.start();
@@ -755,6 +759,42 @@ suite('Multi-window routing', () => {
         test('a window without documentation handlers refuses their ops', async () => {
             await openWindow('bare', {}, false);
             await refusedWith(newRouter().packDocsOp('handleListTargetDocs', {}), /not available in this window/);
+        });
+
+        test('knowledge ops take the ladder, and a tie of idle windows falls to the router\'s own window, said on the Indexes line', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('router', { pid: process.pid, workspaceFolders: [folder('router')] });
+            const router = newRouter();
+            // The documentation ops stay as they are: the manuals belong to one window's target.
+            await refusedAs('AMBIGUOUS_WINDOW', router.packDocsOp('handleListTargetDocs', {}));
+            const search = textOf(await router.packDocsOp('handleKnowledgeSearch', { query: 'HardFault' }));
+            assert.strictEqual(search, `${echo('router', 'knowledge', 'handleKnowledgeSearch', { query: 'HardFault' })}\n`
+                + `Indexes: base; context of the router's own window, pid ${process.pid} (router): 2 windows are registered and none is this `
+                + 'session\'s target; pass window to search with another project\'s context.');
+            assert.strictEqual(router.describeTarget(), undefined, 'not the session\'s target');
+            assert.strictEqual(textOf(await router.packDocsOp('handleKnowledgeGet', { id: 'proc-x' })), echo('router', 'knowledge', 'handleKnowledgeGet', { id: 'proc-x' }));
+            // A window argument names the window as for any call, and the line names it.
+            const named = textOf(await router.packDocsOp('handleKnowledgeSearch', { query: 'HardFault', window: folder('alpha') }));
+            assert.match(named, /^alpha\|knowledge\|handleKnowledgeSearch\|\{"query":"HardFault"\}\nIndexes: base; context of window pid \d+ \(alpha\)\.$/);
+            assert.deepStrictEqual(router.describeTarget()?.name, 'alpha');
+        });
+
+        test('the window\'s own Indexes line is extended, and a tie without the router\'s window registered stays refused', async () => {
+            const searching = {
+                handleKnowledgeSearch: async (): Promise<ToolText> => ({
+                    text: 'Knowledge search: 1 of 1 matching units.\nNo project context: no folder is open.\nIndexes: base and V::P@1.0.0 (2 units).\n1. x',
+                    status: 'ok', data: { matched: 1 },
+                }),
+            };
+            const handlers: PackDocsHandlers = { ...echoingPackDocs('alpha'), knowledge: searching as unknown as PackDocsHandlers['knowledge'] };
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] }, handlers);
+            const router = newRouter();
+            const reply = await router.packDocsOp('handleKnowledgeSearch', { query: 'x' });
+            assert.strictEqual(textOf(reply), 'Knowledge search: 1 of 1 matching units.\nNo project context: no folder is open.\n'
+                + 'Indexes: base and V::P@1.0.0 (2 units); context of window pid 500001 (alpha).\n1. x');
+            assert.strictEqual((reply as { data?: JsonObject }).data?.windowPid, 500001);
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            await refusedAs('AMBIGUOUS_WINDOW', newRouter().packDocsOp('handleKnowledgeSearch', { query: 'x' }));
         });
 
         test('arguments arrive as they were sent', async () => {

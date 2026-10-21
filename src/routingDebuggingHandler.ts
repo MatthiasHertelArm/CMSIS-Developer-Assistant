@@ -83,6 +83,7 @@ import {
     TargetHint,
     WINDOW_ARGUMENT,
     forwardTimeoutMs,
+    isKnowledgeOp,
     targetHintOf,
 } from './core/opTable';
 import { liesInside, samePath } from './core/bootstrapState';
@@ -144,6 +145,8 @@ const INSTALL_PACK = 'install_pack';
 const CREATE_SOLUTION = 'create_solution';
 /** The op of `cmsis_query`, which any window can answer. */
 const QUERY_OP = 'handleCmsisQuery';
+/** The knowledge op whose reply says which window's project context the search used. */
+const KNOWLEDGE_SEARCH_OP = 'handleKnowledgeSearch';
 /** How long, and how often, the router looks for the window `open_solution` opened. */
 const OPENED_WINDOW_WAIT_MS = 30_000;
 const OPENED_WINDOW_POLL_MS = 500;
@@ -202,6 +205,30 @@ class ChannelFailure extends Error {
 /** How a window is named in the watchdog's texts: pid, and the workspace name when it has one. */
 function windowLabel(entry: WindowRegistration): string {
     return typeof entry.name === 'string' && entry.name.length > 0 ? `pid ${entry.pid} (${entry.name})` : `pid ${entry.pid}`;
+}
+
+/**
+ * A `knowledge_search` reply with the window whose project context the
+ * search used, on its `Indexes:` line (added after the context line when
+ * the worker wrote none): the window the ladder chose, or the router's own
+ * when no window could be chosen, with the way to search with another
+ * project's context.
+ */
+function withKnowledgeWindow(result: ToolText, entry: WindowRegistration, reason: ResolutionReason, registered: number): ToolText {
+    const note = reason === 'router-window'
+        ? `context of the router's own window, ${windowLabel(entry)}: ${registered} windows are registered and none is this session's target; `
+            + 'pass window to search with another project\'s context'
+        : `context of window ${windowLabel(entry)}`;
+    const lines = textOf(result).split('\n');
+    const indexes = lines.findIndex((line) => line.startsWith('Indexes: '));
+    if (indexes >= 0) {
+        lines[indexes] = `${lines[indexes].replace(/\.$/, '')}; ${note}.`;
+    } else {
+        const context = lines.findIndex((line) => /^(Context|No project context): /.test(line));
+        lines.splice((context >= 0 ? context : 0) + 1, 0, `Indexes: base; ${note}.`);
+    }
+    const text = lines.join('\n');
+    return isToolReply(result) ? { ...result, text, data: { ...result.data, windowPid: entry.pid } } : text;
 }
 
 /** A health check before the call went unanswered (#14). */
@@ -485,6 +512,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             resolved = routed.action === CREATE_SOLUTION ? this.resolveForCreate(routed.path, hint) : this.resolveForOpen(routed.path, hint);
         } else if (op === QUERY_OP || installsPack(op, given)) {
             resolved = this.resolveAnyWindow(hint);
+        } else if (isKnowledgeOp(op)) {
+            resolved = this.resolveForKnowledge(hint);
         } else {
             resolved = this.resolveTarget(hint);
         }
@@ -511,7 +540,33 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (noticed instanceof ToolError) {
             throw noticed;
         }
+        if (op === KNOWLEDGE_SEARCH_OP) {
+            return withKnowledgeWindow(noticed, entry, reason, this.registry.list().length);
+        }
         return routed?.action === OPEN_SOLUTION ? this.followOpened(noticed) : noticed;
+    }
+
+    /**
+     * The window a knowledge op runs in. The index needs no window, only the
+     * project context does, so the ladder decides as for any call; where it
+     * would refuse — a tie of idle windows, or no window it can name — the
+     * op runs in the router's own window, scoped by that window's project if
+     * it has one, without making it the session's target. `knowledge_search`
+     * says in its reply whose context was used.
+     */
+    private resolveForKnowledge(hint: TargetHint | undefined): Resolved {
+        try {
+            return this.resolveTarget(hint);
+        } catch (failure) {
+            if (!(failure instanceof ToolError) || (failure.code !== 'AMBIGUOUS_WINDOW' && failure.code !== 'WINDOW_UNREACHABLE') || hint !== undefined) {
+                throw failure;
+            }
+            const own = this.registry.findByPid(this.registry.ownPid());
+            if (own === undefined) {
+                throw failure;
+            }
+            return { entry: own, reason: 'router-window' };
+        }
     }
 
     /**

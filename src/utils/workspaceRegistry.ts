@@ -107,7 +107,7 @@ export type HeartbeatPatch = Partial<Pick<WindowRegistration, 'busy' | 'lagMs'>>
  * the default target, the one debugging window, the one window. It shows up
  * in the routing log line and in the router's status bar.
  */
-export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'default' | 'active-session' | 'only-window';
+export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'default' | 'active-session' | 'only-window' | 'router-window';
 
 /**
  * The window the user chose with Select Target Window (#16), for the agent

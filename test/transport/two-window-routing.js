@@ -246,6 +246,14 @@ async function main() {
             && (idleData.candidates ?? []).every((c) => c.isDefault === false && c.role === published[c.pid]),
         JSON.stringify(idleData.candidates));
 
+    // The knowledge index needs no window: a tie sends knowledge_search to the router's own window instead of refusing it.
+    // Without pack-docs handlers in this harness the worker answers TOOL_DISABLED, which shows the call was routed.
+    const idleSearch = await callToolResult(PORT, sid, 'knowledge_search', { query: 'HardFault' }, 120);
+    const idleSearchData = idleSearch.structuredContent ?? {};
+    check('knowledge_search runs in the router\'s own window when two idle windows tie, instead of AMBIGUOUS_WINDOW',
+        idleSearchData.error_code === 'TOOL_DISABLED' && /not available in this window/.test(idleSearch.content?.[0]?.text ?? ''),
+        `${idleSearchData.error_code}: ${(idleSearch.content?.[0]?.text ?? '').split('\n')[0]}`);
+
     // The window argument names the window for one call, by pid or by path, and re-aims the session.
     const tooltipCall = (item) => (item.tooltip ?? '').split('\n').find((line) => line.startsWith('Last agent call here:')) ?? '';
     const byPid = await callToolResult(PORT, sid, 'cmsis_action', { action: 'status', window: String(beta.pid) }, 21);

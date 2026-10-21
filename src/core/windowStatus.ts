@@ -126,6 +126,7 @@ const REASON_TEXT: Readonly<Record<ResolutionReason, string>> = {
     default: 'default target',
     'active-session': 'the only debug session',
     'only-window': 'the only window',
+    'router-window': 'the router\'s own window, for a call any window can run',
 };
 
 /** Tools whose names do not follow from their op name. */
