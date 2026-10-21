@@ -1265,7 +1265,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2781,7 +2781,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4833,7 +4833,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6807,7 +6807,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8909,7 +8909,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",

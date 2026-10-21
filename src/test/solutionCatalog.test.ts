@@ -95,6 +95,9 @@ const H735 = board('STMicroelectronics', 'STM32H735G-DK', ['STMicroelectronics::
 const NUCLEO = board('STMicroelectronics', 'NUCLEO-H753ZI', ['STMicroelectronics::STM32H753ZITx']);
 const DISCO = board('STMicroelectronics', 'STM32H747I-DISCO', ['STMicroelectronics::STM32H747XIHx']);
 const FRDM = board('NXP', 'FRDM-MCXN947', ['NXP::MCXN947VDF']);
+/** The BBC micro:bit V2 as its pack names it, and as a vendor might name a board by its display name. */
+const MICROBIT = board('MicroBit', 'microbit-v2', ['NordicSemiconductor::nRF52833_xxAA'], pack('MicroBit', 'MicroBit_V2_BSP', '0.1.1'));
+const MICROBIT_DISPLAY = board('BBC', 'BBC micro:bit V2', ['NordicSemiconductor::nRF52833_xxAA']);
 const WEB_BLINKY = draft('blinky-stm32h735g-dk', 'Blinky', 'Example', 'Web', undefined, 'Csolution', 'Blinks the LEDs of the board');
 const CUBEMX = draft('keil::stm32h735g-dk_bsp@1.1.0:cubemx', 'CubeMX', 'Template', 'Local', BSP);
 const UV_BLINKY = draft('keil::stm32h735g-dk_bsp@1.1.0:blinky', 'Blinky', 'Example', 'Local', BSP, 'uVision');
@@ -234,10 +237,30 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             assert.ok(reply.text.startsWith('Boards matching device \'^stm32h735igk\': 1.\n'), reply.text);
         });
 
+        test('a name as the user spells it finds the board: against the name and the id, separators ignored', async () => {
+            const api = new StubApi([MICROBIT, MICROBIT_DISPLAY, FRDM]);
+            const idsFor = async (name: string): Promise<string[]> =>
+                (((await query(api, { what: 'boards', name })).data as JsonObject).entries as JsonObject[]).map((entry) => entry.id as string);
+            for (const spelling of ['micro:bit', 'microbit', 'Micro Bit', 'MICRO-BIT', 'micro:bit v2']) {
+                assert.deepStrictEqual(await idsFor(spelling), ['BBC::BBC micro:bit V2', 'MicroBit::microbit-v2'], spelling);
+            }
+            // The id matches too, and a regex keeps its meaning: anchored, it is the id prefix; as text, `MicroBit::`
+            // is the word microbit, which both boards carry.
+            assert.deepStrictEqual(await idsFor('^MicroBit::'), ['MicroBit::microbit-v2']);
+            assert.deepStrictEqual(await idsFor('MicroBit::'), ['BBC::BBC micro:bit V2', 'MicroBit::microbit-v2']);
+            assert.deepStrictEqual(await idsFor('^BBC'), ['BBC::BBC micro:bit V2']);
+            assert.deepStrictEqual(await idsFor('frdm'), ['NXP::FRDM-MCXN947']);
+            assert.deepStrictEqual(await idsFor('nucleo'), []);
+            const reply = await query(api, { what: 'boards', name: 'micro:bit' });
+            assert.ok(reply.text.startsWith("Boards matching name 'micro:bit': 2.\n"), reply.text);
+        });
+
         test('a pattern that is no regular expression is taken as text', () => {
             const brackets = matcherOf('H7[35');
             assert.ok(brackets !== undefined && brackets('stm32h7[35x') && !brackets('STM32H735'));
             assert.strictEqual(matcherOf('  '), undefined);
+            const colon = matcherOf('micro:bit');
+            assert.ok(colon !== undefined && colon('microbit-v2') && colon('BBC micro:bit V2') && !colon('microbot'));
         });
 
         test('devices: family, the cores with their processor names when there are several, and the pack', async () => {

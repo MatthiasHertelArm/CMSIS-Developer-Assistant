@@ -255,7 +255,8 @@ const ABOUT = {
     ),
     cmsis_query: say(
         'Boards, devices, or the examples and templates of a board or device, from CMSIS Solution\'s catalog (web and installed packs);',
-        'no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.',
+        'no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons ' +
+        'and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +
