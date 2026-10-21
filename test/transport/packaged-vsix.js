@@ -39,6 +39,11 @@ console.log(`packaged ${pkg.name}@${pkg.version}, main=${pkg.main}\n`);
 // 1. The entry point named by package.json is actually in the VSIX.
 const mainPath = path.join(root, pkg.main);
 check('package.json main exists in the VSIX', fs.existsSync(mainPath), pkg.main);
+const robotIcon = pkg.contributes?.icons?.['cda-robot']?.default;
+check('the status-bar robot uses the correct font character', robotIcon?.fontCharacter === '\\E001');
+const robotFont = robotIcon?.fontPath && path.join(root, robotIcon.fontPath);
+check('the status-bar robot font ships as WOFF', !!robotFont && fs.existsSync(robotFont)
+    && fs.readFileSync(robotFont).toString('ascii', 0, 4) === 'wOFF');
 
 // 2. Test code is not shipped. Compiled tests carry credential-shaped fixtures
 //    from the redaction suite and nothing loads them.
@@ -103,6 +108,7 @@ check('the native binding loads and enumerates ports', bindingOk, bindingDetail)
 // 6. The bundle did not swallow serialport — if it had, the require above could
 //    pass while the extension still used a broken inlined copy.
 const bundle = fs.readFileSync(mainPath, 'utf8');
+check('the bundled status bar uses the robot glyph', bundle.includes('$(cda-robot)'));
 check('the bundle keeps serialport external',
     /require\(["']serialport["']\)/.test(bundle),
     'bundle require()s serialport at runtime rather than inlining it');

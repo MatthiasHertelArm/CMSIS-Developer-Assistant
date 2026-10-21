@@ -301,7 +301,7 @@ suite('Multi-window routing', () => {
             const a = await openWindow('boardA', { workspaceFolders: [folder('a')], hasActiveSession: true });
             const b = await openWindow('boardB', { workspaceFolders: [folder('b')], hasActiveSession: true });
             const tie = await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleReadMemory({ address: '0x0', length: 4 }),
-                /2 VS Code windows have an active debug session/, /select_debug_window/, /click "CDA" in the VS Code status bar → Select Target Window/);
+                /2 VS Code windows have an active debug session/, /select_debug_window/, /click the CDA robot icon in the VS Code status bar → Select Target Window/);
             const detail = errorDetail(tie);
             assert.ok(detail.includes(folder('a')) && detail.includes(folder('b')), detail);
             // Windows of 2.5.0 publish no role, so their candidates carry none.
@@ -479,7 +479,7 @@ suite('Multi-window routing', () => {
                 /none has an active debug session/,
                 /The default target the user set in VS Code \(closed-board\) is not open\./,
                 /cmsis_action load_and_debug and window set to its pid/,
-                /click "CDA" in the VS Code status bar → Select Target Window/);
+                /click the CDA robot icon in the VS Code status bar → Select Target Window/);
             const candidate = (w: FakeWindow, role: string): object => ({
                 pid: w.pid, name: w.label, workspaceFolders: w.entry.workspaceFolders, hasActiveSession: false, isDefault: false, role,
             });

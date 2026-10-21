@@ -57,6 +57,15 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "icons": {
+      "cda-robot": {
+        "description": "CMSIS Developer Assistant",
+        "default": {
+          "fontPath": "./assets/icons/cda-icons.woff",
+          "fontCharacter": "\\E001"
+        }
+      }
+    },
     "mcpServerDefinitionProviders": [
       {
         "id": "cmsis-developer-assistant",

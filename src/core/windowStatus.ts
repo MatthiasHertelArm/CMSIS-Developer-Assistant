@@ -200,18 +200,18 @@ function sessionLine(session: SessionView, ownPid: number): string {
 }
 
 /**
- * The item's text and tooltip. The text is `$(plug) CDA router` or
- * `$(plug) CDA worker`, then ` · default` when this window is the default
+ * The item's text and tooltip. The text is `$(cda-robot) R` or
+ * `$(cda-robot) W`, then ` · default` when this window is the default
  * target and a spinner while an agent call runs here. `warning` is set while
  * a running call is past its fence.
  */
 export function renderWindowStatus(state: WindowStatusState): WindowStatusView {
     const isDefault = state.defaultTarget?.pid === state.pid;
-    const text = `$(plug) CDA ${state.role}${isDefault ? ' · default' : ''}${state.running.length > 0 ? ' $(sync~spin)' : ''}`;
+    const text = `$(cda-robot) ${state.role === 'router' ? 'R' : 'W'}${isDefault ? ' · default' : ''}${state.running.length > 0 ? ' $(sync~spin)' : ''}`;
     const lines = [
         ROLE_LINES[state.role],
         `MCP endpoint: ${state.endpoint}`,
-        `Default target: ${defaultTargetText(state.defaultTarget, state.pid)}`,
+        `Default target windows: ${defaultTargetText(state.defaultTarget, state.pid)}`,
         ...callLines(state),
     ];
     if (state.sessions !== undefined) {

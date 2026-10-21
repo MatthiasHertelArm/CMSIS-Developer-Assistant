@@ -205,7 +205,7 @@ async function main() {
     // The stub keeps its items in creation order, and alpha's coordinator started first.
     const [alphaItem, betaItem] = stub.statusBarItems;
     check('each window shows its role in the status bar, and a click on it selects the target window',
-        alphaItem?.text === `$(plug) CDA ${roleOf(c1)}` && betaItem?.text === `$(plug) CDA ${roleOf(c2)}`
+        alphaItem?.text === `$(cda-robot) ${c1.isRouter() ? 'R' : 'W'}` && betaItem?.text === `$(cda-robot) ${c2.isRouter() ? 'R' : 'W'}`
             && alphaItem.visible && betaItem.visible && alphaItem.name === 'CMSIS Developer Assistant'
             && alphaItem.command === 'cmsis-developer-assistant.selectTargetWindow',
         `${alphaItem?.text} / ${betaItem?.text}`);
@@ -276,7 +276,7 @@ async function main() {
         saved.pid === beta.pid && saved.workspaceFolder === betaDir && saved.name === 'beta' && typeof saved.setAt === 'number'
             && (process.platform === 'win32' || (fs.statSync(defaultFile).mode & 0o777) === 0o600),
         JSON.stringify(saved));
-    check('the window that was chosen says so in its status bar at once', betaItem.text === `$(plug) CDA ${roleOf(c2)} · default`,
+    check('the window that was chosen says so in its status bar at once', betaItem.text === `$(cda-robot) ${c2.isRouter() ? 'R' : 'W'} · default`,
         betaItem.text);
 
     const defaultSid = await openSession(PORT);
@@ -412,7 +412,7 @@ async function main() {
         `isRouter=${worker.isRouter()}`);
     const promotedEntry = workerWindow.registry.list().find((w) => w.pid === workerWindow.pid);
     check('the promoted window publishes and shows its new role',
-        promotedEntry?.role === 'router' && workerItem.text.startsWith('$(plug) CDA router'),
+        promotedEntry?.role === 'router' && workerItem.text.startsWith('$(cda-robot) R'),
         `${promotedEntry?.role} / ${workerItem.text}`);
 
     // #14: the old router's session id means nothing to the new one; 404 tells the client to start over.

@@ -11228,7 +11228,7 @@
           "id": "cmsis-developer-assistant.window",
           "name": "CMSIS Developer Assistant",
           "command": "cmsis-developer-assistant.selectTargetWindow",
-          "text": "$(plug) CDA router"
+          "text": "$(cda-robot) R"
         },
         {
           "ev": "settled",
@@ -12192,7 +12192,7 @@
           "id": "cmsis-developer-assistant.window",
           "name": "CMSIS Developer Assistant",
           "command": "cmsis-developer-assistant.selectTargetWindow",
-          "text": "$(plug) CDA worker"
+          "text": "$(cda-robot) W"
         },
         {
           "ev": "settled",
@@ -13354,7 +13354,7 @@
           "id": "cmsis-developer-assistant.window",
           "name": "CMSIS Developer Assistant",
           "command": "cmsis-developer-assistant.selectTargetWindow",
-          "text": "$(plug) CDA router"
+          "text": "$(cda-robot) R"
         },
         {
           "ev": "settled",

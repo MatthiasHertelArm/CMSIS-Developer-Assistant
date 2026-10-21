@@ -40,6 +40,7 @@ owns the workspace or the board the call is about.
 | `src/core/opTable.ts` | the names of every op that may cross a window boundary, shared by both ends, the internal ops, the channel's timings and budgets; `targetHintOf()` |
 | `src/core/windowHealth.ts` | what a window knows about its own health: the busy table, the event-loop lag, the notice gate; the router watch, and `probeLoopback()`, the one-request probe behind the health check and the port check |
 | `src/windowStatus.ts`, `src/core/windowStatus.ts` | the status-bar item and Select Target Window: the wiring, and the pure rendering |
+| `assets/icons/cda-robot.svg`, `assets/icons/cda-icons.woff` | the robot artwork and its one-glyph font, contributed by `package.json` as the product icon `cda-robot` |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
 
 ## The registry
@@ -378,14 +379,14 @@ was the router or which window an agent was driving.
 
 - **The item.** Every started window shows one status-bar item,
   `cmsis-developer-assistant.window`, named "CMSIS Developer Assistant" so the
-  status bar's own menu can hide it: `$(plug) CDA router` or
-  `$(plug) CDA worker`, `· default` on the default target, and a spinner while
+  status bar's own menu can hide it: `$(cda-robot) R` (router) or
+  `$(cda-robot) W` (worker), `· default` on the default target, and a spinner while
   an agent call runs in the window. Its tooltip gives the MCP endpoint, the
-  default target, the calls running and the last one; in the router window
-  also every open MCP session with the window it drives and the rung that
-  chose it. While a call runs on past its fence it has the warning
-  background (#14). The item shows with a single window too: it confirms
-  the server runs.
+  default target under "Default target windows:", the calls running and the
+  last one; in the router window also every open MCP session with the window
+  it drives and the rung that chose it. While a call runs on past its fence
+  it has the warning background (#14). The item shows with a single window
+  too: it confirms the server runs.
 - **Its sources.** `ControlServer.onOp()` tells the window when an op starts,
   outlives its fence and ends, with a ticket per run; every call arrives
   that way, the router's own included. The

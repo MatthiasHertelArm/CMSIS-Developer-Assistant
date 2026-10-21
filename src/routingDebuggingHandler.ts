@@ -122,7 +122,7 @@ const SELECT_HINT = 'Call list_debug_windows to see the options.';
 const LISTING_FOOTER = 'Pin one for this session with select_debug_window({ pid }) when the automatic choice is wrong, '
     + 'or pass window to a tool that takes it.';
 /** How an agent asks the user to choose: the status-bar item's click opens Select Target Window. */
-const ASK_THE_USER = 'or ask the user to pick one: click "CDA" in the VS Code status bar → Select Target Window.';
+const ASK_THE_USER = 'or ask the user to pick one: click the CDA robot icon in the VS Code status bar → Select Target Window.';
 const DEFAULT_MARK = 'default target (set in VS Code)';
 const UNREACHABLE_HINT = 'It may have been closed. Call list_debug_windows to see what is still open.';
 const BUSY_HINT = 'The call may still be running there. Call get_session_status to see the state of that window, then retry.';

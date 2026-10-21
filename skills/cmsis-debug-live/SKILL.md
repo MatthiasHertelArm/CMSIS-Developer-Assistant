@@ -393,7 +393,7 @@ When no rule decides — two windows debugging at once, or several idle ones —
 refuses to guess and asks you to choose: reading the wrong board's memory looks
 exactly like a firmware bug. `list_debug_windows` shows the candidates and the
 default target; `select_debug_window` pins one for the rest of the session. Or
-ask the user to pick one: a click on "CDA" in the VS Code status bar opens
+ask the user to pick one: a click on the CDA robot icon in the VS Code status bar opens
 Select Target Window.
 
 `WORKER_TIMEOUT` means the target window is alive but the call did not finish

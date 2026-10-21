@@ -80,7 +80,7 @@ Everything the agent does goes through the MCP tools below; the commands are for
 | Command | What it does |
 |---------|--------------|
 | **Configure Agent** | The first-run setup, on demand: pick the AI agents to register the MCP server with (their configuration files are written for you, and the [agent skills](#agent-skills) are installed into your personal skills directories), then pick the rule files that get the [tool rules](#tool-rules-in-your-agents-rule-files). Run it again after installing a new agent, to reinstall the skills, or to take the rules out of a file. |
-| **Select Target Window** | With several VS Code windows open: choose the window that agent calls go to when nothing else names one, or **Automatic** to clear the choice. A click on the **CDA** item in the status bar opens it too; see [Networking and multiple windows](#networking-and-multiple-windows). |
+| **Select Target Window** | With several VS Code windows open: choose the window that agent calls go to when nothing else names one, or **Automatic** to clear the choice. A click on the **CDA robot icon** in the status bar opens it too; see [Networking and multiple windows](#networking-and-multiple-windows). |
 | **Release Serial Port** | Takes back a serial port an agent holds in this window, so the Serial Monitor or a terminal can open it; the agent is told why when it next uses the port. While a port is held, the status bar shows **Serial: COM7 (agent)**, and a click on it runs this command. See [Serial ports](#serial-ports). |
 | **List Target Documentation** | Writes the current csolution target's document list — pack manuals and datasheets, Arm documents for the core, your imported and workspace PDFs, each with its index state — to the _CMSIS Developer Assistant_ output channel. The same list the agent gets from `list_target_docs`. |
 | **Index Target Documentation** | Extracts and indexes every PDF of the current target now, with a progress notification, so the agent's first search is instant instead of paying for extraction. |
@@ -299,7 +299,7 @@ The target window of a call is chosen in this order:
 
 When none of these decides, for example with two windows debugging or two idle ones, the call fails and names every window, and the agent asks you or pins one itself.
 
-Every window shows an item in the status bar: **CDA router** or **CDA worker**, with **· default** on the default target and a spinner while an agent call runs in it. Its tooltip names the MCP endpoint, the default target and the last agent call; in the router window it also lists the agent sessions with the window each one drives and why. A click on the item opens **Select Target Window**, which saves your choice for every window. It survives a reload of the chosen window, since the window is found again by its folder. Hide the item from the status bar's context menu (**CMSIS Developer Assistant**) if you do not need it.
+Every window shows the robot icon followed by **R** (router) or **W** (worker) in the status bar, with **· default** on the default target and a spinner while an agent call runs in it. Its tooltip names the MCP endpoint, the default target under **Default target windows:** and the last agent call; in the router window it also lists the agent sessions with the window each one drives and why. A click on the item opens **Select Target Window**, which saves your choice for every window. It survives a reload of the chosen window, since the window is found again by its folder. Hide the item from the status bar's context menu (**CMSIS Developer Assistant**) if you do not need it.
 
 A call that hangs in a window ends in time. When a call does not finish, for example because a picker or dialog in that window waits for you, the window tells the agent `WORKER_TIMEOUT` shortly before the router would give up. The call keeps running there: the window shows a warning, and its status-bar item turns to the warning background until the call ends. A window whose extension host is blocked, or that was closed, fails a health check within seconds, and the agent gets `WINDOW_UNREACHABLE` instead of waiting minutes. When the router window itself stops responding, it keeps the port and no other window can take over; the other windows then show a warning that names it. Reload or close that window, and another window takes over automatically.
 
@@ -406,7 +406,7 @@ If the port is held by an unrelated process, set `cmsis-developer-assistant.serv
 
 ### Two windows are debugging at the same time
 
-Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the serial tools) cannot tell which window is meant and return an error naming both. The same holds for several windows of which none is debugging. Click **CDA** in the status bar and choose the target window, ask the agent to call `select_debug_window`, or close the other debug session.
+Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the serial tools) cannot tell which window is meant and return an error naming both. The same holds for several windows of which none is debugging. Click the **CDA robot icon** in the status bar and choose the target window, ask the agent to call `select_debug_window`, or close the other debug session.
 
 ### A `gdbtarget` session fails to launch
 
