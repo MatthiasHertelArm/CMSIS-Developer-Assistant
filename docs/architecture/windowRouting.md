@@ -29,6 +29,11 @@ owns the workspace or the board the call is about.
   2.5.1) and shows it in the status bar (see
   [Window selection for people](#window-selection-for-people)).
 
+The log tells state, not routine: a window says once that it is a worker or
+the router, one line names a window that joins or leaves the registry (seen
+by the heartbeat), and the bids for the port, their usual failure and the
+release after it are debug lines.
+
 ## The pieces
 
 | File | Responsibility |
@@ -156,6 +161,17 @@ folder; nothing is followed afterwards. `cmsis_query` reads CMSIS Solution's
 catalog, which every window answers alike, so it takes the ladder and, where
 the ladder would refuse a tie, the router's own window
 (`resolveAnyWindow()`, which `open_solution` uses for its tie too).
+
+The knowledge ops are routed with the documentation ops, because the
+project context of a `knowledge_search` is the active target of one window;
+but the index needs no window. So they take the ladder, and where it would
+refuse — a tie of idle windows, or no window it can name — they run in the
+router's own window, scoped by that window's project if it has one, without
+making it the session's target (`resolveForKnowledge()`). The reply of
+`knowledge_search` says on its `Indexes:` line whose context was used
+(`withKnowledgeWindow()`), and in the fallback case how to search with
+another project's context. The documentation ops keep refusing the tie:
+their manuals belong to one window's target.
 
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take

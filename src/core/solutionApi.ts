@@ -342,7 +342,19 @@ export function matcherOf(pattern: string | undefined): ((value: string | undefi
     } catch {
         expression = new RegExp(escapeRegExp(given), 'i');
     }
-    return (value) => value !== undefined && expression.test(value);
+    const spelled = folded(given);
+    return (value) => value !== undefined && (expression.test(value) || folded(value).includes(spelled));
+}
+
+/**
+ * A name as a user spells it, without case or separators: `micro:bit`,
+ * `Micro Bit` and `microbit-v2` are one word. A pattern is compared this
+ * way as well as a regular expression, so the user's spelling of a board
+ * finds its id, and a pattern with regex syntax loses nothing (its folded
+ * form matches no name, and the regular expression decides).
+ */
+function folded(text: string): string {
+    return text.toLowerCase().replace(/[\s:_\-.]/g, '');
 }
 
 /** The id of a board, device or draft as the listing shows it. */

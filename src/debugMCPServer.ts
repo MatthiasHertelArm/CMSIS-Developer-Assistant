@@ -323,7 +323,8 @@ export class DebugMCPServer {
      * bind means another window serves MCP, reported as `PortInUseError`.
      */
     async start(): Promise<void> {
-        logger.info(`Opening the MCP endpoint on ${LOOPBACK_V4}:${this.port}`);
+        // A worker bids for the port every 10 s: the attempt and its usual outcome are debug lines, the bind itself is news.
+        logger.debug(`Opening the MCP endpoint on ${LOOPBACK_V4}:${this.port}`);
         try {
             this.listener = await listenOnLoopback(this.buildApp(), this.port);
             const where = this.listener.address();
@@ -336,7 +337,7 @@ export class DebugMCPServer {
             logger.info(`MCP endpoint ready at http://${LOOPBACK_V4}:${where.port}${MCP_ROUTE}`);
         } catch (failure) {
             if ((failure as NodeJS.ErrnoException | undefined)?.code === 'EADDRINUSE') {
-                logger.info(`Port ${this.port} is taken; another window serves MCP`);
+                logger.debug(`Port ${this.port} is taken; another window serves MCP`);
                 throw new PortInUseError(this.port);
             }
             logger.error('The MCP endpoint did not start', failure);
@@ -369,8 +370,11 @@ export class DebugMCPServer {
             this.listener = undefined;
             this.boundPort = undefined;
             await closeHttpServer(listener);
+            logger.info('MCP endpoint stopped');
+        } else {
+            // The release after a failed bind, or a second stop: nothing was serving.
+            logger.debug('MCP endpoint stopped (it was not listening)');
         }
-        logger.info('MCP endpoint stopped');
     }
 
     /** The bound port while listening (the OS's pick when 0 was configured), else the configured one. */

@@ -181,6 +181,10 @@ export class WindowCoordinator {
     private lastLag: EventLoopLag | undefined;
     private heartbeat: ReturnType<typeof setInterval> | undefined;
     private promotionTimer: ReturnType<typeof setInterval> | undefined;
+    /** True once the log said this window is a worker; the polls that keep losing the port say so at debug level. */
+    private workerAnnounced = false;
+    /** The windows the last heartbeat saw in the registry, by pid, so that one joining or leaving is one log line. */
+    private windowsSeen: Map<number, string> | undefined;
     /** The csolution file the CMSIS Solution extension last named, as the registry entry carries it. */
     private solutionFile: string | undefined;
     /** The `getSolutionFile` query in flight; one at a time. */
@@ -288,7 +292,12 @@ export class WindowCoordinator {
             // the port bind itself failed).
             await server.stop().catch(() => undefined);
             if (error instanceof PortInUseError) {
-                logger.info('Another window is the router; this window is a worker.');
+                if (this.workerAnnounced) {
+                    logger.debug(`Still a worker: port ${this.options.port} is taken`);
+                } else {
+                    logger.info('Another window is the router; this window is a worker.');
+                    this.workerAnnounced = true;
+                }
                 this.startPromotionPolling();
                 return;
             }
@@ -384,6 +393,31 @@ export class WindowCoordinator {
         this.status?.reloadDefault();
         // A solution opened or closed since the last publish shows up in the listing.
         this.refreshSolutionFile();
+        this.observeWindows();
+    }
+
+    /**
+     * One log line for each window that joined or left the registry since
+     * the last look, the windows present at the first look included; a look
+     * that finds the same windows logs nothing. Public so that a test
+     * observes a change without waiting for the heartbeat.
+     */
+    public observeWindows(): void {
+        const current = new Map(this.registry.list().map((entry) => [entry.pid, entry.name]));
+        const before = this.windowsSeen ?? new Map<number, string>();
+        this.windowsSeen = current;
+        const label = (pid: number, name: string): string => `pid ${pid}${name && name !== NO_WORKSPACE ? ` (${name})` : ''}`;
+        const count = `${current.size} window${current.size === 1 ? '' : 's'} registered`;
+        for (const [pid, name] of current) {
+            if (!before.has(pid)) {
+                logger.info(`Window ${label(pid, name)} joined the registry; ${count}`);
+            }
+        }
+        for (const [pid, name] of before) {
+            if (!current.has(pid)) {
+                logger.info(`Window ${label(pid, name)} left the registry; ${count}`);
+            }
+        }
     }
 
     /** The calls busy here for more than 10 s, as the registry entry lists them; undefined when none is. */

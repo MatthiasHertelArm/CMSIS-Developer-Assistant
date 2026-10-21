@@ -472,7 +472,9 @@ since `getApi` makes a new one per call. It also finds a board, device or
 draft by id, case-insensitively, with near ids when none matches.
 `src/core/catalogQuery.ts` applies the filters itself, as case-insensitive
 regular expressions (the API's name filter is case-sensitive and its vendor
-filter exact), sorts boards and devices by id, caps the list at `limit`
+filter exact); a name is tried against the entry's name and its id, and
+also as text without separators, so the user's `micro:bit` finds the board
+`microbit-v2` (`matcherOf`). It sorts boards and devices by id, caps the list at `limit`
 (20, at most 100) and counts the rest. The pack, devices and cores of an
 entry can cost the web catalog one request each, so they are read for the
 listed entries only, in parallel, and left out with a note when they do not

@@ -21,7 +21,11 @@
  *   1. The project (device, cores, compiler, components, tools) becomes a set
  *      of entity ids, with what the index knows above them.
  *   2. Candidates come from BM25; a unit whose symptom pattern matches a
- *      line of the query stands first.
+ *      line of the query stands first. A question of a few words is a task
+ *      name, and the procedure or routing unit whose "when to use" text
+ *      holds that name is lifted to the top (`HOW_TO_BONUS`): BM25 alone
+ *      ranks a short reference unit that carries the word in its title above
+ *      a procedure that names it once in a long description.
  *   3. A unit a pack ships is scoped to that pack (`scoped_to`): only a
  *      project that uses the pack sees it, and without a project nobody.
  *      A unit without `applies_to` holds everywhere. Otherwise each
@@ -36,6 +40,7 @@
  * Pure: the index is passed in.
  */
 
+import { queryWords } from './store';
 import type { KnowledgeNode, KnowledgeReader } from './store';
 
 /** Reciprocal rank fusion, as in the prototype, so scores stay comparable with it. */
@@ -50,6 +55,22 @@ const RANK_FUSION_K = 60;
  * base (tests/golden.json).
  */
 const HOW_TO_PRIOR = 0.001;
+/**
+ * The most content words a question may have to count as a task name
+ * (`HardFault`, `create a new project`). A longer question carries
+ * specifics — an API, an option, a message — that the reference text
+ * answers better, and the bonus on it cost the golden set.
+ */
+const HOW_TO_QUERY_WORDS = 3;
+/**
+ * What a how-to unit gets whose title, summary or triggers name the task:
+ * all of the words of a one- or two-word question, all but one of a
+ * three-word one, scaled by the share named. Above the whole spread of the
+ * rank scores (1/61 to 1/121), so that the unit stands at the top from
+ * anywhere among the candidates, and also when BM25 left it out. Tuned
+ * with the golden set, which it leaves unchanged.
+ */
+const HOW_TO_BONUS = 0.010;
 /**
  * What an exact message on the first line of a query gets more than one on
  * the last. In tool output the first error is the cause and later ones, such
@@ -285,6 +306,16 @@ export function searchKnowledge(index: KnowledgeReader, query: string, options: 
         const type = index.node(id)?.type;
         if (type === 'procedure' && !id.startsWith('route-')) {
             score.set(id, value + HOW_TO_PRIOR);
+        }
+    }
+    const words = queryWords(query).filter((word) => word.length > 1);
+    if (words.length > 0 && words.length <= HOW_TO_QUERY_WORDS) {
+        const needed = words.length <= 2 ? words.length : words.length - 1;
+        const unlisted = 1 / (RANK_FUSION_K + CANDIDATES + 1);
+        for (const [id, named] of index.howToCoverage(words)) {
+            if (named >= needed) {
+                score.set(id, (score.get(id) ?? unlisted) + HOW_TO_BONUS * named / words.length);
+            }
         }
     }
 
