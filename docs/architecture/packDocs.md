@@ -4,6 +4,14 @@ Merged from the experimental CMSIS Pack Docs extension. Two pure cores, two
 handlers, one dispatch seam, wired into the MCP server and the multi-window
 router the same way as the serial tool group.
 
+Two working notes under `docs/proposals/` go further than this page: the
+[cross-extension call inventory](../proposals/extension-calls.md) lists the
+exact calls into other extensions, and the
+[document-storage proposal](../proposals/pack-docs-storage.md) separates the
+existing storage functions from a proposed provider API, with
+[Pack Docs storage at a glance](../proposals/pack-docs-storage-overview.md)
+as its one-page map.
+
 ## Layout
 
 | Path | What | Imports `vscode`? |

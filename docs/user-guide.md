@@ -384,11 +384,23 @@ Besides Cortex-M targets, the extension starts and controls debug sessions for o
 
 ## How It Works
 
-![Architecture of the CMSIS Developer Assistant](../assets/architecture.png)
+![CMSIS Developer Assistant 2.7 architecture, including the knowledge system](../assets/architecture.png)
 
 The diagram source is [assets/architecture.mmd](../assets/architecture.mmd) (Mermaid; `npm run diagram` re-renders it). The extension speaks to the debugger through the VS Code debug API and the Debug Adapter Protocol (DAP). It adds nothing on the target side: pyOCD or the J-Link GDB server, GDB, and the debug adapter are the same components that the Arm CMSIS Debugger uses interactively. A named `launch.json` configuration is passed to `vscode.debug.startDebugging()` unchanged, so whatever the CMSIS Solution extension generates is what the agent launches.
 
 One window owns the MCP port and forwards each tool call over a token-protected loopback channel to the window that owns the workspace, so an agent has one URL however many windows are open. The documentation tools follow the same path: in the window that owns the project, the PDFs the target's packs ship (from `CMSIS_PACK_ROOT`), the user's own datasheets and the workspace `docs/` folder are extracted with the bundled pdf.js into a page store in the extension's global storage — page text plus a BM25 index with the page headings as a weighted field — and `search_target_docs`, `read_doc_pages` and `get_peripheral_docs` answer from it with page citations; `fetch_doc` adds Arm documents and PDF URLs to the same store, and the SVD joins register names to the manual's pages. Nothing is sent anywhere: the only network traffic is a `fetch_doc` download you asked for.
+
+In 2.7, the knowledge tools follow the same window routing and are always on.
+`knowledge_search`, `knowledge_get` and `knowledge_expand` share a read-only
+knowledge engine with the **Knowledge Browser**. It combines the bundled core
+index (`resources/knowledge/core.db`), the index a pack ships
+(`.knowledge/knowledge.db` next to its PDSC) and the index of a workspace
+folder (`.cmsis/knowledge.db`) over procedures, rules, concepts and
+troubleshooting knowledge. When a target is active, its board, device, packs
+and compiler scope `knowledge_search` to the units that apply; the browser's
+search opts into the same context with its "active project" box. Units can
+link to reusable assets and related units. Indexes are built outside the
+extension.
 
 ## Known Limitations and Workarounds
 

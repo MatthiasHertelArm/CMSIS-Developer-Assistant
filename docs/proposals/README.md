@@ -118,3 +118,11 @@ No issue yet. [knowledge-base.md](knowledge-base.md) covers the handover of the 
 ## Added 2026-10-18: CMSIS Solution integration
 
 No issue yet. [cmsis-solution-integration.md](cmsis-solution-integration.md) is a review of CMSIS Solution 1.72.0 against this extension: its public API v2 (boards, devices, examples, `createNewSolution`, `build`) and the commands `installPack`, `getCbuildRunFile`, `getDfpPath` and `getBspPath`. Phases: 0 the window listing names the solution (XS, done), 1 ask the extension instead of guessing the target and the pack folder, `path:` packs included (S), 2 `cmsis_action install_pack`, whose result names the pack's knowledge (M), 3 the catalog and the examples through API v2, with #41 (M), 4 hand-offs and `rebuild`/`clean`/`stop_build` (S). Five decisions. All five phases are in 2.7.0 with the recommended options, checked live once on the micro:bit V2 simulator; the knowledge-base side is open (see the proposal's implementation section).
+
+## Added 2026-10-21: cross-extension call inventory
+
+Related: #41. [extension-calls.md](extension-calls.md) is an inventory, not a proposal: every call this extension makes into CMSIS Solution, the CMSIS Debugger, the Serial Monitor and VS Code's debug API, with the exact command IDs, arguments, fences and fallbacks, checked against 2.7.0 (`bc23732`). It is the current-state baseline for the commands #41 proposes. The Peripheral Inspector is no longer called (17d9111), and the note says so.
+
+## Added 2026-10-21: Pack Docs document storage
+
+No issue yet. [pack-docs-storage.md](pack-docs-storage.md) describes where Pack Docs keeps originals and derived data today and what an external document manager would have to preserve: the storage classes, the functions it could wrap, document identity, publication and invalidation, and eight acceptance checks before a provider API is exposed. [pack-docs-storage-overview.md](pack-docs-storage-overview.md) is its one-page map. No API is proposed yet; the note is the requirements side.
