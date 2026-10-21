@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import type * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as http from 'http';
@@ -25,6 +25,7 @@ import * as path from 'path';
 import { SERVER_VERSION } from '../debuggingExecutor';
 import { WindowCoordinator } from '../windowCoordinator';
 import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
+import { logger } from '../utils/logger';
 
 suite('WindowCoordinator serial teardown', () => {
     let dir: string;
@@ -202,6 +203,61 @@ suite('WindowCoordinator and the router window (#14)', () => {
         now += 10_000;
         await coordinator.pollPromotion();
         assert.strictEqual(shown.length, 1, 'once per episode');
+    });
+
+    /** A log channel that records what reaches it at the level the user picked, as logger.test.ts has it. */
+    class RecordingChannel {
+        readonly lines: string[] = [];
+        constructor(public logLevel: number) { }
+        trace(line: string): void { this.lines.push(`trace ${line}`); }
+        debug(line: string): void { this.lines.push(`debug ${line}`); }
+        info(line: string): void { this.lines.push(`info ${line}`); }
+        warn(line: string): void { this.lines.push(`warn ${line}`); }
+        error(line: string): void { this.lines.push(`error ${line}`); }
+    }
+
+    /** Run `work` with the logger writing to a recording channel at `level`, and give back its lines. */
+    async function logged(level: number, work: () => Promise<void>): Promise<string[]> {
+        const swap = logger as unknown as { channel: unknown };
+        const original = swap.channel;
+        const channel = new RecordingChannel(level);
+        swap.channel = channel;
+        try {
+            await work();
+        } finally {
+            swap.channel = original;
+        }
+        return channel.lines;
+    }
+
+    test('a worker says once that it is a worker; the polls that keep losing the port are debug lines', async () => {
+        const port = await holdAnswering();
+        plant('router', { role: 'router', updatedAt: Date.now() });
+        const coordinator = worker(port, [], () => Date.now());
+        const atInfo = await logged(vscode.LogLevel.Info, async () => {
+            await coordinator.pollPromotion();
+            await coordinator.pollPromotion();
+            await coordinator.pollPromotion();
+        });
+        assert.deepStrictEqual(atInfo, ['info Another window is the router; this window is a worker.']);
+        const atDebug = await logged(vscode.LogLevel.Debug, () => coordinator.pollPromotion());
+        assert.deepStrictEqual(atDebug.filter((line) => !line.startsWith('debug ')), [], atDebug.join('\n'));
+        assert.ok(atDebug.some((line) => line === `debug Still a worker: port ${port} is taken`), atDebug.join('\n'));
+        assert.ok(atDebug.some((line) => line.startsWith('debug Opening the MCP endpoint on')), atDebug.join('\n'));
+        assert.ok(atDebug.some((line) => line === 'debug MCP endpoint stopped (it was not listening)'), atDebug.join('\n'));
+    });
+
+    test('a window that joins or leaves the registry is one info line; a look that finds the same windows logs nothing', async () => {
+        const port = await holdAnswering();
+        const coordinator = worker(port, [], () => Date.now());
+        plant('CDA-Testdrive', { role: 'router', updatedAt: Date.now() });
+        const joined = await logged(vscode.LogLevel.Info, async () => coordinator.observeWindows());
+        assert.deepStrictEqual(joined, ['info Window pid 700201 (CDA-Testdrive) joined the registry; 1 window registered']);
+        const same = await logged(vscode.LogLevel.Info, async () => coordinator.observeWindows());
+        assert.deepStrictEqual(same, []);
+        fs.rmSync(path.join(dir, 'window-CDA-Testdrive.json'));
+        const left = await logged(vscode.LogLevel.Info, async () => coordinator.observeWindows());
+        assert.deepStrictEqual(left, ['info Window pid 700201 (CDA-Testdrive) left the registry; 0 windows registered']);
     });
 
     test('a healthy router raises none: its fresh entry spares the check, and a port that answers ends the episode', async () => {

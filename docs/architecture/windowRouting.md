@@ -29,6 +29,11 @@ owns the workspace or the board the call is about.
   2.5.1) and shows it in the status bar (see
   [Window selection for people](#window-selection-for-people)).
 
+The log tells state, not routine: a window says once that it is a worker or
+the router, one line names a window that joins or leaves the registry (seen
+by the heartbeat), and the bids for the port, their usual failure and the
+release after it are debug lines.
+
 ## The pieces
 
 | File | Responsibility |
