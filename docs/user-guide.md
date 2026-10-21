@@ -1,7 +1,8 @@
 # CMSIS Developer Assistant user guide
 
 The reference for the extension: installation and agent setup, the VS Code
-commands, every MCP tool, the Agent Skills, the tool rules, the settings,
+commands, every MCP tool, the installed skill and the knowledge index, the
+tool rules, the settings,
 networking with several windows, manual agent registration, other languages,
 how it works, and the known limitations. The [README](../README.md) is the
 short version for the Marketplace page.
@@ -20,7 +21,7 @@ The Arm® CMSIS Developer Assistant extension connects AI coding agents to the d
 - Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Roo Code, Antigravity, and any other MCP-compatible assistant.
 - Runs entirely on the local machine: the MCP server binds to `localhost` only, needs no credentials, and sends nothing to an external service.
 - Also debugs applications in other languages (Python, JavaScript/TypeScript, Java, C#, C/C++, Go, Rust, PHP, Ruby) through the respective VS Code debug extensions.
-- Nine palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents (which also installs the CMSIS skills), choosing the target window when several VS Code windows are open, releasing a serial port, copying the recent problems, and — with the experimental documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel. See [Commands](#commands).
+- Nine palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents (which also installs the `cmsis-help` skill), choosing the target window when several VS Code windows are open, releasing a serial port, copying the recent problems, and — with the experimental documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel. See [Commands](#commands).
 
 For Arm Cortex-M targets, use it together with these extensions (all included in the [Arm Keil® Studio pack](https://marketplace.visualstudio.com/items?itemName=Arm.keil-studio-pack)):
 
@@ -41,7 +42,7 @@ Reload the VS Code window afterwards. To build the extension from source, see [C
 
 The extension activates on startup and serves MCP at `http://localhost:3001/mcp`. GitHub Copilot in VS Code finds the server automatically through the registered `McpServerDefinitionProvider`; nothing needs to be edited.
 
-For other agents, the extension shows a two-step setup on first activation: step 1 writes the server into the configuration of every agent you select and installs the [agent skills](#agent-skills) into your personal skills directories, and step 2 offers to add the [tool rules](#tool-rules-in-your-agents-rule-files) to your agents' rule files, each change shown as a diff before it is written. The setup can be opened again at any time with the command **CMSIS Developer Assistant: Configure Agent** from the [command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette). For manual registration, see [Manual agent registration](#manual-agent-registration).
+For other agents, the extension shows a two-step setup on first activation: step 1 writes the server into the configuration of every agent you select and installs the [`cmsis-help` skill](#agent-skills) into your personal skills directories, and step 2 offers to add the [tool rules](#tool-rules-in-your-agents-rule-files) to your agents' rule files, each change shown as a diff before it is written. The setup can be opened again at any time with the command **CMSIS Developer Assistant: Configure Agent** from the [command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette). For manual registration, see [Manual agent registration](#manual-agent-registration).
 
 > &#128204; **TIP**
 >
@@ -49,12 +50,12 @@ For other agents, the extension shows a two-step setup on first activation: step
 
 ## Starting from an empty VS Code
 
-You do not need an open project to begin. In a VS Code window without a folder the extension is active, the MCP server answers, and an agent can take it from there. Ask it, for example: _"I have an STM32H735G-DK on my desk. Create a Blinky project for it in ~/Projects and stop at `main`."_ The agent then follows the `cmsis-bootstrap` skill:
+You do not need an open project to begin. In a VS Code window without a folder the extension is active, the MCP server answers, and an agent can take it from there. Ask it, for example: _"I have an STM32H735G-DK on my desk. Create a Blinky project for it in ~/Projects and stop at `main`."_ The agent then follows the `cmsis-bootstrap` procedure of the knowledge index (`proc-cmsis-bootstrap`; `/cmsis-help` and `knowledge_search` lead to it):
 
 1. **Extensions.** The agent checks that the CMSIS Solution and CMSIS Debugger extensions are installed and asks you to install the [Keil Studio Pack](https://marketplace.visualstudio.com/items?itemName=Arm.keil-studio-pack) when they are not.
 2. **Questions.** It asks for the board, the folder, and, where you have a preference, the compiler and the debug probe.
 3. **Tools.** It writes a `vcpkg-configuration.json` into the new folder. The Arm Tools Environment Manager fetches the tools it names when the folder opens; its download and licence prompts are yours to answer.
-4. **Project.** It resolves the board to its packs and creates the solution from an example of the board's pack, a template of the pack, or a minimal project, and builds it once. This step is the `start-cmsis-project` skill: a minimal project (CMSIS CORE, the DFP's startup component, a bare `main`) that every device with a DFP can have, with Arm Compiler 6 unless you prefer another compiler, or an example or template of the board's pack when the tools can list them. The agent needs no shell for it.
+4. **Project.** It resolves the board to its packs and creates the solution from an example of the board's pack, a template of the pack, or a minimal project, and builds it once. This step is the `start-cmsis-project` procedure (`proc-start-cmsis-project`): a minimal project (CMSIS CORE, the DFP's startup component, a bare `main`) that every device with a DFP can have, with Arm Compiler 6 unless you prefer another compiler, or an example or template of the board's pack when the tools can list them. The agent needs no shell for it.
 5. **Window.** It opens the folder with `cmsis_action open_solution`. For an agent in a terminal (Claude Code, Codex, Gemini CLI) the empty window you started in opens the folder in itself and reloads; the agent reconnects to the server after a few seconds. For a chat inside VS Code (Copilot Chat, Cline, Roo Code), which the reload would end, and for a window that already has another folder open, the folder opens in a **new** window and the agent's later calls go there.
 6. **Build, flash, debug.** `cmsis_action build`, then `load_and_debug`, as in [Getting Started](#getting-started).
 
@@ -67,7 +68,7 @@ You can also do any of these steps yourself and let the agent continue. `get_ses
 3. Ask the agent to debug, for example: _"Load and debug the application, then stop at `main`."_ The agent calls `cmsis_action` with `load_and_debug`, which builds if required, programs the device, and attaches the debugger in one step.
 4. Continue in natural language: _"Why do we end up in the HardFault handler?"_, _"Show the GPIOA registers"_, _"Read 64 bytes at the stack pointer"_. The agent uses the inspection tools described below and reports what it found.
 
-The extension also installs the CMSIS agent skills into your personal skills directories: `cmsis-bootstrap`, which takes the agent from an empty VS Code window to a project that builds and debugs (see [Starting from an empty VS Code](#starting-from-an-empty-vs-code)); `cmsis-project`, the entry point for creating, extending and retargeting csolution and Zephyr projects; `add-board-layer`, which authors a board layer for a new csolution target by interviewing you for the few decisions the packs and the pack documentation cannot answer; `cmsis-debug-live`, which teaches the agent a systematic workflow for firmware debugging on hardware, from target-state checks to HardFault root-cause analysis; `cmsis-pack-docs`, which teaches page-cited lookups in the target's pack documentation; `create-csolution-github-action`, which writes a GitHub Actions workflow for the solution; and `cmsis-help`, which answers "what can I ask the CMSIS Developer Assistant for?" — the slash commands, VS Code commands, tools and settings. Agents that support the [agent skills](https://agentskills.io/) format pick them up automatically. See [Agent skills](#agent-skills) for the member skills behind the entry points.
+The extension also installs one agent skill into your personal skills directories: `cmsis-help`, the entry point and health check, which checks the session, the debug windows and the recent problems and names the debug topic or the knowledge procedure that fits the task. Agents that support the [agent skills](https://agentskills.io/) format pick it up automatically. The CMSIS procedures themselves are units of the knowledge index the extension ships: `cmsis-bootstrap`, which takes the agent from an empty VS Code window to a project that builds and debugs (see [Starting from an empty VS Code](#starting-from-an-empty-vs-code)); the project procedures for creating, extending and retargeting csolution and Zephyr projects; `add-board-layer`, which authors a board layer for a new csolution target by interviewing you for the few decisions the packs and the pack documentation cannot answer; `cmsis-debug-live`, a systematic workflow for firmware debugging on hardware, from target-state checks to HardFault root-cause analysis; `cmsis-pack-docs`, page-cited lookups in the target's pack documentation; and `create-csolution-github-action`, which writes a GitHub Actions workflow for the solution. The agent finds them with `knowledge_search` and reads them with `knowledge_get`, scoped to the active target. See [Agent Skills](#agent-skills).
 
 > &#128221; **Note:**
 >
@@ -79,7 +80,7 @@ Everything the agent does goes through the MCP tools below; the commands are for
 
 | Command | What it does |
 |---------|--------------|
-| **Configure Agent** | The first-run setup, on demand: pick the AI agents to register the MCP server with (their configuration files are written for you, and the [agent skills](#agent-skills) are installed into your personal skills directories), then pick the rule files that get the [tool rules](#tool-rules-in-your-agents-rule-files). Run it again after installing a new agent, to reinstall the skills, or to take the rules out of a file. |
+| **Configure Agent** | The first-run setup, on demand: pick the AI agents to register the MCP server with (their configuration files are written for you, and the [`cmsis-help` skill](#agent-skills) is installed into your personal skills directories), then pick the rule files that get the [tool rules](#tool-rules-in-your-agents-rule-files). Run it again after installing a new agent, to reinstall the skill, or to take the rules out of a file. |
 | **Select Target Window** | With several VS Code windows open: choose the window that agent calls go to when nothing else names one, or **Automatic** to clear the choice. A click on the **CDA robot icon** in the status bar opens it too; see [Networking and multiple windows](#networking-and-multiple-windows). |
 | **Release Serial Port** | Takes back a serial port an agent holds in this window, so the Serial Monitor or a terminal can open it; the agent is told why when it next uses the port. While a port is held, the status bar shows **Serial: COM7 (agent)**, and a click on it runs this command. See [Serial ports](#serial-ports). |
 | **List Target Documentation** | Writes the current csolution target's document list — pack manuals and datasheets, Arm documents for the core, your imported and workspace PDFs, each with its index state — to the _CMSIS Developer Assistant_ output channel. The same list the agent gets from `list_target_docs`. |
@@ -162,7 +163,7 @@ While an agent holds a port, the status bar shows **Serial: COM7 (agent)**. Its 
 
 ### Documentation (experimental, on by default — `cmsis-developer-assistant.packDocs.enabled`)
 
-Page-cited answers from the documentation of the current csolution target: the reference manuals, datasheets, errata and board manuals its DFP/BSP ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and core TRMs), the shipped Cortex-M core-peripheral SVDs, and your own PDFs. PDFs are extracted with the bundled pdf.js (or `pdftotext` from poppler when `packDocs.extractor` says so) and indexed on first use; the text stays in the extension's global storage. The `cmsis-pack-docs` skill teaches the workflow.
+Page-cited answers from the documentation of the current csolution target: the reference manuals, datasheets, errata and board manuals its DFP/BSP ship or link, the Arm documents for the device's core (architecture reference manual, ADIv5/ADIv6, CoreSight and core TRMs), the shipped Cortex-M core-peripheral SVDs, and your own PDFs. PDFs are extracted with the bundled pdf.js (or `pdftotext` from poppler when `packDocs.extractor` says so) and indexed on first use; the text stays in the extension's global storage. The `cmsis-pack-docs` procedure of the knowledge index (`proc-cmsis-pack-docs`) teaches the workflow.
 
 | Tool | Description |
 |------|-------------|
@@ -185,6 +186,16 @@ Deterministic reads of the current target's build output — no debug session ne
 | `lookup_symbol` | A symbol by name — address, size, section, defining object — or the symbol, section and region that contain an address (a fault PC or LR). |
 | `get_section_layout` | LOAD segments and allocated sections with address, size, region and the largest contributing objects. |
 | `get_build_diagnostics` | Errors and warnings of the newest build log (GCC/Clang/armclang/armlink/CMake/ninja/cbuild) with `file:line` and the final status. |
+
+### Knowledge (experimental, always on)
+
+The CMSIS procedures, rules, concepts and the causes and fixes of tool messages, from the core index the extension ships (`resources/knowledge/core.db`), the `.knowledge/knowledge.db` of the installed packs and a workspace folder's `.cmsis/knowledge.db`. See [Agent Skills](#agent-skills) for the procedures and [How It Works](#how-it-works) for the scoping.
+
+| Tool | Description |
+|------|-------------|
+| `knowledge_search` | Searches the index by summaries, filtered by the active target; an exact error text hits its troubleshooting unit. Returns ids and summaries only. |
+| `knowledge_get` | The full unit of an id, never clipped, and the files it ships (templates, scripts). |
+| `knowledge_expand` | One hop from a unit or entity: what it requires, refines, constrains, produces, consumes, references or applies to. |
 
 ### Session health
 
@@ -222,7 +233,7 @@ Deterministic reads of the current target's build output — no debug session ne
 
 ## Agent Skills
 
-Skills are `SKILL.md` workflows in the [Agent Skills](https://agentskills.io/) format that an agent loads on demand. The extension ships a fixed set of them and copies every one into the directories your agents read, for this user, so that every workspace has them:
+Skills are `SKILL.md` workflows in the [Agent Skills](https://agentskills.io/) format that an agent loads when a task matches their description. The extension installs one: **`cmsis-help`**, the entry point and health check. It reads the session state, the debug windows and the recent problems with the read-only tools, reports them in five lines, and names the `get_debug_instructions` topic or the knowledge procedure that fits the task. Ask the agent `/cmsis-help`, or let it invoke the skill by itself when firmware misbehaves. The skill is copied into the directories your agents read, for this user, so that every workspace has it:
 
 | Directory | Read by |
 |-----------|---------|
@@ -230,25 +241,25 @@ Skills are `SKILL.md` workflows in the [Agent Skills](https://agentskills.io/) f
 | `~/.claude/skills/` | Claude Code (only when a `~/.claude` directory exists; `CLAUDE_CONFIG_DIR` is honoured) |
 | `$COPILOT_HOME/skills/` | GitHub Copilot CLI, only when `COPILOT_HOME` is set (it then ignores `~/.agents/skills`) |
 
-The skills are installed at every activation and again when **CMSIS Developer Assistant: Configure Agent** registers the agents; there is nothing to select. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker; a skill a later release no longer ships is removed by that marker, and a skill you installed yourself is never overwritten or removed, even if it shares a name. Releases before 2.5.15 could also install a selection into a workspace folder (`.agents/skills`, `.claude/skills` next to your sources); such copies are swept at the next activation, and nothing is written there any more.
+The skill is installed at every activation and again when **CMSIS Developer Assistant: Configure Agent** registers the agents; there is nothing to select. Every directory the extension writes carries a `.cmsis-developer-assistant.json` marker, and only a directory with that marker is ever replaced or removed. The same sync sweeps the roots: the skills earlier releases installed — `cmsis-bootstrap`, `cmsis-project` and its members, `add-board-layer`, `cmsis-debug-live`, `cmsis-pack-docs`, `create-csolution-github-action` and the hidden hand-over skills — are removed at the first activation of 2.7.0, while a skill you installed yourself is never overwritten or removed, even if it shares a name. Releases before 2.5.15 could also install a selection into a workspace folder (`.agents/skills`, `.claude/skills` next to your sources); such copies are swept too, and nothing is written there any more.
 
-The slash commands, as `/cmsis-help` lists them:
+### Where the procedures are
 
-- **`cmsis-bootstrap`** — from an empty VS Code window to a CMSIS solution that builds and debugs: it finds out what is missing, asks for board, folder, compiler and probe, and hands over to the project skills and `cmsis_action open_solution`.
-- **`cmsis-project`** — the entry point for creating, extending and retargeting CMSIS csolution and Zephyr projects. It dispatches to its member skills from [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) (`check-cmsis-environment`, `identify-cmsis-board-support`, `add-cmsis-target`, `identify-cmsis-board-layer`, `check-zephyr-environment`, `identify-zephyr-board`, `start-zephyr-project`) and to `cmsis-debugger-setup` (set the debug adapter of a csolution target, let the CMSIS Solution extension write `launch.json`, and verify Load & Debug on the target).
-- **`add-board-layer`** — add a board layer to an existing csolution: read the packs and the csolution first, ask only the open decisions (layer strategy, probe, STDIO transport, memory), then reuse the BSP layer, integrate the DFP's configuration generator, or write a minimal bare-metal layer, and build to green. Hardware facts come from the pack documentation with page cites.
-- **`cmsis-debug-live`** — the live Cortex-M debugging workflow for the tools of this extension; when a session will not start, connect or program, it hands over to `debugger-troubleshooting`.
-- **`cmsis-pack-docs`** — look things up in the target's documentation through the documentation tools: `list_target_docs` → `search_target_docs` → `read_doc_pages`, `fetch_doc` for web-linked and Arm documents, `get_peripheral_docs` for one peripheral, and the citation convention.
-- **`create-csolution-github-action`** (from cmsis-skills) — write a GitHub Actions workflow that builds the solution's targets and optionally tests the FVP targets.
-- **`cmsis-help`** — the list of CMSIS slash commands, the member skills behind each, the VS Code commands, the MCP tool groups and the settings; generated from the catalog and `package.json` so it cannot go stale. Ask the agent `/cmsis-help`.
+The CMSIS procedures that were skills in earlier releases are units of the knowledge index the extension ships (`resources/knowledge/core.db`), converted from the extension's own skills in `skills/` and from [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) at the commit pinned in `skills/cmsis-skills.lock.json`. Each has the id `proc-` plus the former skill name:
 
-The member skills of `cmsis-project` (among them `start-cmsis-project`, which writes the first solution), and the hand-over targets `cmsis-debugger-setup`, `debugger-troubleshooting` (why a debug or flash session does not start, connect or program) and `fvp-debug-setup` (make Run and Debug work against an Arm FVP model through its GDBServer plugin, with a model shim and, on macOS, a Docker image), are installed with `user-invocable: false`: agents that honour that flag (Claude Code, VS Code, Copilot CLI) keep them out of the `/` menu while the model can still invoke them by description or through the skill that hands over to them.
+- **`proc-cmsis-bootstrap`** — from an empty VS Code window to a CMSIS solution that builds and debugs: it finds out what is missing, asks for board, folder, compiler and probe, and hands over to the project procedures and `cmsis_action open_solution`. **`proc-start-cmsis-project`** writes the first solution.
+- **The project procedures** from cmsis-skills — `proc-check-cmsis-environment`, `proc-identify-cmsis-board-support`, `proc-add-cmsis-target`, `proc-identify-cmsis-board-layer`, `proc-check-zephyr-environment`, `proc-identify-zephyr-board`, `proc-start-zephyr-project` — and **`proc-cmsis-debugger-setup`** (set the debug adapter of a csolution target, let the CMSIS Solution extension write `launch.json`, and verify Load & Debug on the target): the members of the former `/cmsis-project`. The unit `route-project` says which fits a task and in which order.
+- **`proc-add-board-layer`** — add a board layer to an existing csolution: read the packs and the csolution first, ask only the open decisions (layer strategy, probe, STDIO transport, memory), then reuse the BSP layer, integrate the DFP's configuration generator, or write a minimal bare-metal layer, and build to green. Hardware facts come from the pack documentation with page cites.
+- **`proc-cmsis-debug-live`** — the live Cortex-M debugging workflow for the tools of this extension; when a session will not start, connect or program, **`proc-debugger-troubleshooting`** takes over. **`proc-fvp-debug-setup`** makes Run and Debug work against an Arm FVP model through its GDBServer plugin, with a model shim and, on macOS, a Docker image. `route-debug` orders them.
+- **`proc-cmsis-pack-docs`** — look things up in the target's documentation through the documentation tools: `list_target_docs` → `search_target_docs` → `read_doc_pages`, `fetch_doc` for web-linked and Arm documents, `get_peripheral_docs` for one peripheral, and the citation convention.
+- **`proc-create-csolution-github-action`** (from cmsis-skills, DevOps) — write a GitHub Actions workflow that builds the solution's targets and optionally tests the FVP targets.
+- **The bring-up, pack, Ethos-U and CMSIS-Stream procedures** of cmsis-skills — debug-access and trace knowledge records, PDSC debug and trace sequences, `debugvars`, Ethos-U variant evaluation, CMSIS-Stream components — for authors of CMSIS-Pack content; `route-bring-up` and `route-pack` lead to them. These categories are not vendored under `skills/`; they can still be installed from the cmsis-skills repository by hand as skills.
 
-The cmsis-skills skills are vendored at a pinned commit (`skills/cmsis-skills.lock.json`), from the _project_ and _DevOps_ categories. The _bring-up_ and _pack_ categories — debug-access and trace knowledge records, PDSC debug and trace sequences, `debugvars` — stay upstream: they author CMSIS-Pack content, which a user of the extension does not need; the Ethos-U evaluation skill stays upstream too. They can be installed from the cmsis-skills repository by hand.
+The agent reaches a procedure with `knowledge_search`, given the task in a few words or the exact text of an error message, then `knowledge_get` with the id for the whole unit, and `knowledge_expand` for the units and entities one relates to. The server instructions say so first ("Knowledge first"), `cmsis-help` names the procedure for a task, and GitHub Copilot Chat, which loads no skills, gets the same guidance from `get_debug_instructions`. A unit's templates and scripts (the starter `vcpkg-configuration.json` of the bootstrap, the FVP model shim) are files of the unit that `knowledge_get` lists and returns. Software packs ship their own units in `.knowledge/` and a workspace folder in `.cmsis/knowledge.db`; both are read next to the core index, and the units of a pack apply only in projects that use it. **CMSIS Developer Assistant: Open Knowledge Browser** shows every unit of the index with its text, files and relations.
 
 ## Tool rules in your agents' rule files
 
-Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a shell instead of the MCP tools, which fights the running debug session for the probe. The server instructions and the bundled skills therefore start with a short list of tool rules. Skill text can get lost when an agent compacts its context; a rule file is loaded in every session. So step 2 of **Configure Agent** offers to add the same rules to the files your agents read:
+Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a shell instead of the MCP tools, which fights the running debug session for the probe. The server instructions and the `cmsis-help` skill therefore start with a short list of tool rules. Skill text can get lost when an agent compacts its context; a rule file is loaded in every session. So step 2 of **Configure Agent** offers to add the same rules to the files your agents read:
 
 | Agent | This user (preselected) | This workspace |
 |-------|-------------------------|----------------|

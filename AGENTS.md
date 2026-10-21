@@ -15,9 +15,11 @@ registers, peripheral registers described by the device SVD, decoded
 Cortex-M fault status, the build, flash and debug actions of the CMSIS
 Solution extension, and serial consoles. Other debug types, such as Python,
 Node.js or C/C++ on the host, are still served by the generic tools. The
-extension also installs Agent Skills for CMSIS work, writes its tool rules
-into the agents' rule files when the user confirms it, offers tools over the
-target's documentation and build artefacts.
+extension also ships a knowledge index of the CMSIS procedures and reads it
+through the knowledge tools, installs one Agent Skill (`cmsis-help`, the entry
+point and health check), writes its tool rules into the agents' rule files
+when the user confirms it, and offers tools over the target's documentation
+and build artefacts.
 
 The project started as a fork of microsoft/DebugMCP. The code that still
 came from there has since been replaced by independently written code
@@ -56,10 +58,10 @@ simply forwards to itself.
 | `DebugState` | `src/debugState.ts` | Value object for location, stack and breakpoints, rendered in a full and a compact form | [docs/architecture/debugState.md](docs/architecture/debugState.md) |
 | `DebugConfigurationManager` | `src/utils/debugConfigurationManager.ts` | The `launch.json` picker and configurations synthesized from the file type for `start_debugging` | [docs/architecture/debugConfigurationManager.md](docs/architecture/debugConfigurationManager.md) |
 | Window routing | `src/windowCoordinator.ts`, `src/routingDebuggingHandler.ts`, `src/controlServer.ts`, `src/utils/workspaceRegistry.ts`, `src/core/opTable.ts`, `src/core/windowHealth.ts`, `src/windowStatus.ts`, `src/core/windowStatus.ts` | Router and worker windows, the window registry and the default target, forwarding of every op, fences and health checks on the control channel, the status-bar item and Select Target Window | [docs/architecture/windowRouting.md](docs/architecture/windowRouting.md) |
-| `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts`, `src/core/agentRules.ts`, `src/utils/agentRuleFiles.ts` | Registers the server in AI agents' configuration files, installs Agent Skills, and writes the tool rules into the agents' rule files the user confirms | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
+| `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts`, `src/core/agentRules.ts`, `src/utils/agentRuleFiles.ts` | Registers the server in AI agents' configuration files, installs the `cmsis-help` skill (and removes, marker-guarded, the skills earlier releases installed), and writes the tool rules into the agents' rule files the user confirms | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
 | `PackDocsHandler` / `BuildInfoHandler` | `src/packDocsHandler.ts`, `src/buildInfoHandler.ts`, `src/core/packDocs/`, `src/core/buildInfo/` | Documentation tools (pack PDFs, Arm documents, user and workspace documents, core SVDs) and build-artefact tools (ELF, map file, build log); both on by default and routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
-| `KnowledgeHandler` | `src/knowledgeHandler.ts`, `src/knowledgeTools.ts`, `src/core/knowledge/`, `src/knowledgePanel.ts`, `src/knowledgePanelPage.ts` | Experimental knowledge tools over a local knowledge index (`knowledge.db`): search by summaries, the whole unit, one hop in the graph; off by default, routed with the documentation ops. The knowledge browser, a read-only panel over the same index | [docs/architecture/knowledge.md](docs/architecture/knowledge.md) |
-| `skills/` | `skills/` | The skills the extension installs, every one of them: the entry points `cmsis-debug-live`, `add-board-layer`, `cmsis-bootstrap`, `cmsis-pack-docs` and the generated `cmsis-help`; the hidden `cmsis-debugger-setup`, `fvp-debug-setup` and `debugger-troubleshooting`; the vendored Open-CMSIS-Pack/cmsis-skills skills of the configured categories; the `cmsis-project` router; `catalog.json` | [skills/README.md](skills/README.md) |
+| `KnowledgeHandler` | `src/knowledgeHandler.ts`, `src/knowledgeTools.ts`, `src/core/knowledge/`, `src/knowledgePanel.ts`, `src/knowledgePanelPage.ts` | Experimental knowledge tools over the knowledge index — the core index the extension ships (`resources/knowledge/core.db`), the `.knowledge/knowledge.db` of the installed packs, a workspace folder's `.cmsis/knowledge.db`: search by summaries scoped to the active target, the whole unit, one hop in the graph; always on, routed with the documentation ops. The knowledge browser, a read-only panel over the same index | [docs/architecture/knowledge.md](docs/architecture/knowledge.md) |
+| `skills/` | `skills/` | The one installed skill, `cmsis-help` (authored, with the tool-contract blocks generated in); the extension's own skills `cmsis-debug-live`, `add-board-layer`, `cmsis-bootstrap`, `cmsis-pack-docs`, `start-cmsis-project`, `cmsis-debugger-setup`, `fvp-debug-setup` and `debugger-troubleshooting`, kept as the sources of knowledge units, not installed; the vendored Open-CMSIS-Pack/cmsis-skills skills of the configured categories, sources of units and of `catalog.json`; the generated `cmsis-project` router; `catalog.json` with the `installed` flag the installer obeys | [skills/README.md](skills/README.md) |
 
 Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts`,
 `src/core/serialMonitorBridge.ts` and `src/core/serialLease.ts` (the
