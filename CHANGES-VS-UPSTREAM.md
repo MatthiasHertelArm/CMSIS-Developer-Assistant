@@ -188,6 +188,8 @@ Tool schemas that differ from names agents commonly guess — worth documenting 
 
 This fork is **not** intended to be merged back as-is — the embedded surface (CMSIS pipeline, fault decoder, SVD reader, hardware-timeout layer, dual serial backend) would be dead code for the 95% of upstream users debugging Python/TypeScript. The clean path for upstreaming would be factoring `src/core/*`, `src/utils/timeout.ts`, and `src/utils/sessionStateTracker.ts` into an optional "embedded" feature module gated on the presence of the CMSIS Debugger extension, and making the timeout layer + state-aware errors available generically while keeping the SVD / fault decoder / CMSIS panel controls gated. That refactor is out of scope for this evaluation build.
 
+One CI divergence from Open-CMSIS-Pack's repository: the `Update current version` step of `.github/workflows/ci.yml` also runs for `release` events on any repository owner, so a release cut on a fork builds the tag's version into the VSIX names and the version the server reports (upstream runs it for its own owner only).
+
 ---
 
 ## 9. Upstream work deliberately not taken
