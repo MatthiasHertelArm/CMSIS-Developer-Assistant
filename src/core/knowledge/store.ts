@@ -48,6 +48,25 @@ const ANCESTOR_DEPTH = 6;
 const STOP_WORDS = new Set(('a an the and or of to in on for with by my me i is are be it its this that these those how do does what why '
     + 'when where which can could should would from at as into your you we our there their then than so if').split(' '));
 
+/** The words of a question the search matches: its tokens without the function words. */
+export function queryWords(query: string): string[] {
+    return (query.match(/[\p{L}\p{N}_]+/gu) ?? []).filter((word) => !STOP_WORDS.has(word.toLowerCase()));
+}
+
+/** Two words a question writes apart that an identifier writes together: `hard fault` next to `HardFault`. */
+function joinedPairs(words: readonly string[]): { first: number; joined: string }[] {
+    const pairs: { first: number; joined: string }[] = [];
+    for (let i = 0; i + 1 < words.length; i++) {
+        if (/^\p{L}+$/u.test(words[i]) && /^\p{L}+$/u.test(words[i + 1])) {
+            pairs.push({ first: i, joined: words[i] + words[i + 1] });
+        }
+    }
+    return pairs;
+}
+
+/** A how-to unit: a procedure, or a routing unit (`route-*`), which says which procedure fits a task. */
+const HOW_TO_WHERE = "(n.type = 'procedure' OR n.id LIKE 'route-%')";
+
 /** A row of `nodes`: a knowledge unit (`kind` knowledge) or an entity. */
 export interface KnowledgeNode {
     id: string;
@@ -131,6 +150,13 @@ export interface KnowledgeReader {
     has(id: string): boolean;
     unitCount(): number;
     bm25(query: string, limit: number): string[];
+    /**
+     * For each how-to unit (a procedure or a routing unit) that names any
+     * of `words` in its title, summary or triggers: how many of them it
+     * names. Two adjacent words count as named when their join is
+     * (`hard fault` finds `HardFault`).
+     */
+    howToCoverage(words: readonly string[]): Map<string, number>;
     exactSymptoms(lines: readonly string[]): string[];
     exactSymptomLines(lines: readonly string[]): Map<string, number>;
     appliesTo(id: string): string[];
@@ -251,13 +277,41 @@ export class KnowledgeIndex implements KnowledgeReader {
      * triggers weigh more than the body.
      */
     bm25(query: string, limit: number): string[] {
-        const words = (query.match(/[\p{L}\p{N}_]+/gu) ?? []).filter((word) => !STOP_WORDS.has(word.toLowerCase()));
+        const words = queryWords(query);
         if (words.length === 0) {
             return [];
         }
         const match = words.map((word) => `"${word}"`).join(' OR ');
         return this.db.prepare('SELECT id FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY bm25(nodes_fts, 0, 8, 4, 1, 6, 6) LIMIT ?')
             .all(match, limit).map((row) => text(row.id));
+    }
+
+    /**
+     * One FTS query per word over the "when to use" text of the how-to
+     * units, with the index's own tokenizer, so that `crashes` finds
+     * `crash` and `HardFault` finds `HardFaults` the way the ranking does.
+     */
+    howToCoverage(words: readonly string[]): Map<string, number> {
+        if (words.length === 0) {
+            return new Map();
+        }
+        const naming = this.db.prepare(
+            `SELECT f.id FROM nodes_fts f JOIN nodes n ON n.id = f.id WHERE nodes_fts MATCH ? AND ${HOW_TO_WHERE}`);
+        const unitsNaming = (term: string): string[] => naming.all(`{title summary triggers}: "${term}"`).map((row) => text(row.id));
+        const named = words.map((word) => new Set(unitsNaming(word)));
+        for (const { first, joined } of joinedPairs(words)) {
+            for (const id of unitsNaming(joined)) {
+                named[first].add(id);
+                named[first + 1].add(id);
+            }
+        }
+        const count = new Map<string, number>();
+        for (const units of named) {
+            for (const id of units) {
+                count.set(id, (count.get(id) ?? 0) + 1);
+            }
+        }
+        return count;
     }
 
     /** Troubleshooting units whose symptom pattern matches one of the lines, in the order of the first line each matches. */
@@ -493,6 +547,18 @@ export class KnowledgeSet implements KnowledgeReader {
 
     bm25(query: string, limit: number): string[] {
         return interleaveByRank(this.members.map((member) => member.index.bm25(query, limit)), limit);
+    }
+
+    howToCoverage(words: readonly string[]): Map<string, number> {
+        const count = new Map<string, number>();
+        for (const member of this.members) {
+            for (const [id, named] of member.index.howToCoverage(words)) {
+                if (!count.has(id)) {
+                    count.set(id, named);
+                }
+            }
+        }
+        return count;
     }
 
     exactSymptoms(lines: readonly string[]): string[] {

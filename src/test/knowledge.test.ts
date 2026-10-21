@@ -91,6 +91,44 @@ const UNITS: Unit[] = [
         meta: { status: 'reviewed', stop_conditions: ['Stop when confirmation is absent.'] },
     },
     { id: 'rule-empty', type: 'rule', title: 'No installation', body: '_Kanonischer Text: wird von Hand geschrieben._' },
+    // Three how-to units as the core index has them: a skill name for a title, the task in the triggers and the
+    // description, and a long body; next to them reference units that carry the task's words in a short title.
+    {
+        id: 'proc-debug-live', type: 'procedure', title: 'cmsis-debug-live', domain: 'debug',
+        summary: 'Investigate a firmware runtime bug on a live Cortex-M debug session: faults, hangs, wrong values',
+        body: `# Live Cortex-M debugging\n\n${'Halt the CPU and look before adding a print. '.repeat(200)}`,
+        meta: {
+            triggers: ['first investigation step whenever live inspection is practical'],
+            description: 'Drive a live Arm Cortex-M debug session to investigate firmware runtime bugs — HardFaults and other faults, '
+                + 'crashes, hangs, failing tests, wrong values that are right in simulation.',
+        },
+    },
+    {
+        id: 'route-project', type: 'concept', title: 'CMSIS project setup: which procedure', domain: 'project',
+        summary: 'Create, extend or retarget CMSIS csolution projects: which procedure fits a task, and the usual order.',
+        body: '| If the task is to … | Procedure |\n|---|---|\n| Go from an empty window to a solution | `proc-bootstrap` |',
+        meta: {
+            triggers: ['Set up and extend CMSIS csolution projects: verify the toolchain, resolve a board name, or create an initial '
+                + 'Blinky solution for a board. Use when the user wants to create, extend or retarget a csolution.'],
+        },
+    },
+    {
+        id: 'proc-bootstrap', type: 'procedure', title: 'cmsis-bootstrap', domain: 'project',
+        summary: 'Go from an empty VS Code window to a CMSIS solution that builds and debugs',
+        body: `# From an empty VS Code window to a debugged board\n\n${'Find out what is missing and hand over. '.repeat(200)}`,
+        meta: {
+            triggers: ['start a new CMSIS project for a board'],
+            description: 'Get from an empty VS Code window (no folder open, no project on disk) to a CMSIS solution that builds: '
+                + 'create the solution for the board or device, build, wire the debugger.',
+        },
+    },
+    { id: 'ref-hardfault', type: 'concept', title: 'HardFault', summary: 'The HardFault exception.', body: 'HardFault entry and its status registers.' },
+    { id: 'ref-hardfault-mpu', type: 'concept', title: 'MPU CTRL: HardFault', summary: 'HardFault with the MPU on.', body: 'The HFNMIENA bit.' },
+    { id: 'ref-crash', type: 'concept', title: 'Firmware crashes', summary: 'A firmware crash on boot.', body: 'Check the vector table first.' },
+    { id: 'ref-eclipse', type: 'concept', title: 'Create a new project in Eclipse', summary: 'Create the new project.', body: 'File, New, Project.' },
+    { id: 'ref-rtx', type: 'concept', title: 'Create an RTX5 project', summary: 'A new project with RTX5.', body: 'Add the RTX component.' },
+    { id: 'ref-blinky', type: 'concept', title: 'Blinky: run on a board', summary: 'The Blinky example on a board.', body: 'Flash and watch the LED.' },
+    { id: 'ref-start', type: 'concept', title: 'Start a project', summary: 'Start a project with west.', body: 'west init, west build.' },
 ];
 
 const ENTITIES: [id: string, type: string, title: string][] = [
@@ -124,7 +162,9 @@ function writeIndex(file: string, info: Record<string, string> = {}): void {
         const meta: Record<string, unknown> = { status: 'draft', ...unit.meta };
         node.run(unit.id, 'knowledge', unit.type, unit.domain ?? null, unit.title, unit.summary ?? '', unit.body, JSON.stringify(meta));
         const symptoms = Array.isArray(meta.symptoms) ? (meta.symptoms as string[]).join(' ') : '';
-        fts.run(unit.id, unit.title, unit.summary ?? '', unit.body, symptoms, '');
+        // As build_index.py fills the triggers column: the triggers, then the description.
+        const triggers = [...(Array.isArray(meta.triggers) ? meta.triggers as string[] : []), ...(typeof meta.description === 'string' ? [meta.description] : [])];
+        fts.run(unit.id, unit.title, unit.summary ?? '', unit.body, symptoms, triggers.join(' '));
         for (const target of unit.appliesTo ?? []) {
             edge.run(unit.id, 'applies_to', target);
         }
@@ -270,7 +310,8 @@ suite('knowledge tools', () => {
 
         test('types and domain narrow the answer; the status comes from the unit', () => {
             const procedures = searchKnowledge(index, 'debug sequences stack', { types: ['procedure'] }).results;
-            assert.deepStrictEqual(procedures.map((hit) => [hit.id, hit.status]), [['proc-long', 'reviewed']]);
+            assert.deepStrictEqual(procedures.map((hit) => [hit.id, hit.status])[0], ['proc-long', 'reviewed']);
+            assert.ok(procedures.every((hit) => hit.type === 'procedure'), procedures.map((hit) => hit.id).join());
             assert.deepStrictEqual(searchKnowledge(index, 'board device', { domain: 'error-catalog' }).results.map((hit) => hit.id),
                 ['ts-csolution-board-mounted-device']);
         });
@@ -278,6 +319,57 @@ suite('knowledge tools', () => {
         test('a failed build is pointed only to complete units', () => {
             assert.deepStrictEqual(knownMessages(index, ['board mounted device STM32U585AIIx not found', 'no installed board was found', 'something else']),
                 [{ message: 'board mounted device STM32U585AIIx not found', id: 'ts-csolution-board-mounted-device' }]);
+        });
+
+        test('a task name of a few words leads to the procedure whose "when to use" text names it, past the reference units', () => {
+            // BM25 alone: a short reference title with the word beats a long description that names it once.
+            assert.deepStrictEqual(index.bm25('HardFault', 3), ['ref-hardfault', 'ref-hardfault-mpu', 'proc-debug-live']);
+            assert.strictEqual(ids('HardFault')[0], 'proc-debug-live');
+            // Two words written apart find the identifier written together.
+            assert.strictEqual(ids('hard fault')[0], 'proc-debug-live');
+            assert.strictEqual(ids('the firmware crashes')[0], 'proc-debug-live');
+            const create = ids('create a new project').slice(0, 3);
+            assert.ok(create.includes('proc-bootstrap') && create.includes('route-project'), create.join());
+            const blinky = ids('new Blinky for my board').slice(0, 3);
+            assert.ok(blinky.includes('route-project') || blinky.includes('proc-bootstrap'), blinky.join());
+            const start = ids('start a project').slice(0, 3);
+            assert.ok(start.includes('proc-bootstrap') || start.includes('route-project'), start.join());
+            assert.deepStrictEqual(index.howToCoverage(['hard', 'fault']), new Map([['proc-debug-live', 2]]));
+        });
+
+        test('the how-to bonus needs the task named: a three-word name all but one word, a longer question gets none', () => {
+            // Only one of three words named (project): the reference unit stays first.
+            assert.strictEqual(ids('RTX5 kernel project')[0], 'ref-rtx');
+            assert.deepStrictEqual(index.howToCoverage(['RTX5', 'kernel', 'project']), new Map([['proc-bootstrap', 1], ['route-project', 1]]));
+            // Four content words are a question with specifics, not a task name: the routing unit, which no prior
+            // lifts, stays behind the reference unit, where the three-word name put it in the top three.
+            const question = ids('create a new project in Eclipse');
+            assert.ok(question.indexOf('ref-eclipse') < question.indexOf('route-project'), question.join());
+            // A word in the body alone does not count: the long procedure says nothing about that in its triggers.
+            assert.deepStrictEqual(index.howToCoverage(['confirmation']), new Map());
+        });
+    });
+
+    suite('the shipped core index', () => {
+        const core = path.resolve(__dirname, '..', '..', '..', 'resources', 'knowledge', 'core.db');
+
+        test('the task names of the preview-1 check lead to their procedures and routing units', function () {
+            if (!fs.existsSync(core)) {
+                this.skip();
+            }
+            const shipped = new KnowledgeIndex(core);
+            try {
+                const top = (query: string, n: number): string[] => searchKnowledge(shipped, query, { k: n }).results.map((hit) => hit.id);
+                for (const query of ['HardFault', 'hard fault', 'the firmware crashes']) {
+                    assert.ok(top(query, 3).includes('proc-cmsis-debug-live'), `${query}: ${top(query, 3).join()}`);
+                }
+                for (const query of ['create a new project', 'new Blinky for my board', 'start a project']) {
+                    const found = top(query, 3);
+                    assert.ok(found.includes('route-project') || found.includes('proc-cmsis-bootstrap'), `${query}: ${found.join()}`);
+                }
+            } finally {
+                shipped.close();
+            }
         });
     });
 
@@ -436,7 +528,7 @@ suite('knowledge tools', () => {
             assert.ok(overview.entities.some((entry) => entry.name === 'asset' && entry.count === 1));
             assert.ok(overview.entities.some((entry) => entry.name === 'device' && entry.count >= 60));
             assert.ok(overview.relations.some((entry) => entry.name === 'part_of'));
-            assert.deepStrictEqual(overview.routes, [], 'this index has no routing unit');
+            assert.deepStrictEqual(overview.routes.map((route) => route.id), ['route-project'], 'the routing units, by their id prefix');
             assert.strictEqual(overview.byCollection.reduce((sum, entry) => sum + entry.count, 0), rows.length);
             assert.strictEqual(rows.find((row) => row.id === 'ts-packchk-m302')?.collection, 'error-catalog', 'a catalog message names no collection');
             assert.strictEqual(rows.find((row) => row.id === 'proc-long')?.collection, 'skills');
@@ -746,7 +838,7 @@ suite('knowledge tools', () => {
             assert.match(text, /The only Agent Skill installed is cmsis-help/);
             // What a skill's description did by itself has to be said: look the procedure up before the work, and first of all.
             assert.ok(text.startsWith('Knowledge first: before you start a CMSIS task'), text.slice(0, 80));
-            assert.match(text, /call knowledge_search with the task in a few words, read the procedure it finds with knowledge_get and follow it; do not work such a task from memory/);
+            assert.match(text, /call knowledge_search with the task's name in two or three words \(new project, board layer, HardFault\), read the procedure it finds with knowledge_get and follow it; do not work such a task from memory/);
             assert.match(text, /route-project, route-bring-up, route-pack and route-debug/);
         });
 

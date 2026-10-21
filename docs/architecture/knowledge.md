@@ -57,6 +57,19 @@ pack a csolution names with `path:` outside the pack root
   converts from cmsis-skills itself, so it covers more than `skills/` vendors.
   The installer's sweep removes every other skill this extension installed.
 
+- **A task name leads to its procedure.** BM25 over title, summary, body
+  and triggers ranks a short reference unit that carries a word in its title
+  above a procedure that names the word once in a long description, so
+  `HardFault` did not reach `proc-cmsis-debug-live` and `create a new
+  project` neither `route-project` nor `proc-cmsis-bootstrap`. A question
+  of at most three content words is taken as a task name: the procedures and
+  routing units whose title, summary or triggers name all of its words (all
+  but one of three; two adjacent words also as one identifier, `hard fault`
+  as `HardFault`) get a bonus above the spread of the rank scores
+  (`HOW_TO_BONUS` in `search.ts`, `KnowledgeIndex.howToCoverage`). Longer
+  questions carry specifics the reference text answers better and get none;
+  the golden set of the knowledge base (`tests/eval_search.js`) is the
+  measure for any change here.
 - **Files of a unit.** A skill's templates and scripts are `asset` entities
   with the file as body, referenced by their procedure. `knowledge_get` on a
   procedure lists them by the path its text uses, and returns one by its id
