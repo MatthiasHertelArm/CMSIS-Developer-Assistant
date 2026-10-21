@@ -255,7 +255,7 @@ const ABOUT = {
     ),
     cmsis_query: say(
         'Boards, devices, or the examples and templates of a board or device, from CMSIS Solution\'s catalog (web and installed packs);',
-        'no project needed. Patterns are case-insensitive regexes.',
+        'no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +

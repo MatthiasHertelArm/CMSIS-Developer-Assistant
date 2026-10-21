@@ -39,9 +39,10 @@ import {
 import { ErrorCode, JsonObject, ToolError, ToolReply, ToolText, errorDetail, isToolReply } from '../core/toolResult';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
 import { DebuggingHandler } from '../debuggingHandler';
-import { createSolution, CreateRequest } from '../handler/createSolution';
+import { createSolution, CreateRequest, SolutionActivator } from '../handler/createSolution';
 import { HandlerHost, VSCODE_HOST } from '../handler/host';
 import type { IDebugConfigurationManager } from '../utils/debugConfigurationManager';
+import { ManualClock } from './cmsisTaskFixtures';
 
 /**
  * `cmsis_query` and `cmsis_action create_solution` against a stub of CMSIS
@@ -317,14 +318,20 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
                 + 'cmsis_query {what:\'boards\', name} lists boards with their ids.');
         });
 
-        test('a list that fails is TASK_FAILED, one that does not answer in time TIMEOUT', async () => {
+        test('a list that fails is TASK_FAILED; one that does not answer in time is running, the catalog still loading', async () => {
             const api = catalogApi();
             api.boardsAnswer = () => Promise.reject(new Error('csolution rpc is not running'));
             const failed = await refusalOf(query(api, { what: 'boards' }), 'TASK_FAILED');
             assert.strictEqual(failed.message, 'cmsis_query: CMSIS Solution could not list the boards: csolution rpc is not running');
             api.boardsAnswer = () => never();
-            const late = await refusalOf(query(api, { what: 'boards' }, soon(50)), 'TIMEOUT');
-            assert.match(errorDetail(late), /did not list the boards in time\.\nIts first request loads Arm's web catalog/);
+            const late = await query(api, { what: 'boards' }, soon(50));
+            assert.strictEqual(late.status, 'running');
+            assert.strictEqual(late.text, 'cmsis_query {what:\'boards\'}: the CMSIS Solution catalog is still loading (first request fetches Arm\'s web catalog); '
+                + 'repeat the same cmsis_query call.');
+            assert.deepStrictEqual(late.data, { what: 'boards', loading: true });
+            // examples: the boards it needs first are as late.
+            const examples = await query(api, { what: 'examples', board: 'STM32H735G-DK' }, soon(50));
+            assert.deepStrictEqual([examples.status, examples.data], ['running', { what: 'examples', loading: true }]);
         });
 
         test('a pack that does not arrive in time is left out, and the entries without it are counted', async () => {
@@ -396,15 +403,31 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             workspaceFolders: () => folders.map(asFolder),
             solutionExtension: () => handle,
         });
-        const create = (host: HandlerHost, request: CreateRequest, deadline = soon()): Promise<ToolText> => createSolution(host, request, deadline);
+        /** An activator that records its calls and answers as `open_solution` does for a solution the extension took. */
+        const activator = (answer?: (file: string) => Promise<ToolText>): SolutionActivator & { calls: Array<[string, number]> } => {
+            const calls: Array<[string, number]> = [];
+            const activate = async (file: string, deadline: number): Promise<ToolText> => {
+                calls.push([file, deadline]);
+                return answer ? answer(file) : { text: 'ok', status: 'ok', data: { opened: path.dirname(file), newWindow: false, solution: file } };
+            };
+            return Object.assign(activate, { calls });
+        };
+        const create = (host: HandlerHost, request: CreateRequest, deadline = soon(), activate: SolutionActivator = activator()): Promise<ToolText> =>
+            createSolution(host, request, deadline, activate);
 
-        test('in the window that has the folder open: the board and draft are looked up by id, git stays off, the text says what follows', async () => {
+        test('in the window that has the folder open: the board and draft are looked up by id, git stays off, the new csolution is activated', async () => {
             const api = catalogApi();
             const folder = path.join(scratch, 'h735-app');
             fs.mkdirSync(folder);
+            const file = path.join(folder, 'CubeMX.csolution.yml');
+            // The extension reports the path as it lists it (`Uri.fsPath`: on Windows the drive letter in lower case).
+            const reported = vscode.Uri.file(file).fsPath;
+            const deadline = soon();
+            const activate = activator(async () => ({ text: 'ok', status: 'ok', data: { opened: folder, newWindow: false, solution: reported } }));
             const reply = await create(hostWith([folder], installed(api)),
-                { path: folder, board: 'STMicroelectronics::STM32H735G-DK', draft: 'keil::stm32h735g-dk_bsp@1.1.0:cubemx', client: 'copilot' });
+                { path: folder, board: 'STMicroelectronics::STM32H735G-DK', draft: 'keil::stm32h735g-dk_bsp@1.1.0:cubemx', client: 'copilot' }, deadline, activate);
             assert.ok(isToolReply(reply) && reply.status === 'ok');
+            assert.deepStrictEqual(activate.calls, [[file, deadline]], 'activated with the created csolution, within the call\'s deadline');
             assert.strictEqual(api.created.length, 1);
             const options = api.created[0];
             assert.strictEqual(options.board, H735, 'the API gets the board object it listed');
@@ -418,13 +441,53 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
                 'CMSIS Solution goes on by itself: it writes .vscode/cmsis.json and, when the project brings no vcpkg-configuration.json, '
                     + 'adds one through the Arm Tools Environment Manager (CMSIS-Toolbox, CMake, Ninja, Arm Compiler 6).',
                 'Then it opens the folder in this window, which has it open already, so the window stays.',
-                `Next: get_session_status until the solution is active (if it stays inactive, cmsis_action {action:'open_solution', path:'${folder}'} `
-                    + 'activates it), then cmsis_action build, which fetches the packs.',
+                `Active solution: ${reported}. Next: cmsis_action build, which fetches the packs.`,
             ].join('\n'));
             assert.deepStrictEqual(reply.data, {
                 created: folder, draft: 'keil::stm32h735g-dk_bsp@1.1.0:cubemx', reloads: false,
-                board: 'STMicroelectronics::STM32H735G-DK', solution: path.join(folder, 'CubeMX.csolution.yml'),
+                board: 'STMicroelectronics::STM32H735G-DK', solution: file, activation: 'active', active: reported,
             });
+        });
+
+        test('an activation that fails keeps the folder a success and adds the failure with its hint; one that is pending says so', async () => {
+            const api = catalogApi();
+            const folder = path.join(scratch, 'h735-app');
+            fs.mkdirSync(folder);
+            const file = path.join(folder, 'CubeMX.csolution.yml');
+            const request: CreateRequest = { path: folder, board: 'STMicroelectronics::STM32H735G-DK', draft: 'keil::stm32h735g-dk_bsp@1.1.0:cubemx' };
+            const picker = 'If VS Code shows the CMSIS Solution extension\'s "Select a solution" picker, ask the user to pick the solution there.';
+            const failing = activator(async () => {
+                throw new ToolError('TASK_FAILED', `CMSIS 'open_solution' failed: the CMSIS Solution extension did not activate ${file} within 10 s.`, picker);
+            });
+            const failed = await create(hostWith([folder], installed(api)), request, soon(), failing);
+            assert.ok(isToolReply(failed) && failed.status === 'ok', JSON.stringify(failed));
+            assert.strictEqual(failing.calls.length, 1);
+            assert.strictEqual(failed.text.split('\n').at(-1),
+                `Activating ${file} failed: CMSIS 'open_solution' failed: the CMSIS Solution extension did not activate ${file} within 10 s. ${picker} `
+                    + 'Next: once it is active, cmsis_action build, which fetches the packs.');
+            assert.deepStrictEqual([failed.data?.activation, failed.data?.active, failed.data?.solution], ['failed', undefined, file]);
+
+            fs.rmSync(folder, { recursive: true, force: true });
+            fs.mkdirSync(folder);
+            const pending = activator(async () => ({ text: 'asked', status: 'running', data: { opened: folder, newWindow: false, solution: file } }));
+            const later = await create(hostWith([folder], installed(api)), request, soon(), pending);
+            assert.ok(isToolReply(later) && later.status === 'ok');
+            assert.strictEqual(later.text.split('\n').at(-1),
+                `CMSIS Solution was asked to activate ${file} but does not report it as active yet. `
+                    + `Next: get_session_status until it is active (if it stays inactive, cmsis_action {action:'open_solution', path:'${file}'} activates it), `
+                    + 'then cmsis_action build, which fetches the packs.');
+            assert.strictEqual(later.data?.activation, 'pending');
+
+            fs.rmSync(folder, { recursive: true, force: true });
+            fs.mkdirSync(folder);
+            const unasked = activator();
+            const late = await create(hostWith([folder], installed(api)), request, soon(1_000), unasked);
+            assert.ok(isToolReply(late) && late.status === 'ok');
+            assert.strictEqual(unasked.calls.length, 0, 'with less than 3 s left the activation is not started');
+            assert.strictEqual(late.text.split('\n').at(-1),
+                `Not activated: the call has no time left to activate it. Next: cmsis_action {action:'open_solution', path:'${file}'} activates it, `
+                    + 'then cmsis_action build, which fetches the packs.');
+            assert.strictEqual(late.data?.activation, 'skipped');
         });
 
         test('an unknown draft id is refused with the ids there are, and nothing is created', async () => {
@@ -470,10 +533,12 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             assert.match(chat.message, /this window, which has no folder, that is a reload, which ends a chat that runs inside it\.$/);
             assert.strictEqual(api.created.length, 0);
 
-            const reply = await create(hostWith([], installed(api)), { ...request, client: 'claude-code' });
+            const activate = activator();
+            const reply = await create(hostWith([], installed(api)), { ...request, client: 'claude-code' }, soon(), activate);
             assert.ok(isToolReply(reply));
             assert.strictEqual(api.created[0].git, true);
             assert.strictEqual(reply.data?.reloads, true);
+            assert.deepStrictEqual([activate.calls.length, reply.data?.activation], [0, undefined], 'the window reloads: nothing to activate here');
             assert.match(reply.text, /^Created a solution in .* from the example 'Blinky' from Arm's web catalog for board STMicroelectronics::STM32H735G-DK\. /);
             assert.match(reply.text, /\nCMSIS Solution goes on by itself: it runs git init, writes \.vscode\/cmsis\.json/);
             assert.match(reply.text, /\nThen it opens the folder in this window without asking: VS Code reloads the window, and the MCP server with it when it runs here\. /);
@@ -533,7 +598,58 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             assert.match(refused.message, /^cmsis_query \{what:'devices'\} not attempted: the CMSIS Solution extension \(Arm\.cmsis-csolution\) is not installed/);
         });
 
-        test('cmsis_action create_solution needs no active solution and passes its arguments through', async () => {
+        /** Lets the body of a fenced call run up to its next timer: microtasks first, then one macrotask. */
+        const settle = (): Promise<void> => new Promise<void>((wake) => setImmediate(wake));
+
+        test('cmsis_query whose first list request outlasts its deadline answers running; the next call lists, on the same API object', async () => {
+            const clock = new ManualClock(1_000_000);
+            const api = catalogApi();
+            let arrive: ((boards: ApiBoard[]) => void) | undefined;
+            api.boardsAnswer = () => new Promise<ApiBoard[]>((resolve) => { arrive = resolve; });
+            const handle = installed(api);
+            const handler = new CatalogHandler({
+                solutionExtension: () => handle, now: () => clock.now(), startTimer: (ms, fire) => clock.startTimer(ms, fire),
+            });
+            const first = handler.handleCmsisQuery({ what: 'boards' });
+            await settle();
+            clock.advance(clock.now() + 57_000);
+            const reply = await first;
+            assert.ok(isToolReply(reply), JSON.stringify(reply));
+            assert.strictEqual(reply.status, 'running');
+            assert.strictEqual(reply.text, 'cmsis_query {what:\'boards\'}: the CMSIS Solution catalog is still loading (first request fetches Arm\'s web catalog); '
+                + 'repeat the same cmsis_query call.');
+            assert.deepStrictEqual(reply.data, { what: 'boards', loading: true });
+            assert.strictEqual(clock.pendingTimers(), 0, 'the fence is disarmed');
+
+            // The catalog arrives; the repeat lists it without a new API object or activation.
+            assert.ok(arrive !== undefined);
+            arrive(api.boards);
+            api.boardsAnswer = undefined;
+            const second = await handler.handleCmsisQuery({ what: 'boards', name: 'frdm' });
+            assert.ok(isToolReply(second) && second.status === 'ok', JSON.stringify(second));
+            assert.strictEqual(second.text.split('\n')[1], '- NXP::FRDM-MCXN947 — device NXP::MCXN947VDF');
+            assert.deepStrictEqual([handle.asked, handle.activations], [1, 0]);
+        });
+
+        test('the fence of cmsis_query, when it wins, answers running too, with the catalog as the cause', async () => {
+            const clock = new ManualClock(1_000_000);
+            const api = catalogApi();
+            api.boardsAnswer = () => never();
+            const handler = new CatalogHandler({
+                solutionExtension: () => installed(api), now: () => clock.now(), startTimer: (ms, fire) => clock.startTimer(ms, fire),
+            });
+            const pending = handler.handleCmsisQuery({ what: 'boards' });
+            await settle();
+            // Both timers are due: the fence, armed first and settled synchronously, wins the race.
+            clock.advance(clock.now() + 60_000);
+            const reply = await pending;
+            assert.ok(isToolReply(reply), JSON.stringify(reply));
+            assert.strictEqual(reply.status, 'running');
+            assert.strictEqual(reply.text, '\'cmsis_query\' did not complete within 60000 ms (handler-level cap). '
+                + 'The CMSIS Solution catalog is still loading (first request fetches Arm\'s web catalog); repeat the same cmsis_query call.');
+        });
+
+        test('cmsis_action create_solution needs no active solution, passes its arguments through, and activates with open_solution\'s code', async () => {
             const api = catalogApi();
             const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cda-create-')));
             try {
@@ -543,6 +659,9 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
                 });
                 assert.ok(isToolReply(reply) && reply.status === 'ok', JSON.stringify(reply));
                 assert.deepStrictEqual([api.created.length, api.created[0].git, api.created[0].folder], [1, true, folder]);
+                // The activation is open_solution's: in the test VS Code, without the CMSIS Solution extension, it refuses, and the reply says so.
+                assert.strictEqual(reply.data?.activation, 'failed');
+                assert.match(reply.text, /\nActivating .*Blinky\.csolution\.yml failed: CMSIS 'open_solution' not attempted: the CMSIS Solution extension \(Arm\.cmsis-csolution\) is not installed/);
             } finally {
                 fs.rmSync(folder, { recursive: true, force: true });
             }

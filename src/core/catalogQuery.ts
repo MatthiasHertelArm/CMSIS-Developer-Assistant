@@ -31,6 +31,12 @@
  * request each; they are read for the listed entries only, in parallel, and
  * left out when they do not arrive in time.
  *
+ * The first list request of a window fills the extension's catalog from
+ * Arm's web service, which can outlast the call. That is not a failure: the
+ * answer is a `running` reply that says to repeat the same call, and the
+ * extension goes on loading (its API object is kept, `acquireSolutionApi`),
+ * so the repeat finds the catalog, or waits for less of it.
+ *
  * Pure: no `vscode`; the API and the clock come from the caller.
  */
 
@@ -83,6 +89,20 @@ const DESCRIPTION_TEXT_CHARS = 80;
 const DESCRIPTION_DATA_CHARS = 400;
 /** Devices of a board that `data` names at most. */
 const BOARD_DEVICES_LISTED = 8;
+/** What a call answers while the extension's first list request still loads the catalog. */
+export const CATALOG_LOADING = 'the CMSIS Solution catalog is still loading (first request fetches Arm\'s web catalog); repeat the same cmsis_query call.';
+
+/** A list request still open at the call's deadline: the catalog is loading. `queryCatalog` answers it as `running`. */
+class CatalogLoading extends Error {
+    constructor(label: string) {
+        super(`the ${label} did not arrive in time`);
+    }
+}
+
+/** The `running` reply for a catalog that is still loading; `what` is the query's kind. */
+function catalogLoadingReply(what: string): ToolReply {
+    return { text: `cmsis_query {what:'${what}'}: ${CATALOG_LOADING}`, status: 'running', data: { what, loading: true } };
+}
 
 /** One listed entry: its line in the text and its object in `data`. */
 interface Entry {
@@ -112,8 +132,8 @@ export function limitOf(limit: number | undefined): number {
 
 /**
  * One list request of the API within the call's deadline: the entries, an
- * empty list for a non-array, `TIMEOUT` when it does not answer in time,
- * `TASK_FAILED` when it rejects.
+ * empty list for a non-array, `CatalogLoading` when it does not answer in
+ * time (the catalog is still being filled), `TASK_FAILED` when it rejects.
  */
 async function listed<T>(request: () => PromiseLike<T[]>, label: string, clock: Clock, deadline: number): Promise<T[]> {
     let answer: { value: T[] } | undefined;
@@ -124,8 +144,7 @@ async function listed<T>(request: () => PromiseLike<T[]>, label: string, clock: 
             'get_recent_problems and the CMSIS Solution output channel show more.');
     }
     if (answer === undefined) {
-        throw new ToolError('TIMEOUT', `cmsis_query: CMSIS Solution did not list the ${label} in time.`,
-            'Its first request loads Arm\'s web catalog, which can take a while: repeat the call in a minute.');
+        throw new CatalogLoading(label);
     }
     return Array.isArray(answer.value) ? answer.value : [];
 }
@@ -405,22 +424,30 @@ function errorNotes(errors: CatalogErrors | undefined): string[] {
 
 /**
  * Answer `cmsis_query` for the catalog kinds from CMSIS Solution's API.
- * `deadline` is on `clock`; a list request still open then is `TIMEOUT`.
+ * `deadline` is on `clock`; a list request still open then is answered as
+ * `running`: the catalog is loading, the same call again finds it.
  */
 export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number): Promise<ToolReply> {
     let listing: Listing;
-    switch (query.what) {
-        case 'boards':
-            listing = await listBoards(api, query, clock, deadline);
-            break;
-        case 'devices':
-            listing = await listDevices(api, query, clock, deadline);
-            break;
-        case 'examples':
-            listing = await listExamples(api, query, clock, deadline);
-            break;
-        default:
-            throw new ToolError('INVALID_ARGUMENT', `cmsis_query not attempted: what must be one of ${QUERY_KINDS.join(', ')}.`);
+    try {
+        switch (query.what) {
+            case 'boards':
+                listing = await listBoards(api, query, clock, deadline);
+                break;
+            case 'devices':
+                listing = await listDevices(api, query, clock, deadline);
+                break;
+            case 'examples':
+                listing = await listExamples(api, query, clock, deadline);
+                break;
+            default:
+                throw new ToolError('INVALID_ARGUMENT', `cmsis_query not attempted: what must be one of ${QUERY_KINDS.join(', ')}.`);
+        }
+    } catch (caught) {
+        if (caught instanceof CatalogLoading) {
+            return catalogLoadingReply(query.what);
+        }
+        throw caught;
     }
     const errors = catalogErrorsOf(api);
     const listedCount = listing.entries.length;

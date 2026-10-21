@@ -1265,7 +1265,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1449,8 +1449,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56607,
-          "sha256": "4939f145d7ff7e7823b4de684f70d3a8379e1f970dc7fec890ca4bb13d221dcc"
+          "bytes": 56839,
+          "sha256": "766387a48777709a1b528347af4e6ffe85557bf13b4808444e075a331e1e0f91"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -2781,7 +2781,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2965,8 +2965,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56607,
-          "sha256": "4939f145d7ff7e7823b4de684f70d3a8379e1f970dc7fec890ca4bb13d221dcc"
+          "bytes": 56839,
+          "sha256": "766387a48777709a1b528347af4e6ffe85557bf13b4808444e075a331e1e0f91"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -4833,7 +4833,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -5017,8 +5017,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56607,
-          "sha256": "4939f145d7ff7e7823b4de684f70d3a8379e1f970dc7fec890ca4bb13d221dcc"
+          "bytes": 56839,
+          "sha256": "766387a48777709a1b528347af4e6ffe85557bf13b4808444e075a331e1e0f91"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -6807,7 +6807,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -7033,8 +7033,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56607,
-          "sha256": "4939f145d7ff7e7823b4de684f70d3a8379e1f970dc7fec890ca4bb13d221dcc"
+          "bytes": 56839,
+          "sha256": "766387a48777709a1b528347af4e6ffe85557bf13b4808444e075a331e1e0f91"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,
@@ -8909,7 +8909,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes.",
+          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes. A first call may answer status running while the web catalog loads: repeat it.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -9135,8 +9135,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 56607,
-          "sha256": "4939f145d7ff7e7823b4de684f70d3a8379e1f970dc7fec890ca4bb13d221dcc"
+          "bytes": 56839,
+          "sha256": "766387a48777709a1b528347af4e6ffe85557bf13b4808444e075a331e1e0f91"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9525,

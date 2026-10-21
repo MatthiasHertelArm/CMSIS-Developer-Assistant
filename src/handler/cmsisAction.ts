@@ -1274,7 +1274,9 @@ export async function runCmsisAction(
         return runInstallPack(host, pack, deadline);
     }
     if (action === 'create_solution') {
-        return createSolution(host, { ...creation, path: openPath, client }, deadline - DEADLINE_MARGIN_MS);
+        // In the window that keeps the folder, the new csolution is activated as open_solution activates one.
+        return createSolution(host, { ...creation, path: openPath, client }, deadline - DEADLINE_MARGIN_MS,
+            (file, remaining) => activateHere(context, placeOf(file), remaining));
     }
     if (SESSION_ACTIONS.has(action) && executor.hasDebugSession()) {
         const status = await executor.getSessionStatus();

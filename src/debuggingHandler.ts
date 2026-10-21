@@ -84,7 +84,7 @@ import {
     selectVariables,
 } from './core/variableView';
 import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction } from './handler/cmsisAction';
-import { CatalogQuery, queryCatalog } from './core/catalogQuery';
+import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
 import { acquireSolutionApi } from './core/solutionApi';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
@@ -211,6 +211,8 @@ const NO_ACTIVE_SESSION = 'No active debug session.';
 /** `cmsis_query`: the fence, and how much earlier the query's own deadline answers. */
 const QUERY_FENCE_MS = 60_000;
 const QUERY_MARGIN_MS = 3_000;
+/** What the fence of `cmsis_query` answers, as a `running` reply: the catalog is loading, in the words of the query's own deadline. */
+const QUERY_FENCE_ADVICE = CATALOG_LOADING.charAt(0).toUpperCase() + CATALOG_LOADING.slice(1);
 /** How to get a session: CMSIS projects start theirs through the CMSIS Solution extension (#20). */
 const START_FIRST = 'Start a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.';
 const NOTHING_TO_STOP = 'Nothing to stop — no debug session is active.';
@@ -1785,15 +1787,18 @@ export class DebuggingHandler
      * `cmsis_query` (#41, the catalog slice): boards, devices and the examples
      * of a board or device from CMSIS Solution's API version 2. Needs no
      * solution and no session; activates the CMSIS Solution extension when it
-     * is installed but inactive.
+     * is installed but inactive. The extension's first list request fills its
+     * catalog from Arm's web service, which can outlast the call: the query's
+     * own deadline, and the fence behind it, answer `running` then, like a
+     * long build, and the same call again finds the catalog.
      */
     handleCmsisQuery(args: CatalogQuery): Answer {
-        return this.fence('cmsis_query', QUERY_FENCE_MS, 'error', async () => {
+        return this.fence('cmsis_query', QUERY_FENCE_MS, 'reply', async () => {
             const host = this.host();
             const deadline = host.now() + QUERY_FENCE_MS - QUERY_MARGIN_MS;
             const api = await acquireSolutionApi(host.solutionExtension(), `cmsis_query {what:'${args.what}'}`, host);
             return queryCatalog(api, args, host, deadline);
-        });
+        }, { advice: QUERY_FENCE_ADVICE, capStatus: 'running' });
     }
 
     /** `flash`; it notes a serial port this window holds (#49). */

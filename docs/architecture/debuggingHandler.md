@@ -36,8 +36,9 @@ cannot be left out of the routing (see [windowRouting.md](windowRouting.md)).
 
 | Tools | Failure | Too slow |
 | ----- | ------- | -------- |
-| Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads, `cmsis_query` | rejected with the body's `ToolError`; a plain error gets a code from `classifyError()` | rejected with `TIMEOUT`: a read that returned nothing has failed |
+| Variables and expressions, memory, registers, cycle counter, peripherals, fault tools, SVD lookups, call stack and threads | rejected with the body's `ToolError`; a plain error gets a code from `classifyError()` | rejected with `TIMEOUT`: a read that returned nothing has failed |
 | `reset`, `wait_for_stop`, `cmsis_action`, `flash` | as above | answered with status `timeout` and the notice that the call did not complete within its limit |
+| `cmsis_query` | as above | answered with status `running`: the extension is still filling its catalog from Arm's web service, and the same call again finds it (`FenceOptions.capStatus`) |
 | Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint; a `Refusal` passes as it is | bounded by the executor's request deadlines and by the stop and session waits below; the configuration picker of `start_debugging` fails with `INVALID_ARGUMENT` after its limit, and `stop_debugging` answers with status `timeout` after 10 s (#14). What stays unbounded here, the window's fence answers (see [windowRouting.md](windowRouting.md#fences-and-health-checks)) |
 
 The cause reads as its message: a plain `Error` loses the `Error: ` its
@@ -365,7 +366,14 @@ window's CMSIS job tracker (next section):
   would lose it and is refused, and so is an empty window for a chat inside
   it. The reply says what CMSIS Solution does next (`data.reloads`), and a
   creation that outlasts the wait (a web example downloads first) is
-  answered with status `running`.
+  answered with status `running`. In the window that stays, CMSIS Solution
+  does not make the new csolution its active solution, so the call does:
+  `runCmsisAction` hands `createSolution()` the activation of
+  `open_solution` (`activateHere()`, the same lookup in the extension's
+  list by real path and the same checks), which runs within the time the
+  call has left and names the solution as the extension reports it
+  (`data.activation`, `data.active`). A refusal, a failure or no time left
+  goes into the reply with its hint; the created folder stays a success.
 
 Before any command: a debug session refuses `load_and_debug` and `attach`,
 the probe guard refuses what another owner blocks (`PROBE_BUSY`), a window
@@ -469,6 +477,15 @@ filter exact), sorts boards and devices by id, caps the list at `limit`
 entry can cost the web catalog one request each, so they are read for the
 listed entries only, in parallel, and left out with a note when they do not
 arrive within 10 s. The answer is a text and the same as `data`.
+
+The extension's first list request in a window fills its catalog from Arm's
+web service, which can take longer than the call. That is answered as a
+`running` reply, not a failure, by the query's own deadline (3 s before the
+fence) and by the fence behind it (`capStatus`): the text says the catalog
+is still loading and to repeat the same call. Nothing is cached here: the
+extension goes on loading, its API object is kept per extension
+(`acquireSolutionApi()`), and the repeat finds the catalog or waits for
+less of it.
 
 The API keeps a source's failure to itself. Only a draft says where it came
 from (`draftSource`: web or installed pack). Whether the web catalog was
