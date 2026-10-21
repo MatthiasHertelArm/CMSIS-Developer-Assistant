@@ -25,6 +25,14 @@ index through, loudly, never a missing one), and the CI package job fetches
 the index, cached by the pinned hash, before it packages. The logic is
 `src/core/knowledge/coreIndexLock.ts`, build tooling that nothing of the
 extension imports; `scripts/knowledge-index.ts` is its command line.
+The same release carries `SOURCES.md`, the attribution of the index's
+content (every source with repository and licence, the copyright lines and
+licence texts the MIT and BSD-3-Clause licences require, the NOTICE files of
+the Apache-2.0 sources, the issue repositories), which the lock names too
+(`sources`, `sourcesSha256`): the extension commits and ships the copy
+`resources/knowledge/SOURCES.md`, `knowledge:fetch` refreshes it with the
+index, `knowledge:check` and packaging hold it to the lock's hash, and
+`npm run tpip:report` copies its table of sources into TPIP.md.
 Packs and the workspace add their own indexes to it: every pack under the
 pack root and in cpackget's local repository, and the DFP and BSP folders
 the CMSIS Solution extension names for the active target, which reach a

@@ -119,6 +119,8 @@ check('the bundle keeps serialport external',
 check('the agent skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-debug-live', 'SKILL.md')));
 check('the help skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-help', 'SKILL.md')));
 check('the core knowledge index ships', fs.existsSync(path.join(root, 'resources', 'knowledge', 'core.db')));
+check('the attribution of the knowledge index ships', fs.existsSync(path.join(root, 'resources', 'knowledge', 'SOURCES.md'))
+    && fs.readFileSync(path.join(root, 'resources', 'knowledge', 'SOURCES.md'), 'utf8').includes('<!-- sources:table:begin -->'));
 check('the pack-docs skill ships', fs.existsSync(path.join(root, 'skills', 'cmsis-pack-docs', 'SKILL.md')));
 check('the pdf.js worker thread entry ships beside the extension', fs.existsSync(path.join(root, 'dist', 'pdfWorker.js')));
 check('the pdf.js fake worker ships for that thread', fs.existsSync(path.join(root, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'))

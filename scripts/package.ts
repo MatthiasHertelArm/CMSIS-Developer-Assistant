@@ -141,8 +141,8 @@ const indexUnpinned = argv.includes('--index-unpinned');
 if (indexUnpinned) {
     argv.splice(argv.indexOf('--index-unpinned'), 1);
 }
-const { lock, state } = assertPinnedIndex(repoRoot, { allowUnpinned: indexUnpinned });
-console.log(`Core knowledge index: ${state.kind} ${lock.version} (${lock.units} units, sha256 ${lock.sha256.slice(0, 12)}…)`);
+const { lock, state, sources } = assertPinnedIndex(repoRoot, { allowUnpinned: indexUnpinned });
+console.log(`Core knowledge index: ${state.kind} ${lock.version} (${lock.units} units, sha256 ${lock.sha256.slice(0, 12)}…); SOURCES.md: ${sources.kind}`);
 
 // Ship the README's images inside the VSIX.
 //

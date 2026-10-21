@@ -19,6 +19,10 @@
  * is git-ignored and pinned by `resources/knowledge/core.lock.json`: the
  * version, the URL and the sha256 of one release of the knowledge-base
  * repository (`core-<version>`, published by its `scripts/release_core.sh`).
+ * The same release carries `SOURCES.md`, the attribution of the index's
+ * content (every source with its licence, the copyright lines and licence
+ * texts the licences require); the lock names it (`sources`, `sourcesSha256`)
+ * and the committed copy `resources/knowledge/SOURCES.md` must match it.
  * This module reads and validates the lock, tells whether the local index is
  * the pinned one, downloads the pinned file (redirects followed, hash and size
  * checked before the file takes its place) and rewrites the lock from a
@@ -43,6 +47,9 @@ export const LOCK_RELATIVE = path.join('resources', 'knowledge', 'core.lock.json
 /** The index, relative to the repository root. */
 export const INDEX_RELATIVE = path.join('resources', 'knowledge', 'core.db');
 
+/** The attribution of the index's content, relative to the repository root; committed, unlike the index. */
+export const SOURCES_RELATIVE = path.join('resources', 'knowledge', 'SOURCES.md');
+
 /** The command that makes the local index the pinned one; named in every refusal. */
 export const FETCH_COMMAND = 'npm run knowledge:fetch';
 
@@ -60,6 +67,10 @@ export interface CoreIndexLock {
     units: number;
     /** The knowledge-base commit the index was built from. */
     kbCommit: string;
+    /** The release's `SOURCES.md`, when the release has one. */
+    sources?: string;
+    /** Lower-case hex sha256 of that file; present whenever `sources` is. */
+    sourcesSha256?: string;
 }
 
 /** What `knowledge-core-<version>.json` of a release holds: the index's `info` table plus the file's name, hash and size. */
@@ -69,7 +80,17 @@ export interface ReleaseRecord {
     size: number;
     units: number;
     kbCommit: string;
+    /** The name and sha256 of the release's `SOURCES.md` (`sources`, `sources_sha256`), when the release has one. */
+    sources?: string;
+    sourcesSha256?: string;
 }
+
+/** The committed SOURCES.md compared with the lock. */
+export type SourcesState =
+    | { kind: 'none' }
+    | { kind: 'missing' }
+    | { kind: 'pinned'; sha256: string }
+    | { kind: 'unpinned'; sha256: string };
 
 /** The local index compared with the lock. */
 export type IndexState =
@@ -132,7 +153,7 @@ export function parseLock(text: string, origin: string = LOCK_RELATIVE): CoreInd
     if (!/^https:\/\//.test(url)) {
         throw new Error(`${origin}: "url" must be an https URL`);
     }
-    return {
+    const lock: CoreIndexLock = {
         version: stringField(record, 'version', origin),
         url,
         sha256: hashField(record, 'sha256', origin),
@@ -140,6 +161,14 @@ export function parseLock(text: string, origin: string = LOCK_RELATIVE): CoreInd
         units: countField(record, 'units', origin),
         kbCommit: stringField(record, 'kbCommit', origin),
     };
+    if ('sources' in record) {
+        lock.sources = stringField(record, 'sources', origin);
+        if (!/^https:\/\//.test(lock.sources)) {
+            throw new Error(`${origin}: "sources" must be an https URL`);
+        }
+        lock.sourcesSha256 = hashField(record, 'sourcesSha256', origin);
+    }
+    return lock;
 }
 
 /** Reads the lock of a repository. */
@@ -156,13 +185,18 @@ export function writeLock(repoRoot: string, lock: CoreIndexLock): void {
 /** Parses and validates a release's `knowledge-core-<version>.json`. */
 export function parseReleaseRecord(text: string, origin: string): ReleaseRecord {
     const record = asRecord(text, origin);
-    return {
+    const release: ReleaseRecord = {
         file: stringField(record, 'file', origin),
         sha256: hashField(record, 'sha256', origin),
         size: countField(record, 'size', origin),
         units: countField(record, 'units', origin),
         kbCommit: stringField(record, 'kb_commit', origin),
     };
+    if ('sources' in record) {
+        release.sources = stringField(record, 'sources', origin);
+        release.sourcesSha256 = hashField(record, 'sources_sha256', origin);
+    }
+    return release;
 }
 
 /** The releases folder of the knowledge base, from the URL of the lock: `…/releases/download`. */
@@ -181,7 +215,7 @@ export function releaseRecordUrl(lockUrl: string, version: string): string {
 
 /** The lock that pins a release, from its metadata. */
 export function lockFromRelease(lockUrl: string, version: string, record: ReleaseRecord): CoreIndexLock {
-    return {
+    const lock: CoreIndexLock = {
         version,
         url: `${releasesBase(lockUrl)}/core-${version}/${record.file}`,
         sha256: record.sha256,
@@ -189,6 +223,11 @@ export function lockFromRelease(lockUrl: string, version: string, record: Releas
         units: record.units,
         kbCommit: record.kbCommit,
     };
+    if (record.sources && record.sourcesSha256) {
+        lock.sources = `${releasesBase(lockUrl)}/core-${version}/${record.sources}`;
+        lock.sourcesSha256 = record.sourcesSha256;
+    }
+    return lock;
 }
 
 /** The sha256 of a file, lower-case hex. Synchronous: the index is read once, which takes well under a second. */
@@ -207,6 +246,19 @@ export function indexState(repoRoot: string, lock: CoreIndexLock): IndexState {
     return { kind: sha256 === lock.sha256 && size === lock.size ? 'pinned' : 'unpinned', sha256, size };
 }
 
+/** Compares the committed SOURCES.md with the lock; `none` when the lock names no such file. */
+export function sourcesState(repoRoot: string, lock: CoreIndexLock): SourcesState {
+    if (!lock.sources || !lock.sourcesSha256) {
+        return { kind: 'none' };
+    }
+    const file = path.join(repoRoot, SOURCES_RELATIVE);
+    if (!fs.existsSync(file)) {
+        return { kind: 'missing' };
+    }
+    const sha256 = sha256OfFile(file);
+    return { kind: sha256 === lock.sourcesSha256 ? 'pinned' : 'unpinned', sha256 };
+}
+
 /** What the packaging gate decided. */
 export interface PinnedIndexOptions {
     /** `--index-unpinned`: a present index that is not the pinned one passes, with a warning. */
@@ -216,11 +268,12 @@ export interface PinnedIndexOptions {
 }
 
 /**
- * The packaging gate: the local index must be the pinned one. A missing index
- * is refused in every case; a different one only without `allowUnpinned`.
- * Returns the lock and the state for the caller's message.
+ * The packaging gate: the local index must be the pinned one, and the committed
+ * SOURCES.md the one of the same release when the lock names it. A missing index
+ * is refused in every case; a different index or attribution only without
+ * `allowUnpinned`. Returns the lock and both states for the caller's message.
  */
-export function assertPinnedIndex(repoRoot: string, options: PinnedIndexOptions): { lock: CoreIndexLock; state: IndexState } {
+export function assertPinnedIndex(repoRoot: string, options: PinnedIndexOptions): { lock: CoreIndexLock; state: IndexState; sources: SourcesState } {
     const lock = readLock(repoRoot);
     const state = indexState(repoRoot, lock);
     const warn = options.warn ?? ((message: string): void => { console.warn(message); });
@@ -238,7 +291,17 @@ export function assertPinnedIndex(repoRoot: string, options: PinnedIndexOptions)
         warn('\n' + '!'.repeat(78) + `\n!! WARNING: packaging an UNPINNED core knowledge index (--index-unpinned).\n!! ${detail}.\n`
             + `!! This VSIX is not reproducible from the lock; never publish it.\n` + '!'.repeat(78) + '\n');
     }
-    return { lock, state };
+    const sources = sourcesState(repoRoot, lock);
+    if (sources.kind === 'missing' || sources.kind === 'unpinned') {
+        const detail = sources.kind === 'missing' ? `${SOURCES_RELATIVE} is missing`
+            : `${SOURCES_RELATIVE} has sha256 ${sources.sha256}, the lock pins ${lock.sourcesSha256}`;
+        if (!options.allowUnpinned) {
+            throw new Error(`The attribution of the core knowledge index is not the pinned one: ${detail}. `
+                + `Run \`${FETCH_COMMAND}\` to download the release's SOURCES.md and commit it.`);
+        }
+        warn(`WARNING: ${detail}; the VSIX ships an attribution that may not match its index.`);
+    }
+    return { lock, state, sources };
 }
 
 /** One HTTP(S) GET with redirects followed, resolved with the final response. */
@@ -284,7 +347,7 @@ export async function fetchText(url: string): Promise<string> {
  * it while the hash is computed, renamed into place only when hash and size
  * match `expected`, deleted otherwise.
  */
-export async function downloadVerified(url: string, destination: string, expected: { sha256: string; size: number }): Promise<void> {
+export async function downloadVerified(url: string, destination: string, expected: { sha256: string; size?: number }): Promise<void> {
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     const partial = `${destination}.${process.pid}.part`;
     const hash = crypto.createHash('sha256');
@@ -300,9 +363,9 @@ export async function downloadVerified(url: string, destination: string, expecte
             response.pipe(out);
         });
         const sha256 = hash.digest('hex');
-        if (sha256 !== expected.sha256 || size !== expected.size) {
+        if (sha256 !== expected.sha256 || (expected.size !== undefined && size !== expected.size)) {
             throw new Error(`the download of ${url} does not match the lock: sha256 ${sha256} (${size} bytes), `
-                + `expected ${expected.sha256} (${expected.size} bytes); the file was discarded`);
+                + `expected ${expected.sha256}${expected.size !== undefined ? ` (${expected.size} bytes)` : ''}; the file was discarded`);
         }
         fs.renameSync(partial, destination);
     } finally {
@@ -317,5 +380,18 @@ export async function fetchIndex(repoRoot: string, lock: CoreIndexLock): Promise
         return 'kept';
     }
     await downloadVerified(lock.url, path.join(repoRoot, INDEX_RELATIVE), lock);
+    return state.kind === 'missing' ? 'downloaded' : 'replaced';
+}
+
+/** Makes the committed SOURCES.md the release's; `none` when the lock names no such file. */
+export async function fetchSources(repoRoot: string, lock: CoreIndexLock): Promise<'none' | 'kept' | 'downloaded' | 'replaced'> {
+    const state = sourcesState(repoRoot, lock);
+    if (state.kind === 'none') {
+        return 'none';
+    }
+    if (state.kind === 'pinned') {
+        return 'kept';
+    }
+    await downloadVerified(lock.sources as string, path.join(repoRoot, SOURCES_RELATIVE), { sha256: lock.sourcesSha256 as string });
     return state.kind === 'missing' ? 'downloaded' : 'replaced';
 }
