@@ -9,9 +9,22 @@ them. [docs/proposals/knowledge-base.md](../proposals/knowledge-base.md) has
 the reasons and the open decisions.
 
 The knowledge index is mandatory. The extension ships the core index
-(`resources/knowledge/core.db`, copied in from the knowledge-base repository
-before packaging, git-ignored) and the knowledge tools are always on.
+(`resources/knowledge/core.db`) and the knowledge tools are always on.
 `knowledge.indexPath` replaces the core index, for testing a rebuilt one.
+The file is git-ignored and pinned instead: the knowledge-base repository
+builds it reproducibly from a commit (`scripts/build_core.sh`) and publishes
+it as a GitHub release `core-<version>` with its sha256 and a metadata file
+(`scripts/release_core.sh`); `resources/knowledge/core.lock.json` names the
+version, the asset URL, the hash, the size, the unit count and the commit.
+`npm run knowledge:fetch` downloads the pinned file when the local one is
+missing or differs, hash and size checked before it takes the file's place;
+`npm run knowledge:check` only verifies; `npm run knowledge:update -- <version>`
+rewrites the lock from a release's metadata. Packaging refuses a VSIX whose
+index is missing or not the pinned one (`--index-unpinned` lets a rebuilt
+index through, loudly, never a missing one), and the CI package job fetches
+the index, cached by the pinned hash, before it packages. The logic is
+`src/core/knowledge/coreIndexLock.ts`, build tooling that nothing of the
+extension imports; `scripts/knowledge-index.ts` is its command line.
 Packs and the workspace add their own indexes to it: every pack under the
 pack root and in cpackget's local repository, and the DFP and BSP folders
 the CMSIS Solution extension names for the active target, which reach a
@@ -31,7 +44,9 @@ pack a csolution names with `path:` outside the pack root
   procedure for the task. Every other procedure is a unit of the index. The
   skills of the upstream categories and the extension's own skills stay in
   `skills/` as the sources of those units (`skill2ku.py` reads the catalog,
-  and its `installed` flag is what the installer obeys).
+  and its `installed` flag is what the installer obeys); the index also holds
+  the bring-up, pack, Ethos-U and stream procedures, which the knowledge base
+  converts from cmsis-skills itself, so it covers more than `skills/` vendors.
   The installer's sweep removes every other skill this extension installed.
 
 - **Files of a unit.** A skill's templates and scripts are `asset` entities

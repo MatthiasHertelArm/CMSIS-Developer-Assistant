@@ -18,8 +18,10 @@
  * One method per knowledge tool, each returning the text the agent sees and
  * the same content as data: `knowledge_search` (summaries, filtered by the
  * active project), `knowledge_get` (one unit, whole) and `knowledge_expand`
- * (one hop in the graph). Experimental: the index is a local `knowledge.db`
- * named by a setting, see docs/proposals/knowledge-base.md.
+ * (one hop in the graph). Experimental: the core index ships with the
+ * extension (`resources/knowledge/core.db`, pinned by `core.lock.json`),
+ * `knowledge.indexPath` replaces it, packs and the workspace add their own;
+ * see docs/architecture/knowledge.md and docs/proposals/knowledge-base.md.
  *
  * The shape of `BuildInfoHandler`: no `vscode` import, the host is
  * injected, every call runs under the fence and trace of `core/toolRun.ts`.

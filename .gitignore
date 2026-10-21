@@ -40,5 +40,5 @@ __pycache__/
 *.env
 .DS_Store
 
-# The core knowledge index, built from the knowledge base repository (scripts of cmsis-knowledge-base); copied in before packaging.
+# The core knowledge index: built by the knowledge-base repository, pinned by resources/knowledge/core.lock.json, fetched by `npm run knowledge:fetch`.
 resources/knowledge/*.db

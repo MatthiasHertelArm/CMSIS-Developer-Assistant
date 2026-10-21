@@ -35,7 +35,8 @@ releases had one, with three settings and a monthly prompt).
   versions (`migrateExistingConfigurations()`).
 - Drive the first-run setup and its on-demand re-run (`runSetupFlow()`),
   remembering in `globalState` that it was shown.
-- Install the skill catalog into the personal skills directories
+- Install the one installed skill of the catalog, `cmsis-help`, into the
+  personal skills directories and sweep the rest
   (`syncSkills()`), at activation and after the agents step of the setup,
   using the pure helpers in `skillCatalog.ts` (what is visible, what is
   hidden) and `skillInstaller.ts` (how to write it safely).
@@ -126,15 +127,15 @@ directories. The contract (`docs/agent-resources/tool-contract.md`, #50) is
 copied between marker comments into the hand-written skills of the extension,
 which the installer then copies out like any other file. See
 `skills/README.md`.
-`skills/README.md`.
 
 ### A window without a folder
 
 The extension activates in a VS Code window that has no folder open, and the
 setup runs there as anywhere: the server is registered in the agents'
 user-level configuration files, so an agent started in any directory finds
-it, and the skills go to the personal skills directories, so `cmsis-bootstrap`,
-the skill for exactly this window, is there. What depends on a folder is left
+it, and `cmsis-help` goes to the personal skills directories; the bootstrap
+procedure for exactly this window is a unit of the knowledge index, which
+needs no folder either. What depends on a folder is left
 out: only the agents' user-level rule files can be offered in step 2; an agent
 that reads a workspace file only (Copilot Chat, Cursor, Cline, Roo Code) gets
 its rules once a folder is open.
@@ -244,7 +245,7 @@ read.
 
 ## User Flow
 
-1. Extension activates; `syncSkills('activation')` installs the catalog into
+1. Extension activates; `syncSkills('activation')` installs `cmsis-help` into
    the personal skills directories and sweeps the project roots of 2.5.x.
    After the migration, `refreshAgentRules()` offers to bring recorded rule
    blocks up to date.
@@ -254,9 +255,9 @@ read.
    says how many went where; step 2 (skipped while `agentRules.install` is
    `never`) multi-select of rule files → per file a diff and a dialog → the
    confirmed files written.
-3. A later release with another catalog: the next activation installs the
-   new set and removes the directories this extension wrote that are no
-   longer in it (marker-guarded).
+3. A later release with another catalog: the next activation installs what
+   the catalog marks `installed` and removes the directories this extension
+   wrote that are no longer in that set (marker-guarded).
 
 ## Commands
 

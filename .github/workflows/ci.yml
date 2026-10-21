@@ -234,6 +234,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The core knowledge index is git-ignored and pinned by resources/knowledge/core.lock.json;
+      # packaging refuses a VSIX without it. Cached by the pinned hash, fetched on a miss.
+      - name: Read the pinned index hash
+        id: knowledge-lock
+        run: echo "sha256=$(jq -r .sha256 resources/knowledge/core.lock.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the core knowledge index
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: resources/knowledge/core.db
+          key: knowledge-core-${{ steps.knowledge-lock.outputs.sha256 }}
+
+      - name: Fetch the core knowledge index
+        run: npm run knowledge:fetch
+
       - name: Package VSIX
         run: npm run package -- --target ${{ matrix.target }}
 

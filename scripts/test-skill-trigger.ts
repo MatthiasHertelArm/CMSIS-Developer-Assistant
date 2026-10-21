@@ -16,7 +16,7 @@
  */
 
 /**
- * Does the cmsis-debug-live skill trigger? A live check against a real
+ * Does the cmsis-help skill trigger? A live check against a real
  * GitHub Copilot CLI:
  *
  *   npm run test:skill-trigger-agent
