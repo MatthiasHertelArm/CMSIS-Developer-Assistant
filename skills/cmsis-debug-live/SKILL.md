@@ -167,8 +167,8 @@ Manage Solution → Debugger → Apply**. You cannot do that step for them.
 
 `get_debug_instructions` with `topic: 'build'` returns the full version of this,
 including the pack documentation notes; without `topic` it returns a short
-overview and the list of topics (`session`, `build`, `breakpoints`,
-`inspection`, `faults`, `troubleshooting`).
+overview and the list of topics (`bootstrap`, `session`, `build`,
+`breakpoints`, `inspection`, `faults`, `troubleshooting`).
 
 ---
 
@@ -183,7 +183,7 @@ never throws.
 | `initializing` | Wait, ask again. Do **not** issue a second start. |
 | `stopped` | Inspect freely. |
 | `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. |
-| `unresponsive` | `check_target_connection`; refusals are `PROBE_WEDGED` with the way to reconnect (below). `restart_debugging` re-flashes and resets: last. More reads will only time out. |
+| `unresponsive` | `check_target_connection`; refusals are `PROBE_WEDGED` with the way to reconnect (below). Reconnect without a reset first, so a fault can still be read. `restart_debugging` and `load_and_debug` re-flash and reset, and lose that state: last, and only once the user accepts the loss. More reads will only time out. |
 
 `running` rejects `step_over`, `step_into`, `step_out`, `continue_execution`,
 `read_memory`, `read_core_registers`, `read_peripheral_register`,
@@ -273,10 +273,13 @@ method.
 
 ### Cortex-M breakpoint budget
 
-Breakpoints in flash use the FPB comparators: commonly **6** on Cortex-M4/M7,
-**4** on Cortex-M0+. Past that, breakpoints silently fail to bind or the
-adapter reports an error. `clear_all_breakpoints` between hypotheses. In RAM,
-software breakpoints are unlimited.
+Breakpoints in flash use the FPB code comparators: **4** on Cortex-M0/M0+/M23,
+**6** on M3/M4, **8** on M7/M33/M55/M85 — the table of topic `breakpoints`. A
+device can implement fewer; `FP_CTRL` at `0xE0002000` gives the count on the
+target. Past it, breakpoints silently fail to bind or the adapter reports an
+error. `list_breakpoints` before adding one, and `clear_all_breakpoints` between
+hypotheses, only for breakpoints you set. In RAM, software breakpoints are
+unlimited.
 
 ### Logpoints are not free here
 
@@ -341,12 +344,15 @@ The pieces stay available when you need one of them alone: `get_fault_info`
 `lookup_peripheral { address }` for an address.
 
 If a fault read answers `PROBE_WEDGED`, the debug port no longer answers
-(DHCSR could not be read either): stop reading and follow the hint. An
-attach session reconnects with `cmsis_action detach`, then `attach`,
-without a reset. A `load_and_debug` session owns its GDB server;
-`restart_debugging` and `load_and_debug` re-flash and reset, so to keep
-the fault state the user restarts the server without a reset and you
-`cmsis_action attach`. Never start a GDB server yourself.
+(DHCSR could not be read either): stop reading and follow the hint. Recover in
+this order, keeping the fault state for as long as you can. An attach session
+reconnects with `cmsis_action detach`, then `attach`, without a reset. A
+`load_and_debug` session owns its GDB server: the user restarts that server
+without a reset, and you `cmsis_action attach`. Only then `restart_debugging`,
+`reset` or `load_and_debug` again: each re-flashes or resets the target and
+clears the fault status, so the crash can no longer be read. Use them after the
+decoded fault and frame are recorded, or when the user accepts that loss.
+Never start a GDB server yourself.
 `INVALID_ARGUMENT` "the debug port answers" means only that address is
 unreadable. A lockup note means the core faulted inside a fault handler.
 
@@ -367,9 +373,11 @@ immediately.
 
 `serial_open` takes the port directly; `serial_read` drains a buffered ring. If
 the user has the MS Serial Monitor open on the same device, the OS will not give
-you the tty (`PORT_HELD`): ask the user to stop monitoring it there. The Serial
-Monitor's API does not pass on what it receives, so `serial_subscribe_monitor`
-cannot read that session.
+you the tty (`PORT_HELD`). `serial_subscribe_monitor` reads that session only
+where the Serial Monitor's API exposes a data event, which is capability-dependent:
+API version 0 has none, so the call is refused and says why. Then ask the user to
+stop monitoring the port there, and read it with `serial_capture` once it is free.
+Do not take the user's port silently.
 
 - To see what the board prints, prefer `serial_capture`: one call opens the
   port, reads until your `until` regex matches or `durationMs` ends, and closes it.
@@ -426,6 +434,21 @@ target before you claim it.
 
 ## Clean up
 
-`clear_all_breakpoints` when you change hypotheses — the FPB budget is small and
-stale breakpoints produce confusing stops. `stop_debugging` when done, so the
-probe is released.
+Clean up when the investigation is over, not at a health check or a single read.
+The end state has four parts, each set on its own:
+
+- **Target:** running when you finish, as the tool rules say. Resume a halted
+  target with `continue_execution` unless the user wants it halted.
+- **Breakpoints:** remove the ones you set (`remove_breakpoint`).
+  `clear_all_breakpoints` removes the user's too, so use it only for breakpoints
+  that are yours, or when the user asks for a clean slate.
+- **Debug session:** keep it while the user may still investigate. `stop_debugging`
+  ends it and releases the probe, which a flash or another debugger needs.
+- **Probe:** released by ending the session or `cmsis_action stop_run`, and only
+  when the next step needs it.
+
+This repository has not verified what a session stop does to the CPU. After a
+stop, report the CPU state as unconfirmed unless you checked it before the stop;
+do not claim a clean finish. Read-only checks (`get_session_status`,
+`check_target_connection`, `list_breakpoints`) and inspection-only requests never
+clear breakpoints, stop the session or resume the target.

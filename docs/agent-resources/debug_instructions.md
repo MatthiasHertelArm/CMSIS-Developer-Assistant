@@ -22,8 +22,8 @@ Only the user can lift a rule, by asking for the specific command.
 2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.
 3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).
 4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.
-5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `get_fault_info` first (topic `faults`).
-6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then `clear_all_breakpoints`.
+5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `diagnose_fault` once stopped (topic `faults`).
+6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then clean up (topic `session`).
 
 ## 🐞 DEBUGGER FIRST — do not start by adding prints
 
@@ -38,10 +38,10 @@ A VS Code window without a folder has nothing the CMSIS tools can act on. `get_s
 | ------- | ------------ | --------- |
 | The CMSIS extensions | Status line `Extensions: … not installed`; `[CMSIS_NO_SOLUTION]` with "(Arm.cmsis-csolution) is not installed". | Ask the user to install the Keil Studio Pack (`Arm.keil-studio-pack`: CMSIS Solution, CMSIS Debugger, Arm Tools Environment Manager) and to reload the window. |
 | A folder | `[NO_WORKSPACE]`; status line `Workspace: no folder is open`. | The project exists: `cmsis_action {action:'open_solution', path}`. It does not: create it first (below), then open it. |
-| A csolution | `[CMSIS_NO_SOLUTION]` with "contains no *.csolution.yml". | Create the solution with the skill `cmsis-bootstrap`, which hands over to `start-cmsis-project`: board or device, packs, a minimal project (CMSIS CORE, startup, `main`) written as files, or an example or template of the catalog with `cmsis_action create_solution` (below); `open_solution`, then one `cmsis_action build` fetches the packs. To read a pack's knowledge before writing the project, install the verified packs first (below). |
+| A csolution | `[CMSIS_NO_SOLUTION]` with "contains no *.csolution.yml". | Create the solution with the procedure `proc-cmsis-bootstrap` (`knowledge_get`), which hands over to `proc-start-cmsis-project`: board or device, packs, a minimal project (CMSIS CORE, startup, `main`) written as files, or an example or template of the catalog with `cmsis_action create_solution` (below); `open_solution`, then one `cmsis_action build` fetches the packs. To read a pack's knowledge before writing the project, install the verified packs first (below). |
 | A loaded solution | `[CMSIS_NO_SOLUTION]` with "A solution file exists". | `cmsis_action {action:'open_solution', path:'<file>'}` activates it. After a window opens, the extension needs some seconds; `get_recent_problems` shows what it reported. |
 | The tools | `cmsis_action build` fails because cbuild, the compiler, CMake or Ninja is not found. | The folder needs a `vcpkg-configuration.json`. The Arm Tools Environment Manager fetches what it names when the folder opens; ask the user to answer its prompts. Do not install a compiler yourself. |
-| A debug configuration | `load_and_debug` starts no session, or `load` is refused because the task is not offered. | The target set needs a `debugger:` node; the CMSIS Solution extension then writes `.vscode/launch.json` and `tasks.json`. When the cbuild-run.yml names a debugger but `tasks.json` has no CMSIS task, `cmsis_action` has the extension write them once (*Update Debug Tasks*) and goes on; otherwise the refusal says to ask the user for **Manage Solution Settings** → Debugger. Skill `cmsis-debugger-setup`. |
+| A debug configuration | `load_and_debug` starts no session, or `load` is refused because the task is not offered. | The target set needs a `debugger:` node; the CMSIS Solution extension then writes `.vscode/launch.json` and `tasks.json`. When the cbuild-run.yml names a debugger but `tasks.json` has no CMSIS task, `cmsis_action` has the extension write them once (*Update Debug Tasks*) and goes on; otherwise the refusal says to ask the user for **Manage Solution Settings** → Debugger. Procedure `proc-cmsis-debugger-setup` (`knowledge_get`). |
 
 ### Opening the project
 
@@ -92,7 +92,7 @@ Always call `get_session_status` *before* any session-changing tool. The five po
 | `initializing` | The adapter is starting / flashing and takes no requests yet; on the CMSIS Debugger also while GDB connects to the target and, for a moment, while the session shuts down. | Wait briefly and call `get_session_status` again — do NOT issue another start. |
 | `stopped` | A session is attached and the target is paused. | Skip `start_debugging` entirely. Use inspection tools (`get_call_stack`, `get_variables_values`, `read_memory`, …) directly, or `continue_execution` to resume. |
 | `running` | A session is attached and the CPU is executing. | Inspection reads and stepping are rejected; breakpoint and logpoint changes still work (on the CMSIS Debugger the tool pauses the target for the change and resumes it). Call `pause_execution`, or `wait_for_stop` if a breakpoint is expected to hit, or `stop_debugging`. |
-| `unresponsive` | The probe / GDB server is hung. | Call `check_target_connection` to confirm; calls that need the target answer `PROBE_WEDGED` with the way to reconnect (topic `faults`). `restart_debugging` re-flashes and resets, so it comes last. Do NOT issue more inspection calls — they will time out. |
+| `unresponsive` | The probe / GDB server is hung. | Call `check_target_connection` to confirm; calls that need the target answer `PROBE_WEDGED` with the way to reconnect. Reconnect without a reset first, so a fault can still be read (topic `faults`). `restart_debugging` and `cmsis_action load_and_debug` re-flash and reset, and lose that state: they come last, and only once the user accepts the loss. Do NOT issue more inspection calls — they will time out. |
 
 `start_debugging` and `cmsis_action load_and_debug` refuse with a structured error if a session is already active, naming the existing session and pointing you at `restart_debugging` / `stop_debugging`. Save the round-trip by checking up front.
 
@@ -122,7 +122,16 @@ When the target window is **slow or stuck**, the error code says which:
 
 ## 🧹 Clean up
 
-Once the root cause is identified and verified, call `clear_all_breakpoints` before concluding — a clean slate for the next task, and free FPB comparators for it.
+Clean up when the investigation is over, not when a health check or a single read ends. Four parts of the end state, each set on its own:
+
+- **Target:** running when you finish, as the tool rules say. Resume a halted target with `continue_execution` unless the user wants it halted.
+- **Breakpoints:** remove the ones this investigation set, with `remove_breakpoint` by line. `clear_all_breakpoints` removes the user's too: use it only for breakpoints that are yours, or when the user asks for a clean slate. It also frees the FPB comparators for the next task.
+- **Debug session:** keep it while the user may still investigate. `stop_debugging` ends it and releases the probe, which a flash or another debugger needs; stop it when the probe must be released or the user asks.
+- **Probe:** released by ending the session or `cmsis_action stop_run`, and only when the next step needs it.
+
+This repository has not verified what a session stop does to the CPU: it depends on the launch mode and the GDB adapter. After a stop, report that the CPU state is unconfirmed unless you checked it before the stop; do not claim a clean finish.
+
+Read-only checks (`get_session_status`, `check_target_connection`, `list_breakpoints`) and inspection-only requests never clear breakpoints, stop the session or resume the target.
 <!-- /topic -->
 
 <!-- topic: build | Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line -->
@@ -262,7 +271,7 @@ GDB infers nothing about types, so specifiers are explicit:
 
 Cortex-M cores have a small **fixed number of hardware breakpoint comparators** (FPB unit). When the limit is reached, additional breakpoints are silently dropped, fail to bind, or — depending on the GDB stub — make the *whole* set unreliable. **Never set more simultaneous breakpoints than the core supports.**
 
-Typical limits (verify against the device's TRM / cbuild.yml):
+Typical limits: the Arm default number of code comparators per core. A device can implement fewer, so confirm on the target before you rely on more than the defensive default:
 
 | Core              | Comparators (typical) |
 |-------------------|-----------------------|
@@ -271,6 +280,8 @@ Typical limits (verify against the device's TRM / cbuild.yml):
 | Cortex-M3 / M4    | 6                     |
 | Cortex-M7         | 8                     |
 | Cortex-M33 / M55 / M85 | 8                |
+
+To read the count from the target, halt it and read the FPB control register `FP_CTRL` at `0xE0002000` with `read_memory` (a raw read, never redacted). The code comparators are `NUM_CODE`: bits 7:4 hold its low four bits and bits 14:12 its high three, so the count is `((FP_CTRL >> 4) & 0xF) | (((FP_CTRL >> 12) & 0x7) << 4)`.
 
 Defensive defaults:
 
@@ -297,7 +308,7 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 
 **A motion tool that timed out has already paused the target** and reports where it actually is. Read that PC before adding more breakpoints — firmware sitting in a polling loop, an ISR, or a fault handler all look the same from the outside and the PC tells them apart immediately.
 
-**`reset` vs `restart_debugging`.** `restart_debugging` restarts the whole VS Code session (re-launch, breakpoints re-bound). `reset` resets only the target *inside* the live session — the session and breakpoints survive — and verifies the outcome: after the reset-halt the PC must equal the reset vector read from the vector table, or the tool says the target did NOT appear to reset (silent non-resets are common on attach configurations). Trust the verification, not the command echo. A running target is halted first. Methods: `auto` (escalates `system` → `core` → `hardware` until one verifies), `system` (SYSRESETREQ), `core` (VECTRESET), `hardware` (nSRST — only works when the reset line is wired from probe to target; if it isn't, no software reset can recover a wedge — power-cycle). `halt: true` (default) leaves the target at the reset vector; `halt: false` resumes after verification. When `reset` reports no reset on a J-Link / secure-boot part, the fallback is `stop_debugging` and `cmsis_action load_and_debug` again; power-cycle only if that fails too.
+**`reset` vs `restart_debugging`.** `restart_debugging` restarts the whole VS Code session (re-launch, breakpoints re-bound). `reset` resets only the target *inside* the live session — the session and breakpoints survive — and verifies the outcome: after the reset-halt the PC must equal the reset vector read from the vector table, or the tool says the target did NOT appear to reset (silent non-resets are common on attach configurations). Trust the verification, not the command echo. A running target is halted first. Methods: `auto` (escalates `system` → `core` → `hardware` until one verifies), `system` (SYSRESETREQ), `core` (VECTRESET), `hardware` (nSRST — only works when the reset line is wired from probe to target; if it isn't, no software reset can recover a wedge — power-cycle). `halt: true` (default) leaves the target at the reset vector; `halt: false` resumes after verification. When `reset` reports no reset on a J-Link / secure-boot part, the fallback is `stop_debugging` and `cmsis_action load_and_debug` again; power-cycle only if that fails too. Both re-flash or reconnect with a reset, so in a fault investigation record the fault first (topic `faults`).
 
 **Cycle-accurate timing with `read_cycle_counter`.** Read the DWT cycle counter at point A, run to point B (`continue_execution` / `wait_for_stop`), read again, subtract mod 2^32. Caveats that bite: the 32-bit counter wraps (~10.7 s @ 400 MHz — accumulate over longer spans), and CYCCNT **stops while the core is halted and during WFE sleep** — it counts ACTIVE cycles only, so a delta excludes halted debug time and sleep.
 
@@ -340,14 +351,14 @@ This is tuned for firmware and should rarely get in your way:
 - To see what the board prints, call `serial_capture` with `durationMs`, and `until` when you know what to wait for: one call opens the port, reads, and closes it again.
 - For the output around a reset: `serial_open`, `reset`, `serial_read {waitMs}`, `serial_close`.
 - Close a port as soon as you have read it: while you hold it, the user's Serial Monitor cannot open it. It is released after 300 s without a serial call and when your MCP session ends; `serial_read` then says why.
-- `PORT_HELD` means another program has the port. When it is the Serial Monitor, ask the user to stop monitoring it there (`serial_open_monitor` shows it): its API does not pass on what it receives, so `serial_subscribe_monitor` cannot read that session.
+- `PORT_HELD` means another program has the port. When it is the Serial Monitor, `serial_open_monitor` shows that session. `serial_subscribe_monitor` reads it only where the Serial Monitor's API exposes a data event, which is capability-dependent: API version 0 has none, so the call is refused and says why. Then ask the user to stop monitoring the port there, and read it yourself with `serial_capture` once it is free. Do not close the user's Serial Monitor or take its port silently.
 <!-- /topic -->
 
 <!-- topic: faults | Decode a HardFault, BusFault, MemManage or UsageFault: get_fault_info, the stacked exception frame, resolving the faulting address, the usual causes -->
 ## 💥 When it faulted
 
-0. **`diagnose_fault` does steps 1–4 in one call** — decoded registers, stacked frame, top frames, resolved address, ranked hypotheses with the next call. Use the individual steps when you need one piece alone or want to verify.
-1. **`get_fault_info` first.** It reads and decodes CFSR / HFSR / DFSR / MMFAR / BFAR / AFSR bit by bit and usually names the fault class outright. `FORCED` in HFSR means a configurable fault escalated to HardFault because its own handler was disabled — the CFSR bits still say which one.
+0. **`diagnose_fault` is the first pass,** once the session gate and a pause are done (topic `session`). One call does steps 1–4: decoded registers, stacked frame, top frames, resolved address, ranked hypotheses with the next call.
+1. **The numbered steps are the same work by hand, for one piece or to verify.** `get_fault_info` reads and decodes CFSR / HFSR / DFSR / MMFAR / BFAR / AFSR bit by bit and usually names the fault class outright. `FORCED` in HFSR means a configurable fault escalated to HardFault because its own handler was disabled — the CFSR bits still say which one.
 2. **`read_core_registers`** for PC, LR, MSP, PSP and xPSR. Halted inside the handler, LR holds `EXC_RETURN` (`0xFFFFFFxx`): bit 2 set → the exception frame was pushed on **PSP**, clear → on **MSP**; bit 4 clear → an FP-extended frame (26 words) instead of the basic 8, its FP registers above xPSR. **TrustZone (Armv8-M):** bit 6 is the Security state of that stack (1 Secure), bit 0 the handler's. When they differ, the MSP and PSP shown are the handler's state's, not the frame's: the frame is on `$msp_s` or `$psp_s` (`$msp_ns`, `$psp_ns` for a Non-secure stack; read them with `evaluate_expression`), on the process stack when bit 3 (Thread mode) is set and SPSEL, bit 1 of that state's `$control_s` / `$control_ns`, is set. With bit 6 set and bit 0 or bit 5 clear, the integrity signature, a reserved word and R4–R11 (40 bytes) lie below R0. The low nine bits of xPSR are the active exception number (3 HardFault, 4 MemManage, 5 BusFault, 6 UsageFault).
 3. **`read_memory` 32 bytes at that stack pointer** (40 bytes higher behind the integrity signature): R0, R1, R2, R3, R12, LR, PC, xPSR in that order. The stacked **PC is the faulting instruction** for a precise fault; the stacked LR is its caller. `get_call_stack` walks up from there; `get_frame_variables` on a `frameId` shows the locals at the fault site.
 4. **Resolve the address.** BFAR (when `BFARVALID`) or MMFAR (when `MMARVALID`): `lookup_peripheral { address }` names the peripheral and register at it from the SVD without touching the target. `0x4000_0000`–`0x5FFF_FFFF` is a peripheral → check its clock gate with `read_peripheral_register` before anything else; the `0x2000_0000` range is SRAM → pointer arithmetic or an overflowed buffer; `0xE000_0000` is the PPB; anything outside the device's memory map is a wild pointer.
@@ -367,7 +378,13 @@ This is tuned for firmware and should rarely get in your way:
 
 **Stack overflow without a fault flag:** `read_core_registers`, compare MSP / PSP with the stack region; a canary at the bottom of the stack tells you whether it was crossed. On Armv8-M, `MSPLIM` / `PSPLIM` turn this into a `STKOF` fault instead.
 
-**When the reads themselves fail.** Every failed memory read says why each way of reading failed. `[PROBE_WEDGED]` means the debug port no longer answers: DHCSR, which a debugger can read on every Cortex-M while the port works, could not be read either. More reads will fail the same way, so follow the hint, and never start a GDB server yourself. A session that `attach` started reconnects with `cmsis_action detach`, then `cmsis_action attach`, without a reset. A `load_and_debug` session owns its GDB server, and `restart_debugging` and `load_and_debug` re-flash and reset the target. To keep the fault state, ask the user to restart the server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`. `[INVALID_ARGUMENT] Cannot read 0x… — the debug port answers` means only that address is unreadable in this state: a clock that is off, an MPU or TrustZone region, or nothing mapped there. A note that the core is in lockup means it met a fault it could not handle, inside a fault handler or while entering one; the fault status still names what went wrong.
+**When the reads themselves fail.** Every failed memory read says why each way of reading failed. `[PROBE_WEDGED]` means the debug port no longer answers: DHCSR, which a debugger can read on every Cortex-M while the port works, could not be read either. More reads will fail the same way, so follow the hint, and never start a GDB server yourself. Recover in this order, and keep the fault state for as long as you can:
+
+- **An `attach` session** reconnects with `cmsis_action detach`, then `cmsis_action attach`, without a reset. The fault state survives.
+- **A `load_and_debug` session** owns its GDB server. Ask the user to restart that server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`. The fault state survives.
+- **Only then, `restart_debugging`, `reset` or `cmsis_action load_and_debug`.** Each re-flashes or resets the target and clears the fault status, so the crash can no longer be read. Use them after the decoded fault and frame are recorded, or when the user accepts that loss, and say the loss in the reply.
+
+`[INVALID_ARGUMENT] Cannot read 0x… — the debug port answers` means only that address is unreadable in this state: a clock that is off, an MPU or TrustZone region, or nothing mapped there. A note that the core is in lockup means it met a fault it could not handle, inside a fault handler or while entering one; the fault status still names what went wrong.
 <!-- /topic -->
 
 <!-- topic: troubleshooting | Root cause, not symptom: the investigation loop, embedded examples, breakpoints that never hit, warning signs and the closing checklist -->

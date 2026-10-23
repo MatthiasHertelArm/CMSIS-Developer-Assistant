@@ -102,7 +102,7 @@ const ABOUT = {
     ),
     add_breakpoint: say(
         'Set a breakpoint at a line.',
-        'Cortex-M binds only a few at once (FPB comparators, typically 4–8) — clear ones you no longer need.',
+        'Cortex-M binds only a few at once (FPB code comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85; topic breakpoints) — clear ones you no longer need.',
     ),
     add_logpoint: say(
         'Breakpoint that prints a message and resumes.',
@@ -112,7 +112,7 @@ const ABOUT = {
     ),
     remove_breakpoint: 'Delete one breakpoint, identified by its file and line.',
     clear_all_breakpoints:
-        'Delete every breakpoint in one call — the tidy-up step once the cause of the bug is confirmed, before you start on anything else.',
+        'Delete every breakpoint in one call, the user\'s included: use it for breakpoints this investigation set, or when the user asks for a clean slate. remove_breakpoint deletes one.',
     list_breakpoints: 'Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.',
     list_variable_names: say(
         'Show which variables exist where the target is stopped, with their types but not their values.',
