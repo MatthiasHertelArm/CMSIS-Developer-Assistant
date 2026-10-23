@@ -317,6 +317,22 @@ suite('BuildInfoHandler (end to end)', () => {
         assert.match(gcc, /^  \.text 0x08000040 364 B @FLASH, fill 2 — 6 input sections, 3 objects$/m);
     });
 
+    test('get_build_diagnostics: a log older than the target\'s image says it is of an earlier build', async () => {
+        const logFile = path.join(world.workspace, 'out', 'build.log');
+        const kept = fs.statSync(logFile).mtime;
+        assert.doesNotMatch(textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO', limit: 1 })), /Older than the image/);
+        // A tester's case: the failed run's log stayed, and the next build succeeded and linked the image.
+        const earlier = new Date(Date.now() - 600_000);
+        fs.utimesSync(logFile, earlier, earlier);
+        try {
+            const text = textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO', limit: 1 }));
+            assert.match(text, /^Older than the image: out\/Blinky\/NUCLEO-F756ZG\/Debug\/Blinky\.axf was linked .+, after this log — the log is of an earlier build, and a later one linked the image \(cmsis_action status has the last result\)\.$/m);
+            assert.match(text, /^Status of that build: FAILED — /m);
+        } finally {
+            fs.utimesSync(logFile, kept, kept);
+        }
+    });
+
     test('get_build_diagnostics: newest log under out/, explicit file, none', async () => {
         const text = textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO', limit: 4 }));
         assert.match(text, /^Build: target NUCLEO-F756ZG, compiler AC6 — from out\/Blinky\+NUCLEO-F756ZG\.cbuild-run\.yml$/m);
