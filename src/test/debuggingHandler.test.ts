@@ -3316,6 +3316,69 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(lost.hint, 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
                     + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.');
             });
+
+            test('refresh: the panel\'s Refresh, then csolution\'s messages from the rewritten index; an index that stays as it was answers running', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-refresh-'));
+                try {
+                    const index = path.join(dir, 'demo.cbuild-idx.yml');
+                    const idx = (errors: string[], warnings: string[]): string => [
+                        'build-idx:', '  csolution: demo.csolution.yml', '  messages:',
+                        ...(errors.length > 0 ? ['    errors:', ...errors.map((message) => `      - "${message}"`)] : []),
+                        ...(warnings.length > 0 ? ['    warnings:', ...warnings.map((message) => `      - "${message}"`)] : []),
+                        '',
+                    ].join('\n');
+                    fs.writeFileSync(index, idx(['file \'RTE/CMSIS/RTX_Config.c\' not found; use --update-rte'], []));
+                    let next = idx([], ['file \'RTE/CMSIS_Driver_Validation/DV_USART_Config.h.base\' not found; base version unknown']);
+                    let refreshes = 0;
+                    const rewrites = (): void => {
+                        refreshes++;
+                        setTimeout(() => fs.writeFileSync(index, next), 20);
+                    };
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.refresh': rewrites,
+                    });
+                    const w = jobWorld(5);
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'refresh' })),
+                        /^✅ CMSIS 'refresh' on HE: the solution was converted with the RTE update after [\d.]+ s, and demo\.cbuild-idx\.yml records 0 error\(s\), 1 warning\(s\)\. csolution's warnings:\n  warning: file 'RTE\/CMSIS_Driver_Validation\/DV_USART_Config\.h\.base' not found; base version unknown\nNext: cmsis_action build\.$/);
+
+                    next = idx(['component \'ARM::CMSIS:RTOS2:Keil RTX6\' not found'], []);
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'refresh' }), 'TASK_FAILED');
+                    assert.match(failed.message, /^❌ CMSIS 'refresh' on HE: the convert with the RTE update recorded 1 error\(s\), 0 warning\(s\) in demo\.cbuild-idx\.yml after [\d.]+ s:\n  error: component 'ARM::CMSIS:RTOS2:Keil RTX6' not found$/);
+                    assert.ok(failed.hint?.startsWith('Fix the first error'), failed.hint);
+
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.refresh': () => {
+                            refreshes++;
+                        },
+                    });
+                    assert.match(await replyAnswer(w.handler.handleCmsisCommand({ action: 'refresh', timeoutMs: 3_000 }), 'running'),
+                        /^CMSIS 'refresh' on HE issued via 'cmsis-csolution\.refresh'; csolution has not rewritten demo\.cbuild-idx\.yml after [\d.]+ s\. /);
+                    assert.strictEqual(refreshes, 3);
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
+
+            test('a build whose csolution errors ask for --update-rte names refresh in its hint', async () => {
+                const w = jobWorld();
+                const diagnosis: JobDiagnosis = {
+                    state: 'done', source: 'csolution', errorCount: 1, warningCount: 0, warnings: [],
+                    errors: [{ severity: 'error', message: 'file \'/w/RTE/CMSIS/RTX_Config.c\' not found; use --update-rte' }],
+                    text: '1 error from csolution:\n  error: file \'/w/RTE/CMSIS/RTX_Config.c\' not found; use --update-rte',
+                };
+                w.tracker.onDidFinishJob((job) => {
+                    if (job.state === 'failed') {
+                        w.tracker.completeWith(job.id, Promise.resolve(diagnosis));
+                    }
+                });
+                solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 1, true) });
+                const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
+                assert.strictEqual(failed.hint, 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — '
+                    + 'the Refresh (Update RTE) of the CMSIS view — then cmsis_action build again.');
+            });
         });
 
         suite('the probe guard (#46)', () => {

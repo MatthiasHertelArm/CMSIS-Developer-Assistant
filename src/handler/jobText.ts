@@ -85,6 +85,10 @@ const BUILD_FAILED_HINT = 'get_recent_problems lists what the Problems panel sho
 
 /** After a failed build whose error lines the result shows. */
 const BUILD_ERRORS_HINT = 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.';
+/** csolution's word for files a component brings that are not there yet: `file '…/RTX_Config.c' not found; use --update-rte`. */
+const NEEDS_RTE_UPDATE = /use --update-rte/;
+const RTE_UPDATE_HINT = 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — the Refresh '
+    + '(Update RTE) of the CMSIS view — then cmsis_action build again.';
 
 /** After a failed build whose error lines are still being collected. */
 const BUILD_LINES_PENDING_HINT = 'Call cmsis_action {action:\'status\'} for the error lines — do not start another build to see them. '
@@ -302,7 +306,8 @@ function failedBuild(job: Job, context: ResultContext, decided: JobExecution): T
         return new ToolError('TASK_FAILED', head, BUILD_FAILED_HINT);
     }
     const hint = diagnosis.state === 'pending' ? BUILD_LINES_PENDING_HINT
-        : diagnosis.source === 'none' ? BUILD_FAILED_HINT : BUILD_ERRORS_HINT;
+        : diagnosis.source === 'none' ? BUILD_FAILED_HINT
+        : diagnosis.errors.some((error) => NEEDS_RTE_UPDATE.test(error.message)) ? RTE_UPDATE_HINT : BUILD_ERRORS_HINT;
     return new ToolError('TASK_FAILED', `${head}${diagnosisLines(diagnosis)}`, hint,
         { job: jobData(job, context.now), diagnosis: diagnosisData(diagnosis) });
 }

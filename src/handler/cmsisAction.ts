@@ -91,7 +91,7 @@ import {
     NOTHING_STARTED_MS,
     runtimeOf,
 } from '../core/cmsisTasks';
-import { DIAGNOSTIC_RERUN_CAP_MS } from '../core/buildFailure';
+import { DIAGNOSTIC_RERUN_CAP_MS, idxFileName, IdxMessages, idxMessages } from '../core/buildFailure';
 import { cbuildRunDebugger } from '../core/packDocs/cbuildRun';
 import {
     applyTargetSelection,
@@ -147,14 +147,15 @@ import {
 } from './jobText';
 import { runInstallPack } from './installPack';
 
-export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach'
-    | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
+export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach'
+    | 'detach' | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
 
 /** The CMSIS Solution command behind each action. A Map, so `constructor` and friends are not actions. */
 const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['build', 'cmsis-csolution.build'],
     ['rebuild', 'cmsis-csolution.rebuild'],
     ['clean', 'cmsis-csolution.clean'],
+    ['refresh', 'cmsis-csolution.refresh'],
     ['stop_build', 'cmsis-csolution.stopBuild'],
     ['load', 'cmsis-csolution.cmsisLoad'],
     ['erase', 'cmsis-csolution.cmsisErase'],
@@ -170,8 +171,8 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
 const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run']);
 const SESSION_ACTIONS: ReadonlySet<string> = new Set(['load_and_debug', 'attach']);
 /** Actions whose default wait is the long one: they wait for a task. */
-const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'status',
-    'install_pack', 'create_solution']);
+const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'refresh', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug',
+    'status', 'install_pack', 'create_solution']);
 
 /** Waits without a positive `timeoutMs`: 60 s for the task actions and status (#12), 30 s for the rest. */
 const LONG_WAIT_DEFAULT_MS = 60_000;
@@ -1440,6 +1441,11 @@ export async function runCmsisAction(
             const answer = await sessionPhase(issue, action, '', runAlive);
             return withPreface(runAlive ? answer : withoutRunNote(answer, endpoints), preface);
         }
+        case 'refresh':
+            if (!solution.solutionPath) {
+                throw new ToolError('INTERNAL', `CMSIS 'refresh'${tag} not attempted: the CMSIS Solution extension names no solution file.`);
+            }
+            return refreshSolution(issue, solution.solutionPath);
         case 'load_and_debug': {
             const loadFirst = launchConfigurations.some((config) => config.request === 'launch' && config.preLaunchTask === 'CMSIS Load');
             return withPreface(await loadAndDebug(issue, loadFirst), preface);
@@ -1447,6 +1453,81 @@ export async function runCmsisAction(
         default:
             return runJob(issue, action as JobAction, labels, preface);
     }
+}
+
+/** How often `refresh` looks at the index csolution rewrites. */
+const REFRESH_POLL_MS = 250;
+/** The index lines a `refresh` result shows at most. */
+const REFRESH_LINES = 10;
+
+/** The modification time of a file, or undefined when it is not there. */
+function mtimeOf(file: string): number | undefined {
+    try {
+        return fs.statSync(file).mtimeMs;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * `refresh`: CMSIS Solution's Refresh (Reload Packs, Update RTE), the button
+ * of its panel. In 1.72.0 it reloads the solution's files and asks for a
+ * convert with `updateRte`: csolution then writes the RTE files the
+ * components need — a build without them fails with "not found; use
+ * --update-rte" — and rewrites `<solution>.cbuild-idx.yml`. The call waits
+ * until that file has changed and stays unchanged for one more look, then
+ * answers with the errors and warnings csolution recorded there; a convert
+ * that outlasts the wait (packs to download) answers `running`.
+ */
+async function refreshSolution(issue: Issue, solutionPath: string): Promise<ToolText> {
+    const { host } = issue.context;
+    const index = path.join(path.dirname(solutionPath), idxFileName(solutionPath));
+    const before = mtimeOf(index);
+    const issuedAt = host.now();
+    await issueCommand(issue, 'refresh');
+    let seen: number | undefined;
+    for (;;) {
+        const now = mtimeOf(index);
+        if (now !== undefined && now !== before && now === seen) {
+            break;
+        }
+        seen = now;
+        if (host.now() >= answerBy(issue)) {
+            return {
+                text: `CMSIS 'refresh'${issue.tag} issued via '${issue.command}'; csolution has not rewritten ${path.basename(index)} after `
+                    + `${formatDuration(host.now() - issuedAt)}. The convert may still load or download packs (the CMSIS Solution output `
+                    + 'channel shows it): call cmsis_action build once it is done — do not issue refresh again.',
+                status: 'running',
+            };
+        }
+        await host.sleep(REFRESH_POLL_MS);
+    }
+    let messages: IdxMessages;
+    try {
+        messages = idxMessages(fs.readFileSync(index, 'utf8'));
+    } catch (caught) {
+        throw new ToolError('INTERNAL', `CMSIS 'refresh'${issue.tag}: csolution rewrote ${index}, but it could not be read (${failureText(caught)}).`);
+    }
+    return refreshResult(issue.tag, path.basename(index), messages, host.now() - issuedAt);
+}
+
+/** The answer of `refresh`: ✅ with csolution's warnings, or ❌ with its errors first. */
+function refreshResult(tag: string, index: string, messages: IdxMessages, tookMs: number): ToolText {
+    const all = [...messages.errors, ...messages.warnings];
+    const lines = all.slice(0, REFRESH_LINES).map((message) => `  ${message.severity}: ${message.message}${message.context ? ` (${message.context})` : ''}`);
+    if (all.length > REFRESH_LINES) {
+        lines.push(`  … ${all.length - REFRESH_LINES} more in ${index}`);
+    }
+    const counts = `${messages.errors.length} error(s), ${messages.warnings.length} warning(s)`;
+    if (messages.errors.length > 0) {
+        throw new ToolError('TASK_FAILED',
+            `❌ CMSIS 'refresh'${tag}: the convert with the RTE update recorded ${counts} in ${index} after ${formatDuration(tookMs)}:\n${lines.join('\n')}`,
+            'Fix the first error (a missing pack or component, a name the csolution gets wrong), then cmsis_action refresh again; build once it '
+                + 'records no error.');
+    }
+    const warned = lines.length > 0 ? ` csolution's warnings:\n${lines.join('\n')}\n` : ' ';
+    return `✅ CMSIS 'refresh'${tag}: the solution was converted with the RTE update after ${formatDuration(tookMs)}, `
+        + `and ${index} records ${counts}.${warned}Next: cmsis_action build.`;
 }
 
 /** A result with the sentence the tasks repair wrote in front, when there is one. */

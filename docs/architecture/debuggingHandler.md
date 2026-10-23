@@ -304,6 +304,14 @@ window's CMSIS job tracker (next section):
   issues nothing and says so, and names a build result that is still being
   checked: that check is no task, and `status` waits for it. It never
   switches the target.
+- `refresh` issues `cmsis-csolution.refresh`, the panel's Refresh, which in
+  CMSIS Solution 1.72.0 is a convert with `updateRte`: it writes the files a
+  component brings that a build reports as "not found; use --update-rte".
+  It runs no task, so no job follows it; the call waits until the
+  solution's `<name>.cbuild-idx.yml` has changed and stays unchanged for one
+  more look, and answers with the messages csolution recorded there
+  (`idxMessages()`). A failed build whose errors ask for `--update-rte`
+  names `refresh` in its hint.
 
 - `open_solution` needs no active solution either. It takes the path of a
   csolution or of its folder. A folder this window has open, by its path
