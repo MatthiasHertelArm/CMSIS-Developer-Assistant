@@ -8,7 +8,6 @@ Generated for release: 2.7.0
 | express | 5.3.0 | https://github.com/expressjs/express | [MIT](https://github.com/expressjs/express/blob/master/LICENSE) |
 | jsonc-parser | 3.3.1 | https://github.com/microsoft/node-jsonc-parser | [MIT](https://github.com/microsoft/node-jsonc-parser/blob/main/LICENSE.md) |
 | serialport | 13.0.0 | https://github.com/serialport/node-serialport | [MIT](https://github.com/serialport/node-serialport/blob/master/LICENSE) |
-| cmsis-skills (generic-mcu-skills, vendored under skills/cmsis-skills) | 25c2085 | https://github.com/Open-CMSIS-Pack/cmsis-skills | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/main/LICENSE) |
 | zod | 4.6.5 | https://github.com/colinhacks/zod | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE) |
 | pdfjs-dist | 6.3.289 | https://github.com/mozilla/pdf.js | [Apache-2.0](https://github.com/mozilla/pdf.js/blob/master/LICENSE) |
 
@@ -53,7 +52,8 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 | tflite-micro | [tensorflow/tflite-micro](https://github.com/tensorflow/tflite-micro) | [Apache-2.0](https://github.com/tensorflow/tflite-micro/blob/HEAD/LICENSE) | documentation | 92 |
 | ml-examples | [ARM-software/ML-examples](https://github.com/ARM-software/ML-examples) | [Apache-2.0](https://github.com/ARM-software/ML-examples/blob/HEAD/LICENSE) | documentation | 3 |
 | zephyr | [zephyrproject-rtos/zephyr](https://github.com/zephyrproject-rtos/zephyr) | [Apache-2.0](https://github.com/zephyrproject-rtos/zephyr/blob/HEAD/LICENSE) | documentation | 682 |
-| executorch-arm | [pytorch/executorch](https://github.com/pytorch/executorch) | [BSD-3-Clause](https://github.com/pytorch/executorch/blob/HEAD/LICENSE) | documentation | 63 |
+| executorch-arm | [pytorch/executorch](https://github.com/pytorch/executorch) | [BSD-3-Clause](https://github.com/pytorch/executorch/blob/HEAD/LICENSE) | documentation | 35 |
+| cmsis-executorch | [Arm-Examples/CMSIS-Executorch](https://github.com/Arm-Examples/CMSIS-Executorch) | [Apache-2.0](https://github.com/Arm-Examples/CMSIS-Executorch/blob/HEAD/LICENSE) | documentation | 21 |
 | cmsis-dap | [ARM-software/CMSIS-DAP](https://github.com/ARM-software/CMSIS-DAP) | [Apache-2.0](https://github.com/ARM-software/CMSIS-DAP/blob/HEAD/LICENSE) | documentation | 65 |
 | cmsis-driver-validation | [ARM-software/CMSIS-Driver_Validation](https://github.com/ARM-software/CMSIS-Driver_Validation) | [Apache-2.0](https://github.com/ARM-software/CMSIS-Driver_Validation/blob/HEAD/LICENSE.txt) | documentation | 55 |
 | cpackget | [Open-CMSIS-Pack/cpackget](https://github.com/Open-CMSIS-Pack/cpackget) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cpackget/blob/HEAD/LICENSE.txt) | documentation | 4 |

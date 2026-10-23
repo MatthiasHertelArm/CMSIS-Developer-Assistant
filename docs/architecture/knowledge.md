@@ -54,7 +54,7 @@ pack a csolution names with `path:` outside the pack root
   `skills/` as the sources of those units (`skill2ku.py` reads the catalog,
   and its `installed` flag is what the installer obeys); the index also holds
   the bring-up, pack, Ethos-U and stream procedures, which the knowledge base
-  converts from cmsis-skills itself, so it covers more than `skills/` vendors.
+  converts from cmsis-skills itself; nothing of cmsis-skills is vendored in `skills/`.
   The installer's sweep removes every other skill this extension installed.
 
 - **A task name leads to its procedure.** BM25 over title, summary, body

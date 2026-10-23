@@ -1,34 +1,6 @@
 {
   "schemaVersion": 1,
-  "source": {
-    "repository": "https://github.com/Open-CMSIS-Pack/cmsis-skills.git",
-    "sha": "25c2085a810ee531cc13df9d34ce2768cd84c421",
-    "sourcePath": "generic-mcu-skills/skills"
-  },
   "skills": [
-    {
-      "name": "cmsis-project",
-      "description": "Set up and extend CMSIS csolution projects and Zephyr-based CMSIS solutions: verify the CMSIS-Toolbox, CMake, Ninja and compiler environment or a Zephyr west workspace; resolve a fuzzy board or device name to its exact CMSIS identity and BSP/DFP, or to its Zephyr board target; add a verified target to an existing *.csolution.yml; find compatible packaged board layers; or create an initial west-integrated CMSIS Zephyr Blinky solution. Use when the user wants to create, extend or retarget a csolution, check their build tools, or identify board, device and pack identifiers; it routes to the specialised project procedures of the knowledge index. Not for debugging a running target (cmsis-debug-live) or for PDSC authoring (cmsis-pack).",
-      "category": "project",
-      "kind": "router",
-      "source": "generated",
-      "path": "skills/cmsis-project",
-      "displayName": "CMSIS: Project Setup",
-      "shortDescription": "Create, extend or retarget CMSIS csolution and Zephyr projects",
-      "dependsOn": [
-        "add-cmsis-target",
-        "check-cmsis-environment",
-        "check-zephyr-environment",
-        "cmsis-debugger-setup",
-        "identify-cmsis-board-layer",
-        "identify-cmsis-board-support",
-        "identify-zephyr-board",
-        "start-cmsis-project",
-        "start-zephyr-project"
-      ],
-      "invocable": true,
-      "installed": false
-    },
     {
       "name": "add-board-layer",
       "description": "Add a board layer to an existing CMSIS csolution by interviewing the user for the few facts that cannot be read from the repo — board/device, layer strategy, debugger, STDIO transport, memory — then generating Board.clayer.yml and its startup / retarget-stdio / regions / device-header files (reusing the BSP layer when it fits, running the DFP's configuration generator when startup only comes from it, or a minimal bare-metal layer otherwise) and wiring the target-type into the solution. Use when the user wants to add or author a board layer and would rather be asked than hand over every parameter up front.",
@@ -41,47 +13,8 @@
       "dependsOn": [
         "cmsis-debugger-setup"
       ],
-      "invocable": true,
-      "installed": false
-    },
-    {
-      "name": "add-cmsis-target",
-      "description": "Add a verified board or device target to an existing CMSIS solution, declare its support packs, and offer compatible packaged board layers when the project uses them. Use when the supplied hardware name may be fuzzy and an existing *.csolution.yml must be extended.",
-      "category": "project",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/add-cmsis-target",
-      "displayName": "CMSIS: Add Target",
-      "shortDescription": "Add a verified target and packaged board layer",
-      "dependsOn": [],
-      "invocable": false,
-      "installed": false
-    },
-    {
-      "name": "check-cmsis-environment",
-      "description": "Verify the CMSIS tools environment exported by the CMSIS Solution extension, CMSIS-Toolbox, CMake, Ninja, and available compiler toolchains. Use before creating or building a CMSIS solution project.",
-      "category": "project",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/check-cmsis-environment",
-      "displayName": "CMSIS: Check Environment",
-      "shortDescription": "Verify CMSIS build tools and compiler toolchains",
-      "dependsOn": [],
-      "invocable": false,
-      "installed": false
-    },
-    {
-      "name": "check-zephyr-environment",
-      "description": "Verify an existing Zephyr workspace, its Python virtual environment, and the venv-local west installation. Use before running Zephyr commands or creating projects that depend on an installed Zephyr workspace.",
-      "category": "project",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/check-zephyr-environment",
-      "displayName": "CMSIS: Check Zephyr Environment",
-      "shortDescription": "Verify a local Zephyr west environment",
-      "dependsOn": [],
-      "invocable": false,
-      "installed": false
+      "installed": false,
+      "invocable": true
     },
     {
       "name": "cmsis-bootstrap",
@@ -94,18 +27,13 @@
       "shortDescription": "Go from an empty VS Code window to a CMSIS solution that builds and debugs",
       "dependsOn": [
         "add-board-layer",
-        "check-cmsis-environment",
-        "check-zephyr-environment",
         "cmsis-debugger-setup",
         "debugger-troubleshooting",
         "fvp-debug-setup",
-        "identify-cmsis-board-support",
-        "identify-zephyr-board",
-        "start-cmsis-project",
-        "start-zephyr-project"
+        "start-cmsis-project"
       ],
-      "invocable": true,
-      "installed": false
+      "installed": false,
+      "invocable": true
     },
     {
       "name": "cmsis-debugger-setup",
@@ -120,47 +48,8 @@
         "debugger-troubleshooting",
         "fvp-debug-setup"
       ],
-      "invocable": false,
-      "installed": false
-    },
-    {
-      "name": "identify-cmsis-board-layer",
-      "description": "Identify packaged CMSIS board layers compatible with an existing solution target and its required connections. Use after a board or device target and its verified DFP/BSP entries exist, before selecting or copying a layer into the project.",
-      "category": "project",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/identify-cmsis-board-layer",
-      "displayName": "CMSIS: Identify Board Layer",
-      "shortDescription": "Find compatible packaged CMSIS board layers",
-      "dependsOn": [],
-      "invocable": false,
-      "installed": false
-    },
-    {
-      "name": "identify-cmsis-board-support",
-      "description": "Resolve a supplied board or device to exactly one verified CMSIS identity, identify its BSP or DFP, and ask the user when multiple candidates remain. Use when a CMSIS solution needs verified board, device, and pack identifiers.",
-      "category": "project",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/identify-cmsis-board-support",
-      "displayName": "CMSIS: Identify Board Support",
-      "shortDescription": "Resolve one board or device and find its BSP or DFP",
-      "dependsOn": [],
-      "invocable": false,
-      "installed": false
-    },
-    {
-      "name": "identify-zephyr-board",
-      "description": "Resolve a user-supplied physical board to its exact Zephyr board target and fitted MCU or SoC using the installed west board catalog. Use when a project, build, or support lookup needs a version-matched Zephyr board identifier.",
-      "category": "project",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/identify-zephyr-board",
-      "displayName": "CMSIS: Identify Zephyr Board",
-      "shortDescription": "Resolve a physical board to a Zephyr target",
-      "dependsOn": [],
-      "invocable": false,
-      "installed": false
+      "installed": false,
+      "invocable": false
     },
     {
       "name": "start-cmsis-project",
@@ -173,26 +62,10 @@
       "shortDescription": "Create the first csolution for a board or device: a minimal project, or an example or template of its pack",
       "dependsOn": [
         "add-board-layer",
-        "add-cmsis-target",
-        "check-cmsis-environment",
-        "cmsis-debugger-setup",
-        "identify-cmsis-board-support"
+        "cmsis-debugger-setup"
       ],
-      "invocable": false,
-      "installed": false
-    },
-    {
-      "name": "start-zephyr-project",
-      "description": "Create an initial CMSIS Zephyr Blinky solution for a board already supported by Zephyr. Use when the Zephyr and CMSIS environments, exact Zephyr board target, and matching CMSIS BSP or DFP must be verified and combined into a west-integrated CMSIS solution.",
-      "category": "project",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/start-zephyr-project",
-      "displayName": "CMSIS: Start Zephyr Project",
-      "shortDescription": "Create a CMSIS solution for a Zephyr board",
-      "dependsOn": [],
-      "invocable": false,
-      "installed": false
+      "installed": false,
+      "invocable": false
     },
     {
       "name": "cmsis-pack-docs",
@@ -204,8 +77,8 @@
       "displayName": "CMSIS: Pack Documentation",
       "shortDescription": "Look up registers, peripherals, errata and board facts in the target's manuals, with page citations",
       "dependsOn": [],
-      "invocable": true,
-      "installed": false
+      "installed": false,
+      "invocable": true
     },
     {
       "name": "cmsis-debug-live",
@@ -220,8 +93,8 @@
         "cmsis-pack-docs",
         "debugger-troubleshooting"
       ],
-      "invocable": true,
-      "installed": false
+      "installed": false,
+      "invocable": true
     },
     {
       "name": "debugger-troubleshooting",
@@ -233,8 +106,8 @@
       "displayName": "CMSIS: Debugger Troubleshooting",
       "shortDescription": "Find out why a debug or flash session fails to start, connect or program",
       "dependsOn": [],
-      "invocable": false,
-      "installed": false
+      "installed": false,
+      "invocable": false
     },
     {
       "name": "fvp-debug-setup",
@@ -246,21 +119,8 @@
       "displayName": "CMSIS: FVP Debug Setup",
       "shortDescription": "Make Load & Debug and Run work against an Arm FVP model",
       "dependsOn": [],
-      "invocable": false,
-      "installed": false
-    },
-    {
-      "name": "create-csolution-github-action",
-      "description": "Create a GitHub Actions workflow that builds selected targets from the currently loaded CMSIS solution and optionally tests configured FVP targets. Use when a CMSIS solution workspace needs single-target or target-matrix CI.",
-      "category": "devops",
-      "kind": "skill",
-      "source": "cmsis-skills",
-      "path": "skills/cmsis-skills/create-csolution-github-action",
-      "displayName": "CMSIS: Create Csolution GitHub Action",
-      "shortDescription": "Create build or FVP-test CI for a CMSIS solution",
-      "dependsOn": [],
-      "invocable": true,
-      "installed": false
+      "installed": false,
+      "invocable": false
     },
     {
       "name": "cmsis-help",
@@ -272,8 +132,8 @@
       "displayName": "CMSIS: Help",
       "shortDescription": "Health check of the CMSIS Developer Assistant and where to find each procedure",
       "dependsOn": [],
-      "invocable": true,
-      "installed": true
+      "installed": true,
+      "invocable": true
     }
   ]
 }
