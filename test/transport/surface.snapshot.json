@@ -276,7 +276,7 @@
         },
         {
           "name": "add_breakpoint",
-          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB code comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85; topic breakpoints) — clear ones you no longer need.",
+          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85) — remove ones you no longer need.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -371,7 +371,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Delete every breakpoint in one call, the user's included: use it for breakpoints this investigation set, or when the user asks for a clean slate. remove_breakpoint deletes one.",
+          "description": "Delete every breakpoint, the user's included: only for breakpoints you set yourself, or when the user asks for a clean slate. remove_breakpoint deletes one.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1449,24 +1449,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59391,
-          "sha256": "95d70149d6ba224769113a50c605e135cdb38ea29df6cab4627a8b0d2652f366"
+          "bytes": 59676,
+          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 9525,
-          "sha256": "96286a6d43eef43a7de4db7406a6360fbf608da75ce7f3c47e20e334a920e9e8"
+          "bytes": 9555,
+          "sha256": "820ed86226b935822caa7deed6fb4ef915b98ccd7f0a1d5d9e265d956064c951"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11339,
-          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
+          "bytes": 11369,
+          "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 6894,
           "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7658,
-          "sha256": "6825e42c6f346805cfdbd39019d7ea62781f7b425860821387e8f037496bc6b3"
+          "bytes": 7724,
+          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
         }
       },
       "calls": {
@@ -2089,7 +2089,7 @@
         },
         {
           "name": "add_breakpoint",
-          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB code comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85; topic breakpoints) — clear ones you no longer need.",
+          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85) — remove ones you no longer need.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2184,7 +2184,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Delete every breakpoint in one call, the user's included: use it for breakpoints this investigation set, or when the user asks for a clean slate. remove_breakpoint deletes one.",
+          "description": "Delete every breakpoint, the user's included: only for breakpoints you set yourself, or when the user asks for a clean slate. remove_breakpoint deletes one.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -2965,24 +2965,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59391,
-          "sha256": "95d70149d6ba224769113a50c605e135cdb38ea29df6cab4627a8b0d2652f366"
+          "bytes": 59676,
+          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 9525,
-          "sha256": "96286a6d43eef43a7de4db7406a6360fbf608da75ce7f3c47e20e334a920e9e8"
+          "bytes": 9555,
+          "sha256": "820ed86226b935822caa7deed6fb4ef915b98ccd7f0a1d5d9e265d956064c951"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11339,
-          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
+          "bytes": 11369,
+          "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 6894,
           "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7658,
-          "sha256": "6825e42c6f346805cfdbd39019d7ea62781f7b425860821387e8f037496bc6b3"
+          "bytes": 7724,
+          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
         }
       },
       "calls": {}
@@ -3262,7 +3262,7 @@
         },
         {
           "name": "add_breakpoint",
-          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB code comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85; topic breakpoints) — clear ones you no longer need.",
+          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85) — remove ones you no longer need.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -3357,7 +3357,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Delete every breakpoint in one call, the user's included: use it for breakpoints this investigation set, or when the user asks for a clean slate. remove_breakpoint deletes one.",
+          "description": "Delete every breakpoint, the user's included: only for breakpoints you set yourself, or when the user asks for a clean slate. remove_breakpoint deletes one.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -5017,24 +5017,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59391,
-          "sha256": "95d70149d6ba224769113a50c605e135cdb38ea29df6cab4627a8b0d2652f366"
+          "bytes": 59676,
+          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 9525,
-          "sha256": "96286a6d43eef43a7de4db7406a6360fbf608da75ce7f3c47e20e334a920e9e8"
+          "bytes": 9555,
+          "sha256": "820ed86226b935822caa7deed6fb4ef915b98ccd7f0a1d5d9e265d956064c951"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11339,
-          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
+          "bytes": 11369,
+          "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 6894,
           "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7658,
-          "sha256": "6825e42c6f346805cfdbd39019d7ea62781f7b425860821387e8f037496bc6b3"
+          "bytes": 7724,
+          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
         }
       },
       "calls": {
@@ -5703,7 +5703,7 @@
         },
         {
           "name": "add_breakpoint",
-          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB code comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85; topic breakpoints) — clear ones you no longer need.",
+          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85) — remove ones you no longer need.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -5798,7 +5798,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Delete every breakpoint in one call, the user's included: use it for breakpoints this investigation set, or when the user asks for a clean slate. remove_breakpoint deletes one.",
+          "description": "Delete every breakpoint, the user's included: only for breakpoints you set yourself, or when the user asks for a clean slate. remove_breakpoint deletes one.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -6667,6 +6667,10 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 20
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             },
             "required": [
@@ -7033,24 +7037,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59391,
-          "sha256": "95d70149d6ba224769113a50c605e135cdb38ea29df6cab4627a8b0d2652f366"
+          "bytes": 59676,
+          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 9525,
-          "sha256": "96286a6d43eef43a7de4db7406a6360fbf608da75ce7f3c47e20e334a920e9e8"
+          "bytes": 9555,
+          "sha256": "820ed86226b935822caa7deed6fb4ef915b98ccd7f0a1d5d9e265d956064c951"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11339,
-          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
+          "bytes": 11369,
+          "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 6894,
           "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7658,
-          "sha256": "6825e42c6f346805cfdbd39019d7ea62781f7b425860821387e8f037496bc6b3"
+          "bytes": 7724,
+          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
         }
       },
       "calls": {
@@ -7805,7 +7809,7 @@
         },
         {
           "name": "add_breakpoint",
-          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB code comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85; topic breakpoints) — clear ones you no longer need.",
+          "description": "Set a breakpoint at a line. Cortex-M binds only a few at once (FPB comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85) — remove ones you no longer need.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -7900,7 +7904,7 @@
         },
         {
           "name": "clear_all_breakpoints",
-          "description": "Delete every breakpoint in one call, the user's included: use it for breakpoints this investigation set, or when the user asks for a clean slate. remove_breakpoint deletes one.",
+          "description": "Delete every breakpoint, the user's included: only for breakpoints you set yourself, or when the user asks for a clean slate. remove_breakpoint deletes one.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -8769,6 +8773,10 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 20
+              },
+              "window": {
+                "description": "Run in this window: its pid or a path inside its workspace (list_debug_windows).",
+                "type": "string"
               }
             },
             "required": [
@@ -9135,24 +9143,24 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59391,
-          "sha256": "95d70149d6ba224769113a50c605e135cdb38ea29df6cab4627a8b0d2652f366"
+          "bytes": 59676,
+          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
-          "bytes": 9525,
-          "sha256": "96286a6d43eef43a7de4db7406a6360fbf608da75ce7f3c47e20e334a920e9e8"
+          "bytes": 9555,
+          "sha256": "820ed86226b935822caa7deed6fb4ef915b98ccd7f0a1d5d9e265d956064c951"
         },
         "cmsis-developer-assistant://docs/troubleshooting/cpp": {
-          "bytes": 11339,
-          "sha256": "3a2d0ba3730140aa9c4bdf773690985b5d948c85659346abc9c74954c4c91322"
+          "bytes": 11369,
+          "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
           "bytes": 6894,
           "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7658,
-          "sha256": "6825e42c6f346805cfdbd39019d7ea62781f7b425860821387e8f037496bc6b3"
+          "bytes": 7724,
+          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
         }
       },
       "calls": {

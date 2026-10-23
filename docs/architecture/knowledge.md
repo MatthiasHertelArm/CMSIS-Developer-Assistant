@@ -74,6 +74,34 @@ pack a csolution names with `path:` outside the pack root
   with the file as body, referenced by their procedure. `knowledge_get` on a
   procedure lists them by the path its text uses, and returns one by its id
   (`KnowledgeIndex.assetsOf`). They are not in the search index.
+- **A pack's units stay with the pack.** A unit a pack ships is scoped to
+  the pack by its `scoped_to` edge, and when its index was built without
+  those edges, by the index it comes from: `packScopeOf` reads the pack from
+  the index's info table (`pack`, written by `cmsis-knowledge`) or else from
+  its label, so that no pack unit is ever universal (an index of a C++ book
+  showed up in a Cortex-M55 search). Search runs over the view
+  `forContext(context)` of the open set: the base, the workspace and the
+  packs the project uses. A pack outside the project takes no candidate
+  slot and its symptom patterns never run; `knowledge_get` and
+  `knowledge_expand` still read it, and the `Indexes:` line of a search
+  says that its pack is not in the project. Each index contributes up to
+  `CANDIDATES` BM25 hits of its own (`MemberView.bm25`), so pack hits do
+  not crowd the core's out before the filters run. The context itself is
+  built on the whole set (`contextEntities`): a pack's board entity is what
+  brings the pack into the context.
+- **Symptom patterns are guarded.** The `symptom_regex` of every
+  troubleshooting unit runs synchronously on the extension host; a pattern
+  with an unbounded quantifier inside an unbounded group backtracks for
+  seconds on a line it does not match, and no timeout interrupts it. Any
+  index may ship one, so `safeSymptomPattern` refuses such a pattern (and
+  one over 500 characters) when the index is opened, counted with the
+  patterns that do not compile, and a line is cut to 2 000 characters
+  before a pattern sees it. None of the core index's patterns is affected.
+- **The failed build's lookup follows the active target.** The
+  `Known message:` lines of a failed build (`knownMessageLookup.ts`,
+  `KnowledgeHandler.knownMessageLines`) read the facts of the window's
+  active target at each build, not the context of the last search, so a
+  build in another project names that project's pack units.
 
 ## The knowledge browser
 

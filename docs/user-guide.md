@@ -301,7 +301,7 @@ Several VS Code windows are supported. One window binds `serverPort` and becomes
 
 The target window of a call is chosen in this order:
 
-1. The `window` argument of `cmsis_action`, `flash`, `reset`, `serial_open` or `serial_capture`: a process id, or a path inside the window's workspace. The agent's later calls follow it.
+1. The `window` argument of `cmsis_action`, `flash`, `reset`, `serial_open` or `serial_capture`: a process id, or a path inside the window's workspace. (`knowledge_search` takes it too, to search with that window's project context without changing the target.) The agent's later calls follow it.
 2. The file path the tool has (`add_breakpoint`, `start_debugging`).
 3. The window the agent pinned with `select_debug_window`.
 4. The window the agent's session used last.

@@ -212,8 +212,10 @@ async function main() {
     // (get_recent_problems, serial_capture); two-window-routing.js budgets the
     // routed list, which is what agents see. A regression must be attributable
     // to one tool, hence the per-description cap. Raised from 32 000 for
-    // cmsis_query and cmsis_action create_solution (32 724 measured).
-    const TOOLS_LIST_BUDGET_BYTES = 33_000;
+    // cmsis_query and cmsis_action create_solution (32 724 measured), and from
+    // 33 000 for the comparator counts of add_breakpoint and the ownership note
+    // of clear_all_breakpoints (33 053 measured).
+    const TOOLS_LIST_BUDGET_BYTES = 33_200;
     const DESCRIPTION_CAP_CHARS = 700;
     const toolsBytes = Buffer.byteLength(JSON.stringify(tools));
     check(`tools/list stays under the ${TOOLS_LIST_BUDGET_BYTES} byte budget`, toolsBytes <= TOOLS_LIST_BUDGET_BYTES, `${toolsBytes} bytes`);

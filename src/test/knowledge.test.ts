@@ -30,7 +30,7 @@ import { componentsOf, packsOf } from '../core/knowledge/projectFacts';
 import { appliesIn, contextEntities, inScope, isIncomplete, knownMessages, messageLines, ProjectFacts, searchKnowledge, sectionOf } from '../core/knowledge/search';
 import { detailOf, graphAround, overviewOf, renderMarkdown, TYPE_ORDER, unitRows } from '../core/knowledge/browse';
 import { discoverIndexes, installedPackIndexes, localRepositoryIndexes, workspaceIndexes } from '../core/knowledge/packIndexes';
-import { interleaveByRank, KnowledgeIndex, KnowledgeSet } from '../core/knowledge/store';
+import { interleaveByRank, KnowledgeIndex, KnowledgeSet, packScopeOf, safeSymptomPattern } from '../core/knowledge/store';
 import { isKnowledgeOp, isKnownOp, isPackDocsDocOp, isPackDocsOp, KNOWLEDGE_OPS } from '../core/opTable';
 import { composeInstructions } from '../core/serverInstructions';
 import { silentLog } from '../core/packDocs/host';
@@ -493,11 +493,11 @@ suite('knowledge tools', () => {
             live.dispose();
         });
 
-        test('the lines for a failed build name complete units, and never throw', () => {
-            assert.deepStrictEqual(handler.knownMessageLines(['board mounted device X not found', 'no installed board was found']),
+        test('the lines for a failed build name complete units, and never throw', async () => {
+            assert.deepStrictEqual(await handler.knownMessageLines(['board mounted device X not found', 'no installed board was found']),
                 ['Known message: knowledge_get { id: "ts-csolution-board-mounted-device" } has its cause and fix.']);
-            assert.deepStrictEqual(handlerFor({}).knownMessageLines(['board mounted device X not found']), []);
-            assert.deepStrictEqual(handlerFor({ indexPath: path.join(dir, 'absent.db') }).knownMessageLines(['x']), []);
+            assert.deepStrictEqual(await handlerFor({}).knownMessageLines(['board mounted device X not found']), []);
+            assert.deepStrictEqual(await handlerFor({ indexPath: path.join(dir, 'absent.db') }).knownMessageLines(['x']), []);
         });
     });
 
@@ -679,6 +679,45 @@ suite('knowledge tools', () => {
             assert.deepStrictEqual(interleaveByRank([], 5), []);
         });
 
+        test('the pack an index is scoped to comes from its info table, else from its label; the base and a workspace are not scoped', () => {
+            assert.strictEqual(packScopeOf('Acme::Mini_BSP@0.2.0', { scope: 'pack', pack: 'Acme::Mini_BSP@0.2.0' }), 'pack:Acme::Mini_BSP');
+            assert.strictEqual(packScopeOf('Local::CPP_Architecture@1.0.0', {}), 'pack:Local::CPP_Architecture');
+            assert.strictEqual(packScopeOf('MyVendor::MYCHIP_DFP@1.3.0-dev (local)', {}), 'pack:MyVendor::MYCHIP_DFP');
+            assert.strictEqual(packScopeOf('renamed', { pack: 'V::P@1.0.0' }), 'pack:V::P');
+            assert.strictEqual(packScopeOf('base', {}), undefined);
+            assert.strictEqual(packScopeOf('workspace', {}), undefined);
+            assert.strictEqual(packScopeOf('workspace:my-project', {}), undefined);
+        });
+
+        test('a symptom pattern with an unbounded quantifier inside an unbounded group is refused, and counted as skipped', () => {
+            for (const unsafe of ['(a+)+$', '(\\w*\\s?)*x', '(?:x+){2,}', '((ab)*c)+', 'a'.repeat(501)]) {
+                assert.strictEqual(safeSymptomPattern(unsafe), false, unsafe);
+            }
+            for (const safe of ["^board mounted device '?.+?'? not found$", '(?:foo|bar)+ baz', '(a{1,3})*', '[(+]+', '\\(a+\\)+', '(?:x+){2,5}', '(a+)b+']) {
+                assert.strictEqual(safeSymptomPattern(safe), true, safe);
+            }
+            const own = path.join(dir, 'unsafe-pattern.db');
+            const db = new DatabaseSync(own);
+            db.exec(`
+                CREATE TABLE nodes(id TEXT PRIMARY KEY, kind TEXT, type TEXT, domain TEXT, title TEXT, summary TEXT, body TEXT, meta JSON);
+                CREATE TABLE edges(src TEXT, rel TEXT, dst TEXT, qual JSON, PRIMARY KEY(src, rel, dst));
+                CREATE VIRTUAL TABLE nodes_fts USING fts5(id UNINDEXED, title, summary, body, symptoms, triggers, tokenize='porter unicode61');
+            `);
+            const node = db.prepare('INSERT INTO nodes VALUES(?,?,?,?,?,?,?,?)');
+            node.run('ts-unsafe', 'knowledge', 'troubleshooting', 'error-catalog', 'unsafe', '', CAUSE, JSON.stringify({ symptom_regex: '(a+)+$' }));
+            node.run('ts-safe', 'knowledge', 'troubleshooting', 'error-catalog', 'safe', '', CAUSE, JSON.stringify({ symptom_regex: '^a+$' }));
+            db.close();
+            const opened = new KnowledgeIndex(own);
+            try {
+                assert.strictEqual(opened.skippedSymptoms, 1);
+                assert.deepStrictEqual(opened.exactSymptoms(['aaaa']), ['ts-safe']);
+                // A long line is cut before the pattern runs.
+                assert.deepStrictEqual(opened.exactSymptoms([`${'b'.repeat(2_500)}aaaa`]), []);
+            } finally {
+                opened.close();
+            }
+        });
+
         test('a set reads the base and a pack as one: lookups, symptoms, ancestors, refines and the source of a hit', () => {
             const set = new KnowledgeSet([{ label: 'base', file }, { label: 'MyVendor::MYCHIP_DFP@1.2.0', file: packFile }]);
             try {
@@ -690,12 +729,28 @@ suite('knowledge tools', () => {
                 assert.deepStrictEqual(set.exactSymptoms(['image not signed']), ['ts-pack-boot']);
                 assert.ok(set.ancestors('device:MYCHIP').has('core:Cortex-M55'));
                 assert.ok(set.refinements().some(([s, g]) => s === 'pk-errata-dma' && g === 'fx-generic'));
-                // The pack's unit applies to its device and replaces the general pattern there; elsewhere it is filtered out.
-                const onChip = searchKnowledge(set, 'stack sizing pattern', { context: contextEntities(set, { device: 'MYCHIP', compiler: 'GCC' }) });
+                // The pack's index has no scoped_to edges: its units are scoped to the pack by the index they come from.
+                assert.deepStrictEqual(set.scopesOf('pk-errata-dma'), ['pack:MyVendor::MYCHIP_DFP']);
+                assert.deepStrictEqual(set.scopesOf('fx-generic'), []);
+                // In a project with the pack, the unit applies to its device and replaces the general pattern there.
+                const onChip = searchKnowledge(set, 'stack sizing pattern',
+                    { context: contextEntities(set, { device: 'MYCHIP', packs: ['MyVendor::MYCHIP_DFP@1.2.0'], compiler: 'GCC' }) });
                 assert.ok(onChip.results.some((hit) => hit.id === 'pk-errata-dma' && hit.source === 'MyVendor::MYCHIP_DFP@1.2.0'), JSON.stringify(onChip.results));
                 assert.ok(!onChip.results.some((hit) => hit.id === 'fx-generic'));
-                const elsewhere = searchKnowledge(set, 'stack sizing pattern', { context: contextEntities(set, { device: 'STM32U585AIIx', compiler: 'GCC' }) });
-                assert.ok(!elsewhere.results.some((hit) => hit.id === 'pk-errata-dma'));
+                // The device alone, without its pack, does not bring the pack's units; nor does another project; nor no project.
+                for (const context of [contextEntities(set, { device: 'MYCHIP', compiler: 'GCC' }), contextEntities(set, { device: 'STM32U585AIIx', compiler: 'GCC' }), undefined]) {
+                    const elsewhere = searchKnowledge(set, 'stack sizing pattern', { context });
+                    assert.ok(!elsewhere.results.some((hit) => hit.id === 'pk-errata-dma'), JSON.stringify(elsewhere.results));
+                    // With a context the general pattern stays (fx-m55 is for AC6); without one every refinement counts as certain and replaces it.
+                    assert.strictEqual(elsewhere.results.some((hit) => hit.id === 'fx-generic'), context !== undefined, JSON.stringify(elsewhere.results));
+                }
+                // The view of a project narrows to the indexes it may see; the set itself keeps every file open.
+                assert.deepStrictEqual(set.forContext(undefined).sources().map((source) => source.label), ['base']);
+                assert.deepStrictEqual(set.forContext(new Set(['pack:MyVendor::MYCHIP_DFP'])).sources().map((source) => source.label), ['base', 'MyVendor::MYCHIP_DFP@1.2.0']);
+                assert.ok(!set.forContext(undefined).bm25('stack sizing', 10).includes('pk-errata-dma'), 'an inactive pack takes no candidate slot');
+                assert.ok(set.bm25('stack sizing', 10).includes('pk-errata-dma'));
+                assert.deepStrictEqual(set.forContext(undefined).exactSymptoms(['image not signed']), [], 'an inactive pack\'s patterns do not run');
+                assert.strictEqual(set.forContext(new Set(['pack:MyVendor::MYCHIP_DFP'])), set, 'with every member active, the set is its own view');
                 assert.ok(set.nodeCounts().some((entry) => entry.type === 'device' && entry.count >= 2));
                 assert.strictEqual(set.info.indexes, 'base, MyVendor::MYCHIP_DFP@1.2.0');
             } finally {
@@ -714,7 +769,7 @@ suite('knowledge tools', () => {
             fs.mkdirSync(late, { recursive: true });
             fs.copyFileSync(packFile, path.join(late, 'knowledge.db'));
             text = textOf(await live.handleKnowledgeSearch({ query: 'image not signed' }));
-            assert.match(text, /Indexes: base and V::P@2\.0\.0 \(2 units\), workspace \(2 units\)\./);
+            assert.match(text, /Indexes: base and V::P@2\.0\.0 \(2 units; its pack is not in the project\), workspace \(2 units\)\./);
             assert.match(textOf(await live.handleKnowledgeGet({ id: 'ts-pack-boot' })), /^ts-pack-boot · troubleshooting · draft · error-catalog · from V::P@2\.0\.0\n/);
             live.dispose();
         });
@@ -729,7 +784,7 @@ suite('knowledge tools', () => {
             }, { timeoutMs: 5_000 });
             const live = hostWith(async () => [{ pack: 'MyVendor::MYCHIP_DFP@1.3.0-dev', dir: outside }]);
             const text = textOf(await live.handleKnowledgeSearch({ query: 'image not signed' }));
-            assert.match(text, /Indexes: base and MyVendor::MYCHIP_DFP@1\.3\.0-dev \(local\) \(2 units\)\./);
+            assert.match(text, /Indexes: base and MyVendor::MYCHIP_DFP@1\.3\.0-dev \(local\) \(2 units; its pack is not in the project\)\./);
             assert.match(textOf(await live.handleKnowledgeGet({ id: 'ts-pack-boot' })), / · from MyVendor::MYCHIP_DFP@1\.3\.0-dev \(local\)\n/);
             live.dispose();
             const failing = hostWith(async () => { throw new Error('the extension went away'); });
@@ -798,15 +853,20 @@ suite('knowledge tools', () => {
             }
         });
 
-        test('a failed build names the unit of a pack once a search has seen a project that uses the pack', async () => {
+        test('a failed build names the unit of a pack of the active target, with no search before it and not after the target changed', async () => {
+            let facts: ProjectFacts = { board: 'Acme::mini-board', packs: ['Acme::Mini_BSP'], compiler: 'GCC' };
             const live = new KnowledgeHandler({
                 indexPath: () => file, includeIncomplete: () => false, packRoot: async () => BUILT_PACKS, workspaceFolders: () => [],
-                projectFacts: async () => ({ facts: { board: 'Acme::mini-board', packs: ['Acme::Mini_BSP'], compiler: 'GCC' } }), log: silentLog,
+                projectFacts: async () => ({ facts }), log: silentLog,
             }, { timeoutMs: 5_000 });
-            await live.handleKnowledgeGet({ id: 'fx-generic' });
-            assert.deepStrictEqual(live.knownMessageLines([LOCKED]), []);
+            const known = ['Known message: knowledge_get { id: "ts-mini-flash-locked" } has its cause and fix.'];
+            assert.deepStrictEqual(await live.knownMessageLines([LOCKED]), known, 'the first lookup reads the project itself');
             assert.match(textOf(await live.handleKnowledgeSearch({ query: LOCKED })), /1\. ts-mini-flash-locked · troubleshooting · draft · exact symptom · from Acme::Mini_BSP@0\.2\.0/);
-            assert.deepStrictEqual(live.knownMessageLines([LOCKED]), ['Known message: knowledge_get { id: "ts-mini-flash-locked" } has its cause and fix.']);
+            // The target switched to a project without the pack: the lookup follows the target, not the last search.
+            facts = { board: 'Other::board', packs: ['Other::BSP'], compiler: 'GCC' };
+            assert.deepStrictEqual(await live.knownMessageLines([LOCKED]), []);
+            facts = { board: 'Acme::mini-board', packs: ['Acme::Mini_BSP'], compiler: 'GCC' };
+            assert.deepStrictEqual(await live.knownMessageLines([LOCKED]), known);
             live.dispose();
         });
     });

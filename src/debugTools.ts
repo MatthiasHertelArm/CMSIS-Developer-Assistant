@@ -102,7 +102,7 @@ const ABOUT = {
     ),
     add_breakpoint: say(
         'Set a breakpoint at a line.',
-        'Cortex-M binds only a few at once (FPB code comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85; topic breakpoints) — clear ones you no longer need.',
+        'Cortex-M binds only a few at once (FPB comparators: 4 on M0/M0+/M23, 6 on M3/M4, 8 on M7/M33/M55/M85) — remove ones you no longer need.',
     ),
     add_logpoint: say(
         'Breakpoint that prints a message and resumes.',
@@ -112,7 +112,7 @@ const ABOUT = {
     ),
     remove_breakpoint: 'Delete one breakpoint, identified by its file and line.',
     clear_all_breakpoints:
-        'Delete every breakpoint in one call, the user\'s included: use it for breakpoints this investigation set, or when the user asks for a clean slate. remove_breakpoint deletes one.',
+        'Delete every breakpoint, the user\'s included: only for breakpoints you set yourself, or when the user asks for a clean slate. remove_breakpoint deletes one.',
     list_breakpoints: 'Show the breakpoints and logpoints that are set, in every file, and whether the debugger bound each.',
     list_variable_names: say(
         'Show which variables exist where the target is stopped, with their types but not their values.',
@@ -302,10 +302,12 @@ const BAUD_RATE_DESC = 'Baud rate (default 115200)';
 
 /**
  * The tools that take `window` in a session that routes between windows
- * (#16): those that start or own something. The others follow the session's
- * target, which `window` re-aims. A name added here gets the argument.
+ * (#16): those that start or own something, and `knowledge_search`, whose
+ * project context is one window's active target without making that window
+ * the session's target. The others follow the session's target, which
+ * `window` re-aims. A name added here gets the argument.
  */
-export const WINDOW_ARGUMENT_TOOLS: ReadonlySet<string> = new Set(['cmsis_action', 'flash', 'reset', 'serial_open', 'serial_capture']);
+export const WINDOW_ARGUMENT_TOOLS: ReadonlySet<string> = new Set(['cmsis_action', 'flash', 'reset', 'serial_open', 'serial_capture', 'knowledge_search']);
 
 /** The one-call override of a handler's default timeout (see TIMEOUT_OVERRIDE). */
 const CALL_TIMEOUT = z.number().int().min(100).max(60_000).optional().describe(TIMEOUT_DESC);

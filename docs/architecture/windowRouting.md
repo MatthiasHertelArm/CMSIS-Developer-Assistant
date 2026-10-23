@@ -173,8 +173,10 @@ router's own window, scoped by that window's project if it has one, without
 making it the session's target (`resolveForKnowledge()`). The reply of
 `knowledge_search` says on its `Indexes:` line whose context was used
 (`withKnowledgeWindow()`), and in the fallback case how to search with
-another project's context. The documentation ops keep refusing the tie:
-their manuals belong to one window's target.
+another project's context: `knowledge_search` is one of the
+`WINDOW_ARGUMENT_TOOLS`, so `window` names the window whose project scopes
+the search, without making it the session's target. The documentation ops
+keep refusing the tie: their manuals belong to one window's target.
 
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take
