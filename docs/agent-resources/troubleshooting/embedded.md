@@ -38,7 +38,7 @@ The session-status output includes a hint for each state. If state is `running` 
 - Cortex-M cores have a fixed number of hardware comparators (M0/M0+/M23: 4, M3/M4: 6, M7/M33/M55/M85: 8) — see the FPB unit in the device's TRM
 - Exceeding the limit causes silent drop or unreliable bindings
 - Defensive default: keep ≤4 simultaneous breakpoints unless you know the core has more
-- Use `list_breakpoints` before adding; `clear_all_breakpoints` between investigation phases
+- Use `list_breakpoints` before adding; `remove_breakpoint` for the ones you set between investigation phases (`clear_all_breakpoints` deletes the user's too)
 
 ### Tool Call Hangs or Times Out
 

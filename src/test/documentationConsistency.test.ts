@@ -86,6 +86,14 @@ suite('Documentation consistency across the guide, the live procedure and the no
         }
     });
 
+    test('between phases a source removes the breakpoints the investigation set, never every breakpoint of the window', () => {
+        for (const [name, text] of [['the guide', GUIDE], ['the live procedure', LIVE], ['the troubleshooting notes', EMBEDDED]]) {
+            assert.ok(!/`clear_all_breakpoints` (between|to free|when you change)/.test(flat(text)),
+                `${name} still recommends clear_all_breakpoints between phases, which deletes the user's breakpoints too`);
+            assert.ok(flat(text).includes('`remove_breakpoint`'), `${name} names remove_breakpoint for the breakpoints the investigation set`);
+        }
+    });
+
     test('serial subscription is capability-dependent in the guide and the live procedure, and no document says it taps the monitor', () => {
         assert.ok(flat(sliceTopic(GUIDE, 'inspection')).includes('capability-dependent: API version 0 has none'),
             'the guide says subscription depends on the monitor API');

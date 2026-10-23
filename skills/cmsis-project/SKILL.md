@@ -1,16 +1,16 @@
 ---
 name: cmsis-project
-description: "Set up and extend CMSIS csolution projects and Zephyr-based CMSIS solutions: verify the CMSIS-Toolbox, CMake, Ninja and compiler environment or a Zephyr west workspace; resolve a fuzzy board or device name to its exact CMSIS identity and BSP/DFP, or to its Zephyr board target; add a verified target to an existing *.csolution.yml; find compatible packaged board layers; or create an initial west-integrated CMSIS Zephyr Blinky solution. Use when the user wants to create, extend or retarget a csolution, check their build tools, or identify board, device and pack identifiers; this skill routes to the specialised project skills installed next to it. Not for debugging a running target (cmsis-debug-live) or for PDSC authoring (cmsis-pack)."
+description: "Set up and extend CMSIS csolution projects and Zephyr-based CMSIS solutions: verify the CMSIS-Toolbox, CMake, Ninja and compiler environment or a Zephyr west workspace; resolve a fuzzy board or device name to its exact CMSIS identity and BSP/DFP, or to its Zephyr board target; add a verified target to an existing *.csolution.yml; find compatible packaged board layers; or create an initial west-integrated CMSIS Zephyr Blinky solution. Use when the user wants to create, extend or retarget a csolution, check their build tools, or identify board, device and pack identifiers; it routes to the specialised project procedures of the knowledge index. Not for debugging a running target (cmsis-debug-live) or for PDSC authoring (cmsis-pack)."
 ---
 
 # CMSIS project setup (entry point)
 
-This skill does no work of its own. It selects one of the member skills below and hands
-over to it. Every `$name` is a skill installed next to this one — `../<name>/SKILL.md`
-relative to this file — and the member skills are the source of truth for their own
-prerequisites, steps and guardrails.
+This skill does no work of its own. It selects one of the member procedures below and
+hands over to it. Every `$name` is the procedure `proc-<name>` of the knowledge index:
+read it with `knowledge_get` and follow it. The procedures are the source of truth for
+their own prerequisites, steps and guardrails.
 
-## Pick the skill
+## Pick the procedure
 
 | If the user wants to… | Hand over to |
 |---|---|
@@ -35,14 +35,13 @@ prerequisites, steps and guardrails.
 
 ## How to hand over
 
-- Invoke the chosen skill through your harness's skill mechanism (a Skill tool, `$name`,
-  `/name`). If it is not offered, read `../<name>/SKILL.md` and follow it verbatim.
-- Honour its *Prerequisites* — if it names another `$skill`, run that one first — and apply
-  its *Guardrails*. Do not merge, reorder or paraphrase steps across member skills.
-- If `../<name>/SKILL.md` is missing, say so instead of improvising: the skill was not
-  installed. The user can install the skills again with **CMSIS Developer Assistant: Configure Agent** in VS Code.
+- Read the chosen procedure with `knowledge_get { id: "proc-<name>" }` and follow it verbatim.
+- Honour its *Prerequisites* — if it names another `$name`, read that procedure first — and
+  apply its *Guardrails*. Do not merge, reorder or paraphrase steps across procedures.
+- When `knowledge_get` has no `proc-<name>`, say so instead of improvising: the index does
+  not hold that procedure.
 
-## Member skills
+## Member procedures
 
 - `$add-cmsis-target` — Add a verified board or device target to an existing CMSIS solution, declare its support packs, and offer compatible packaged board layers when the project uses them.
 - `$check-cmsis-environment` — Verify the CMSIS tools environment exported by the CMSIS Solution extension, CMSIS-Toolbox, CMake, Ninja, and available compiler toolchains.

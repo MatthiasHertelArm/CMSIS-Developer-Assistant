@@ -129,8 +129,8 @@ Ask the user to connect the board. Then, in this order:
 4. `continue_execution` and `wait_for_stop` to the breakpoint; `get_call_stack`,
    `get_variables_values` and one `read_peripheral_register` to show that stepping
    and reads work.
-5. `clear_all_breakpoints`, let it run, and `serial_read { waitMs: 5000 }` for the
-   application's output; without `waitMs` the call returns at once with what is
+5. `remove_breakpoint` for the breakpoint you set, let it run, and `serial_read { waitMs: 5000 }`
+   for the application's output; without `waitMs` the call returns at once with what is
    buffered.
 6. `stop_debugging`, `serial_close`.
 

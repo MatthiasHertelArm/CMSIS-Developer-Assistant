@@ -111,7 +111,7 @@ Every tool call is measured; `get_session_status` ends with the session's tool-c
 
 The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one, otherwise from the window this session pinned or used last, then from the default target the user chose in VS Code, then from the window that has an active debug session.
 
-`cmsis_action`, `flash`, `reset`, `serial_open` and `serial_capture` also take `window` — a pid, or a path inside that window's workspace. It aims that call, and the session's later calls without a path follow it to the same window: `cmsis_action({ action: 'load_and_debug', window: '4711' })`, then `read_memory` reads that board.
+`cmsis_action`, `flash`, `reset`, `serial_open`, `serial_capture` and `knowledge_search` also take `window` — a pid, or a path inside that window's workspace (for `knowledge_search` it names the project whose context scopes the search, without changing the session's target). It aims that call, and the session's later calls without a path follow it to the same window: `cmsis_action({ action: 'load_and_debug', window: '4711' })`, then `read_memory` reads that board.
 
 When **no rule decides** — two windows debugging at once, or several idle ones — it refuses to guess and names them all (`AMBIGUOUS_WINDOW`): reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and the default target, and `select_debug_window({ pid })` to pin one for the rest of the session, or ask the user to pick one: a click on the CDA robot icon in the VS Code status bar opens **Select Target Window**.
 
@@ -288,7 +288,7 @@ Defensive defaults:
 - Treat **4 simultaneous breakpoints** as the safe upper bound unless you have confirmed the core supports more (check `cbuild.yml` for the processor name).
 - Before adding a breakpoint, call `list_breakpoints` to see the current count.
 - When you have to investigate a wider area, work iteratively: set 2–3 well-chosen breakpoints, hit one, learn what you need, remove or replace it before adding the next.
-- After concluding an investigation phase, call `clear_all_breakpoints` to free comparators.
+- After concluding an investigation phase, free the comparators with `remove_breakpoint` for each breakpoint you set. `clear_all_breakpoints` deletes every breakpoint, the user's included: only when the user asks for a clean slate.
 
 Software breakpoints (which patch Flash without a comparator) are *not* an option on Flash for most Cortex-M targets — only RAM-resident code can use them, which is rarely the case here.
 
@@ -298,7 +298,7 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 ❌ Locating a breakpoint with `lineContent` → ✅ pass the 1-based `line`.
 ❌ Stopping at a breakpoint 500 times to reach one iteration → ✅ pass `condition`, so the target stops for you only when it holds (the core still halts briefly at every hit while GDB tests it).
 ❌ Stepping over the problematic line without understanding why → ✅ break *on* it, restart, and inspect before it executes.
-❌ Leaving six breakpoints bound on a Cortex-M4 → ✅ stay within the comparator budget, `clear_all_breakpoints` between phases.
+❌ Leaving six breakpoints bound on a Cortex-M4 → ✅ stay within the comparator budget, `remove_breakpoint` for your own between phases.
 <!-- /topic -->
 
 <!-- topic: inspection | Run-and-wait, reset vs restart, cycle-accurate timing, reading variables, registers, memory and peripherals, secret redaction, serial output -->

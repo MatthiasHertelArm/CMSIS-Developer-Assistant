@@ -216,13 +216,14 @@ suite('Agent skill catalog', () => {
             }
         });
 
-        test('a router names every member and hands over by sibling path', () => {
+        test('a router names every member and hands over by knowledge procedure', () => {
             for (const router of routers()) {
                 const markdown = fs.readFileSync(path.join(repoRoot, router.path, 'SKILL.md'), 'utf8');
                 for (const member of router.dependsOn) {
                     assert.ok(markdown.includes(`\`$${member}\``), `${router.name} does not mention $${member}`);
                 }
-                assert.ok(markdown.includes('../<name>/SKILL.md'), `${router.name} must explain where the members live`);
+                assert.ok(markdown.includes('the procedure `proc-<name>` of the knowledge index'), `${router.name} must explain where the members live`);
+                assert.ok(!markdown.includes('installed next to') && !markdown.includes('Configure Agent'), `${router.name} still hands over to installed skills`);
                 assert.ok(fs.existsSync(path.join(repoRoot, router.path, 'agents', 'openai.yaml')), `${router.name} has no Codex metadata`);
             }
         });

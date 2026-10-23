@@ -109,7 +109,6 @@ interface RouterMember {
 }
 
 const MAX_DESCRIPTION_LENGTH = 1024;
-const COMMAND_TITLE = 'CMSIS Developer Assistant: Configure Agent';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
@@ -231,12 +230,12 @@ function routerMarkdown(category: CategoryConfig, members: RouterMember[], allDe
         '',
         `# ${category.label} (entry point)`,
         '',
-        'This skill does no work of its own. It selects one of the member skills below and hands',
-        'over to it. Every `$name` is a skill installed next to this one — `../<name>/SKILL.md`',
-        'relative to this file — and the member skills are the source of truth for their own',
-        'prerequisites, steps and guardrails.',
+        'This skill does no work of its own. It selects one of the member procedures below and',
+        'hands over to it. Every `$name` is the procedure `proc-<name>` of the knowledge index:',
+        'read it with `knowledge_get` and follow it. The procedures are the source of truth for',
+        'their own prerequisites, steps and guardrails.',
         '',
-        '## Pick the skill',
+        '## Pick the procedure',
         '',
         '| If the user wants to… | Hand over to |',
         '|---|---|',
@@ -248,14 +247,13 @@ function routerMarkdown(category: CategoryConfig, members: RouterMember[], allDe
         '',
         '## How to hand over',
         '',
-        '- Invoke the chosen skill through your harness\'s skill mechanism (a Skill tool, `$name`,',
-        '  `/name`). If it is not offered, read `../<name>/SKILL.md` and follow it verbatim.',
-        '- Honour its *Prerequisites* — if it names another `$skill`, run that one first — and apply',
-        '  its *Guardrails*. Do not merge, reorder or paraphrase steps across member skills.',
-        '- If `../<name>/SKILL.md` is missing, say so instead of improvising: the skill was not',
-        `  installed. The user can install the skills again with **${COMMAND_TITLE}** in VS Code.`,
+        '- Read the chosen procedure with `knowledge_get { id: "proc-<name>" }` and follow it verbatim.',
+        '- Honour its *Prerequisites* — if it names another `$name`, read that procedure first — and',
+        '  apply its *Guardrails*. Do not merge, reorder or paraphrase steps across procedures.',
+        '- When `knowledge_get` has no `proc-<name>`, say so instead of improvising: the index does',
+        '  not hold that procedure.',
         '',
-        '## Member skills',
+        '## Member procedures',
         '',
         ...memberLines,
         '',
