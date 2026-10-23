@@ -326,6 +326,13 @@ class HostedHandler extends DebuggingHandler {
     }
 }
 
+/** A job tracker whose tasks.json has the CMSIS tasks of a pyOCD adapter, which CMSIS Solution writes with its launch configurations. */
+function cmsisTasksTracker(clock: Pick<HandlerHost, 'now' | 'sleep' | 'startTimer'>): CmsisJobTracker {
+    const tasks = new FakeTasks();
+    tasks.fetched = workspaceTasks('/w', ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
+    return new CmsisJobTracker(tasks, clock);
+}
+
 function handlerFor(
     executor: ScriptedExecutor,
     replaced: Partial<HandlerHost> = {},
@@ -3046,6 +3053,82 @@ suite('DebuggingHandler', () => {
                     assert.strictEqual(updates, 0);
                 });
 
+                test('load_and_debug and attach without CMSIS tasks: refused with the reason while the setting keeps CMSIS Solution from writing them', async () => {
+                    const w = tasksWorld({ autoDebugLaunch: () => false });
+                    named = cbuildRun('CMSIS-DAP@pyOCD');
+                    let updates = 0;
+                    solutionOn('HE', {
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            updates++;
+                        },
+                        'cmsis-csolution.cmsisLoadAndDebug': () => assert.fail('nothing launches without a launch configuration'),
+                        'cmsis-csolution.cmsisAttachDebugger': () => assert.fail('nothing attaches without a launch configuration'),
+                    });
+                    for (const action of ['load_and_debug', 'attach'] as const) {
+                        const refused = await refusalOf(w.handler.handleCmsisCommand({ action }), 'INVALID_ARGUMENT');
+                        assert.strictEqual(refused.message, `CMSIS '${action}' on HE not started: CMSIS Solution has no launch configuration to start `
+                            + 'for this target; the setting cmsis-csolution.autoDebugLaunch is off, so CMSIS Solution writes no tasks.json.');
+                        assert.ok(refused.hint?.startsWith('Ask the user to turn on cmsis-csolution.autoDebugLaunch'), refused.hint);
+                    }
+                    assert.strictEqual(updates, 0, 'with the setting off, Update Debug Tasks would write nothing');
+                });
+
+                test('load_and_debug without CMSIS tasks: Update Debug Tasks writes them, and the result says so first', async () => {
+                    const w = tasksWorld();
+                    named = cbuildRun('CMSIS-DAP@pyOCD');
+                    w.x.sessionStatus = status('running');
+                    w.x.getThreads = async () => [{ id: 1, name: 'main' }];
+                    solutionOn('HE', {
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            setTimeout(() => {
+                                w.tasks.fetched = workspaceTasks('/w', LOAD_LABELS);
+                            }, 30);
+                        },
+                        'cmsis-csolution.cmsisLoadAndDebug': () => {
+                            const load = w.tasks.execution(shellTask('CMSIS Load'));
+                            setTimeout(() => {
+                                w.tasks.start(load);
+                                w.tasks.finish(load, 0);
+                                w.x.session = true;
+                            }, 5);
+                        },
+                    });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug' })),
+                        /^tasks\.json had no CMSIS tasks; Update Debug Tasks wrote them for the debugger 'CMSIS-DAP@pyOCD'\. CMSIS 'load_and_debug' completed on HE — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-1\); debug session survived the connect/);
+                });
+
+                test('the launch configuration: none of CMSIS Solution\'s while the setting is off is refused; a Load that never starts is the answer and stays in status', async () => {
+                    const w = tasksWorld({
+                        autoDebugLaunch: () => false,
+                        workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'demo', index: 0 }],
+                    });
+                    w.tasks.fetched = workspaceTasks(dir, LOAD_LABELS);
+                    fs.mkdirSync(path.join(dir, '.vscode'));
+                    const launchJson = (configurations: unknown[]): void => {
+                        fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({ version: '0.2.0', configurations }));
+                    };
+                    launchJson([
+                        { name: 'CMSIS-DAP@pyOCD (attach)', type: 'gdbtarget', request: 'attach', cmsis: { cbuildRunFile: 'x' } },
+                        { name: 'mine', type: 'gdbtarget', request: 'launch' },
+                    ]);
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.cmsisLoadAndDebug': () => undefined,
+                    });
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'INVALID_ARGUMENT');
+                    assert.strictEqual(refused.message, 'CMSIS \'load_and_debug\' on HE not started: CMSIS Solution has no launch configuration to start '
+                        + 'for this target; .vscode/launch.json has no launch configuration of CMSIS Solution, and the setting '
+                        + 'cmsis-csolution.autoDebugLaunch is off, so CMSIS Solution writes none.');
+
+                    launchJson([{ name: 'CMSIS-DAP@pyOCD (launch)', type: 'gdbtarget', request: 'launch', preLaunchTask: 'CMSIS Load', cmsis: { cbuildRunFile: 'x' } }]);
+                    const silent = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'TASK_FAILED');
+                    assert.strictEqual(errorDetail(silent), 'CMSIS \'load_and_debug\' on HE: nothing started within 10 s of issuing '
+                        + '\'cmsis-csolution.cmsisLoadAndDebug\' (job d-1). Neither its pre-launch Load nor a session started.\n'
+                        + 'CMSIS Solution may be showing a picker, or a message such as "Unable to start debugging" when it has no launch '
+                        + 'configuration for the target: ask the user what VS Code shows, then repeat the call.');
+                    assert.strictEqual(w.tracker.last('load_and_debug')?.state, 'not-started', 'cmsis_action status keeps the job');
+                });
+
                 test('one lookup with flash: a relative answer, a file that is gone and out/<solution>+<target> are no cbuild-run.yml', async () => {
                     // The extension answers through the host's lookup, as flash asks it, and its command answers the same.
                     // A relative answer resolved against the solution's folder, and the out/ convention, would both find a
@@ -3491,7 +3574,9 @@ suite('DebuggingHandler', () => {
                     },
                 });
                 try {
-                    return await handlerFor(x, fastClock(50)).handleCmsisCommand({ action: 'attach' });
+                    const clock = fastClock(50);
+                    const tracker = cmsisTasksTracker(clock);
+                    return await handlerFor(x, { ...clock, cmsisJobs: () => tracker }).handleCmsisCommand({ action: 'attach' });
                 } finally {
                     registrations?.dispose();
                     registrations = undefined;
@@ -3536,7 +3621,9 @@ suite('DebuggingHandler', () => {
                     },
                 });
                 try {
-                    return { answer: await handlerFor(x, fastClock(50)).handleCmsisCommand({ action: 'attach' }), x };
+                    const clock = fastClock(50);
+                    const tracker = cmsisTasksTracker(clock);
+                    return { answer: await handlerFor(x, { ...clock, cmsisJobs: () => tracker }).handleCmsisCommand({ action: 'attach' }), x };
                 } catch (caught) {
                     assert.ok(caught instanceof ToolError, String(caught));
                     return { answer: caught, x };

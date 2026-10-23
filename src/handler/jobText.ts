@@ -234,6 +234,19 @@ export function missingTaskRefusal(action: JobAction, tag: string, label: string
         'Use one of those, or flash. (Arm Debugger adapters offer only load_and_run and load_and_debug.)');
 }
 
+/**
+ * The pre-check's refusal of `load_and_debug` and `attach`: CMSIS Solution has
+ * no launch configuration to start, because it wrote no CMSIS tasks and
+ * launch configurations (`missing` says why they could not be written) or
+ * the setting that lets it write them is off.
+ */
+export function missingLaunchSetupRefusal(action: string, tag: string, missing?: MissingTasksNote): ToolError {
+    return new ToolError('INVALID_ARGUMENT',
+        `CMSIS '${action}'${tag} not started: CMSIS Solution has no launch configuration to start for this target`
+            + `${missing ? `; ${missing.reason}` : ''}.`,
+        missing?.hint ?? CHOOSE_DEBUGGER_HINT);
+}
+
 /** A build message as `data` carries it. */
 function messageData(message: BuildMessage): JsonObject {
     const data: JsonObject = { severity: message.severity, message: message.message };
@@ -366,6 +379,16 @@ function buildCheckResult(job: Job, context: ResultContext, task: JobExecution):
     return undefined;
 }
 
+/** What to do about a job whose task never started: a build is never "up to date", a launch may have met a message. */
+function notStartedHint(action: JobAction): string {
+    if (action === 'load_and_debug') {
+        return 'CMSIS Solution may be showing a picker, or a message such as "Unable to start debugging" when it has no launch '
+            + 'configuration for the target: ask the user what VS Code shows, then repeat the call.';
+    }
+    const picker = 'The CMSIS panel may be showing a picker or a save prompt: answer it in VS Code, then repeat the call.';
+    return isBuildAction(action) ? `${picker} This does not mean "already up to date" — cbuild runs even when nothing changed.` : picker;
+}
+
 /**
  * The result of a job: a ✅ text when it settled well, a `running` reply
  * while it goes on, and a thrown `ToolError` when it failed, was cancelled
@@ -433,8 +456,7 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
             throw new ToolError('TASK_FAILED',
                 `${preface}CMSIS '${job.action}'${tag}: nothing started within ${formatDuration(NOTHING_STARTED_MS)} of issuing ${issued} `
                     + `(job ${job.id}).${meanwhile(job)}`,
-                'The CMSIS panel may be showing a picker or a save prompt: answer it in VS Code, then repeat the call. '
-                    + 'This does not mean "already up to date" — cbuild runs even when nothing changed.');
+                notStartedHint(job.action));
         }
     }
 }

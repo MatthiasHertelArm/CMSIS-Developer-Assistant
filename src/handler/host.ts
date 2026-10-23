@@ -85,6 +85,12 @@ export interface HandlerHost {
      * or blank.
      */
     solutionProbeId(): string | undefined;
+    /**
+     * The setting `cmsis-csolution.autoDebugLaunch` for `folder`, read as CMSIS
+     * Solution reads it: off, it writes no launch.json and no tasks.json. True
+     * when unset or unreadable.
+     */
+    autoDebugLaunch(folder: string): boolean;
     /** `vscode.openFolder`: open `folder` in a new VS Code window, or in this one. */
     openFolder(folder: string, newWindow: boolean): Thenable<unknown>;
     /** The CMSIS Solution extension's pack install, the pack root and the licence question of `install_pack`. */
@@ -128,7 +134,14 @@ export const VSCODE_HOST: HandlerHost = {
         const value: unknown = vscode.workspace.getConfiguration('cmsis-csolution').get('probe-id');
         return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
     },
-    openFolder: (folder, newWindow) => vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: newWindow }),
+    autoDebugLaunch: (folder) => {
+        try {
+            return vscode.workspace.getConfiguration('cmsis-csolution', vscode.Uri.file(folder)).get<boolean>('autoDebugLaunch', true) !== false;
+        } catch {
+            return true;
+        }
+    },
+    openFolder:(folder, newWindow) => vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: newWindow }),
     packInstall: () => VSCODE_PACK_INSTALL_HOST,
     solutionExtension: () => {
         const found = vscode.extensions.getExtension(SOLUTION_EXTENSION_ID);

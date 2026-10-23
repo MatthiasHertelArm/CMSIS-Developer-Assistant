@@ -32,6 +32,9 @@
  * GDBServer plugin, which belongs to the launch configuration, so while it
  * runs nothing the window started serves an attach.
  *
+ * Load & Debug and Attach need a launch configuration CMSIS Solution wrote;
+ * `cmsisLaunchConfigurations` lists them, with the pre-launch task of each.
+ *
  * No `vscode`: the launch.json text and the task come in.
  */
 
@@ -105,6 +108,48 @@ export function attachEndpoints(launchJson: string): AttachEndpoint[] {
 export async function launchAttachEndpoints(folder: string): Promise<AttachEndpoint[]> {
     try {
         return attachEndpoints(await fs.promises.readFile(path.join(folder, '.vscode', 'launch.json'), 'utf8'));
+    } catch {
+        return [];
+    }
+}
+
+/** A launch configuration CMSIS Solution wrote: every one of its templates carries a `cmsis` node. */
+export interface CmsisLaunchConfiguration {
+    name: string;
+    request: 'launch' | 'attach';
+    /** The task VS Code runs first: `CMSIS Load` for the pyOCD and J-Link launches, none for FVP and Arm Debugger. */
+    preLaunchTask?: string;
+}
+
+/**
+ * The configurations of a launch.json text that CMSIS Solution's Load & Debug
+ * and Attach can start: request `launch` or `attach`, with a `cmsis` node.
+ */
+export function cmsisLaunchConfigurations(launchJson: string): CmsisLaunchConfiguration[] {
+    const parsed: unknown = parseJsonc(launchJson, [], { allowTrailingComma: true });
+    const configurations = (parsed as { configurations?: unknown } | undefined)?.configurations;
+    if (!Array.isArray(configurations)) {
+        return [];
+    }
+    const found: CmsisLaunchConfiguration[] = [];
+    for (const entry of configurations) {
+        const config = entry as { name?: unknown; request?: unknown; cmsis?: unknown; preLaunchTask?: unknown };
+        if ((config?.request !== 'launch' && config?.request !== 'attach') || typeof config.cmsis !== 'object' || config.cmsis === null) {
+            continue;
+        }
+        found.push({
+            name: typeof config.name === 'string' ? config.name : config.request,
+            request: config.request,
+            ...(typeof config.preLaunchTask === 'string' ? { preLaunchTask: config.preLaunchTask } : {}),
+        });
+    }
+    return found;
+}
+
+/** The CMSIS launch configurations of `folder/.vscode/launch.json`; none when the file cannot be read. Reads the file only. */
+export async function folderCmsisLaunchConfigurations(folder: string): Promise<CmsisLaunchConfiguration[]> {
+    try {
+        return cmsisLaunchConfigurations(await fs.promises.readFile(path.join(folder, '.vscode', 'launch.json'), 'utf8'));
     } catch {
         return [];
     }

@@ -398,6 +398,18 @@ extension names, through the lookup `flash` uses
 no other, so a file found on disk by convention would not predict what it
 does.
 
+`load_and_debug` and `attach` go through the same check, since CMSIS
+Solution writes its launch configurations together with its tasks: without
+them its Load & Debug only shows "Unable to start debugging", which the
+agent never sees. With the setting off they also need a launch
+configuration of the right request with a `cmsis` node in `launch.json`
+(`cmsisLaunchConfigurations()` in `src/core/gdbServerPorts.ts`); the
+setting is read through `HandlerHost.autoDebugLaunch`. When that
+configuration runs `CMSIS Load` first, a Load that has not started 10 s
+after the command is the answer — the job is settled as not started and
+stays in `status` — while for FVP and Arm Debugger, whose sessions start
+without one, the session alone decides.
+
 A window without an active solution is an ordinary state for an agent that
 starts in an empty VS Code, so the refusal says which part is missing
 (`whyNoSolution()`, texts in `src/core/bootstrapState.ts`): no folder open is

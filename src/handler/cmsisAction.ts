@@ -88,6 +88,7 @@ import {
     isSettled,
     Job,
     JobAction,
+    NOTHING_STARTED_MS,
     runtimeOf,
 } from '../core/cmsisTasks';
 import { DIAGNOSTIC_RERUN_CAP_MS } from '../core/buildFailure';
@@ -116,7 +117,15 @@ import {
 } from '../core/bootstrapState';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
-import { AttachEndpoint, isFvpDebugger, launchAttachEndpoints, runCommandKind, taskCommandWords } from '../core/gdbServerPorts';
+import {
+    AttachEndpoint,
+    CmsisLaunchConfiguration,
+    folderCmsisLaunchConfigurations,
+    isFvpDebugger,
+    launchAttachEndpoints,
+    runCommandKind,
+    taskCommandWords,
+} from '../core/gdbServerPorts';
 import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
@@ -125,7 +134,17 @@ import { logger } from '../utils/logger';
 import { failureText, LONG_LIMIT_CAP_MS } from './fence';
 import { createSolution, CreateRequest } from './createSolution';
 import type { HandlerHost } from './host';
-import { flashFailedHint, formatDuration, idleStatus, jobResult, MissingTasksNote, missingTaskRefusal, probeRefusal, stillRunning } from './jobText';
+import {
+    flashFailedHint,
+    formatDuration,
+    idleStatus,
+    jobResult,
+    missingLaunchSetupRefusal,
+    MissingTasksNote,
+    missingTaskRefusal,
+    probeRefusal,
+    stillRunning,
+} from './jobText';
 import { runInstallPack } from './installPack';
 
 export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach' | 'detach'
@@ -696,14 +715,9 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
         + `${pushed}${direct}${ids}). Its outputs are incomplete: cmsis_action build before load or flash.`;
 }
 
-/** `cmsis-csolution.autoDebugLaunch` is off: CMSIS Solution then writes no launch.json or tasks.json. Never throws. */
-function autoDebugLaunchOff(folder: string): boolean {
-    try {
-        return vscode.workspace.getConfiguration('cmsis-csolution', vscode.Uri.file(folder)).get<boolean>('autoDebugLaunch', true) === false;
-    } catch {
-        return false;
-    }
-}
+/** The next step while `cmsis-csolution.autoDebugLaunch` is off: CMSIS Solution then writes no launch.json or tasks.json. */
+const AUTO_DEBUG_LAUNCH_HINT = 'Ask the user to turn on cmsis-csolution.autoDebugLaunch (in Settings, or in Manage Solution Settings, command '
+    + 'cmsis-csolution.manageSolution); CMSIS Solution then writes the CMSIS tasks and launch configurations. Until then, flash programs the target.';
 
 /** What the one run of Update Debug Tasks did for a tasks.json without CMSIS tasks: the labels after it, and what the result or the refusal says. */
 interface TasksRepair {
@@ -734,12 +748,11 @@ const BUILD_FIRST_HINT = 'cmsis_action build first: its convert writes the cbuil
  */
 async function writeCmsisTasks(issue: Pick<Issue, 'context' | 'tracker' | 'deadline'>, folder: string): Promise<TasksRepair> {
     const { host } = issue.context;
-    if (autoDebugLaunchOff(folder)) {
+    if (!host.autoDebugLaunch(folder)) {
         return {
             missing: {
                 reason: 'the setting cmsis-csolution.autoDebugLaunch is off, so CMSIS Solution writes no tasks.json',
-                hint: 'Ask the user to turn on cmsis-csolution.autoDebugLaunch (in Settings, or in Manage Solution Settings, command '
-                    + 'cmsis-csolution.manageSolution); CMSIS Solution then writes the CMSIS tasks. Until then, flash programs the target.',
+                hint: AUTO_DEBUG_LAUNCH_HINT,
             },
         };
     }
@@ -932,7 +945,14 @@ function withoutRunNote(answer: ToolText, endpoints: readonly AttachEndpoint[]):
     };
 }
 
-async function loadAndDebug(issue: Issue): Promise<ToolText> {
+/**
+ * load_and_debug. With `loadFirst` — the launch configuration runs `CMSIS
+ * Load` before its session, as the pyOCD and J-Link ones do — a Load that
+ * never starts is the answer: CMSIS Solution showed a picker or a message
+ * instead of launching, and the job stays in `status` as not started.
+ * Without it (FVP, Arm Debugger) the session decides alone.
+ */
+async function loadAndDebug(issue: Issue, loadFirst: boolean): Promise<ToolText> {
     const { tracker } = issue;
     const { host } = issue.context;
     const job = tracker.begin('load_and_debug', issue.target);
@@ -944,7 +964,15 @@ async function loadAndDebug(issue: Issue): Promise<ToolText> {
         throw caught;
     }
     tracker.issued(job.id);
-    if ((await loadOrSession(issue, job.id, SESSION_WAIT_MS)) !== 'load') {
+    let first = await loadOrSession(issue, job.id, SESSION_WAIT_MS);
+    if (first === 'neither' && loadFirst) {
+        first = await loadOrSession(issue, job.id, Math.max(0, NOTHING_STARTED_MS - SESSION_WAIT_MS));
+        if (first === 'neither') {
+            tracker.settle(job.id, 'not-started', 'Neither its pre-launch Load nor a session started.');
+            return jobResult(tracker.job(job.id) ?? job, { tag: issue.tag, now: host.now(), command: issue.command });
+        }
+    }
+    if (first !== 'load') {
         tracker.discard(job.id);
         return sessionPhase(issue, 'load_and_debug', '', false);
     }
@@ -1363,19 +1391,35 @@ export async function runCmsisAction(
     let labels: ReadonlySet<string> | undefined;
     let preface: string | undefined;
     const label = TASK_ACTIONS.has(action) ? ACTION_PHASES[action as JobAction].label : undefined;
-    if (label !== undefined && solution.solutionPath) {
+    // Load & Debug and Attach start a launch configuration that CMSIS Solution writes together with its tasks.
+    const launches = SESSION_ACTIONS.has(action);
+    let launchConfigurations: CmsisLaunchConfiguration[] = [];
+    if ((label !== undefined || launches) && solution.solutionPath) {
         const folder = selectionFolder(solution.solutionPath, host);
         labels = await tracker.taskLabels(folder);
         if (labels && !hasCmsisTasks(labels)) {
             const repair = await writeCmsisTasks(issue, folder);
             labels = repair.labels ?? labels;
             if (repair.wrote === undefined) {
-                throw missingTaskRefusal(action as JobAction, tag, label, labels, repair.missing);
+                throw label !== undefined
+                    ? missingTaskRefusal(action as JobAction, tag, label, labels, repair.missing)
+                    : missingLaunchSetupRefusal(action, tag, repair.missing);
             }
             preface = `${repair.wrote} `;
         }
-        if (labels && !labels.has(label)) {
+        if (label !== undefined && labels && !labels.has(label)) {
             throw missingTaskRefusal(action as JobAction, tag, label, labels);
+        }
+        if (launches) {
+            launchConfigurations = await folderCmsisLaunchConfigurations(folder);
+            const request = action === 'attach' ? 'attach' : 'launch';
+            if (!host.autoDebugLaunch(folder) && !launchConfigurations.some((config) => config.request === request)) {
+                throw missingLaunchSetupRefusal(action, tag, {
+                    reason: `.vscode/launch.json has no ${request} configuration of CMSIS Solution, and the setting `
+                        + 'cmsis-csolution.autoDebugLaunch is off, so CMSIS Solution writes none',
+                    hint: AUTO_DEBUG_LAUNCH_HINT,
+                });
+            }
         }
     }
 
@@ -1394,11 +1438,21 @@ export async function runCmsisAction(
             expectSessionOf(issue);
             await issueCommand(issue, action);
             const answer = await sessionPhase(issue, action, '', runAlive);
-            return runAlive ? answer : withoutRunNote(answer, endpoints);
+            return withPreface(runAlive ? answer : withoutRunNote(answer, endpoints), preface);
         }
-        case 'load_and_debug':
-            return loadAndDebug(issue);
+        case 'load_and_debug': {
+            const loadFirst = launchConfigurations.some((config) => config.request === 'launch' && config.preLaunchTask === 'CMSIS Load');
+            return withPreface(await loadAndDebug(issue, loadFirst), preface);
+        }
         default:
             return runJob(issue, action as JobAction, labels, preface);
     }
+}
+
+/** A result with the sentence the tasks repair wrote in front, when there is one. */
+function withPreface(answer: ToolText, preface: string | undefined): ToolText {
+    if (preface === undefined) {
+        return answer;
+    }
+    return typeof answer === 'string' ? `${preface}${answer}` : { ...answer, text: `${preface}${answer.text}` };
 }
