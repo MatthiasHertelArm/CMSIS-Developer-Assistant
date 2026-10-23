@@ -210,6 +210,18 @@ async function discard(session: McpSession): Promise<void> {
 }
 
 /**
+ * How long an idle keep-alive connection to the endpoint stays open. Node's
+ * default of 5 s races a client that keeps pooled connections longer, as
+ * Codex's HTTP client does: a request sent while the server closes the idle
+ * socket fails with "error sending request". Above the clients' own pool
+ * timeouts, the client closes first. `closeHttpServer` still drops idle
+ * sockets when the server is disposed.
+ */
+const KEEP_ALIVE_MS = 120_000;
+/** Above the keep-alive, so that the header timeout never ends an idle socket first. */
+const HEADERS_TIMEOUT_MS = KEEP_ALIVE_MS + 5_000;
+
+/**
  * Bind the app to the loopback address. Success is the `listening` event,
  * not the listen callback, which Express 5 also calls on failure. A failed
  * bind closes the half-open handle before the error is handed on.
@@ -217,6 +229,8 @@ async function discard(session: McpSession): Promise<void> {
 function listenOnLoopback(app: Express, port: number): Promise<http.Server> {
     return new Promise<http.Server>((bound, failed) => {
         const listener = app.listen(port, LOOPBACK_V4);
+        listener.keepAliveTimeout = KEEP_ALIVE_MS;
+        listener.headersTimeout = HEADERS_TIMEOUT_MS;
         const onError = (problem: Error): void => {
             listener.removeListener('listening', onListening);
             listener.close();

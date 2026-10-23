@@ -50,6 +50,11 @@ Three constraints shape the code:
   keep a web page that resolves its own host name to 127.0.0.1 (DNS
   rebinding) away from the tools.
 - A body above 1 MB is refused with 413 before MCP code sees it.
+- An idle keep-alive connection stays open for 120 s (`listenOnLoopback()`).
+  Node's default of 5 s raced clients that pool connections longer, such as
+  Codex: a request sent while the server closed the socket failed with
+  "error sending request". `closeHttpServer` still drops idle sockets at
+  dispose, so a router change does not leave clients on a dead one.
 - A request that names no session, and is not an initialize request, gets a
   JSON-RPC error with `id: null` and status 400. A request that names a
   session this server does not know gets 404 with the JSON-RPC code -32001

@@ -70,11 +70,11 @@ function check(name, ok, detail) {
     if (!ok) { failures++; }
 }
 
-function request(port, method, extraHeaders, body) {
+function request(port, method, extraHeaders, body, agent) {
     return new Promise((resolve, reject) => {
         const payload = body ? JSON.stringify(body) : undefined;
         const req = http.request({
-            host: '127.0.0.1', port, path: '/mcp', method,
+            host: '127.0.0.1', port, path: '/mcp', method, ...(agent ? { agent } : {}),
             headers: {
                 'Host': `127.0.0.1:${port}`,
                 'Content-Type': 'application/json',
@@ -85,7 +85,7 @@ function request(port, method, extraHeaders, body) {
         }, (res) => {
             let data = '';
             res.on('data', (c) => { data += c; });
-            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data, reused: req.reusedSocket }));
         });
         req.on('error', reject);
         if (payload) { req.write(payload); }
@@ -164,6 +164,17 @@ async function main() {
     await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', method: 'notifications/initialized',
     });
+
+    // An idle pooled connection outlives Node's default (5 s, plus a 1 s buffer): a client that keeps its sockets longer
+    // (Codex) must not send on one the server is closing ("error sending request"). With the default, the request after
+    // 7 s idle needs a new connection.
+    const pooled = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 90, method: 'ping' }, pooled);
+    await new Promise((wake) => setTimeout(wake, 7_000));
+    const afterIdle = await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', id: 91, method: 'ping' }, pooled);
+    check('a request after 7 s idle goes over the same connection: the endpoint keeps it open for 120 s',
+        afterIdle.status === 200 && afterIdle.reused === true, `status=${afterIdle.status} reused=${afterIdle.reused}`);
+    pooled.destroy();
 
     // 2. GET with a valid session id opens the SSE stream
     const stream = await openStream(port, sid);
