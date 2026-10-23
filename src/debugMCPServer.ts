@@ -253,6 +253,15 @@ function jsonlSink(file: string): (sample: ToolSample) => void {
     };
 }
 
+/** The tool rules read by the first server of this process; a window builds a server for each port bid. */
+let sharedToolRules: { rules: string | undefined } | undefined;
+
+/** The tool rules of the process, read from the shipped contract on first use. */
+function processToolRules(docs: ShippedDocs): string | undefined {
+    sharedToolRules ??= { rules: loadToolRules(docs) };
+    return sharedToolRules.rules;
+}
+
 /** Without a factory: one debugging handler, built now and shared by every session. */
 function singleWindowHandlers(timeoutInSeconds: number, hardwareTimeouts?: Partial<HardwareTimeouts>): () => SessionHandlers {
     const debug = new DebuggingHandler(new DebuggingExecutor(hardwareTimeouts), new ConfigurationManager(), timeoutInSeconds);
@@ -270,8 +279,8 @@ export class DebugMCPServer {
     private readonly instanceTotals = new ToolMetrics(INSTANCE_SAMPLES);
     private readonly sink: ((sample: ToolSample) => void) | undefined;
     private readonly docs = new ShippedDocs();
-    /** The tool rules every session's instructions start with, read once for the instance (#50). */
-    private readonly toolRules = loadToolRules(this.docs);
+    /** The tool rules every session's instructions start with, read once per process (#50). */
+    private readonly toolRules = processToolRules(this.docs);
     private readonly sessions = new Map<string, McpSession>();
     private listener: http.Server | undefined;
     private boundPort: number | undefined;

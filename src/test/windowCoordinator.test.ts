@@ -243,8 +243,8 @@ suite('WindowCoordinator and the router window (#14)', () => {
         const atDebug = await logged(vscode.LogLevel.Debug, () => coordinator.pollPromotion());
         assert.deepStrictEqual(atDebug.filter((line) => !line.startsWith('debug ')), [], atDebug.join('\n'));
         assert.ok(atDebug.some((line) => line === `debug Still a worker: port ${port} is taken`), atDebug.join('\n'));
-        assert.ok(atDebug.some((line) => line.startsWith('debug Opening the MCP endpoint on')), atDebug.join('\n'));
-        assert.ok(atDebug.some((line) => line === 'debug MCP endpoint stopped (it was not listening)'), atDebug.join('\n'));
+        // The poll finds the port answering and builds no server for it (#14).
+        assert.ok(!atDebug.some((line) => line.startsWith('debug Opening the MCP endpoint on')), atDebug.join('\n'));
     });
 
     test('a window that joins or leaves the registry is one info line; a look that finds the same windows logs nothing', async () => {

@@ -14,7 +14,10 @@ owns the workspace or the board the call is about.
   accepts the MCP sessions and forwards every tool call.
 - **Worker.** Every other window. It executes calls forwarded to it and
   retries the port every 10 s, so that one of the workers takes over when the
-  router window closes and the agents' URL keeps working. The new router
+  router window closes and the agents' URL keeps working. A retry first asks
+  whether anything accepts a connection on the port (`portAnswers()`); only
+  a free port gets a `DebugMCPServer`, so a worker does not build and discard
+  a server every 10 s. The new router
   answers the clients' old session ids with 404, which tells a client to
   open a new session (#14). When the router window stops running without
   closing, the workers tell their users (#14).
