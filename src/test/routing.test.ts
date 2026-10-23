@@ -336,6 +336,29 @@ suite('Multi-window routing', () => {
             livePids.delete(gone.pid);
             await refusedAs('WINDOW_UNREACHABLE', router.handleGetSessionStatus(), /pinned with select_debug_window .* is gone/);
         });
+
+        test('a pin follows its window through a reload to the one window with the same folders, and says so once', async () => {
+            const before = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: before.pid });
+            // The reload: the extension host registers the window again under a new pid.
+            livePids.delete(before.pid);
+            const after = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const moved = await router.handleGetSessionStatus();
+            assertAnsweredBy(moved, 'alpha');
+            assert.ok(textOf(moved).endsWith(`\nThe window pinned with select_debug_window (pid=${before.pid}) was reloaded; the pin moved to `
+                + `pid=${after.pid} | ${folder('alpha')}, which has the same folders.`), textOf(moved));
+            const next = await router.handleGetSessionStatus();
+            assert.ok(!textOf(next).includes('was reloaded'), 'said once');
+            assert.match(router.listDebugWindows(), new RegExp(`pid=${after.pid} .*pinned`));
+
+            // Two windows with those folders: the pin has nothing to follow.
+            livePids.delete(after.pid);
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('alpha2', { workspaceFolders: [folder('alpha')] });
+            await refusedAs('WINDOW_UNREACHABLE', router.handleGetSessionStatus(), /pinned with select_debug_window .* is gone/);
+        });
     });
 
     suite('explicit selection', () => {

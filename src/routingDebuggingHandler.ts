@@ -104,6 +104,7 @@ import { toolNameOf, type SessionTarget } from './core/windowStatus';
 import {
     DefaultTarget,
     describeWindow,
+    foldersOf,
     ResolutionReason,
     WindowRegistration,
     WorkspaceRegistry,
@@ -306,7 +307,7 @@ function routedPathOf(op: string, args: unknown): { action: string; path: string
 
 /** Whether the window has exactly `folder` open, as its only folder. */
 function hasOnly(entry: WindowRegistration, folder: string): boolean {
-    const folders = Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
+    const folders = foldersOf(entry);
     return folders.length === 1 && samePath(folders[0], folder);
 }
 
@@ -315,10 +316,15 @@ function installsPack(op: string, args: unknown): boolean {
     return op === CMSIS_OP && typeof args === 'object' && args !== null && (args as { action?: unknown }).action === INSTALL_PACK;
 }
 
+/** Whether a window has exactly `folders` open, in any order; a window without folders matches none. */
+function hasFolders(entry: WindowRegistration, folders: readonly string[]): boolean {
+    const own = foldersOf(entry);
+    return folders.length > 0 && own.length === folders.length && folders.every((folder) => own.some((mine) => samePath(mine, folder)));
+}
+
 /** Whether one of the window's folders is `target` or contains it; a window without folders holds nothing. */
 function holdsPath(entry: WindowRegistration, target: string): boolean {
-    const folders = Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
-    return folders.some((folder) => liesInside(target, folder));
+    return foldersOf(entry).some((folder) => liesInside(target, folder));
 }
 
 /** The indented window list inside routing errors and the selection miss. */
@@ -351,6 +357,10 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     private targetReason: ResolutionReason | undefined;
     /** Set by `select_debug_window`; only a later selection replaces it. */
     private pinnedPid: number | undefined;
+    /** The folders of the pinned window: a reload gives it a new pid, and the pin follows the window that has them. */
+    private pinnedFolders: readonly string[] = [];
+    /** Said once, on the next answer: the pin moved to the reloaded window. */
+    private pinNote: string | undefined;
     /** `setAt` of the default target this session last saw; a new one drops `target`. */
     private defaultSetAt: number | undefined;
     /** What this session has seen of each window's problem journal (#48), by pid. */
@@ -431,6 +441,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             throw new ToolError('INVALID_ARGUMENT', `No registered window matches ${wanted}.`, known);
         }
         this.pinnedPid = chosen.pid;
+        this.pinnedFolders = foldersOf(chosen);
+        this.pinNote = undefined;
         this.settle(chosen, 'pinned');
         const pinned = `This session is now pinned to: ${describeWindow(chosen)}\n`
             + 'Every subsequent tool call runs in that window until you pin another.';
@@ -540,10 +552,21 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (noticed instanceof ToolError) {
             throw noticed;
         }
+        const answered = this.withPinNote(noticed);
         if (op === KNOWLEDGE_SEARCH_OP) {
-            return withKnowledgeWindow(noticed, entry, reason, this.registry.list().length);
+            return withKnowledgeWindow(answered, entry, reason, this.registry.list().length);
         }
-        return routed?.action === OPEN_SOLUTION ? this.followOpened(noticed) : noticed;
+        return routed?.action === OPEN_SOLUTION ? this.followOpened(answered) : answered;
+    }
+
+    /** The answer with the note that the pin moved, once. */
+    private withPinNote(answer: ToolText): ToolText {
+        const note = this.pinNote;
+        if (note === undefined) {
+            return answer;
+        }
+        this.pinNote = undefined;
+        return isToolReply(answer) ? { ...answer, text: `${answer.text}\n${note}` } : `${textOf(answer)}\n${note}`;
     }
 
     /**
@@ -670,6 +693,25 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         };
     }
 
+    /**
+     * The pinned window is gone: a window reload or an extension host
+     * restart registers it again under a new pid. When exactly one window
+     * has the pinned window's folders, the pin moves there and the next
+     * answer says so; otherwise there is nothing to follow.
+     */
+    private followPin(): WindowRegistration | undefined {
+        const successors = this.registry.list().filter((w) => hasFolders(w, this.pinnedFolders));
+        if (successors.length !== 1) {
+            return undefined;
+        }
+        const [successor] = successors;
+        this.pinNote = `The window pinned with select_debug_window (pid=${this.pinnedPid}) was reloaded; the pin moved to `
+            + `${describeWindow(successor)}, which has the same folders.`;
+        logger.info(`Routing: the pin moved from pid=${this.pinnedPid} to pid=${successor.pid}, a window with the same folders`);
+        this.pinnedPid = successor.pid;
+        return successor;
+    }
+
     /** The resolution ladder; the first rung that applies decides, and a miss throws. */
     private resolveTarget(hint: TargetHint | undefined): Resolved {
         const chosenDefault = this.followDefault();
@@ -686,7 +728,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             return this.settle(owner, 'path');
         }
         if (this.pinnedPid !== undefined) {
-            const pinned = this.registry.findByPid(this.pinnedPid);
+            const pinned = this.registry.findByPid(this.pinnedPid) ?? this.followPin();
             if (!pinned) {
                 throw new ToolError('WINDOW_UNREACHABLE',
                     `The window pinned with select_debug_window (pid=${this.pinnedPid}) is gone.`,
