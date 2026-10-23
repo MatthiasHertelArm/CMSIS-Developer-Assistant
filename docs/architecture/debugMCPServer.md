@@ -196,7 +196,7 @@ Neither the rules, nor the sentence on results, nor the reminder is in a tool
 description: `tools/list` goes along with every turn, and
 `test/transport/session-lifecycle.js` pins its size. The rules also reach the
 bundled skills and the agent guide, together with the table of shell commands
-and the tools that replace them: `npm run skills:sync -- --offline` copies both
+and the tools that replace them: `npm run skills:sync` copies both
 blocks between marker comments (`src/core/toolContract.ts`,
 `src/utils/markerBlock.ts`; see `skills/README.md`), and
 `src/test/toolContract.test.ts` compares every copy with the source.

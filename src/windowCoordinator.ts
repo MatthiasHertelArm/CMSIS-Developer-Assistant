@@ -27,7 +27,7 @@ import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs } from './cor
 import { problemJournal, type ProblemJournal } from './core/problemJournal';
 import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
-import { LagMonitor, NoticeGate, RouterWarning, RouterWatch, busyCallsOf, portSilent, secondsText } from './core/windowHealth';
+import { LagMonitor, NoticeGate, RouterWarning, RouterWatch, busyCallsOf, portAnswers, portSilent, secondsText } from './core/windowHealth';
 import { toolNameOf } from './core/windowStatus';
 import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { solutionFileOf } from './core/solutionAnswers';
@@ -44,6 +44,9 @@ const PRODUCT = 'CMSIS Developer Assistant';
 
 /** How often a worker re-tries the router port after the router disappears. */
 const PROMOTION_POLL_MS = 10_000;
+
+/** How long a worker waits for an answer on the router port before it bids for the port. */
+const PORT_PROBE_MS = 1_000;
 
 /** At most one notice per tool in this time when calls outlive their fence (#14). */
 const FENCE_NOTICE_EVERY_MS = 10 * 60_000;
@@ -272,6 +275,14 @@ export class WindowCoordinator {
     public async tryBecomeRouter(): Promise<void> {
         if (this.disposed || this.mcpServer) { return; }
 
+        // A worker bids every ten seconds. When something already answers on
+        // the port, the bid is lost before a server is built: building one
+        // reads the tool rules and binds and releases the port for nothing.
+        if (await portAnswers(this.options.port, PORT_PROBE_MS)) {
+            this.stayWorker();
+            return;
+        }
+
         const server = new DebugMCPServer(
             this.options.port,
             this.options.timeoutInSeconds,
@@ -292,13 +303,7 @@ export class WindowCoordinator {
             // the port bind itself failed).
             await server.stop().catch(() => undefined);
             if (error instanceof PortInUseError) {
-                if (this.workerAnnounced) {
-                    logger.debug(`Still a worker: port ${this.options.port} is taken`);
-                } else {
-                    logger.info('Another window is the router; this window is a worker.');
-                    this.workerAnnounced = true;
-                }
-                this.startPromotionPolling();
+                this.stayWorker();
                 return;
             }
             throw error;
@@ -306,6 +311,17 @@ export class WindowCoordinator {
         // The role is part of the registry entry and of the status bar.
         this.publish();
         this.status?.render();
+    }
+
+    /** The port is another window's: say so once, and keep polling for it. */
+    private stayWorker(): void {
+        if (this.workerAnnounced) {
+            logger.debug(`Still a worker: port ${this.options.port} is taken`);
+        } else {
+            logger.info('Another window is the router; this window is a worker.');
+            this.workerAnnounced = true;
+        }
+        this.startPromotionPolling();
     }
 
     /**

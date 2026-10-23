@@ -5,7 +5,7 @@ serial terminal in the shell, and the shell commands with the tool that
 replaces each (#50). This file is the only place they are written:
 
 - The MCP server starts its `instructions` with the rules block.
-- `npm run skills:sync -- --offline` copies the blocks between their markers
+- `npm run skills:sync` copies the blocks between their markers
   into the bundled skills `cmsis-debug-live`, `cmsis-pack-docs`,
   `add-board-layer` and `cmsis-help`, and into `debug_instructions.md`.
   `src/test/toolContract.test.ts` fails when a copy differs.

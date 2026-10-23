@@ -27,11 +27,11 @@ Goal: a CMSIS solution that is open in a VS Code window, builds with
 `cmsis_action build`, and reaches `main` with `cmsis_action load_and_debug`.
 
 This skill does little work of its own. It finds out what is missing, asks the user
-for the few things only they can decide or do, and hands over to the skill that owns
-each step. Every `$name` is a skill installed next to this one
-(`../<name>/SKILL.md`). When one is missing, say so: the user installs the skills
-again with **CMSIS Developer Assistant: Configure Agent** in VS Code. Do not improvise
-its steps.
+for the few things only they can decide or do, and hands over to the procedure that
+owns each step. Every `$name` is the procedure `proc-<name>` of the knowledge index:
+read it with `knowledge_get`; `route-project` gives the order. When a procedure is not
+in the index, say so and do not improvise its steps. Nothing here is installed
+separately: ask the user only for an extension or an external capability.
 
 The agent's shell is not the VS Code terminal: the tools the Arm Tools Environment
 Manager activates are on the PATH of VS Code's terminals, not on yours. Nothing in
@@ -80,7 +80,7 @@ Ask, unless the request already says:
     for CMSIS packs; say so in one line;
   - how it will be debugged: the probe on the board or on the desk (CMSIS-DAP,
     ST-Link, J-Link, ULINKplus, …), or an Arm FVP simulation model.
-- **A Zephyr board.** When the user wants a Zephyr application, the project skill
+- **A Zephyr board.** When the user wants a Zephyr application, the project procedure
   is `$start-zephyr-project` instead of step 5; it needs `$check-zephyr-environment`
   and `$identify-zephyr-board`, and runs `west` in a shell as its steps name.
 
@@ -181,7 +181,7 @@ the `launch.json` the CMSIS Solution extension writes from it.
 
 - Hardware probe: `$cmsis-debugger-setup`.
 - Arm FVP: `$fvp-debug-setup`.
-- Neither skill installed: ask the user to choose the debug adapter in the CMSIS
+- Neither procedure in the index (`knowledge_get` fails for both): ask the user to choose the debug adapter in the CMSIS
   view under **Manage Solution Settings**.
 
 Skip this step when `$start-cmsis-project` already set the adapter, or the copied

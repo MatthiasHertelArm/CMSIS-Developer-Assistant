@@ -20,14 +20,17 @@
  *
  *   1. The project (device, cores, compiler, components, tools) becomes a set
  *      of entity ids, with what the index knows above them.
- *   2. Candidates come from BM25; a unit whose symptom pattern matches a
- *      line of the query stands first. A question of a few words is a task
+ *   2. The reader is narrowed to the indexes the project may see
+ *      (`forContext`): the base, the workspace, the packs the context names.
+ *      Candidates come from BM25, `CANDIDATES` of each index; a unit whose
+ *      symptom pattern matches a line of the query stands first. A question of a few words is a task
  *      name, and the procedure or routing unit whose "when to use" text
  *      holds that name is lifted to the top (`HOW_TO_BONUS`): BM25 alone
  *      ranks a short reference unit that carries the word in its title above
  *      a procedure that names it once in a long description.
- *   3. A unit a pack ships is scoped to that pack (`scoped_to`): only a
- *      project that uses the pack sees it, and without a project nobody.
+ *   3. A unit a pack ships is scoped to that pack (`scoped_to`, or the pack
+ *      of its index): only a project that uses the pack sees it, and
+ *      without a project nobody.
  *      A unit without `applies_to` holds everywhere. Otherwise each
  *      dimension it names (core, toolchain, tool, …) must have one target in
  *      the project; a dimension the project says nothing about leaves the
@@ -291,7 +294,8 @@ export function appliesIn(targets: readonly string[], context: ReadonlySet<strin
 }
 
 /** Search the index; see the head of this file for the steps. */
-export function searchKnowledge(index: KnowledgeReader, query: string, options: SearchOptions = {}): SearchResult {
+export function searchKnowledge(reader: KnowledgeReader, query: string, options: SearchOptions = {}): SearchResult {
+    const index = reader.forContext(options.context);
     const k = options.k ?? DEFAULT_RESULTS;
     const budget = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
     const lines = messageLines(query);
@@ -381,7 +385,8 @@ export function searchKnowledge(index: KnowledgeReader, query: string, options: 
  * symptom: what a failed build's error lines can point to. A pack's unit
  * only when `context`, the project's entities, has the pack.
  */
-export function knownMessages(index: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): { message: string; id: string }[] {
+export function knownMessages(reader: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): { message: string; id: string }[] {
+    const index = reader.forContext(context);
     const found: { message: string; id: string }[] = [];
     for (const message of messages) {
         for (const id of index.exactSymptoms(messageLines(message))) {

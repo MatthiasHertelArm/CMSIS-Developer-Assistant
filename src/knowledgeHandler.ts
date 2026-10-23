@@ -117,12 +117,6 @@ function neighbourLine(neighbour: Neighbour): string {
 export class KnowledgeHandler {
     private callCounter = 0;
     private open?: { key: string; index: KnowledgeReader };
-    /** The pack root of the last call, for the synchronous build hook. */
-    private packRootSeen?: string;
-    /** The active target's pack folders at the last call, for the same hook. */
-    private packFoldersSeen: readonly PackFolder[] = [];
-    /** The project's entities at the last search, for the synchronous build hook: a pack's unit needs its pack there. */
-    private contextSeen?: ReadonlySet<string>;
 
     constructor(private readonly host: KnowledgeHost, private readonly options: KnowledgeHandlerOptions) { }
 
@@ -139,9 +133,6 @@ export class KnowledgeHandler {
             const tools = (args.tools ?? []).map((tool) => tool.trim()).filter((tool) => tool.length > 0);
             const facts: ProjectFacts | undefined = project.facts || tools.length > 0 ? { ...project.facts, tools } : undefined;
             const context = facts ? contextEntities(index, facts) : undefined;
-            if (project.facts) {
-                this.contextSeen = contextEntities(index, project.facts);
-            }
             const result = searchKnowledge(index, query, {
                 domain: args.domain?.trim() || undefined, types: args.types, context, k: args.k ?? DEFAULT_RESULTS,
                 includeIncomplete: this.host.includeIncomplete(),
@@ -153,7 +144,10 @@ export class KnowledgeHandler {
             lines.push(contextText ? `Context: ${contextText}.` : `No project context: ${project.note ?? 'none'}.`);
             const extra = index.sources().slice(1);
             if (extra.length > 0) {
-                lines.push(`Indexes: base and ${extra.map((source) => `${source.label} (${source.units} units)`).join(', ')}.`);
+                // A pack's index outside the project is open but not searched: say so, or its units seem lost.
+                const active = new Set(index.forContext(context).sources().map((source) => source.label));
+                lines.push(`Indexes: base and ${extra.map((source) =>
+                    `${source.label} (${source.units} units${active.has(source.label) ? '' : '; its pack is not in the project'})`).join(', ')}.`);
             }
             for (const id of result.incompleteExact) {
                 lines.push(`The index knows this message as ${id}, but no cause or fix is recorded for it yet; the units below are related at best.`);
@@ -278,13 +272,16 @@ export class KnowledgeHandler {
         };
     }
 
-    public knownMessageLines(messages: readonly string[]): string[] {
+    public async knownMessageLines(messages: readonly string[]): Promise<string[]> {
         try {
             if (this.host.indexPath() === undefined) {
                 return [];
             }
-            // The pack root and the project are asked for asynchronously: before the first search, the packs are not read here.
-            return knownMessages(this.openSet(this.packRootSeen, this.packFoldersSeen), messages, this.contextSeen)
+            // The context of the build that failed: the active target now, not the project of the last search.
+            const index = await this.index();
+            const project = await this.host.projectFacts();
+            const context = project.facts ? contextEntities(index, project.facts) : undefined;
+            return knownMessages(index, messages, context)
                 .map(({ id }) => `Known message: knowledge_get { id: "${id}" } has its cause and fix.`);
         } catch (caught) {
             this.host.log.debug(`knowledge: no known-message lines: ${caught instanceof Error ? caught.message : String(caught)}`);
@@ -305,9 +302,7 @@ export class KnowledgeHandler {
      * workspace carry, reopened when any file was rebuilt, added or removed.
      */
     private async index(): Promise<KnowledgeReader> {
-        this.packRootSeen = await this.host.packRoot();
-        this.packFoldersSeen = await this.packFolders();
-        return this.openSet(this.packRootSeen, this.packFoldersSeen);
+        return this.openSet(await this.host.packRoot(), await this.packFolders());
     }
 
     /** The host's pack folders; none when it has no answer. Never throws. */

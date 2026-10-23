@@ -121,7 +121,7 @@ suite('Tool contract', () => {
         test(`${copy.file} carries its blocks exactly as the contract renders them`, () => {
             const text = read(copy.file);
             for (const { id } of copy.blocks) {
-                assert.strictEqual(extractBlock(text, id), bodyOf(id), `${copy.file}: block "${id}" is stale — run \`npm run skills:sync -- --offline\``);
+                assert.strictEqual(extractBlock(text, id), bodyOf(id), `${copy.file}: block "${id}" is stale — run \`npm run skills:sync\``);
                 assert.ok(text.includes(renderContractBlock(id, contract)), `${copy.file}: block "${id}" differs from the rendering`);
             }
             for (const id of [RULES_BLOCK, TABLE_BLOCK].filter((block) => !copy.blocks.some((listed) => listed.id === block))) {
@@ -135,7 +135,7 @@ suite('Tool contract', () => {
         const help = read('skills/cmsis-help/SKILL.md');
         const rules = help.indexOf(renderContractBlock(RULES_BLOCK, contract));
         const table = help.indexOf(renderContractBlock(TABLE_BLOCK, contract));
-        assert.ok(rules >= 0 && table >= 0, 'cmsis-help lacks a block — run `npm run skills:sync -- --offline`');
+        assert.ok(rules >= 0 && table >= 0, 'cmsis-help lacks a block — run `npm run skills:sync`');
         assert.ok(rules < table && table < help.indexOf('\n## Health check (read-only)\n'), 'the rules, then the table, then the health check');
     });
 

@@ -21,8 +21,8 @@
  * tools are on; without one there are no lines. No `vscode` import.
  */
 
-/** Lines for the messages the knowledge index has a complete unit for. */
-export type KnownMessageLookup = (messages: readonly string[]) => string[];
+/** Lines for the messages the knowledge index has a complete unit for, in the context of the window's active target. */
+export type KnownMessageLookup = (messages: readonly string[]) => Promise<string[]>;
 
 let lookup: KnownMessageLookup | undefined;
 
@@ -32,6 +32,6 @@ export function setKnownMessageLookup(next: KnownMessageLookup | undefined): voi
 }
 
 /** The lines for `messages`; none without a lookup. */
-export function knownMessageLines(messages: readonly string[]): string[] {
-    return lookup ? lookup(messages) : [];
+export function knownMessageLines(messages: readonly string[]): Promise<string[]> {
+    return lookup ? lookup(messages) : Promise.resolve([]);
 }

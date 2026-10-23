@@ -67,6 +67,87 @@ function joinedPairs(words: readonly string[]): { first: number; joined: string 
 /** A how-to unit: a procedure, or a routing unit (`route-*`), which says which procedure fits a task. */
 const HOW_TO_WHERE = "(n.type = 'procedure' OR n.id LIKE 'route-%')";
 
+/** The most characters of a line a symptom pattern is tested against; an error line is far shorter, and a pattern's cost grows with its input. */
+const SYMPTOM_LINE_MAX = 2_000;
+/** The longest symptom pattern accepted; the message catalogue's are a line each. */
+const SYMPTOM_PATTERN_MAX = 500;
+
+/**
+ * May the extension host run this symptom pattern against every query? A
+ * pattern an index ships runs synchronously, and an unbounded quantifier
+ * inside an unbounded group — `(a+)+`, `(\w*\s?)*`, `(?:x+){2,}` —
+ * backtracks exponentially on a line it does not match, which no timeout
+ * interrupts. The check walks the pattern once and refuses such a group,
+ * and a pattern longer than SYMPTOM_PATTERN_MAX. Any index may ship a
+ * pattern, an inactive pack's included, so the index build's Python check
+ * is not enough.
+ */
+export function safeSymptomPattern(source: string): boolean {
+    if (source.length > SYMPTOM_PATTERN_MAX) {
+        return false;
+    }
+    /** Open groups, innermost last: does the group hold an unbounded quantifier? */
+    const groups: boolean[] = [];
+    /** The group that closed last, when the previous atom was a group. */
+    let closed: boolean | undefined;
+    let inClass = false;
+    const unboundedAt = (i: number): { unbounded: boolean; end: number } | undefined => {
+        const c = source[i];
+        if (c === '*' || c === '+') {
+            return { unbounded: true, end: i + 1 };
+        }
+        if (c === '{') {
+            const match = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(i));
+            if (match !== null) {
+                return { unbounded: match[2] !== undefined && match[3] === '', end: i + match[0].length };
+            }
+        }
+        return undefined;
+    };
+    for (let i = 0; i < source.length; i++) {
+        const c = source[i];
+        if (c === '\\') {
+            i++;
+            closed = undefined;
+            continue;
+        }
+        if (inClass) {
+            inClass = c !== ']';
+            continue;
+        }
+        if (c === '[') {
+            inClass = true;
+            closed = undefined;
+            continue;
+        }
+        if (c === '(') {
+            groups.push(false);
+            closed = undefined;
+            continue;
+        }
+        if (c === ')') {
+            closed = groups.pop() ?? false;
+            continue;
+        }
+        const quantifier = unboundedAt(i);
+        if (quantifier === undefined) {
+            closed = undefined;
+            continue;
+        }
+        if (quantifier.unbounded) {
+            if (closed === true) {
+                return false;
+            }
+            for (let depth = 0; depth < groups.length; depth++) {
+                groups[depth] = true;
+            }
+        }
+        i = quantifier.end - 1;
+        closed = undefined;
+    }
+    return true;
+}
+
 /** A row of `nodes`: a knowledge unit (`kind` knowledge) or an entity. */
 export interface KnowledgeNode {
     id: string;
@@ -141,6 +222,13 @@ export interface KnowledgeReader {
     readonly skippedSymptoms: number;
     /** The indexes read, base first, with their labels and unit counts. */
     sources(): IndexSource[];
+    /**
+     * The reader over the indexes a project may see: the base, the workspace
+     * and the packs the context names; without a context, no pack. Search
+     * runs on it, so the units of a pack outside the project take no
+     * candidate slots and their symptom patterns never run.
+     */
+    forContext(context: ReadonlySet<string> | undefined): KnowledgeReader;
     /** The label of the index a node came from; undefined for the base index. */
     sourceOf(id: string): string | undefined;
     /** The file of the index a node came from, the base index included. */
@@ -160,7 +248,7 @@ export interface KnowledgeReader {
     exactSymptoms(lines: readonly string[]): string[];
     exactSymptomLines(lines: readonly string[]): Map<string, number>;
     appliesTo(id: string): string[];
-    /** The packs a unit is scoped to; none means it is not scoped. */
+    /** The packs a unit is scoped to; none means it is not scoped. A unit of a pack's index is scoped to that pack at least. */
     scopesOf(id: string): string[];
     refinements(): [specific: string, general: string][];
     ancestors(id: string): Set<string>;
@@ -187,9 +275,9 @@ export class KnowledgeIndex implements KnowledgeReader {
     private readonly db: DatabaseSync;
     /** The `info` table: `embed_model`, and `schema_version` and the build facts once the tooling writes them. */
     readonly info: Readonly<Record<string, string>>;
-    /** Symptom patterns of the troubleshooting units that compiled as JavaScript expressions. */
+    /** Symptom patterns of the troubleshooting units that compiled as JavaScript expressions and passed `safeSymptomPattern`. */
     private readonly symptoms: { id: string; pattern: RegExp }[] = [];
-    /** How many symptom patterns did not compile; the index build checks Python's syntax only. */
+    /** How many symptom patterns did not compile or were refused; the index build checks Python's syntax only. */
     readonly skippedSymptoms: number;
 
     constructor(readonly file: string) {
@@ -232,6 +320,9 @@ export class KnowledgeIndex implements KnowledgeReader {
             "SELECT id, json_extract(meta, '$.symptom_regex') AS pattern FROM nodes WHERE type = 'troubleshooting' AND pattern IS NOT NULL").all();
         for (const row of patterns) {
             try {
+                if (!safeSymptomPattern(text(row.pattern))) {
+                    throw new Error('unsafe pattern');
+                }
                 this.symptoms.push({ id: text(row.id), pattern: new RegExp(text(row.pattern), 'i') });
             } catch {
                 skipped++;
@@ -242,6 +333,10 @@ export class KnowledgeIndex implements KnowledgeReader {
 
     sources(): IndexSource[] {
         return [{ label: 'base', file: this.file, units: this.unitCount() }];
+    }
+
+    forContext(_context: ReadonlySet<string> | undefined): KnowledgeReader {
+        return this;
     }
 
     sourceOf(_id: string): string | undefined {
@@ -323,7 +418,7 @@ export class KnowledgeIndex implements KnowledgeReader {
     exactSymptomLines(lines: readonly string[]): Map<string, number> {
         const found: { id: string; line: number }[] = [];
         for (const { id, pattern } of this.symptoms) {
-            const line = lines.findIndex((candidate) => candidate.length > 0 && pattern.test(candidate));
+            const line = lines.findIndex((candidate) => candidate.length > 0 && pattern.test(candidate.slice(0, SYMPTOM_LINE_MAX)));
             if (line >= 0) {
                 found.push({ id, line });
             }
@@ -467,32 +562,33 @@ export function interleaveByRank(lists: readonly (readonly string[])[], limit: n
 }
 
 /**
- * Several index files read as one: the base index of the setting, then
+ * `pack:Vendor::Pack` for the index a pack ships, from its info table
+ * (`pack`, written by cmsis-knowledge) or else from its label
+ * (`Vendor::Pack@1.0.0`, `Vendor::Pack@1.0.0 (local)`); undefined for the
+ * base index and a workspace index, which are not scoped.
+ */
+export function packScopeOf(label: string, info: Readonly<Record<string, string>>): string | undefined {
+    const match = /^([^\s:@]+)::([^\s@]+)/.exec(info.pack ?? label);
+    return match === null ? undefined : `pack:${match[1]}::${match[2]}`;
+}
+
+/** One open index of a set, and the pack it is scoped to when it is a pack's. */
+interface Member {
+    label: string;
+    index: KnowledgeIndex;
+    scope?: string;
+}
+
+/**
+ * Several open indexes read as one: the base index of the setting, then
  * the indexes the installed packs and the workspace carry. Ids are looked
  * up in order, so the base wins a clash; ranked lists are merged by rank,
  * since BM25 scores of different files are not comparable; everything
- * else is the union.
+ * else is the union. A view owns no file: `KnowledgeSet` opens and closes
+ * them, `forContext` narrows to the members a project may see.
  */
-export class KnowledgeSet implements KnowledgeReader {
-    private readonly members: { label: string; index: KnowledgeIndex }[];
-
-    /** `files`: base first; a file that cannot be opened fails the whole set, as one bad index would. */
-    constructor(files: readonly { label: string; file: string }[]) {
-        if (files.length === 0) {
-            throw new ToolError('TOOL_DISABLED', 'No knowledge index is set',
-                'Ask the user to set cmsis-developer-assistant.knowledge.indexPath to a knowledge.db.');
-        }
-        const opened: { label: string; index: KnowledgeIndex }[] = [];
-        try {
-            for (const { label, file } of files) {
-                opened.push({ label, index: new KnowledgeIndex(file) });
-            }
-        } catch (caught) {
-            opened.forEach((member) => member.index.close());
-            throw caught;
-        }
-        this.members = opened;
-    }
+class MemberView implements KnowledgeReader {
+    constructor(protected readonly members: readonly Member[]) { }
 
     get file(): string {
         return this.members[0].index.file;
@@ -520,7 +616,12 @@ export class KnowledgeSet implements KnowledgeReader {
     }
 
     close(): void {
-        this.members.forEach((member) => member.index.close());
+        // A view owns no file.
+    }
+
+    forContext(context: ReadonlySet<string> | undefined): KnowledgeReader {
+        const active = this.members.filter((member) => member.scope === undefined || (context !== undefined && context.has(member.scope)));
+        return active.length === this.members.length ? this : new MemberView(active);
     }
 
     private each<T>(pick: (index: KnowledgeIndex) => T[]): T[] {
@@ -545,8 +646,9 @@ export class KnowledgeSet implements KnowledgeReader {
         return this.members.reduce((sum, member) => sum + member.index.unitCount(), 0);
     }
 
+    /** Up to `limit` hits of each index, merged by rank: a pack's hits take no slot from the base's. */
     bm25(query: string, limit: number): string[] {
-        return interleaveByRank(this.members.map((member) => member.index.bm25(query, limit)), limit);
+        return interleaveByRank(this.members.map((member) => member.index.bm25(query, limit)), limit * this.members.length);
     }
 
     howToCoverage(words: readonly string[]): Map<string, number> {
@@ -575,8 +677,14 @@ export class KnowledgeSet implements KnowledgeReader {
     }
 
     scopesOf(id: string): string[] {
-        // Scoped by the index the unit is read from: a base unit of the same id is not.
-        return this.members.find((member) => member.index.has(id))?.index.scopesOf(id) ?? [];
+        // Scoped by the index the unit is read from: a base unit of the same id is not. A pack's unit
+        // without a scoped_to edge (an index built without them) is scoped to its pack, never universal.
+        const owner = this.members.find((member) => member.index.has(id));
+        if (owner === undefined) {
+            return [];
+        }
+        const scopes = owner.index.scopesOf(id);
+        return scopes.length === 0 && owner.scope !== undefined ? [owner.scope] : scopes;
     }
 
     refinements(): [specific: string, general: string][] {
@@ -650,5 +758,32 @@ export class KnowledgeSet implements KnowledgeReader {
         const rank = (n: Neighbour): number => (n.kind === 'knowledge' ? 0 : 1);
         const neighbours = all.sort((a, b) => rank(a) - rank(b) || a.relation.localeCompare(b.relation) || a.id.localeCompare(b.id)).slice(0, limit);
         return { neighbours, total };
+    }
+}
+
+/** The indexes of a window, opened from their files and closed together. */
+export class KnowledgeSet extends MemberView {
+    /** `files`: base first; a file that cannot be opened fails the whole set, as one bad index would. */
+    constructor(files: readonly { label: string; file: string }[]) {
+        if (files.length === 0) {
+            throw new ToolError('TOOL_DISABLED', 'No knowledge index is set',
+                'Ask the user to set cmsis-developer-assistant.knowledge.indexPath to a knowledge.db.');
+        }
+        const opened: Member[] = [];
+        try {
+            for (const { label, file } of files) {
+                const index = new KnowledgeIndex(file);
+                const scope = opened.length === 0 ? undefined : packScopeOf(label, index.info);
+                opened.push({ label, index, ...(scope === undefined ? {} : { scope }) });
+            }
+        } catch (caught) {
+            opened.forEach((member) => member.index.close());
+            throw caught;
+        }
+        super(opened);
+    }
+
+    close(): void {
+        this.members.forEach((member) => member.index.close());
     }
 }

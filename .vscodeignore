@@ -57,6 +57,13 @@ coverage/**
 docs/**
 !docs/agent-resources/**
 
+# Of skills/, only the catalog and the installed skill ship: activation copies
+# cmsis-help out of the extension. The other folders are the sources of
+# knowledge units, read by the knowledge-base repository (skills/README.md).
+skills/**
+!skills/catalog.json
+!skills/cmsis-help/**
+
 # personal scratch notes
 notes.md
 # Build output of the knowledge index (2.7 line); never shipped.

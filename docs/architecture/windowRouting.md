@@ -14,7 +14,10 @@ owns the workspace or the board the call is about.
   accepts the MCP sessions and forwards every tool call.
 - **Worker.** Every other window. It executes calls forwarded to it and
   retries the port every 10 s, so that one of the workers takes over when the
-  router window closes and the agents' URL keeps working. The new router
+  router window closes and the agents' URL keeps working. A retry first asks
+  whether anything accepts a connection on the port (`portAnswers()`); only
+  a free port gets a `DebugMCPServer`, so a worker does not build and discard
+  a server every 10 s. The new router
   answers the clients' old session ids with 404, which tells a client to
   open a new session (#14). When the router window stops running without
   closing, the workers tell their users (#14).
@@ -170,8 +173,10 @@ router's own window, scoped by that window's project if it has one, without
 making it the session's target (`resolveForKnowledge()`). The reply of
 `knowledge_search` says on its `Indexes:` line whose context was used
 (`withKnowledgeWindow()`), and in the fallback case how to search with
-another project's context. The documentation ops keep refusing the tie:
-their manuals belong to one window's target.
+another project's context: `knowledge_search` is one of the
+`WINDOW_ARGUMENT_TOOLS`, so `window` names the window whose project scopes
+the search, without making it the session's target. The documentation ops
+keep refusing the tie: their manuals belong to one window's target.
 
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take

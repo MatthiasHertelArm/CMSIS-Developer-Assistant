@@ -161,7 +161,7 @@ export interface DiagnosisHost {
     /** The tracker's clock: job times, the cap and the kill grace. */
     readonly clock: TrackerClock;
     /** Lines for the error messages the knowledge index knows; absent or empty without the knowledge tools. */
-    knownMessageLines?(messages: readonly string[]): string[];
+    knownMessageLines?(messages: readonly string[]): string[] | Promise<string[]>;
 }
 
 /** A build result names at most this many units of the knowledge index. */
@@ -462,14 +462,14 @@ export class BuildDiagnosisRunner {
         return checked('cleaned', `Removed: ${shown(images[0], solutionDir)}${more(images)}.`);
     }
 
-    /** The diagnosis with a line for each error message the knowledge index has a unit for. */
-    withKnownMessages(diagnosis: JobDiagnosis): JobDiagnosis {
+    /** The diagnosis with a line for each error message the knowledge index has a unit for, in the context of the active target. */
+    async withKnownMessages(diagnosis: JobDiagnosis): Promise<JobDiagnosis> {
         if (diagnosis.errors.length === 0 || !this.host.knownMessageLines) {
             return diagnosis;
         }
         let lines: string[] = [];
         try {
-            lines = this.host.knownMessageLines(diagnosis.errors.map((error) => error.message)).slice(0, MAX_KNOWN_MESSAGE_LINES);
+            lines = (await this.host.knownMessageLines(diagnosis.errors.map((error) => error.message))).slice(0, MAX_KNOWN_MESSAGE_LINES);
         } catch (caught) {
             logger.debug('Build diagnosis: the knowledge lookup failed', caught);
         }

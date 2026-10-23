@@ -4,10 +4,11 @@
 
 ### Starting a Debug Session
 
-**For CMSIS projects (preferred):** call `cmsis_action` with `action="load_and_debug"`. This is the same flow as the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the target, and attaches in one step, using the configuration the user selected via *Manage Solution → Debugger*.
+**For CMSIS projects (preferred):** call `cmsis_action` with `action="load_and_debug"`. This is the same flow as the **Debug** button in the CMSIS Solution panel — it builds (if needed), flashes the target, and attaches in one step, on the target-type / target-set the panel has selected. The reply names that target (`… on HP@debug`); on a multi-target solution pass `target` to select it — a differing target is switched and verified first, an undeclared one is refused with the declared list.
 
-```json
+```text
 cmsis_action {"action": "load_and_debug", "timeoutMs": 45000}
+cmsis_action {"action": "load_and_debug", "target": "HP@debug"}
 ```
 
 **Pre-check first**: call `get_session_status`. If a session is already active, `cmsis_action load_and_debug` will refuse — use `restart_debugging` or `cmsis_action attach` instead.
@@ -84,7 +85,7 @@ When a `step_*` does not stop in time, the server **auto-heals**: it pauses the 
 ### Available Tools (Cortex-M focus)
 
 | Tool | Description |
-| --- | --- |
+|---|---|
 | `cmsis_action` | ⭐ Drive the CMSIS Solution panel buttons (build/load/erase/load_and_debug/attach/…) |
 | `get_session_status` | 5-state classifier (no-session/initializing/running/stopped/unresponsive) |
 | `check_target_connection` | Fast DAP `threads` liveness probe |

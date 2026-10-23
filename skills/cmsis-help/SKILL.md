@@ -70,7 +70,7 @@ Report the answer in five short lines: session, target, windows, problems, next 
 | Build, flash, load or attach | `get_debug_instructions` topic `build` |
 | Breakpoints, logpoints, the breakpoint budget | topic `breakpoints` |
 | Variables, registers, memory, peripherals, run control | topic `inspection` |
-| A HardFault or another fault | topic `faults`, then `get_fault_info` or `diagnose_fault`; `knowledge_search HardFault` for the live-debugging procedure (`proc-cmsis-debug-live`) |
+| A HardFault or another fault | topic `faults`: its first step is `diagnose_fault` (`get_fault_info` for the registers alone); `knowledge_search HardFault` for the live-debugging procedure (`proc-cmsis-debug-live`) |
 | A hang, a breakpoint that never hits, a wrong value | topic `troubleshooting` |
 | An error text from a build, csolution, packchk or svdconv | `knowledge_search` with the exact text |
 | A datasheet, reference manual or register meaning | `list_target_docs`, then `search_target_docs`; never read the PDF yourself |
