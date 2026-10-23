@@ -623,7 +623,10 @@ once when errors arrived that the agent has not seen, and
   journals failed responses, adapter errors and output line by line: GDB's
   `stderr` as warnings; the adapter's `console` and `important` and the GDB
   server's own log (category `server` on cdt-gdb-adapter) as `info` unless a
-  line is known; never the target's `stdout` or GDB's `log` stream. A failed
+  line is known or, for the server's log, pyOCD's level column says `W`
+  (warning) or `E`/`C` (error), so that a server that ends at once leaves
+  its reason among the errors a failed `load_and_debug` carries; colour codes
+  are stripped; never the target's `stdout` or GDB's `log` stream. A failed
   response is an error when VS Code sent the request and a warning when a
   tool did, since the tool reports its own outcome;
   `customRequestWithTimeout` announces the tools' requests to tell them
@@ -654,8 +657,9 @@ once when errors arrived that the agent has not seen, and
   | `no active solution` | `CMSIS_NO_SOLUTION` | error | as reported |
 
   `PROBE_NOT_FOUND` (pyOCD's "No available debug probes", a J-Link connect
-  failure) and `CORE_NOT_FOUND` wait for a captured line, as do the pyOCD log
-  prefix and the J-Link banner that would mark any GDB-server line.
+  failure) and `CORE_NOT_FOUND` wait for a captured line, as does the J-Link
+  banner that would mark any GDB-server line; `serverLineSeverity()` reads
+  pyOCD's log prefix, captured from a tester's failed launch.
 - **Delivery** (`src/core/problemFeed.ts`). `runJournaled()` runs an op in
   the window that owns it — the control server for a forwarded call,
   `journalLocally()` on a server without a router — and attaches up to five

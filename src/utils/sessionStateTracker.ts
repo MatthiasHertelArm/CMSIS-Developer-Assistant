@@ -30,11 +30,12 @@
  * set while the target runs) and a warning when a tool sent it through
  * `customRequestWithTimeout`, since that tool reports its own outcome.
  * `stderr` is a warning, the other output `info`, unless `classifyProblem`
- * knows the line.
+ * knows the line or pyOCD's own level marks a GDB-server line as a warning
+ * or an error.
  */
 
 import * as vscode from 'vscode';
-import { classifyProblem } from '../core/problemCodes';
+import { classifyProblem, serverLineSeverity } from '../core/problemCodes';
 import { failedResponseMessage } from '../core/problemFeed';
 import { problemJournal, type ProblemJournal, type ProblemSeverity, type ProblemSource } from '../core/problemJournal';
 import { logger } from './logger';
@@ -367,8 +368,9 @@ function journalFailedResponse(journal: ProblemJournal, session: vscode.DebugSes
  * What adapter output weighs, by category, and whose it is. cdt-gdb-adapter
  * (behind `gdbtarget`) forwards the GDB server's stdout and stderr as
  * `server`, its whole log included, so that is `info` like the adapter's
- * `console`; GDB's own `stderr` is a warning. The target's `stdout`, GDB's
- * `log` stream and anything else are not journaled.
+ * `console`, unless pyOCD's own level says warning or error; GDB's own
+ * `stderr` is a warning. The target's `stdout`, GDB's `log` stream and
+ * anything else are not journaled.
  */
 const OUTPUT_KINDS: Readonly<Partial<Record<string, { severity: ProblemSeverity; source: ProblemSource }>>> = {
     stderr: { severity: 'warning', source: 'dap' },
@@ -377,9 +379,13 @@ const OUTPUT_KINDS: Readonly<Partial<Record<string, { severity: ProblemSeverity;
     server: { severity: 'info', source: 'gdb-server' },
 };
 
+/** A terminal colour or style sequence: pyOCD dims its tracebacks with them. */
+const ANSI_SEQUENCE = /\x1b\[[0-9;]*[A-Za-z]/g;
+
 /**
- * Adapter output of a journaled category, one record per line, each weighed
- * and coded by `classifyProblem` when it knows the line.
+ * Adapter output of a journaled category, one record per line without its
+ * colour codes, each weighed and coded by `classifyProblem` when it knows
+ * the line; a GDB-server line it does not know keeps the level pyOCD gave it.
  */
 function journalOutput(journal: ProblemJournal, session: vscode.DebugSession, category: unknown, output: string): void {
     const kind = OUTPUT_KINDS[typeof category === 'string' ? category : 'console'];
@@ -387,15 +393,16 @@ function journalOutput(journal: ProblemJournal, session: vscode.DebugSession, ca
         return;
     }
     for (const line of output.split(/\r?\n/)) {
-        const text = line.trim();
+        const text = line.replace(ANSI_SEQUENCE, '').trim();
         if (text.length === 0) {
             continue;
         }
         const known = classifyProblem(text, kind.source);
+        const leveled = kind.source === 'gdb-server' ? serverLineSeverity(text) : undefined;
         journal.append({
             source: known?.source ?? kind.source,
             origin: session.name,
-            severity: known?.severity ?? kind.severity,
+            severity: known?.severity ?? leveled ?? kind.severity,
             message: text,
             debugSessionId: session.id,
             ...(known ? { code: known.code, hint: known.hint } : {}),

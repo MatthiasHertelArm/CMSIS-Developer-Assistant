@@ -388,6 +388,30 @@ suite('Session state tracker', () => {
             ]);
         });
 
+        test('a GDB-server line keeps the level pyOCD gave it, without its colour codes', () => {
+            // A tester's pyOCD on Windows (CMSIS Debugger 1.10.0), whose STDIO file folder did not exist.
+            const a = journaled();
+            a.output([
+                '0000652 I Target device: STM32F746ZGTx [cbuild_run]',
+                '0000992 E Unhandled exception in \'gdbserver\' subcommand [gdbserver_cmd]',
+                '\x1b[2mTraceback (most recent call last):',
+                'FileNotFoundError: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist\x1b[0m',
+                '0001001 C Error: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist [__main__]',
+                'gdbserver exited with code 1',
+            ].join('\r\n'), 'server');
+            // The same prefix outside the GDB server's category weighs nothing.
+            a.output('0000992 E not the server\'s\n', 'console');
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.source, record.message]), [
+                ['info', 'gdb-server', '0000652 I Target device: STM32F746ZGTx [cbuild_run]'],
+                ['error', 'gdb-server', '0000992 E Unhandled exception in \'gdbserver\' subcommand [gdbserver_cmd]'],
+                ['info', 'gdb-server', 'Traceback (most recent call last):'],
+                ['info', 'gdb-server', 'FileNotFoundError: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist'],
+                ['error', 'gdb-server', '0001001 C Error: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist [__main__]'],
+                ['info', 'gdb-server', 'gdbserver exited with code 1'],
+                ['info', 'dap', '0000992 E not the server\'s'],
+            ]);
+        });
+
         test('an adapter error is an error', () => {
             const a = journaled();
             a.tracker.onError?.(new Error('pipe closed'));

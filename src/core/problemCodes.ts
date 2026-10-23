@@ -28,8 +28,9 @@
  * captured. Rows the proposal named without such a line wait for one:
  * pyOCD's "No available debug probes" and a J-Link connect failure
  * (`PROBE_NOT_FOUND`), and "Could not find core in Coresight setup"
- * (`CORE_NOT_FOUND`); so do the pyOCD log prefix and the J-Link banner that
- * would mark any GDB-server line.
+ * (`CORE_NOT_FOUND`); so does the J-Link banner that would mark any
+ * GDB-server line. pyOCD's log prefix has its line: `serverLineSeverity`
+ * weighs a GDB-server line by the level pyOCD gave it.
  *
  * Pure: no vscode.
  */
@@ -97,6 +98,23 @@ const ROWS: readonly ProblemRow[] = [
  * records are texts of this extension.
  */
 const CLASSIFIED_SOURCES: ReadonlySet<ProblemSource> = new Set<ProblemSource>(['dap', 'gdb-server', 'task', 'ui', 'extension']);
+
+/**
+ * pyOCD's log line: milliseconds since start, seven digits, and the level's
+ * first letter (`0000992 E Unhandled exception in 'gdbserver' subcommand
+ * [gdbserver_cmd]`), as the CMSIS Debugger's pyOCD prints it.
+ */
+const PYOCD_LEVEL = /^\d{7} ([DIWEC]) /;
+
+/**
+ * The weight pyOCD gave a GDB-server line: `W` a warning, `E` and `C` (critical)
+ * an error; undefined for its debug and info lines and for any line without
+ * the prefix, which keep the weight of their output category.
+ */
+export function serverLineSeverity(text: string): ProblemSeverity | undefined {
+    const level = PYOCD_LEVEL.exec(text)?.[1];
+    return level === 'W' ? 'warning' : level === 'E' || level === 'C' ? 'error' : undefined;
+}
 
 /** The code, weight and next step of a known line; undefined for any other line or source. */
 export function classifyProblem(text: string, source: ProblemSource): ProblemClass | undefined {

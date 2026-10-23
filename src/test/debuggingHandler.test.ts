@@ -3206,6 +3206,33 @@ suite('DebuggingHandler', () => {
                 const text = await textAnswer(good.handler.handleCmsisCommand({ action: 'load_and_debug' }));
                 assert.match(text, /^CMSIS 'load_and_debug' completed on HE — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-1\); debug session survived the connect \(t\+3s: 1 thread\(s\), t\+6s: 1 thread\(s\) — target threads present\)\. State: \{/);
             });
+
+            test('load_and_debug: a session lost while connecting points at the GDB server\'s lines, and a probe out of time is no verdict on the probe', async () => {
+                const w = jobWorld(50);
+                let probes = 0;
+                w.x.getThreads = async () => {
+                    probes++;
+                    if (probes === 1) {
+                        throw new HardwareTimeoutError('DAP threads', 2_000);
+                    }
+                    w.x.session = false;
+                    throw new Error('session ended');
+                };
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisLoadAndDebug': () => {
+                        const load = w.tasks.execution(shellTask('CMSIS Load'));
+                        setTimeout(() => {
+                            w.tasks.start(load);
+                            w.tasks.finish(load, 0);
+                            w.x.session = true;
+                        }, 5);
+                    },
+                });
+                const lost = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'TASK_FAILED');
+                assert.match(lost.message, /^CMSIS 'load_and_debug' on HE started a debug session but it did NOT survive the initial connect — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-1\); t\+3s: thread probe failed — no answer within 2 s, then t\+6s: thread probe failed — session ended\.$/);
+                assert.strictEqual(lost.hint, 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
+                    + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.');
+            });
         });
 
         suite('the probe guard (#46)', () => {

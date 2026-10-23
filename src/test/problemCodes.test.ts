@@ -15,7 +15,7 @@
  */
 
 import * as assert from 'assert';
-import { classifyProblem } from '../core/problemCodes';
+import { classifyProblem, serverLineSeverity } from '../core/problemCodes';
 
 /**
  * Every row of the problem-code table (#48) against a line captured from a
@@ -64,6 +64,20 @@ suite('Problem codes', () => {
             severity: 'error',
             hint: 'Open the folder of the project\'s *.csolution.yml in that VS Code window and select the solution in the CMSIS Solution panel.',
         });
+    });
+
+    test('pyOCD\'s level weighs a GDB-server line: W a warning, E and C an error, D and I and unprefixed lines nothing', () => {
+        // Captured: a tester's load_and_debug on Windows with the pyOCD of CMSIS Debugger 1.10.0, whose STDIO file folder
+        // did not exist (2026-10-21); the warning line is the same prefix with pyOCD's W level.
+        assert.strictEqual(serverLineSeverity('0000992 E Unhandled exception in \'gdbserver\' subcommand [gdbserver_cmd]'), 'error');
+        assert.strictEqual(serverLineSeverity('0001001 C Error: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist [__main__]'), 'error');
+        assert.strictEqual(serverLineSeverity('0000410 C No connected debug probes [__main__]'), 'error');
+        assert.strictEqual(serverLineSeverity('0000713 W Board ID 0000 is not recognized [board]'), 'warning');
+        assert.strictEqual(serverLineSeverity('0000652 I Target device: STM32F746ZGTx [cbuild_run]'), undefined);
+        assert.strictEqual(serverLineSeverity('0000012 D Probe found [cmsis_dap]'), undefined);
+        assert.strictEqual(serverLineSeverity('gdbserver exited with code 1'), undefined);
+        assert.strictEqual(serverLineSeverity('Traceback (most recent call last):'), undefined);
+        assert.strictEqual(serverLineSeverity('1234 E four digits are no pyOCD prefix'), undefined);
     });
 
     test('lines of the other sources are never classified: compiler lines, the Problems panel, serial records', () => {

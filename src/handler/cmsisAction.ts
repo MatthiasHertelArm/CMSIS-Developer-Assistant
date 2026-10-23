@@ -419,7 +419,9 @@ async function probeThreads(
         }
         return { healthy: false, present: true, detail: `${label}: session object present, 0 threads so far` };
     } catch (caught) {
-        return { healthy: false, present: executor.hasDebugSession(), detail: `${label}: thread probe failed — ${failureText(caught)}` };
+        // A probe that runs out of time is no verdict on the probe hardware: the adapter may still be connecting.
+        const why = caught instanceof HardwareTimeoutError ? `no answer within ${formatDuration(caught.timeoutMs)}` : failureText(caught);
+        return { healthy: false, present: executor.hasDebugSession(), detail: `${label}: thread probe failed — ${why}` };
     }
 }
 
@@ -812,16 +814,24 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
             status: 'running',
         };
     }
-    const noRun = action === 'attach' && !runAlive
+    const failed = `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${loaded}${survival.detail}.`;
+    if (action !== 'attach') {
+        // load_and_debug launched its own GDB server: the server's or GDB's own lines say why the session ended.
+        throw new ToolError('TASK_FAILED', failed, LOST_LAUNCH_HINT);
+    }
+    const noRun = !runAlive
         ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
             + '(the pyOCD task resets the target first); load_and_run programs first.'
         : '';
-    throw new ToolError('TASK_FAILED',
-        `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${loaded}${survival.detail}.`,
+    throw new ToolError('TASK_FAILED', failed,
         'For \'attach\' this almost always means no GDB server is listening on the configured port: '
             + `start the GDB server first, or use 'load_and_debug' (which launches one).${noRun} `
             + 'Confirm with get_session_status / check_target_connection.');
 }
+
+/** The next step after a load_and_debug whose session ended during the connect. */
+const LOST_LAUNCH_HINT = 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
+    + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.';
 
 /** Wait until load_and_debug's pre-launch Load started or a session exists, for at most `budgetMs`. */
 async function loadOrSession(issue: Issue, jobId: string, budgetMs: number): Promise<'load' | 'session' | 'neither'> {
