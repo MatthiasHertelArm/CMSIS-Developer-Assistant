@@ -627,7 +627,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         description: ABOUT.evaluate_expression,
         inputSchema: {
             expression: z.string().describe('What to evaluate, written in the language of the program being debugged'),
-            depth: z.number().int().min(1).max(3).optional().describe('Levels of struct fields shown (default 1)'),
+            depth: z.number().int().min(0).max(3).optional().describe('Levels of struct fields shown (default 1; 0: the value only)'),
             timeoutMs: CALL_TIMEOUT,
         },
     }, (args) => debug.handleEvaluateExpression(args).then(reply));

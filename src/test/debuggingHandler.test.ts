@@ -1515,6 +1515,9 @@ suite('DebuggingHandler', () => {
             const deeper = await textAnswer(h.handleEvaluateExpression({ expression: 'config', depth: 2 }));
             assert.ok(deeper.includes('  timing: {...} (timing_t)\n    on_ms: 20 (uint16_t)\n  secret:'), deeper);
             assert.deepStrictEqual(x.argsOf('getVariableChildren').slice(1).map((call) => call[0]), [7, 8], 'the withheld field stays closed');
+            assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: 'config', depth: 0 })),
+                'Evaluated: config\nResult: {...}\nType: led_config_t', 'depth 0: the value only');
+            assert.strictEqual(x.argsOf('getVariableChildren').length, 3, 'depth 0 opens nothing');
 
             await textAnswer(h.handleEvaluateExpression({ expression: 'password' }));
             assert.deepStrictEqual(x.argsOf('getVariableChildren').length, 3, 'a credential-named expression is not opened');

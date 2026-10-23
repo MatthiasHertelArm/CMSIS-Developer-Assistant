@@ -472,9 +472,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -2286,9 +2286,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -3460,9 +3460,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -5902,9 +5902,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -8009,9 +8009,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
