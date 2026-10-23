@@ -648,7 +648,9 @@ once when errors arrived that the agent has not seen, and
   its reason among the errors a failed `load_and_debug` carries; colour codes
   are stripped; never the target's `stdout` or GDB's `log` stream. A failed
   response is an error when VS Code sent the request and a warning when a
-  tool did, since the tool reports its own outcome;
+  tool did, since the tool reports its own outcome; an `evaluate` that a
+  view sent on its own (Watch, hover, the CMSIS Debugger's Live Watch) is
+  `info`, since the views repeat theirs at every stop;
   `customRequestWithTimeout` announces the tools' requests to tell them
   apart. `src/windowProblems.ts` journals a
   failed CMSIS job as `TASK_FAILED` and the error lines of a failed build

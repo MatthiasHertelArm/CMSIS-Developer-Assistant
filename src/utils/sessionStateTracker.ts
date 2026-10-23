@@ -28,7 +28,8 @@
  * cdt-gdb-adapter), line by line, never the target's `stdout`. A failed
  * response is an error when VS Code sent the request (a breakpoint the user
  * set while the target runs) and a warning when a tool sent it through
- * `customRequestWithTimeout`, since that tool reports its own outcome.
+ * `customRequestWithTimeout`, since that tool reports its own outcome; an
+ * `evaluate` of the Watch view, a hover or Live Watch is `info`.
  * `stderr` is a warning, the other output `info`, unless `classifyProblem`
  * knows the line or pyOCD's own level marks a GDB-server line as a warning
  * or an error.
@@ -342,9 +343,18 @@ function senderOf(session: vscode.DebugSession, response: any): 'tools' | 'vscod
 }
 
 /**
+ * Requests the views send on their own for what they show — the Watch and
+ * Variables views, a hover, the CMSIS Debugger's Live Watch — and repeat
+ * at every stop and refresh: one that fails is the view's, not a problem
+ * of the session.
+ */
+const VIEW_REQUESTS: ReadonlySet<string> = new Set(['evaluate']);
+
+/**
  * A failed response: a warning for a request a tool sent (the tool reports
  * it), an error for one VS Code sent; when the tracker did not see the
  * request, a warning while a tool call runs in this window, else an error.
+ * A view's own request that fails is `info`.
  */
 function journalFailedResponse(journal: ProblemJournal, session: vscode.DebugSession, message: any, sender: 'tools' | 'vscode' | undefined): void {
     const reason = message.message ?? message.body?.error?.format;
@@ -353,11 +363,12 @@ function journalFailedResponse(journal: ProblemJournal, session: vscode.DebugSes
     }
     const text = failedResponseMessage(String(message.command), reason ?? '<no message>');
     const ours = sender === 'tools' || (sender === undefined && journal.callsInFlight() > 0);
+    const viewOnly = !ours && VIEW_REQUESTS.has(String(message.command));
     const known = classifyProblem(text, 'dap');
     journal.append({
         source: 'dap',
         origin: session.name,
-        severity: ours ? 'warning' : 'error',
+        severity: ours ? 'warning' : viewOnly ? 'info' : 'error',
         message: text,
         debugSessionId: session.id,
         ...(known ? { code: known.code, hint: known.hint } : {}),

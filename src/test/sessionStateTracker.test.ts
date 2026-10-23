@@ -350,6 +350,27 @@ suite('Session state tracker', () => {
             ]);
         });
 
+        test('an evaluate the views sent on their own (Watch, hover, Live Watch) that fails is info; a tool\'s stays a warning', () => {
+            const a = journaled();
+            // A tester's Watch expressions while the target ran, and Live Watch without a frame.
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 21, command: 'evaluate', arguments: { expression: 'huart2', context: 'watch' } });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 21, command: 'evaluate', success: false });
+            a.tracker.onDidSendMessage?.({ type: 'response', command: 'evaluate', success: false,
+                message: 'Evaluation of expression without frameId is not supported.' });
+            noteOwnRequest(a.session, 'evaluate');
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 22, command: 'evaluate', arguments: { expression: 'x' } });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 22, command: 'evaluate', success: false, message: 'No symbol "x" in current context.' });
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 23, command: 'readMemory' });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 23, command: 'readMemory', success: false, message: 'Unable to read memory.' });
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.message]), [
+                ['info', 'error response to \'evaluate\': <no message>'],
+                ['info', 'error response to \'evaluate\': Evaluation of expression without frameId is not supported.'],
+                ['warning', 'error response to \'evaluate\': No symbol "x" in current context.'],
+                ['error', 'error response to \'readMemory\': Unable to read memory.'],
+            ]);
+            assert.strictEqual(journal.counters().errors, 1, 'only the readMemory counts as an error');
+        });
+
         test('a cancelled request and a successful response are no problem', () => {
             const a = journaled();
             a.tracker.onDidSendMessage?.({ type: 'response', command: 'stackTrace', success: false, message: 'cancelled' });
