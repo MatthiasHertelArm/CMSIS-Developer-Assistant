@@ -615,6 +615,7 @@ async function stopRun(issue: Issue): Promise<ToolText> {
     const { tracker } = issue;
     const { executor, host } = issue.context;
     const snapshot = tracker.stoppableExecutions();
+    const builds = tracker.buildExecutions();
     await issueCommand(issue, 'stop_run');
     const requestedAt = host.now();
     const totalMs = Math.max(0, Math.min(STOP_TOTAL_MS, answerBy(issue) - requestedAt));
@@ -636,9 +637,10 @@ async function stopRun(issue: Issue): Promise<ToolText> {
         alive = second.alive;
     }
     const tag = issue.tag;
+    const buildNote = await buildsAfterStopRun(tracker, builds);
     if (snapshot.length === 0) {
-        return `CMSIS 'stop_run'${tag}: nothing to stop — no CMSIS task is running in this window. `
-            + `'${issue.command}' was issued anyway; it also ends a debug session the CMSIS panel started.`;
+        return `CMSIS 'stop_run'${tag}: no CMSIS task of a run was running in this window. `
+            + `'${issue.command}' was issued anyway; it also ends a debug session the CMSIS panel started.${buildNote}`;
     }
     if (alive.length > 0) {
         throw new ToolError('PROBE_BUSY',
@@ -652,7 +654,28 @@ async function stopRun(issue: Issue): Promise<ToolText> {
         ? 'a debug session is still active — stop_debugging frees the probe'
         : 'the probe is free';
     return `CMSIS 'stop_run'${tag}: stopped ${nameList(snapshot)} (ended ${formatDuration(endedLast - requestedAt)} `
-        + `after the stop request${pushed}); ${probe}.`;
+        + `after the stop request${pushed}); ${probe}.${buildNote}`;
+}
+
+/**
+ * What became of the builds that ran when stop_run was issued: stop_run is
+ * not for them, but CMSIS Solution's Stop Running can end one, and a build
+ * that runs on is stop_build's.
+ */
+async function buildsAfterStopRun(tracker: CmsisJobTracker, builds: readonly ExecutionLike[]): Promise<string> {
+    if (builds.length === 0) {
+        return '';
+    }
+    const { endedAt, alive } = await tracker.waitForEnd(builds, 0);
+    const ended = builds.filter((execution) => endedAt.has(execution));
+    const notes: string[] = [];
+    if (ended.length > 0) {
+        notes.push(` ${nameList(ended)}, a build, ended meanwhile: build again before load.`);
+    }
+    if (alive.length > 0) {
+        notes.push(` ${nameList(alive)} still ${alive.length === 1 ? 'runs' : 'run'}: stop_run leaves builds alone — cmsis_action stop_build ends them.`);
+    }
+    return notes.join('');
 }
 
 /**

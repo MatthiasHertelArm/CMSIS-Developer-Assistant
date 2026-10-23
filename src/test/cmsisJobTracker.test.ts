@@ -20,7 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CmsisJobTracker, JOB_RETENTION_MS, LABEL_FETCH_MS } from '../cmsisJobTracker';
 import { executionIn, Job, JobDiagnosis } from '../core/cmsisTasks';
-import { formatDuration, idleStatus, sessionTaskLine } from '../handler/jobText';
+import { formatDuration, idleStatus, sessionTaskLine, stillRunning } from '../handler/jobText';
 import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 
 /**
@@ -340,6 +340,19 @@ suite('CmsisJobTracker', () => {
             clock.advance(clock.now() + 180_000);
             assert.strictEqual(sessionTaskLine(tracker.recent(), tracker.liveExecutions(), clock.now()),
                 'CMSIS tasks: \'CMSIS Run\' alive 3 min (holds the probe); last load ✅ 3 min ago');
+        });
+
+        test('a build still running after 2 min names stop_build for a task that outlived its build', () => {
+            const { tasks, clock, tracker } = world();
+            const job = tracker.begin('build', 'HE');
+            tasks.start(tasks.execution(BUILD));
+            clock.advance(clock.now() + 60_000);
+            const early = stillRunning(tracker.job(job.id) ?? job, { tag: ' on HE', now: clock.now() });
+            assert.ok(!early.text.includes('stop_build'), early.text);
+            clock.advance(clock.now() + 70_000);
+            const late = stillRunning(tracker.job(job.id) ?? job, { tag: ' on HE', now: clock.now() });
+            assert.ok(late.text.endsWith('do not start another build. If VS Code shows the build finished while this stays running, '
+                + 'cmsis_action stop_build ends the task.'), late.text);
         });
 
         test('status without a job in flight: the recent results and the live tasks, or that there is nothing', () => {

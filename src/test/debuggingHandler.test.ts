@@ -3593,8 +3593,32 @@ suite('DebuggingHandler', () => {
                 assert.deepStrictEqual(w.tracker.probeOwners(), []);
 
                 assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_run' })),
-                    'CMSIS \'stop_run\' on HE: nothing to stop — no CMSIS task is running in this window. '
+                    'CMSIS \'stop_run\' on HE: no CMSIS task of a run was running in this window. '
                     + '\'cmsis-csolution.cmsisStopRun\' was issued anyway; it also ends a debug session the CMSIS panel started.');
+
+                // A build is stop_build's: stop_run names one it ended, and one that runs on.
+                again();
+                const b = guarded((tasks) => {
+                    tasks.start(tasks.execution({ name: 'cbuild demo.csolution.yml --active HE', source: 'CMSIS Solution', definition: { type: 'cmsis-csolution.build' } }));
+                });
+                again();
+                solutionOn('HE', { 'cmsis-csolution.cmsisStopRun': () => undefined });
+                assert.strictEqual(await textAnswer(b.handler.handleCmsisCommand({ action: 'stop_run' })),
+                    'CMSIS \'stop_run\' on HE: no CMSIS task of a run was running in this window. '
+                    + '\'cmsis-csolution.cmsisStopRun\' was issued anyway; it also ends a debug session the CMSIS panel started. '
+                    + '\'cbuild demo.csolution.yml --active HE\' still runs: stop_run leaves builds alone — cmsis_action stop_build ends them.');
+                again();
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisStopRun': () => {
+                        for (const execution of b.tasks.taskExecutions()) {
+                            execution.terminate();
+                        }
+                    },
+                });
+                assert.strictEqual(await textAnswer(b.handler.handleCmsisCommand({ action: 'stop_run' })),
+                    'CMSIS \'stop_run\' on HE: no CMSIS task of a run was running in this window. '
+                    + '\'cmsis-csolution.cmsisStopRun\' was issued anyway; it also ends a debug session the CMSIS panel started. '
+                    + '\'cbuild demo.csolution.yml --active HE\', a build, ended meanwhile: build again before load.');
 
                 let stubborn: FakeExecution | undefined;
                 again();

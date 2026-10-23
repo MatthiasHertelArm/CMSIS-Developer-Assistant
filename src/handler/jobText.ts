@@ -85,6 +85,8 @@ const BUILD_FAILED_HINT = 'get_recent_problems lists what the Problems panel sho
 
 /** After a failed build whose error lines the result shows. */
 const BUILD_ERRORS_HINT = 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.';
+/** A build still running after this long gets the way out of a task that outlived its build. */
+const LONG_BUILD_MS = 120_000;
 /** csolution's word for files a component brings that are not there yet: `file '…/RTX_Config.c' not found; use --update-rte`. */
 const NEEDS_RTE_UPDATE = /use --update-rte/;
 const RTE_UPDATE_HINT = 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — the Refresh '
@@ -194,8 +196,12 @@ export function stillRunning(job: Job, context: ResultContext): ToolReply {
     const head = task
         ? `CMSIS '${job.action}'${context.tag} is still running after ${elapsed} (task '${task.name}', job ${job.id}).`
         : `CMSIS '${job.action}'${context.tag} was issued ${elapsed} ago and its task has not started yet (job ${job.id}).`;
+    // A build task can outlive its build: VS Code still lists it while no cbuild runs any more.
+    const stuck = task && isBuildAction(job.action) && context.now - job.armedAt >= LONG_BUILD_MS
+        ? ' If VS Code shows the build finished while this stays running, cmsis_action stop_build ends the task.'
+        : '';
     return {
-        text: `${context.preface ?? ''}${head} This is not a failure. Call cmsis_action {action:'status'} to wait for the result — ${again}.`,
+        text: `${context.preface ?? ''}${head} This is not a failure. Call cmsis_action {action:'status'} to wait for the result — ${again}.${stuck}`,
         status: 'running',
         data: { job: jobData(job, context.now) },
     };

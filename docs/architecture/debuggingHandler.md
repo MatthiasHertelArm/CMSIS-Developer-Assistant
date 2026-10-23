@@ -295,7 +295,9 @@ window's CMSIS job tracker (next section):
   error lines of a failed build once they are in.
 - `stop_run` waits until the CMSIS tasks it stops have ended, terminates
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
-  alive after 10 s. `detach` returns at once.
+  alive after 10 s. Builds are not its tasks, but CMSIS Solution's Stop
+  Running can end one: the reply names a build that ended during the wait
+  and one that runs on, which `stop_build` ends. `detach` returns at once.
 - `stop_build` does the same for the build-type tasks of the window (build,
   rebuild, clean, or the `cbuild setup` CMSIS Solution runs after loading a
   solution), over `cmsis-csolution.stopBuild`, which ends only one of them.
