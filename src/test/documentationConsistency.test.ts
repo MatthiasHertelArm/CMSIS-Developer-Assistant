@@ -74,6 +74,22 @@ suite('Documentation consistency across the guide, the live procedure and the no
             'the troubleshooting notes say to record the fault before a reset');
     });
 
+    test('an attach session reconnects to a GDB server that lives as long as its CMSIS Run task, in every source', () => {
+        for (const [name, text] of [['the faults topic', flat(sliceTopic(GUIDE, 'faults'))], ['the live procedure', flat(LIVE)], ['the troubleshooting notes', flat(EMBEDDED)]]) {
+            assert.ok(text.includes('lives as long as its CMSIS Run task'), `${name} says how long the attach session's GDB server lives`);
+            assert.ok(text.includes('could not connect'), `${name} says what a failed attach means`);
+            assert.ok(!text.includes('GDB server that keeps running'), `${name} still says the server keeps running`);
+        }
+    });
+
+    test('an Arm FVP is stopped by a breakpoint, never by a pause, in the guide and the procedures that say how to halt', () => {
+        assert.ok(flat(sliceTopic(GUIDE, 'inspection')).includes('An Arm FVP ignores the pause while the model runs'), 'the guide');
+        assert.ok(flat(LIVE).includes('An Arm FVP ignores the pause'), 'the live procedure');
+        assert.ok(flat(read('skills', 'fvp-debug-setup', 'SKILL.md')).includes('The running model ignores `pause_execution`'), 'the FVP set-up');
+        assert.ok(flat(read('skills', 'debugger-troubleshooting', 'SKILL.md')).includes('on an Arm FVP, which ignores `pause_execution`'),
+            'the troubleshooting procedure');
+    });
+
     test('the clean-up contract names the same four parts in the guide and in the live procedure', () => {
         for (const [name, text] of [['the guide', flat(sliceTopic(GUIDE, 'session'))], ['the live procedure', flat(LIVE)]]) {
             assert.ok(text.includes('**Target:** running when you finish'), `${name} names the target state at the end`);

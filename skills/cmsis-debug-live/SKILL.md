@@ -182,7 +182,7 @@ never throws.
 | `no-session` | `cmsis_action load_and_debug` for CMSIS projects — builds, flashes, attaches. `cmsis_action run` then `attach` to look at a target without reflashing; `start_debugging` only for non-CMSIS targets. |
 | `initializing` | Wait, ask again. Do **not** issue a second start. |
 | `stopped` | Inspect freely. |
-| `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. |
+| `running` | Reads and steps will be rejected. `pause_execution`, or set a breakpoint (the tool pauses the target briefly to apply it) and `wait_for_stop`. An Arm FVP ignores the pause while the model runs, and takes no breakpoint change then: only a breakpoint set before `continue_execution` stops it (`stop_debugging`, `cmsis_action load_and_debug`, then set it). |
 | `unresponsive` | `check_target_connection`; refusals are `PROBE_WEDGED` with the way to reconnect (below). Reconnect without a reset first, so a fault can still be read. `restart_debugging` and `load_and_debug` re-flash and reset, and lose that state: last, and only once the user accepts the loss. More reads will only time out. |
 
 `running` rejects `step_over`, `step_into`, `step_out`, `continue_execution`,
@@ -259,7 +259,8 @@ method.
 2. **Run and wait.** `continue_execution`, then `wait_for_stop` when you want an
    explicit bound. If no stop comes within the wait, `continue_execution`
    answers `running` and leaves the target running; `pause_execution` halts
-   it and says where the PC is.
+   it and says where the PC is (not on an Arm FVP, which only a breakpoint
+   stops).
 3. **Look before you read.** `list_variable_names` shows what is in scope
    without reading values. On a slow probe that turns thirty reads into one.
 4. **Read what you need.** `get_variables_values` (optionally with
@@ -330,6 +331,8 @@ This is the characteristic embedded bug, and the reason the memory tools exist.
 
 A fault does not halt the core by itself: the handler spins. `get_session_status`
 first; when the state is `running`, `pause_execution`, which lands in the handler.
+An Arm FVP ignores the pause: there a breakpoint on `HardFault_Handler` (and the
+other fault handlers), set before `continue_execution`, stops it in the handler.
 Then `diagnose_fault` does the whole first pass in one call: the decoded fault
 registers, the stacked exception frame (the PC of the faulting instruction and
 its caller — on a stacked exception the interesting PC is in the frame, not in
@@ -346,8 +349,11 @@ The pieces stay available when you need one of them alone: `get_fault_info`
 If a fault read answers `PROBE_WEDGED`, the debug port no longer answers
 (DHCSR could not be read either): stop reading and follow the hint. Recover in
 this order, keeping the fault state for as long as you can. An attach session
-reconnects with `cmsis_action detach`, then `attach`, without a reset. A
-`load_and_debug` session owns its GDB server: the user restarts that server
+reconnects with `cmsis_action detach`, then `attach`, without a reset: its GDB
+server lives as long as its CMSIS Run task. If attach then fails with "could not
+connect", the server ended with that task (window closed or reloaded, `stop_run`):
+`cmsis_action run` in the window that owns the board starts it again, with a
+reset. A `load_and_debug` session owns its GDB server: the user restarts that server
 without a reset, and you `cmsis_action attach`. Only then `restart_debugging`,
 `reset` or `load_and_debug` again: each re-flashes or resets the target and
 clears the fault status, so the crash can no longer be read. Use them after the
@@ -367,7 +373,10 @@ A `continue_execution` whose wait runs out answers `running` and leaves the
 target running. Call `pause_execution` and read where the PC is before adding
 more breakpoints — firmware sitting in a polling loop, an ISR, or a fault
 handler all look the same from the outside and the PC tells them apart
-immediately.
+immediately. An Arm FVP ignores the pause: `stop_debugging` (twice: the first
+waits for a halt that does not come), `cmsis_action load_and_debug`, and set
+breakpoints where it may be — for a fault, `HardFault_Handler` — before
+`continue_execution`.
 
 ## When the firmware prints
 

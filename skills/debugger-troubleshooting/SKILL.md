@@ -188,7 +188,9 @@ firmware has configured the controller. Beyond that:
 ## 6. It flashed, but the firmware faults or prints nothing
 
 **Get the fault status first**, with a session attached (`cmsis_action attach` for
-firmware that runs, else `load_and_debug`) and the target halted:
+firmware that runs, else `load_and_debug`) and the target halted (on an Arm FVP,
+which ignores `pause_execution`, by a breakpoint on `HardFault_Handler` set before
+`continue_execution`):
 
 ```text
 diagnose_fault
