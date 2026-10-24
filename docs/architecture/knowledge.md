@@ -98,7 +98,11 @@ pack a csolution names with `path:` outside the pack root
   `CANDIDATES` BM25 hits of its own (`MemberView.bm25`), so pack hits do
   not crowd the core's out before the filters run. The context itself is
   built on the whole set (`contextEntities`): a pack's board entity is what
-  brings the pack into the context.
+  brings the pack into the context. A component of the cbuild file names
+  its vendor (`Infineon::Device:Startup`), and only that vendor's entity
+  joins the context, without bundle and variant; the lookup by the name
+  alone, which would bring `Device:Startup` of some 40 vendors and so their
+  units, is left to a component given without a vendor (`CMSIS:CORE`).
 - **Symptom patterns are guarded.** The `symptom_regex` of every
   troubleshooting unit runs synchronously on the extension host; a pattern
   with an unbounded quantifier inside an unbounded group backtracks for

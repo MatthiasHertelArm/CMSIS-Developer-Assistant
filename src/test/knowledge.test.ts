@@ -130,13 +130,19 @@ const UNITS: Unit[] = [
     { id: 'ref-rtx', type: 'concept', title: 'Create an RTX5 project', summary: 'A new project with RTX5.', body: 'Add the RTX component.' },
     { id: 'ref-blinky', type: 'concept', title: 'Blinky: run on a board', summary: 'The Blinky example on a board.', body: 'Flash and watch the LED.' },
     { id: 'ref-start', type: 'concept', title: 'Start a project', summary: 'Start a project with west.', body: 'west init, west build.' },
+    // A unit for one vendor's startup component, as a pack's knowledge may scope it.
+    {
+        id: 'pat-keil-startup', type: 'pattern', title: 'Keil startup file: weak handlers', summary: 'Override a weak handler of the Keil startup file.',
+        body: 'Every vector of the Keil startup file is a weak alias of Default_Handler.', appliesTo: ['component:Keil::Device:Startup'],
+    },
 ];
 
 const ENTITIES: [id: string, type: string, title: string][] = [
     ['device:AE722F80F55D5LS', 'device', 'AE722F80F55D5LS'], ['core:Cortex-M55', 'core', 'Cortex-M55'], ['core:Cortex-M33', 'core', 'Cortex-M33'],
     ['device:STM32U585AIIx', 'device', 'STM32U585AIIx'], ['family:STMicroelectronics::STM32U5 Series', 'family', 'STM32U5 Series'],
     ['toolchain:AC6', 'toolchain', 'AC6'], ['toolchain:GCC', 'toolchain', 'GCC'], ['pack:Big::Pack', 'pack', 'Big::Pack'],
-    ['component:ARM::CMSIS:CORE', 'component', 'CMSIS:CORE'],
+    ['component:ARM::CMSIS:CORE', 'component', 'CMSIS:CORE'], ['component:ARM::CMSIS:RTOS2:Keil RTX5', 'component', 'CMSIS:RTOS2:Keil RTX5'],
+    ['component:Keil::Device:Startup', 'component', 'Device:Startup'], ['component:Infineon::Device:Startup', 'component', 'Device:Startup'],
     ['tool:csolution', 'tool', 'csolution'], ['tool:packchk', 'tool', 'packchk'], ['tool:svdconv', 'tool', 'svdconv'],
 ];
 
@@ -284,6 +290,22 @@ suite('knowledge tools', () => {
             const context = contextEntities(index, { components: ['CMSIS:CORE@6.1.0'], board: 'STMicroelectronics::B-U585I-IOT02A:Rev.C', packs: ['Keil::STM32U5xx_DFP'] });
             assert.ok(context.has('component:ARM::CMSIS:CORE'));
             assert.ok(context.has('board:STMicroelectronics::B-U585I-IOT02A') && context.has('pack:Keil::STM32U5xx_DFP'));
+        });
+
+        test('a component with its vendor brings that vendor\'s entity alone, without bundle and variant', () => {
+            // The components of an XMC4700 project's cbuild.yml: Device:Startup used to bring every vendor's.
+            const components = ['ARM::CMSIS:CORE@6.1.0', 'Infineon::Device:Startup@2.14.0', 'ARM::CMSIS:RTOS2:Keil RTX5&Source@5.9.0'];
+            const context = contextEntities(index, { device: 'XMC4700-F144x2048', components });
+            assert.deepStrictEqual([...context].filter((id) => id.startsWith('component:')).sort(), [
+                'component:ARM::CMSIS:CORE', 'component:ARM::CMSIS:RTOS2:Keil RTX5', 'component:Infineon::Device:Startup',
+            ]);
+            // The unit of Keil's startup file is not this project's; a project with Keil's startup component sees it.
+            assert.ok(!ids('weak handlers startup file', { device: 'XMC4700-F144x2048', components }).includes('pat-keil-startup'));
+            assert.strictEqual(ids('weak handlers startup file', { device: 'STM32U585AIIx', components: ['Keil::Device:Startup&C Startup@2.0.0'] })[0], 'pat-keil-startup');
+            // Without a vendor the name finds every vendor's, as before; the vendor's spelling is compared without case.
+            const bare = contextEntities(index, { components: ['Device:Startup'] });
+            assert.ok(bare.has('component:Keil::Device:Startup') && bare.has('component:Infineon::Device:Startup'));
+            assert.ok(contextEntities(index, { components: ['infineon::Device:Startup'] }).has('component:Infineon::Device:Startup'));
         });
 
         test('units without a cause or text are left out and counted, unless asked for', () => {

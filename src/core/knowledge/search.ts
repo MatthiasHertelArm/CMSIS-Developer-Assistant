@@ -222,9 +222,16 @@ function withoutVersion(value: string): string {
     return value.replace(/@.*$/, '').trim();
 }
 
+/** `infineon` for `component:Infineon::Device:Startup`; empty for an id without a vendor. */
+function componentVendor(id: string): string {
+    const rest = id.replace(/^component:/, '');
+    return rest.includes('::') ? rest.slice(0, rest.indexOf('::')).trim().toLowerCase() : '';
+}
+
 /**
  * The entity ids of a project: the ids its facts name, and for a device or
- * board the index knows, what stands above it there.
+ * board the index knows, what stands above it there. A component with its
+ * vendor is that vendor's alone.
  */
 export function contextEntities(index: KnowledgeReader, facts: ProjectFacts): Set<string> {
     const entities = new Set<string>();
@@ -257,12 +264,19 @@ export function contextEntities(index: KnowledgeReader, facts: ProjectFacts): Se
         entities.add(`pack:${withoutVersion(pack)}`);
     }
     for (const given of facts.components ?? []) {
-        const component = withoutVersion(given);
-        if (component.includes('::')) {
+        // `Vendor::Class&Bundle:Group&Variant@1.0.0` is the entity `component:Vendor::Class:Group`.
+        const component = withoutVersion(given).replace(/&[^:]*/g, '');
+        const separator = component.indexOf('::');
+        const vendor = separator >= 0 ? component.slice(0, separator).trim() : undefined;
+        if (vendor !== undefined) {
             entities.add(`component:${component}`);
         }
-        for (const id of index.componentIds(component.split('::').pop()!)) {
-            entities.add(id);
+        // By the name alone, which finds the vendor of `CMSIS:CORE`; a component that names its vendor keeps to
+        // it: `Device:Startup` is the name of some 40 vendors' components, and their units are not this project's.
+        for (const id of index.componentIds(separator >= 0 ? component.slice(separator + 2) : component)) {
+            if (vendor === undefined || componentVendor(id) === vendor.toLowerCase()) {
+                entities.add(id);
+            }
         }
     }
     if (facts.compiler) {
