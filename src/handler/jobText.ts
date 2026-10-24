@@ -563,7 +563,7 @@ const PROBE_HOLDERS: ReadonlySet<string> = new Set(['run', 'loadRun', 'load', 'e
 export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[], now: number): string {
     const lines: string[] = [];
     if (recent.length === 0) {
-        lines.push('No CMSIS job in this window: nothing is in flight and nothing finished in the last 10 min.');
+        lines.push('No CMSIS job in this window: nothing is in flight and none has finished since the window started.');
     } else {
         const results = recent.map((job) => {
             const where = job.target ? ` on ${job.target}` : '';
@@ -571,7 +571,7 @@ export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[
             const named = task ? `, '${task.name}'` : '';
             return `${job.action}${where} ${verdictMark(job)} ${formatDuration(now - (job.settledAt ?? now))} ago (job ${job.id}${named})`;
         });
-        lines.push(`No CMSIS job in flight in this window. Last results (10 min): ${results.join('; ')}.`);
+        lines.push(`No CMSIS job in flight in this window. Last results: ${results.join('; ')}.`);
         for (const job of recent) {
             const diagnosis = job.diagnosis;
             const named = `${job.action} job ${job.id}`;

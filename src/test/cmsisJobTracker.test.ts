@@ -192,17 +192,40 @@ suite('CmsisJobTracker', () => {
             assert.strictEqual(tracker.job(job.id)?.state, 'running-ok');
         });
 
-        test(`settled jobs are kept ${JOB_RETENTION_MS / 60_000} min; open ones are never dropped`, () => {
+        test(`the latest settled job of each action stays until a newer one settles; older ones are kept ${JOB_RETENTION_MS / 60_000} min; open ones are never dropped`, () => {
             const { tasks, clock, tracker } = world();
-            const job = tracker.begin('erase', 'MPS3');
+            const first = tracker.begin('erase', 'MPS3');
             tasks.finish(tasks.start(tasks.execution(shell('CMSIS Erase'))), 0);
             const open = tracker.begin('build', undefined);
             const settledAt = clock.now();
-            clock.advance(settledAt + JOB_RETENTION_MS);
-            assert.strictEqual(tracker.last('erase')?.id, job.id);
-            clock.advance(settledAt + JOB_RETENTION_MS + 1);
-            assert.strictEqual(tracker.last('erase'), undefined);
+            // A failed build at 13:54, status asked at 14:15: the result is still there.
+            clock.advance(settledAt + 3 * JOB_RETENTION_MS);
+            assert.strictEqual(tracker.last('erase')?.id, first.id);
+            assert.deepStrictEqual(tracker.recent().map((job) => job.id), [first.id]);
+            const second = tracker.begin('erase', 'MPS3');
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Erase'))), 1);
+            assert.strictEqual(tracker.last('erase')?.id, second.id);
+            // The replaced one is past the retention, so it is gone; the newer one stays however old it gets.
+            assert.strictEqual(tracker.job(first.id), undefined);
+            clock.advance(clock.now() + 2 * JOB_RETENTION_MS);
+            assert.strictEqual(tracker.job(second.id)?.state, 'failed');
             assert.strictEqual(tracker.inFlight()?.id, open.id);
+        });
+
+        test(`a replaced job is still kept ${JOB_RETENTION_MS / 60_000} min after it settled`, () => {
+            const { tasks, clock, tracker } = world();
+            const first = tracker.begin('load', undefined);
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Load'))), 0);
+            const settledAt = clock.now();
+            const second = tracker.begin('load', undefined);
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Load'))), 0);
+            clock.advance(settledAt + JOB_RETENTION_MS);
+            tracker.recent();
+            assert.strictEqual(tracker.job(first.id)?.state, 'ok');
+            clock.advance(settledAt + JOB_RETENTION_MS + 1);
+            tracker.recent();
+            assert.strictEqual(tracker.job(first.id), undefined);
+            assert.strictEqual(tracker.last('load')?.id, second.id);
         });
 
         test('onDidFinishJob hears each job once, when it settles', () => {
@@ -417,14 +440,14 @@ suite('CmsisJobTracker', () => {
         test('status without a job in flight: the recent results and the live tasks, or that there is nothing', () => {
             const { tasks, clock, tracker } = world();
             assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
-                'No CMSIS job in this window: nothing is in flight and nothing finished in the last 10 min.\n'
+                'No CMSIS job in this window: nothing is in flight and none has finished since the window started.\n'
                 + 'No CMSIS task is running in this window.');
             const job = tracker.begin('build', 'MPS3');
             tasks.finish(tasks.start(tasks.execution(BUILD)), 2);
             tasks.start(tasks.execution(shell('CMSIS Run')));
             clock.advance(clock.now() + 5_000);
             assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
-                `No CMSIS job in flight in this window. Last results (10 min): build on MPS3 ❌ exit 2 5 s ago (job ${job.id}, '${BUILD.name}').\n`
+                `No CMSIS job in flight in this window. Last results: build on MPS3 ❌ exit 2 5 s ago (job ${job.id}, '${BUILD.name}').\n`
                 + 'CMSIS tasks running: \'CMSIS Run\' for 5 s (holds the probe). cmsis_action {action:\'stop_run\'} ends them.');
         });
     });

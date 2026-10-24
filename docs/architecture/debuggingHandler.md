@@ -639,8 +639,11 @@ the panel are seen too. It keeps the live CMSIS executions and the jobs:
 - a build, rebuild, clean, load or erase started elsewhere is adopted as a
   job of its own, so that a repeated call attaches to it instead of
   starting another;
-- settled jobs are kept for 10 minutes, in memory only; `get_session_status`
-  shows one line from them and the live tasks.
+- the latest settled job of each action is kept until a newer one of that
+  action settles, since an agent may ask `status` long after a build
+  failed, while it waited for the user; older settled jobs are kept for 10
+  minutes; all in memory only. `get_session_status` shows one line from
+  them and the live tasks.
 
 A call has one deadline (#12): the solution checks and a target switch come
 out of it, and a job still going when it passes is answered with status

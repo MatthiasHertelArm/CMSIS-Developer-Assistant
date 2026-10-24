@@ -37,7 +37,9 @@
  *     instead of starting a second one;
  *   - `requestStop` marks the executions `cmsis_action stop_build` ends, so
  *     that their jobs count as stopped however the task closes;
- *   - settled jobs are kept 10 minutes, in memory only.
+ *   - the latest settled job of each action is kept until a newer one of
+ *     that action settles; older settled jobs are kept 10 minutes; all in
+ *     memory only.
  *
  * A build's result is completed after the job settled: an `onDidFinishJob`
  * listener hands its work to `completeWith` — the error lines of a failed
@@ -150,7 +152,11 @@ export interface EndReport {
     alive: ExecutionLike[];
 }
 
-/** Settled jobs are kept this long for `status`, `get_session_status` and `last`. */
+/**
+ * Settled jobs other than the latest of their action are kept this long. The
+ * latest of each action stays until a newer one settles: an agent may ask
+ * `status` long after a build failed, while it waited for the user.
+ */
 export const JOB_RETENTION_MS = 10 * 60_000;
 /** The label pre-check gives `fetchTasks` this long. */
 export const LABEL_FETCH_MS = 3_000;
@@ -356,14 +362,19 @@ export class CmsisJobTracker {
         return [...this.jobs.values()].filter((job) => !isSettled(job.state)).sort((a, b) => a.armedAt - b.armedAt);
     }
 
-    /** The latest settled job of `action` from the last 10 minutes. */
+    /** The latest settled job of `action`, however long ago it settled. */
     last(action: JobAction): Job | undefined {
         return this.recent().find((job) => job.action === action);
     }
 
-    /** The latest settled job of each action from the last 10 minutes, newest first. */
+    /** The latest settled job of each action, however long ago it settled, newest first. */
     recent(): Job[] {
         this.prune();
+        return this.latestSettled().sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0));
+    }
+
+    /** The latest settled job of each action, in no particular order. */
+    private latestSettled(): Job[] {
         const latest = new Map<JobAction, Job>();
         for (const job of this.jobs.values()) {
             if (!isSettled(job.state)) {
@@ -374,7 +385,7 @@ export class CmsisJobTracker {
                 latest.set(job.action, job);
             }
         }
-        return [...latest.values()].sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0));
+        return [...latest.values()];
     }
 
     /**
@@ -855,11 +866,16 @@ export class CmsisJobTracker {
         return `${ID_PREFIX[action]}-${++this.jobCount}`;
     }
 
-    /** Drop settled jobs older than the retention, with anything still waiting on them, and definitions and commands no one refers to. */
+    /**
+     * Drop settled jobs older than the retention, except the latest of each
+     * action, with anything still waiting on them, and definitions and
+     * commands no one refers to.
+     */
     private prune(): void {
         const cutoff = this.clock.now() - JOB_RETENTION_MS;
+        const latest = new Set(this.latestSettled());
         for (const [id, job] of this.jobs) {
-            if (isSettled(job.state) && (job.settledAt ?? 0) < cutoff && !this.followUps.has(id)) {
+            if (isSettled(job.state) && (job.settledAt ?? 0) < cutoff && !latest.has(job) && !this.followUps.has(id)) {
                 this.jobs.delete(id);
                 this.waiters.delete(id);
             }

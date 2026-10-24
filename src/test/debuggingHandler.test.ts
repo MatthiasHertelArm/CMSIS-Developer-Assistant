@@ -3033,7 +3033,7 @@ suite('DebuggingHandler', () => {
                     + 'This is a terminal result — do not wait for an output file.');
                 setTimeout(() => deliver(), 50);
                 const idle = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
-                assert.match(idle, /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE ❌ exit 2 [\d.]+ s ago \(job b-2, '.*'\)\.\nBuild job b-2 failed: 1 error \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0\):\n {2}main\.c:42:5 error: 'ledx' undeclared\nNo CMSIS task is running in this window\.$/);
+                assert.match(idle, /^No CMSIS job in flight in this window\. Last results: build on HE ❌ exit 2 [\d.]+ s ago \(job b-2, '.*'\)\.\nBuild job b-2 failed: 1 error \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0\):\n {2}main\.c:42:5 error: 'ledx' undeclared\nNo CMSIS task is running in this window\.$/);
             });
 
             test('a build that exited 0 is answered after its check: failed with the lines, or not confirmed (CMSIS Solution reports 0 for failed builds)', async () => {
@@ -3124,7 +3124,7 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(builds, 1, 'the repeat did not issue a second build');
 
                 const idle = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
-                assert.match(idle, /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE ✅ [\d.]+ s ago \(job b-1, '.*'\)\.\nNo CMSIS task is running in this window\.$/);
+                assert.match(idle, /^No CMSIS job in flight in this window\. Last results: build on HE ✅ [\d.]+ s ago \(job b-1, '.*'\)\.\nNo CMSIS task is running in this window\.$/);
             });
 
             test('a build of another target while one runs is refused; one from the panel is attached to', async () => {
@@ -3152,7 +3152,7 @@ suite('DebuggingHandler', () => {
             test('status needs no solution and launches nothing', async () => {
                 const w = jobWorld();
                 assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
-                    'No CMSIS job in this window: nothing is in flight and nothing finished in the last 10 min.\n'
+                    'No CMSIS job in this window: nothing is in flight and none has finished since the window started.\n'
                     + 'No CMSIS task is running in this window.');
             });
 
@@ -3313,7 +3313,7 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(stops, 1);
                 assert.strictEqual(w.tracker.last('build')?.state, 'cancelled');
                 assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
-                    /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE stopped [\d.]+ s ago \(job b-1, 'cbuild demo\.csolution\.yml --active HE'\)\.\nNo CMSIS task is running in this window\.$/);
+                    /^No CMSIS job in flight in this window\. Last results: build on HE stopped [\d.]+ s ago \(job b-1, 'cbuild demo\.csolution\.yml --active HE'\)\.\nNo CMSIS task is running in this window\.$/);
 
                 assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
                     'CMSIS \'stop_build\' on HE: nothing to stop — no build is running in this window.');
