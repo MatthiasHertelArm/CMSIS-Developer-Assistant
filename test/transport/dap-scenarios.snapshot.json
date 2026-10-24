@@ -790,7 +790,7 @@
         {
           "tool": "diagnose_fault",
           "args": {},
-          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: LR unavailable — read_core_registers, then read_memory at PSP/MSP\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
@@ -805,13 +805,14 @@
             "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
             "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
             "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
           ]
         },
         {
           "tool": "read_core_registers",
           "args": {},
-          "text": "Core Registers:\n  r0  = 0x5fffffec    r1  = 0x00000020    r2  = 0x00000000    r3  = 0x20000010    \n  r4  = 0x000001f4    r5  = 0x00000000    r6  = 0x00000000    r7  = 0x20017fc8    \n  r8  = 0x00000000    r9  = 0x00000000    r10 = 0x00000000    r11 = 0x00000000    \n  r12 = 0x00000000    sp  = 0x20017fa8    lr  = -7            pc  = 0x80001a4     \n  xpsr = 1627389955\n  msp  = 0x20017fa8\n  psp  = 0x0\n  control   = 0\n  faultmask = 0x00000000\n  basepri   = 0x00000000\n  primask   = 0x00000000\n",
+          "text": "Core Registers:\n  r0  = 0x5fffffec    r1  = 0x00000020    r2  = 0x00000000    r3  = 0x20000010    \n  r4  = 0x000001f4    r5  = 0x00000000    r6  = 0x00000000    r7  = 0x20017fc8    \n  r8  = 0x00000000    r9  = 0x00000000    r10 = 0x00000000    r11 = 0x00000000    \n  r12 = 0x00000000    sp  = 0x20017fa8    lr  = 0xfffffff9    pc  = 0x80001a4     \n  xpsr = 1627389955\n  msp  = 0x20017fa8\n  psp  = 0x0\n  control   = 0\n  faultmask = 0x00000000\n  basepri   = 0x00000000\n  primask   = 0x00000000\n",
           "traffic": [
             "dap: threads {}",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
@@ -933,7 +934,7 @@
         {
           "tool": "diagnose_fault",
           "args": {},
-          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nLockup: The core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: LR unavailable — read_core_registers, then read_memory at PSP/MSP\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nLockup: The core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
@@ -948,6 +949,7 @@
             "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
             "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
             "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
           ]
         }

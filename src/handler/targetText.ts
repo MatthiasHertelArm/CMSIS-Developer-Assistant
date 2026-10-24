@@ -43,9 +43,11 @@ const ASCII_LINE_CHARS = 64;
 
 /**
  * One register value in a comparable form. Decoded flags and placeholders
- * stay as they are; `0x…` loses a trailing annotation such as `<main+12>`;
- * a non-negative decimal becomes `0x` and eight hex digits. A `0X…` value
- * and a negative decimal come back unchanged (KB14).
+ * stay as they are; `0x…` and `0X…` lose a trailing annotation such as
+ * `<main+12>`; a decimal becomes `0x` and eight hex digits. GDB prints a
+ * register typed `int` (lr, xpsr, r0–r12 on pyOCD's and J-Link's target
+ * descriptions) as a signed decimal, so EXC_RETURN 0xfffffff9 arrives as
+ * `-7`: a negative 32-bit value is read as its two's complement.
  */
 export function normaliseRegister(raw: string): string {
     const text = raw.trim();
@@ -53,14 +55,15 @@ export function normaliseRegister(raw: string): string {
         return text;
     }
     if (text.startsWith('0x') || text.startsWith('0X')) {
-        const leadingHex = /^0x[0-9a-fA-F]+/.exec(text);
-        return leadingHex ? leadingHex[0] : text;
+        const leadingHex = /^0[xX][0-9a-fA-F]+/.exec(text);
+        return leadingHex ? `0x${leadingHex[0].slice(2)}` : text;
     }
     const decimal = parseInt(text, 10);
-    if (Number.isNaN(decimal) || decimal < 0) {
+    if (Number.isNaN(decimal) || decimal < -(WORD_SPAN / 2)) {
         return text;
     }
-    return `0x${(decimal % WORD_SPAN).toString(16).padStart(8, '0')}`;
+    const unsigned = decimal < 0 ? decimal + WORD_SPAN : decimal % WORD_SPAN;
+    return `0x${unsigned.toString(16).padStart(8, '0')}`;
 }
 
 /**

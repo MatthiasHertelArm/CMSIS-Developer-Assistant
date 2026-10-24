@@ -1585,7 +1585,7 @@ suite('DebuggingHandler', () => {
             const reply = await textAnswer(handlerFor(x).handleReadCoreRegisters());
             const cell = (name: string, value: string): string => `${name.padEnd(4)}= ${value.padEnd(14)}`;
             assert.strictEqual(reply, 'Core Registers:\n'
-                + `  ${cell('r0', '0x20000000')}${cell('r1', '0x8000123')}${cell('r2', '0X1F <x>')}${cell('r3', '-7')}\n`
+                + `  ${cell('r0', '0x20000000')}${cell('r1', '0x8000123')}${cell('r2', '0x1F')}${cell('r3', '0xfffffff9')}\n`
                 + `  ${cell('r4', '<?>')}${cell('r5', '<?>')}${cell('r6', '0x00000000')}${cell('r7', '0x00000001')}\n`
                 + `  ${cell('r8', '0x00000002')}${cell('r9', '0x00000003')}${cell('r10', '0x00000004')}${cell('r11', '0x00000005')}\n`
                 + `  ${cell('r12', '0x00000006')}${cell('sp', '0x20017fd0')}${cell('lr', '0x080001b1')}${cell('pc', '0x80002fe')}\n`
@@ -1703,6 +1703,30 @@ suite('DebuggingHandler', () => {
             assert.ok((await textAnswer(handlerFor(x).handleDiagnoseFault())).includes('Exception frame: PSP unavailable — read_core_registers'));
             assert.deepStrictEqual(x.argsOf('readCoreRegisters').map(([, names]) => (names as string[])[0]), ['sp', 'sp', 'sp'],
                 'a frame on the current state\'s stack reads no banked register');
+        });
+
+        test('an LR and xPSR that GDB prints as signed decimals (int registers) decode like hex', async () => {
+            // J-Link and pyOCD type lr and xpsr as int: EXC_RETURN 0xfffffff9 arrives as "-7", 0xfffffffd as "-3" (a tester's XMC4700 run).
+            const x = new ScriptedExecutor();
+            x.registers = { sp: '0x200299b8', lr: '-3', pc: '0x8000460', xpsr: '1090519046', msp: '0x200299b8', psp: '0x20007db0' };
+            const frame = Buffer.alloc(32);
+            frame.writeUInt32LE(0x08007169, 20);
+            frame.writeUInt32LE(0x00000000, 24);
+            x.readExceptionFrame = async (sp, ms) => {
+                x.note('readExceptionFrame', sp, ms);
+                return frame;
+            };
+            const reply = await textAnswer(handlerFor(x).handleDiagnoseFault());
+            assert.deepStrictEqual(x.argsOf('readExceptionFrame'), [[0x20007db0, undefined]], 'EXC_RETURN 0xfffffffd selects PSP');
+            assert.ok(reply.includes('Exception frame: PSP @ 0x20007db0 (EXC_RETURN 0xfffffffd)'), reply);
+            assert.ok(reply.includes('PC=0x00000000'), reply);
+            assert.ok(!reply.includes('LR unavailable'), reply);
+
+            const y = new ScriptedExecutor();
+            y.registers = { sp: '0x20029a28', lr: '-7', pc: '0x8000480', xpsr: '-1593835515', msp: '0x20029a28', psp: '0x0' };
+            const stacked = await textAnswer(handlerFor(y).handleDiagnoseFault());
+            assert.deepStrictEqual(y.argsOf('readExceptionFrame'), [[0x20029a28, undefined]], 'EXC_RETURN 0xfffffff9 selects MSP');
+            assert.ok(stacked.includes('Exception frame: MSP @ 0x20029a28 (EXC_RETURN 0xfffffff9)'), stacked);
         });
 
         test('a frame on the other Security state\'s stack is read through that state\'s banked stack pointer', async () => {
