@@ -162,6 +162,7 @@ Object.assign(stub.debug, {
     },
     async stopDebugging(session) {
         current.record(`vscode: debug.stopDebugging session=${JSON.stringify(session?.name ?? null)}`);
+        if (session && current.holdsStop(session)) { return new Promise(() => {}); }
         if (session) { current.endSession(session); }
     },
     addBreakpoints(bps) {
@@ -1152,6 +1153,21 @@ class ScenarioContext {
         return true;
     }
 
+    /**
+     * The first stop of a running target whose adapter halts it before it disconnects (`disconnectWaitsForHalt`, an Arm FVP
+     * that ignores the halt): the disconnect goes to the adapter, which takes no requests from then on and never ends the
+     * session; VS Code's second stop ends it.
+     */
+    holdsStop(session) {
+        const target = this.targets.find((t) => t.session === session);
+        if (!target || target.dead || !target.spec.disconnectWaitsForHalt || target.state !== 'running' || target.disconnecting) { return false; }
+        target.disconnecting = true;
+        target.tracker.receive({ type: 'request', seq: target.seq++, command: 'disconnect', arguments: { restart: false } });
+        this.record('adapter: disconnect waits for a halt the target never reports');
+        target.ready = false;
+        return true;
+    }
+
     endSession(session, { quiet = false } = {}) {
         const target = this.targets.find((t) => t.session === session);
         if (!target || target.dead) { return; }
@@ -1447,6 +1463,18 @@ const SCENARIOS = [
             { tool: 'continue_execution', args: { timeoutMs: 300 } },
             { tool: 'pause_execution', args: { timeoutMs: 1000 } },
             { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 29 } },
+        ],
+    },
+    {
+        name: 'fvp-stop-waits-for-halt',
+        description: 'stop_debugging on a running Arm FVP: the adapter halts the target before it disconnects and the model ignores the halt, so '
+            + 'the first stop answers timeout and says to stop again, the status says the session is shutting down rather than starting, '
+            + 'and the second stop ends it.',
+        session: { initial: 'running', config: 'fvp', ignoresPause: true, disconnectWaitsForHalt: true },
+        calls: [
+            { tool: 'stop_debugging' },
+            { tool: 'get_session_status' },
+            { tool: 'stop_debugging' },
         ],
     },
     {

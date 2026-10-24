@@ -23,6 +23,7 @@ import {
     captureOutput,
     coreSilentSince,
     createSessionTracker,
+    endRequestOf,
     expectAgentStart,
     type FocusSource,
     forgetAgentStarts,
@@ -301,6 +302,42 @@ suite('Session state tracker', () => {
             noteCoreVerdict(b.session, 'silent', 1_000);
             const again = createSessionTracker(b.session);
             assert.strictEqual(coreSilentSince(b.session), undefined, 'a relaunch in the same session');
+            again.onWillStopSession?.();
+        });
+    });
+
+    suite('a session asked to end', () => {
+        test('a disconnect or terminate request to the adapter is kept with its time; other requests are not', () => {
+            const a = track();
+            const b = track();
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 1, command: 'threads', arguments: {} });
+            assert.strictEqual(endRequestOf(a.session), undefined);
+            const before = Date.now();
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 2, command: 'terminate', arguments: {} });
+            const ending = endRequestOf(a.session);
+            assert.strictEqual(ending?.command, 'terminate');
+            assert.ok(ending !== undefined && ending.at >= before && ending.at <= Date.now());
+            assert.strictEqual(endRequestOf(b.session), undefined, 'the other session has its own');
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 3, command: 'disconnect', arguments: { restart: false } });
+            assert.strictEqual(endRequestOf(a.session)?.command, 'disconnect', 'the last request counts');
+        });
+
+        test('forgotten when the adapter refuses it, when the session ends and when an adapter starts in it again', () => {
+            const a = track();
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 1, command: 'terminate', arguments: {} });
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 1, command: 'terminate', success: true });
+            assert.strictEqual(endRequestOf(a.session)?.command, 'terminate', 'a terminate that succeeds still waits for the end');
+            a.tracker.onDidSendMessage?.({ type: 'response', request_seq: 1, command: 'terminate', success: false, message: 'not now' });
+            assert.strictEqual(endRequestOf(a.session), undefined);
+
+            a.tracker.onWillReceiveMessage?.({ type: 'request', seq: 2, command: 'disconnect', arguments: {} });
+            a.event('terminated');
+            assert.strictEqual(endRequestOf(a.session), undefined);
+
+            const b = track();
+            b.tracker.onWillReceiveMessage?.({ type: 'request', seq: 1, command: 'disconnect', arguments: { restart: true } });
+            const again = createSessionTracker(b.session);
+            assert.strictEqual(endRequestOf(b.session), undefined, 'a relaunch in the same session');
             again.onWillStopSession?.();
         });
     });

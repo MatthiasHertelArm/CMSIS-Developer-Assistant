@@ -45,7 +45,7 @@ const SHOWN_THREADS = 32;
 /** What to do next when an inspection meets a session in this state. */
 const REFUSAL_HINTS: Record<SessionState, string> = {
     'no-session': 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.',
-    initializing: 'The debug adapter is still starting. Wait briefly and retry; the session has not torn down.',
+    initializing: 'The debug adapter is still starting, or the session is shutting down, and takes no requests. Wait briefly and retry.',
     running: 'The target is running: call pause_execution first, or set a breakpoint and wait_for_stop.',
     unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm.',
     stopped: 'Session reports stopped — please retry the operation.',
@@ -65,9 +65,10 @@ const REFUSAL_CODES: Record<SessionState, ErrorCode> = {
  * session's, for the way to reconnect (#3). A stopped session whose last
  * DHCSR read got no answer `coreSilentForMs` ago says so instead of
  * promising full inspection; its state stays `stopped`, so pausing and
- * stopping are not blocked.
+ * stopping are not blocked. An initializing session asked to end
+ * `endRequestedForMs` ago is shutting down, not starting.
  */
-function statusHint(state: SessionState, liveSessions: number, request: string | undefined, coreSilentForMs?: number): string {
+function statusHint(state: SessionState, liveSessions: number, request: string | undefined, coreSilentForMs?: number, endRequestedForMs?: number): string {
     switch (state) {
         case 'no-session':
             return liveSessions === 0
@@ -79,7 +80,10 @@ function statusHint(state: SessionState, liveSessions: number, request: string |
                     + 'If you just reinstalled the extension, reload the window so the new build is active.'
                 : 'Hint: call start_debugging or cmsis_action load_and_debug to attach.';
         case 'initializing':
-            return 'Hint: the adapter is still starting — wait a moment and retry.';
+            return endRequestedForMs === undefined
+                ? 'Hint: the adapter is still starting or shutting down — wait a moment and retry.'
+                : 'Hint: the session is shutting down — call get_session_status again in a moment; if it is still listed, '
+                    + 'stop_debugging once more makes VS Code end the adapter.';
         case 'running':
             return 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.';
         case 'stopped':
@@ -157,7 +161,7 @@ export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnost
     lines.push(`Diagnostics: serverVersion=${diagnostics.serverVersion}, `
         + `liveSessionsInThisWindow=${diagnostics.liveSessionCount}${names}, vscodeActiveDebugSession=${focused}`);
     lines.push(...extraLines);
-    lines.push(statusHint(status.state, diagnostics.liveSessionCount, request, status.coreSilentForMs));
+    lines.push(statusHint(status.state, diagnostics.liveSessionCount, request, status.coreSilentForMs, status.endRequestedForMs));
     return lines.join('\n');
 }
 

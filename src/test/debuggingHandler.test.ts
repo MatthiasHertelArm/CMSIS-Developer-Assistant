@@ -854,7 +854,7 @@ suite('DebuggingHandler', () => {
         test('each session state has its own refusal code and hint', async () => {
             const hints: Record<StatusShape['state'], string> = {
                 'no-session': 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.',
-                initializing: 'The debug adapter is still starting. Wait briefly and retry; the session has not torn down.',
+                initializing: 'The debug adapter is still starting, or the session is shutting down, and takes no requests. Wait briefly and retry.',
                 running: 'The target is running: call pause_execution first, or set a breakpoint and wait_for_stop.',
                 unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm.',
                 stopped: 'Session reports stopped — please retry the operation.',
@@ -2138,7 +2138,7 @@ suite('DebuggingHandler', () => {
 
             const hints: Array<[StatusShape['state'], string]> = [
                 ['no-session', 'Hint: call start_debugging or cmsis_action load_and_debug to attach.'],
-                ['initializing', 'Hint: the adapter is still starting — wait a moment and retry.'],
+                ['initializing', 'Hint: the adapter is still starting or shutting down — wait a moment and retry.'],
                 ['running', 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.'],
                 ['unresponsive', `Hint: probe/GDB server is hung. ${wedgeHint('launch')}`],
             ];
@@ -2154,6 +2154,19 @@ suite('DebuggingHandler', () => {
             const empty = await textAnswer(handlerFor(x, withFolder).handleGetSessionStatus());
             assert.ok(empty.includes('liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\n'
                 + 'Hint: no debug session is running in the VS Code window this call was routed to.'), empty);
+        });
+
+        test('an initializing session that was asked to end is shutting down, not starting: its hint says what ends it', async () => {
+            const x = new ScriptedExecutor();
+            const detail = 'The session was asked to end (terminate sent 12 s ago); its adapter takes no requests while it shuts down.';
+            x.sessionStatus = { state: 'initializing', sessionName: 'Arm-FVP@GDB (launch)', sessionType: 'gdbtarget', configurationName: null,
+                dapResponsive: true, dapProbeMs: 3, detail, endRequestedForMs: 12_000 };
+            const text = await textAnswer(handlerFor(x).handleGetSessionStatus());
+            assert.ok(text.startsWith('State: initializing\n'), text);
+            assert.ok(text.includes(`\nDetail: ${detail}\n`), text);
+            assert.ok(text.endsWith('\nHint: the session is shutting down — call get_session_status again in a moment; if it is still listed, '
+                + 'stop_debugging once more makes VS Code end the adapter.'), text);
+            assert.ok(!text.includes('still starting'), text);
         });
 
         test('a stopped session whose last DHCSR read got no answer says so instead of "full inspection", still stopped (#3)', async () => {

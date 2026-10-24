@@ -1325,6 +1325,43 @@
       ]
     },
     {
+      "name": "fvp-stop-waits-for-halt",
+      "description": "stop_debugging on a running Arm FVP: the adapter halts the target before it disconnects and the model ignores the halt, so the first stop answers timeout and says to stop again, the status says the session is shutting down rather than starting, and the second stop ends it.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "Stop requested, but the session is still listed: the debug adapter halts the target before it disconnects, and the Arm FVP ignores that interrupt. Call stop_debugging once more: VS Code then ends the adapter.",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"Arm-FVP@GDB (launch)\"",
+            "adapter: disconnect waits for a halt the target never reports"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: initializing\nSession: Arm-FVP@GDB (launch)\nType: gdbtarget\nConfiguration: Arm-FVP@GDB (launch)\nDAP responsive: true (probe <n>ms)\nDetail: The session was asked to end (disconnect sent <n>s ago); its adapter takes no requests while it shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [Arm-FVP@GDB (launch)], vscodeActiveDebugSession=set\nHint: the session is shutting down — call get_session_status again in a moment; if it is still listed, stop_debugging once more makes VS Code end the adapter.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {} -> empty success (adapter not ready)"
+          ]
+        },
+        {
+          "tool": "stop_debugging",
+          "args": {},
+          "text": "The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**\n\nAsk yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?\n\nKnowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:\n- a variable that turns out null or undefined\n- a function that hands back a value nobody expected\n- an error raised at one particular line\n- a condition that took the wrong branch\n\nThe root cause explains *why* it went wrong, for instance:\n- a variable that was initialised with the wrong value\n- faulty logic inside a function\n- an error path that is not handled\n- a condition built on a false assumption\n\nWhat to do next (required):\n1. Set breakpoints at the places worth investigating with `add_breakpoint`.\n2. Trace the run from its beginning with `start_debugging`.\n3. Work out why it happened, not only what happened.\n4. Repeat until the root cause is identified.",
+          "traffic": [
+            "vscode: debug.stopDebugging session=\"Arm-FVP@GDB (launch)\"",
+            "event: terminated {}"
+          ]
+        }
+      ]
+    },
+    {
       "name": "step-ui-fallback",
       "description": "The tracker says stopped but the adapter rejects `next` with GDB's running-target error: on gdbtarget the step answers TARGET_RUNNING and no UI command runs (the scripted UI command would step).",
       "setup": [
@@ -2834,7 +2871,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting — wait a moment and retry.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting or shutting down — wait a moment and retry.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "dap: threads {} -> empty success (adapter not ready)"
           ]
@@ -2854,7 +2891,7 @@
             "length": 4
           },
           "isError": true,
-          "text": "[NO_SESSION] Cannot read memory: session state is 'initializing'.\nThe debug adapter is still starting. Wait briefly and retry; the session has not torn down. Use get_session_status for a definitive, never-failing classification.",
+          "text": "[NO_SESSION] Cannot read memory: session state is 'initializing'.\nThe debug adapter is still starting, or the session is shutting down, and takes no requests. Wait briefly and retry. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
             "dap: threads {} -> empty success (adapter not ready)",
             "dap: threads {} -> empty success (adapter not ready)"
@@ -2908,7 +2945,7 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting — wait a moment and retry.\n\nTool stats (this session): <trailer>",
+          "text": "State: initializing\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: The adapter answered the threads probe without a thread list: it takes no requests until GDB has connected to the target and run the launch configuration's commands, nor while the session shuts down.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nCMSIS tasks: last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: the adapter is still starting or shutting down — wait a moment and retry.\n\nTool stats (this session): <trailer>",
           "traffic": [
             "event: output [server] \"gdbserver exited with code 1\"",
             "dap: threads {} -> empty success (adapter not ready)"

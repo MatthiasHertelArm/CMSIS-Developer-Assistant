@@ -28,8 +28,8 @@
 
 import * as vscode from 'vscode';
 import { CMSIS_DEBUGGER_TYPE } from '../core/gdbDialect';
-import { coreVerdict, DebugPortProbe, dhcsrSummary, silentCoreText, wedgeHint } from '../core/probeWedge';
-import { coreSilentSince, getStoppedReason, isSessionStopped, resolveActiveSession } from '../utils/sessionStateTracker';
+import { ageText, coreVerdict, DebugPortProbe, dhcsrSummary, silentCoreText, wedgeHint } from '../core/probeWedge';
+import { coreSilentSince, endRequestOf, getStoppedReason, isSessionStopped, resolveActiveSession } from '../utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout';
 import { messageOf } from './common';
 import { SessionStatus } from './contract';
@@ -54,11 +54,18 @@ export function takesRequests(session: vscode.DebugSession, reply: unknown): boo
     return Array.isArray((reply as { threads?: unknown } | null | undefined)?.threads);
 }
 
+/** The detail of a session asked to end `ageMs` ago with `command`, whose adapter gave the probe no thread list. */
+function endingDetail(command: string, ageMs: number): string {
+    return `The session was asked to end (${command} sent ${ageText(ageMs)} ago); its adapter takes no requests while it shuts down.`;
+}
+
 /**
  * Probes the session with one `threads` request. A timeout means the probe
  * or target is hung; any other failure usually means the adapter is still
  * starting, and so does a CMSIS Debugger reply without a thread list
- * (`takesRequests`). Never rejects.
+ * (`takesRequests`). A session asked to end (`endRequestOf`) that gives no
+ * thread list, timeout included, is shutting down: `initializing`, with
+ * `endRequestedForMs`. Never rejects.
  */
 export async function probeSession(probeMs: number): Promise<SessionStatus> {
     const session = resolveActiveSession();
@@ -83,6 +90,19 @@ export async function probeSession(probeMs: number): Promise<SessionStatus> {
         reply = await customRequestWithTimeout(session, 'threads', {}, probeMs);
     } catch (err) {
         const hung = err instanceof HardwareTimeoutError;
+        const ending = endRequestOf(session);
+        if (ending) {
+            const endRequestedForMs = Math.max(0, Date.now() - ending.at);
+            const probe = hung ? `The threads probe got no answer within ${probeMs}ms.` : `The threads probe failed: ${messageOf(err)}`;
+            return {
+                state: 'initializing',
+                ...identity,
+                dapResponsive: false,
+                dapProbeMs: null,
+                detail: `${endingDetail(ending.command, endRequestedForMs)} ${probe}`,
+                endRequestedForMs,
+            };
+        }
         return {
             state: hung ? 'unresponsive' : 'initializing',
             ...identity,
@@ -95,12 +115,15 @@ export async function probeSession(probeMs: number): Promise<SessionStatus> {
     }
     const roundTripMs = Date.now() - sentAt;
     if (!takesRequests(session, reply)) {
+        const ending = endRequestOf(session);
+        const endRequestedForMs = ending ? Math.max(0, Date.now() - ending.at) : undefined;
         return {
             state: 'initializing',
             ...identity,
             dapResponsive: true,
             dapProbeMs: roundTripMs,
-            detail: NOT_TAKING_REQUESTS,
+            detail: ending && endRequestedForMs !== undefined ? endingDetail(ending.command, endRequestedForMs) : NOT_TAKING_REQUESTS,
+            ...(endRequestedForMs === undefined ? {} : { endRequestedForMs }),
         };
     }
     const halted = isSessionStopped(session);
@@ -147,7 +170,9 @@ export function connectionReport(status: SessionStatus, port?: DebugPortProbe, r
                 ? 'DAP probe: TIMEOUT — probe/target unresponsive'
                 : status.dapResponsive
                     ? `DAP probe: NOT READY (${status.dapProbeMs}ms)`
-                    : 'DAP probe: FAILED — adapter likely still initializing');
+                    : status.endRequestedForMs !== undefined
+                        ? 'DAP probe: FAILED — the session is shutting down'
+                        : 'DAP probe: FAILED — adapter likely still initializing');
             if (status.detail) {
                 report.push(status.detail);
             }

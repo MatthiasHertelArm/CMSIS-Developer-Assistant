@@ -396,6 +396,35 @@ async function main() {
     }
     reset();
     {
+        // A session asked to end: the adapter got a disconnect or terminate and gives the probe no thread list while it shuts down.
+        let reply;
+        const { session } = makeSession(() => (typeof reply === 'function' ? reply() : reply), { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
+        focusOn(session);
+        const t = trackerFor(session);
+        event(t, 'continued', { threadId: 1 });
+        t.onWillReceiveMessage({ type: 'request', seq: 7, command: 'disconnect', arguments: { restart: false } });
+        const ex = new DebuggingExecutor({ dapRequestMs: 100 });
+        const ending = 'The session was asked to end (disconnect sent 0 s ago); its adapter takes no requests while it shuts down.';
+        reply = undefined;
+        let st = await ex.getSessionStatus();
+        check('SS8 no thread list after a disconnect → initializing, shutting down', st.state === 'initializing' && st.detail === ending
+            && typeof st.endRequestedForMs === 'number' && st.endRequestedForMs >= 0 && st.dapResponsive === true, st);
+        reply = never;
+        st = await ex.getSessionStatus();
+        check('SS8 a probe timeout after a disconnect → initializing, not unresponsive', st.state === 'initializing'
+            && st.detail === `${ending} The threads probe got no answer within 100ms.` && st.dapResponsive === false && st.dapProbeMs === null, st);
+        reply = () => { throw new Error('boom'); };
+        st = await ex.getSessionStatus();
+        check('SS8 a failed probe after a disconnect → initializing, with the failure', st.state === 'initializing'
+            && st.detail === `${ending} The threads probe failed: boom`, st);
+        const txt = await ex.checkTargetConnection();
+        check('SS8 check text', txt === `Session: Sess (type=gdbtarget)\nConfiguration: Cfg\nDAP probe: FAILED — the session is shutting down\n${ending} The threads probe failed: boom`, txt);
+        reply = { threads: [{ id: 1, name: 'main' }] };
+        st = await ex.getSessionStatus();
+        check('SS8 a thread list still counts as it is', st.state === 'running' && st.endRequestedForMs === undefined, st);
+    }
+    reset();
+    {
         // Other adapters keep their answers: a reply without a body is a session that answers.
         const { session } = makeSession(() => undefined, { type: 'python', name: 'Py' }, 'Py');
         focusOn(session);

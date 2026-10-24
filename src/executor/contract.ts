@@ -50,7 +50,9 @@ export interface HardwareTimeouts {
  * Where a session stands, judged by the `threads` probe and the stop tracker.
  * `initializing` is an adapter that does not take requests: the probe failed
  * without a timeout, or the CMSIS Debugger's adapter answered without a
- * thread list while GDB connects or the session shuts down.
+ * thread list while GDB connects or the session shuts down. A session that
+ * was asked to end is `initializing` whenever the probe gets no thread list,
+ * a timeout included, with `endRequestedForMs`.
  */
 export type SessionState = 'no-session' | 'initializing' | 'running' | 'stopped' | 'unresponsive';
 
@@ -71,6 +73,12 @@ export interface SessionStatus {
      * (#3). Nothing is read for it.
      */
     coreSilentForMs?: number;
+    /**
+     * Initializing only: how long ago a `disconnect` or `terminate` request
+     * went to the session's adapter, which then takes no requests while it
+     * shuts down. Nothing is read for it.
+     */
+    endRequestedForMs?: number;
 }
 
 /** One entry of the thread list, with the thread's innermost frame when that could be read. */

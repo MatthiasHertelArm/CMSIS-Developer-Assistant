@@ -87,8 +87,14 @@ can fake only the part a case drives.
   configuration's commands, and again while the session shuts down. A
   `threads` reply without a thread list is therefore `initializing` there,
   and `hasActiveSession()` false (`takesRequests()`); the replies of other
-  adapters count as they are. `getDiagnostics()` adds the server version and
-  the live sessions of the window.
+  adapters count as they are. Starting and shutting down are told apart by
+  the session tracker, which sees the `disconnect` or `terminate` request go
+  to the adapter (`endRequestOf()`): a session asked to end that gives no
+  thread list, a probe timeout included, is `initializing` with
+  `endRequestedForMs`, since an adapter that halts the target before it
+  disconnects can wait there indefinitely (an Arm FVP ignores the halt). The
+  five states stay as they are. `getDiagnostics()` adds the server version
+  and the live sessions of the window.
 - **Run control.** Steps, continue and pause send the DAP request (`next`,
   `stepIn`, `stepOut`, `continue`, `pause`) for the focused thread. When the
   request fails for any reason except a timeout, a CMSIS Debugger session

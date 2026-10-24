@@ -21,8 +21,10 @@
  * the next stop, for the frame VS Code selects after it and for a session's
  * end, the
  * output a GDB command prints (#56), when the adapter has answered VS Code's
- * `setBreakpoints`, the GDB `dprintf` logpoints set in a session, and when
- * the last DHCSR read of a session got no answer (#3). Everything a session
+ * `setBreakpoints`, the GDB `dprintf` logpoints set in a session, when
+ * the last DHCSR read of a session got no answer (#3), and whether a session
+ * was asked to end (a `disconnect` or `terminate` request), which an adapter
+ * that waits for a halt first can take long to do. Everything a session
  * holds goes when it ends.
  *
  * What goes wrong on the channel goes into the window's problem journal
@@ -759,6 +761,23 @@ export function coreSilentSince(session: vscode.DebugSession): number | undefine
     return silentCores.get(session);
 }
 
+// ── A session asked to end ─────────────────────────────────────────
+
+/** The DAP requests that end a session. */
+const END_REQUESTS: ReadonlySet<string> = new Set(['disconnect', 'terminate']);
+
+/**
+ * The last request to end a session that went to its adapter, and when. Kept
+ * until the session ends or starts again, and forgotten when the adapter
+ * refuses it.
+ */
+const endRequests = new WeakMap<vscode.DebugSession, { command: string; at: number }>();
+
+/** When a `disconnect` or `terminate` request went to `session`'s adapter, and which; undefined when none did. */
+export function endRequestOf(session: vscode.DebugSession): { command: string; at: number } | undefined {
+    return endRequests.get(session);
+}
+
 // ── Session end ────────────────────────────────────────────────────
 
 interface EndWaiter {
@@ -798,6 +817,7 @@ function sessionEnded(session: vscode.DebugSession): void {
     closeCaptures(session);
     gdbLogpointsBySession.delete(session);
     silentCores.delete(session);
+    endRequests.delete(session);
     pendingBreakpointRequests.delete(session);
     ownRequestsDue.delete(session);
     requestsSent.delete(session);
@@ -842,6 +862,7 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
     // VS Code's restart of an adapter without a restart request relaunches it in the same session.
     endedSessions.delete(session);
     silentCores.delete(session);
+    endRequests.delete(session);
     addLiveSession(session);
     noteSessionOrigin(session);
     return {
@@ -852,6 +873,8 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
             noteRequestSent(session, message);
             if (message.command === 'setBreakpoints') {
                 noteBreakpointRequest(session, message);
+            } else if (END_REQUESTS.has(message.command)) {
+                endRequests.set(session, { command: message.command, at: Date.now() });
             }
         },
         onDidSendMessage(message: any): void {
@@ -859,6 +882,9 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
                 const sender = senderOf(session, message);
                 if (message.command === 'setBreakpoints') {
                     noteBreakpointResponse(session, message);
+                }
+                if (END_REQUESTS.has(message.command) && message.success === false) {
+                    endRequests.delete(session);
                 }
                 if (message.success === false) {
                     journalFailedResponse(journal, session, message, sender);
