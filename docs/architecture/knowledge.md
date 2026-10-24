@@ -102,6 +102,12 @@ pack a csolution names with `path:` outside the pack root
   `KnowledgeHandler.knownMessageLines`) read the facts of the window's
   active target at each build, not the context of the last search, so a
   build in another project names that project's pack units.
+- **A summary line is no cause.** csolution follows the errors of a context
+  with `processing context '…' failed`. A unit the index marks
+  `role: summary` is named after the others and worded as a summary, and
+  left out when a real unit was found for an earlier error line
+  (`knownMessages()`), so a failed build does not send the agent to a unit
+  that only says "fix the errors before this line".
 
 ## The knowledge browser
 

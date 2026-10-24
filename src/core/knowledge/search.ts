@@ -380,21 +380,42 @@ export function searchKnowledge(reader: KnowledgeReader, query: string, options:
     return { results, budgetUsed: used, matched: kept.length, incompleteHidden, incompleteExact, contextFilter: options.context !== undefined };
 }
 
+/** A unit a failed build's error message points to; `summary` when the message only sums up the errors before it. */
+export interface KnownMessage {
+    message: string;
+    id: string;
+    summary?: true;
+}
+
+/**
+ * True for a unit whose message only sums up the errors printed before it
+ * (`role: summary`, such as csolution's `processing context '…' failed`):
+ * it has no cause of its own to tell.
+ */
+function isSummary(node: KnowledgeNode): boolean {
+    return node.meta.role === 'summary';
+}
+
 /**
  * The complete unit behind each message that the index knows by its exact
- * symptom: what a failed build's error lines can point to. A pack's unit
- * only when `context`, the project's entities, has the pack.
+ * symptom: what a failed build's error lines can point to, in the order of
+ * the messages. A pack's unit only when `context`, the project's entities,
+ * has the pack. A summary unit comes after all others, and is left out when
+ * another unit was found for an earlier message (or the same one): that
+ * unit is what the agent needs.
  */
-export function knownMessages(reader: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): { message: string; id: string }[] {
+export function knownMessages(reader: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): KnownMessage[] {
     const index = reader.forContext(context);
-    const found: { message: string; id: string }[] = [];
-    for (const message of messages) {
+    const found: { message: string; id: string; at: number; summary: boolean }[] = [];
+    messages.forEach((message, at) => {
         for (const id of index.exactSymptoms(messageLines(message))) {
             const node = index.node(id);
             if (node !== undefined && !isIncomplete(node) && inScope(index.scopesOf(id), context) && !found.some((f) => f.id === id)) {
-                found.push({ message, id });
+                found.push({ message, id, at, summary: isSummary(node) });
             }
         }
-    }
-    return found;
+    });
+    const causes = found.filter((f) => !f.summary);
+    const summaries = found.filter((f) => f.summary && !causes.some((cause) => cause.at <= f.at));
+    return [...causes, ...summaries].map(({ message, id, summary }) => ({ message, id, ...(summary ? { summary: true as const } : {}) }));
 }

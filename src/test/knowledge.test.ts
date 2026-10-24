@@ -70,7 +70,8 @@ const UNITS: Unit[] = [
         id: 'ts-csolution-processing-context', type: 'troubleshooting', title: "csolution: processing context '…' failed",
         body: '## Symptom\n\n`x`\n\n## Cause\n\nAn earlier error stopped the context.\n\n## Fix\n\nFix that error first.',
         domain: 'error-catalog', appliesTo: ['tool:csolution'],
-        meta: { tool: 'csolution', symptoms: ["processing context '<…>' failed"], symptom_regex: "^processing context '.+?' failed$" },
+        // A summary unit, as the knowledge base marks csolution's line after every error of a context.
+        meta: { tool: 'csolution', role: 'summary', symptoms: ["processing context '<…>' failed"], symptom_regex: "^processing context '.+?' failed$" },
     },
     {
         id: 'ts-csolution-no-board', type: 'troubleshooting', title: 'csolution: no installed board was found', body: NO_CAUSE,
@@ -321,6 +322,28 @@ suite('knowledge tools', () => {
                 [{ message: 'board mounted device STM32U585AIIx not found', id: 'ts-csolution-board-mounted-device' }]);
         });
 
+        test('a failed build keeps the message order of its units; a summary unit comes last, and only when no unit was found before it', () => {
+            const vendor = 'No vendor tag found in the PDSC file';
+            const board = 'board mounted device STM32U585AIIx not found';
+            const context = (name: string): string => `processing context '${name}' failed`;
+            const knownIds = (messages: string[]): string[] => knownMessages(index, messages).map((known) => known.id);
+            // Units without a role, as before: in the order of their messages, without a summary flag.
+            assert.deepStrictEqual(knownIds([vendor, board]), ['ts-packchk-m302', 'ts-csolution-board-mounted-device']);
+            assert.deepStrictEqual(knownIds([board, vendor]), ['ts-csolution-board-mounted-device', 'ts-packchk-m302']);
+            assert.ok(knownMessages(index, [vendor, board]).every((known) => !('summary' in known)));
+            // The summary alone, also after an error the index does not know.
+            assert.deepStrictEqual(knownMessages(index, ['something else', context('app+U5')]),
+                [{ message: context('app+U5'), id: 'ts-csolution-processing-context', summary: true }]);
+            // A unit for an earlier error is what the agent needs: the summary is left out.
+            assert.deepStrictEqual(knownIds([board, context('app+U5')]), ['ts-csolution-board-mounted-device']);
+            assert.deepStrictEqual(knownIds([vendor, context('a'), board, context('b')]), ['ts-packchk-m302', 'ts-csolution-board-mounted-device']);
+            // A summary before every other unit stays, after them.
+            assert.deepStrictEqual(knownMessages(index, ['something else', context('a'), board, context('b')]), [
+                { message: board, id: 'ts-csolution-board-mounted-device' },
+                { message: context('a'), id: 'ts-csolution-processing-context', summary: true },
+            ]);
+        });
+
         test('a task name of a few words leads to the procedure whose "when to use" text names it, past the reference units', () => {
             // BM25 alone: a short reference title with the word beats a long description that names it once.
             assert.deepStrictEqual(index.bm25('HardFault', 3), ['ref-hardfault', 'ref-hardfault-mpu', 'proc-debug-live']);
@@ -498,6 +521,16 @@ suite('knowledge tools', () => {
                 ['Known message: knowledge_get { id: "ts-csolution-board-mounted-device" } has its cause and fix.']);
             assert.deepStrictEqual(await handlerFor({}).knownMessageLines(['board mounted device X not found']), []);
             assert.deepStrictEqual(await handlerFor({ indexPath: path.join(dir, 'absent.db') }).knownMessageLines(['x']), []);
+        });
+
+        test('the line of a summary unit promises no cause, comes last and is left out after a unit for an earlier error', async () => {
+            const board = 'Known message: knowledge_get { id: "ts-csolution-board-mounted-device" } has its cause and fix.';
+            const summary = 'Known message: knowledge_get { id: "ts-csolution-processing-context" } — the error line it matches only sums up the errors before it; '
+                + 'fix the first of those.';
+            assert.deepStrictEqual(await handler.knownMessageLines(["processing context 'app+U5' failed"]), [summary]);
+            assert.deepStrictEqual(await handler.knownMessageLines(['board mounted device X not found', "processing context 'app+U5' failed"]), [board]);
+            assert.deepStrictEqual(await handler.knownMessageLines(
+                ['something else', "processing context 'a' failed", 'board mounted device X not found', "processing context 'b' failed"]), [board, summary]);
         });
     });
 

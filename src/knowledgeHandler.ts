@@ -272,6 +272,11 @@ export class KnowledgeHandler {
         };
     }
 
+    /**
+     * The `Known message:` lines of a failed build's error messages, in the
+     * order of `knownMessages`; a summary unit's line promises no cause.
+     * None without an index or on any failure.
+     */
     public async knownMessageLines(messages: readonly string[]): Promise<string[]> {
         try {
             if (this.host.indexPath() === undefined) {
@@ -281,8 +286,9 @@ export class KnowledgeHandler {
             const index = await this.index();
             const project = await this.host.projectFacts();
             const context = project.facts ? contextEntities(index, project.facts) : undefined;
-            return knownMessages(index, messages, context)
-                .map(({ id }) => `Known message: knowledge_get { id: "${id}" } has its cause and fix.`);
+            return knownMessages(index, messages, context).map(({ id, summary }) => (summary
+                ? `Known message: knowledge_get { id: "${id}" } — the error line it matches only sums up the errors before it; fix the first of those.`
+                : `Known message: knowledge_get { id: "${id}" } has its cause and fix.`));
         } catch (caught) {
             this.host.log.debug(`knowledge: no known-message lines: ${caught instanceof Error ? caught.message : String(caught)}`);
             return [];
