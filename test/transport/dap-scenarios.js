@@ -542,7 +542,8 @@ class FakeTarget {
             this.sc.record(`${line} -> error: ${msg}`);
             return Promise.reject(new Error(msg));
         }
-        if (this.hung) {
+        // `threadsHangWhileRunning`: GDB busy with the running target answers no `threads` until a pause stops it.
+        if (this.hung || (command === 'threads' && this.spec.threadsHangWhileRunning && this.state === 'running')) {
             this.sc.record(`${line} -> no answer`);
             return new Promise(() => {});
         }
@@ -1711,7 +1712,7 @@ const SCENARIOS = [
     },
     {
         name: 'unresponsive-adapter',
-        description: 'Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is refused, stop works.',
+        description: 'Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is tried once and refused when it gets no answer, stop works.',
         session: { initial: { at: 'main31', reason: 'breakpoint' }, hangAfterStart: true },
         calls: [
             { tool: 'get_session_status' },
@@ -1719,6 +1720,17 @@ const SCENARIOS = [
             { tool: 'read_memory', args: { address: '0x20000000', length: 16, timeoutMs: 1000 }, settleMs: 6500 },
             { tool: 'pause_execution' },
             { tool: 'stop_debugging' },
+        ],
+    },
+    {
+        name: 'unresponsive-pause-recovers',
+        description: 'A running target whose adapter answers no threads probe (GDB busy with it): the status says unresponsive, yet pause_execution '
+            + 'is not refused: its one pause stops the target, and the status is stopped again.',
+        session: { initial: 'running', threadsHangWhileRunning: true },
+        calls: [
+            { tool: 'get_session_status' },
+            { tool: 'pause_execution' },
+            { tool: 'get_session_status' },
         ],
     },
     {

@@ -2561,7 +2561,7 @@
     },
     {
       "name": "unresponsive-adapter",
-      "description": "Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is refused, stop works.",
+      "description": "Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is tried once and refused when it gets no answer, stop works.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -2605,7 +2605,8 @@
           "isError": true,
           "text": "[PROBE_WEDGED] Cannot pause: session state is 'unresponsive'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug. Use get_session_status for a definitive, never-failing classification.",
           "traffic": [
-            "dap: threads {} -> no answer"
+            "dap: threads {} -> no answer",
+            "dap: pause {\"threadId\":1} -> no answer"
           ]
         },
         {
@@ -2615,6 +2616,44 @@
           "traffic": [
             "vscode: debug.stopDebugging session=\"CMSIS Debugger: pyOCD\"",
             "event: terminated {}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unresponsive-pause-recovers",
+      "description": "A running target whose adapter answers no threads probe (GDB busy with it): the status says unresponsive, yet pause_execution is not refused: its one pause stops the target, and the status is stopped again.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
+        "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: unresponsive\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: false\nDetail: DAP threads probe timed out after <n>ms — probe/target may be hung.\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: probe/GDB server is hung. This session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {} -> no answer"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {},
+          "text": "Target paused. {\n  \"sessionActive\": true,\n  \"frameName\": \"delay_ms\",\n  \"fileFullPath\": \"<tmp>/project/main.c\",\n  \"currentLine\": 17,\n  \"currentLineContent\": \"for (volatile uint32_t i = 0; i < ms * 1000u; i++) {\",\n  \"nextLines\": [\n    \"__asm volatile (\\\"nop\\\");\",\n    \"}\",\n    \"}\"\n  ],\n  \"frameId\": 1000,\n  \"threadId\": 1,\n  \"stackTrace\": [\n    \"delay_ms:17\",\n    \"main:32\"\n  ],\n  \"breakpoints\": []\n}",
+          "traffic": [
+            "dap: threads {} -> no answer",
+            "dap: pause {\"threadId\":1}",
+            "event: stopped {\"reason\":\"SIGINT\",\"threadId\":1,\"allThreadsStopped\":true}",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: stopped\nSession: CMSIS Debugger: pyOCD\nType: gdbtarget\nConfiguration: CMSIS Debugger: pyOCD\nDAP responsive: true (probe <n>ms)\nDetail: Stopped reason: SIGINT\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=1 [CMSIS Debugger: pyOCD], vscodeActiveDebugSession=set\nHint: full inspection (variables, memory, registers) is available.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "dap: threads {}"
           ]
         }
       ]

@@ -1207,11 +1207,27 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(await textAnswer(h.handlePause()), 'Target is already stopped (reason: breakpoint). No pause needed — proceed with inspection tools.');
             x.sessionStatus = status('stopped');
             assert.ok((await textAnswer(h.handlePause())).startsWith('Target is already stopped (reason: n/a).'));
-            // Unresponsive is PROBE_WEDGED, as at every gate, with the way to reconnect instead of a re-flash (#3).
+            // Unresponsive: one pause with a 5 s deadline; when it does not stop the target, PROBE_WEDGED as at every gate,
+            // with the way to reconnect instead of a re-flash (#3).
             x.sessionStatus = status('unresponsive');
-            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'PROBE_WEDGED')),
+            x.waiters.push({ kind: 'timeout' });
+            assert.strictEqual(errorDetail(await refusalOf(h.handlePause({ timeoutMs: 30_000 }), 'PROBE_WEDGED')),
                 'Cannot pause: session state is \'unresponsive\'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm. '
                 + `${wedgeHint('launch')} Use get_session_status for a definitive, never-failing classification.`);
+            assert.deepStrictEqual(x.argsOf('pause'), [[5_000]], 'one pause, with the short deadline whatever timeoutMs says');
+            assert.deepStrictEqual(x.argsOf('armStopWaiter'), [[5_000]]);
+            x.failures.pause = new Error('Remote communication error.');
+            x.waiters.push({ kind: 'timeout' });
+            assert.strictEqual((await refusalOf(h.handlePause(), 'PROBE_WEDGED')).message, 'Cannot pause: session state is \'unresponsive\'.',
+                'a pause that fails is the same refusal');
+            delete x.failures.pause;
+            x.waiters.push({ kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            const recovered = await textAnswer(h.handlePause());
+            assert.ok(recovered.startsWith('Target paused. '), recovered);
+            x.waiters.push({ kind: 'ended' });
+            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
+                'Pause requested but the debug session ended. The target may have crashed.');
+            x.calls.length = 0;
             x.sessionStatus = status('initializing');
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
                 'Cannot pause yet: session is still initializing.\nWait briefly and retry.');

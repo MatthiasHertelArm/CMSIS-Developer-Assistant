@@ -199,6 +199,8 @@ const WAIT_CAP_MS = 60_000;
 const PROGRAMMING_ACTIONS: ReadonlySet<string> = new Set<CmsisAction>(['load', 'erase', 'load_and_run']);
 /** The recovery pause after a step or continue that did not stop. */
 const RECOVERY_PAUSE_MS = 5_000;
+/** How long `pause_execution` on an unresponsive session waits for its one pause to stop the target. */
+const UNRESPONSIVE_PAUSE_MS = 5_000;
 /** `wait_for_stop` without `timeoutMs`, and the margin that lets its own text beat the fence. */
 const WAIT_FOR_STOP_DEFAULT_MS = 28_500;
 const WAIT_FOR_STOP_MARGIN_MS = 1_500;
@@ -1093,6 +1095,7 @@ export class DebuggingHandler
     /**
      * Not fenced and not wrapped: refusals and errors keep their own text and
      * code. A pause an Arm FVP ignored says that only a breakpoint stops it.
+     * An unresponsive session gets one short pause before it is refused.
      */
     async handlePause(args?: TimeoutArg): Answer {
         if (!this.dbg.hasDebugSession()) {
@@ -1103,8 +1106,7 @@ export class DebuggingHandler
             case 'stopped':
                 return `Target is already stopped (reason: ${status.detail ?? 'n/a'}). No pause needed — proceed with inspection tools.`;
             case 'unresponsive':
-                // As every gate answers it (#3): PROBE_WEDGED, and the way to reconnect that keeps the fault state.
-                throw stoppedTargetRefusal('pause', status.state, this.sessionRequest());
+                return this.pauseUnresponsive();
             case 'no-session':
                 throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION);
             case 'initializing':
@@ -1122,6 +1124,29 @@ export class DebuggingHandler
         }
         if (outcome.ended) {
             throw new ToolError('NO_SESSION', 'Pause requested but the debug session ended. The target may have crashed.');
+        }
+        return outcome.focused ? `Target paused. ${this.compactState(outcome.state)}` : `Target paused. ${NO_FRAME_SELECTED}`;
+    }
+
+    /**
+     * The one call an unresponsive session does not refuse: a pause may be
+     * what brings an adapter back that is busy with a running target, so it
+     * is sent once, with a short deadline. When it does not stop the target,
+     * the answer is the gate's `PROBE_WEDGED` with the way to reconnect that
+     * keeps the fault state (#3).
+     */
+    private async pauseUnresponsive(): Promise<ToolText> {
+        let outcome: StopOutcome | undefined;
+        try {
+            outcome = await this.sendAndAwaitStop(() => this.dbg.pause(UNRESPONSIVE_PAUSE_MS), UNRESPONSIVE_PAUSE_MS);
+        } catch (caught) {
+            logger.info(`pause_execution on an unresponsive session failed: ${failureText(caught)}`);
+        }
+        if (outcome?.ended) {
+            throw new ToolError('NO_SESSION', 'Pause requested but the debug session ended. The target may have crashed.');
+        }
+        if (!outcome || outcome.timedOut) {
+            throw stoppedTargetRefusal('pause', 'unresponsive', this.sessionRequest());
         }
         return outcome.focused ? `Target paused. ${this.compactState(outcome.state)}` : `Target paused. ${NO_FRAME_SELECTED}`;
     }

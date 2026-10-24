@@ -65,7 +65,11 @@ halted target is an answer, since there is
 nothing to do; it is neither fenced nor wrapped, so its refusals keep their
 own text and code (`PROBE_WEDGED` for an unresponsive probe, built by
 `stoppedTargetRefusal()` like every gate's, `NO_SESSION` while the session
-starts or after it ended). `get_session_status` and
+starts or after it ended). On an unresponsive session it is the one call
+that is not refused at once: a threads probe that timed out can be a GDB
+busy with a running target, which a pause brings back, so
+`pauseUnresponsive()` sends one pause with a 5 s deadline and answers
+`PROBE_WEDGED` only when that does not stop the target. `get_session_status` and
 `check_target_connection` never reject for the state they report:
 `check_target_connection` answers a hardware timeout as text.
 
