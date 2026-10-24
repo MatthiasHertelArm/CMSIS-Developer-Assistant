@@ -61,9 +61,9 @@ import { type DapVariable, isDapVariable } from './core/variableView';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import {
-    armFocusWatch, armStartFocusWatch, awaitBreakpointsApplied, expectAgentStart, forgetGdbLogpoints, FrameFocusWatch, GdbLogpoint, gdbLogpointsOf,
-    getLiveSessionCount, getLiveSessionNames, getStoppedReason, isSessionStopped, rememberGdbLogpoint, resolveActiveSession, StartFocusWatch,
-    StopWaitResult, waitForSessionEnd, waitForStopEvent,
+    AdoptedBreakpoint, adoptedBreakpointsOf, armFocusWatch, armStartFocusWatch, awaitBreakpointsApplied, expectAgentStart, forgetGdbLogpoints,
+    FrameFocusWatch, GdbLogpoint, gdbLogpointsOf, getLiveSessionCount, getLiveSessionNames, getStoppedReason, isSessionStopped, rememberGdbLogpoint,
+    resolveActiveSession, StartFocusWatch, StopWaitResult, waitForSessionEnd, waitForStopEvent,
 } from './utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
@@ -87,8 +87,8 @@ import { version as PACKAGE_VERSION } from '../package.json';
 
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
 export type {
-    BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, FrameFocusWatch, GdbLogpoint, GdbReply, HardwareTimeouts,
-    IDebuggingExecutor, MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus, StartFocus, StartFocusWatch,
+    AdoptedBreakpoint, BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, FrameFocusWatch, GdbLogpoint, GdbReply,
+    HardwareTimeouts, IDebuggingExecutor, MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus, StartFocus, StartFocusWatch,
 } from './executor/contract';
 
 /** The version the MCP server, the server definition and the HTTP user agent report: package.json's `version` at build time. */
@@ -416,6 +416,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     getBreakpoints(): ReadonlyArray<vscode.Breakpoint> {
         return vscode.debug.breakpoints;
+    }
+
+    adoptedBreakpoints(): AdoptedBreakpoint[] {
+        return adoptedBreakpointsOf();
     }
 
     clearAllBreakpoints(): Promise<BreakpointRemoval> {

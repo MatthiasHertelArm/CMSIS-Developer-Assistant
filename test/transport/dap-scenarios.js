@@ -87,7 +87,8 @@
 // de-duplication.
 //
 // Scenarios are independent: each gets a fresh server, a fresh fake session
-// and an empty breakpoint model. Module-level state in the code under test
+// and an empty breakpoint model, the breakpoints the session tracker saw VS
+// Code adopt from an adapter included. Module-level state in the code under test
 // (the window's problem journal, whose record numbers count on across
 // scenarios and are masked in the replies, the pack-root answer, the parsed
 // SVD cache) persists across scenarios as it does across sessions in one
@@ -2170,6 +2171,7 @@ async function runScenario(def, index, env, ctx, DebugMCPServer) {
     const sc = new ScenarioContext(def, index, env);
     current = sc;
     stub.debug.breakpoints = [];
+    require(path.join(OUT, 'utils', 'sessionStateTracker.js')).forgetAdoptedBreakpoints();
     stub.debug.activeDebugSession = undefined;
     stub.debug.activeStackItem = undefined;
 

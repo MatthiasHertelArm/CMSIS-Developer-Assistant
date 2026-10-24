@@ -31,10 +31,10 @@ import type { DebugPortProbe } from '../core/probeWedge';
 import { ResetMethod, ResetOutcomeView } from '../core/resetAssist';
 import type { DapVariable } from '../core/variableView';
 import { DebugState, StackFrame } from '../debugState';
-import type { FrameFocusWatch, GdbLogpoint, StartFocusWatch, StopWaitResult } from '../utils/sessionStateTracker';
+import type { AdoptedBreakpoint, FrameFocusWatch, GdbLogpoint, StartFocusWatch, StopWaitResult } from '../utils/sessionStateTracker';
 import type { GdbReply } from './gdbCommand';
 
-export type { FrameFocusWatch, GdbLogpoint, StartFocus, StartFocusWatch } from '../utils/sessionStateTracker';
+export type { AdoptedBreakpoint, FrameFocusWatch, GdbLogpoint, StartFocus, StartFocusWatch } from '../utils/sessionStateTracker';
 export type { GdbReply } from './gdbCommand';
 export type { DebugPortProbe } from '../core/probeWedge';
 
@@ -220,6 +220,12 @@ export interface BreakpointControl {
      */
     removeBreakpoint(file: vscode.Uri, line: number, options?: { logpointsOnly?: boolean }): Promise<BreakpointRemoval>;
     getBreakpoints(): ReadonlyArray<vscode.Breakpoint>;
+    /**
+     * The breakpoints VS Code adopted from an adapter's announcement of a new
+     * one in this window, which `getBreakpoints` lacks until the window
+     * reloads; some may also be in `getBreakpoints` already.
+     */
+    adoptedBreakpoints(): AdoptedBreakpoint[];
     /** Removes every breakpoint of the model and waits, bounded, until the adapter has taken the change. */
     clearAllBreakpoints(): Promise<BreakpointRemoval>;
     /**

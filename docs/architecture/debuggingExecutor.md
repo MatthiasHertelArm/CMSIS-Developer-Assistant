@@ -122,6 +122,9 @@ can fake only the part a case drives.
   logpoints are GDB `dprintf`s instead: MI `-dprintf-insert`, `condition`,
   `delete` with numbers (never a bare `delete`) and MI `-break-list`; the
   session tracker remembers them per session under their GDB number.
+  `adoptedBreakpoints()` returns the breakpoints the tracker saw an adapter
+  announce as new, which VS Code adopts without listing them in
+  `vscode.debug.breakpoints` until the window reloads.
 - **GDB commands.** `runGdbCommand()` (`src/executor/gdbCommand.ts`) sends a
   raw GDB command as a REPL evaluate in the prefix of the session's adapter
   (`src/core/gdbDialect.ts`, #56): `>` on the CMSIS Debugger, `-exec` and a

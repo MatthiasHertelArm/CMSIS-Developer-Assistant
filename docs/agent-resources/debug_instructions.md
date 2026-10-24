@@ -292,7 +292,7 @@ To read the count from the target, halt it and read the FPB control register `FP
 Defensive defaults:
 
 - Treat **4 simultaneous breakpoints** as the safe upper bound unless you have confirmed the core supports more (check `cbuild.yml` for the processor name).
-- Before adding a breakpoint, call `list_breakpoints` to see the current count.
+- Before adding a breakpoint, call `list_breakpoints` to see the current count. It also lists apart the breakpoints VS Code adopted from GDB `break` commands (a launch configuration's `initCommands`): they use comparators too, and only VS Code's Breakpoints view removes them.
 - When you have to investigate a wider area, work iteratively: set 2–3 well-chosen breakpoints, hit one, learn what you need, remove or replace it before adding the next.
 - After concluding an investigation phase, free the comparators with `remove_breakpoint` for each breakpoint you set. `clear_all_breakpoints` deletes every breakpoint, the user's included: only when the user asks for a clean slate.
 

@@ -56,7 +56,7 @@
 
 import * as vscode from 'vscode';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
-import type { BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor, StartFocusWatch } from './debuggingExecutor';
+import type { AdoptedBreakpoint, BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor, StartFocusWatch } from './debuggingExecutor';
 import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { logger } from './utils/logger';
 import { isSensitiveName, REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
@@ -247,6 +247,10 @@ const NO_EVALUATION_RESULT = 'The debug adapter returned no result for this expr
 const START_REFUSED = 'The debug session did not start. Make sure the debugger extension for this kind of file is installed.';
 const NO_BREAKPOINTS = 'The breakpoint list is empty.';
 const NOTHING_TO_CLEAR = 'Nothing to clear — no breakpoints are set.';
+/** Heads the breakpoints VS Code adopted from the debug adapter, which extensions do not see until the window reloads. */
+const ADOPTED_HEAD = 'VS Code also holds these, adopted from the debug adapter (GDB break commands, such as those in the launch configuration\'s '
+    + 'initCommands): it sends them to the next session and saves them with the workspace, but shows them to extensions only after a window '
+    + 'reload, so remove_breakpoint and clear_all_breakpoints cannot reach them; VS Code\'s Breakpoints view can.';
 const NO_SESSION_YET = '(No debug session yet — added to VS Code\'s breakpoint list; the debugger binds it when a session starts.)';
 const ADAPTER_SILENT = '⚠️ The debug adapter did not confirm the change within 2 s; list_breakpoints shows what it reports.';
 const UNBOUND_ADVICE = 'An unverified breakpoint never stops the target: the line may have no code (a declaration, a comment, code the '
@@ -1534,13 +1538,29 @@ export class DebuggingHandler
         }
     }
 
+    /**
+     * The breakpoints VS Code adopted from the debug adapter that `all`, its
+     * list as extensions see it, lacks: those only its Breakpoints view can
+     * remove before the window reloads.
+     */
+    private unlistedAdopted(all: ReadonlyArray<vscode.Breakpoint>): AdoptedBreakpoint[] {
+        const listed = new Set(all.map((bp) => sourceLocationOf(bp)).filter((location) => location !== undefined)
+            .map((location) => `${location.uri.toString()}:${location.range.start.line + 1}`));
+        return this.dbg.adoptedBreakpoints().filter((bp) => !listed.has(`${vscode.Uri.file(bp.path).toString()}:${bp.line}`));
+    }
+
     /** Clears VS Code's model and deletes the session's GDB logpoints by number — never with a bare `delete`. */
     async handleClearAllBreakpoints(): Answer {
         try {
             const count = this.dbg.getBreakpoints().length;
             const logpoints = this.dbg.gdbLogpoints();
+            const adopted = this.unlistedAdopted(this.dbg.getBreakpoints()).length;
+            const kept = adopted > 0
+                ? `${adopted} breakpoint(s) VS Code adopted from the debug adapter stay: only its Breakpoints view removes them before a window `
+                    + 'reload (list_breakpoints names them).'
+                : '';
             if (count === 0 && logpoints.length === 0) {
-                return NOTHING_TO_CLEAR;
+                return adopted > 0 ? `Nothing this tool can clear. ${kept}` : NOTHING_TO_CLEAR;
             }
             const change = await this.withTargetHalted('clear the breakpoints', async () => {
                 const notes: string[] = [];
@@ -1552,7 +1572,7 @@ export class DebuggingHandler
                 }
                 return notes;
             });
-            return [`Cleared ${count} breakpoint(s) from the model.`, ...change.result, change.pausedNote].filter((line) => line.length > 0).join('\n');
+            return [`Cleared ${count} breakpoint(s) from the model.`, ...change.result, change.pausedNote, kept].filter((line) => line.length > 0).join('\n');
         } catch (caught) {
             throw wrapError('Could not clear the breakpoints', caught);
         }
@@ -1560,16 +1580,19 @@ export class DebuggingHandler
 
     /**
      * VS Code's breakpoints with the adapter's binding of each while a
-     * session runs, then the CMSIS Debugger logpoints with GDB's hit count.
-     * Kinds other than source and function breakpoints print nothing but
-     * keep their number (KB15).
+     * session runs, then the CMSIS Debugger logpoints with GDB's hit count,
+     * then the breakpoints VS Code adopted from the debug adapter, which
+     * extensions do not see until the window reloads. Kinds other than
+     * source and function breakpoints print nothing but keep their number
+     * (KB15).
      */
     async handleListBreakpoints(): Answer {
         try {
             const all = this.dbg.getBreakpoints();
             const logpoints = this.dbg.gdbLogpoints();
+            const adopted = this.unlistedAdopted(all);
             if (all.length === 0 && logpoints.length === 0) {
-                return NO_BREAKPOINTS;
+                return adopted.length === 0 ? NO_BREAKPOINTS : adoptedListing(adopted);
             }
             const live = this.dbg.hasDebugSession();
             let listing = 'Breakpoints that are set:\n';
@@ -1604,7 +1627,7 @@ export class DebuggingHandler
                 });
                 this.dbg.forgetGdbLogpoints(gone);
             }
-            return listing;
+            return adopted.length === 0 ? listing : `${listing}${adoptedListing(adopted)}`;
         } catch (caught) {
             throw wrapError('Could not list the breakpoints', caught);
         }
@@ -2002,6 +2025,11 @@ export class DebuggingHandler
         return this.noteHeldSerialPort(() => this.fence('flash', waitMs, 'reply', () => runFlash(this.dbg, this.host(), args, waitMs),
             { capMs: LONG_LIMIT_CAP_MS, advice: FLASH_FENCE_ADVICE }));
     }
+}
+
+/** The breakpoints VS Code adopted from the debug adapter, under their head, one per line. */
+function adoptedListing(adopted: readonly AdoptedBreakpoint[]): string {
+    return `${ADOPTED_HEAD}\n${adopted.map((bp) => `  ${lastSegment(bp.path)}:${bp.line} (announced by '${bp.sessionName}')`).join('\n')}\n`;
 }
 
 /** `Did you mean: A, B?` after a failed name lookup, or nothing. */

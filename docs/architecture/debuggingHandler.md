@@ -202,6 +202,20 @@ evaluated by GDB at every hit, which halts the core each time; the session
 stops only when it holds. The deprecated `lineContent` argument still works
 and sets a breakpoint on every line that contains the text.
 
+VS Code adds a breakpoint the adapter announces as new (a `breakpoint`
+event with reason `new` and a source line: a GDB `break` in the launch
+configuration's `initCommands`, or typed in the Debug Console) to its own
+model without telling extensions: `vscode.debug.breakpoints` lists it only
+after a window reload, yet VS Code saves it and sends it to the next
+session. A live test listed "The breakpoint list is empty." while the
+workspace held five such breakpoints and the next session stopped at one.
+The session tracker therefore keeps the breakpoints it saw announced, for
+the window, and forgets one when its adapter announces its removal
+(`adoptedBreakpointsOf()`); `list_breakpoints` lists those the API does not
+show apart, saying that only VS Code's Breakpoints view removes them, and
+`clear_all_breakpoints` says they stay (`unlistedAdopted()`). A removal in
+that view is not seen, so the list may keep one until the window reloads.
+
 On the CMSIS Debugger a logpoint is a GDB `dprintf` (#56), because
 cdt-gdb-adapter prints a VS Code logpoint's message without filling in the
 values. `translateLogMessage()` (`src/handler/gdbText.ts`) derives the format

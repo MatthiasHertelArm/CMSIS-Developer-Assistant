@@ -22,7 +22,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { SerialPortMock } from 'serialport';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
-import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor, StartFocus } from '../debuggingExecutor';
+import type { AdoptedBreakpoint, BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor, StartFocus } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
 import { PickerCancelled, type IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
@@ -235,6 +235,9 @@ class ScriptedExecutor {
         return matching.length > 0 ? { removed: matching.length, applied: this.session ? this.removalApplied : undefined } : { removed: 0 };
     };
     getBreakpoints: IDebuggingExecutor['getBreakpoints'] = () => this.breakpoints;
+    /** The breakpoints VS Code adopted from the adapter: none by default. */
+    adopted: AdoptedBreakpoint[] = [];
+    adoptedBreakpoints: IDebuggingExecutor['adoptedBreakpoints'] = () => this.adopted.map((bp) => ({ ...bp }));
     clearAllBreakpoints: IDebuggingExecutor['clearAllBreakpoints'] = async () => {
         this.moves.push('clearAllBreakpoints');
         this.note('clearAllBreakpoints');
@@ -1727,6 +1730,31 @@ suite('DebuggingHandler', () => {
             idle.session = false;
             idle.breakpoints = [sourceBreakpoint('/w/src/main.c', 41)];
             assert.strictEqual(await textAnswer(handlerFor(idle).handleListBreakpoints()), 'Breakpoints that are set:\n1. main.c:42\n');
+        });
+
+        test('the breakpoints VS Code adopted from the adapter, which extensions do not see, are listed apart, and clear_all says they stay', async () => {
+            const head = 'VS Code also holds these, adopted from the debug adapter (GDB break commands, such as those in the launch configuration\'s '
+                + 'initCommands): it sends them to the next session and saves them with the workspace, but shows them to extensions only after a window '
+                + 'reload, so remove_breakpoint and clear_all_breakpoints cannot reach them; VS Code\'s Breakpoints view can.';
+            const x = new ScriptedExecutor();
+            x.session = false;
+            x.adopted = [
+                { path: '/w/RTE/startup_SSE300MPS3.c', line: 53, sessionName: 'Arm-FVP@GDB (launch)' },
+                { path: '/w/RTE/startup_SSE300MPS3.c', line: 54, sessionName: 'Arm-FVP@GDB (launch)' },
+            ];
+            assert.strictEqual(await textAnswer(handlerFor(x).handleListBreakpoints()),
+                `${head}\n  startup_SSE300MPS3.c:53 (announced by 'Arm-FVP@GDB (launch)')\n  startup_SSE300MPS3.c:54 (announced by 'Arm-FVP@GDB (launch)')\n`);
+            assert.strictEqual(await textAnswer(handlerFor(x).handleClearAllBreakpoints()),
+                'Nothing this tool can clear. 2 breakpoint(s) VS Code adopted from the debug adapter stay: only its Breakpoints view removes them '
+                + 'before a window reload (list_breakpoints names them).');
+
+            // One that extensions see already (after a reload, or a duplicate of one set through the API) is listed once, in its place.
+            x.breakpoints = [sourceBreakpoint('/w/RTE/startup_SSE300MPS3.c', 52), sourceBreakpoint('/w/main.c', 9)];
+            assert.strictEqual(await textAnswer(handlerFor(x).handleListBreakpoints()),
+                `Breakpoints that are set:\n1. startup_SSE300MPS3.c:53\n2. main.c:10\n${head}\n  startup_SSE300MPS3.c:54 (announced by 'Arm-FVP@GDB (launch)')\n`);
+            assert.strictEqual(await textAnswer(handlerFor(x).handleClearAllBreakpoints()),
+                'Cleared 2 breakpoint(s) from the model.\n1 breakpoint(s) VS Code adopted from the debug adapter stay: only its Breakpoints view '
+                + 'removes them before a window reload (list_breakpoints names them).');
         });
     });
 

@@ -859,6 +859,67 @@ export function gdbLogpointsOf(session: vscode.DebugSession): GdbLogpoint[] {
         .map((logpoint) => ({ ...logpoint }));
 }
 
+// ── Breakpoints VS Code adopts from an adapter ────────────────────
+
+/**
+ * A breakpoint an adapter announced as new — a GDB `break` command, such as
+ * one in the launch configuration's `initCommands`, or one typed in the
+ * Debug Console — at a source line.
+ */
+export interface AdoptedBreakpoint {
+    /** The source path the adapter named. */
+    path: string;
+    line: number;
+    /** The session whose adapter announced it. */
+    sessionName: string;
+}
+
+/**
+ * The breakpoints VS Code took into its own breakpoint model from a
+ * `breakpoint` event with reason `new` and a source line, by path and line.
+ * VS Code adds them without telling extensions — `vscode.debug.breakpoints`
+ * lists them only after the window reloads them from the workspace's
+ * storage — saves them, and sends them to later sessions. Kept for the
+ * window, past the session's end; the adapter's `removed` event for the
+ * same breakpoint takes one out, as VS Code does.
+ */
+const adoptedBreakpoints = new Map<string, AdoptedBreakpoint & { announced: Array<{ session: vscode.DebugSession; id: number }> }>();
+
+/** An adapter's `breakpoint` event: a new one at a source line is adopted, a removed one forgotten. */
+function noteBreakpointEvent(session: vscode.DebugSession, body: any): void {
+    const breakpoint = body?.breakpoint;
+    const id: unknown = breakpoint?.id;
+    if (body?.reason === 'new') {
+        const sourcePath: unknown = breakpoint?.source?.path;
+        const line: unknown = breakpoint?.line;
+        if (typeof sourcePath !== 'string' || sourcePath.length === 0 || typeof line !== 'number' || !Number.isInteger(line) || line < 1) {
+            return;
+        }
+        const key = `${pathKey(sourcePath)}:${line}`;
+        const known = adoptedBreakpoints.get(key) ?? { path: sourcePath, line, sessionName: session.name, announced: [] };
+        if (typeof id === 'number') {
+            known.announced.push({ session, id });
+        }
+        adoptedBreakpoints.set(key, known);
+    } else if (body?.reason === 'removed' && typeof id === 'number') {
+        for (const [key, known] of adoptedBreakpoints) {
+            if (known.announced.some((entry) => entry.session === session && entry.id === id)) {
+                adoptedBreakpoints.delete(key);
+            }
+        }
+    }
+}
+
+/** The breakpoints VS Code adopted from an adapter in this window, in the order they were announced. */
+export function adoptedBreakpointsOf(): AdoptedBreakpoint[] {
+    return [...adoptedBreakpoints.values()].map(({ path: sourcePath, line, sessionName }) => ({ path: sourcePath, line, sessionName }));
+}
+
+/** Forget every adopted breakpoint: for harnesses that start each scenario with an empty breakpoint model. */
+export function forgetAdoptedBreakpoints(): void {
+    adoptedBreakpoints.clear();
+}
+
 // ── The core's debug status (#3) ──────────────────────────────────
 
 /**
@@ -1030,6 +1091,7 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
                 if (message.body?.reason === 'removed' && typeof removedId === 'number') {
                     forgetGdbLogpoints(session, [removedId]);
                 }
+                noteBreakpointEvent(session, message.body);
                 return;
             }
             const state = getOrInit(session);

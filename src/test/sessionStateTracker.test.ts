@@ -18,6 +18,7 @@ import * as vscode from 'vscode';
 import * as assert from 'assert';
 import { ProblemJournal, type ProblemRecord } from '../core/problemJournal';
 import {
+    adoptedBreakpointsOf,
     armFocusWatch,
     armStartFocusWatch,
     awaitBreakpointsApplied,
@@ -27,6 +28,7 @@ import {
     endRequestOf,
     expectAgentStart,
     type FocusSource,
+    forgetAdoptedBreakpoints,
     forgetAgentStarts,
     forgetGdbLogpoints,
     gdbLogpointsOf,
@@ -449,6 +451,33 @@ suite('Session state tracker', () => {
             assert.strictEqual(await armStartFocusWatch(focus.source, () => a.session, () => false).settled(5_000), 'running');
             assert.strictEqual(await armStartFocusWatch(focus.source, () => undefined, () => true).settled(5_000), 'none');
             assert.strictEqual(focus.listeners(), 0);
+        });
+    });
+
+    suite('the breakpoints VS Code adopts from an adapter', () => {
+        teardown(() => forgetAdoptedBreakpoints());
+
+        test('a new breakpoint at a source line is adopted for the window, past the session\'s end; its removal by the same adapter forgets it', () => {
+            forgetAdoptedBreakpoints();
+            const a = track();
+            const at = (id: number, line: number): unknown => ({ reason: 'new', breakpoint: { id, verified: true, source: { name: 'startup.c', path: '/w/startup.c' }, line } });
+            a.event('breakpoint', at(1, 53));
+            a.event('breakpoint', at(2, 54));
+            a.event('breakpoint', { reason: 'new', breakpoint: { id: 3, verified: true, instructionReference: '0x10000100' } });
+            a.event('breakpoint', { reason: 'changed', breakpoint: { id: 1, verified: true, source: { path: '/w/startup.c' }, line: 53 } });
+            assert.deepStrictEqual(adoptedBreakpointsOf(), [
+                { path: '/w/startup.c', line: 53, sessionName: a.session.name },
+                { path: '/w/startup.c', line: 54, sessionName: a.session.name },
+            ], 'no source line, nothing VS Code can adopt; a change adopts nothing');
+            const b = track();
+            b.event('breakpoint', { reason: 'removed', breakpoint: { id: 2, verified: false } });
+            assert.strictEqual(adoptedBreakpointsOf().length, 2, 'another session\'s id 2 is another breakpoint');
+            a.event('breakpoint', { reason: 'removed', breakpoint: { id: 2, verified: false } });
+            assert.deepStrictEqual(adoptedBreakpointsOf().map((bp) => bp.line), [53]);
+            a.tracker.onWillStopSession?.();
+            assert.deepStrictEqual(adoptedBreakpointsOf().map((bp) => bp.line), [53], 'VS Code keeps it after the session');
+            forgetAdoptedBreakpoints();
+            assert.deepStrictEqual(adoptedBreakpointsOf(), []);
         });
     });
 
