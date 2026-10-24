@@ -472,9 +472,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -1195,7 +1195,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1206,6 +1206,7 @@
                   "build",
                   "rebuild",
                   "clean",
+                  "refresh",
                   "load",
                   "erase",
                   "run",
@@ -1449,8 +1450,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59676,
-          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
+          "bytes": 60083,
+          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -2285,9 +2286,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -2711,7 +2712,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2722,6 +2723,7 @@
                   "build",
                   "rebuild",
                   "clean",
+                  "refresh",
                   "load",
                   "erase",
                   "run",
@@ -2965,8 +2967,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59676,
-          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
+          "bytes": 60083,
+          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -3458,9 +3460,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -4763,7 +4765,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4774,6 +4776,7 @@
                   "build",
                   "rebuild",
                   "clean",
+                  "refresh",
                   "load",
                   "erase",
                   "run",
@@ -5017,8 +5020,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59676,
-          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
+          "bytes": 60083,
+          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -5899,9 +5902,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -6737,7 +6740,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6748,6 +6751,7 @@
                   "build",
                   "rebuild",
                   "clean",
+                  "refresh",
                   "load",
                   "erase",
                   "run",
@@ -7037,8 +7041,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59676,
-          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
+          "bytes": 60083,
+          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -8005,9 +8009,9 @@
                 "description": "What to evaluate, written in the language of the program being debugged"
               },
               "depth": {
-                "description": "Levels of struct fields shown (default 1)",
+                "description": "Levels of struct fields shown (default 1; 0: the value only)",
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 3
               },
               "timeoutMs": {
@@ -8843,7 +8847,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, like the panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended. open_solution opens a csolution's folder (path) in a VS Code window and activates it; needs no open project.",
+          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8854,6 +8858,7 @@
                   "build",
                   "rebuild",
                   "clean",
+                  "refresh",
                   "load",
                   "erase",
                   "run",
@@ -9143,8 +9148,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59676,
-          "sha256": "9bcdeb4b59923646b249a4ceef49543c627a18f6b35367efcda069727c1eb73f"
+          "bytes": 60083,
+          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,

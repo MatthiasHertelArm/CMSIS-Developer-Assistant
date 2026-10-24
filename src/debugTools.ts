@@ -245,13 +245,14 @@ const ABOUT = {
         'Stopping its monitor there frees the port for serial_capture.',
     ),
     cmsis_action: say(
-        'The entry point for CMSIS / Cortex-M debugging: drives the CMSIS Solution extension on the active csolution target, ' +
-        'like the panel buttons; each result names its target.',
+        'The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel ' +
+        'buttons; each result names its target.',
         'build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code.',
         'A task still running at the wait returns status running: call action status, never start it again.',
         'run: CMSIS Run alone, no build or flash — a probe\'s GDB server, then attach; an FVP hosts none.',
-        'load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait until the tasks ended.',
-        'open_solution opens a csolution\'s folder (path) in a VS Code window and activates it; needs no open project.',
+        'load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end.',
+        'refresh: Update RTE (for "use --update-rte").',
+        'open_solution (path) opens and activates a csolution; needs no open project.',
     ),
     cmsis_query: say(
         'Boards, devices, or the examples and templates of a board or device, from CMSIS Solution\'s catalog (web and installed packs);',
@@ -626,7 +627,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         description: ABOUT.evaluate_expression,
         inputSchema: {
             expression: z.string().describe('What to evaluate, written in the language of the program being debugged'),
-            depth: z.number().int().min(1).max(3).optional().describe('Levels of struct fields shown (default 1)'),
+            depth: z.number().int().min(0).max(3).optional().describe('Levels of struct fields shown (default 1; 0: the value only)'),
             timeoutMs: CALL_TIMEOUT,
         },
     }, (args) => debug.handleEvaluateExpression(args).then(reply));
@@ -793,7 +794,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
+            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
                 'stop_build', 'status', 'open_solution', 'install_pack', 'create_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
             path: z.string().optional().describe('Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project\'s folder.'),

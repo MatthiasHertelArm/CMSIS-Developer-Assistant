@@ -84,6 +84,42 @@ suite('buildInfo/buildLog', () => {
         assert.deepStrictEqual([g.notes, g.warnings], [0, 1]);
     });
 
+    test('Windows paths: drive letters with either slash, spaces, CRLF; the compiler driver\'s own lines', () => {
+        // A tester's assembler failure (armclang on Windows), and the forms around it.
+        const s = parseBuildLog([
+            '[1/3] Building ASM object CMakeFiles/Group_CubeMX.dir/D_/Test/DUT/startup_stm32f746xx.o',
+            'FAILED: CMakeFiles/Group_CubeMX.dir/D_/Test/DUT/startup_stm32f746xx.o',
+            'armclang: warning: argument unused during compilation: \'-MD\' [-Wunused-command-line-argument]',
+            'D:\\Test\\DUT\\Board\\MDK-ARM\\startup_stm32f746xx.s:39:1: error: unknown directive',
+            'D:/Test/DUT/main.c:12:5: error: use of undeclared identifier \'x\'',
+            'C:\\Users\\dev one\\My Project\\main.c:10:5: warning: unused variable \'y\' [-Wunused-variable]',
+            '/Users/dev/My Project/main.c:3:5: error: boom',
+            '1> C:\\x\\y.c:2: note: behind a prefix',
+            'D:\\x\\main.c:12: undefined reference to `foo\'',
+            'C:\\My Project\\main.c:13: undefined reference to `bar\'',
+            'arm-none-eabi-gcc.exe: error: unrecognized command-line option \'-mfoo\'',
+            'CMake Error at D:/Test/DUT/CMakeLists.txt:12 (message):',
+            '  Missing pack component',
+            '',
+            'ninja: build stopped: subcommand failed.',
+        ].join('\r\n'), 'w.log');
+        const shown = s.diagnostics.map((d) => [d.severity, d.tool, d.file, d.line, d.code, d.message]);
+        assert.deepStrictEqual(shown, [
+            ['warning', 'compiler', undefined, undefined, '-Wunused-command-line-argument', 'argument unused during compilation: \'-MD\''],
+            ['error', 'compiler', 'D:\\Test\\DUT\\Board\\MDK-ARM\\startup_stm32f746xx.s', 39, undefined, 'unknown directive'],
+            ['error', 'compiler', 'D:/Test/DUT/main.c', 12, undefined, 'use of undeclared identifier \'x\''],
+            ['warning', 'compiler', 'C:\\Users\\dev one\\My Project\\main.c', 10, '-Wunused-variable', 'unused variable \'y\''],
+            ['error', 'compiler', '/Users/dev/My Project/main.c', 3, undefined, 'boom'],
+            ['note', 'compiler', 'C:\\x\\y.c', 2, undefined, 'behind a prefix'],
+            ['error', 'linker', 'D:\\x\\main.c', 12, undefined, 'undefined reference to `foo\''],
+            ['error', 'linker', 'C:\\My Project\\main.c', 13, undefined, 'undefined reference to `bar\''],
+            ['error', 'compiler', undefined, undefined, undefined, 'unrecognized command-line option \'-mfoo\''],
+            ['error', 'cmake', 'D:/Test/DUT/CMakeLists.txt', 12, undefined, 'Missing pack component'],
+        ]);
+        assert.deepStrictEqual([s.errors, s.warnings, s.notes, s.ok], [7, 2, 1, false]);
+        assert.deepStrictEqual(s.failedSteps, ['…/Test/DUT/startup_stm32f746xx.o']);
+    });
+
     test('looksLikeBuildLog and shortPath', () => {
         assert.ok(looksLikeBuildLog(path.join(BUILDINFO_FIXTURES, 'build-ok.log')));
         const tmp = path.join(BUILDINFO_FIXTURES, '..', '..', '..', '..', 'out', 'not-a-build.log.tmp');

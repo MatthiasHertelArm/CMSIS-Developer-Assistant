@@ -193,6 +193,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `build` | Build the active context. | Waits for the cbuild task. |
 | `rebuild` | Build the active context from scratch (`cbuild --rebuild`). | Like `build`. |
 | `clean` | Remove the `out` and `tmp` directories of the whole solution (`cbuild --clean`, every target). | Waits for the task; says which images of the active target it removed. Build again before `load`. |
+| `refresh` | The panel's *Refresh (Reload Packs, Update RTE)*: convert with the RTE update, which writes the files a component brings (a build error "not found; use --update-rte"). | Waits until csolution rewrote `<name>.cbuild-idx.yml`, then ✅ or ❌ with its messages. Build next. |
 | `load` | Flash the built image. | Waits for the flash task. |
 | `erase` | Erase target flash. | Waits for the task. |
 | `run` | Start the CMSIS Run task alone: the GDB server on the probe, no build, no flash — the way to `attach` to a target that is already running. The pyOCD task resets the target and lets the firmware run, the J-Link task leaves it as it was. The FVP task starts the model with the last-built image and hosts no GDB server: use `load_and_debug` there. | Waits until Run stays up. |
@@ -205,7 +206,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 
 **Read the result line.** `build`, `rebuild`, `clean`, `load`, `erase`, `run` and `load_and_run` end with a terminal ✅ success / ❌ failure, the task, its exit code, how long it ran and the job id (`job b-3`). On ❌ fix the source and build again — do not poll for an output file and do not call `get_session_status` to find out whether a build worked. `load_and_debug` reports a failed Load before anything else; it and `attach` verify that the session really has a target behind it. A session that is still connecting, or whose target reports no threads yet, comes back with status `running`: poll `get_session_status`. One that ends before it comes up is `TASK_FAILED`.
 
-**Build errors.** A failed `build` lists its error lines with file and line: the errors csolution recorded in `<name>.cbuild-idx.yml` (a missing pack or component), else those of a diagnostic re-run of cbuild with `--log`, whose log `get_build_diagnostics` reads. A re-run recompiles only what failed, so its warning count covers those files only. When the lines take longer than the call's wait, the result says they are coming: `cmsis_action {action:'status'}` returns them — do not start another build, and do not run cbuild yourself, to see them.
+**Build errors.** A failed `build` lists its error lines with file and line: the errors csolution recorded in `<name>.cbuild-idx.yml` (a missing pack or component; for "use --update-rte" run `refresh`), else those of a diagnostic re-run of cbuild with `--log`, whose log `get_build_diagnostics` reads. A re-run recompiles only what failed, so its warning count covers those files only. When the lines take longer than the call's wait, the result says they are coming: `cmsis_action {action:'status'}` returns them — do not start another build, and do not run cbuild yourself, to see them.
 
 **Exit 0 is checked.** CMSIS Solution reports exit 0 for a failed build too, so a `build` or `rebuild` whose task exited 0 is checked before it answers ✅: an image not rewritten since the build started leads to the same re-run, and a build that fails there comes back ❌ with its error lines. ⚠️ means the check could not decide; do not load that image before the user confirms the build. A `clean` is checked against the images it was to remove: one still there is ⚠️.
 
@@ -229,6 +230,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `pyocd list`, `JLinkExe` to check the probe | `check_target_connection`, `get_session_status` |
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |
 | `cbuild …` | `cmsis_action build` |
+| `cbuild … --update-rte`, *CMSIS: Refresh* by hand | `cmsis_action refresh` |
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |

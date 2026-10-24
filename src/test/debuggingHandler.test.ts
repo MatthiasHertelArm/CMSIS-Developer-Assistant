@@ -326,6 +326,13 @@ class HostedHandler extends DebuggingHandler {
     }
 }
 
+/** A job tracker whose tasks.json has the CMSIS tasks of a pyOCD adapter, which CMSIS Solution writes with its launch configurations. */
+function cmsisTasksTracker(clock: Pick<HandlerHost, 'now' | 'sleep' | 'startTimer'>): CmsisJobTracker {
+    const tasks = new FakeTasks();
+    tasks.fetched = workspaceTasks('/w', ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
+    return new CmsisJobTracker(tasks, clock);
+}
+
 function handlerFor(
     executor: ScriptedExecutor,
     replaced: Partial<HandlerHost> = {},
@@ -1508,6 +1515,9 @@ suite('DebuggingHandler', () => {
             const deeper = await textAnswer(h.handleEvaluateExpression({ expression: 'config', depth: 2 }));
             assert.ok(deeper.includes('  timing: {...} (timing_t)\n    on_ms: 20 (uint16_t)\n  secret:'), deeper);
             assert.deepStrictEqual(x.argsOf('getVariableChildren').slice(1).map((call) => call[0]), [7, 8], 'the withheld field stays closed');
+            assert.strictEqual(await textAnswer(h.handleEvaluateExpression({ expression: 'config', depth: 0 })),
+                'Evaluated: config\nResult: {...}\nType: led_config_t', 'depth 0: the value only');
+            assert.strictEqual(x.argsOf('getVariableChildren').length, 3, 'depth 0 opens nothing');
 
             await textAnswer(h.handleEvaluateExpression({ expression: 'password' }));
             assert.deepStrictEqual(x.argsOf('getVariableChildren').length, 3, 'a credential-named expression is not opened');
@@ -3046,6 +3056,82 @@ suite('DebuggingHandler', () => {
                     assert.strictEqual(updates, 0);
                 });
 
+                test('load_and_debug and attach without CMSIS tasks: refused with the reason while the setting keeps CMSIS Solution from writing them', async () => {
+                    const w = tasksWorld({ autoDebugLaunch: () => false });
+                    named = cbuildRun('CMSIS-DAP@pyOCD');
+                    let updates = 0;
+                    solutionOn('HE', {
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            updates++;
+                        },
+                        'cmsis-csolution.cmsisLoadAndDebug': () => assert.fail('nothing launches without a launch configuration'),
+                        'cmsis-csolution.cmsisAttachDebugger': () => assert.fail('nothing attaches without a launch configuration'),
+                    });
+                    for (const action of ['load_and_debug', 'attach'] as const) {
+                        const refused = await refusalOf(w.handler.handleCmsisCommand({ action }), 'INVALID_ARGUMENT');
+                        assert.strictEqual(refused.message, `CMSIS '${action}' on HE not started: CMSIS Solution has no launch configuration to start `
+                            + 'for this target; the setting cmsis-csolution.autoDebugLaunch is off, so CMSIS Solution writes no tasks.json.');
+                        assert.ok(refused.hint?.startsWith('Ask the user to turn on cmsis-csolution.autoDebugLaunch'), refused.hint);
+                    }
+                    assert.strictEqual(updates, 0, 'with the setting off, Update Debug Tasks would write nothing');
+                });
+
+                test('load_and_debug without CMSIS tasks: Update Debug Tasks writes them, and the result says so first', async () => {
+                    const w = tasksWorld();
+                    named = cbuildRun('CMSIS-DAP@pyOCD');
+                    w.x.sessionStatus = status('running');
+                    w.x.getThreads = async () => [{ id: 1, name: 'main' }];
+                    solutionOn('HE', {
+                        'cmsis-csolution.updateDebugTasks': () => {
+                            setTimeout(() => {
+                                w.tasks.fetched = workspaceTasks('/w', LOAD_LABELS);
+                            }, 30);
+                        },
+                        'cmsis-csolution.cmsisLoadAndDebug': () => {
+                            const load = w.tasks.execution(shellTask('CMSIS Load'));
+                            setTimeout(() => {
+                                w.tasks.start(load);
+                                w.tasks.finish(load, 0);
+                                w.x.session = true;
+                            }, 5);
+                        },
+                    });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug' })),
+                        /^tasks\.json had no CMSIS tasks; Update Debug Tasks wrote them for the debugger 'CMSIS-DAP@pyOCD'\. CMSIS 'load_and_debug' completed on HE — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-1\); debug session survived the connect/);
+                });
+
+                test('the launch configuration: none of CMSIS Solution\'s while the setting is off is refused; a Load that never starts is the answer and stays in status', async () => {
+                    const w = tasksWorld({
+                        autoDebugLaunch: () => false,
+                        workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'demo', index: 0 }],
+                    });
+                    w.tasks.fetched = workspaceTasks(dir, LOAD_LABELS);
+                    fs.mkdirSync(path.join(dir, '.vscode'));
+                    const launchJson = (configurations: unknown[]): void => {
+                        fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({ version: '0.2.0', configurations }));
+                    };
+                    launchJson([
+                        { name: 'CMSIS-DAP@pyOCD (attach)', type: 'gdbtarget', request: 'attach', cmsis: { cbuildRunFile: 'x' } },
+                        { name: 'mine', type: 'gdbtarget', request: 'launch' },
+                    ]);
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.cmsisLoadAndDebug': () => undefined,
+                    });
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'INVALID_ARGUMENT');
+                    assert.strictEqual(refused.message, 'CMSIS \'load_and_debug\' on HE not started: CMSIS Solution has no launch configuration to start '
+                        + 'for this target; .vscode/launch.json has no launch configuration of CMSIS Solution, and the setting '
+                        + 'cmsis-csolution.autoDebugLaunch is off, so CMSIS Solution writes none.');
+
+                    launchJson([{ name: 'CMSIS-DAP@pyOCD (launch)', type: 'gdbtarget', request: 'launch', preLaunchTask: 'CMSIS Load', cmsis: { cbuildRunFile: 'x' } }]);
+                    const silent = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'TASK_FAILED');
+                    assert.strictEqual(errorDetail(silent), 'CMSIS \'load_and_debug\' on HE: nothing started within 10 s of issuing '
+                        + '\'cmsis-csolution.cmsisLoadAndDebug\' (job d-1). Neither its pre-launch Load nor a session started.\n'
+                        + 'CMSIS Solution may be showing a picker, or a message such as "Unable to start debugging" when it has no launch '
+                        + 'configuration for the target: ask the user what VS Code shows, then repeat the call.');
+                    assert.strictEqual(w.tracker.last('load_and_debug')?.state, 'not-started', 'cmsis_action status keeps the job');
+                });
+
                 test('one lookup with flash: a relative answer, a file that is gone and out/<solution>+<target> are no cbuild-run.yml', async () => {
                     // The extension answers through the host's lookup, as flash asks it, and its command answers the same.
                     // A relative answer resolved against the solution's folder, and the out/ convention, would both find a
@@ -3205,6 +3291,96 @@ suite('DebuggingHandler', () => {
                 });
                 const text = await textAnswer(good.handler.handleCmsisCommand({ action: 'load_and_debug' }));
                 assert.match(text, /^CMSIS 'load_and_debug' completed on HE — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-1\); debug session survived the connect \(t\+3s: 1 thread\(s\), t\+6s: 1 thread\(s\) — target threads present\)\. State: \{/);
+            });
+
+            test('load_and_debug: a session lost while connecting points at the GDB server\'s lines, and a probe out of time is no verdict on the probe', async () => {
+                const w = jobWorld(50);
+                let probes = 0;
+                w.x.getThreads = async () => {
+                    probes++;
+                    if (probes === 1) {
+                        throw new HardwareTimeoutError('DAP threads', 2_000);
+                    }
+                    w.x.session = false;
+                    throw new Error('session ended');
+                };
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisLoadAndDebug': () => {
+                        const load = w.tasks.execution(shellTask('CMSIS Load'));
+                        setTimeout(() => {
+                            w.tasks.start(load);
+                            w.tasks.finish(load, 0);
+                            w.x.session = true;
+                        }, 5);
+                    },
+                });
+                const lost = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'TASK_FAILED');
+                assert.match(lost.message, /^CMSIS 'load_and_debug' on HE started a debug session but it did NOT survive the initial connect — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-1\); t\+3s: thread probe failed — no answer within 2 s, then t\+6s: thread probe failed — session ended\.$/);
+                assert.strictEqual(lost.hint, 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
+                    + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.');
+            });
+
+            test('refresh: the panel\'s Refresh, then csolution\'s messages from the rewritten index; an index that stays as it was answers running', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-refresh-'));
+                try {
+                    const index = path.join(dir, 'demo.cbuild-idx.yml');
+                    const idx = (errors: string[], warnings: string[]): string => [
+                        'build-idx:', '  csolution: demo.csolution.yml', '  messages:',
+                        ...(errors.length > 0 ? ['    errors:', ...errors.map((message) => `      - "${message}"`)] : []),
+                        ...(warnings.length > 0 ? ['    warnings:', ...warnings.map((message) => `      - "${message}"`)] : []),
+                        '',
+                    ].join('\n');
+                    fs.writeFileSync(index, idx(['file \'RTE/CMSIS/RTX_Config.c\' not found; use --update-rte'], []));
+                    let next = idx([], ['file \'RTE/CMSIS_Driver_Validation/DV_USART_Config.h.base\' not found; base version unknown']);
+                    let refreshes = 0;
+                    const rewrites = (): void => {
+                        refreshes++;
+                        setTimeout(() => fs.writeFileSync(index, next), 20);
+                    };
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.refresh': rewrites,
+                    });
+                    const w = jobWorld(5);
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'refresh' })),
+                        /^✅ CMSIS 'refresh' on HE: the solution was converted with the RTE update after [\d.]+ s, and demo\.cbuild-idx\.yml records 0 error\(s\), 1 warning\(s\)\. csolution's warnings:\n  warning: file 'RTE\/CMSIS_Driver_Validation\/DV_USART_Config\.h\.base' not found; base version unknown\nNext: cmsis_action build\.$/);
+
+                    next = idx(['component \'ARM::CMSIS:RTOS2:Keil RTX6\' not found'], []);
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'refresh' }), 'TASK_FAILED');
+                    assert.match(failed.message, /^❌ CMSIS 'refresh' on HE: the convert with the RTE update recorded 1 error\(s\), 0 warning\(s\) in demo\.cbuild-idx\.yml after [\d.]+ s:\n  error: component 'ARM::CMSIS:RTOS2:Keil RTX6' not found$/);
+                    assert.ok(failed.hint?.startsWith('Fix the first error'), failed.hint);
+
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.refresh': () => {
+                            refreshes++;
+                        },
+                    });
+                    assert.match(await replyAnswer(w.handler.handleCmsisCommand({ action: 'refresh', timeoutMs: 3_000 }), 'running'),
+                        /^CMSIS 'refresh' on HE issued via 'cmsis-csolution\.refresh'; csolution has not rewritten demo\.cbuild-idx\.yml after [\d.]+ s\. /);
+                    assert.strictEqual(refreshes, 3);
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
+
+            test('a build whose csolution errors ask for --update-rte names refresh in its hint', async () => {
+                const w = jobWorld();
+                const diagnosis: JobDiagnosis = {
+                    state: 'done', source: 'csolution', errorCount: 1, warningCount: 0, warnings: [],
+                    errors: [{ severity: 'error', message: 'file \'/w/RTE/CMSIS/RTX_Config.c\' not found; use --update-rte' }],
+                    text: '1 error from csolution:\n  error: file \'/w/RTE/CMSIS/RTX_Config.c\' not found; use --update-rte',
+                };
+                w.tracker.onDidFinishJob((job) => {
+                    if (job.state === 'failed') {
+                        w.tracker.completeWith(job.id, Promise.resolve(diagnosis));
+                    }
+                });
+                solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 1, true) });
+                const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
+                assert.strictEqual(failed.hint, 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — '
+                    + 'the Refresh (Update RTE) of the CMSIS view — then cmsis_action build again.');
             });
         });
 
@@ -3420,8 +3596,32 @@ suite('DebuggingHandler', () => {
                 assert.deepStrictEqual(w.tracker.probeOwners(), []);
 
                 assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_run' })),
-                    'CMSIS \'stop_run\' on HE: nothing to stop — no CMSIS task is running in this window. '
+                    'CMSIS \'stop_run\' on HE: no CMSIS task of a run was running in this window. '
                     + '\'cmsis-csolution.cmsisStopRun\' was issued anyway; it also ends a debug session the CMSIS panel started.');
+
+                // A build is stop_build's: stop_run names one it ended, and one that runs on.
+                again();
+                const b = guarded((tasks) => {
+                    tasks.start(tasks.execution({ name: 'cbuild demo.csolution.yml --active HE', source: 'CMSIS Solution', definition: { type: 'cmsis-csolution.build' } }));
+                });
+                again();
+                solutionOn('HE', { 'cmsis-csolution.cmsisStopRun': () => undefined });
+                assert.strictEqual(await textAnswer(b.handler.handleCmsisCommand({ action: 'stop_run' })),
+                    'CMSIS \'stop_run\' on HE: no CMSIS task of a run was running in this window. '
+                    + '\'cmsis-csolution.cmsisStopRun\' was issued anyway; it also ends a debug session the CMSIS panel started. '
+                    + '\'cbuild demo.csolution.yml --active HE\' still runs: stop_run leaves builds alone — cmsis_action stop_build ends them.');
+                again();
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisStopRun': () => {
+                        for (const execution of b.tasks.taskExecutions()) {
+                            execution.terminate();
+                        }
+                    },
+                });
+                assert.strictEqual(await textAnswer(b.handler.handleCmsisCommand({ action: 'stop_run' })),
+                    'CMSIS \'stop_run\' on HE: no CMSIS task of a run was running in this window. '
+                    + '\'cmsis-csolution.cmsisStopRun\' was issued anyway; it also ends a debug session the CMSIS panel started. '
+                    + '\'cbuild demo.csolution.yml --active HE\', a build, ended meanwhile: build again before load.');
 
                 let stubborn: FakeExecution | undefined;
                 again();
@@ -3464,7 +3664,9 @@ suite('DebuggingHandler', () => {
                     },
                 });
                 try {
-                    return await handlerFor(x, fastClock(50)).handleCmsisCommand({ action: 'attach' });
+                    const clock = fastClock(50);
+                    const tracker = cmsisTasksTracker(clock);
+                    return await handlerFor(x, { ...clock, cmsisJobs: () => tracker }).handleCmsisCommand({ action: 'attach' });
                 } finally {
                     registrations?.dispose();
                     registrations = undefined;
@@ -3509,7 +3711,9 @@ suite('DebuggingHandler', () => {
                     },
                 });
                 try {
-                    return { answer: await handlerFor(x, fastClock(50)).handleCmsisCommand({ action: 'attach' }), x };
+                    const clock = fastClock(50);
+                    const tracker = cmsisTasksTracker(clock);
+                    return { answer: await handlerFor(x, { ...clock, cmsisJobs: () => tracker }).handleCmsisCommand({ action: 'attach' }), x };
                 } catch (caught) {
                     assert.ok(caught instanceof ToolError, String(caught));
                     return { answer: caught, x };

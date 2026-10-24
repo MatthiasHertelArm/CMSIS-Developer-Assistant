@@ -304,7 +304,7 @@ function discardIfAbandoned(file: string): void {
 }
 
 /** A folder list that is safe to iterate, whatever the file held. */
-function foldersOf(entry: WindowRegistration): string[] {
+export function foldersOf(entry: WindowRegistration): string[] {
     return Array.isArray(entry.workspaceFolders) ? entry.workspaceFolders : [];
 }
 

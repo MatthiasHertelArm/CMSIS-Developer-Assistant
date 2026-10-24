@@ -126,7 +126,9 @@ that applies decides:
    the window whose workspace folder contains it most deeply. A pin never
    overrides a path: a named file must not be opened in another window.
 3. **Pin.** The window chosen with `select_debug_window`, by process id or by a
-   path inside its workspace, for the rest of the MCP session.
+   path inside its workspace, for the rest of the MCP session. A reload gives
+   the window a new pid: the pin keeps the window's folders and moves to the
+   one window that has them (`followPin()`), and the next answer says so once.
 4. **Cache.** The window this MCP session reached last, while it is still
    registered on the same control port.
 5. **Default target.** The window the user chose with Select Target Window,
@@ -191,8 +193,8 @@ refusal is `AMBIGUOUS_WINDOW`, and its `data.candidates` lists every
 registered window (`pid`, `name`, `workspaceFolders`, `hasActiveSession`,
 `isDefault`, and `role` for windows that publish one); its hint names
 `select_debug_window` and the status bar, and a default target whose window
-is not open. An empty registry and a pinned window that is gone are
-`WINDOW_UNREACHABLE`; a path inside no workspace, a `window` argument that
+is not open. An empty registry and a pinned window that is gone, with no
+single window of the same folders to follow, are `WINDOW_UNREACHABLE`; a path inside no workspace, a `window` argument that
 matches nothing (with the same candidates in `data`), and a
 `select_debug_window` without a selector or without a match are
 `INVALID_ARGUMENT`. `list_debug_windows` shows every registered window, marks

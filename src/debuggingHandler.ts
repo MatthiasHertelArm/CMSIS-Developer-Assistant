@@ -1512,7 +1512,7 @@ export class DebuggingHandler
      * CMSIS Debugger in its `>` spelling, with the text GDB printed as the
      * result) and is never redacted: it is a raw target read like read_memory.
      * A result with children (a struct, an array, a pointer) lists them under
-     * `Fields:`, `depth` levels deep (one by default), capped and redacted
+     * `Fields:`, `depth` levels deep (one by default, none for 0), capped and redacted
      * like a variable listing.
      */
     handleEvaluateExpression(args: ExpressionRequest): Answer {
@@ -1535,13 +1535,14 @@ export class DebuggingHandler
             }
             let redacted = shown.redacted;
             const reference = typeof reply.variablesReference === 'number' ? reply.variablesReference : 0;
+            const depth = args.depth ?? 1;
             // A struct, array or pointer: its fields below, never those of a withheld or credential-named value.
-            if (reference > 0 && !passthrough && !shown.redacted && !(redacting && isSensitiveName(args.expression.trim()))) {
+            if (reference > 0 && depth > 0 && !passthrough && !shown.redacted && !(redacting && isSensitiveName(args.expression.trim()))) {
                 const fields = await expandFields({
                     children: (ref) => this.dbg.getVariableChildren(ref, args.timeoutMs),
                     redact: redacting ? (name, value) => redactVariableValue(name, value) : undefined,
                     withholdChildren: redacting ? isSensitiveName : undefined,
-                }, reference, args.depth ?? 1);
+                }, reference, depth);
                 if (fields.shown.length > 0 || fields.hidden > 0 || fields.error !== undefined) {
                     text += `\n${renderFields(fields)}`;
                 }

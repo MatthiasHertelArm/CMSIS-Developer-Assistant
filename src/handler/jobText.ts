@@ -85,6 +85,12 @@ const BUILD_FAILED_HINT = 'get_recent_problems lists what the Problems panel sho
 
 /** After a failed build whose error lines the result shows. */
 const BUILD_ERRORS_HINT = 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.';
+/** A build still running after this long gets the way out of a task that outlived its build. */
+const LONG_BUILD_MS = 120_000;
+/** csolution's word for files a component brings that are not there yet: `file '…/RTX_Config.c' not found; use --update-rte`. */
+const NEEDS_RTE_UPDATE = /use --update-rte/;
+const RTE_UPDATE_HINT = 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — the Refresh '
+    + '(Update RTE) of the CMSIS view — then cmsis_action build again.';
 
 /** After a failed build whose error lines are still being collected. */
 const BUILD_LINES_PENDING_HINT = 'Call cmsis_action {action:\'status\'} for the error lines — do not start another build to see them. '
@@ -190,8 +196,12 @@ export function stillRunning(job: Job, context: ResultContext): ToolReply {
     const head = task
         ? `CMSIS '${job.action}'${context.tag} is still running after ${elapsed} (task '${task.name}', job ${job.id}).`
         : `CMSIS '${job.action}'${context.tag} was issued ${elapsed} ago and its task has not started yet (job ${job.id}).`;
+    // A build task can outlive its build: VS Code still lists it while no cbuild runs any more.
+    const stuck = task && isBuildAction(job.action) && context.now - job.armedAt >= LONG_BUILD_MS
+        ? ' If VS Code shows the build finished while this stays running, cmsis_action stop_build ends the task.'
+        : '';
     return {
-        text: `${context.preface ?? ''}${head} This is not a failure. Call cmsis_action {action:'status'} to wait for the result — ${again}.`,
+        text: `${context.preface ?? ''}${head} This is not a failure. Call cmsis_action {action:'status'} to wait for the result — ${again}.${stuck}`,
         status: 'running',
         data: { job: jobData(job, context.now) },
     };
@@ -232,6 +242,19 @@ export function missingTaskRefusal(action: JobAction, tag: string, label: string
     return new ToolError('INVALID_ARGUMENT',
         `CMSIS '${action}'${tag} not started: this debugger adapter has no '${label}' task; it offers ${offeredActions(labels)}.`,
         'Use one of those, or flash. (Arm Debugger adapters offer only load_and_run and load_and_debug.)');
+}
+
+/**
+ * The pre-check's refusal of `load_and_debug` and `attach`: CMSIS Solution has
+ * no launch configuration to start, because it wrote no CMSIS tasks and
+ * launch configurations (`missing` says why they could not be written) or
+ * the setting that lets it write them is off.
+ */
+export function missingLaunchSetupRefusal(action: string, tag: string, missing?: MissingTasksNote): ToolError {
+    return new ToolError('INVALID_ARGUMENT',
+        `CMSIS '${action}'${tag} not started: CMSIS Solution has no launch configuration to start for this target`
+            + `${missing ? `; ${missing.reason}` : ''}.`,
+        missing?.hint ?? CHOOSE_DEBUGGER_HINT);
 }
 
 /** A build message as `data` carries it. */
@@ -289,7 +312,8 @@ function failedBuild(job: Job, context: ResultContext, decided: JobExecution): T
         return new ToolError('TASK_FAILED', head, BUILD_FAILED_HINT);
     }
     const hint = diagnosis.state === 'pending' ? BUILD_LINES_PENDING_HINT
-        : diagnosis.source === 'none' ? BUILD_FAILED_HINT : BUILD_ERRORS_HINT;
+        : diagnosis.source === 'none' ? BUILD_FAILED_HINT
+        : diagnosis.errors.some((error) => NEEDS_RTE_UPDATE.test(error.message)) ? RTE_UPDATE_HINT : BUILD_ERRORS_HINT;
     return new ToolError('TASK_FAILED', `${head}${diagnosisLines(diagnosis)}`, hint,
         { job: jobData(job, context.now), diagnosis: diagnosisData(diagnosis) });
 }
@@ -366,6 +390,16 @@ function buildCheckResult(job: Job, context: ResultContext, task: JobExecution):
     return undefined;
 }
 
+/** What to do about a job whose task never started: a build is never "up to date", a launch may have met a message. */
+function notStartedHint(action: JobAction): string {
+    if (action === 'load_and_debug') {
+        return 'CMSIS Solution may be showing a picker, or a message such as "Unable to start debugging" when it has no launch '
+            + 'configuration for the target: ask the user what VS Code shows, then repeat the call.';
+    }
+    const picker = 'The CMSIS panel may be showing a picker or a save prompt: answer it in VS Code, then repeat the call.';
+    return isBuildAction(action) ? `${picker} This does not mean "already up to date" — cbuild runs even when nothing changed.` : picker;
+}
+
 /**
  * The result of a job: a ✅ text when it settled well, a `running` reply
  * while it goes on, and a thrown `ToolError` when it failed, was cancelled
@@ -433,8 +467,7 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
             throw new ToolError('TASK_FAILED',
                 `${preface}CMSIS '${job.action}'${tag}: nothing started within ${formatDuration(NOTHING_STARTED_MS)} of issuing ${issued} `
                     + `(job ${job.id}).${meanwhile(job)}`,
-                'The CMSIS panel may be showing a picker or a save prompt: answer it in VS Code, then repeat the call. '
-                    + 'This does not mean "already up to date" — cbuild runs even when nothing changed.');
+                notStartedHint(job.action));
         }
     }
 }

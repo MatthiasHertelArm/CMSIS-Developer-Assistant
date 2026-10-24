@@ -609,7 +609,7 @@ export interface ProbeOwner {
 
 /** The actions the guard judges: every cmsis_action action and flash. */
 export type GuardedAction =
-    | 'build' | 'rebuild' | 'clean' | 'stop_build' | 'status' | 'detach' | 'stop_run' | 'load' | 'erase' | 'run' | 'load_and_run'
+    | 'build' | 'rebuild' | 'clean' | 'refresh' | 'stop_build' | 'status' | 'detach' | 'stop_run' | 'load' | 'erase' | 'run' | 'load_and_run'
     | 'load_and_debug' | 'attach' | 'flash';
 
 /**
@@ -624,7 +624,7 @@ const SERVER_KINDS: ReadonlySet<string> = new Set(['run', 'loadRun']);
 /** Hold it until they end on their own. */
 const TRANSIENT_KINDS: ReadonlySet<string> = new Set(['load', 'erase', 'targetInfo', 'flash']);
 /** Never touch the probe (a target switch under a session is refused elsewhere). */
-const PROBE_FREE_ACTIONS: ReadonlySet<GuardedAction> = new Set<GuardedAction>(['build', 'rebuild', 'clean', 'stop_build', 'status', 'detach', 'stop_run']);
+const PROBE_FREE_ACTIONS: ReadonlySet<GuardedAction> = new Set<GuardedAction>(['build', 'rebuild', 'clean', 'refresh', 'stop_build', 'status', 'detach', 'stop_run']);
 
 /**
  * The guard matrix of #46. `attach` may run beside a live Run task: it

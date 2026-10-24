@@ -295,7 +295,9 @@ window's CMSIS job tracker (next section):
   error lines of a failed build once they are in.
 - `stop_run` waits until the CMSIS tasks it stops have ended, terminates
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
-  alive after 10 s. `detach` returns at once.
+  alive after 10 s. Builds are not its tasks, but CMSIS Solution's Stop
+  Running can end one: the reply names a build that ended during the wait
+  and one that runs on, which `stop_build` ends. `detach` returns at once.
 - `stop_build` does the same for the build-type tasks of the window (build,
   rebuild, clean, or the `cbuild setup` CMSIS Solution runs after loading a
   solution), over `cmsis-csolution.stopBuild`, which ends only one of them.
@@ -304,6 +306,14 @@ window's CMSIS job tracker (next section):
   issues nothing and says so, and names a build result that is still being
   checked: that check is no task, and `status` waits for it. It never
   switches the target.
+- `refresh` issues `cmsis-csolution.refresh`, the panel's Refresh, which in
+  CMSIS Solution 1.72.0 is a convert with `updateRte`: it writes the files a
+  component brings that a build reports as "not found; use --update-rte".
+  It runs no task, so no job follows it; the call waits until the
+  solution's `<name>.cbuild-idx.yml` has changed and stays unchanged for one
+  more look, and answers with the messages csolution recorded there
+  (`idxMessages()`). A failed build whose errors ask for `--update-rte`
+  names `refresh` in its hint.
 
 - `open_solution` needs no active solution either. It takes the path of a
   csolution or of its folder. A folder this window has open, by its path
@@ -397,6 +407,18 @@ extension names, through the lookup `flash` uses
 (`HandlerHost.activeCbuildRunFile`): Update Debug Tasks reads that file and
 no other, so a file found on disk by convention would not predict what it
 does.
+
+`load_and_debug` and `attach` go through the same check, since CMSIS
+Solution writes its launch configurations together with its tasks: without
+them its Load & Debug only shows "Unable to start debugging", which the
+agent never sees. With the setting off they also need a launch
+configuration of the right request with a `cmsis` node in `launch.json`
+(`cmsisLaunchConfigurations()` in `src/core/gdbServerPorts.ts`); the
+setting is read through `HandlerHost.autoDebugLaunch`. When that
+configuration runs `CMSIS Load` first, a Load that has not started 10 s
+after the command is the answer — the job is settled as not started and
+stays in `status` — while for FVP and Arm Debugger, whose sessions start
+without one, the session alone decides.
 
 A window without an active solution is an ordinary state for an agent that
 starts in an empty VS Code, so the refusal says which part is missing
@@ -623,9 +645,14 @@ once when errors arrived that the agent has not seen, and
   journals failed responses, adapter errors and output line by line: GDB's
   `stderr` as warnings; the adapter's `console` and `important` and the GDB
   server's own log (category `server` on cdt-gdb-adapter) as `info` unless a
-  line is known; never the target's `stdout` or GDB's `log` stream. A failed
+  line is known or, for the server's log, pyOCD's level column says `W`
+  (warning) or `E`/`C` (error), so that a server that ends at once leaves
+  its reason among the errors a failed `load_and_debug` carries; colour codes
+  are stripped; never the target's `stdout` or GDB's `log` stream. A failed
   response is an error when VS Code sent the request and a warning when a
-  tool did, since the tool reports its own outcome;
+  tool did, since the tool reports its own outcome; an `evaluate` that a
+  view sent on its own (Watch, hover, the CMSIS Debugger's Live Watch) is
+  `info`, since the views repeat theirs at every stop;
   `customRequestWithTimeout` announces the tools' requests to tell them
   apart. `src/windowProblems.ts` journals a
   failed CMSIS job as `TASK_FAILED` and the error lines of a failed build
@@ -654,8 +681,9 @@ once when errors arrived that the agent has not seen, and
   | `no active solution` | `CMSIS_NO_SOLUTION` | error | as reported |
 
   `PROBE_NOT_FOUND` (pyOCD's "No available debug probes", a J-Link connect
-  failure) and `CORE_NOT_FOUND` wait for a captured line, as do the pyOCD log
-  prefix and the J-Link banner that would mark any GDB-server line.
+  failure) and `CORE_NOT_FOUND` wait for a captured line, as does the J-Link
+  banner that would mark any GDB-server line; `serverLineSeverity()` reads
+  pyOCD's log prefix, captured from a tester's failed launch.
 - **Delivery** (`src/core/problemFeed.ts`). `runJournaled()` runs an op in
   the window that owns it — the control server for a forwarded call,
   `journalLocally()` on a server without a router — and attaches up to five

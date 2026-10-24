@@ -2308,7 +2308,7 @@
             "configurationName": "CMSIS Debugger: pyOCD"
           },
           "isError": true,
-          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent problems:\n  #<seq> warning dap error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
+          "text": "[INTERNAL] Error starting debug session: Failed to start debug session with configuration 'CMSIS Debugger: pyOCD'.\nRecent problems:\n  #<seq> error gdb-server 0000410 C No connected debug probes [__main__]\n  #<seq> warning dap error response to 'launch': Failed to launch the GDB server: pyocd exited with code 1",
           "traffic": [
             "vscode: debug.startDebugging folder=<tmp>/project configuration=\"CMSIS Debugger: pyOCD\"",
             "event: output [server] \"0000410 C No connected debug probes [__main__]\"",
