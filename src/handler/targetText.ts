@@ -21,8 +21,9 @@
  *
  * GDB hands registers back in whatever format its target description
  * implies: decimal for `int` registers, `0x…` with a symbol for code
- * pointers, `[ Z C ]` for decoded flags. `normaliseRegister` brings the
- * numeric ones to one hex form. Pure: no `vscode` import.
+ * pointers, `[ Z C ]` for decoded flags, `void` for a register its target
+ * description lacks. `normaliseRegister` brings the numeric ones to one hex
+ * form. Pure: no `vscode` import.
  */
 
 import type { MemoryRead } from '../executor/contract';
@@ -79,20 +80,52 @@ export function registerNumber(raw: string | undefined): number | undefined {
     return /^0x[0-9a-fA-F]+$/.test(shown) ? Number(shown) >>> 0 : undefined;
 }
 
-/** The `read_core_registers` table. `xpsr` and `control` are printed as GDB gave them. */
+/** What GDB gives for `$name` when its target description has no such register: an unset convenience variable. */
+const GDB_VOID = 'void';
+/** Shown instead of `void` for a register the GDB server does not report (the Arm FVP's lacks msp, psp, control and the masks). */
+const NOT_REPORTED = '<not reported by the GDB server>';
+
+/** True when GDB's text for a register means the GDB server does not report it. */
+export function isUnreportedRegister(raw: string | undefined): boolean {
+    return raw !== undefined && raw.trim() === GDB_VOID;
+}
+
+/**
+ * MSP when the GDB server does not report it but the core is in Handler
+ * mode (IPSR, the low nine bits of xPSR, not 0): Handler mode always runs on
+ * the MSP, so it is the SP. Undefined otherwise.
+ */
+export function mspFromHandlerSp(registers: Record<string, string | undefined>): number | undefined {
+    if (!isUnreportedRegister(registers.msp)) {
+        return undefined;
+    }
+    const xpsr = registerNumber(registers.xpsr);
+    return xpsr !== undefined && (xpsr & 0x1FF) !== 0 ? registerNumber(registers.sp) : undefined;
+}
+
+/**
+ * The `read_core_registers` table. `xpsr` and `control` are printed as GDB
+ * gave them. A register the GDB server does not report reads as such, not
+ * as GDB's `void`; MSP then comes from the SP in Handler mode.
+ */
 export function renderCoreRegisters(registers: Record<string, string>): string {
     const raw = (name: string): string => registers[name] ? registers[name] : '<?>';
-    const value = (name: string): string => normaliseRegister(raw(name));
+    const value = (name: string): string => isUnreportedRegister(raw(name)) ? NOT_REPORTED : normaliseRegister(raw(name));
+    const verbatim = (name: string): string => isUnreportedRegister(raw(name)) ? NOT_REPORTED : raw(name);
     const cell = (name: string): string => `${name.padEnd(4)}= ${value(name).padEnd(14)}`;
+    const handlerMsp = mspFromHandlerSp(registers);
+    const msp = handlerMsp === undefined
+        ? value('msp')
+        : `0x${handlerMsp.toString(16).padStart(8, '0')} (the SP: Handler mode runs on the MSP; the GDB server does not report msp)`;
     const lines = ['Core Registers:'];
     for (const row of GENERAL_ROWS) {
         lines.push(`  ${row.map(cell).join('')}`);
     }
     lines.push(
-        `  xpsr = ${raw('xpsr')}`,
-        `  msp  = ${value('msp')}`,
+        `  xpsr = ${verbatim('xpsr')}`,
+        `  msp  = ${msp}`,
         `  psp  = ${value('psp')}`,
-        `  control   = ${raw('control')}`,
+        `  control   = ${verbatim('control')}`,
         `  faultmask = ${value('faultmask')}`,
         `  basepri   = ${value('basepri')}`,
         `  primask   = ${value('primask')}`,

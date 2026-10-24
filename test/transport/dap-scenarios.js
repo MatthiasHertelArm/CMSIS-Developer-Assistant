@@ -592,6 +592,10 @@ class FakeTarget {
         const regs = { ...BASE_REGS, ...(REG_OVERRIDES[this.at] ?? {}) };
         regs.pc = LOCATIONS[this.at][level]?.addr ?? 0;
         regs.msp = regs.sp;
+        // An Arm FVP's target description has no msp, psp, control or masks (`noSystemRegisters`): GDB answers void.
+        if (this.spec.noSystemRegisters) {
+            for (const name of ['msp', 'psp', 'control', 'faultmask', 'basepri', 'primask']) { delete regs[name]; }
+        }
         return regs;
     }
 
@@ -1722,6 +1726,17 @@ const SCENARIOS = [
             { tool: 'read_memory', args: { address: '0x20000000', length: 16, timeoutMs: 1000 }, settleMs: 6500 },
             { tool: 'pause_execution' },
             { tool: 'stop_debugging' },
+        ],
+    },
+    {
+        name: 'fvp-fault-without-system-registers',
+        description: 'A HardFault on an Arm FVP: the GDB server zeroes SCS reads longer than a word and reports no msp, psp, control or masks '
+            + '(GDB says void). The fault registers are read word by word, read_core_registers says which registers are not reported and '
+            + 'takes MSP from the SP in Handler mode, and diagnose_fault reads the stacked frame there.',
+        session: { initial: { at: 'hardFault', reason: 'breakpoint' }, memory: FAULT_WORDS, config: 'fvp', zeroScsBlocks: true, noSystemRegisters: true },
+        calls: [
+            { tool: 'read_core_registers' },
+            { tool: 'diagnose_fault' },
         ],
     },
     {

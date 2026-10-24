@@ -1838,6 +1838,36 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [[undefined, undefined]]);
         });
 
+        test('registers the GDB server does not report (the Arm FVP: GDB says void) read as such; in Handler mode MSP is the SP', async () => {
+            const x = new ScriptedExecutor();
+            const fvp = (xpsr: string): Record<string, string> => ({
+                r0: '0', r1: '0', r2: '0', r3: '0', r4: '0', r5: '0', r6: '0', r7: '0', r8: '0', r9: '0', r10: '0', r11: '0', r12: '0',
+                sp: '0x2005ffb0', lr: '-7', pc: '0x1000219e <HardFault_Handler+2>', xpsr,
+                msp: 'void', psp: 'void', control: 'void', faultmask: 'void', basepri: 'void', primask: 'void',
+            });
+            x.registers = fvp('1627389955');
+            const handler = await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.ok(handler.endsWith('  xpsr = 1627389955\n'
+                + '  msp  = 0x2005ffb0 (the SP: Handler mode runs on the MSP; the GDB server does not report msp)\n'
+                + '  psp  = <not reported by the GDB server>\n  control   = <not reported by the GDB server>\n'
+                + '  faultmask = <not reported by the GDB server>\n  basepri   = <not reported by the GDB server>\n'
+                + '  primask   = <not reported by the GDB server>\n'), handler);
+            assert.ok(!handler.includes('void'), handler);
+
+            x.registers = fvp('16777216');
+            const thread = await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.ok(thread.includes('\n  msp  = <not reported by the GDB server>\n'), 'in Thread mode the SP may be the PSP');
+        });
+
+        test('diagnose_fault reads the frame at the SP in Handler mode when the GDB server does not report msp', async () => {
+            const x = new ScriptedExecutor();
+            x.registers = { sp: '0x20017fa8', lr: '-7', pc: '0x080001a4 <HardFault_Handler>', xpsr: '1627389955',
+                msp: 'void', psp: 'void', control: 'void', msplim: 'void', psplim: 'void' };
+            const reply = await textAnswer(handlerFor(x).handleDiagnoseFault());
+            assert.match(reply, /\nException frame: MSP @ 0x20017fa8 /);
+            assert.deepStrictEqual(x.argsOf('readExceptionFrame')[0]?.[0], 0x20017fa8);
+        });
+
         test('a register unavailable on the CMSIS Debugger: one DHCSR read, and when the core does not answer, why and how to reconnect (#3)', async () => {
             const names = ['r0', 'sp', 'lr', 'pc'];
             const unavailable = Object.fromEntries(names.map((name) => [name, '<unavailable>']));

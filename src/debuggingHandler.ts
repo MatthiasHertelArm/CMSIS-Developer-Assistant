@@ -105,7 +105,7 @@ import {
     stoppedTargetRefusal,
 } from './handler/sessionText';
 import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
-import { normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
+import { mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
 import { secondsText } from './core/windowHealth';
 import { syncProblemsPanel } from './windowProblems';
@@ -1750,7 +1750,8 @@ export class DebuggingHandler
                 lr: registerNumber(raw.lr),
                 pc: registerNumber(raw.pc),
                 xpsr: registerNumber(raw.xpsr),
-                msp: registerNumber(raw.msp),
+                // A GDB server without msp (the Arm FVP's): in Handler mode the SP is the MSP.
+                msp: registerNumber(raw.msp) ?? mspFromHandlerSp(raw),
                 psp: registerNumber(raw.psp),
                 msplim: registerNumber(raw.msplim),
                 psplim: registerNumber(raw.psplim),

@@ -246,7 +246,11 @@ it). Other adapters take breakpoint changes while their target runs.
 - The memory dump, the core-register table and the cycle-counter text come
   from `src/handler/targetText.ts`. A dump labels its rows from the first
   byte the read returned and, when part of the range could not be read,
-  says how much was read and which part was not.
+  says how much was read and which part was not. A register the GDB
+  server's target description lacks comes back from GDB as `void` (the Arm
+  FVP has no msp, psp, control or masks); the table says it is not
+  reported, and in Handler mode it shows the SP as the MSP, which
+  `diagnose_fault` then uses for a frame on the MSP (`mspFromHandlerSp()`).
 - `diagnose_fault` combines the decoded fault registers, the stacked
   exception frame chosen by `EXC_RETURN`, the top of the call stack and the
   SVD's view of the faulting address into one report with ranked hypotheses
