@@ -74,17 +74,29 @@ A compaction forced in the middle of a run is not part of it: Copilot CLI docume
 GDBServer plugin the CMSIS Solution extension drives). Once per machine:
 
 1. Open `.work/<id>/` (run once with `--keep`, or copy the fixture yourself) in VS Code
-   with the CMSIS Solution and CMSIS Developer Assistant extensions; let it generate
-   `.vscode/launch.json` for the `Arm-FVP` debugger of the target-set.
-2. Apply the two readiness fixes to the `Arm-FVP@GDB (launch)` config: `"port": ""`,
-   `"serverPortRegExp": "GDBServer: Listening .*port=([0-9]+)"`,
-   `"portDetectionTimeout": 300000`, and `"cmsis": { "updateConfiguration": "manual" }` so
-   regeneration keeps them. `.vscode/fvp.sh` already line-buffers the model and resolves the
-   plugin; on macOS it builds a Docker image on first use (`docker info` must work, the Arm
-   user-based licence in `~/.armlm` is mounted). `python3 fixtures/verify-launch.py` replays
-   the adapter's launch path and proves the handshake.
-3. Build once (`cmsis_action build` from the window, or the CMSIS panel) so
-   `out/…cbuild-run.yml` exists.
+   with the CMSIS Solution and CMSIS Developer Assistant extensions. The fixture brings its
+   `.vscode/launch.json` with the readiness fixes (`"port": ""`, `serverPortRegExp`,
+   `portDetectionTimeout`, `"updateConfiguration": "manual"`), the model shim
+   `.vscode/fvp.sh` and, for macOS, `.vscode/fvp.Dockerfile`.
+2. On macOS `docker info` must work: `fvp.sh` builds the image of the pinned FVP release on
+   first use and mounts the Arm user-based licence in `~/.armlm`. On Linux and Windows the
+   model has to be on PATH (`vcpkg activate`). `python3 fixtures/verify-launch.py`, run in
+   the work folder with the CMSIS Debugger's `arm-none-eabi-gdb` on PATH, replays the
+   adapter's launch path and proves the handshake.
+3. Let the Arm Tools Environment Manager activate `vcpkg-configuration.json` in that window
+   (CMSIS Solution then writes `.cmsis/tools-environment.yml`), and build once
+   (`cmsis_action build`, or the CMSIS panel) so the cbuild-run file and the ELF exist. The
+   fixture carries its RTE configuration files, so a clean copy builds without an RTE update.
+
+On the FVP a fault scenario reaches `diagnose_fault` only through a breakpoint on the fault
+handler: the model's GDB server ignores GDB's interrupt, so `pause_execution` cannot stop a
+model that spins in `HardFault_Handler`. The scenario's path is `load_and_debug`,
+`add_breakpoint` on `HardFault_Handler` (in `startup_SSE300MPS3.c`), `continue_execution`,
+then `diagnose_fault`; the `load_and_debug` reply on an FVP says to set breakpoints first.
+`fvp.sh` refuses a GDB port that another folder's model or another program (a board's pyOCD
+under CMSIS Run, for example) already listens on, and the extension refuses such a launch
+before it starts. A launch or stop that hangs leaves the adapter's log in
+`tmp/gdb-adapter.log` of the work folder.
 
 **Board.** Point the same csolution at your hardware (a second target-type with its own
 `target-set` debugger) and pass `--target board`; scenarios list which targets they suit.
