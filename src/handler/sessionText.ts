@@ -68,7 +68,9 @@ const REFUSAL_CODES: Record<SessionState, ErrorCode> = {
  * stopping are not blocked. An initializing session asked to end
  * `endRequestedForMs` ago is shutting down, not starting.
  */
-function statusHint(state: SessionState, liveSessions: number, request: string | undefined, coreSilentForMs?: number, endRequestedForMs?: number): string {
+function statusHint(
+    state: SessionState, liveSessions: number, request: string | undefined, coreSilentForMs?: number, endRequestedForMs?: number, fvp = false,
+): string {
     switch (state) {
         case 'no-session':
             return liveSessions === 0
@@ -85,7 +87,9 @@ function statusHint(state: SessionState, liveSessions: number, request: string |
                 : 'Hint: the session is shutting down — call get_session_status again in a moment; if it is still listed, '
                     + 'stop_debugging once more makes VS Code end the adapter.';
         case 'running':
-            return 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.';
+            return fvp
+                ? `Hint: target is running. ${FVP_RUNNING_HINT}`
+                : 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.';
         case 'stopped':
             return coreSilentForMs === undefined
                 ? 'Hint: full inspection (variables, memory, registers) is available.'
@@ -102,12 +106,14 @@ function statusHint(state: SessionState, liveSessions: number, request: string |
  * state: the state's code, and the next action for that state as the hint.
  * A `Refusal`, so a tool that wraps its failures passes it on as it is. An
  * unresponsive probe is `PROBE_WEDGED`, and its hint adds the way to
- * reconnect for a session started with `request` (#3).
+ * reconnect for a session started with `request` (#3). A running Arm FVP
+ * (`fvp`) is told what stops it instead of a pause.
  */
-export function stoppedTargetRefusal(operation: string, state: SessionState, request?: string): Refusal {
+export function stoppedTargetRefusal(operation: string, state: SessionState, request?: string, fvp = false): Refusal {
     const reconnect = state === 'unresponsive' ? ` ${wedgeHint(request)}` : '';
+    const hint = state === 'running' && fvp ? FVP_RUNNING_HINT : REFUSAL_HINTS[state];
     return new Refusal(REFUSAL_CODES[state], `Cannot ${operation}: session state is '${state}'.`,
-        `${REFUSAL_HINTS[state]}${reconnect} Use get_session_status for a definitive, never-failing classification.`);
+        `${hint}${reconnect} Use get_session_status for a definitive, never-failing classification.`);
 }
 
 /** Said instead of the state after a stop for which VS Code selected no frame within `FRAME_FOCUS_WAIT_MS`. */
@@ -135,6 +141,18 @@ export const FVP_STOP_UNCONFIRMED = 'Stop requested, but the session is still li
 export const FVP_BREAK_FIRST = 'On the Arm FVP pause_execution will not stop the running model: set breakpoints '
     + '(for a fault, HardFault_Handler) before continue_execution.';
 
+/** What stops a running FVP, for the `running` refusal and the status hint. */
+export const FVP_RUNNING_HINT = 'On the Arm FVP pause_execution will not stop it, only a breakpoint does: wait_for_stop for one that is set, '
+    + 'or stop_debugging, cmsis_action load_and_debug and add_breakpoint before continue_execution.';
+
+/** `wait_for_stop` on an FVP whose wait ran out: what to do instead of pausing. */
+export const FVP_WAIT_RAN_OUT = 'Target did not stop within the timeout — it is still running. On the Arm FVP pause_execution will not stop it, '
+    + 'only a breakpoint does: call wait_for_stop again with a larger timeoutMs, or stop_debugging and cmsis_action load_and_debug to set one.';
+
+/** After a step on an FVP that did not stop: the recovery pause is skipped. */
+export const FVP_NO_RECOVERY_PAUSE = '🩹 No recovery pause: the Arm FVP ignores it while the model runs, so only a breakpoint stops it — '
+    + 'stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop, then continue_execution.';
+
 /** A continue on an FVP that keeps running: what to do instead of pausing. */
 export const FVP_KEEPS_RUNNING = 'Call wait_for_stop to wait for a breakpoint. On the Arm FVP pause_execution will not stop it, nor will a fault: '
     + 'to set a breakpoint, stop_debugging and cmsis_action load_and_debug first.';
@@ -143,7 +161,9 @@ export const FVP_KEEPS_RUNNING = 'Call wait_for_stop to wait for a breakpoint. O
  * The `get_session_status` text; `extraLines` (the CMSIS task line) go before the closing hint, `request` is the
  * session's `configuration.request`.
  */
-export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnostics, extraLines: readonly string[] = [], request?: string): string {
+export function renderSessionStatus(
+    status: SessionStatus, diagnostics: Diagnostics, extraLines: readonly string[] = [], request?: string, fvp = false,
+): string {
     const lines = [`State: ${status.state}`];
     if (status.sessionName) {
         lines.push(`Session: ${status.sessionName}`);
@@ -164,7 +184,7 @@ export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnost
     lines.push(`Diagnostics: serverVersion=${diagnostics.serverVersion}, `
         + `liveSessionsInThisWindow=${diagnostics.liveSessionCount}${names}, vscodeActiveDebugSession=${focused}`);
     lines.push(...extraLines);
-    lines.push(statusHint(status.state, diagnostics.liveSessionCount, request, status.coreSilentForMs, status.endRequestedForMs));
+    lines.push(statusHint(status.state, diagnostics.liveSessionCount, request, status.coreSilentForMs, status.endRequestedForMs, fvp));
     return lines.join('\n');
 }
 

@@ -127,8 +127,11 @@ such a session from its configuration, and the replies that would advise a
 pause say so instead (`FVP_*` in `src/handler/sessionText.ts`): a pause that
 sees no stop, a continue that keeps running, a breakpoint change the model
 did not stop for (`TARGET_RUNNING`), a stop the adapter holds while it waits
-for a halt (stop again), and a session that came up through `cmsis_action`
-(set breakpoints first).
+for a halt (stop again), a session that came up through `cmsis_action`
+(set breakpoints first), the `running` refusal of the gates and the
+`running` hint of `get_session_status`, and a `wait_for_stop` that runs
+out. A step that does not stop sends no recovery pause there
+(`locateRunawayTarget()` is skipped), since the model would ignore it too.
 
 Before it reads anything after a stop, the handler waits for the frame VS
 Code selects for it (`frameSelected()`), at most 2 s and never past the

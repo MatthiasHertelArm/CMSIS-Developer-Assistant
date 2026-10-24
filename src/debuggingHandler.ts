@@ -104,8 +104,8 @@ import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
 import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from './handler/problemText';
 import {
-    FVP_KEEPS_RUNNING, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, fvpChangeRefusal, NO_FRAME_SELECTED, renderCallStack, renderSessionStatus,
-    renderThreads, stoppedTargetRefusal,
+    FVP_KEEPS_RUNNING, FVP_NO_RECOVERY_PAUSE, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, FVP_WAIT_RAN_OUT, fvpChangeRefusal, NO_FRAME_SELECTED,
+    renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal,
 } from './handler/sessionText';
 import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
@@ -507,7 +507,7 @@ export class DebuggingHandler
             return;
         }
         const status = await this.dbg.getSessionStatus();
-        throw stoppedTargetRefusal(operation, status.state, this.sessionRequest());
+        throw stoppedTargetRefusal(operation, status.state, this.sessionRequest(), this.onFvp());
     }
 
     /** `configuration.request` of the session this window acts on, `launch` or `attach`: who owns the GDB server (#3). */
@@ -690,7 +690,9 @@ export class DebuggingHandler
             const overrun = `⚠️ '${spec.tool}' did not complete within ${durationText(outcome.waitedMs)}. `
                 + 'The target is still running or the probe is unresponsive. '
                 + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
-            return { text: overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
+            // An Arm FVP ignores the pause the recovery would send: only a breakpoint stops the model.
+            const recovery = this.onFvp() ? `\n${FVP_NO_RECOVERY_PAUSE}` : await this.locateRunawayTarget(spec.tool);
+            return { text: overrun + recovery, status: 'timeout' };
         }
         const stopped = outcome.reason ? `Target stopped (reason: ${outcome.reason}).` : 'Target stopped.';
         if (!outcome.focused) {
@@ -1014,7 +1016,8 @@ export class DebuggingHandler
     async handleGetSessionStatus(): Answer {
         const status = await this.dbg.getSessionStatus();
         const gaps = status.state === 'no-session' ? this.bootstrapLines() : [];
-        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()], this.sessionRequest());
+        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()], this.sessionRequest(),
+            this.onFvp());
     }
 
     /**
@@ -1215,7 +1218,7 @@ export class DebuggingHandler
             const outcome = await this.dbg.waitForStop(budgetMs);
             if (outcome.kind === 'timeout') {
                 return {
-                    text: 'Target did not stop within the timeout — it is still running (or the probe is unresponsive). '
+                    text: this.onFvp() ? FVP_WAIT_RAN_OUT : 'Target did not stop within the timeout — it is still running (or the probe is unresponsive). '
                         + 'Options: call wait_for_stop again with a larger timeoutMs, pause_execution to see where it is, '
                         + 'or check_target_connection if other calls are also stalling.',
                     status: 'timeout',

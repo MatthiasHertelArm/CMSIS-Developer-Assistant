@@ -1334,11 +1334,39 @@ suite('DebuggingHandler', () => {
                 'Stop requested, but the session is still listed: the debug adapter halts the target before it disconnects, '
                 + 'and the Arm FVP ignores that interrupt. Call stop_debugging once more: VS Code then ends the adapter.');
 
+            const running = 'On the Arm FVP pause_execution will not stop it, only a breakpoint does: wait_for_stop for one that is set, '
+                + 'or stop_debugging, cmsis_action load_and_debug and add_breakpoint before continue_execution.';
+            const read = fvp();
+            read.stopped = false;
+            assert.strictEqual(errorDetail(await refusalOf(handlerFor(read).handleReadMemory({ address: '0x20000000', length: 4 }), 'TARGET_RUNNING')),
+                `Cannot read memory: session state is 'running'.\n${running} Use get_session_status for a definitive, never-failing classification.`);
+            assert.ok((await textAnswer(handlerFor(fvp()).handleGetSessionStatus())).endsWith(`\nHint: target is running. ${running}`));
+
+            const waited = fvp();
+            waited.waitForStop = async () => ({ kind: 'timeout' });
+            assert.strictEqual(await replyAnswer(handlerFor(waited).handleWaitForStop({ timeoutMs: 2_000 }), 'timeout'),
+                'Target did not stop within the timeout — it is still running. On the Arm FVP pause_execution will not stop it, only a breakpoint does: '
+                + 'call wait_for_stop again with a larger timeoutMs, or stop_debugging and cmsis_action load_and_debug to set one.');
+
+            const stepped = fvp();
+            stepped.sessionStatus = status('stopped');
+            stepped.waiters.push({ kind: 'timeout' });
+            const runaway = await replyAnswer(handlerFor(stepped).handleStepOver({ timeoutMs: 500 }), 'timeout');
+            assert.ok(runaway.endsWith('\n🩹 No recovery pause: the Arm FVP ignores it while the model runs, so only a breakpoint stops it — '
+                + 'stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop, then continue_execution.'), runaway);
+            assert.deepStrictEqual(stepped.moves, ['arm', 'stepOver'], 'no pause sent');
+
             // Other sessions keep their texts.
             const board = new ScriptedExecutor();
             board.sessionStatus = status('running');
             board.waiters.push({ kind: 'timeout' });
             assert.ok((await replyAnswer(handlerFor(board).handlePause(), 'timeout')).startsWith('Pause requested but target did not stop within the timeout.'));
+            board.stopped = false;
+            assert.ok(errorDetail(await refusalOf(handlerFor(board).handleReadMemory({ address: '0x20000000', length: 4 }), 'TARGET_RUNNING'))
+                .includes('call pause_execution first'));
+            const boardWait = new ScriptedExecutor();
+            boardWait.waitForStop = async () => ({ kind: 'timeout' });
+            assert.ok((await replyAnswer(handlerFor(boardWait).handleWaitForStop({ timeoutMs: 2_000 }), 'timeout')).includes('pause_execution to see where it is'));
         });
     });
 
