@@ -275,7 +275,14 @@ window's CMSIS job tracker (next section):
   connecting when the wait runs out, or one without threads yet, is
   answered with status `running`; `TASK_FAILED` is kept for a session that
   is gone, and one that ends before it came up ends the wait at once, where
-  a start or a restart waits on (`awaitLiveSession()`).
+  a start or a restart waits on (`awaitLiveSession()`). The wait polls at
+  growing gaps and can miss a session that starts and fails between two
+  polls, so a wait that saw none reads the journal from the call's start:
+  an error of the debug adapter or the GDB server in this call — while a
+  session is still there, only a refused launch or attach request — makes
+  it `TASK_FAILED`, with those records listed (`startFailed()`). Without
+  one it stays `running`, since a slow multi-core flash may still be on
+  its way.
 - `attach` connects to a GDB server it does not start, so before the
   command it checks only what the window knows
   (`refuseAttachToBareModel()`, `src/core/gdbServerPorts.ts`): while the

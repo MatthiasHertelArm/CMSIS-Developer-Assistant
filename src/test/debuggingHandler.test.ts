@@ -33,6 +33,7 @@ import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from '../core/toolResult';
 import { ProblemInput, ProblemJournal, problemJournal, problemJson } from '../core/problemJournal';
+import { renderProblemsBlock, runJournaled } from '../core/problemFeed';
 import type { HandlerHost, ToolEnvironment } from '../handler/host';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
@@ -370,6 +371,19 @@ async function textAnswer(pending: Promise<ToolText>): Promise<string> {
     const answered = await pending;
     assert.strictEqual(typeof answered, 'string', `expected a plain text, got ${JSON.stringify(answered)}`);
     return answered as string;
+}
+
+/**
+ * A call run the way the control server runs it (`runJournaled`), in the
+ * call context `callId`: a failure rejects with the records it produced in
+ * `data.problems`.
+ */
+async function journaled(callId: string, run: () => Promise<ToolText>): Promise<ToolText> {
+    const { outcome } = await runJournaled(problemJournal(), { callId }, run);
+    if (outcome instanceof ToolError) {
+        throw outcome;
+    }
+    return outcome;
 }
 
 /** The text of a call that ends with a reply of the given status. */
@@ -3344,6 +3358,56 @@ suite('DebuggingHandler', () => {
                     + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.');
             });
 
+            test('load_and_debug whose session never showed: a launch the debug adapter refused during the call fails it, its records listed; without one it is running', async () => {
+                const LOST_LAUNCH = 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
+                    + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.';
+                /** One load_and_debug whose session is never seen: its command journals `records`, after a CMSIS Load that exits 0 when `load`. */
+                const launch = (records: ProblemInput[], load = false): Promise<ToolText> => {
+                    const w = jobWorld(50);
+                    w.x.sessionStatus = status('no-session');
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.cmsisLoadAndDebug': () => {
+                            const execution = load ? w.tasks.execution(shellTask('CMSIS Load')) : undefined;
+                            setTimeout(() => {
+                                if (execution) {
+                                    w.tasks.start(execution);
+                                    w.tasks.finish(execution, 0);
+                                }
+                                // What the session tracker journals from the adapter's failed response and the GDB server's output.
+                                records.forEach((record) => problemJournal().append(record));
+                            }, 5);
+                        },
+                    });
+                    return journaled('launch01-1', () => w.handler.handleCmsisCommand({ action: 'load_and_debug' }));
+                };
+
+                // Corstone-300 FVP: GDB lost the model's GDB server during the launch, and the session ended between two polls.
+                const reset = 'error response to \'launch\': Remote communication error.  Target disconnected: error while reading: Connection reset by peer.';
+                const fvp = await refusalOf(launch([{ source: 'dap', origin: 'Arm-FVP (launch)', severity: 'error', message: reset, debugSessionId: 'fvp-1' }]),
+                    'TASK_FAILED');
+                assert.strictEqual(fvp.message, 'CMSIS \'load_and_debug\' on HE started no debug session — the debug adapter\'s launch failed.');
+                assert.strictEqual(fvp.hint, LOST_LAUNCH);
+                assert.match(renderProblemsBlock(fvp.data?.problems), new RegExp(`^\\nRecent problems:\\n  #\\d+ error dap ${reset.replace(/[.()]/g, '\\$&')}$`));
+
+                // pyOCD after its Load, on a port another window's FVP held: the Load leads the message, the server's error line rides along.
+                const unexpected = 'error response to \'launch\': Remote replied unexpectedly to \'vMustReplyEmpty\': timeout';
+                const pyocd = await refusalOf(launch([
+                    { source: 'gdb-server', origin: 'CMSIS_DAP@pyOCD (launch)', severity: 'error', message: '0001234 E Address already in use [gdbserver]' },
+                    { source: 'dap', origin: 'CMSIS_DAP@pyOCD (launch)', severity: 'error', message: unexpected },
+                ], true), 'TASK_FAILED');
+                assert.match(pyocd.message, /^CMSIS 'load_and_debug' on HE started no debug session — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-\d+\); the debug adapter's launch failed\.$/);
+                assert.strictEqual(pyocd.hint, LOST_LAUNCH);
+                const listed = renderProblemsBlock(pyocd.data?.problems).split('\n').slice(2);
+                assert.deepStrictEqual(listed.map((line) => line.replace(/^  #\d+ /, '')),
+                    ['error gdb-server 0001234 E Address already in use [gdbserver]', `error dap ${unexpected}`]);
+
+                // Nothing journaled: a slow flash may still be on its way.
+                const quiet = await replyAnswer(launch([]), 'running');
+                assert.ok(quiet.startsWith('CMSIS \'load_and_debug\' on HE issued via \'cmsis-csolution.cmsisLoadAndDebug\'. '
+                    + 'The flash/connect pipeline is running in the CMSIS extension'), quiet);
+            });
+
             suite('the program of a failed Load or launch: J-Link and its PATH', () => {
                 /** CMSIS Load as CMSIS Solution 1.72.0 writes it for the J-Link adapter: on Windows (a tester's XMC4700 project), and on macOS and Linux. */
                 const JLINK_LOAD_WINDOWS = 'echo Connect > .cmd.jlink && echo LoadFile "out/snmp_agent_demo/snmp_agent_demo_flash/snmp_agent_demo.axf" '
@@ -4009,6 +4073,58 @@ suite('DebuggingHandler', () => {
             assert.ok(lost.answer.hint?.startsWith('For \'attach\' this almost always means no GDB server is listening'), lost.answer.hint);
             assert.deepStrictEqual(lost.x.argsOf('getThreads'), [], 'a session that is gone is not probed');
             assert.strictEqual(lost.x.argsOf('getSessionStatus').length, 2, 'the wait ends with the session');
+        });
+
+        test('attach whose session never showed: an attach the debug adapter refused fails it with the attach hint; a view\'s evaluate, a tool\'s warning, another call\'s error, or a server line while the session still connects do not', async () => {
+            /** One attach whose command journals `records`; the session is never seen, or, with `connecting`, stays initializing. */
+            const attach = async (records: ProblemInput[], connecting = false): Promise<ToolText> => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                x.sessionStatus = status(connecting ? 'initializing' : 'no-session');
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisAttachDebugger': () => {
+                        x.session = connecting;
+                        setTimeout(() => records.forEach((record) => problemJournal().append(record)), 5);
+                    },
+                });
+                try {
+                    const clock = fastClock(50);
+                    const tracker = cmsisTasksTracker(clock);
+                    return await journaled('attach01-1', () => handlerFor(x, { ...clock, cmsisJobs: () => tracker }).handleCmsisCommand({ action: 'attach' }));
+                } finally {
+                    registrations?.dispose();
+                    registrations = undefined;
+                }
+            };
+            const origin = 'CMSIS_DAP@pyOCD (attach)';
+
+            // No GDB server listening: GDB's connect timed out and the session ended between two polls.
+            const timedOut = 'error response to \'attach\': could not connect: Operation timed out.';
+            const refused = await refusalOf(attach([{ source: 'dap', origin, severity: 'error', message: timedOut, debugSessionId: 'a-1' }]), 'TASK_FAILED');
+            assert.strictEqual(refused.message, 'CMSIS \'attach\' on HE started no debug session — the debug adapter\'s attach failed.');
+            assert.strictEqual(refused.hint, 'For \'attach\' this almost always means no GDB server is listening on the configured port: '
+                + 'start the GDB server first, or use \'load_and_debug\' (which launches one). No CMSIS Run task is alive in this window — '
+                + 'cmsis_action run starts the GDB server without programming (the pyOCD task resets the target first); load_and_run programs first. '
+                + 'Confirm with get_session_status / check_target_connection.');
+            assert.match(renderProblemsBlock(refused.data?.problems), /^\nRecent problems:\n  #\d+ error dap error response to 'attach': could not connect: Operation timed out\.$/);
+
+            // A Watch expression VS Code evaluated on its own (info), a tool's own failed request (warning), an error of another call: still running.
+            const unrelated = await replyAnswer(attach([
+                { source: 'dap', origin, severity: 'info', message: 'error response to \'evaluate\': <no message>' },
+                { source: 'dap', origin, severity: 'warning', message: 'error response to \'threads\': Thread is running.' },
+                { source: 'dap', origin, severity: 'error', message: timedOut, toolCallId: 'other001-9' },
+            ]), 'running');
+            assert.ok(unrelated.startsWith('CMSIS \'attach\' on HE issued via \'cmsis-csolution.cmsisAttachDebugger\'. '), unrelated);
+
+            // A session still connecting: a server's error line is no verdict yet; the attach request itself refused is one.
+            const serverLine = { source: 'gdb-server', origin, severity: 'error', message: '0000500 E Failed to get unique id for open [dap_access_cmsis_dap]' } as const;
+            await replyAnswer(attach([serverLine], true), 'running');
+            const refusedWhileThere = await refusalOf(attach([serverLine, { source: 'dap', origin, severity: 'error', message: timedOut }], true), 'TASK_FAILED');
+            assert.strictEqual(refusedWhileThere.message, 'CMSIS \'attach\' on HE started no debug session — the debug adapter\'s attach failed.');
+            assert.strictEqual(renderProblemsBlock(refusedWhileThere.data?.problems).split('\n').length, 4, 'both records listed');
+
+            // Nothing journaled.
+            await replyAnswer(attach([]), 'running');
         });
 
         test('the fence honours the long cap for cmsis_action and flash only', async () => {

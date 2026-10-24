@@ -115,6 +115,8 @@ import {
     samePath,
     SOLUTION_EXTENSION_ID,
 } from '../core/bootstrapState';
+import { currentCallContext } from '../core/callContext';
+import { failedResponseMessage } from '../core/problemFeed';
 import type { ProblemJournal } from '../core/problemJournal';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
@@ -839,34 +841,83 @@ async function writeCmsisTasks(issue: Pick<Issue, 'context' | 'tracker' | 'deadl
     return { labels, missing: { reason: `Update Debug Tasks (cmsis-csolution.updateDebugTasks) ran for the debugger '${debuggerName}' but wrote none` } };
 }
 
-/** What load_and_debug's session phase needs to name a GDB server the debug adapter could not start. */
-interface LaunchFacts {
-    /** The first journal seq of this call's launch. */
+/** What the session phase of load_and_debug and attach reads in the journal. */
+interface SessionFacts {
+    /** The first journal seq of this call's launch or attach. */
     sinceSeq: number;
-    /** The `target.server` programs of the solution's CMSIS launch configurations. */
-    servers: readonly string[];
+    /** load_and_debug only: the `target.server` programs of the solution's CMSIS launch configurations. */
+    servers?: readonly string[];
+}
+
+/** The journal position a launch or attach about to be issued starts from. */
+function journalStart(issue: Issue): number {
+    return issue.context.journal.counters().seq + 1;
+}
+
+/** The start of the line the session tracker journals for a launch or attach request the debug adapter refused. */
+const REFUSED_START = [failedResponseMessage('launch', ''), failedResponseMessage('attach', '')];
+
+/**
+ * Whether a load_and_debug or attach whose wait saw no live session failed:
+ * the debug adapter or the GDB server journaled an error during this call
+ * (from `sinceSeq`, not another call's). The wait polls at growing gaps, so
+ * a session can start and fail between two polls; its records stay. While a
+ * session is still there, only a refused launch or attach request counts:
+ * other lines of a session coming up are no verdict. Records of VS Code's
+ * views are `info` and never count.
+ */
+function startFailed(journal: ProblemJournal, sinceSeq: number, sessionThere: boolean): boolean {
+    const callId = currentCallContext()?.callId;
+    const errors = journal.query({ sinceSeq, sources: ['dap', 'gdb-server'], minSeverity: 'error' }).records
+        .filter((record) => record.toolCallId === undefined || record.toolCallId === callId);
+    if (!sessionThere) {
+        return errors.length > 0;
+    }
+    return errors.some((record) => record.source === 'dap' && REFUSED_START.some((start) => record.message.startsWith(start)));
+}
+
+/** The next step after an attach whose session never came up or did not survive the connect. */
+function attachFailedHint(runAlive: boolean): string {
+    const noRun = !runAlive
+        ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
+            + '(the pyOCD task resets the target first); load_and_run programs first.'
+        : '';
+    return 'For \'attach\' this almost always means no GDB server is listening on the configured port: '
+        + `start the GDB server first, or use 'load_and_debug' (which launches one).${noRun} `
+        + 'Confirm with get_session_status / check_target_connection.';
 }
 
 /**
  * The last step of load_and_debug and attach: wait for the session, then
  * probe it twice. A session that ended before it came up is not probed.
- * For load_and_debug (`launch`), a `GDB_SERVER_NOT_FOUND` the debug adapter
- * reported during the call makes a lost session, or one that never showed,
- * a failure whose hint says which PATH lacks the server.
+ * For load_and_debug (`facts.servers`), a `GDB_SERVER_NOT_FOUND` the debug
+ * adapter reported during the call makes a lost session, or one that never
+ * showed, a failure whose hint says which PATH lacks the server. A session
+ * that never showed is a failure too when the debug adapter or the GDB
+ * server journaled an error during the call (`startFailed`); the problem
+ * feed lists those records under the failure. Otherwise it is `running`.
  */
-async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean, launch?: LaunchFacts): Promise<ToolText> {
+async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean, facts: SessionFacts): Promise<ToolText> {
     const { executor, host } = issue.context;
     const tag = issue.tag;
-    const serverMissing = (): string | undefined => (launch
-        ? gdbServerMissingHint(host, issue.context.journal, launch.sinceSeq, launch.servers, issue.solutionPath)
+    const servers = facts.servers;
+    const serverMissing = (): string | undefined => (servers
+        ? gdbServerMissingHint(host, issue.context.journal, facts.sinceSeq, servers, issue.solutionPath)
         : undefined);
+    const loaded = loadNote ? `${loadNote}; ` : '';
     const wait = await issue.context.awaitLiveSession(SESSION_WAIT_MS);
     if (wait === 'timeout') {
         const missing = serverMissing();
         if (missing !== undefined) {
             throw new ToolError('TASK_FAILED',
-                `CMSIS '${action}'${tag} started no debug session — ${loadNote ? `${loadNote}; ` : ''}the debug adapter could not start the GDB server.`,
+                `CMSIS '${action}'${tag} started no debug session — ${loaded}the debug adapter could not start the GDB server.`,
                 missing);
+        }
+        if (startFailed(issue.context.journal, facts.sinceSeq, executor.hasDebugSession())) {
+            const attach = action === 'attach';
+            throw new ToolError('TASK_FAILED',
+                `CMSIS '${action}'${tag} started no debug session — ${loaded}the debug adapter's ${attach ? 'attach' : 'launch'} failed.`,
+                attach ? attachFailedHint(runAlive) : LOST_LAUNCH_HINT);
         }
         return {
             text: `CMSIS '${action}'${tag} issued via '${issue.command}'.${loadNote ? ` ${loadNote}` : ''} `
@@ -880,7 +931,6 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
         };
     }
     const survival = wait === 'gone' ? ENDED_BEFORE_UP : await checkSurvival(executor, host);
-    const loaded = loadNote ? `${loadNote}; ` : '';
     if (survival.stable) {
         const state = await executor.getCurrentDebugState(3);
         return `CMSIS '${action}' completed${tag} — ${loaded}debug session survived the connect (${survival.detail}). `
@@ -899,17 +949,10 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
         // load_and_debug launched its own GDB server: the server's or GDB's own lines say why the session ended.
         throw new ToolError('TASK_FAILED', failed, serverMissing() ?? LOST_LAUNCH_HINT);
     }
-    const noRun = !runAlive
-        ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
-            + '(the pyOCD task resets the target first); load_and_run programs first.'
-        : '';
-    throw new ToolError('TASK_FAILED', failed,
-        'For \'attach\' this almost always means no GDB server is listening on the configured port: '
-            + `start the GDB server first, or use 'load_and_debug' (which launches one).${noRun} `
-            + 'Confirm with get_session_status / check_target_connection.');
+    throw new ToolError('TASK_FAILED', failed, attachFailedHint(runAlive));
 }
 
-/** The next step after a load_and_debug whose session ended during the connect. */
+/** The next step after a load_and_debug whose session ended during the connect or never came up. */
 const LOST_LAUNCH_HINT = 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
     + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.';
 
@@ -1022,7 +1065,7 @@ function withoutRunNote(answer: ToolText, endpoints: readonly AttachEndpoint[]):
 async function loadAndDebug(issue: Issue, loadFirst: boolean, servers: readonly string[]): Promise<ToolText> {
     const { tracker } = issue;
     const { host } = issue.context;
-    const launch: LaunchFacts = { sinceSeq: issue.context.journal.counters().seq + 1, servers };
+    const launch: SessionFacts = { sinceSeq: journalStart(issue), servers };
     const job = tracker.begin('load_and_debug', issue.target);
     expectSessionOf(issue);
     try {
@@ -1510,9 +1553,10 @@ export async function runCmsisAction(
             if (runAlive && solution.solutionPath) {
                 await refuseAttachToBareModel(issue, endpoints);
             }
+            const sinceSeq = journalStart(issue);
             expectSessionOf(issue);
             await issueCommand(issue, action);
-            const answer = await sessionPhase(issue, action, '', runAlive);
+            const answer = await sessionPhase(issue, action, '', runAlive, { sinceSeq });
             return withPreface(runAlive ? answer : withoutRunNote(answer, endpoints), preface);
         }
         case 'refresh':
