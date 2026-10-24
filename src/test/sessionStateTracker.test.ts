@@ -625,7 +625,7 @@ suite('Session state tracker', () => {
                 'FileNotFoundError: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist\x1b[0m',
                 '0001001 C Error: Directory D:\\Test\\DUT\\out\\reports for STDIO file usart-validation.log does not exist [__main__]',
                 'gdbserver exited with code 1',
-            ].join('\r\n'), 'server');
+            ].join('\r\n') + '\r\n', 'server');
             // The same prefix outside the GDB server's category weighs nothing.
             a.output('0000992 E not the server\'s\n', 'console');
             assert.deepStrictEqual(journal.query().records.map((record) => [record.severity, record.source, record.message]), [
@@ -637,6 +637,47 @@ suite('Session state tracker', () => {
                 ['info', 'gdb-server', 'gdbserver exited with code 1'],
                 ['info', 'dap', '0000992 E not the server\'s'],
             ]);
+        });
+
+        test('a line the GDB server writes in pieces is one record once its newline comes; categories keep their own pieces', () => {
+            // The Corstone FVP's output reached the journal as "Bl", "in", "ky i", ... one record each.
+            const a = journaled();
+            for (const piece of ['= Bl', 'in', 'ky i', 's running =', '\r', '\nFailed to po', 'wer up DAP\nListening']) {
+                a.output(piece, 'server');
+            }
+            a.output('Reading sym', 'console');
+            a.output('bols\n', 'console');
+            assert.deepStrictEqual(journal.query().records.map((record) => [record.source, record.code ?? '-', record.message]), [
+                ['gdb-server', '-', '= Blinky is running ='],
+                ['gdb-server', 'DAP_POWER_UP_FAILED', 'Failed to power up DAP'],
+                ['dap', '-', 'Reading symbols'],
+            ]);
+            a.output(' on port 3333\n', 'server');
+            assert.strictEqual(journal.query().records.at(-1)?.message, 'Listening on port 3333');
+            a.output('hello', 'stdout');
+            a.output(' target\n', 'stdout');
+            assert.strictEqual(journal.size, 4, 'the target\'s stdout is still left out');
+        });
+
+        test('the start of a line is journaled as it is after a short wait, at the session\'s end, or when it is very long', async () => {
+            const a = journaled();
+            a.output('gdbserver exited with code 1', 'server');
+            assert.strictEqual(journal.size, 0, 'it waits for its end');
+            await delay(700);
+            assert.deepStrictEqual(journal.query().records.map((record) => record.message), ['gdbserver exited with code 1']);
+
+            const b = journaled();
+            b.output('Remote connection closed', 'console');
+            b.event('terminated');
+            assert.strictEqual(journal.query().records.at(-1)?.message, 'Remote connection closed', 'the session\'s end journals it at once');
+            await delay(700);
+            assert.strictEqual(journal.query().records.filter((record) => record.message === 'Remote connection closed').length, 1, 'and only once');
+
+            const c = journaled();
+            const before = journal.size;
+            c.output('x'.repeat(5_000), 'server');
+            assert.strictEqual(journal.size, before + 1, 'a very long piece is not held');
+            assert.ok(journal.query().records.at(-1)?.message.startsWith('xxxx'));
         });
 
         test('an adapter error is an error', () => {

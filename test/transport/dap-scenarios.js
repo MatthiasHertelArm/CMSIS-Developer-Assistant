@@ -1115,6 +1115,8 @@ class ScenarioContext {
         this.syncBreakpoints(stub.debug.breakpoints);
         // cdt-gdb-adapter prints this at configurationDone, which a failed launch never reaches.
         if (spec.banner !== false) { target.output('console', GDB_BANNER); }
+        // The GDB server's output as some servers write it, a few characters per output event (`serverPieces`).
+        for (const piece of spec.serverPieces ?? []) { target.output('server', piece); }
         if (spec.initial === 'running') {
             target.stopAt('main31', 'breakpoint');
             target.run();
@@ -1723,6 +1725,18 @@ const SCENARIOS = [
         ],
     },
     {
+        name: 'server-output-in-pieces',
+        description: 'The GDB server writes its lines a few characters per output event, as the Corstone FVP\'s model output does: '
+            + 'get_recent_problems lists each line once, whole, not one record per piece.',
+        session: {
+            initial: { at: 'main31', reason: 'breakpoint' },
+            serverPieces: ['= Bl', 'in', 'ky i', 's running =\r', '\nFailed to po', 'wer up DAP\n', 'telnetterminal0: Listening for serial connection on port 5000\n'],
+        },
+        calls: [
+            { tool: 'get_recent_problems', args: { sources: ['gdb-server'], minSeverity: 'info', limit: 3 } },
+        ],
+    },
+    {
         name: 'unresponsive-pause-recovers',
         description: 'A running target whose adapter answers no threads probe (GDB busy with it): the status says unresponsive, yet pause_execution '
             + 'is not refused: its one pause stops the target, and the status is stopped again.',
@@ -2115,8 +2129,9 @@ function normalise(text, ctx) {
         .replace(/\b127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
         // The release number (with a pre-release suffix when CI set one), so that a version bump leaves the snapshot alone.
         .replace(/\bserverVersion=\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/g, 'serverVersion=<version>')
-        // Problem-journal numbers count on across scenarios, so they depend on every scenario before.
-        .replace(/(^|\n) {2}#\d+ (error|warning|info) /g, '$1  #<seq> $2 ')
+        // Problem-journal numbers count on across scenarios, so they depend on every scenario before, as do the records a page leaves out.
+        .replace(/(^|\n)( {2})?#\d+ (error|warning|info) /g, '$1$2#<seq> $3 ')
+        .replace(/… \d+ older records? left out/g, '… <n> older record(s) left out')
         .replace(/\b(sinceSeq: |nextSeq=| since #)\d+/g, '$1<seq>');
 }
 

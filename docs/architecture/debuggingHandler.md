@@ -778,7 +778,11 @@ once when errors arrived that the agent has not seen, and
   line is known or, for the server's log, pyOCD's level column says `W`
   (warning) or `E`/`C` (error), so that a server that ends at once leaves
   its reason among the errors a failed `load_and_debug` carries; colour codes
-  are stripped; never the target's `stdout` or GDB's `log` stream. A failed
+  are stripped; never the target's `stdout` or GDB's `log` stream. A line
+  arrives in pieces when the server writes a few characters at a time (an
+  FVP's model output), so the start of a line waits for the output event
+  with its newline, at most 500 ms and 4 096 characters, and the session's
+  end journals what is left. A failed
   response is an error when VS Code sent the request and a warning when a
   tool did, since the tool reports its own outcome; an `evaluate` that a
   view sent on its own (Watch, hover, the CMSIS Debugger's Live Watch) is

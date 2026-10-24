@@ -2621,6 +2621,35 @@
       ]
     },
     {
+      "name": "server-output-in-pieces",
+      "description": "The GDB server writes its lines a few characters per output event, as the Corstone FVP's model output does: get_recent_problems lists each line once, whole, not one record per piece.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: output [server] \"= Bl\"",
+        "event: output [server] \"in\"",
+        "event: output [server] \"ky i\"",
+        "event: output [server] \"s running =\"",
+        "event: output [server] \"Failed to po\"",
+        "event: output [server] \"wer up DAP\"",
+        "event: output [server] \"telnetterminal0: Listening for serial connection on port 5000\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_recent_problems",
+          "args": {
+            "sources": [
+              "gdb-server"
+            ],
+            "minSeverity": "info",
+            "limit": 3
+          },
+          "text": "… <n> older record(s) left out: raise limit (at most 50) or narrow sources or minSeverity.\n#<seq> info gdb-server = Blinky is running =\n#<seq> error gdb-server [DAP_POWER_UP_FAILED] Failed to power up DAP → Check the board's power and the debug cable, then cmsis_action load_and_debug.\n#<seq> info gdb-server telnetterminal0: Listening for serial connection on port 5000\nnextSeq=<seq>",
+          "traffic": []
+        }
+      ]
+    },
+    {
       "name": "unresponsive-pause-recovers",
       "description": "A running target whose adapter answers no threads probe (GDB busy with it): the status says unresponsive, yet pause_execution is not refused: its one pause stops the target, and the status is stopped again.",
       "setup": [

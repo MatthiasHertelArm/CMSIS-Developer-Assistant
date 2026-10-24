@@ -30,7 +30,8 @@
  * What goes wrong on the channel goes into the window's problem journal
  * (#48): failed responses, adapter errors, and the output of the categories
  * `stderr`, `console`, `important` and `server` (the GDB server's, on
- * cdt-gdb-adapter), line by line, never the target's `stdout`. A failed
+ * cdt-gdb-adapter), line by line, a line split over several output events
+ * as one, never the target's `stdout`. A failed
  * response is an error when VS Code sent the request (a breakpoint the user
  * set while the target runs) and a warning when a tool sent it through
  * `customRequestWithTimeout`, since that tool reports its own outcome; an
@@ -515,32 +516,104 @@ const OUTPUT_KINDS: Readonly<Partial<Record<string, { severity: ProblemSeverity;
 /** A terminal colour or style sequence: pyOCD dims its tracebacks with them. */
 const ANSI_SEQUENCE = /\x1b\[[0-9;]*[A-Za-z]/g;
 
+/** The longest part of a line kept for the output event that ends it; a longer one is journaled as it is. */
+const PARTIAL_LINE_MAX_CHARS = 4_096;
+/** How long the start of a line waits for the output event that ends it before it is journaled as it is. */
+const PARTIAL_LINE_WAIT_MS = 500;
+
+/** The start of a line an output event left without its newline, and how to journal it if no end comes. */
+interface PartialLine {
+    text: string;
+    timer: NodeJS.Timeout;
+    flush: () => void;
+}
+
+/**
+ * Per session and category, the start of a line an output event ended
+ * without a newline: a GDB server that writes a few characters at a time (an
+ * FVP's model output) would otherwise leave one record per fragment.
+ */
+const partialLines = new WeakMap<vscode.DebugSession, Map<string, PartialLine>>();
+
+/** The kept start of a line of `category`, now taken; empty when there is none. */
+function takePartialLine(session: vscode.DebugSession, category: string): string {
+    const partial = partialLines.get(session)?.get(category);
+    if (!partial) {
+        return '';
+    }
+    clearTimeout(partial.timer);
+    partialLines.get(session)?.delete(category);
+    return partial.text;
+}
+
+/** Journals every kept start of a line of `session` as it is: the session ends. */
+function flushPartialLines(session: vscode.DebugSession): void {
+    const kept = partialLines.get(session);
+    partialLines.delete(session);
+    for (const partial of kept?.values() ?? []) {
+        clearTimeout(partial.timer);
+        partial.flush();
+    }
+}
+
 /**
  * Adapter output of a journaled category, one record per line without its
  * colour codes, each weighed and coded by `classifyProblem` when it knows
  * the line; a GDB-server line it does not know keeps the level pyOCD gave it.
+ * A line is journaled once its newline came, in this event or a later one;
+ * the start of a line waits for its end at most `PARTIAL_LINE_WAIT_MS` and
+ * `PARTIAL_LINE_MAX_CHARS`, and the session's end journals it as it is.
  */
 function journalOutput(journal: ProblemJournal, session: vscode.DebugSession, category: unknown, output: string): void {
-    const kind = OUTPUT_KINDS[typeof category === 'string' ? category : 'console'];
+    const name = typeof category === 'string' ? category : 'console';
+    const kind = OUTPUT_KINDS[name];
     if (!kind) {
         return;
     }
-    for (const line of output.split(/\r?\n/)) {
-        const text = line.replace(ANSI_SEQUENCE, '').trim();
-        if (text.length === 0) {
-            continue;
-        }
-        const known = classifyProblem(text, kind.source);
-        const leveled = kind.source === 'gdb-server' ? serverLineSeverity(text) : undefined;
-        journal.append({
-            source: known?.source ?? kind.source,
-            origin: session.name,
-            severity: known?.severity ?? leveled ?? kind.severity,
-            message: text,
-            debugSessionId: session.id,
-            ...(known ? { code: known.code, hint: known.hint } : {}),
-        });
+    const lines = (takePartialLine(session, name) + output).split(/\r?\n/);
+    const rest = lines.pop() ?? '';
+    for (const line of lines) {
+        journalLine(journal, session, kind, line);
     }
+    if (rest.length === 0) {
+        return;
+    }
+    if (rest.length >= PARTIAL_LINE_MAX_CHARS) {
+        journalLine(journal, session, kind, rest);
+        return;
+    }
+    const flush = (): void => journalLine(journal, session, kind, rest);
+    const timer = setTimeout(() => {
+        if (partialLines.get(session)?.get(name)?.timer === timer) {
+            partialLines.get(session)?.delete(name);
+            flush();
+        }
+    }, PARTIAL_LINE_WAIT_MS);
+    timer.unref?.();
+    let kept = partialLines.get(session);
+    if (!kept) {
+        kept = new Map();
+        partialLines.set(session, kept);
+    }
+    kept.set(name, { text: rest, timer, flush });
+}
+
+/** One line of adapter output as a problem record, unless it is empty once its colour codes are gone. */
+function journalLine(journal: ProblemJournal, session: vscode.DebugSession, kind: { severity: ProblemSeverity; source: ProblemSource }, line: string): void {
+    const text = line.replace(ANSI_SEQUENCE, '').trim();
+    if (text.length === 0) {
+        return;
+    }
+    const known = classifyProblem(text, kind.source);
+    const leveled = kind.source === 'gdb-server' ? serverLineSeverity(text) : undefined;
+    journal.append({
+        source: known?.source ?? kind.source,
+        origin: session.name,
+        severity: known?.severity ?? leveled ?? kind.severity,
+        message: text,
+        debugSessionId: session.id,
+        ...(known ? { code: known.code, hint: known.hint } : {}),
+    });
 }
 
 // ── Output capture (GDB commands on cdt-gdb-adapter) ──────────────
@@ -810,6 +883,7 @@ export function waitForSessionEnd(session: vscode.DebugSession, timeoutMs: numbe
 
 /** Everything the tracker holds for a session goes when it ends, and whoever waits on it is told. */
 function sessionEnded(session: vscode.DebugSession): void {
+    flushPartialLines(session);
     endedSessions.add(session);
     sessionStates.delete(session);
     removeLiveSession(session);
