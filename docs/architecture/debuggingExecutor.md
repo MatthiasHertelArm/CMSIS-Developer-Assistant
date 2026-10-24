@@ -181,7 +181,9 @@ can fake only the part a case drives.
   only the address cannot be read in this state, `INVALID_ARGUMENT`. A read
   that timed out on a port that answers keeps its timeout. The hint of
   `PROBE_WEDGED` depends on the session's `request`: an attached session
-  reconnects with `cmsis_action detach` and `attach`, a launched one owns
+  reconnects with `cmsis_action detach` and `attach`, since the CMSIS Run
+  task's pyOCD (`--persist`) outlives every detach and ends only with its
+  task, after which `cmsis_action run` starts it again; a launched one owns
   its GDB server (`src/core/probeWedge.ts`). The fault registers are judged
   once, at the first word that fails.
   `probeDebugPort()` offers the same DHCSR read to the handler, which checks

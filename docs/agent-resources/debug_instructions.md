@@ -386,7 +386,7 @@ This is tuned for firmware and should rarely get in your way:
 
 **When the reads themselves fail.** Every failed memory read says why each way of reading failed. `[PROBE_WEDGED]` means the debug port no longer answers: DHCSR, which a debugger can read on every Cortex-M while the port works, could not be read either. More reads will fail the same way, so follow the hint, and never start a GDB server yourself. Recover in this order, and keep the fault state for as long as you can:
 
-- **An `attach` session** reconnects with `cmsis_action detach`, then `cmsis_action attach`, without a reset. The fault state survives.
+- **An `attach` session** reconnects with `cmsis_action detach`, then `cmsis_action attach`, without a reset: its GDB server lives as long as its CMSIS Run task. The fault state survives. If attach then fails with "could not connect", the server ended with that task (window closed or reloaded, `stop_run`): `cmsis_action run` in the window that owns the board starts it again, with a reset.
 - **A `load_and_debug` session** owns its GDB server. Ask the user to restart that server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`. The fault state survives.
 - **Only then, `restart_debugging`, `reset` or `cmsis_action load_and_debug`.** Each re-flashes or resets the target and clears the fault status, so the crash can no longer be read. Use them after the decoded fault and frame are recorded, or when the user accepts that loss, and say the loss in the reply.
 

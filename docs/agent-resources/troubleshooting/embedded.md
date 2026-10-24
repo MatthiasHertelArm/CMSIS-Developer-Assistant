@@ -51,7 +51,7 @@ The session-status output includes a hint for each state. If state is `running` 
 
 - The debug port stopped answering: the failed read and a read of DHCSR (0xE000EDF0), which works on every Cortex-M while the port does, both failed. The message keeps each read strategy's cause.
 - Do not retry the read, and do not start a GDB server yourself; follow the hint of the error
-- Attach session (`cmsis_action attach`): `cmsis_action detach`, then `cmsis_action attach` reconnects without a reset; then `diagnose_fault`
+- Attach session (`cmsis_action attach`): the GDB server lives as long as its CMSIS Run task (pyOCD `--persist`), so `cmsis_action detach`, then `cmsis_action attach` reconnects without a reset — pyOCD lets the target run while detached and halts it on attach; then `diagnose_fault`. If attach then fails with "could not connect", the server ended with its task (window closed or reloaded, `stop_run`): `cmsis_action run` in the window that owns the board starts it again, with a reset
 - Launch session (`cmsis_action load_and_debug`): it owns the GDB server. `restart_debugging` and `load_and_debug` re-flash and reset, which clears the fault status: record the fault first. To keep it, the user restarts the server without a reset (J-Link `-nohalt -noreset`, pyOCD `-O connect_mode=attach`), then `cmsis_action attach`.
 - `INVALID_ARGUMENT` "the debug port answers" is different: only that address is unreadable (peripheral clock off, MPU or TrustZone, nothing mapped)
 

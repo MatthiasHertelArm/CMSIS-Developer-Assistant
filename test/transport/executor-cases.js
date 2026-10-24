@@ -1020,7 +1020,7 @@ async function main() {
             && wedged.message.startsWith('Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory.). Reading 0xE000ED28 — ')
             && wedged.message.includes('DAP readMemory: Unable to read memory. (@ 0xE000ED28)')
             && calls.filter((c) => c.args.memoryReference === '0xE000EDF0').length === 1
-            && wedged.hint.startsWith('This session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach'),
+            && wedged.hint.startsWith('This session is attached to a GDB server that lives as long as its CMSIS Run task: cmsis_action detach, then cmsis_action attach'),
         wedged && `${wedged.code} ${wedged.message} / ${wedged.hint}`);
 
         dhcsr = 'hang';

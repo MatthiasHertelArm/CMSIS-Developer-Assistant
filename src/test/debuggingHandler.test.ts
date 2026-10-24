@@ -884,7 +884,7 @@ suite('DebuggingHandler', () => {
             x.sessionStatus = status('unresponsive');
             x.activeSession = { configuration: { request: 'attach' } };
             const attached = await refusalOf(handlerFor(x).handleGetFaultInfo(), 'PROBE_WEDGED');
-            assert.ok(attached.hint?.includes('cmsis_action detach, then cmsis_action attach — reconnects without a reset; then get_fault_info.'),
+            assert.ok(attached.hint?.includes('cmsis_action detach, then cmsis_action attach reconnects without a reset (pyOCD lets the target run while detached and halts it on attach); then get_fault_info.'),
                 attached.hint);
             x.activeSession = { configuration: { request: 'launch' } };
             const launched = await refusalOf(handlerFor(x).handleDiagnoseFault(), 'PROBE_WEDGED');

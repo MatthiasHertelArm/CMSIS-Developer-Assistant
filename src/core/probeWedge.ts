@@ -101,8 +101,14 @@ export interface ReadFailureFacts {
 /** An adapter without DAP `readMemory` says so; its DHCSR read then tells nothing about the port. */
 const UNSUPPORTED = /unrecognized request|not supported|unsupported|not implemented/i;
 
-const ATTACH_HINT = 'This session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach — '
-    + 'reconnects without a reset; then get_fault_info.';
+/**
+ * The CMSIS Run task starts pyOCD with `--persist`: its GDB server outlives every detach and ends with the task.
+ * pyOCD halts the target when GDB connects and resumes it when the last client leaves.
+ */
+const ATTACH_HINT = 'This session is attached to a GDB server that lives as long as its CMSIS Run task: cmsis_action detach, '
+    + 'then cmsis_action attach reconnects without a reset (pyOCD lets the target run while detached and halts it on attach); '
+    + 'then get_fault_info. If attach then fails with "could not connect", the server ended with its task (window closed or reloaded, '
+    + 'stop_run): cmsis_action run in the window that owns the board starts it again, with a reset.';
 
 const LAUNCH_HINT = 'This session launched its own GDB server: detaching or stopping the session stops that server, and '
     + 'restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to '

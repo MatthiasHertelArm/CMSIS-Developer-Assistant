@@ -205,8 +205,11 @@ suite('memory reads and a wedged probe (#3)', () => {
 
     test('the way out depends on who owns the GDB server; the agent is never told to start one', () => {
         const attach = wedgeHint('attach');
-        assert.strictEqual(attach, 'This session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach — '
-            + 'reconnects without a reset; then get_fault_info.');
+        assert.strictEqual(attach, 'This session is attached to a GDB server that lives as long as its CMSIS Run task: cmsis_action detach, '
+            + 'then cmsis_action attach reconnects without a reset (pyOCD lets the target run while detached and halts it on attach); '
+            + 'then get_fault_info. If attach then fails with "could not connect", the server ended with its task (window closed or reloaded, '
+            + 'stop_run): cmsis_action run in the window that owns the board starts it again, with a reset.');
+        assert.ok(!/cmsis_action (load_and_debug|load_and_run)/.test(attach), 'an attach session is never told to re-flash');
         const launch = wedgeHint('launch');
         assert.ok(launch.startsWith('This session launched its own GDB server: detaching or stopping the session stops that server'), launch);
         assert.ok(launch.includes('ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach)'));

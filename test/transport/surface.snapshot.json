@@ -1451,8 +1451,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61799,
-          "sha256": "15130ad9c07eb7800c7348469f6b8a6b4f2d738b0de895947bf46657233dbe7f"
+          "bytes": 62055,
+          "sha256": "a8b40937235d4afe1955a5f6c304dcfd44467c5766d4e669630415936d85f3e8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -1467,8 +1467,8 @@
           "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7724,
-          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
+          "bytes": 8070,
+          "sha256": "ed8766b96244c278e28c400a52ba344840ebc39d7a2b9a66fd152f0868be79f3"
         }
       },
       "calls": {
@@ -2969,8 +2969,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61799,
-          "sha256": "15130ad9c07eb7800c7348469f6b8a6b4f2d738b0de895947bf46657233dbe7f"
+          "bytes": 62055,
+          "sha256": "a8b40937235d4afe1955a5f6c304dcfd44467c5766d4e669630415936d85f3e8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -2985,8 +2985,8 @@
           "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7724,
-          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
+          "bytes": 8070,
+          "sha256": "ed8766b96244c278e28c400a52ba344840ebc39d7a2b9a66fd152f0868be79f3"
         }
       },
       "calls": {}
@@ -5023,8 +5023,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61799,
-          "sha256": "15130ad9c07eb7800c7348469f6b8a6b4f2d738b0de895947bf46657233dbe7f"
+          "bytes": 62055,
+          "sha256": "a8b40937235d4afe1955a5f6c304dcfd44467c5766d4e669630415936d85f3e8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -5039,8 +5039,8 @@
           "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7724,
-          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
+          "bytes": 8070,
+          "sha256": "ed8766b96244c278e28c400a52ba344840ebc39d7a2b9a66fd152f0868be79f3"
         }
       },
       "calls": {
@@ -7045,8 +7045,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61799,
-          "sha256": "15130ad9c07eb7800c7348469f6b8a6b4f2d738b0de895947bf46657233dbe7f"
+          "bytes": 62055,
+          "sha256": "a8b40937235d4afe1955a5f6c304dcfd44467c5766d4e669630415936d85f3e8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -7061,8 +7061,8 @@
           "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7724,
-          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
+          "bytes": 8070,
+          "sha256": "ed8766b96244c278e28c400a52ba344840ebc39d7a2b9a66fd152f0868be79f3"
         }
       },
       "calls": {
@@ -9153,8 +9153,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61799,
-          "sha256": "15130ad9c07eb7800c7348469f6b8a6b4f2d738b0de895947bf46657233dbe7f"
+          "bytes": 62055,
+          "sha256": "a8b40937235d4afe1955a5f6c304dcfd44467c5766d4e669630415936d85f3e8"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -9169,8 +9169,8 @@
           "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
-          "bytes": 7724,
-          "sha256": "2422f7e8ba3a77080ce1f86a5f40741190aa8e9f0ae08434ccf1725a6904be02"
+          "bytes": 8070,
+          "sha256": "ed8766b96244c278e28c400a52ba344840ebc39d7a2b9a66fd152f0868be79f3"
         }
       },
       "calls": {
