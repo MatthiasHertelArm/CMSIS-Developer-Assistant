@@ -39,6 +39,8 @@
  *   `PROBE_WEDGED` when the debug port does not answer, or as
  *   `INVALID_ARGUMENT` when only the address cannot be read (#3,
  *   src/executor/gdbMemory.ts). Nothing is retried or reconnected.
+ *   `checkTargetConnection` reads DHCSR on a stopped CMSIS Debugger session
+ *   too; the session tracker keeps the last read that got no answer.
  *
  * The contract types live in src/executor/contract.ts and are re-exported
  * here. The snapshot, the GDB command and word read, the reset and the
@@ -286,8 +288,15 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         return probeSession(this.budgets.probe());
     }
 
+    /** The probe's report; on a stopped CMSIS Debugger session with one DHCSR read, as the target is not asked otherwise (#3). */
     async checkTargetConnection(): Promise<string> {
-        return connectionReport(await this.getSessionStatus());
+        const status = await this.getSessionStatus();
+        const session = resolveActiveSession();
+        if (status.state !== 'stopped' || session?.type !== CMSIS_DEBUGGER_TYPE) {
+            return connectionReport(status);
+        }
+        const request: unknown = session.configuration?.request;
+        return connectionReport(status, await probeDebugPort(session, this.budgets.request()), typeof request === 'string' ? request : undefined);
     }
 
     getDiagnostics(): ExecutorDiagnostics {

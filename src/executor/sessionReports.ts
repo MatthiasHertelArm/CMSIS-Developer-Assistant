@@ -19,11 +19,17 @@
  * probe behind the status tools, the `check_target_connection` report, the
  * `get_device_info` block, and the workspace folder in which a launch
  * configuration named by the agent is looked up.
+ *
+ * The `threads` probe asks only the debug adapter. Whether the core answers
+ * is a DHCSR read (src/core/probeWedge.ts): `check_target_connection` makes
+ * one on a stopped CMSIS Debugger session, and the status reports the last
+ * one that got no answer, kept by the session tracker, without reading.
  */
 
 import * as vscode from 'vscode';
 import { CMSIS_DEBUGGER_TYPE } from '../core/gdbDialect';
-import { getStoppedReason, isSessionStopped, resolveActiveSession } from '../utils/sessionStateTracker';
+import { coreVerdict, DebugPortProbe, dhcsrSummary, silentCoreText, wedgeHint } from '../core/probeWedge';
+import { coreSilentSince, getStoppedReason, isSessionStopped, resolveActiveSession } from '../utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout';
 import { messageOf } from './common';
 import { SessionStatus } from './contract';
@@ -99,17 +105,34 @@ export async function probeSession(probeMs: number): Promise<SessionStatus> {
     }
     const halted = isSessionStopped(session);
     const reason = halted ? getStoppedReason(session) : null;
+    const silentSince = halted ? coreSilentSince(session) : undefined;
     return {
         state: halted ? 'stopped' : 'running',
         ...identity,
         dapResponsive: true,
         dapProbeMs: roundTripMs,
         detail: reason === null ? undefined : `Stopped reason: ${reason}`,
+        ...(silentSince === undefined ? {} : { coreSilentForMs: Math.max(0, Date.now() - silentSince) }),
     };
 }
 
-/** The `check_target_connection` text for a probe result. The stop reason is left out. */
-export function connectionReport(status: SessionStatus): string {
+/** The `Target state` lines of a stopped session: what the DHCSR read `port` found, when there was one that tells something. */
+function stoppedLines(port: DebugPortProbe | undefined, request: string | undefined): string[] {
+    if (port?.readable) {
+        return [`Target state: stopped — the debug port answers: ${dhcsrSummary(port.dhcsr)}.`];
+    }
+    if (port && coreVerdict(port) === 'silent') {
+        return [`Target state: stopped, but ${silentCoreText(port)}`, wedgeHint(request)];
+    }
+    return ['Target state: stopped — full inspection is available.'];
+}
+
+/**
+ * The `check_target_connection` text for a probe result. The stop reason is
+ * left out. `port` is the DHCSR read of a stopped CMSIS Debugger session,
+ * `request` that session's `configuration.request`.
+ */
+export function connectionReport(status: SessionStatus, port?: DebugPortProbe, request?: string): string {
     if (status.state === 'no-session') {
         return 'No active debug session.';
     }
@@ -134,8 +157,7 @@ export function connectionReport(status: SessionStatus): string {
                 'Target state: running — DAP reads (memory/registers/variables) will be rejected until the target stops.');
             break;
         case 'stopped':
-            report.push(`DAP probe: OK (${status.dapProbeMs}ms)`,
-                'Target state: stopped — full inspection is available.');
+            report.push(`DAP probe: OK (${status.dapProbeMs}ms)`, ...stoppedLines(port, request));
             break;
     }
     return report.join('\n');

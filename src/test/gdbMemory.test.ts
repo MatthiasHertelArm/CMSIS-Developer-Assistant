@@ -17,10 +17,15 @@
 import type * as vscode from 'vscode';
 import * as assert from 'assert';
 import {
-    attemptsText, CAUSE_MAX_CHARS, classifyReadFailure, DHCSR_ADDRESS, isLockedUp, LOCKUP_NOTE, wedgeHint,
+    ageText, attemptsText, CAUSE_MAX_CHARS, classifyReadFailure, coreVerdict, DebugPortProbe, DHCSR_ADDRESS, dhcsrSummary, isLockedUp, LOCKUP_NOTE,
+    silentCoreText, wedgeHint,
 } from '../core/probeWedge';
 import { ToolError } from '../core/toolResult';
+import { DebuggingExecutor } from '../debuggingExecutor';
+import type { SessionStatus } from '../executor/contract';
 import { explainReadFailure, MemoryReadFailure, probeDebugPort, readWordThroughGdb, withEarlierAttempts } from '../executor/gdbMemory';
+import { connectionReport } from '../executor/sessionReports';
+import { coreSilentSince, createSessionTracker } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
 
 /**
@@ -219,5 +224,204 @@ suite('memory reads and a wedged probe (#3)', () => {
             { strategy: 'MI read', cause: 'Unable to read memory.' },
             { strategy: 'block read', cause: 'boom\n  second line' },
         ]), 'MI read: Unable to read memory.; block read: boom second line');
+    });
+});
+
+/**
+ * Whether the core answers, beyond the adapter's `threads` reply (#3, tester
+ * feedback on an XMC4700 with J-Link): `check_target_connection` reads DHCSR
+ * on a stopped CMSIS Debugger session, and `get_session_status` reports the
+ * last read that got no answer without reading.
+ */
+suite('the core\'s debug status in check_target_connection and get_session_status (#3)', () => {
+    const UNREADABLE = 'Unable to read memory. (@ 0xe000edf0)';
+    const unreadable: DebugPortProbe = { readable: false, timedOut: false, cause: UNREADABLE };
+    const timedOut: DebugPortProbe = { readable: false, timedOut: true, cause: 'DAP readMemory timed out after 1000 ms' };
+    const unsupported: DebugPortProbe = { readable: false, timedOut: false, cause: 'unrecognized request' };
+    const refusedRunning: DebugPortProbe = { readable: false, timedOut: false, cause: 'Cannot execute this command while the target is running.' };
+    const stopped: SessionStatus = {
+        state: 'stopped', sessionName: 'S', sessionType: 'gdbtarget', configurationName: 'C', dapResponsive: true, dapProbeMs: 4,
+    };
+    const HEAD = 'Session: S (type=gdbtarget)\nConfiguration: C\nDAP probe: OK (4ms)\n';
+
+    test('the verdict: DHCSR read answers, unreadable or timed out is silent, an adapter without readMemory or a running target tells nothing', () => {
+        assert.strictEqual(coreVerdict({ readable: true, dhcsr: 0 }), 'answers');
+        assert.strictEqual(coreVerdict(unreadable), 'silent');
+        assert.strictEqual(coreVerdict(timedOut), 'silent');
+        assert.strictEqual(coreVerdict({ readable: false, timedOut: false, cause: 'no data in the reply' }), 'silent');
+        assert.strictEqual(coreVerdict(unsupported), 'unknown');
+        assert.strictEqual(coreVerdict(refusedRunning), 'unknown');
+        assert.strictEqual(coreVerdict({ readable: false, timedOut: true, cause: 'not supported' }), 'silent', 'a timeout is never "unsupported"');
+    });
+
+    test('a DHCSR value says halted or not, sleeping, and lockup with the tool that reads the fault', () => {
+        assert.strictEqual(dhcsrSummary(0x00030003), 'DHCSR=0x00030003 (halted)');
+        assert.strictEqual(dhcsrSummary(0x000b0003), 'DHCSR=0x000b0003 (halted, in lockup — get_fault_info)');
+        assert.strictEqual(dhcsrSummary(0x01040001), 'DHCSR=0x01040001 (not halted, sleeping)');
+        assert.strictEqual(dhcsrSummary(0xffffffff | 0), 'DHCSR=0xffffffff (halted, sleeping, in lockup — get_fault_info)');
+        assert.strictEqual(ageText(12_400), '12 s');
+        assert.strictEqual(ageText(119_000), '119 s');
+        assert.strictEqual(ageText(2_400_000), '40 min');
+        assert.strictEqual(ageText(-5), '0 s');
+    });
+
+    test('readable DHCSR: the report says the debug port answers, with the value, instead of "full inspection"', () => {
+        assert.strictEqual(connectionReport(stopped, { readable: true, dhcsr: 0x00030003 }, 'launch'),
+            `${HEAD}Target state: stopped — the debug port answers: DHCSR=0x00030003 (halted).`);
+        assert.strictEqual(connectionReport(stopped, { readable: true, dhcsr: 0x000b0003 }, 'launch'),
+            `${HEAD}Target state: stopped — the debug port answers: DHCSR=0x000b0003 (halted, in lockup — get_fault_info).`);
+    });
+
+    test('unreadable or timed-out DHCSR: the core does not answer, reads will fail with PROBE_WEDGED, and the way to reconnect', () => {
+        assert.strictEqual(connectionReport(stopped, unreadable, 'launch'), `${HEAD}Target state: stopped, but the core does not answer `
+            + `(DHCSR at 0xE000EDF0 unreadable: ${UNREADABLE}): memory and register reads will fail with PROBE_WEDGED.\n${wedgeHint('launch')}`);
+        assert.strictEqual(connectionReport(stopped, timedOut, 'attach'), `${HEAD}Target state: stopped, but the core does not answer `
+            + `(DHCSR at 0xE000EDF0 timed out): memory and register reads will fail with PROBE_WEDGED.\n${wedgeHint('attach')}`);
+        const long = silentCoreText({ readable: false, timedOut: false, cause: 'x'.repeat(500) });
+        assert.ok(long.includes(`unreadable: ${'x'.repeat(CAUSE_MAX_CHARS - 1)}…)`), 'the cause is clipped');
+    });
+
+    test('an adapter that cannot read memory, a refusal because the target runs, and no read keep today\'s line', () => {
+        const today = `${HEAD}Target state: stopped — full inspection is available.`;
+        assert.strictEqual(connectionReport(stopped, unsupported, 'launch'), today);
+        assert.strictEqual(connectionReport(stopped, refusedRunning, 'launch'), today);
+        assert.strictEqual(connectionReport(stopped), today);
+        const running = connectionReport({ ...stopped, state: 'running' }, unreadable, 'launch');
+        assert.ok(running.endsWith('Target state: running — DAP reads (memory/registers/variables) will be rejected until the target stops.'), running);
+    });
+
+    suite('through the executor, on a live session', () => {
+        type Answer = (command: string, args: Record<string, unknown>) => unknown;
+        interface Live {
+            session: vscode.DebugSession;
+            requests: Array<{ command: string; args: Record<string, unknown> }>;
+            tracker: vscode.DebugAdapterTracker;
+            event(event: string, body?: unknown): void;
+        }
+        const live: Live[] = [];
+        let count = 0;
+
+        /** A session the tracker sees as the most recent one, whose adapter answers `threads` with a thread list and DHCSR through `dhcsr`. */
+        function liveSession(dhcsr: Answer, type = 'gdbtarget', request = 'launch'): Live {
+            const requests: Live['requests'] = [];
+            const session = {
+                id: `core-status-${++count}`, name: 'S', type, configuration: { type, name: 'C', request },
+                customRequest: (command: string, args: Record<string, unknown>) => {
+                    requests.push({ command, args });
+                    try {
+                        return Promise.resolve(command === 'threads' ? { threads: [{ id: 1, name: 'main' }] } : dhcsr(command, args));
+                    } catch (caught) {
+                        return Promise.reject(caught);
+                    }
+                },
+            } as unknown as vscode.DebugSession;
+            const tracker = createSessionTracker(session);
+            const made: Live = {
+                session, requests, tracker,
+                event: (event, body = {}) => tracker.onDidSendMessage?.({ type: 'event', event, body }),
+            };
+            live.push(made);
+            return made;
+        }
+        const dhcsrReads = (made: Live): number => made.requests.filter((request) => request.command === 'readMemory'
+            && request.args.memoryReference === DHCSR_ADDRESS && request.args.count === 4).length;
+        const fails = (message: string): Answer => () => {
+            throw new Error(message);
+        };
+
+        teardown(() => {
+            for (const made of live.splice(0)) {
+                made.tracker.onWillStopSession?.();
+            }
+        });
+
+        test('a stopped CMSIS Debugger session: one DHCSR read; halted and lockup are reported', async () => {
+            const halted = liveSession(() => bytes(0x00030003));
+            halted.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const text = await new DebuggingExecutor().checkTargetConnection();
+            assert.match(text, /^Session: S \(type=gdbtarget\)\nConfiguration: C\nDAP probe: OK \(\d+ms\)\n/);
+            assert.ok(text.endsWith('\nTarget state: stopped — the debug port answers: DHCSR=0x00030003 (halted).'), text);
+            assert.strictEqual(dhcsrReads(halted), 1);
+            halted.tracker.onWillStopSession?.();
+
+            const locked = liveSession(() => bytes(0x000b0003));
+            locked.event('stopped', { reason: 'signal', threadId: 1 });
+            assert.ok((await new DebuggingExecutor().checkTargetConnection()).endsWith('(halted, in lockup — get_fault_info).'));
+        });
+
+        test('unreadable and timed-out DHCSR: the core does not answer, with the reconnect hint of the session\'s request', async () => {
+            const wedged = liveSession(fails('Unable to read memory. (@ 0xe000edf0)'), 'gdbtarget', 'attach');
+            wedged.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const text = await new DebuggingExecutor().checkTargetConnection();
+            assert.ok(text.endsWith('Target state: stopped, but the core does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. '
+                + `(@ 0xe000edf0)): memory and register reads will fail with PROBE_WEDGED.\n${wedgeHint('attach')}`), text);
+            wedged.tracker.onWillStopSession?.();
+
+            const hung = liveSession(() => never());
+            hung.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const began = Date.now();
+            const slow = await new DebuggingExecutor({ dapRequestMs: 5_000 }).checkTargetConnection();
+            assert.ok(Date.now() - began < 3_000, 'DHCSR gets at most 1 s');
+            assert.ok(slow.endsWith(`(DHCSR at 0xE000EDF0 timed out): memory and register reads will fail with PROBE_WEDGED.\n${wedgeHint('launch')}`),
+                slow);
+        });
+
+        test('an adapter without readMemory keeps today\'s line; a running target and other debug types are not read', async () => {
+            const unsupportedAdapter = liveSession(fails('unrecognized request'));
+            unsupportedAdapter.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            assert.ok((await new DebuggingExecutor().checkTargetConnection()).endsWith('\nTarget state: stopped — full inspection is available.'));
+            assert.strictEqual(dhcsrReads(unsupportedAdapter), 1);
+            unsupportedAdapter.tracker.onWillStopSession?.();
+
+            const running = liveSession(() => bytes(0x00030003));
+            running.event('continued', {});
+            assert.ok((await new DebuggingExecutor().checkTargetConnection()).endsWith('will be rejected until the target stops.'));
+            assert.strictEqual(dhcsrReads(running), 0);
+            running.tracker.onWillStopSession?.();
+
+            const python = liveSession(() => bytes(0x00030003), 'debugpy');
+            python.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const unchanged = await new DebuggingExecutor().checkTargetConnection();
+            assert.match(unchanged, /^Session: S \(type=debugpy\)\nConfiguration: C\nDAP probe: OK \(\d+ms\)\nTarget state: stopped — full inspection is available\.$/);
+            assert.strictEqual(dhcsrReads(python), 0);
+        });
+
+        test('the status keeps a DHCSR read that got no answer, without reading; a stop or a DHCSR read that answers forgets it', async () => {
+            let answer: Answer = fails('Unable to read memory. (@ 0xe000edf0)');
+            const made = liveSession((command, args) => answer(command, args));
+            made.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const executor = new DebuggingExecutor();
+            assert.strictEqual((await executor.getSessionStatus()).coreSilentForMs, undefined);
+            await executor.checkTargetConnection();
+            const status = await executor.getSessionStatus();
+            assert.strictEqual(status.state, 'stopped', 'pause and stop stay possible');
+            assert.ok(typeof status.coreSilentForMs === 'number' && status.coreSilentForMs >= 0 && status.coreSilentForMs < 5_000, String(status.coreSilentForMs));
+            assert.strictEqual(dhcsrReads(made), 1, 'the status reads nothing');
+
+            made.event('continued', {});
+            assert.strictEqual((await executor.getSessionStatus()).coreSilentForMs, undefined, 'only a stopped status carries it');
+            assert.notStrictEqual(coreSilentSince(made.session), undefined, 'a continue alone does not forget it');
+            made.event('stopped', { reason: 'step', threadId: 1 });
+            assert.strictEqual((await executor.getSessionStatus()).coreSilentForMs, undefined, 'the target ran and stopped again');
+
+            await executor.probeDebugPort();
+            assert.notStrictEqual((await executor.getSessionStatus()).coreSilentForMs, undefined, 'every DHCSR read counts, lockedUp\'s too');
+            answer = () => bytes(0x00030003);
+            await executor.probeDebugPort();
+            assert.strictEqual((await executor.getSessionStatus()).coreSilentForMs, undefined, 'a DHCSR read that answers');
+        });
+
+        test('a failed memory read\'s DHCSR read is kept too; other debug types keep nothing', async () => {
+            const made = liveSession(fails('Unable to read memory.'));
+            made.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const failure = new MemoryReadFailure('0x20000000', [{ strategy: 'DAP readMemory', cause: 'Unable to read memory.' }]);
+            const thrown = await explainReadFailure(made.session, '0x20000000', failure, 1_000);
+            assert.ok(thrown instanceof ToolError && thrown.code === 'PROBE_WEDGED');
+            assert.notStrictEqual(coreSilentSince(made.session), undefined);
+
+            const other = scripted(fails('Unable to read memory.'), 'cppdbg');
+            await probeDebugPort(other.session, 1_000);
+            assert.strictEqual(coreSilentSince(other.session), undefined);
+        });
     });
 });

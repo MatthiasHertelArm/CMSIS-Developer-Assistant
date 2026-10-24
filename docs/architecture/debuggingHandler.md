@@ -232,7 +232,10 @@ target runs.
   `get_fault_info` and `diagnose_fault` answer the executor's `PROBE_WEDGED`
   itself rather than a diagnosis built on registers that were not read (#3).
   Both read DHCSR once more (`probeDebugPort()`) and add a lockup note when
-  `S_LOCKUP` is set.
+  `S_LOCKUP` is set. `read_core_registers` reads DHCSR only when a register
+  could not be read, and then says whether the core answers; the stopped hint of
+  `get_session_status` names a DHCSR read that got no answer, which the
+  executor's status carries.
 - `lookup_peripheral` and `lookup_register` answer from the device SVD
   (`src/core/svdParser.ts`, `src/core/svdLookup.ts`) without a session.
   During one, they and `diagnose_fault` take the SVD of the session the

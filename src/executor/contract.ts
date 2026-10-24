@@ -65,6 +65,12 @@ export interface SessionStatus {
     dapProbeMs: number | null;
     /** Why the probe failed or the adapter takes no requests, or why the target is stopped. */
     detail?: string;
+    /**
+     * Stopped only: how long ago the last DHCSR read of the session got no
+     * answer, when neither a stop nor a DHCSR read that answered came since
+     * (#3). Nothing is read for it.
+     */
+    coreSilentForMs?: number;
 }
 
 /** One entry of the thread list, with the thread's innermost frame when that could be read. */
@@ -128,7 +134,7 @@ export interface Readiness {
     hasActiveSession(): Promise<boolean>;
     /** Never rejects. */
     getSessionStatus(): Promise<SessionStatus>;
-    /** The status as the `check_target_connection` text. Never rejects. */
+    /** The status as the `check_target_connection` text, with one DHCSR read on a stopped CMSIS Debugger session. Never rejects. */
     checkTargetConnection(): Promise<string>;
     getDiagnostics(): ExecutorDiagnostics;
     getDeviceInfo(): Promise<string>;

@@ -19,8 +19,9 @@
  * adapter tracker sees: the live sessions and the one to act on, whether each
  * target is stopped, waits for the next stop and for a session's end, the
  * output a GDB command prints (#56), when the adapter has answered VS Code's
- * `setBreakpoints`, and the GDB `dprintf` logpoints set in a session.
- * Everything a session holds goes when it ends.
+ * `setBreakpoints`, the GDB `dprintf` logpoints set in a session, and when
+ * the last DHCSR read of a session got no answer (#3). Everything a session
+ * holds goes when it ends.
  *
  * What goes wrong on the channel goes into the window's problem journal
  * (#48): failed responses, adapter errors, and the output of the categories
@@ -36,6 +37,7 @@
  */
 
 import * as vscode from 'vscode';
+import type { CoreVerdict } from '../core/probeWedge';
 import { classifyProblem, serverLineSeverity } from '../core/problemCodes';
 import { failedResponseMessage } from '../core/problemFeed';
 import { problemJournal, type ProblemJournal, type ProblemSeverity, type ProblemSource } from '../core/problemJournal';
@@ -616,6 +618,29 @@ export function gdbLogpointsOf(session: vscode.DebugSession): GdbLogpoint[] {
         .map((logpoint) => ({ ...logpoint }));
 }
 
+// ── The core's debug status (#3) ──────────────────────────────────
+
+/**
+ * When the last DHCSR read of a session got no answer. A stop event after it
+ * means GDB talked to the target again, so the stop forgets it, as does a
+ * DHCSR read that answers and the session's end.
+ */
+const silentCores = new WeakMap<vscode.DebugSession, number>();
+
+/** Keeps what one DHCSR read of `session` found: `silent` with its time, `answers` forgets it, `unknown` changes nothing. */
+export function noteCoreVerdict(session: vscode.DebugSession, verdict: CoreVerdict, now: number = Date.now()): void {
+    if (verdict === 'silent') {
+        silentCores.set(session, now);
+    } else if (verdict === 'answers') {
+        silentCores.delete(session);
+    }
+}
+
+/** When the last DHCSR read of `session` got no answer, unless the target stopped or DHCSR answered since. */
+export function coreSilentSince(session: vscode.DebugSession): number | undefined {
+    return silentCores.get(session);
+}
+
 // ── Session end ────────────────────────────────────────────────────
 
 interface EndWaiter {
@@ -654,6 +679,7 @@ function sessionEnded(session: vscode.DebugSession): void {
     settleStopWaiters(session, { kind: 'ended' });
     closeCaptures(session);
     gdbLogpointsBySession.delete(session);
+    silentCores.delete(session);
     pendingBreakpointRequests.delete(session);
     ownRequestsDue.delete(session);
     requestsSent.delete(session);
@@ -692,6 +718,7 @@ function noticeQuietStartFailure(session: vscode.DebugSession, message: { messag
 export function createSessionTracker(session: vscode.DebugSession, journal: ProblemJournal = problemJournal()): vscode.DebugAdapterTracker {
     // VS Code's restart of an adapter without a restart request relaunches it in the same session.
     endedSessions.delete(session);
+    silentCores.delete(session);
     addLiveSession(session);
     noteSessionOrigin(session);
     return {
@@ -740,6 +767,8 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
                 state.stoppedReason = message.body?.reason ?? null;
                 state.stoppedThreadId = message.body?.threadId ?? null;
                 state.lastEventAt = Date.now();
+                // The target ran and stopped again: GDB has talked to it since a DHCSR read that got no answer.
+                silentCores.delete(session);
                 logger.debug(`[session-tracker] stopped (${state.stoppedReason}) on ${session.name}`);
                 settleStopWaiters(session, { kind: 'stopped', reason: state.stoppedReason, threadId: state.stoppedThreadId });
             } else if (message.event === 'continued') {

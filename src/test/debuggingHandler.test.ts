@@ -1608,6 +1608,49 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [[undefined, undefined]]);
         });
 
+        test('a register unavailable on the CMSIS Debugger: one DHCSR read, and when the core does not answer, why and how to reconnect (#3)', async () => {
+            const names = ['r0', 'sp', 'lr', 'pc'];
+            const unavailable = Object.fromEntries(names.map((name) => [name, '<unavailable>']));
+            const x = new ScriptedExecutor();
+            x.registers = unavailable;
+            x.activeSession = { configuration: { request: 'launch' } };
+            (x.activeSession as { type?: string }).type = 'gdbtarget';
+            const table = await textAnswer(handlerFor(x).handleReadCoreRegisters({ timeoutMs: 4000 }));
+            assert.ok(table.startsWith('Core Registers:\n') && !table.includes('DHCSR'), 'a core that answers leaves the table as it is');
+
+            x.debugPort = { readable: false, timedOut: false, cause: 'Unable to read memory. (@ 0xe000edf0)' };
+            const reply = await textAnswer(handlerFor(x).handleReadCoreRegisters({ timeoutMs: 4000 }));
+            assert.strictEqual(reply, `${table}Every register is unavailable: the core does not answer (DHCSR at 0xE000EDF0 unreadable: `
+                + `Unable to read memory. (@ 0xe000edf0)): memory and register reads will fail with PROBE_WEDGED.\n${wedgeHint('launch')}\n`);
+            assert.deepStrictEqual(x.argsOf('probeDebugPort'), [[4000], [4000]], 'one DHCSR read per call');
+
+            x.debugPort = { readable: false, timedOut: true, cause: 'timed out' };
+            assert.ok((await textAnswer(handlerFor(x).handleReadCoreRegisters())).includes('(DHCSR at 0xE000EDF0 timed out)'));
+            x.debugPort = { readable: false, timedOut: false, cause: 'unrecognized request' };
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadCoreRegisters({ timeoutMs: 4000 })), table,
+                'an adapter that cannot read DHCSR adds nothing');
+
+            // A board that lost power (B-L475E-IOT01A, pyOCD): GDB still has the registers it read at the last stop, the rest come back
+            // `<unavailable>` or without text.
+            x.debugPort = { readable: false, timedOut: false, cause: 'Unable to read memory. (@ 0xe000edf0)' };
+            x.registers = { r0: '<unavailable>', sp: '0x200098c8', lr: '134218335', pc: '' };
+            const partial = await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.ok(partial.includes('2 of 4 registers are unavailable: the core does not answer (DHCSR at 0xE000EDF0 unreadable: '
+                + 'Unable to read memory. (@ 0xe000edf0)): memory and register reads will fail with PROBE_WEDGED. '
+                + 'The values shown may be GDB\'s copies from before it lost the target.\n'), partial);
+
+            const calls = x.argsOf('probeDebugPort').length;
+            x.registers = { r0: '0x0', sp: '0x200098c8', lr: '134218335', pc: '0x080002fe <main+22>' };
+            await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            x.registers = Object.fromEntries(names.map((name) => [name, '<timeout>']));
+            await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            x.registers = unavailable;
+            x.activeSession = { configuration: { request: 'launch' } };
+            await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.strictEqual(x.argsOf('probeDebugPort').length, calls,
+                'not read when every register answered or timed out, or on other debug types');
+        });
+
         test('cycle counter, present or not', async () => {
             const x = new ScriptedExecutor();
             x.readCycleCounter = async () => ({ cycles: 0, enabledNow: false, present: false });
@@ -1897,6 +1940,25 @@ suite('DebuggingHandler', () => {
             const empty = await textAnswer(handlerFor(x, withFolder).handleGetSessionStatus());
             assert.ok(empty.includes('liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\n'
                 + 'Hint: no debug session is running in the VS Code window this call was routed to.'), empty);
+        });
+
+        test('a stopped session whose last DHCSR read got no answer says so instead of "full inspection", still stopped (#3)', async () => {
+            const x = new ScriptedExecutor();
+            x.sessionStatus = { state: 'stopped', sessionName: 'S', sessionType: 'gdbtarget', configurationName: 'C',
+                dapResponsive: true, dapProbeMs: 12, detail: 'Stopped reason: breakpoint', coreSilentForMs: 12_400 };
+            const text = await textAnswer(handlerFor(x).handleGetSessionStatus());
+            assert.ok(text.startsWith('State: stopped\n'), text);
+            assert.ok(text.endsWith('\nHint: the session is stopped, but the last read of the core\'s debug status (DHCSR, 12 s ago) got no answer: '
+                + `memory and register reads fail with PROBE_WEDGED. check_target_connection reads it again. ${wedgeHint('launch')}`), text);
+            assert.deepStrictEqual(x.argsOf('probeDebugPort'), [], 'the status reads nothing');
+
+            x.sessionStatus = { ...x.sessionStatus, coreSilentForMs: 2_400_000 };
+            x.activeSession = { configuration: { request: 'attach' } };
+            const later = await textAnswer(handlerFor(x).handleGetSessionStatus());
+            assert.ok(later.includes('(DHCSR, 40 min ago)') && later.endsWith(wedgeHint('attach')), later);
+
+            x.sessionStatus = { ...x.sessionStatus, coreSilentForMs: undefined };
+            assert.ok((await textAnswer(handlerFor(x).handleGetSessionStatus())).endsWith('\nHint: full inspection (variables, memory, registers) is available.'));
         });
 
         test('session status without a session says what an empty window lacks: a folder, the CMSIS extensions', async () => {

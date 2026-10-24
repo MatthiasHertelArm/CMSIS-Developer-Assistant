@@ -775,7 +775,7 @@
         },
         {
           "name": "check_target_connection",
-          "description": "Probe the hardware debug connection with a short-timeout DAP ping. Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs — uses an internal short timeout.",
+          "description": "Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core's debug status (DHCSR). Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -1451,8 +1451,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60711,
-          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
+          "bytes": 60888,
+          "sha256": "22d6a93618a78152b3f67e6572f274ba268db8844332b1cf5bd228b954ad502d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -1463,8 +1463,8 @@
           "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6894,
-          "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
+          "bytes": 6973,
+          "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
           "bytes": 7724,
@@ -2590,7 +2590,7 @@
         },
         {
           "name": "check_target_connection",
-          "description": "Probe the hardware debug connection with a short-timeout DAP ping. Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs — uses an internal short timeout.",
+          "description": "Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core's debug status (DHCSR). Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -2969,8 +2969,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60711,
-          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
+          "bytes": 60888,
+          "sha256": "22d6a93618a78152b3f67e6572f274ba268db8844332b1cf5bd228b954ad502d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -2981,8 +2981,8 @@
           "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6894,
-          "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
+          "bytes": 6973,
+          "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
           "bytes": 7724,
@@ -3765,7 +3765,7 @@
         },
         {
           "name": "check_target_connection",
-          "description": "Probe the hardware debug connection with a short-timeout DAP ping. Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs — uses an internal short timeout.",
+          "description": "Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core's debug status (DHCSR). Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -5023,8 +5023,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60711,
-          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
+          "bytes": 60888,
+          "sha256": "22d6a93618a78152b3f67e6572f274ba268db8844332b1cf5bd228b954ad502d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -5035,8 +5035,8 @@
           "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6894,
-          "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
+          "bytes": 6973,
+          "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
           "bytes": 7724,
@@ -6208,7 +6208,7 @@
         },
         {
           "name": "check_target_connection",
-          "description": "Probe the hardware debug connection with a short-timeout DAP ping. Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs — uses an internal short timeout.",
+          "description": "Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core's debug status (DHCSR). Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -7045,8 +7045,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60711,
-          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
+          "bytes": 60888,
+          "sha256": "22d6a93618a78152b3f67e6572f274ba268db8844332b1cf5bd228b954ad502d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -7057,8 +7057,8 @@
           "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6894,
-          "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
+          "bytes": 6973,
+          "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
           "bytes": 7724,
@@ -8316,7 +8316,7 @@
         },
         {
           "name": "check_target_connection",
-          "description": "Probe the hardware debug connection with a short-timeout DAP ping. Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs — uses an internal short timeout.",
+          "description": "Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core's debug status (DHCSR). Use this when other tool calls start timing out or returning \"unavailable\" to determine whether the probe/GDB server is alive and whether the target is stopped (so DAP reads are valid). Never hangs.",
           "inputSchema": {
             "type": "object",
             "properties": {}
@@ -9153,8 +9153,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60711,
-          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
+          "bytes": 60888,
+          "sha256": "22d6a93618a78152b3f67e6572f274ba268db8844332b1cf5bd228b954ad502d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -9165,8 +9165,8 @@
           "sha256": "7ddd5ea9003e7ef5b5aedde8a3838dced93f741a3cd40d711dc6c4f79d738947"
         },
         "cmsis-developer-assistant://docs/cmsis-embedded-guide": {
-          "bytes": 6894,
-          "sha256": "5d8edfbe80cee6b40a7c78ac1970850c3958e9325ee7856468f580e28bd6fbfb"
+          "bytes": 6973,
+          "sha256": "2a65b0c3abdfd55d68b3446f2f7f96785c98983611069c24d3f3af43b5770801"
         },
         "cmsis-developer-assistant://docs/troubleshooting/embedded": {
           "bytes": 7724,

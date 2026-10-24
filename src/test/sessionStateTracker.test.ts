@@ -20,6 +20,7 @@ import { ProblemJournal, type ProblemRecord } from '../core/problemJournal';
 import {
     awaitBreakpointsApplied,
     captureOutput,
+    coreSilentSince,
     createSessionTracker,
     expectAgentStart,
     forgetAgentStarts,
@@ -27,6 +28,7 @@ import {
     gdbLogpointsOf,
     getLiveSessionNames,
     isAgentStarted,
+    noteCoreVerdict,
     noteOwnRequest,
     quietStartFailure,
     rememberGdbLogpoint,
@@ -215,6 +217,49 @@ suite('Session state tracker', () => {
                 }
                 assert.deepStrictEqual(gdbLogpointsOf(a.session), [], end);
             }
+        });
+    });
+
+    suite('the last DHCSR read that got no answer (#3)', () => {
+        test('kept with its time per session; a read that answers forgets it, one that tells nothing changes nothing', () => {
+            const a = track();
+            const b = track();
+            assert.strictEqual(coreSilentSince(a.session), undefined);
+            noteCoreVerdict(a.session, 'silent', 1_000);
+            noteCoreVerdict(a.session, 'unknown', 2_000);
+            assert.strictEqual(coreSilentSince(a.session), 1_000);
+            assert.strictEqual(coreSilentSince(b.session), undefined, 'the other session has its own');
+            noteCoreVerdict(a.session, 'silent', 3_000);
+            assert.strictEqual(coreSilentSince(a.session), 3_000, 'the last read counts');
+            noteCoreVerdict(a.session, 'answers', 4_000);
+            assert.strictEqual(coreSilentSince(a.session), undefined);
+        });
+
+        test('a stop event forgets it, a continued event does not', () => {
+            const a = track();
+            noteCoreVerdict(a.session, 'silent', 1_000);
+            a.event('continued', { threadId: 1 });
+            assert.strictEqual(coreSilentSince(a.session), 1_000);
+            a.event('stopped', { reason: 'step', threadId: 1 });
+            assert.strictEqual(coreSilentSince(a.session), undefined);
+        });
+
+        test('forgotten when the session ends and when an adapter starts in it again', () => {
+            for (const end of ['terminated', 'stop']) {
+                const a = track();
+                noteCoreVerdict(a.session, 'silent', 1_000);
+                if (end === 'stop') {
+                    a.tracker.onWillStopSession?.();
+                } else {
+                    a.event(end);
+                }
+                assert.strictEqual(coreSilentSince(a.session), undefined, end);
+            }
+            const b = track();
+            noteCoreVerdict(b.session, 'silent', 1_000);
+            const again = createSessionTracker(b.session);
+            assert.strictEqual(coreSilentSince(b.session), undefined, 'a relaunch in the same session');
+            again.onWillStopSession?.();
         });
     });
 

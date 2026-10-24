@@ -27,7 +27,7 @@
 
 import type { StackFrame } from '../debugState';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
-import { wedgeHint } from '../core/probeWedge';
+import { ageText, wedgeHint } from '../core/probeWedge';
 import { shortenPath, truncateList } from '../core/textBudget';
 import { ErrorCode, Refusal } from '../core/toolResult';
 
@@ -59,8 +59,14 @@ const REFUSAL_CODES: Record<SessionState, ErrorCode> = {
     stopped: 'INTERNAL',
 };
 
-/** The closing hint of `get_session_status`, by state; `request` is the session's, for the way to reconnect (#3). */
-function statusHint(state: SessionState, liveSessions: number, request: string | undefined): string {
+/**
+ * The closing hint of `get_session_status`, by state; `request` is the
+ * session's, for the way to reconnect (#3). A stopped session whose last
+ * DHCSR read got no answer `coreSilentForMs` ago says so instead of
+ * promising full inspection; its state stays `stopped`, so pausing and
+ * stopping are not blocked.
+ */
+function statusHint(state: SessionState, liveSessions: number, request: string | undefined, coreSilentForMs?: number): string {
     switch (state) {
         case 'no-session':
             return liveSessions === 0
@@ -76,7 +82,11 @@ function statusHint(state: SessionState, liveSessions: number, request: string |
         case 'running':
             return 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.';
         case 'stopped':
-            return 'Hint: full inspection (variables, memory, registers) is available.';
+            return coreSilentForMs === undefined
+                ? 'Hint: full inspection (variables, memory, registers) is available.'
+                : `Hint: the session is stopped, but the last read of the core's debug status (DHCSR, ${ageText(coreSilentForMs)} ago) `
+                    + 'got no answer: memory and register reads fail with PROBE_WEDGED. check_target_connection reads it again. '
+                    + wedgeHint(request);
         case 'unresponsive':
             return `Hint: probe/GDB server is hung. ${wedgeHint(request)}`;
     }
@@ -120,7 +130,7 @@ export function renderSessionStatus(status: SessionStatus, diagnostics: Diagnost
     lines.push(`Diagnostics: serverVersion=${diagnostics.serverVersion}, `
         + `liveSessionsInThisWindow=${diagnostics.liveSessionCount}${names}, vscodeActiveDebugSession=${focused}`);
     lines.push(...extraLines);
-    lines.push(statusHint(status.state, diagnostics.liveSessionCount, request));
+    lines.push(statusHint(status.state, diagnostics.liveSessionCount, request, status.coreSilentForMs));
     return lines.join('\n');
 }
 

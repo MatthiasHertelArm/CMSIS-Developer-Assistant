@@ -179,6 +179,13 @@ can fake only the part a case drives.
   `probeDebugPort()` offers the same DHCSR read to the handler, which checks
   `S_LOCKUP` with it. Nothing is retried or reconnected: a reconnect replaces
   the session and must not happen as a side effect of a read.
+- **Does the core answer?** The `threads` probe behind the status asks only
+  the debug adapter, which answers from GDB's state while every target read
+  fails. So `checkTargetConnection()` reads DHCSR once on a stopped CMSIS
+  Debugger session, and every DHCSR read leaves its verdict with the session
+  tracker (`noteCoreVerdict()`): a read that got no answer is kept until a
+  stop event, a DHCSR read that answers or the session's end, and
+  `getSessionStatus()` reports its age without reading the target.
 - **Reset.** `resetTarget()` hands over to `performReset()` in
   `src/executor/targetReset.ts`. A running target is halted first; each
   method is sent as GDB monitor commands in the dialect of the GDB server
@@ -245,10 +252,10 @@ Code update needs a look at this.
 | `src/executor/gdbCommand.ts` | `runGdbCommand()`: the adapter's prefix, output capture and settle |
 | `src/core/gdbDialect.ts` | GDB prefix per adapter, the agent's passthrough spellings, MI memory results, GDB's refusal of a run-control request |
 | `src/executor/gdbMemory.ts` | address helpers, `bytesInRange()` for a DAP `readMemory` reply, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
-| `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
+| `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP`; `coreVerdict()` and the texts of a core that answers or does not |
 | `src/executor/sessionReports.ts` | `probeSession()`, `takesRequests()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
-| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`) |
+| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`), the last DHCSR read that got no answer (`noteCoreVerdict()`, `coreSilentSince()`) |
 | `src/utils/timeout.ts` | `withTimeout()`, `customRequestWithTimeout()`, `HardwareTimeoutError` |
 
 ## Tests
@@ -261,7 +268,8 @@ Code update needs a look at this.
   end sooner than asked, the GDB word-read ladder and the DHCSR read after a
   failed read
 - `src/test/gdbMemory.test.ts`: the ladder's causes, `PROBE_WEDGED` and
-  `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints
+  `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints; the
+  DHCSR read of `check_target_connection` and the verdict the status keeps
 - `test/transport/dap-scenarios.js`: the executor behind the handler and the
   server in 40 scripted scenarios, mostly `gdbtarget` sessions, a wedged
   probe and an adapter that is still connecting among them

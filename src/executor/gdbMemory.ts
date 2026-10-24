@@ -32,7 +32,8 @@
  * On the CMSIS Debugger, `explainReadFailure` then reads DHCSR once
  * (`probeDebugPort`) and turns the failure into `PROBE_WEDGED` or
  * `INVALID_ARGUMENT` (src/core/probeWedge.ts); elsewhere the failure keeps
- * its causes and nothing more is read.
+ * its causes and nothing more is read. Every DHCSR read of a CMSIS Debugger
+ * session leaves its verdict with the session tracker.
  *
  * `readWord` in src/core/peripheralReader.ts is a similar ladder with its own
  * behaviour (no third form, `readMemory` first); the two stay separate.
@@ -40,7 +41,8 @@
 
 import * as vscode from 'vscode';
 import { bytesFromMiMemoryReply, CMSIS_DEBUGGER_TYPE, miReadMemoryCommand } from '../core/gdbDialect';
-import { attemptsText, CANARY_MS, classifyReadFailure, DebugPortProbe, DHCSR_ADDRESS, ReadAttempt } from '../core/probeWedge';
+import { attemptsText, CANARY_MS, classifyReadFailure, coreVerdict, DebugPortProbe, DHCSR_ADDRESS, ReadAttempt } from '../core/probeWedge';
+import { noteCoreVerdict } from '../utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout';
 import { EvaluateBody, FrameArg, messageOf, ReadMemoryBody } from './common';
 import type { MemoryRead } from './contract';
@@ -183,9 +185,19 @@ export async function readWordThroughGdb(
 
 /**
  * Read DHCSR once, 4 bytes through DAP `readMemory` within at most 1 s: does
- * the debug port answer? Never rejects.
+ * the debug port answer? On the CMSIS Debugger the session tracker keeps the
+ * verdict for `get_session_status` (`noteCoreVerdict`). Never rejects.
  */
 export async function probeDebugPort(session: vscode.DebugSession, budgetMs: number): Promise<DebugPortProbe> {
+    const probe = await readDhcsr(session, budgetMs);
+    if (session.type === CMSIS_DEBUGGER_TYPE) {
+        noteCoreVerdict(session, coreVerdict(probe));
+    }
+    return probe;
+}
+
+/** `probeDebugPort` without the verdict kept. */
+async function readDhcsr(session: vscode.DebugSession, budgetMs: number): Promise<DebugPortProbe> {
     try {
         const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
             { memoryReference: DHCSR_ADDRESS, count: 4 }, Math.min(budgetMs, CANARY_MS));

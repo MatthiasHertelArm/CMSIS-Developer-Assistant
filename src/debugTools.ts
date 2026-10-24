@@ -177,10 +177,11 @@ const ABOUT = {
         'Return information about the connected debug target: session name, debug type, program path, GDB path, GDB server, ' +
         'port, and CMSIS config details.',
     check_target_connection: say(
-        'Probe the hardware debug connection with a short-timeout DAP ping.',
+        'Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core\'s debug ' +
+        'status (DHCSR).',
         'Use this when other tool calls start timing out or returning "unavailable" to determine whether the probe/GDB server ' +
         'is alive and whether the target is stopped (so DAP reads are valid).',
-        'Never hangs — uses an internal short timeout.',
+        'Never hangs.',
     ),
     get_call_stack: say(
         'Return the full call stack (function names, source, line, frameId) for the active thread, or a specific thread when ' +

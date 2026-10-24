@@ -310,14 +310,18 @@ async function main() {
     }
     reset();
     {
-        const { session } = makeSession(() => ({ threads: [] }), { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
+        // The adapter answers DHCSR with a halted core (#3); every other request with an empty thread list.
+        const { session, calls } = makeSession((c, a) => (c === 'readMemory' && a.memoryReference === '0xE000EDF0'
+            ? { data: le(0x00030003).toString('base64') } : { threads: [] }), { type: 'gdbtarget', name: 'Cfg' }, 'Sess');
         focusOn(session);
         stub.debug.activeStackItem = { session, threadId: 1, frameId: 5 };
         const ex = new DebuggingExecutor();
         const st = await ex.getSessionStatus();
-        check('SS4 stopped', st.state === 'stopped' && st.dapResponsive === true && typeof st.dapProbeMs === 'number' && 'detail' in st && st.detail === undefined, st);
+        check('SS4 stopped', st.state === 'stopped' && st.dapResponsive === true && typeof st.dapProbeMs === 'number' && 'detail' in st && st.detail === undefined
+            && !('coreSilentForMs' in st), st);
         const txt = await ex.checkTargetConnection();
-        check('SS4 text', /^Session: Sess \(type=gdbtarget\)\nConfiguration: Cfg\nDAP probe: OK \(\d+ms\)\nTarget state: stopped — full inspection is available\.$/.test(txt), txt);
+        check('SS4 text', /^Session: Sess \(type=gdbtarget\)\nConfiguration: Cfg\nDAP probe: OK \(\d+ms\)\nTarget state: stopped — the debug port answers: DHCSR=0x00030003 \(halted\)\.$/.test(txt), txt);
+        check('SS4 one DHCSR read', calls.filter((c) => c.command === 'readMemory').map((c) => c.json).join() === '{"memoryReference":"0xE000EDF0","count":4}', calls);
         const t = trackerFor(session);
         event(t, 'stopped', { reason: 'step', threadId: 1 });
         const st2 = await ex.getSessionStatus();
@@ -325,6 +329,7 @@ async function main() {
         event(t, 'continued', {});
         const txt2 = await ex.checkTargetConnection();
         check('SS4 running text', txt2.endsWith('Target state: running — DAP reads (memory/registers/variables) will be rejected until the target stops.'), txt2);
+        check('SS4 running: DHCSR not read', calls.filter((c) => c.command === 'readMemory').length === 1, calls.length);
     }
     reset();
     {

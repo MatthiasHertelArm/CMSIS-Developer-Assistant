@@ -63,7 +63,7 @@ import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
 import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
-import { isLockedUp, LOCKUP_NOTE } from './core/probeWedge';
+import { coreVerdict, isLockedUp, LOCKUP_NOTE, silentCoreText, wedgeHint } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
 import { programmingNote, serialSessionLine } from './core/serialText';
@@ -489,6 +489,29 @@ export class DebuggingHandler
     private async lockedUp(timeoutMs: number | undefined): Promise<boolean> {
         const port = await this.dbg.probeDebugPort(timeoutMs);
         return port.readable && isLockedUp(port.dhcsr);
+    }
+
+    /**
+     * When a register of `registers` could not be read on the CMSIS Debugger
+     * (`<unavailable>`, or GDB gave no text), one DHCSR read (#3): if the core
+     * does not answer either, why the reads fail and how to reconnect;
+     * otherwise nothing. A target that lost power leaves GDB's copies of the
+     * registers it read at the last stop, so some values can still show.
+     */
+    private async silentCoreNote(registers: Record<string, string>, timeoutMs: number | undefined): Promise<string | undefined> {
+        const values = Object.values(registers);
+        const unread = values.filter((value) => value === '<unavailable>' || value.trim() === '').length;
+        if (unread === 0 || this.dbg.getActiveSession()?.type !== CMSIS_DEBUGGER_TYPE) {
+            return undefined;
+        }
+        const port = await this.dbg.probeDebugPort(timeoutMs);
+        if (port.readable || coreVerdict(port) !== 'silent') {
+            return undefined;
+        }
+        const every = unread === values.length;
+        const lead = every ? 'Every register is unavailable' : `${unread} of ${values.length} registers are unavailable`;
+        const copies = every ? '' : ' The values shown may be GDB\'s copies from before it lost the target.';
+        return `${lead}: ${silentCoreText(port)}${copies}\n${wedgeHint(this.sessionRequest())}\n`;
     }
 
     /** The full state, remembering which breakpoint list it showed. */
@@ -1566,10 +1589,13 @@ export class DebuggingHandler
         });
     }
 
+    /** The register table; when no register could be read on the CMSIS Debugger, also whether the core answers (#3). */
     handleReadCoreRegisters(args?: TimeoutArg): Answer {
         return this.fence('read_core_registers', args?.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read core registers');
-            return renderCoreRegisters(await this.dbg.readCoreRegisters(args?.timeoutMs));
+            const registers = await this.dbg.readCoreRegisters(args?.timeoutMs);
+            const silence = await this.silentCoreNote(registers, args?.timeoutMs);
+            return `${renderCoreRegisters(registers)}${silence ?? ''}`;
         });
     }
 

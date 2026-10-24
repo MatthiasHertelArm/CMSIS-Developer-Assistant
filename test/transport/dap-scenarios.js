@@ -407,6 +407,7 @@ function baseMemory() {
     // System control space and DWT.
     words.set(0xe000ed00, 0x410fc241); words.set(0xe000ed08, 0x08000000);          // CPUID, VTOR
     words.set(0xe0001000, 0x40000000); words.set(0xe0001004, 0x00a3c1f5);          // DWT_CTRL, CYCCNT
+    words.set(0xe000edf0, 0x00030003);                                             // DHCSR: halted, C_DEBUGEN
     return words;
 }
 const FAULT_WORDS = { 0xe000ed28: 0x00008200, 0xe000ed2c: 0x40000000, 0xe000ed30: 0x00000008, 0xe000ed34: 0x60000000, 0xe000ed38: 0x60000000 };
@@ -1363,13 +1364,16 @@ const SCENARIOS = [
     {
         name: 'probe-wedged',
         description: 'Halted in HardFault, then the probe wedges (#3): GDB answers threads, stack and registers from its caches, but every memory read '
-            + 'fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy\'s cause and the hint of a launch session.',
+            + 'fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy\'s cause and the hint of a launch session. '
+            + 'Afterwards get_session_status names the DHCSR read that got no answer without reading, and check_target_connection reads DHCSR again.',
         session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, wedged: true },
         calls: [
             { tool: 'get_session_status' },
             { tool: 'get_fault_info' },
             { tool: 'diagnose_fault' },
             { tool: 'read_memory', args: { address: '0x20017fa8', length: 32 } },
+            { tool: 'get_session_status' },
+            { tool: 'check_target_connection' },
         ],
     },
     {
