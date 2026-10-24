@@ -94,6 +94,8 @@ Always call `get_session_status` *before* any session-changing tool. The five po
 | `running` | A session is attached and the CPU is executing. | Inspection reads and stepping are rejected; breakpoint and logpoint changes still work (on the CMSIS Debugger the tool pauses the target for the change and resumes it). Call `pause_execution`, or `wait_for_stop` if a breakpoint is expected to hit, or `stop_debugging`. |
 | `unresponsive` | The probe / GDB server is hung. | Call `check_target_connection` to confirm; calls that need the target answer `PROBE_WEDGED` with the way to reconnect. Reconnect without a reset first, so a fault can still be read (topic `faults`). `restart_debugging` and `cmsis_action load_and_debug` re-flash and reset, and lose that state: they come last, and only once the user accepts the loss. Do NOT issue more inspection calls — they will time out. |
 
+With several VS Code windows debugging and none chosen for this session, the state reads `no target window` and each window's own state follows: choose one first (below, *Several VS Code windows open*).
+
 `start_debugging` and `cmsis_action load_and_debug` refuse with a structured error if a session is already active, naming the existing session and pointing you at `restart_debugging` / `stop_debugging`. Save the round-trip by checking up front.
 
 ### Reading results
@@ -113,7 +115,7 @@ The MCP server runs in one window (the router) and forwards each call to the win
 
 `cmsis_action`, `flash`, `reset`, `serial_open`, `serial_capture` and `knowledge_search` also take `window` — a pid, or a path inside that window's workspace (for `knowledge_search` it names the project whose context scopes the search, without changing the session's target). It aims that call, and the session's later calls without a path follow it to the same window: `cmsis_action({ action: 'load_and_debug', window: '4711' })`, then `read_memory` reads that board.
 
-When **no rule decides** — two windows debugging at once, or several idle ones — it refuses to guess and names them all (`AMBIGUOUS_WINDOW`): reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and the default target, and `select_debug_window({ pid })` to pin one for the rest of the session, or ask the user to pick one: a click on the CDA robot icon in the VS Code status bar opens **Select Target Window**.
+When **no rule decides** — two windows debugging at once, or several idle ones — it refuses to guess and names them all (`AMBIGUOUS_WINDOW`): reading the wrong board's memory looks exactly like a firmware bug and costs far more than being asked to pick. Use `list_debug_windows` to see the candidates and the default target, and `select_debug_window({ pid })` to pin one for the rest of the session, or ask the user to pick one: a click on the CDA robot icon in the VS Code status bar opens **Select Target Window**. `get_session_status` answers a tie instead of refusing it — the windows, with the state of each one that debugs — and `cmsis_query`, `serial_list_ports` and `knowledge_search` need no choice.
 
 When the target window is **slow or stuck**, the error code says which:
 

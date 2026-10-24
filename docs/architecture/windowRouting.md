@@ -172,6 +172,19 @@ folder; nothing is followed afterwards. `cmsis_query` reads CMSIS Solution's
 catalog, which every window answers alike, so it takes the ladder and, where
 the ladder would refuse a tie, the router's own window
 (`resolveAnyWindow()`, which `open_solution` uses for its tie too).
+`serial_list_ports` goes the same way: the serial ports belong to the
+machine, and every window lists the same ones. The other serial tools keep
+the ladder, since a port is opened and read in one window.
+
+`get_session_status` is the call agents make when another one failed, and
+its description promises that it never fails. On a tie it is therefore
+answered, not refused (`resolveForStatus()`, `statusWithoutTarget()`): with
+idle windows `State: no-session`, why there is no target, and the windows;
+with several debugging windows `State: no target window`, and each of them
+with the state line its own status gives within 5 s, asked all at once
+(`State: stopped`, or `State: unknown` with why); then the same ways to
+choose as the refusal (`tieOf()`). Nothing becomes the session's target. An
+empty registry and a pinned window that is gone still fail as below.
 
 The knowledge ops are routed with the documentation ops, because the
 project context of a `knowledge_search` is the active target of one window;
@@ -192,8 +205,9 @@ effect at once all the same, every session remembers the `setAt` of the
 default it last saw (`followDefault()`): a new one drops the session's cache,
 never its pin. Removing the default leaves each session where it is.
 
-Otherwise the call is refused with the list of windows and the ways to pick
-one — when two windows are debugging, reading memory from the wrong board
+Otherwise the call — except for the ones above, which any window can
+answer, and `get_session_status` — is refused with the list of windows and
+the ways to pick one — when two windows are debugging, reading memory from the wrong board
 would look exactly like a firmware bug, so the router never guesses. The
 refusal is `AMBIGUOUS_WINDOW`, and its `data.candidates` lists every
 registered window (`pid`, `name`, `workspaceFolders`, `hasActiveSession`,
@@ -459,7 +473,9 @@ releases the window's serial ports, giving that step at most two seconds.
 ## Tests
 
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
-  round trip; typed outcomes — a worker error with its code and the target
+  round trip; `serial_list_ports` and `get_session_status` on a tie (the
+  router's own window; the status across idle and debugging windows, a
+  window that does not answer); typed outcomes — a worker error with its code and the target
   kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the
   gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`; the
   default target, the `window` argument, the candidates' `isDefault` and
