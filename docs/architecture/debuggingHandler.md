@@ -596,7 +596,11 @@ exit 0 is not a success until `BuildDiagnosisRunner.check` agrees:
 - errors in a fresh `*.cbuild-idx.yml` make it a failure;
 - the images the build writes — the primary outputs of each context the
   index names, else those of the cbuild-run file — all written since the
-  build started confirm it;
+  build started confirm it. "Written" means changed since the build task
+  started, when `onStarted` noted their times; only without that note does
+  an image up to 2 s older than the build count, for coarse file times. A
+  failed build that starts right after a good one finds the image of that
+  one younger than 2 s, so the age alone would have confirmed it;
 - otherwise stage B decides. The build is incremental, so the re-run fails
   where the build failed and succeeds at once when there was nothing to
   rebuild; an image that kept its old time is no failure by itself.
