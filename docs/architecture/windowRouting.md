@@ -63,10 +63,16 @@ or `worker`; windows of 2.5.0 and earlier write none). Since 2.5.1 it also
 holds the extension `version`, and from the first heartbeat on `lagMs`, the
 event-loop delay of the last 20 s, and `busy`, the agent calls running there
 for more than 10 s (#14). The file is written atomically, refreshed every
-20 s, and rewritten at once when a debug session starts or ends or the
-folders change — the session state is what routes every call that names no
-file. The heartbeat takes a patch, so it brings `busy` and `lagMs` up to
-date as it refreshes the time. Readers drop the files of processes that no
+20 s, and rewritten at once when a debug session starts or ends, VS Code's
+focused session changes, or the folders change — the session state is what
+routes every call that names no file. `hasActiveSession` comes from the
+session tracker's live sessions, not from `vscode.debug.activeDebugSession`
+alone, which still names a session while `onDidTerminateDebugSession`
+announces its end (VS Code moves the focus afterwards); the configuration
+is the focused session's while it is live, else the most recent live
+session's (`registrySession()` in `src/utils/sessionStateTracker.ts`). The
+heartbeat takes a patch, so it brings `busy` and `lagMs` up to date as it
+refreshes the time. Readers drop the files of processes that no
 longer exist and of other windows not refreshed for 60 s, with one
 exception: the router's entry stays, skipped, while its process lives (up to
 an hour), because it names the window that holds the MCP port when that
@@ -480,7 +486,9 @@ releases the window's serial ports, giving that step at most two seconds.
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'
   `mode` option and the loopback checks
 - `src/test/windowCoordinator.test.ts`: the serial teardown on dispose; the
-  role and version the window publishes; the warning about a router that
+  role and version the window publishes; the debug session it publishes — a
+  session that ends while still focused, the one that remains of two, a
+  change of focus; the warning about a router that
   stopped running, once per episode, none for a healthy router, and by
   port for a router of 2.5.0 (injected notifier and clock)
 - `src/test/opTable.test.ts`: the op table and `targetHintOf()`

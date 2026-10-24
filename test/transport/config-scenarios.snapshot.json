@@ -11219,6 +11219,10 @@
         },
         {
           "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
@@ -11909,6 +11913,7 @@
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
@@ -12210,6 +12215,10 @@
         },
         {
           "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
@@ -12424,6 +12433,7 @@
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
@@ -13368,6 +13378,10 @@
         },
         {
           "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
@@ -13585,6 +13599,7 @@
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",

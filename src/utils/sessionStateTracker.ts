@@ -16,8 +16,9 @@
 
 /**
  * What this window knows about its debug sessions from the DAP traffic the
- * adapter tracker sees: the live sessions and the one to act on, whether each
- * target is stopped, waits for the next stop and for a session's end, the
+ * adapter tracker sees: the live sessions, the one to act on and the one the
+ * window's registry entry names, whether each target is stopped, waits for
+ * the next stop and for a session's end, the
  * output a GDB command prints (#56), when the adapter has answered VS Code's
  * `setBreakpoints`, the GDB `dprintf` logpoints set in a session, and when
  * the last DHCSR read of a session got no answer (#3). Everything a session
@@ -200,6 +201,29 @@ export function getLiveSessionNames(): string[] {
  */
 export function resolveActiveSession(): vscode.DebugSession | undefined {
     return vscode.debug.activeDebugSession ?? getMostRecentLiveSession();
+}
+
+/**
+ * The session this window's registry entry names: `active`, VS Code's
+ * focused session, while it is live, else the most recently started live
+ * session; undefined when none is live. The focused session alone is no
+ * answer, since `onDidTerminateDebugSession` runs while it still names the
+ * session that ends: VS Code moves the focus only afterwards. `ending` is the
+ * session whose end is being announced, which never counts, whichever end
+ * listener runs first. The tracker sees every debug type, so a focused
+ * session it never saw has its adapter in another extension host, and counts
+ * as VS Code has it.
+ */
+export function registrySession(active: vscode.DebugSession | undefined, ending?: vscode.DebugSession): vscode.DebugSession | undefined {
+    if (active !== undefined && active !== ending && !endedSessions.has(active)) {
+        return active;
+    }
+    for (let index = liveSessions.length - 1; index >= 0; index--) {
+        if (liveSessions[index] !== ending) {
+            return liveSessions[index];
+        }
+    }
+    return undefined;
 }
 
 /**

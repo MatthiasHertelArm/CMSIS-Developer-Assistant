@@ -33,6 +33,7 @@ import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { solutionFileOf } from './core/solutionAnswers';
 import { logger } from './utils/logger';
 import { notifyWarning } from './utils/notify';
+import { registrySession } from './utils/sessionStateTracker';
 import { withTimeout } from './utils/timeout';
 import { WindowStatus } from './windowStatus';
 
@@ -59,6 +60,10 @@ const NO_WORKSPACE = '(no workspace)';
 
 /** Shows a warning with buttons and resolves with the one chosen: `notifyWarning`, or a test's stand-in. */
 export type WarningNotifier = (message: string, ...items: string[]) => Thenable<string | undefined> | undefined;
+
+/** The part of `vscode.debug` the registry entry follows: the focused session and the events that republish it. */
+export type DebugSessionEvents = Pick<typeof vscode.debug,
+    'activeDebugSession' | 'onDidStartDebugSession' | 'onDidTerminateDebugSession' | 'onDidChangeActiveDebugSession'>;
 
 export interface CoordinatorOptions {
     port: number;
@@ -114,6 +119,8 @@ export interface CoordinatorOptions {
      * for tests.
      */
     solutionFile?: () => Thenable<unknown> | undefined;
+    /** VS Code's focused debug session and the session events; `vscode.debug` by default. Injectable for tests. */
+    debug?: DebugSessionEvents;
 }
 
 const SERIAL_TEARDOWN_MS = 2_000;
@@ -247,10 +254,13 @@ export class WindowCoordinator {
 
         // Debug-session state is the routing signal for every tool that has no
         // file path, so republish the moment it changes rather than waiting for
-        // the next heartbeat.
+        // the next heartbeat. The ending session is named: VS Code still has it
+        // focused while its end is announced, and moves the focus afterwards.
+        const debug = this.debugApi();
         context.subscriptions.push(
-            vscode.debug.onDidStartDebugSession(() => this.publish()),
-            vscode.debug.onDidTerminateDebugSession(() => this.publish()),
+            debug.onDidStartDebugSession(() => this.publish()),
+            debug.onDidTerminateDebugSession((ended) => this.publish(ended)),
+            debug.onDidChangeActiveDebugSession(() => this.publish()),
             vscode.workspace.onDidChangeWorkspaceFolders(() => this.publish()),
         );
 
@@ -544,23 +554,31 @@ export class WindowCoordinator {
         };
     }
 
+    /** VS Code's debug API, or the stand-in a test gave. */
+    private debugApi(): DebugSessionEvents {
+        return this.options.debug ?? vscode.debug;
+    }
+
     /**
      * Write this window's current state into the shared registry.
      *
      * Public because debug-session state is a routing input, not just a display
      * detail: until this runs, other windows still believe this one is idle.
+     * The session comes from the session tracker's live sessions
+     * (`registrySession()`), not from VS Code's focus alone; `ending` is a
+     * session whose end is being announced, which no longer counts.
      */
-    public publish(): void {
+    public publish(ending?: vscode.DebugSession): void {
         if (this.disposed || !this.controlServer) { return; }
         this.refreshSolutionFile();
 
-        const session = vscode.debug.activeDebugSession;
+        const session = registrySession(this.debugApi().activeDebugSession, ending);
         this.registry.register({
             controlPort: this.controlServer.getPort(),
             controlToken: this.controlToken,
             workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath),
             name: vscode.workspace.name ?? NO_WORKSPACE,
-            hasActiveSession: !!session,
+            hasActiveSession: session !== undefined,
             activeConfigurationName: session?.configuration?.name,
             cmsisProject: this.solutionFile,
             role: this.role(),

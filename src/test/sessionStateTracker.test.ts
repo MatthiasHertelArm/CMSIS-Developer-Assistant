@@ -31,6 +31,7 @@ import {
     noteCoreVerdict,
     noteOwnRequest,
     quietStartFailure,
+    registrySession,
     rememberGdbLogpoint,
     waitForSessionEnd,
     waitForStopEvent,
@@ -289,6 +290,34 @@ suite('Session state tracker', () => {
             again.onDidSendMessage?.({ type: 'event', event: 'stopped', body: { reason: 'breakpoint', threadId: 1 } });
             assert.deepStrictEqual(await stop, { kind: 'stopped', reason: 'breakpoint', threadId: 1 });
             again.onWillStopSession?.();
+        });
+    });
+
+    suite('the session the window\'s registry entry names', () => {
+        test('the focused session while it is live; not while its end is announced, nor once the tracker saw it end', () => {
+            const a = track();
+            assert.strictEqual(registrySession(a.session), a.session);
+            assert.strictEqual(registrySession(a.session, a.session), undefined, 'VS Code still has it focused while onDidTerminateDebugSession runs');
+            a.tracker.onWillStopSession?.();
+            assert.strictEqual(registrySession(a.session), undefined, 'a focus VS Code has not moved yet');
+            assert.strictEqual(registrySession(undefined), undefined);
+        });
+
+        test('of two sessions, the one that stays when the other ends, focused or not', () => {
+            const first = track();
+            const second = track();
+            assert.strictEqual(registrySession(undefined), second.session, 'none focused: the most recent live session');
+            assert.strictEqual(registrySession(first.session), first.session, 'the focused one, though older');
+            assert.strictEqual(registrySession(second.session, second.session), first.session);
+            second.event('terminated');
+            assert.strictEqual(registrySession(second.session), first.session);
+            assert.strictEqual(registrySession(undefined), first.session);
+        });
+
+        test('a focused session the tracker never saw counts as VS Code has it, until its end is announced', () => {
+            const elsewhere = { id: 'other-host', name: 'Python', type: 'debugpy', configuration: { name: 'Python: Current File' } } as unknown as vscode.DebugSession;
+            assert.strictEqual(registrySession(elsewhere), elsewhere);
+            assert.strictEqual(registrySession(elsewhere, elsewhere), undefined);
         });
     });
 
