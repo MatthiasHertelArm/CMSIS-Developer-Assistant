@@ -75,9 +75,9 @@ export interface CatalogQuery {
     vendor?: string;
     /** boards, devices, examples: a pattern for the name. */
     name?: string;
-    /** examples: the id of the board. */
+    /** boards: a second pattern for the board's name; examples: the id of the board. */
     board?: string;
-    /** boards: a pattern for a device the board carries; examples: the id of the device. */
+    /** boards: a pattern for a device the board carries; devices: a second pattern for the name; examples: the id of the device. */
     device?: string;
     /** Entries listed at most; default 20, at most 100. */
     limit?: number;
@@ -170,6 +170,16 @@ function filterText(parts: ReadonlyArray<readonly [string, string | undefined]>)
     return given.length > 0 ? ` matching ${given.map(([label, value]) => `${label} '${value.trim()}'`).join(', ')}` : '';
 }
 
+/**
+ * Whether an entry's name or id matches a pattern; no pattern matches all.
+ * `board` for boards and `device` for devices are such a pattern as well:
+ * an agent that names the board or device it means is not answered with
+ * the whole catalog.
+ */
+function nameMatches(pattern: ((value: string | undefined) => boolean) | undefined, entry: { name?: unknown; id?: { key?: unknown } }): boolean {
+    return !pattern || pattern(textField(entry?.name)) || pattern(keyOf(entry));
+}
+
 /** Compare by id, ignoring case, for a stable listing. */
 function byKey(a: { id?: { key?: unknown } }, b: { id?: { key?: unknown } }): number {
     return keyOf(a).toLowerCase().localeCompare(keyOf(b).toLowerCase());
@@ -193,11 +203,12 @@ function lateNote(late: number, what: string, waitedMs: number): string[] {
 async function listBoards(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number): Promise<Listing> {
     const vendor = matcherOf(query.vendor);
     const name = matcherOf(query.name);
+    const boardName = matcherOf(query.board);
     const device = matcherOf(query.device);
     // A mountedDevice filter makes the API fetch the boards with their devices; the empty one keeps
     // every board that has a device, and the case-insensitive match is made here.
     const boards = await listed(() => api.getBoards(device ? { mountedDevice: {} } : undefined), 'boards', clock, deadline);
-    const named = boards.filter((board) => (!vendor || vendor(textField(board?.vendor))) && (!name || name(textField(board?.name)) || name(keyOf(board))));
+    const named = boards.filter((board) => (!vendor || vendor(textField(board?.vendor))) && nameMatches(name, board) && nameMatches(boardName, board));
     let matching = named;
     if (device) {
         // The API's own filter has read every board's devices already; one wait covers them all.
@@ -243,7 +254,7 @@ async function listBoards(api: SolutionApiV2, query: CatalogQuery, clock: Clock,
         return { line: `- ${keyOf(board)}${parts.length > 0 ? ` — ${parts.join(', ')}` : ''}`, data };
     }));
     return {
-        header: `Boards${filterText([['vendor', query.vendor], ['name', query.name], ['device', query.device]])}`,
+        header: `Boards${filterText([['vendor', query.vendor], ['name', query.name], ['board', query.board], ['device', query.device]])}`,
         total: matching.length,
         entries,
         notes: lateNote(late, 'device or pack', detailMs),
@@ -269,8 +280,9 @@ function coreText(processors: readonly { name?: unknown; core?: unknown }[]): st
 async function listDevices(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number): Promise<Listing> {
     const vendor = matcherOf(query.vendor);
     const name = matcherOf(query.name);
+    const deviceName = matcherOf(query.device);
     const devices = await listed(() => api.getDevices(), 'devices', clock, deadline);
-    const matching = devices.filter((device) => (!vendor || vendor(textField(device?.vendor))) && (!name || name(textField(device?.name)) || name(keyOf(device))));
+    const matching = devices.filter((device) => (!vendor || vendor(textField(device?.vendor))) && nameMatches(name, device) && nameMatches(deviceName, device));
     matching.sort(byKey);
     const shown = matching.slice(0, limitOf(query.limit));
     const detailMs = Math.min(DETAIL_MS, left(clock, deadline));
@@ -297,7 +309,7 @@ async function listDevices(api: SolutionApiV2, query: CatalogQuery, clock: Clock
         return { line: `- ${keyOf(device)}${parts.length > 0 ? ` — ${parts.join(', ')}` : ''}`, data };
     }));
     return {
-        header: `Devices${filterText([['vendor', query.vendor], ['name', query.name]])}`,
+        header: `Devices${filterText([['vendor', query.vendor], ['name', query.name], ['device', query.device]])}`,
         total: matching.length,
         entries,
         notes: lateNote(late, 'pack or cores', detailMs),
@@ -359,7 +371,7 @@ async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Cloc
     const drafts = await listed(() => api.getDraftProjects(board?.id, device?.id), 'examples and templates', clock, deadline);
     const errors = catalogErrorsOf(api);
     const name = matcherOf(query.name);
-    const matching = drafts.filter((draft) => !name || name(textField(draft?.name)) || name(keyOf(draft)));
+    const matching = drafts.filter((draft) => nameMatches(name, draft));
     const shown = matching.slice(0, limitOf(query.limit));
     const entries = shown.map((draft): Entry => {
         const source = sourceOf(draft);

@@ -1287,11 +1287,11 @@
                 "type": "string"
               },
               "board": {
-                "description": "examples: board id",
+                "description": "boards: pattern; examples: board id",
                 "type": "string"
               },
               "device": {
-                "description": "boards: pattern; examples: device id",
+                "description": "boards, devices: pattern; examples: device id",
                 "type": "string"
               },
               "limit": {
@@ -1451,8 +1451,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61265,
-          "sha256": "52da3ab9fd4da9de43fd7cd883347a7b15fb780d5b5bbe4ad20be471ec855405"
+          "bytes": 61333,
+          "sha256": "3624ea412e92a5493851d6574baecb3e7803d6e1bee515e6c12d00dfd845270b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -2805,11 +2805,11 @@
                 "type": "string"
               },
               "board": {
-                "description": "examples: board id",
+                "description": "boards: pattern; examples: board id",
                 "type": "string"
               },
               "device": {
-                "description": "boards: pattern; examples: device id",
+                "description": "boards, devices: pattern; examples: device id",
                 "type": "string"
               },
               "limit": {
@@ -2969,8 +2969,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61265,
-          "sha256": "52da3ab9fd4da9de43fd7cd883347a7b15fb780d5b5bbe4ad20be471ec855405"
+          "bytes": 61333,
+          "sha256": "3624ea412e92a5493851d6574baecb3e7803d6e1bee515e6c12d00dfd845270b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -4859,11 +4859,11 @@
                 "type": "string"
               },
               "board": {
-                "description": "examples: board id",
+                "description": "boards: pattern; examples: board id",
                 "type": "string"
               },
               "device": {
-                "description": "boards: pattern; examples: device id",
+                "description": "boards, devices: pattern; examples: device id",
                 "type": "string"
               },
               "limit": {
@@ -5023,8 +5023,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61265,
-          "sha256": "52da3ab9fd4da9de43fd7cd883347a7b15fb780d5b5bbe4ad20be471ec855405"
+          "bytes": 61333,
+          "sha256": "3624ea412e92a5493851d6574baecb3e7803d6e1bee515e6c12d00dfd845270b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -6839,11 +6839,11 @@
                 "type": "string"
               },
               "board": {
-                "description": "examples: board id",
+                "description": "boards: pattern; examples: board id",
                 "type": "string"
               },
               "device": {
-                "description": "boards: pattern; examples: device id",
+                "description": "boards, devices: pattern; examples: device id",
                 "type": "string"
               },
               "limit": {
@@ -7045,8 +7045,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61265,
-          "sha256": "52da3ab9fd4da9de43fd7cd883347a7b15fb780d5b5bbe4ad20be471ec855405"
+          "bytes": 61333,
+          "sha256": "3624ea412e92a5493851d6574baecb3e7803d6e1bee515e6c12d00dfd845270b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -8947,11 +8947,11 @@
                 "type": "string"
               },
               "board": {
-                "description": "examples: board id",
+                "description": "boards: pattern; examples: board id",
                 "type": "string"
               },
               "device": {
-                "description": "boards: pattern; examples: device id",
+                "description": "boards, devices: pattern; examples: device id",
                 "type": "string"
               },
               "limit": {
@@ -9153,8 +9153,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 61265,
-          "sha256": "52da3ab9fd4da9de43fd7cd883347a7b15fb780d5b5bbe4ad20be471ec855405"
+          "bytes": 61333,
+          "sha256": "3624ea412e92a5493851d6574baecb3e7803d6e1bee515e6c12d00dfd845270b"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,

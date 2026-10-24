@@ -274,6 +274,24 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             ].join('\n'));
         });
 
+        test('devices by device and boards by board: the argument the other kinds take is a name pattern here, never ignored', async () => {
+            // A tester's call: {what:'devices', device:'XMC4700'} listed all 13 605 devices of the catalog.
+            const devices = await query(catalogApi(), { what: 'devices', device: 'h735' });
+            assert.deepStrictEqual(((devices.data as JsonObject).entries as JsonObject[]).map((entry) => entry.id), ['STMicroelectronics::STM32H735IGKx']);
+            assert.ok(devices.text.startsWith('Devices matching device \'h735\': 1.\n'), devices.text);
+            // With name as well, both must match.
+            const both = await query(catalogApi(), { what: 'devices', name: 'MCXN|h735', device: '^NXP::' });
+            assert.deepStrictEqual(((both.data as JsonObject).entries as JsonObject[]).map((entry) => entry.id), ['NXP::MCXN947VDF']);
+            assert.ok(both.text.startsWith('Devices matching name \'MCXN|h735\', device \'^NXP::\': 1.\n'), both.text);
+            assert.strictEqual((await query(catalogApi(), { what: 'devices', device: 'XMC4700' })).text, 'Devices matching device \'XMC4700\': none.');
+
+            const api = catalogApi();
+            const boards = await query(api, { what: 'boards', board: 'nucleo' });
+            assert.deepStrictEqual(((boards.data as JsonObject).entries as JsonObject[]).map((entry) => entry.id), ['STMicroelectronics::NUCLEO-H753ZI']);
+            assert.ok(boards.text.startsWith('Boards matching board \'nucleo\': 1.\n'), boards.text);
+            assert.deepStrictEqual(api.filters, [undefined], 'a board pattern needs no devices from the API');
+        });
+
         test('the examples of a board: each says where it comes from, in the API\'s order, with the call that creates one', async () => {
             const reply = await query(catalogApi(), { what: 'examples', board: 'stmicroelectronics::stm32h735g-dk' });
             assert.strictEqual(reply.text, [
