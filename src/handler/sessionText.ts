@@ -17,8 +17,9 @@
 /**
  * Texts about the debug session itself: why an inspection is refused in the
  * current state (with the code that refusal carries), what
- * `get_session_status` reports, and the call-stack and thread listings.
- * What the adapter said when a start failed rides along with the failure as
+ * `get_session_status` reports, the call-stack and thread listings, and
+ * what an Arm FVP session says instead where pausing cannot work. What the
+ * adapter said when a start failed rides along with the failure as
  * problem records (#48), not as text of its own.
  *
  * `test/realboard/run.ts` reads `State: …` from the status and `frameId=N`
@@ -104,6 +105,32 @@ export function stoppedTargetRefusal(operation: string, state: SessionState, req
     return new Refusal(REFUSAL_CODES[state], `Cannot ${operation}: session state is '${state}'.`,
         `${REFUSAL_HINTS[state]}${reconnect} Use get_session_status for a definitive, never-failing classification.`);
 }
+
+// ── An Arm FVP: its GDB server ignores GDB's interrupt while the model runs; only a breakpoint stops it ──
+
+/** `pause_execution` on an FVP that did not stop. */
+export const FVP_PAUSE_IGNORED = 'Pause requested, but the Arm FVP did not stop: its GDB server ignores GDB\'s interrupt while the model runs, '
+    + 'so only a breakpoint stops it. To see where it runs: stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop '
+    + '(for a fault, HardFault_Handler), then continue_execution.';
+
+/** A breakpoint change on an FVP whose model did not stop for it. */
+export function fvpChangeRefusal(operation: string): Refusal {
+    return new Refusal('TARGET_RUNNING', `Cannot ${operation} while the Arm FVP runs: the change needs a halted target, `
+        + 'and its GDB server ignores the pause request.',
+    'stop_debugging, cmsis_action load_and_debug (it stops at main), make the change, then continue_execution.');
+}
+
+/** `stop_debugging` on an FVP whose session is still listed. */
+export const FVP_STOP_UNCONFIRMED = 'Stop requested, but the session is still listed: the debug adapter halts the target before it '
+    + 'disconnects, and the Arm FVP ignores that interrupt. Call stop_debugging once more: VS Code then ends the adapter.';
+
+/** After a session on an FVP came up: what stops it later. */
+export const FVP_BREAK_FIRST = 'On the Arm FVP pause_execution will not stop the running model: set breakpoints '
+    + '(for a fault, HardFault_Handler) before continue_execution.';
+
+/** A continue on an FVP that keeps running: what to do instead of pausing. */
+export const FVP_KEEPS_RUNNING = 'Call wait_for_stop to wait for a breakpoint. On the Arm FVP pause_execution will not stop it, nor will a fault: '
+    + 'to set a breakpoint, stop_debugging and cmsis_action load_and_debug first.';
 
 /**
  * The `get_session_status` text; `extraLines` (the CMSIS task line) go before the closing hint, `request` is the

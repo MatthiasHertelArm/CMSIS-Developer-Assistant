@@ -1279,6 +1279,52 @@
       ]
     },
     {
+      "name": "fvp-ignores-pause",
+      "description": "An Arm FVP, whose GDB server ignores GDB's interrupt while the model runs: a continue that does not stop, a pause and a breakpoint change on the running model say that only a breakpoint stops it, and how to set one, instead of advising a pause.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "continue_execution",
+          "args": {
+            "timeoutMs": 300
+          },
+          "text": "Target is running: no stop within <n>ms of 'continue_execution', and it keeps running; nothing was paused. Call wait_for_stop to wait for a breakpoint. On the Arm FVP pause_execution will not stop it, nor will a fault: to set a breakpoint, stop_debugging and cmsis_action load_and_debug first.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: continue {\"threadId\":1}",
+            "event: continued {\"threadId\":1,\"allThreadsContinued\":true}"
+          ]
+        },
+        {
+          "tool": "pause_execution",
+          "args": {
+            "timeoutMs": 1000
+          },
+          "text": "Pause requested, but the Arm FVP did not stop: its GDB server ignores GDB's interrupt while the model runs, so only a breakpoint stops it. To see where it runs: stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop (for a fault, HardFault_Handler), then continue_execution.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}"
+          ]
+        },
+        {
+          "tool": "add_breakpoint",
+          "args": {
+            "fileFullPath": "<tmp>/project/main.c",
+            "line": 29
+          },
+          "isError": true,
+          "text": "[TARGET_RUNNING] Cannot add a breakpoint while the Arm FVP runs: the change needs a halted target, and its GDB server ignores the pause request.\nstop_debugging, cmsis_action load_and_debug (it stops at main), make the change, then continue_execution.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: pause {\"threadId\":1}"
+          ]
+        }
+      ]
+    },
+    {
       "name": "step-ui-fallback",
       "description": "The tracker says stopped but the adapter rejects `next` with GDB's running-target error: on gdbtarget the step answers TARGET_RUNNING and no UI command runs (the scripted UI command would step).",
       "setup": [

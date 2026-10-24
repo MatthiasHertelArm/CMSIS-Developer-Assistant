@@ -66,6 +66,7 @@ import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
 import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
+import { isFvpSession } from './core/gdbServerPorts';
 import { coreVerdict, isLockedUp, LOCKUP_NOTE, silentCoreText, wedgeHint } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
@@ -99,7 +100,10 @@ import {
 import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
 import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from './handler/problemText';
-import { renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal } from './handler/sessionText';
+import {
+    FVP_KEEPS_RUNNING, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, fvpChangeRefusal, renderCallStack, renderSessionStatus, renderThreads,
+    stoppedTargetRefusal,
+} from './handler/sessionText';
 import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
@@ -497,6 +501,11 @@ export class DebuggingHandler
         return typeof request === 'string' ? request : undefined;
     }
 
+    /** True when the session this window acts on runs on an Arm FVP, whose GDB server ignores the pause request. */
+    private onFvp(): boolean {
+        return isFvpSession(this.dbg.getActiveSession()?.configuration);
+    }
+
     /** DHCSR.S_LOCKUP from one DHCSR read (#3); false when DHCSR cannot be read. */
     private async lockedUp(timeoutMs: number | undefined): Promise<boolean> {
         const port = await this.dbg.probeDebugPort(timeoutMs);
@@ -635,7 +644,8 @@ export class DebuggingHandler
      * A step or continue: gate, request, wait. When nothing stopped, a step
      * pauses the target to say where it went and answers with status
      * `timeout`; a continue leaves the target running and answers with
-     * status `running`. A session that ends during the wait is a failure,
+     * status `running` (on an Arm FVP without the advice to pause, which the
+     * model ignores). A session that ends during the wait is a failure,
      * `NO_SESSION`, as for pause and `wait_for_stop`; the gate's own refusal
      * passes unwrapped.
      */
@@ -652,10 +662,12 @@ export class DebuggingHandler
                 + 'the target may have run to completion, crashed, or lost its connection.', SESSION_ENDED_HINT);
         }
         if (outcome.timedOut && spec.onWaitOut === 'keep-running') {
+            const next = this.onFvp()
+                ? FVP_KEEPS_RUNNING
+                : 'Call wait_for_stop to wait for the next stop (a breakpoint, a fault), or pause_execution to halt it and see where it is.';
             return {
                 text: `Target is running: no stop within ${durationText(outcome.waitedMs)} of '${spec.tool}', and it keeps running; `
-                    + 'nothing was paused. Call wait_for_stop to wait for the next stop (a breakpoint, a fault), '
-                    + 'or pause_execution to halt it and see where it is.',
+                    + `nothing was paused. ${next}`,
                 status: 'running',
             };
         }
@@ -833,17 +845,20 @@ export class DebuggingHandler
      * Stop the session and wait at most 10 s for VS Code to end it (#14). A
      * stop that does not settle in time, while the session is still listed,
      * answers with status `timeout`; one whose session is gone by then is a
-     * success.
+     * success. On an Arm FVP that timeout says to stop once more: the
+     * adapter waits for a halt the model never reports.
      */
     async handleStopDebugging(): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
                 return NOTHING_TO_STOP;
             }
+            // Asked before the stop: once it is sent the session may already be on its way out.
+            const fvp = this.onFvp();
             const settled = await this.settlesWithin(this.dbg.stopDebugging(), STOP_WAIT_MS);
             if (!settled && this.dbg.hasDebugSession()) {
                 logger.info(`stop_debugging: the session did not end within ${STOP_WAIT_MS} ms`);
-                return { text: STOP_UNCONFIRMED, status: 'timeout' };
+                return { text: fvp ? FVP_STOP_UNCONFIRMED : STOP_UNCONFIRMED, status: 'timeout' };
             }
             return `${SESSION_STOPPED}\n\n${ROOT_CAUSE_CHECK}`;
         } catch (caught) {
@@ -1075,7 +1090,10 @@ export class DebuggingHandler
         return this.move(CONTINUE, args);
     }
 
-    /** Not fenced and not wrapped: refusals and errors keep their own text and code. */
+    /**
+     * Not fenced and not wrapped: refusals and errors keep their own text and
+     * code. A pause an Arm FVP ignored says that only a breakpoint stops it.
+     */
     async handlePause(args?: TimeoutArg): Answer {
         if (!this.dbg.hasDebugSession()) {
             throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, START_FIRST);
@@ -1097,7 +1115,7 @@ export class DebuggingHandler
         const outcome = await this.sendAndAwaitStop(() => this.dbg.pause(args?.timeoutMs), args?.timeoutMs);
         if (outcome.timedOut) {
             return {
-                text: 'Pause requested but target did not stop within the timeout. '
+                text: this.onFvp() ? FVP_PAUSE_IGNORED : 'Pause requested but target did not stop within the timeout. '
                     + 'Probe may be unresponsive — call get_session_status / check_target_connection.',
                 status: 'timeout',
             };
@@ -1156,6 +1174,8 @@ export class DebuggingHandler
      * first and resumed afterwards, also when the change fails; the answer
      * then says so (#13). Without a session the change only touches VS
      * Code's model, and other adapters take changes while the target runs.
+     * An Arm FVP that did not stop for the change is `TARGET_RUNNING`, with
+     * the way to set it on a halted model.
      */
     private async withTargetHalted<T>(operation: string, change: (context: ChangeContext) => Promise<T>): Promise<HaltedChange<T>> {
         if (!this.dbg.hasDebugSession()) {
@@ -1178,6 +1198,9 @@ export class DebuggingHandler
             throw new Refusal('NO_SESSION', `Cannot ${operation}: the debug session ended while the target was being paused for it.`);
         }
         if (paused.kind === 'timeout') {
+            if (this.onFvp()) {
+                throw fvpChangeRefusal(operation);
+            }
             throw new Refusal('TIMEOUT', `Cannot ${operation}: the target did not stop within ${CHANGE_PAUSE_MS / 1000} s of the pause request.`,
                 'Call check_target_connection; if the probe answers, pause_execution and retry.');
         }

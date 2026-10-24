@@ -734,7 +734,8 @@ class FakeTarget {
                 this.perform(command);
                 return command === 'continue' ? { allThreadsContinued: true } : undefined;
             case 'pause':
-                if (this.state !== 'stopped') { setTimeout(() => this.stopAt(this.runningAt, 'SIGINT'), 5); }
+                // An Arm FVP's GDB server ignores GDB's interrupt while the model runs (`ignoresPause`).
+                if (this.state !== 'stopped' && !this.spec.ignoresPause) { setTimeout(() => this.stopAt(this.runningAt, 'SIGINT'), 5); }
                 return undefined;
             default:
                 throw new Error('unrecognized request');
@@ -1015,6 +1016,10 @@ function sessionConfig(env, kind) {
         case 'pyocd-attach':
             return { ...common, name: 'CMSIS Debugger: pyOCD (attach)', request: 'attach',
                 target: { server: 'pyocd', port: '3333' } };
+        case 'fvp':
+            return { ...common, name: 'Arm-FVP@GDB (launch)', request: 'launch', initCommands: ['tbreak main'],
+                target: { server: path.join(project, '.vscode', 'fvp.sh'), port: '',
+                    serverParameters: ['-D', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3333', '-f', 'fvp_config.txt'] } };
         case 'jlink':
             return { ...common, name: 'CMSIS Debugger: J-LINK', request: 'launch', initCommands: ['load', 'break main'],
                 target: { server: 'JLinkGDBServer', serverParameters: ['-device', 'STM32F401RE', '-endian', 'little',
@@ -1431,6 +1436,17 @@ const SCENARIOS = [
             { tool: 'continue_execution' },
             { tool: 'wait_for_stop' },
             { tool: 'pause_execution' },
+        ],
+    },
+    {
+        name: 'fvp-ignores-pause',
+        description: 'An Arm FVP, whose GDB server ignores GDB\'s interrupt while the model runs: a continue that does not stop, a pause and a '
+            + 'breakpoint change on the running model say that only a breakpoint stops it, and how to set one, instead of advising a pause.',
+        session: { initial: { at: 'main31', reason: 'breakpoint' }, config: 'fvp', ignoresPause: true },
+        calls: [
+            { tool: 'continue_execution', args: { timeoutMs: 300 } },
+            { tool: 'pause_execution', args: { timeoutMs: 1000 } },
+            { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 29 } },
         ],
     },
     {

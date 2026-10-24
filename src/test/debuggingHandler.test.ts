@@ -1228,6 +1228,56 @@ suite('DebuggingHandler', () => {
             x.session = false;
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')), 'No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.');
         });
+
+        test('on an Arm FVP, whose GDB server ignores the interrupt, the replies that would advise a pause say that only a breakpoint stops it', async () => {
+            const fvp = (): ScriptedExecutor => {
+                const x = new ScriptedExecutor();
+                x.activeSession = {
+                    name: 'Arm-FVP@GDB (launch)',
+                    configuration: {
+                        type: 'gdbtarget', name: 'Arm-FVP@GDB (launch)', request: 'launch',
+                        target: { server: '/w/.vscode/fvp.sh', serverParameters: ['--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3333'] },
+                    },
+                } as unknown as ScriptedExecutor['activeSession'];
+                x.sessionStatus = status('running');
+                return x;
+            };
+
+            const paused = fvp();
+            paused.waiters.push({ kind: 'timeout' });
+            assert.strictEqual(await replyAnswer(handlerFor(paused).handlePause({ timeoutMs: 700 }), 'timeout'),
+                'Pause requested, but the Arm FVP did not stop: its GDB server ignores GDB\'s interrupt while the model runs, so only a breakpoint stops it. '
+                + 'To see where it runs: stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop (for a fault, HardFault_Handler), '
+                + 'then continue_execution.');
+
+            const continued = fvp();
+            continued.sessionStatus = status('stopped');
+            continued.waiters.push({ kind: 'timeout' });
+            assert.strictEqual(await replyAnswer(handlerFor(continued, {}, 180).handleContinue({ timeoutMs: 500 }), 'running'),
+                'Target is running: no stop within 500 ms of \'continue_execution\', and it keeps running; nothing was paused. '
+                + 'Call wait_for_stop to wait for a breakpoint. On the Arm FVP pause_execution will not stop it, nor will a fault: '
+                + 'to set a breakpoint, stop_debugging and cmsis_action load_and_debug first.');
+
+            const breakpoint = fvp();
+            breakpoint.waiters.push({ kind: 'timeout' });
+            const refused = await refusalOf(handlerFor(breakpoint).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }), 'TARGET_RUNNING');
+            assert.strictEqual(errorDetail(refused), 'Cannot add a breakpoint while the Arm FVP runs: the change needs a halted target, '
+                + 'and its GDB server ignores the pause request.\nstop_debugging, cmsis_action load_and_debug (it stops at main), make the change, '
+                + 'then continue_execution.');
+            assert.ok(!breakpoint.moves.includes('addBreakpoint') && !breakpoint.moves.includes('continue'), breakpoint.moves.join(', '));
+
+            const stuck = fvp();
+            stuck.stopDebugging = () => new Promise<void>(() => { /* the adapter waits for a halt the model never reports */ });
+            assert.strictEqual(await replyAnswer(handlerFor(stuck, fastClock(1000)).handleStopDebugging(), 'timeout'),
+                'Stop requested, but the session is still listed: the debug adapter halts the target before it disconnects, '
+                + 'and the Arm FVP ignores that interrupt. Call stop_debugging once more: VS Code then ends the adapter.');
+
+            // Other sessions keep their texts.
+            const board = new ScriptedExecutor();
+            board.sessionStatus = status('running');
+            board.waiters.push({ kind: 'timeout' });
+            assert.ok((await replyAnswer(handlerFor(board).handlePause(), 'timeout')).startsWith('Pause requested but target did not stop within the timeout.'));
+        });
     });
 
     suite('breakpoints and logpoints', () => {
@@ -4210,8 +4260,11 @@ suite('DebuggingHandler', () => {
         });
 
         test('attach waits for the session and probes it twice; no threads yet is not a failure, a vanished session is', async () => {
-            const attach = async (threadCounts: Array<number | 'gone'> | undefined): Promise<ToolText> => {
+            const attach = async (threadCounts: Array<number | 'gone'> | undefined, fvp = false): Promise<ToolText> => {
                 const x = new ScriptedExecutor();
+                if (fvp) {
+                    x.activeSession = { configuration: { type: 'gdbtarget', name: 'Arm-FVP@GDB (attach)', request: 'attach' } } as unknown as ScriptedExecutor['activeSession'];
+                }
                 x.session = false;
                 x.sessionStatus = status(threadCounts ? 'running' : 'initializing');
                 x.getThreads = async () => {
@@ -4239,6 +4292,10 @@ suite('DebuggingHandler', () => {
             const survived = await textAnswer(attach([1, 1]));
             assert.ok(survived.startsWith('CMSIS \'attach\' completed on HE — debug session survived the connect '
                 + '(t+3s: 1 thread(s), t+6s: 1 thread(s) — target threads present). State: {'), survived);
+            assert.ok(!survived.includes('Arm FVP'), survived);
+            const onFvp = await textAnswer(attach([1, 1], true));
+            assert.ok(onFvp.endsWith('\nOn the Arm FVP pause_execution will not stop the running model: set breakpoints '
+                + '(for a fault, HardFault_Handler) before continue_execution.'), onFvp);
             assert.strictEqual(await replyAnswer(attach([1, 0]), 'running'),
                 'CMSIS \'attach\' on HE: the debug session is up but the target is not reporting threads yet — '
                 + 't+3s: 1 thread(s), then t+6s: session object present, 0 threads so far. '

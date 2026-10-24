@@ -125,6 +125,7 @@ import {
     CmsisLaunchConfiguration,
     folderCmsisLaunchConfigurations,
     isFvpDebugger,
+    isFvpSession,
     launchAttachEndpoints,
     runCommandKind,
     taskCommandWords,
@@ -149,6 +150,7 @@ import {
     stillRunning,
 } from './jobText';
 import { runInstallPack } from './installPack';
+import { FVP_BREAK_FIRST } from './sessionText';
 import { failedTaskProgram, gdbServerMissingHint } from './taskProgram';
 
 export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_environment' | 'load' | 'erase' | 'run' | 'load_and_run'
@@ -896,6 +898,7 @@ function attachFailedHint(runAlive: boolean): string {
  * that never showed is a failure too when the debug adapter or the GDB
  * server journaled an error during the call (`startFailed`); the problem
  * feed lists those records under the failure. Otherwise it is `running`.
+ * A session that came up on an Arm FVP adds that only a breakpoint stops it.
  */
 async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean, facts: SessionFacts): Promise<ToolText> {
     const { executor, host } = issue.context;
@@ -933,8 +936,9 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
     const survival = wait === 'gone' ? ENDED_BEFORE_UP : await checkSurvival(executor, host);
     if (survival.stable) {
         const state = await executor.getCurrentDebugState(3);
+        const fvp = isFvpSession(executor.getActiveSession()?.configuration) ? `\n${FVP_BREAK_FIRST}` : '';
         return `CMSIS '${action}' completed${tag} — ${loaded}debug session survived the connect (${survival.detail}). `
-            + `State: ${issue.context.renderFullState(state)}`;
+            + `State: ${issue.context.renderFullState(state)}${fvp}`;
     }
     if (survival.present) {
         // A slow multi-core start still has no threads at the second probe: not up yet, not failed (#47).

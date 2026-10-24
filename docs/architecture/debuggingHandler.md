@@ -117,6 +117,15 @@ status `timeout`. A session that ends meanwhile rejects with `NO_SESSION`,
 in a step or continue as in `pause_execution` and `wait_for_stop`, with the
 calls that confirm it and start a new session as the hint.
 
+An Arm FVP's GDB server ignores GDB's interrupt while the model runs; only a
+breakpoint stops it. `isFvpSession()` (`src/core/gdbServerPorts.ts`) tells
+such a session from its configuration, and the replies that would advise a
+pause say so instead (`FVP_*` in `src/handler/sessionText.ts`): a pause that
+sees no stop, a continue that keeps running, a breakpoint change the model
+did not stop for (`TARGET_RUNNING`), a stop the adapter holds while it waits
+for a halt (stop again), and a session that came up through `cmsis_action`
+(set breakpoints first).
+
 Before it reads anything after a stop, the handler waits for the frame VS
 Code selects for it (`frameSelected()`), at most 2 s and never past the
 call's own limit: the state, registers and variables go through VS Code's
@@ -199,8 +208,8 @@ applies the change and resumes it, also when the change fails
 (`withTargetHalted()`, #13); the answer says for how long the target was
 paused. The change is refused while the session initialises (`NO_SESSION`),
 when the probe hangs (`TIMEOUT`) or when the pause does not stop the target
-within 5 s (`TIMEOUT`). Other adapters take breakpoint changes while their
-target runs.
+within 5 s (`TIMEOUT`; `TARGET_RUNNING` on an Arm FVP, which never stops for
+it). Other adapters take breakpoint changes while their target runs.
 
 ## Reading the target
 

@@ -91,7 +91,7 @@ Always call `get_session_status` *before* any session-changing tool. The five po
 | `no-session` | No debug session is attached. | **CMSIS solutions: `cmsis_action load_and_debug`** (flashes then attaches via the CMSIS Solution panel — the panel's *Debug* button). `start_debugging` ONLY for non-CMSIS launch configurations or to attach without flashing. |
 | `initializing` | The adapter is starting / flashing and takes no requests yet; on the CMSIS Debugger also while GDB connects to the target and, for a moment, while the session shuts down. | Wait briefly and call `get_session_status` again — do NOT issue another start. |
 | `stopped` | A session is attached and the target is paused. | Skip `start_debugging` entirely. Use inspection tools (`get_call_stack`, `get_variables_values`, `read_memory`, …) directly, or `continue_execution` to resume. When the hint says the last DHCSR read got no answer, the core does not answer: reads fail with `PROBE_WEDGED`, so follow the hint; `check_target_connection` reads DHCSR again. |
-| `running` | A session is attached and the CPU is executing. | Inspection reads and stepping are rejected; breakpoint and logpoint changes still work (on the CMSIS Debugger the tool pauses the target for the change and resumes it). Call `pause_execution`, or `wait_for_stop` if a breakpoint is expected to hit, or `stop_debugging`. |
+| `running` | A session is attached and the CPU is executing. | Inspection reads and stepping are rejected; breakpoint and logpoint changes still work (on the CMSIS Debugger the tool pauses the target for the change and resumes it; not on an Arm FVP, topic `inspection`). Call `pause_execution`, or `wait_for_stop` if a breakpoint is expected to hit, or `stop_debugging`. |
 | `unresponsive` | The probe / GDB server is hung. | Call `check_target_connection` to confirm; calls that need the target answer `PROBE_WEDGED` with the way to reconnect. Reconnect without a reset first, so a fault can still be read (topic `faults`). `restart_debugging` and `cmsis_action load_and_debug` re-flash and reset, and lose that state: they come last, and only once the user accepts the loss. Do NOT issue more inspection calls — they will time out. |
 
 With several VS Code windows debugging and none chosen for this session, the state reads `no target window` and each window's own state follows: choose one first (below, *Several VS Code windows open*).
@@ -321,6 +321,8 @@ Software breakpoints (which patch Flash without a comparator) are *not* an optio
 ## 🔬 Inspecting variables: discover, then read
 
 A running target rejects every read and step: call `pause_execution` first, then read.
+
+**An Arm FVP ignores the pause while the model runs; only a breakpoint stops it.** Set breakpoints (for a fault, `HardFault_Handler`) before `continue_execution`. A running model takes no breakpoint change either: `stop_debugging` (twice: the first waits for a halt that does not come), then `cmsis_action load_and_debug` gives a halted one.
 
 `list_variable_names` reports what is in scope by **name and type only**, reading no values. `get_variables_values` then reads them — pass `variableNames` to fetch just what you need, or omit it to dump the whole scope.
 

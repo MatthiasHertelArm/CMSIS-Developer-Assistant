@@ -34,6 +34,8 @@
  *
  * Load & Debug and Attach need a launch configuration CMSIS Solution wrote;
  * `cmsisLaunchConfigurations` lists them, with the pre-launch task of each.
+ * `isFvpSession` tells from a session's configuration whether its GDB server
+ * is an Arm FVP's, which ignores GDB's interrupt while the model runs.
  *
  * No `vscode`: the launch.json text and the task come in.
  */
@@ -67,6 +69,12 @@ const FVP_DEBUGGER = 'Arm-FVP';
 const GDB_SERVER_WORD = /gdbserver/i;
 /** The executable of an Arm FVP model (`FVP_Corstone_SSE-300`, `FVP_MPS2_Cortex-M3.exe`; `VHT_…` for the older AVH models). */
 const FVP_MODEL = /^(?:FVP|VHT)_/;
+/** The FVP's GDB server plugin as a launch configuration loads it (`--plugin …/GDBServer.so`, `.dll` on Windows). */
+const FVP_GDB_SERVER_PLUGIN = /(?:^|[\\/])GDBServer\.(?:so|dll)$/i;
+/** The plugin's port parameter in a launch configuration's `serverParameters` (`-C GDBServer.port=3333`). */
+const FVP_GDB_SERVER_PORT = /^GDBServer\.port=/i;
+/** The launch configurations CMSIS Solution writes for the FVP adapter: `Arm-FVP@GDB (launch)`, `Arm-FVP@GDB (attach)`. */
+const FVP_CONFIGURATION_NAME = /^Arm-FVP@/i;
 /** A word of a command line: double-quoted, single-quoted or bare. */
 const COMMAND_LINE_WORD = /"([^"]*)"|'([^']*)'|(\S+)/g;
 
@@ -209,4 +217,31 @@ export function runCommandKind(words: readonly string[] | undefined): RunCommand
 /** True for the FVP adapter's debugger name as a cbuild-run.yml writes it (`Arm-FVP`), in any case. */
 export function isFvpDebugger(name: string | undefined): boolean {
     return name !== undefined && name.trim().toLowerCase() === FVP_DEBUGGER.toLowerCase();
+}
+
+/**
+ * True for a CMSIS Debugger session (`gdbtarget`) on an Arm FVP: its
+ * configuration is named as CMSIS Solution names the FVP adapter's
+ * (`Arm-FVP@…`), its GDB server is a model executable, or its server
+ * parameters load the model's GDBServer plugin or set its port. The model's
+ * GDB server does not stop on GDB's interrupt while the simulation runs;
+ * only a breakpoint stops it.
+ */
+export function isFvpSession(configuration: unknown): boolean {
+    const config = configuration as { type?: unknown; name?: unknown; target?: { server?: unknown; serverParameters?: unknown } } | undefined;
+    if (config?.type !== 'gdbtarget') {
+        return false;
+    }
+    if (typeof config.name === 'string' && FVP_CONFIGURATION_NAME.test(config.name.trim())) {
+        return true;
+    }
+    const server = wordOf(config.target?.server);
+    if (server !== undefined && FVP_MODEL.test(server.split(/[\\/]/).pop() ?? server)) {
+        return true;
+    }
+    const parameters: unknown[] = Array.isArray(config.target?.serverParameters) ? config.target.serverParameters : [];
+    return parameters.some((parameter) => {
+        const word = wordOf(parameter)?.trim();
+        return word !== undefined && (FVP_GDB_SERVER_PLUGIN.test(word) || FVP_GDB_SERVER_PORT.test(word));
+    });
 }

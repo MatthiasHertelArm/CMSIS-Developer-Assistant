@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { attachEndpoints, isFvpDebugger, launchAttachEndpoints, runCommandKind, taskCommandWords } from '../core/gdbServerPorts';
+import { attachEndpoints, isFvpDebugger, isFvpSession, launchAttachEndpoints, runCommandKind, taskCommandWords } from '../core/gdbServerPorts';
 
 /** A launch.json as CMSIS Solution writes it: a launch and an attach configuration, with a comment. */
 function launchJson(port: number | string, host?: string): string {
@@ -106,6 +106,23 @@ suite('GDB server ports of the attach configurations', () => {
         assert.strictEqual(runCommandKind(['openocd', '-f', 'board.cfg']), 'unknown');
         assert.strictEqual(runCommandKind([]), 'unknown');
         assert.strictEqual(runCommandKind(undefined), 'unknown');
+    });
+
+    test('isFvpSession: a CMSIS Debugger session on an Arm FVP by its name, its model or its GDBServer plugin', () => {
+        const target = (server: unknown, serverParameters?: unknown[]): unknown => ({ type: 'gdbtarget', name: 'Mine', target: { server, serverParameters } });
+        assert.strictEqual(isFvpSession({ type: 'gdbtarget', name: 'Arm-FVP@GDB (launch)' }), true);
+        assert.strictEqual(isFvpSession({ type: 'gdbtarget', name: ' arm-fvp@gdb (attach)', target: { port: '3333' } }), true);
+        assert.strictEqual(isFvpSession(target('/opt/fvp/FVP_Corstone_SSE-300')), true);
+        assert.strictEqual(isFvpSession(target('C:\\FVP\\FVP_MPS2_Cortex-M3.exe')), true);
+        assert.strictEqual(isFvpSession(target('VHT_Corstone_SSE-300_Ethos-U55')), true);
+        assert.strictEqual(isFvpSession(target('/w/.vscode/fvp.sh', ['-D', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-f', 'fvp_config.txt'])), true);
+        assert.strictEqual(isFvpSession(target('fvp.cmd', ['--plugin', 'C:\\FVP\\plugins\\GDBServer.dll'])), true);
+        assert.strictEqual(isFvpSession(target('model.sh', ['-C', 'GDBServer.port=3334'])), true);
+        assert.strictEqual(isFvpSession(target('pyocd', ['--port', '3333'])), false);
+        assert.strictEqual(isFvpSession(target('JLinkGDBServerCL', ['-device', 'STM32F401RE'])), false);
+        assert.strictEqual(isFvpSession(target('/opt/MyGDBServer.so')), false, 'the plugin is a parameter of the model, not the server');
+        assert.strictEqual(isFvpSession({ type: 'cortex-debug', name: 'Arm-FVP@GDB (launch)' }), false);
+        assert.strictEqual(isFvpSession(undefined), false);
     });
 
     test('isFvpDebugger: the FVP adapter by its cbuild-run.yml name', () => {
