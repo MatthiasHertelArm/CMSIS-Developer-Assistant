@@ -168,7 +168,8 @@ export class KnowledgeHandler {
                     results: asJson(result.results), budgetUsed: result.budgetUsed, matched: result.matched,
                     incompleteHidden: result.incompleteHidden, incompleteExact: result.incompleteExact, contextFilter: result.contextFilter,
                     indexes: index.sources().map((source) => ({ label: source.label, units: source.units })),
-                    ...(context ? { context: [...context].sort().slice(0, 40) } : {}),
+                    // The count, not the ids: the list cost about 1.7 KB in every reply and nothing reads it.
+                    ...(context ? { contextEntities: context.size } : {}),
                     ...(project.note ? { contextNote: project.note } : {}),
                 },
             };

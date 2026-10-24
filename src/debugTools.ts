@@ -42,6 +42,7 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/
 import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { QUERY_KINDS } from './core/catalogQuery';
+import { TEXT_ONLY_CLIENTS } from './core/clientHosting';
 import { TOPICS, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
@@ -57,6 +58,7 @@ import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
 import { registerKnowledgeTools } from './knowledgeTools';
 import { registerPackDocsTools } from './packDocsTools';
+import { actionTimeoutMs } from './handler/cmsisAction';
 import { logger } from './utils/logger';
 
 /** The name in the initialize result, and the scheme of every resource URI. */
@@ -518,7 +520,13 @@ export function buildSessionServer(parts: SessionParts): MeasuredMcpServer {
         { name: SERVER_NAME, version: SERVER_VERSION },
         { instructions: buildServerInstructions(parts.toolRules, parts.options) },
         parts.ring,
+        TEXT_ONLY_CLIENTS,
+        { log: (line) => logger.info(line) },
     );
+    // Waits a client that gives up sooner may have cut: cmsis_action's default depends on the action;
+    // flash's wait is pyOCD's budget, which a cut would end early.
+    mcp.declareWait('cmsis_action', { defaultMs: (args) => actionTimeoutMs(String(args.action), undefined) });
+    mcp.declareWait('flash', { endsWork: true });
     const handlers = parts.handlers();
     // A router's tools that start or own something can name the window they run in.
     if (windowRoutingOf(handlers.debug) !== undefined) {

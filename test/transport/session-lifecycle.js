@@ -53,6 +53,10 @@
 //      later request with its id gets 404, and its port is
 //      released. Mock ports only: the serial controller's port factory is
 //      swapped for serialport's SerialPortMock.
+//  13. A wait the client gives up on (2.7.0 tester feedback): a pending call
+//      cancelled over the socket with another reason teaches nothing; one
+//      cancelled with the SDK client's "Request timed out" teaches the
+//      session its client's limit, which is logged once.
 
 const stub = require('./vscode-stub.js');
 
@@ -563,6 +567,44 @@ async function main() {
     check('serial_open holds the port for this session, released after 300 s without a serial call',
         serialOpened.isError !== true && /held by this session, released after 300 s without a serial call/.test(heldBy.content?.[0]?.text ?? ''),
         (heldBy.content?.[0]?.text ?? '').split('\n')[0]);
+
+    // 6e. A wait the client gives up on: serial_read waits on the held, silent port while the
+    //     client cancels it over the socket, then hangs up, as the SDK client does at its timeout.
+    const { logger } = require(path.join(OUT, 'utils', 'logger.js'));
+    const learned = [];
+    const logInfo = logger.info;
+    logger.info = function (message, detail) {
+        if (/gave up on/.test(String(message))) { learned.push(String(message)); }
+        return logInfo.call(this, message, detail);
+    };
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const giveUp = async (id, afterMs, reason) => {
+        const payload = JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'serial_read', arguments: { waitMs: afterMs + 300 } } });
+        const pendingCall = http.request({
+            host: '127.0.0.1', port, path: '/mcp', method: 'POST',
+            headers: {
+                'Host': `127.0.0.1:${port}`, 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
+                'Content-Length': Buffer.byteLength(payload), 'mcp-session-id': sid,
+            },
+        });
+        pendingCall.on('error', () => undefined);
+        pendingCall.end(payload);
+        await sleep(afterMs);
+        const cancelled = await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id, reason } });
+        pendingCall.destroy();
+        // The read's own wait ends before the next step uses the port.
+        await sleep(350);
+        return cancelled.status;
+    };
+    const userStop = await giveUp(52, 100, 'The user stopped the agent.');
+    check('a call cancelled for another reason teaches the session nothing', userStop === 202 && learned.length === 0,
+        `status=${userStop} ${learned.join(' | ')}`);
+    const timedOut = await giveUp(53, 1000, 'McpError: MCP error -32001: Request timed out');
+    check('a call the client gives up on with "Request timed out" teaches the session its client\'s limit, logged once',
+        timedOut === 202 && learned.length === 1
+            && new RegExp(`^MCP session ${sid}: the client gave up on serial_read after \\d s; long waits are cut to 1 s$`).test(learned[0]),
+        `status=${timedOut} ${learned.join(' | ')}`);
+    logger.info = logInfo;
 
     // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });

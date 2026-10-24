@@ -423,6 +423,9 @@ suite('knowledge tools', () => {
             assert.match(text, /\n1\. ts-csolution-board-mounted-device · troubleshooting · draft · exact symptom · full text about \d+ tokens\n/);
             assert.match(text, /Next: knowledge_get \{ id \}/);
             assert.strictEqual(reply.data?.contextFilter, true);
+            // The context's entities are counted, not listed: the ids cost every reply about 1.7 KB.
+            assert.ok(typeof reply.data?.contextEntities === 'number' && reply.data.contextEntities > 0, String(reply.data?.contextEntities));
+            assert.strictEqual(reply.data?.context, undefined);
         });
 
         test('knowledge_search without a project says why, and tools still filter', async () => {

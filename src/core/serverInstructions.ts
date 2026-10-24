@@ -53,9 +53,11 @@ const CORE_SKILLS_ONLY =
 const WITHOUT_SKILLS =
     'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
 
+/** A client may give up on a call before its wait ends (tester feedback, 2.7.0): that loses the reply, not the work. */
 const TIMEOUT_OVERRIDE =
     'Tools that accept timeoutMs use it as a one-call override of the default, capped at 60 s (cmsis_action and flash: 600 s); '
-    + 'set it when you can estimate the work.';
+    + 'set it when you can estimate the work. A wait your client gives up on is no failure: the work goes on, and '
+    + 'cmsis_action {action:\'status\'} returns its result.';
 
 /** How to read an outcome (#11); it rides in the initialize result, so tools/list does not grow. */
 const READING_RESULTS =

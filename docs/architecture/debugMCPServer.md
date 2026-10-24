@@ -74,7 +74,11 @@ Three constraints shape the code:
    calls `openSession()`: a `ToolMetrics` ring for the session, a server from
    `buildSessionServer()`, and a `StreamableHTTPServerTransport` that issues a
    random UUID as the session id.
-2. When the SDK assigns that id, `adopt()` enters the pair in the session map.
+2. When the SDK assigns that id, `adopt()` enters the pair in the session map
+   and logs one info line that names the client and its version, `MCP
+   session <id> opened by <name> <version>`. The SDK assigns the id before its
+   server has read the initialize request, so the name comes from the
+   request's `clientInfo`, which `acceptPost()` hands to `openSession()`.
    A session that fails before this point is closed at once (`discard()`).
 3. Later requests carrying the id go straight to the session's transport
    (`acceptSessionRequest()` for `GET` and `DELETE`). Each one marks the
@@ -183,7 +187,9 @@ without the rules, and a warning says why.
 After the rules, `composeInstructions()` adds fixed sentences: what the tools
 are for, to invoke the `cmsis-debug-live` Agent Skill first and what it
 brings, `get_debug_instructions` for harnesses that load no skills, the 60 s
-cap on `timeoutMs` (600 s for `cmsis_action` and `flash`), how to read a
+cap on `timeoutMs` (600 s for `cmsis_action` and `flash`) and that a wait the
+client gives up on is no failure (the work goes on, `cmsis_action status`
+returns its result), how to read a
 result (`isError` and the `[CODE]` prefix; `timeout` and `running` are not
 failures), and one sentence each for the documentation and build-artefact
 groups. While the documentation group is off, its sentence points to the
@@ -274,12 +280,62 @@ DAP oracles fail any reply whose `structuredContent` leaves out a line of
 its text (`linesMissingFromStructured()`). `get_session_status` appends its
 statistics to the text of the handler's outcome.
 
+Other clients show the model both, the text and `structuredContent`
+serialized after it. For them that guarantee doubles every result with
+data: in a tester's session under the GitHub Copilot SDK agent, 635 KB of
+`structuredContent` came on top of 764 KB of text, and that client puts a
+result over about 8 KB into a file the agent then pages through (50 of 410
+calls). So the shape of a result also depends on the client:
+`MeasuredMcpServer` drops `structuredContent` from every result of a session
+whose client sent a name in `TEXT_ONLY_CLIENTS` (`src/core/clientHosting.ts`,
+matched exactly, `wantsTextOnly()`). The text is complete without it, and a
+failure keeps `isError` and its `[CODE]`. The wrapper classifies the outcome
+from the whole result before, and records the bytes the client receives.
+The list is empty until the Copilot SDK's client name is known; the
+constructor takes another one for tests.
+
 The problem records that ride along with a failure or a timeout
 (`data.problems`, #48) reach `structuredContent.problems` like any other
 data, and `toCallToolResult()` also lists them under the text as
 "Recent problems:", one line each (`renderProblemsBlock()`). The block is
 rendered here rather than in the window that ran the call, so the records
 cross the control channel once, as data.
+
+### Long waits and the client's timeout
+
+A call may wait minutes: `cmsis_action` and `flash` take `timeoutMs` up to
+600 s, the documentation tools too. The client has a request timeout of its
+own, which the server cannot ask for: the MCP TypeScript SDK defaults to
+60 s, and the GitHub Copilot SDK agent gave up after 180 s in a tester's
+session while a first build downloaded packs. The client then cancels the
+request (`notifications/cancelled`), the SDK drops the reply, and the agent
+learns nothing of a build that went on. `MeasuredMcpServer` deals with it at
+the boundary, so that no handler and no worker window has to know the client:
+
+- **Progress.** A request that carries `_meta.progressToken` gets a
+  `notifications/progress` every 15 s once it has run that long, with the
+  seconds so far (`watchCall()`). A client that resets its timeout on
+  progress keeps waiting; without a token nothing is sent.
+- **The learned limit.** A call cancelled with a timeout as the reason (the
+  SDK's "Request timed out", -32001) tells the session how long its client
+  waits: the time the call had run, the shortest one kept, logged once. From
+  then on, a call whose wait exceeds that limit less 10 s gets `timeoutMs`
+  cut to it before the callback runs (`cutWait()`, `cutWaitMs()`). The wait
+  is the call's `timeoutMs`, or the default a tool declares
+  (`declareWait()`; `cmsis_action`'s depends on the action). A tool without
+  `timeoutMs` is never cut, nor is `flash`: its `timeoutMs` is pyOCD's
+  budget, so a cut would end the programming, not just the wait.
+
+A cut wait that runs out is answered like any other — status `running` or
+`timeout`, the job goes on — and its reply carries one more line that says
+why the wait was shorter than asked and how to pick up the result
+(`clientLimitNote()`), in the text and in `structuredContent.message`. A
+call that ended within the cut wait gets no note. A cancellation for another
+reason, such as the user stopping the agent, teaches nothing. The limit lives
+in the session's server and ends with it: the first call a client gives up on
+is still lost, the later ones are answered. The documentation tools take
+their default wait from the worker window's settings, which the session does
+not know, so only their explicit `timeoutMs` is cut.
 
 ### Resources and shipped documents
 
@@ -320,9 +376,13 @@ whole guide is served and a warning is logged.
   `composeInstructions`, `TOOL_RULES_REMINDER`
 - `src/core/toolContract.ts` and `src/utils/markerBlock.ts`: the tool
   contract's blocks, their copies and the marker comments around them
-- `src/core/measuredMcpServer.ts` (`toCallToolResult`, `addArgument`) and
-  `src/core/toolMetrics.ts`: the MCP result, the added arguments and
-  measurement; `src/core/callContext.ts`: the call context
+- `src/core/measuredMcpServer.ts` (`toCallToolResult`, `addArgument`,
+  `shapedForClient`, `declareWait`, `watchCall`, `cutWait`, `cutWaitMs`,
+  `clientLimitNote`) and `src/core/toolMetrics.ts`: the MCP result, its shape
+  per client, the added arguments, progress and the client's limit, and
+  measurement;
+  `src/core/clientHosting.ts`: `TEXT_ONLY_CLIENTS`, `wantsTextOnly`;
+  `src/core/callContext.ts`: the call context
 - `src/core/problemFeed.ts`: `journalLocally`, `renderProblemsBlock` and the
   rest of the problem journal's delivery
 - `src/core/toolResult.ts`: `ToolText`, `ToolReply`, `ToolError`, the error
@@ -336,8 +396,11 @@ whole guide is served and a warning is logged.
 - `src/test/loopback.test.ts`: the `Host` and `Origin` checks;
   `src/test/debugMCPServer.test.ts`: that the server still exports them
 - `src/test/measuredMcpServer.test.ts`: every outcome as a client receives
-  it, the metrics outcome, an added argument, the call ids and context, and
-  the problems block
+  it, the metrics outcome, an added argument, the call ids and context, the
+  problems block, the text alone for a client on the text-only list, and
+  long waits against an SDK client that times out: the limit learned or
+  not, the cut and its note, progress notifications;
+  `src/test/clientHosting.test.ts`: which names are on it
 - `src/test/toolResult.test.ts`: classification, wrapping, the reading of
   2.3.10 texts
 - `src/test/debugSkillGuidance.test.ts`: instructions, tool descriptions and
@@ -357,7 +420,8 @@ whole guide is served and a warning is logged.
   empty `get_recent_problems`, the problems of a failing call, the note and
   the count of new errors; the serial port of a session released by
   `DELETE` and by expiry, and a session with an open stream or a recent
-  request spared by the sweep
+  request spared by the sweep; a pending call cancelled over the socket,
+  which teaches the session its client's limit only for a timeout
 - `test/transport/surface-snapshot.js` (`npm run test:surface`): initialize
   result, tool list, resources and every tool's reply without a session,
   compared with `test/transport/surface.snapshot.json`

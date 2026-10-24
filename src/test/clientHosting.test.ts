@@ -15,7 +15,7 @@
  */
 
 import * as assert from 'assert';
-import { survivesWindowReload } from '../core/clientHosting';
+import { survivesWindowReload, wantsTextOnly } from '../core/clientHosting';
 
 suite('Which MCP clients survive a window reload', () => {
     test('the CLIs do: Claude Code, Codex, Gemini CLI, by name prefix, case-insensitively', () => {
@@ -28,5 +28,20 @@ suite('Which MCP clients survive a window reload', () => {
         for (const name of ['Visual Studio Code', 'Visual Studio Code - Insiders', 'Cline', 'Roo Code', 'cursor-vscode', 'windsurf', '', undefined]) {
             assert.strictEqual(survivesWindowReload(name), false, String(name));
         }
+    });
+});
+
+suite('Which MCP clients get tool results as text alone', () => {
+    test('a name on the list, exactly and in the case it is sent', () => {
+        const list = ['some-sdk-client'];
+        assert.strictEqual(wantsTextOnly('some-sdk-client', list), true);
+        for (const name of ['Some-SDK-Client', ' some-sdk-client', 'some-sdk-client-2', 'some-sdk', '', undefined]) {
+            assert.strictEqual(wantsTextOnly(name, list), false, String(name));
+        }
+    });
+
+    test('an absent or empty name never does, whatever the shipped list holds', () => {
+        assert.strictEqual(wantsTextOnly(undefined), false);
+        assert.strictEqual(wantsTextOnly(''), false);
     });
 });

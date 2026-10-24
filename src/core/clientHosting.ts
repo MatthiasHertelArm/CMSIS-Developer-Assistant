@@ -15,7 +15,8 @@
  */
 
 /**
- * Where an MCP client lives, judged by the name it sent with `initialize`.
+ * What is known of an MCP client from the name it sent with `initialize`:
+ * where it lives, and how it shows a tool result to the model.
  *
  * `open_solution` from a window without a folder may open the folder in that
  * window, which VS Code reloads: a client that runs outside the window (a CLI
@@ -25,11 +26,29 @@
  * So the reload is only for clients known to survive it; everyone else gets
  * a new window, which always works.
  *
+ * Some clients hand the model a result's `structuredContent` instead of its
+ * text, so every `structuredContent` repeats the text as `message`. A client
+ * that shows both then reads every result with data twice; its sessions get
+ * the text alone (`TEXT_ONLY_CLIENTS`).
+ *
  * Pure: no vscode.
  */
 
 /** Name prefixes of the clients that run outside the VS Code window: the CLIs. */
 const OUTSIDE_THE_WINDOW: readonly string[] = ['claude-code', 'codex', 'gemini'];
+
+/**
+ * Names of the clients whose sessions get tool results without
+ * `structuredContent`, because they show the model the text and the object
+ * serialized after it. The text says everything without the object
+ * (`linesMissingFromStructured`), and a failure keeps `isError` and its
+ * `[CODE]`. A name matches exactly, in the case the client sends it.
+ *
+ * Empty for now. The GitHub Copilot SDK agent shows both (a tester's log of
+ * 2.7.0-preview3: 635 KB of `structuredContent` on top of 764 KB of text);
+ * its exact client name goes here once it is known.
+ */
+export const TEXT_ONLY_CLIENTS: readonly string[] = [];
 
 /**
  * Whether a client of this name keeps working while the VS Code window it
@@ -41,4 +60,13 @@ export function survivesWindowReload(clientName: string | undefined): boolean {
     }
     const name = clientName.trim().toLowerCase();
     return OUTSIDE_THE_WINDOW.some((prefix) => name.startsWith(prefix));
+}
+
+/**
+ * Whether a client of this name gets tool results as text alone: its name is
+ * in `textOnly` (`TEXT_ONLY_CLIENTS` unless a test passes another list),
+ * exactly. An absent name never is.
+ */
+export function wantsTextOnly(clientName: string | undefined, textOnly: readonly string[] = TEXT_ONLY_CLIENTS): boolean {
+    return clientName !== undefined && textOnly.includes(clientName);
 }
