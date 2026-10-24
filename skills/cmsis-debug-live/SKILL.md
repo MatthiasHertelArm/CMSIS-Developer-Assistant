@@ -406,9 +406,12 @@ ask the user to pick one: a click on the CDA robot icon in the VS Code status ba
 Select Target Window.
 
 `WORKER_TIMEOUT` means the target window is alive but the call did not finish
-in time and still runs there, often because a picker or dialog waits for the
-user: call `get_session_status` and ask the user to look at that window before
-you repeat the call. `WINDOW_UNREACHABLE` means the window did not answer at
+in time and still runs there; the hint says what it waits for. For
+`start_debugging`, `restart_debugging` and `cmsis_action` a picker or dialog
+may wait for the user: call `get_session_status` and ask the user to look at
+that window before you repeat the call. For other debugging calls the debug
+adapter or GDB has not answered: call `get_session_status`, then
+`check_target_connection`. `WINDOW_UNREACHABLE` means the window did not answer at
 all, because its extension host is blocked or it closed: call
 `list_debug_windows`, and if the window is still listed, ask the user to reload
 it.

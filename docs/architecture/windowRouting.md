@@ -283,18 +283,24 @@ from both ends (#14):
 - **The worker's fence.** `ControlServer.dispatch()` races every op
   against a timer of the budget minus 5 s, at least 1 s
   (`workerFenceMs()`). When it fires, the router is answered
-  `WORKER_TIMEOUT` — the tool, the window, and that it still runs there,
-  with the hint that a picker or dialog may wait for the user — and the
-  window journals a warning with that code. Nothing is cancelled: no API
-  withdraws a DAP request, a task or a picker. The op stays in the busy
-  table (`BusyTable`) until its promise settles; only then does the op hook
-  hear its end, and its late result is logged and dropped. A router that
-  gives up and closes the request is logged too.
+  `WORKER_TIMEOUT` — the tool, the window, and that it still runs there —
+  and the window journals a warning with that code. The hint depends on
+  what the op can wait for: a picker or dialog only for the ops that can
+  open one (`USER_WAIT_OPS` in `src/core/opTable.ts`: `start_debugging`,
+  `restart_debugging`, `cmsis_action`), the debug adapter or GDB for the
+  other debugging ops, the op's own work for the rest. Nothing is
+  cancelled: no API withdraws a DAP request, a task or a picker. The op
+  stays in the busy table (`BusyTable`) until its promise settles; only
+  then does the op hook hear its end, and its late result is logged and
+  dropped. A router that gives up and closes the request is logged too.
 - **What the user sees.** The op hook's `fenced` phase turns the window's
-  status-bar item to the warning background while the call runs on, and
-  the coordinator shows a warning, at most one per tool in ten minutes
-  (`NoticeGate`), through `notifyWarning`, which journals it: often the
-  user is the only one who can close the picker or dialog.
+  status-bar item to the warning background while the call runs on. For an
+  op that can wait for a picker or dialog, the coordinator also shows a
+  warning, at most one per tool in ten minutes (`NoticeGate`), through
+  `notifyWarning`, which journals it: the user is the only one who can
+  close the picker or dialog. Any other op gets no warning, since the user
+  cannot answer a debug adapter that is slow; the fence's journal record
+  stays.
 - **`health`.** An internal op (`INTERNAL_OPS` in `src/core/opTable.ts`):
   no tool, answered by the control server itself at once, never queued
   behind an op, never journaled or shown in the status bar. It answers the

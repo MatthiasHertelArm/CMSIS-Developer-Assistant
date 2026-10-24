@@ -87,9 +87,11 @@ same code path the extension uses — and drives the router over MCP:
   session is pinned to, never from the router or the other window.
 - The control channel's fences (#14): with a tool timeout of 1 s and
   shortened margins (`timings`), a worker whose handler never answers
-  returns `WORKER_TIMEOUT` inside the router's 3 s budget, shows its user one
-  warning (the stub's `showWarningMessage` is replaced to catch it) and
-  turns its status-bar item to the warning background. After failover the
+  returns `WORKER_TIMEOUT` inside the router's 3 s budget and turns its
+  status-bar item to the warning background. A debugging op's hint names the
+  debug adapter and shows the user nothing; an op that can wait for a picker
+  (`restart_debugging`) names the picker and shows its user one warning (the
+  stub's `showWarningMessage` is replaced to catch it). After failover the
   new router answers the old router's session id with 404 and `-32001`, and
   a new session works.
 

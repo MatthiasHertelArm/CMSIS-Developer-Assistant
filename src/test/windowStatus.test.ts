@@ -112,12 +112,18 @@ suite('Window status', () => {
             const view = renderWindowStatus(state({
                 role: 'worker',
                 sessions: undefined,
-                running: [{ tool: 'start_debugging', since: NOW - 200_000, fenced: true }, { tool: 'read_memory', since: NOW - 400 }],
+                running: [
+                    { tool: 'start_debugging', since: NOW - 200_000, fenced: true, waitsForUser: true },
+                    { tool: 'continue_execution', since: NOW - 11_000, fenced: true, waitsForUser: false },
+                    { tool: 'read_memory', since: NOW - 400 },
+                ],
             }));
             assert.strictEqual(view.warning, true);
             assert.strictEqual(view.text, '$(cda-robot) W $(sync~spin)');
+            // A picker or dialog only for the call that can open one.
             assert.ok(view.tooltip.split('\n').includes('Running here: start_debugging for 3 min (the agent was told it timed out; '
-                + 'a picker or dialog here may be waiting for you), read_memory for 0 s'), view.tooltip);
+                + 'a picker or dialog here may be waiting for you), continue_execution for 11 s (the agent was told it timed out), '
+                + 'read_memory for 0 s'), view.tooltip);
             assert.strictEqual(renderWindowStatus(state({ running: [{ tool: 'read_memory', since: NOW }] })).warning, false);
         });
 

@@ -502,6 +502,7 @@ suite('DebuggingHandler', () => {
             const reply = await replyAnswer(handlerFor(x, {}, 180).handleContinue({ timeoutMs: 500 }), 'running');
             assert.deepStrictEqual(x.moves, ['arm', 'continue'], 'nothing is paused');
             assert.deepStrictEqual(x.argsOf('pause'), []);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [], 'a running target is not asked for its state');
             assert.strictEqual(reply, 'Target is running: no stop within 500 ms of \'continue_execution\', and it keeps running; '
                 + 'nothing was paused. Call wait_for_stop to wait for the next stop (a breakpoint, a fault), '
                 + 'or pause_execution to halt it and see where it is.');
@@ -512,16 +513,39 @@ suite('DebuggingHandler', () => {
                 'without timeoutMs the wait is the setting under the 60 s cap');
         });
 
+        test('a continue whose wait runs out answers at once: no state read that would wait out the adapter\'s deadline', async () => {
+            const x = new ScriptedExecutor();
+            x.waiters.push({ kind: 'timeout' });
+            // A stackTrace to a running target can hang until its 10 s deadline; here it never answers.
+            x.getCurrentDebugState = () => new Promise<DebugState>(() => undefined);
+            const first = await Promise.race([
+                replyAnswer(handlerFor(x).handleContinue({ timeoutMs: 100 }), 'running').then((text) => text),
+                delay(1_000).then(() => 'still waiting'),
+            ]);
+            assert.ok(first.startsWith('Target is running: no stop within 100 ms of \'continue_execution\''), first);
+        });
+
         test('a step that does not stop pauses the target and says where it is, with status timeout', async () => {
             const x = new ScriptedExecutor();
             x.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
             const reply = await replyAnswer(handlerFor(x).handleStepOver(), 'timeout');
             assert.deepStrictEqual(x.moves, ['arm', 'stepOver', 'arm', 'pause']);
-            assert.ok(reply.includes('\'step_over\' did not complete within 5 s'), reply);
-            assert.ok(reply.includes('Recovery attempt'), reply);
+            // The reply leads with the overrun and the recovery; the state is read once, after the recovery pause stopped the target.
+            assert.ok(reply.startsWith('⚠️ \'step_over\' did not complete within 5 s. The target is still running or the probe is unresponsive. '), reply);
+            assert.ok(reply.includes('check_target_connection.\n🩹 Recovery attempt: target did not stop on its own'), reply);
             assert.ok(reply.includes('Paused successfully. PC = 0x08000100, LR = 0x08000200 in main at main.c:42.'), reply);
+            assert.ok(reply.endsWith('or step from here with step_over / continue_execution.\n\n'
+                + x.state.toCompactString({ includeBreakpoints: true })), reply);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [[3]]);
             assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [[5000, ['pc', 'lr']]]);
             assert.deepStrictEqual(x.argsOf('pause'), [[5000]]);
+
+            // Right after the pause VS Code may not have focused a frame yet (pyOCD, RTX on a B-L475E-IOT01A): no empty state block.
+            const unfocused = new ScriptedExecutor();
+            unfocused.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: null });
+            unfocused.getCurrentDebugState = async () => new DebugState();
+            const bare = await replyAnswer(handlerFor(unfocused).handleStepOver(), 'timeout');
+            assert.ok(bare.endsWith('or step from here with step_over / continue_execution.'), bare);
         });
 
         test('the end of the session during a continue rejects with NO_SESSION, unwrapped, like pause and wait_for_stop', async () => {
@@ -552,9 +576,10 @@ suite('DebuggingHandler', () => {
 
             const silent = new ScriptedExecutor();
             silent.waiters.push({ kind: 'timeout' }, { kind: 'timeout' });
-            assert.ok((await replyAnswer(handlerFor(silent).handleStepOver(), 'timeout')).includes(
+            assert.ok((await replyAnswer(handlerFor(silent).handleStepOver(), 'timeout')).endsWith(
                 'Pause did not produce a stop event within 5s — probe/GDB server may be unresponsive. '
                 + 'Call check_target_connection, then restart_debugging if needed.'));
+            assert.deepStrictEqual(silent.argsOf('getCurrentDebugState'), [], 'the target never stopped, so no state is read');
 
             const gone = new ScriptedExecutor();
             gone.waiters.push({ kind: 'timeout' }, { kind: 'ended' });
@@ -1058,6 +1083,7 @@ suite('DebuggingHandler', () => {
             x.waiters.push({ kind: 'timeout' });
             assert.ok((await replyAnswer(h.handlePause({ timeoutMs: 700 }), 'timeout')).startsWith('Pause requested but target did not stop within the timeout.'));
             assert.deepStrictEqual(x.argsOf('pause'), [[700]]);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [], 'a pause that did not stop the target reads no state');
             x.waiters.push({ kind: 'ended' });
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
                 'Pause requested but the debug session ended. The target may have crashed.');

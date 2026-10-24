@@ -94,11 +94,16 @@ the DAP `stopped` event of the session, *before* the request goes out, then
 waits for that event, the end of the session, or the limit: the call's
 `timeoutMs` or the configured `timeoutInSeconds`, capped at 60 s either way.
 VS Code's stack-item events never end a wait, because they also fire when
-the item is cleared on resume.
+the item is cleared on resume. The state is read only after a stop: a
+target whose wait ran out may still run, and a `stackTrace` to a running
+target holds the call for the whole DAP request deadline, which made every
+continue that ended `running` 10 s slower and pushed short ones past the
+window's fence.
 
 What a wait that runs out means depends on the request (`MotionSpec.onWaitOut`).
 A step should have stopped, so `locateRunawayTarget()` pauses the target and
-reports where it is — PC, LR, function and source line — so the agent learns
+reports where it is — PC, LR, function and source line, then the compact
+state read after that stop, behind the overrun line — so the agent learns
 whether the firmware sits in a loop, an ISR or a fault handler before it sets
 more breakpoints; that answer has status `timeout`, as has a pause that sees
 no stop in time. A continue is meant to run: the target is left running, and

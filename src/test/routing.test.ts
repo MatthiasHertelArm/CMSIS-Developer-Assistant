@@ -1270,7 +1270,8 @@ suite('Multi-window routing', () => {
     suite('fences and health checks (#14)', () => {
         const READ = { address: '0x0', length: 4 };
         const HEALTH = '{"op":"health","args":{}}';
-        const FENCE_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
+        const FENCE_HINT = 'The debug adapter or GDB has not answered: call get_session_status, then check_target_connection.';
+        const PICKER_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
         /** An op that never settles. */
         const never = (): Promise<ToolText> => new Promise<ToolText>(() => { /* waits for a person nobody is */ });
         /** Fences 300 ms inside the budget, and what the window says about itself. */
@@ -1334,6 +1335,36 @@ suite('Multi-window routing', () => {
             // The late result went nowhere: the next call is answered as usual.
             const next = await rawPost(port, 'tok', ['{"op":"handleGetSessionStatus","args":{}}']);
             assert.deepStrictEqual(JSON.parse(next.body), { result: echo('solo', 'debug', 'handleGetSessionStatus', {}) });
+        });
+
+        test('the hint names a picker or dialog only for the ops that can open one; the journal record carries the same hint', async () => {
+            const journal = new ProblemJournal();
+            const { port } = await startControl({ handleRestart: never, handleCmsisCommand: never, handleStartDebugging: never, handleStepOver: never },
+                journal, quickFence);
+            const hintOf = async (op: string): Promise<unknown> => {
+                const reply = await rawPost(port, 'tok', [JSON.stringify({ op, args: {}, budgetMs: 350 })], 0, { [CONTROL_ENVELOPE_HEADER]: '2' });
+                assert.strictEqual(reply.status, 500, reply.body);
+                const error = (JSON.parse(reply.body) as { error: JsonObject }).error;
+                assert.strictEqual(error.code, 'WORKER_TIMEOUT');
+                return error.hint;
+            };
+            assert.strictEqual(await hintOf('handleStartDebugging'), PICKER_HINT, 'the launch.json picker');
+            assert.strictEqual(await hintOf('handleRestart'), PICKER_HINT, 'a preLaunchTask\'s prompt or dialog');
+            assert.strictEqual(await hintOf('handleCmsisCommand'), PICKER_HINT, 'the CMSIS Solution extension\'s pickers');
+            assert.strictEqual(await hintOf('handleStepOver'), FENCE_HINT, 'a step waits for the debug adapter, not for the user');
+            assert.deepStrictEqual(journal.query({ minSeverity: 'warning' }).records.map((record) => record.hint),
+                [PICKER_HINT, PICKER_HINT, PICKER_HINT, FENCE_HINT]);
+
+            // An op outside the debugging handler waits for its own work: neither a picker nor the debug adapter.
+            const knowledge = { ...echoing<object>('solo', 'knowledge', KNOWLEDGE_OPS), handleKnowledgeSearch: never };
+            const control = new ControlServer(echoing<IDebuggingHandler>('solo', 'debug', DEBUG_OPS), 'tok',
+                { ...echoingPackDocs('solo'), knowledge: knowledge as unknown as PackDocsHandlers['knowledge'] }, new ProblemJournal(), quickFence);
+            const other = await control.start();
+            running.push(() => control.stop());
+            const reply = await rawPost(other, 'tok', [JSON.stringify({ op: 'handleKnowledgeSearch', args: {}, budgetMs: 350 })], 0,
+                { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.strictEqual((JSON.parse(reply.body) as { error: JsonObject }).error.hint,
+                'list_debug_windows shows when it has finished; get_recent_problems shows what that window reported.');
         });
 
         test('without a budget in the envelope (a router of 2.5.0) the window\'s own timeout sets the fence', async () => {

@@ -23,7 +23,7 @@ import { HardwareTimeouts, SERVER_VERSION } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { BusyCall, EventLoopLag, WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
-import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs } from './core/opTable';
+import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs, mayWaitForUser } from './core/opTable';
 import { problemJournal, type ProblemJournal } from './core/problemJournal';
 import { serialController } from './core/serialController';
 import { serialMonitorBridge } from './core/serialMonitorBridge';
@@ -460,7 +460,7 @@ export class WindowCoordinator {
         }
     }
 
-    /** The control server's op hook: the status bar hears every phase, the user a call past its fence (#14). */
+    /** The control server's op hook: the status bar hears every phase, the user a call past its fence that may wait for them (#14). */
     private noteOp(op: OpName, phase: OpPhase, run: OpRun): void {
         try {
             this.status?.noteOp(op, phase, run.ticket);
@@ -474,12 +474,14 @@ export class WindowCoordinator {
 
     /**
      * Tell the user that an agent call has waited here past its fence, at
-     * most once per tool in ten minutes: often it waits for a picker or a
-     * dialog that only the user can answer. The notice is journaled too.
+     * most once per tool in ten minutes, when it may wait for a picker or a
+     * dialog that only the user can answer (`mayWaitForUser`). Any other op
+     * waits for the debug adapter, GDB or its own work, which the user cannot
+     * answer: no notice; the control server's journal record stays.
      */
     private noticeFence(op: OpName, ranMs: number): void {
         const tool = toolNameOf(op);
-        if (this.disposed || !this.fenceNotices.allow(tool, this.clock())) {
+        if (this.disposed || !mayWaitForUser(op) || !this.fenceNotices.allow(tool, this.clock())) {
             return;
         }
         const message = `${PRODUCT}: an agent's ${tool} has been waiting ${secondsText(ranMs)} in this window; `

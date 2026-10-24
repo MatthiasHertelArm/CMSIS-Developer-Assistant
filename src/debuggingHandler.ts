@@ -298,6 +298,11 @@ const CONTINUE: MotionSpec = {
 
 /** How an execution request ended, with the state read afterwards. */
 interface StopOutcome {
+    /**
+     * The state read after the stop; an empty one after a timeout or the
+     * session's end, when nothing is read: the target may still run, and a
+     * `stackTrace` to a running target waits out its whole deadline.
+     */
     state: DebugState;
     timedOut: boolean;
     /** How long the wait for the stop was allowed to take. */
@@ -565,7 +570,10 @@ export class DebuggingHandler
     /**
      * Arm the executor's stop waiter, send the request, then wait for the
      * armed DAP event (or its timeout, or the session's end). A request that
-     * throws leaves the armed waiter to run out on its own.
+     * throws leaves the armed waiter to run out on its own. The state is read
+     * only after a stop: a target whose wait ran out may still run, and
+     * reading its stack would hold the call for the adapter's request
+     * deadline.
      */
     private async sendAndAwaitStop(send: () => Promise<void>, overrideMs: number | undefined): Promise<StopOutcome> {
         const limitMs = waitLimitMs(this.configuredSeconds, overrideMs);
@@ -576,11 +584,13 @@ export class DebuggingHandler
         if (result.kind === 'timeout') {
             logger.debug(`No DAP stopped event within ${limitMs} ms`);
         }
-        let state: DebugState;
-        try {
-            state = await this.dbg.getCurrentDebugState(3);
-        } catch {
-            state = new DebugState();
+        let state = new DebugState();
+        if (result.kind === 'stopped') {
+            try {
+                state = await this.dbg.getCurrentDebugState(3);
+            } catch {
+                // The empty state stands.
+            }
         }
         return {
             state,
@@ -619,22 +629,21 @@ export class DebuggingHandler
                 status: 'running',
             };
         }
-        const body = outcome.reason
-            ? `Target stopped (reason: ${outcome.reason}).\n\n${this.compactState(outcome.state)}`
-            : this.compactState(outcome.state);
         if (outcome.timedOut) {
-            const overrun = `\n\n⚠️ '${spec.tool}' did not complete within ${durationText(outcome.waitedMs)}. `
+            const overrun = `⚠️ '${spec.tool}' did not complete within ${durationText(outcome.waitedMs)}. `
                 + 'The target is still running or the probe is unresponsive. '
                 + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
-            return { text: body + overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
+            return { text: overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
         }
-        return body;
+        return outcome.reason
+            ? `Target stopped (reason: ${outcome.reason}).\n\n${this.compactState(outcome.state)}`
+            : this.compactState(outcome.state);
     }
 
     /**
-     * After a step that did not stop: pause the target and say
-     * where it is. Reads the recovered state directly, so the breakpoint
-     * diff of the compact state is not touched. Never throws.
+     * After a step that did not stop: pause the target and say where it is,
+     * ending with the compact state read after that stop. Nothing is read
+     * while the target may still run. Never throws.
      */
     private async locateRunawayTarget(tool: string): Promise<string> {
         const report = ['\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.'];
@@ -671,6 +680,10 @@ export class DebuggingHandler
             report.push('The breakpoint you expected was not hit — the firmware did not reach it. '
                 + 'Verify the breakpoint location, check the call stack with get_call_stack, '
                 + 'or step from here with step_over / continue_execution.');
+            // Right after a pause VS Code may not have focused a frame yet (seen with pyOCD on an RTX target): no empty state then.
+            if (where.frameName !== null || where.stackTrace.length > 0) {
+                report.push('', this.compactState(where));
+            }
         }
         return report.join('\n');
     }
