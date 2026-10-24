@@ -21,7 +21,8 @@
  * cbuild-run file (for `flash` and `cmsis_action`), where `flash` looks for
  * pyOCD and which probe it selects, where the hints after a failed J-Link
  * task or GDB server start look its program up, what `cmsis_action
- * install_pack` asks, and the CMSIS Solution extension behind `cmsis_query`.
+ * install_pack` asks, the CMSIS Solution extension behind `cmsis_query`, and
+ * who holds a GDB port a launch is about to use.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
@@ -35,6 +36,7 @@ import * as fs from 'fs';
 import { CmsisJobTracker, windowJobTracker } from '../cmsisJobTracker';
 import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
 import { fileExists } from '../core/flashController';
+import { findGdbPortHolder, type GdbPortHolder } from '../core/gdbPortGuard';
 import { SerialController, serialController } from '../core/serialController';
 import { activeCbuildRunFile } from '../utils/solutionQueries';
 import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
@@ -116,6 +118,14 @@ export interface HandlerHost {
     solutionExtension(): SolutionExtensionHandle | undefined;
     /** `fetch` for Arm's web catalog: which pack each of two web examples alike comes from (`cmsis_query`, `webCatalog.ts`). */
     webCatalogFetch: CatalogFetch;
+    /**
+     * Who holds a local GDB port that a launch or a CMSIS Run is about to use:
+     * another window's session or CMSIS Run task, as its registry entry says,
+     * or another program that listens there (a bind test, never a
+     * connection); undefined when the port is free. The default knows no
+     * other window; the window's `DebuggingHandler` is given the registry.
+     */
+    gdbPortHolder(port: number): Promise<GdbPortHolder | undefined>;
 }
 
 /** The key under `terminal.integrated.env` per platform. */
@@ -197,4 +207,5 @@ export const VSCODE_HOST: HandlerHost = {
         };
     },
     webCatalogFetch: (url, init) => fetch(url, init),
+    gdbPortHolder: (port) => findGdbPortHolder(port, []),
 };

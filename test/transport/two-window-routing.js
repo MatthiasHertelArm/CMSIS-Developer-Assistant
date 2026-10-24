@@ -48,6 +48,9 @@
 //      dialog does it tell its user, once. After failover the
 //      new router answers a session id of the old one with 404 and -32001,
 //      the answer that tells a client to initialize again.
+//  13. Two windows on one GDB port: each window publishes the GDB ports its
+//      sessions and CMSIS Run tasks use (an injected source here), the other
+//      window reads them from the registry, and the listing names them.
 
 const stub = require('./vscode-stub.js');
 
@@ -177,9 +180,12 @@ async function main() {
     // which is what two real windows look like. A tool timeout of 1 s and a
     // forward margin of 2 s make a forward's budget 3 s, and the worker's
     // fence 1 s inside it (#14): the check of the fence waits 2 s, not 190.
+    // Beta's CMSIS Run serves pyOCD's port; alpha uses none.
+    const betaPorts = [{ port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' }];
     const makeCoordinator = (win) => new WindowCoordinator({
         port: PORT, timeoutInSeconds: 1, hardwareTimeouts: {}, registry: win.registry, journal: win.journal,
         timings: { forwardMarginMs: 2_000, fenceMarginMs: 1_000 },
+        gdbPorts: async () => (win === beta ? betaPorts : []),
     });
 
     const c1 = makeCoordinator(alpha);
@@ -237,6 +243,11 @@ async function main() {
     check('list_debug_windows reports both windows and marks the router',
         listing.includes(alphaDir) && listing.includes(betaDir) && rowOf(listing, c1.isRouter() ? alphaDir : betaDir).includes(' | router'),
         listing.replace(/\n/g, ' | '));
+    const betaSeen = alpha.registry.list().find((entry) => entry.pid === beta.pid);
+    check('a window\'s GDB ports reach the other window through the registry, and the listing names them',
+        JSON.stringify(betaSeen?.gdbPorts) === JSON.stringify(betaPorts) && rowOf(listing, betaDir).includes(' | GDB port 3333 (CMSIS Run)')
+            && !rowOf(listing, alphaDir).includes('GDB port'),
+        `${JSON.stringify(betaSeen?.gdbPorts)} | ${rowOf(listing, betaDir)}`);
 
     // #16: two idle windows are a tie for a path-less call.
     const idleTie = await callToolResult(PORT, sid, 'read_memory', { address: '0x20000000', length: 4 }, 20);

@@ -11226,6 +11226,14 @@
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
           "ev": "getExtension",
           "id": "Arm.cmsis-csolution"
         },
@@ -11915,6 +11923,8 @@
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
@@ -12222,6 +12232,14 @@
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
           "ev": "createStatusBarItem",
           "id": "cmsis-developer-assistant.window",
           "alignment": 2,
@@ -12435,6 +12453,8 @@
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
@@ -13385,6 +13405,14 @@
           "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
           "ev": "getExtension",
           "id": "Arm.cmsis-csolution"
         },
@@ -13601,6 +13629,8 @@
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",

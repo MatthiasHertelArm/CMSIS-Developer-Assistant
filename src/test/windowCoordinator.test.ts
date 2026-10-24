@@ -27,6 +27,21 @@ import { WindowCoordinator, type DebugSessionEvents } from '../windowCoordinator
 import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
 import { logger } from '../utils/logger';
 import { createSessionTracker } from '../utils/sessionStateTracker';
+import type { PortClaimingWindow } from '../core/gdbPortGuard';
+import type { GdbPortClaim } from '../core/gdbServerPorts';
+
+/** Poll `registry` until this window's entry lists `expected` as its GDB ports (none: undefined). */
+async function publishedPorts(registry: WorkspaceRegistry, expected: GdbPortClaim[] | undefined): Promise<void> {
+    let seen: unknown;
+    for (let tries = 0; tries < 50; tries++) {
+        seen = registry.list().find((entry) => entry.pid === process.pid)?.gdbPorts;
+        if (JSON.stringify(seen) === JSON.stringify(expected)) {
+            return;
+        }
+        await new Promise((later) => setTimeout(later, 20));
+    }
+    assert.fail(`gdbPorts is ${JSON.stringify(seen)}, not ${JSON.stringify(expected)}`);
+}
 
 suite('WindowCoordinator serial teardown', () => {
     let dir: string;
@@ -182,6 +197,35 @@ suite('WindowCoordinator and the router window (#14)', () => {
             answer = '';
             coordinator.publish();
             await published(undefined);
+        } finally {
+            await coordinator.dispose();
+            for (const subscription of context.subscriptions) {
+                subscription.dispose();
+            }
+        }
+    });
+
+    test('the window publishes the GDB ports its sessions and CMSIS Run tasks use, again when they change, and gives its handler the other windows\' ports', async () => {
+        const registry = registryView();
+        const run: GdbPortClaim = { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' };
+        let claims: GdbPortClaim[] = [run];
+        const coordinator = new WindowCoordinator({
+            port: 0, timeoutInSeconds: 1, hardwareTimeouts: {}, registry, serialTeardown: noTeardown,
+            solutionFile: () => undefined,
+            gdbPorts: async () => claims,
+        });
+        const context = { subscriptions: [] as vscode.Disposable[] };
+        try {
+            await coordinator.start(context as unknown as vscode.ExtensionContext);
+            await publishedPorts(registry, [run]);
+            claims = [];
+            coordinator.publish();
+            await publishedPorts(registry, undefined);
+
+            plant('item13', { name: 'item13', gdbPorts: [{ ...run }] });
+            plant('older', { name: 'older' });
+            const others = (coordinator as unknown as { otherWindowPorts(): PortClaimingWindow[] }).otherWindowPorts();
+            assert.deepStrictEqual(others, [{ pid: ROUTER_PID, name: 'item13', claims: [run] }], 'its own entry and a window without ports are left out');
         } finally {
             await coordinator.dispose();
             for (const subscription of context.subscriptions) {
@@ -379,6 +423,20 @@ suite('WindowCoordinator and the debug session it publishes', () => {
         debug.activeDebugSession = fvp;
         end(fvp);
         assert.deepStrictEqual(published(), [false, undefined]);
+    });
+
+    test('a live CMSIS Debugger session on an FVP publishes the GDB port of its model; its end withdraws it', async () => {
+        const name = 'Arm-FVP@GDB (launch)';
+        const session = {
+            id: 'coordinator-fvp', name, type: 'gdbtarget',
+            configuration: { name, type: 'gdbtarget', request: 'launch', target: { server: '/w/.vscode/fvp.sh', serverParameters: ['-C', 'GDBServer.port=3333'], port: '' } },
+        } as unknown as vscode.DebugSession;
+        trackers.set(session, createSessionTracker(session));
+        debug.activeDebugSession = session;
+        debug.started.fire(session);
+        await publishedPorts(registry, [{ port: 3333, source: 'session', label: name, server: 'Arm FVP' }]);
+        end(session);
+        await publishedPorts(registry, undefined);
     });
 
     test('a change of the focused session is published, and so is a focus that leaves an ended session', () => {

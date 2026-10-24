@@ -198,6 +198,14 @@ export function getLiveSessionNames(): string[] {
 }
 
 /**
+ * The live debug sessions, oldest first, without `ending`, the session whose
+ * end is being announced: what the window's GDB ports are read from.
+ */
+export function liveSessionsExcept(ending?: vscode.DebugSession): vscode.DebugSession[] {
+    return liveSessions.filter((session) => session !== ending && !endedSessions.has(session));
+}
+
+/**
  * Resolve "the debug session the agent should operate on": VS Code's focused
  * session if there is one, otherwise the most-recently-started tracked
  * session. This is the single source of truth the executor should use

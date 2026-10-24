@@ -16,13 +16,19 @@
 
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ControlServer, OpPhase, OpRun, WindowFacts } from './controlServer';
 import { DebugMCPServer, DebugMCPServerOptions, PortInUseError, SessionHandlers } from './debugMCPServer';
 import { DebuggingExecutor, ConfigurationManager, DebuggingHandler } from '.';
 import { HardwareTimeouts, SERVER_VERSION } from './debuggingExecutor';
 import { RoutingDebuggingHandler } from './routingDebuggingHandler';
+import { windowJobTracker } from './cmsisJobTracker';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { BusyCall, EventLoopLag, WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
+import type { PortClaimingWindow } from './core/gdbPortGuard';
+import { gdbPortClaimsOf, taskCommandWords, windowGdbPorts, type GdbPortClaim } from './core/gdbServerPorts';
+import { cbuildRunGdbPorts } from './core/packDocs/cbuildRun';
 import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs, mayWaitForUser } from './core/opTable';
 import { problemJournal, type ProblemJournal } from './core/problemJournal';
 import { serialController } from './core/serialController';
@@ -33,7 +39,8 @@ import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { solutionFileOf } from './core/solutionAnswers';
 import { logger } from './utils/logger';
 import { notifyWarning } from './utils/notify';
-import { registrySession } from './utils/sessionStateTracker';
+import { liveSessionsExcept, registrySession } from './utils/sessionStateTracker';
+import { activeCbuildRunFile } from './utils/solutionQueries';
 import { withTimeout } from './utils/timeout';
 import { WindowStatus } from './windowStatus';
 
@@ -121,6 +128,13 @@ export interface CoordinatorOptions {
     solutionFile?: () => Thenable<unknown> | undefined;
     /** VS Code's focused debug session and the session events; `vscode.debug` by default. Injectable for tests. */
     debug?: DebugSessionEvents;
+    /**
+     * The local GDB ports this window's live debug sessions and CMSIS Run
+     * tasks use, without `ending`, the session whose end is being announced;
+     * read from the session tracker and the window's CMSIS job tracker by
+     * default. Injectable for tests.
+     */
+    gdbPorts?: (ending?: vscode.DebugSession) => Promise<GdbPortClaim[]>;
 }
 
 const SERIAL_TEARDOWN_MS = 2_000;
@@ -142,6 +156,33 @@ function querySolutionFile(): Thenable<unknown> | undefined {
 async function defaultSerialTeardown(): Promise<void> {
     await serialController.close();
     serialMonitorBridge.unsubscribe();
+}
+
+/**
+ * The GDB ports of a pyOCD CMSIS Run that reads them from a cbuild-run file:
+ * the active target's when the task names it through CMSIS Solution's
+ * command, else the file it names by an absolute path. None when there is no
+ * such file or it lists no port.
+ */
+async function cbuildRunPortsOf(file: string): Promise<readonly number[]> {
+    const runFile = file.includes('${') ? await activeCbuildRunFile() : path.isAbsolute(file) ? file : undefined;
+    if (runFile === undefined) {
+        return [];
+    }
+    try {
+        return cbuildRunGdbPorts(await fs.promises.readFile(runFile, 'utf8'));
+    } catch {
+        return [];
+    }
+}
+
+/** The GDB ports of this window: its live debug sessions from the session tracker, its CMSIS Run tasks from the job tracker. */
+async function defaultGdbPorts(ending?: vscode.DebugSession): Promise<GdbPortClaim[]> {
+    const sessions = liveSessionsExcept(ending).map((session) => ({ name: session.name, configuration: session.configuration }));
+    const tracker = windowJobTracker();
+    const runs = tracker.liveExecutions().filter((live) => live.kind === 'run')
+        .map((live) => ({ name: live.name, words: tracker.commandOf(live.key) ?? taskCommandWords(live.execution.task) }));
+    return windowGdbPorts(sessions, runs, cbuildRunPortsOf);
 }
 
 /**
@@ -167,6 +208,11 @@ async function defaultSerialTeardown(): Promise<void> {
  * process lives, and a port that does not answer `GET /mcp` — and then warns
  * its user once per episode: no API lets one window take the port or reload
  * another.
+ *
+ * The entry also lists the local GDB ports the window's live debug sessions
+ * and CMSIS Run tasks use, republished when a session or a task starts or
+ * ends; the window's debugging handler reads the other windows' ports before
+ * a launch, so that two windows do not start GDB servers on one port.
  */
 export class WindowCoordinator {
     private readonly registry: WorkspaceRegistry;
@@ -201,6 +247,12 @@ export class WindowCoordinator {
     private solutionQuery: Promise<void> | undefined;
     /** A refresh was asked for while a query was in flight: ask again when it ends. */
     private solutionQueryAgain = false;
+    /** The GDB ports this window's sessions and CMSIS Run tasks use, as the registry entry carries them; none until the first look. */
+    private gdbPorts: GdbPortClaim[] = [];
+    /** The look at the GDB ports in flight; one at a time. */
+    private gdbPortsQuery: Promise<void> | undefined;
+    /** A look was asked for while one was in flight: look again when it ends. */
+    private gdbPortsAgain = false;
     private disposed = false;
 
     constructor(private readonly options: CoordinatorOptions) {
@@ -213,7 +265,7 @@ export class WindowCoordinator {
         this.timings = { ...CHANNEL_TIMINGS, ...options.timings };
         const executor = new DebuggingExecutor(options.hardwareTimeouts);
         const configManager = new ConfigurationManager();
-        this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds, this.journal);
+        this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds, this.journal, () => this.otherWindowPorts());
     }
 
     /** True when this window owns the well-known port. */
@@ -263,6 +315,13 @@ export class WindowCoordinator {
             debug.onDidChangeActiveDebugSession(() => this.publish()),
             vscode.workspace.onDidChangeWorkspaceFolders(() => this.publish()),
         );
+        // A CMSIS Run task that starts or ends changes the GDB ports this window uses.
+        const tasks = vscode.tasks as Partial<typeof vscode.tasks> | undefined;
+        for (const event of [tasks?.onDidStartTaskProcess, tasks?.onDidEndTaskProcess, tasks?.onDidEndTask]) {
+            if (event) {
+                context.subscriptions.push(event(() => this.refreshGdbPorts()));
+            }
+        }
 
         await this.tryBecomeRouter();
         this.showStatus();
@@ -419,6 +478,7 @@ export class WindowCoordinator {
         this.status?.reloadDefault();
         // A solution opened or closed since the last publish shows up in the listing.
         this.refreshSolutionFile();
+        this.refreshGdbPorts();
         this.observeWindows();
     }
 
@@ -571,6 +631,7 @@ export class WindowCoordinator {
     public publish(ending?: vscode.DebugSession): void {
         if (this.disposed || !this.controlServer) { return; }
         this.refreshSolutionFile();
+        this.refreshGdbPorts(ending);
 
         const session = registrySession(this.debugApi().activeDebugSession, ending);
         this.registry.register({
@@ -586,7 +647,53 @@ export class WindowCoordinator {
             // Both from the heartbeat: none before the first one.
             lagMs: this.lastLag,
             busy: this.busyCalls(),
+            gdbPorts: this.gdbPorts.length > 0 ? this.gdbPorts : undefined,
         });
+    }
+
+    /**
+     * Look at the GDB ports this window's live sessions and CMSIS Run tasks
+     * use, and publish again when they changed. The look starts after the
+     * event that asked for it has reached every listener, the job tracker's
+     * included. A routing input like the session state, but never a reason
+     * to fail: a look that fails keeps the last answer.
+     */
+    private refreshGdbPorts(ending?: vscode.DebugSession): void {
+        if (this.disposed) { return; }
+        if (this.gdbPortsQuery !== undefined) {
+            this.gdbPortsAgain = true;
+            return;
+        }
+        const source = this.options.gdbPorts ?? defaultGdbPorts;
+        this.gdbPortsQuery = Promise.resolve()
+            .then(() => source(ending))
+            .then(
+                (claims) => this.noteGdbPorts(claims),
+                (caught: unknown) => logger.debug(`window listing: GDB ports: ${caught instanceof Error ? caught.message : String(caught)}`),
+            )
+            .finally(() => {
+                this.gdbPortsQuery = undefined;
+                if (this.gdbPortsAgain) {
+                    this.gdbPortsAgain = false;
+                    this.refreshGdbPorts();
+                }
+            });
+    }
+
+    /** Keep the GDB ports of the last look; a change is published at once. */
+    private noteGdbPorts(claims: GdbPortClaim[]): void {
+        if (this.disposed || JSON.stringify(claims) === JSON.stringify(this.gdbPorts)) { return; }
+        this.gdbPorts = claims;
+        this.publish();
+    }
+
+    /** The other registered windows with the GDB ports they publish, for this window's launch checks. */
+    private otherWindowPorts(): PortClaimingWindow[] {
+        const own = this.registry.ownPid();
+        return this.registry.list()
+            .filter((entry) => entry.pid !== own)
+            .map((entry) => ({ pid: entry.pid, name: entry.name, claims: gdbPortClaimsOf(entry.gdbPorts) }))
+            .filter((window) => window.claims.length > 0);
     }
 
     /**

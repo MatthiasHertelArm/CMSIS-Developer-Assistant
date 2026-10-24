@@ -92,7 +92,6 @@ import {
     runtimeOf,
 } from '../core/cmsisTasks';
 import { DIAGNOSTIC_RERUN_CAP_MS, idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
-import { cbuildRunDebugger } from '../core/packDocs/cbuildRun';
 import {
     applyTargetSelection,
     formatTargetChoices,
@@ -124,12 +123,18 @@ import {
     AttachEndpoint,
     CmsisLaunchConfiguration,
     folderCmsisLaunchConfigurations,
+    folderCmsisRunCommand,
+    gdbServerKind,
     isFvpDebugger,
     isFvpSession,
     launchAttachEndpoints,
     runCommandKind,
+    runTaskCbuildRun,
+    runTaskGdbPorts,
     taskCommandWords,
 } from '../core/gdbServerPorts';
+import { gdbPortRefusal, type PortStart } from '../core/gdbPortGuard';
+import { cbuildRunDebugger, cbuildRunGdbPorts } from '../core/packDocs/cbuildRun';
 import { AGENT_START_WINDOW_MS, expectAgentStart, FRAME_FOCUS_WAIT_MS, type StartFocusWatch } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
@@ -1592,13 +1597,72 @@ export async function runCmsisAction(
             return activateEnvironment(issue, solution.solutionPath);
         case 'load_and_debug': {
             const launchOnes = launchConfigurations.filter((config) => config.request === 'launch');
+            await refuseHeldLaunchPorts(issue, launchOnes);
             const loadFirst = launchOnes.some((config) => config.preLaunchTask === 'CMSIS Load');
             const servers = launchOnes.map((config) => config.server).filter((server): server is string => server !== undefined);
             return withPreface(await loadAndDebug(issue, loadFirst, servers), preface);
         }
+        case 'run':
+        case 'load_and_run':
+            if (solution.solutionPath) {
+                await refuseHeldRunPorts(issue, action, selectionFolder(solution.solutionPath, host));
+            }
+            return runJob(issue, action, labels, preface);
         default:
             return runJob(issue, action as JobAction, labels, preface);
     }
+}
+
+/**
+ * Refuse a start whose GDB port another window or another program holds
+ * (`HandlerHost.gdbPortHolder`, `src/core/gdbPortGuard.ts`): GDB would reach
+ * that server instead of the new one, and halt that target. Each port is
+ * asked once, in order.
+ */
+async function refuseHeldPorts(issue: Issue, ports: ReadonlyArray<{ port: number; start: PortStart }>): Promise<void> {
+    const asked = new Set<number>();
+    for (const { port, start } of ports) {
+        if (asked.has(port)) {
+            continue;
+        }
+        asked.add(port);
+        const holder = await issue.context.host.gdbPortHolder(port);
+        if (holder) {
+            logger.info(`${start.subject}: GDB port ${port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
+            throw gdbPortRefusal(start, port, holder);
+        }
+    }
+}
+
+/** load_and_debug: the GDB ports the launch configurations fix for their servers. */
+async function refuseHeldLaunchPorts(issue: Issue, launches: readonly CmsisLaunchConfiguration[]): Promise<void> {
+    const subject = `CMSIS 'load_and_debug'${issue.tag} not started`;
+    await refuseHeldPorts(issue, launches.flatMap((config) => (config.gdbPort === undefined ? [] : [{
+        port: config.gdbPort,
+        start: { what: 'launch' as const, subject, configuration: config.name, server: config.gdbServer },
+    }])));
+}
+
+/**
+ * run and load_and_run: the GDB ports of the CMSIS Run task that tasks.json
+ * holds, for pyOCD from the active target's cbuild-run file when its command
+ * line names that file and no port. A Run that hosts no GDB server (the FVP
+ * adapter's model) has none.
+ */
+async function refuseHeldRunPorts(issue: Issue, action: string, folder: string): Promise<void> {
+    const words = await folderCmsisRunCommand(folder);
+    const file = runTaskCbuildRun(words);
+    let fromFile: number[] = [];
+    if (file !== undefined) {
+        const runFile = file.includes('${') ? await issue.context.host.activeCbuildRunFile() : path.resolve(folder, file);
+        try {
+            fromFile = runFile ? cbuildRunGdbPorts(await fs.promises.readFile(runFile, 'utf8')) : [];
+        } catch {
+            fromFile = [];
+        }
+    }
+    const start: PortStart = { what: 'run', subject: `CMSIS '${action}'${issue.tag} not started`, server: gdbServerKind(words) };
+    await refuseHeldPorts(issue, runTaskGdbPorts(words, fromFile).map((port) => ({ port, start })));
 }
 
 /** How often `refresh` looks at the index csolution rewrites. */

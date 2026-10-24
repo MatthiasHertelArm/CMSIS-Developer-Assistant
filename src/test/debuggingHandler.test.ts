@@ -35,6 +35,7 @@ import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from
 import { ProblemInput, ProblemJournal, problemJournal, problemJson } from '../core/problemJournal';
 import { renderProblemsBlock, runJournaled } from '../core/problemFeed';
 import type { HandlerHost, ToolEnvironment } from '../handler/host';
+import type { GdbPortHolder } from '../core/gdbPortGuard';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
@@ -348,7 +349,8 @@ class HostedHandler extends DebuggingHandler {
     }
 
     protected host(): HandlerHost {
-        return { ...super.host(), ...this.replaced };
+        // No GDB port is taken unless a test says so: the bind test would see whatever listens on this machine.
+        return { ...super.host(), gdbPortHolder: async () => undefined, ...this.replaced };
     }
 }
 
@@ -4591,6 +4593,148 @@ suite('DebuggingHandler', () => {
             timers.length = 0;
             await textAnswer(handler.handleReadMemory({ address: '0x20000000', length: 4, timeoutMs: 120_000 }));
             assert.strictEqual(timers[0], 60_000, 'a read keeps the 60 s cap');
+        });
+
+        /**
+         * Two windows on one GDB port (live test): an FVP launch in one window while pyOCD's CMSIS Run of
+         * another listened on 127.0.0.1:3333 connected GDB to pyOCD and halted that board. A launch, a
+         * CMSIS Run and start_debugging now ask who holds their GDB port before anything starts.
+         */
+        suite('two windows on one GDB port', () => {
+            const FVP_LAUNCH = {
+                name: 'Arm-FVP@GDB (launch)', type: 'gdbtarget', request: 'launch', cwd: '${workspaceFolder}/',
+                target: {
+                    server: '${workspaceFolder}/.vscode/fvp.sh',
+                    serverParameters: ['-D', '--plugin', '${env:AVH_FVP_PLUGINS}/GDBServer.so', '-C', 'GDBServer.port=3333', '-f', 'fvp_config.txt'],
+                    port: '', serverPortRegExp: 'GDBServer: Listening .*port=([0-9]+)',
+                },
+                cmsis: { cbuildRunFile: '${command:cmsis-csolution.getCbuildRunFile}', updateConfiguration: 'manual' },
+            };
+            const FVP_ATTACH = { name: 'Arm-FVP@GDB (attach)', type: 'gdbtarget', request: 'attach', target: { port: '3333' }, cmsis: {} };
+            const PYOCD_LAUNCH = { name: 'STLink@pyOCD (launch)', type: 'gdbtarget', request: 'launch', target: { server: 'pyocd', port: '3333' }, cmsis: {} };
+            const PYOCD_ATTACH = { name: 'STLink@pyOCD (attach)', type: 'gdbtarget', request: 'attach', target: { port: '3333' }, cmsis: {} };
+            const PYOCD_RUN_TASK = { label: 'CMSIS Run', type: 'shell', command: 'pyocd',
+                args: ['gdbserver', '--probe', 'stlink:', '--persist', '--reset-run', '--cbuild-run', '${command:cmsis-csolution.getCbuildRunFile}', '--quiet'] };
+            const FVP_RUN_TASK = { label: 'CMSIS Run', type: 'shell', command: 'FVP_Corstone_SSE-300_Ethos-U55', args: ['-f', 'fvp_config.txt', '-a', 'Blinky.axf'] };
+            const ITEM13_RUN: GdbPortHolder = { kind: 'window', pid: 70401, name: 'item13', claim: { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' } };
+
+            let dir: string;
+            const writeVscode = (file: string, content: unknown): void => {
+                fs.writeFileSync(path.join(dir, '.vscode', file), JSON.stringify(content));
+            };
+            setup(() => {
+                dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-gdbport-'));
+                fs.mkdirSync(path.join(dir, '.vscode'));
+                writeVscode('launch.json', { version: '0.2.0', configurations: [FVP_LAUNCH, FVP_ATTACH] });
+                writeVscode('tasks.json', { version: '2.0.0', tasks: [PYOCD_RUN_TASK] });
+                // pyOCD's gdbserver --cbuild-run listens where the cbuild-run file says.
+                fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), 'cbuild-run:\n  debugger:\n    name: ST-Link@pyOCD\n    gdbserver:\n      - port: 3334\n');
+            });
+            teardown(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+            /** A window with that folder open; `holder` answers for each GDB port a call asks about, which `asked` records. */
+            const portWorld = (holder: (port: number) => GdbPortHolder | undefined) => {
+                const clock = fastClock(20);
+                const tasks = new FakeTasks();
+                tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
+                const tracker = new CmsisJobTracker(tasks, clock);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const asked: number[] = [];
+                const issued: string[] = [];
+                const record = (name: string) => () => {
+                    issued.push(name);
+                };
+                registrations?.dispose();
+                registrations = standIns({
+                    'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                    'cmsis-csolution.getActiveTargetSet': () => 'HE',
+                    'cmsis-csolution.cmsisLoadAndDebug': record('load_and_debug'),
+                    'cmsis-csolution.cmsisRun': record('run'),
+                    'cmsis-csolution.cmsisLoadAndRun': record('load_and_run'),
+                });
+                const handler = handlerFor(x, {
+                    ...clock,
+                    cmsisJobs: () => tracker,
+                    workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }],
+                    activeCbuildRunFile: async () => path.join(dir, 'demo+HE.cbuild-run.yml'),
+                    gdbPortHolder: async (port) => {
+                        asked.push(port);
+                        return holder(port);
+                    },
+                }, 5, {});
+                return { handler, asked, issued, x };
+            };
+
+            test('load_and_debug is refused before its command while another window\'s CMSIS Run uses the FVP\'s GDB port', async () => {
+                const w = portWorld((port) => (port === 3333 ? ITEM13_RUN : undefined));
+                const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'PROBE_BUSY');
+                assert.strictEqual(refused.message, 'CMSIS \'load_and_debug\' on HE not started: the Arm FVP GDB server of \'Arm-FVP@GDB (launch)\' would use '
+                    + 'port 3333, which window \'item13\' (pid 70401) uses for its CMSIS Run task (pyOCD GDB server). GDB would connect to that server '
+                    + 'instead of the new one, and debug — and halt — that target.');
+                assert.strictEqual(refused.hint, 'Stop that task there once the user agrees (cmsis_action stop_run with window: \'70401\'), or give this project another port: '
+                    + 'GDBServer.port in .vscode/launch.json.');
+                assert.deepStrictEqual(w.asked, [3333], 'the launch configuration is asked about, the attach configuration is not');
+                assert.deepStrictEqual(w.issued, []);
+            });
+
+            test('run and load_and_run are refused while another program listens where pyOCD\'s CMSIS Run would; its port comes from the cbuild-run file', async () => {
+                const w = portWorld(() => ({ kind: 'listener' }));
+                for (const action of ['run', 'load_and_run'] as const) {
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action }), 'PROBE_BUSY');
+                    assert.strictEqual(refused.message, `CMSIS '${action}' on HE not started: its pyOCD GDB server (CMSIS Run) would use port 3334, and another `
+                        + 'program already listens on that port of this computer — no window of the CMSIS Developer Assistant claims it: a GDB server started '
+                        + 'elsewhere, or one an earlier session left running. Two GDB servers on one port: the new one fails to start, or a GDB meant for one '
+                        + 'of them reaches the other.');
+                    assert.strictEqual(refused.hint, 'Free the port (the user can end that program), or give this project\'s GDB server another port.');
+                }
+                assert.deepStrictEqual(w.asked, [3334, 3334]);
+                assert.deepStrictEqual(w.issued, []);
+            });
+
+            test('a free port lets the launch and the CMSIS Run through; the FVP adapter\'s Run hosts no GDB server and asks nothing', async () => {
+                const w = portWorld(() => undefined);
+                await w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 2_000 }).catch(() => undefined);
+                await w.handler.handleCmsisCommand({ action: 'run', timeoutMs: 2_000 }).catch(() => undefined);
+                assert.deepStrictEqual(w.asked, [3333, 3334]);
+                assert.deepStrictEqual(w.issued, ['load_and_debug', 'run']);
+
+                writeVscode('tasks.json', { version: '2.0.0', tasks: [FVP_RUN_TASK] });
+                const bare = portWorld(() => ({ kind: 'listener' }));
+                await bare.handler.handleCmsisCommand({ action: 'run', timeoutMs: 2_000 }).catch(() => undefined);
+                assert.deepStrictEqual(bare.asked, []);
+                assert.deepStrictEqual(bare.issued, ['run']);
+            });
+
+            test('start_debugging of a launch configuration with a fixed port asks before the start; an attach configuration does not', async () => {
+                writeVscode('launch.json', { version: '0.2.0', configurations: [PYOCD_LAUNCH, PYOCD_ATTACH] });
+                const held = portWorld(() => ({ kind: 'listener' }));
+                const refused = await refusalOf(held.handler.handleStartDebugging({ workingDirectory: dir, configurationName: 'STLink@pyOCD (launch)' }), 'PROBE_BUSY');
+                assert.ok(refused.message.startsWith('Debug session not started: the pyOCD GDB server of \'STLink@pyOCD (launch)\' would use port 3333, '
+                    + 'and another program already listens'), refused.message);
+                assert.strictEqual(refused.hint, 'Free the port (the user can end that program), or give this project another port: '
+                    + 'target.port of \'STLink@pyOCD (launch)\' in .vscode/launch.json.');
+                assert.deepStrictEqual(held.x.argsOf('startDebuggingByName'), []);
+
+                await held.handler.handleStartDebugging({ workingDirectory: dir, configurationName: 'STLink@pyOCD (attach)', timeoutMs: 1_000 }).catch(() => undefined);
+                assert.deepStrictEqual(held.asked, [3333], 'the attach connects to a server that is meant to listen');
+                assert.deepStrictEqual(held.x.argsOf('startDebuggingByName'), [[dir, 'STLink@pyOCD (attach)']]);
+            });
+
+            test('the window\'s handler reads the other windows\' GDB ports it was given, and names the session that holds one', async () => {
+                writeVscode('launch.json', { version: '0.2.0', configurations: [PYOCD_LAUNCH] });
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const windows = [{ pid: 4047, name: 'eval1', claims: [{ port: 3333, source: 'session' as const, label: 'Arm-FVP@GDB (launch)', server: 'Arm FVP' as const }] }];
+                const handler = new DebuggingHandler(x as unknown as IDebuggingExecutor, {} as IDebugConfigurationManager, 5, problemJournal(), () => windows);
+                const refused = await refusalOf(handler.handleStartDebugging({ workingDirectory: dir, configurationName: 'STLink@pyOCD (launch)' }), 'PROBE_BUSY');
+                assert.strictEqual(refused.message, 'Debug session not started: the pyOCD GDB server of \'STLink@pyOCD (launch)\' would use port 3333, which '
+                    + 'window \'eval1\' (pid 4047) uses for its debug session \'Arm-FVP@GDB (launch)\' (Arm FVP GDB server). GDB would connect to that server '
+                    + 'instead of the new one, and debug — and halt — that target.');
+                assert.strictEqual(refused.hint, 'Stop that session there once the user agrees (select_debug_window {pid: 4047}, then stop_debugging), or give this project another '
+                    + 'port: target.port of \'STLink@pyOCD (launch)\' in .vscode/launch.json.');
+                assert.deepStrictEqual(x.argsOf('startDebuggingByName'), []);
+            });
         });
     });
 

@@ -55,6 +55,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
 import type { AdoptedBreakpoint, BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor, StartFocusWatch } from './debuggingExecutor';
 import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
@@ -66,7 +67,8 @@ import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
 import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
-import { isFvpSession } from './core/gdbServerPorts';
+import { findGdbPortHolder, gdbPortRefusal, type PortClaimingWindow } from './core/gdbPortGuard';
+import { configurationGdbPort, folderLaunchConfiguration, isFvpSession } from './core/gdbServerPorts';
 import { coreVerdict, isLockedUp, LOCKUP_NOTE, silentCoreText, wedgeHint } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
 import { lookupAddress, matchName, parseAddress, renderAddressHit, renderPeripheral, renderPeripheralList, renderRegister } from './core/svdLookup';
@@ -469,17 +471,26 @@ export class DebuggingHandler
     private shownBreakpoints: string | undefined;
     /** The MCP sessions whose `stop_debugging` showed the root-cause check, oldest first; '' for calls outside one. */
     private readonly rootCauseShown = new Set<string>();
+    /** `VSCODE_HOST`, with the other windows' GDB ports when the window's registry was given. */
+    private readonly defaultHost: HandlerHost;
 
+    /**
+     * `portWindows` lists the other registered windows with the GDB ports
+     * they publish, read at each launch; without it only the bind test tells
+     * whether a GDB port is taken.
+     */
     constructor(
         executor: IDebuggingExecutor,
         configurations: IDebugConfigurationManager,
         timeoutSeconds: number,
         journal: ProblemJournal = problemJournal(),
+        portWindows?: () => readonly PortClaimingWindow[],
     ) {
         this.dbg = executor;
         this.launchConfigs = configurations;
         this.configuredSeconds = timeoutSeconds;
         this.journal = journal;
+        this.defaultHost = portWindows ? { ...VSCODE_HOST, gdbPortHolder: (port) => findGdbPortHolder(port, portWindows()) } : VSCODE_HOST;
     }
 
     /** VS Code logpoint message → GDB `dprintf` format and arguments. */
@@ -489,7 +500,7 @@ export class DebuggingHandler
 
     /** Clock, focused frame, task events and workspace; unit tests override this. */
     protected host(): HandlerHost {
-        return VSCODE_HOST;
+        return this.defaultHost;
     }
 
     // ── shared machinery ──
@@ -804,6 +815,7 @@ export class DebuggingHandler
         try {
             const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
+                await this.refuseHeldGdbPort(args.workingDirectory, chosen);
                 const began = this.host().now();
                 // Before the start: a frame VS Code holds from an earlier session is not this one's.
                 const focus = this.dbg.watchStartFocus();
@@ -833,6 +845,43 @@ export class DebuggingHandler
             // What the adapter and the GDB server said rides along as problem records (#48).
             throw wrapError('Error starting debug session', caught);
         }
+    }
+
+    /**
+     * Before the launch of a CMSIS Debugger configuration whose GDB server
+     * has a fixed local port: refuse it while another window's session or
+     * CMSIS Run task, or another program, holds that port, since GDB would
+     * connect to that server instead (`src/core/gdbPortGuard.ts`). The
+     * configuration is read from the launch.json of the workspace folder that
+     * holds `workingDirectory`, else of `workingDirectory` itself; an attach
+     * connects to a server that is meant to listen, and is left alone.
+     */
+    private async refuseHeldGdbPort(workingDirectory: string, name: string): Promise<void> {
+        const configuration = await this.launchConfiguration(workingDirectory, name);
+        const listens = (configuration as { request?: unknown } | undefined)?.request === 'launch' ? configurationGdbPort(configuration) : undefined;
+        if (!listens) {
+            return;
+        }
+        const holder = await this.host().gdbPortHolder(listens.port);
+        if (holder) {
+            logger.info(`start_debugging: '${name}' not started, its GDB port ${listens.port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
+            throw gdbPortRefusal({ what: 'launch', subject: 'Debug session not started', configuration: name, server: listens.server }, listens.port, holder);
+        }
+    }
+
+    /** The launch.json entry `name` that `start_debugging` would start, from the folders that may hold it, deepest first. */
+    private async launchConfiguration(workingDirectory: string, name: string): Promise<unknown> {
+        const wanted = path.resolve(workingDirectory);
+        const holders = this.host().workspaceFolders().map((folder) => folder.uri.fsPath)
+            .filter((folder) => wanted === path.resolve(folder) || wanted.startsWith(`${path.resolve(folder)}${path.sep}`))
+            .sort((a, b) => b.length - a.length);
+        for (const folder of [...holders, wanted]) {
+            const found = await folderLaunchConfiguration(folder, name);
+            if (found !== undefined) {
+                return found;
+            }
+        }
+        return undefined;
     }
 
     private async requireLiveStart(): Promise<void> {

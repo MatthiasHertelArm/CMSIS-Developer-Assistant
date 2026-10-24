@@ -161,7 +161,9 @@ start or a `cmsis_action` attach, shows everything. See
 
 `handleStartDebugging()` refuses while a session exists. With a
 `configurationName` it starts that `launch.json` entry by name through the
-executor. Without one it lets the user choose through
+executor; a CMSIS Debugger launch whose GDB server has a fixed local port is
+refused first while another window or another program holds that port
+(`refuseHeldGdbPort()`, see [GDB ports](windowRouting.md#gdb-ports)). Without one it lets the user choose through
 `promptForConfiguration()`, and the entry `Default Configuration` gets a
 configuration synthesized from the source file (see
 [debugConfigurationManager.md](debugConfigurationManager.md)). The picker
@@ -477,7 +479,15 @@ Before any command: a debug session refuses `load_and_debug` and `attach`,
 the probe guard refuses what another owner blocks (`PROBE_BUSY`), a window
 without an active solution is refused, an unknown target or action is
 `INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does not
-have (`load` on an Arm Debugger adapter, for example).
+have (`load` on an Arm Debugger adapter, for example). The probe guard
+knows this window only; a GDB port is shared by the machine. So
+`load_and_debug`, `run` and `load_and_run` then ask who holds the GDB ports
+they would start a server on — each launch configuration's fixed port, the
+CMSIS Run task's ports (`refuseHeldLaunchPorts()`, `refuseHeldRunPorts()`)
+— and refuse with `PROBE_BUSY` naming the other window and what holds the
+port there, or another program, before the command goes out. GDB would
+otherwise connect to that server and halt its target, while the session
+here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)).
 
 A `tasks.json` without any CMSIS task is a hand-off to the CMSIS Solution
 extension rather than a dead end: when the active target's cbuild-run.yml
@@ -891,7 +901,9 @@ or GDB server start look a program up, what `install_pack` asks of VS
 Code and the CMSIS Solution extension (`packInstall()`), and the CMSIS
 Solution extension behind `cmsis_query` and `create_solution`
 (`solutionExtension()`, its activation state and exports read at each
-use). `get_session_status` adds a line
+use), and who holds a GDB port before a launch (`gdbPortHolder()`: the
+other windows' claims, which the window's coordinator hands the handler's
+constructor, then a bind test). `get_session_status` adds a line
 on the serial port from it (#49): the port held, for whom and how long idle,
 or why it was released, seen from the MCP session that asks. `VSCODE_HOST` looks each of them up in VS Code at the
 moment of the call. Unit tests override `host()` with a scaled clock, so a
@@ -940,6 +952,7 @@ by #56.
 | `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build or rebuild: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0, and of a clean |
 | `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
 | `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
+| `src/core/gdbServerPorts.ts`, `src/core/gdbPortGuard.ts` | The GDB port of a launch configuration, a session and a CMSIS Run task, the claims a window publishes; who holds a port (the other windows' claims, the bind test) and the `PROBE_BUSY` refusal |
 | `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, probe guard, pyOCD lookup |
 | `src/core/flashController.ts` | `resolvePyocd()`, the pyOCD process and its output |
 

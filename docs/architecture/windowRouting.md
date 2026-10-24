@@ -50,6 +50,7 @@ release after it are debug lines.
 | `src/windowStatus.ts`, `src/core/windowStatus.ts` | the status-bar item and Select Target Window: the wiring, and the pure rendering |
 | `assets/icons/cda-robot.svg`, `assets/icons/cda-icons.woff` | the robot artwork and its one-glyph font, contributed by `package.json` as the product icon `cda-robot` |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
+| `src/core/gdbServerPorts.ts`, `src/core/gdbPortGuard.ts` | the GDB ports a window publishes (`windowGdbPorts()`, `gdbPortClaimsOf()`), and who holds one before a launch (`findGdbPortHolder()`, the bind test, `gdbPortRefusal()`) |
 
 ## The registry
 
@@ -62,7 +63,9 @@ activate it; a changed answer is published at once), and its role (`router`
 or `worker`; windows of 2.5.0 and earlier write none). Since 2.5.1 it also
 holds the extension `version`, and from the first heartbeat on `lagMs`, the
 event-loop delay of the last 20 s, and `busy`, the agent calls running there
-for more than 10 s (#14). The file is written atomically, refreshed every
+for more than 10 s (#14). Since 2.7.0 it lists `gdbPorts`, the local GDB
+ports the window's live debug sessions and CMSIS Run tasks use (see
+[GDB ports](#gdb-ports)). The file is written atomically, refreshed every
 20 s, and rewritten at once when a debug session starts or ends, VS Code's
 focused session changes, or the folders change — the session state is what
 routes every call that names no file. `hasActiveSession` comes from the
@@ -230,6 +233,54 @@ reply of `select_debug_window` says when the pin overrides a default. Its
 lines (`describeWindow()`) also name the calls busy in a window, with their
 age and whether they are past their fence, and an event-loop lag above 1 s:
 `pid=4711 | … | router | busy: cmsis_action 240 s | event-loop lag 4.2 s`.
+
+## GDB ports
+
+Routing keeps each call in its own window, but GDB servers share the
+machine's ports, and CMSIS Solution gives its pyOCD, J-Link and FVP set-ups
+the same one, 3333. A live test showed what follows. Window A's CMSIS Run task (pyOCD) listened on
+127.0.0.1:3333; an FVP launch in window B, whose container Docker publishes
+on `*:3333`, connected GDB to pyOCD before the model was up, halted A's
+board, and the launch still read as a success with an empty stack. And the
+FVP shim's `docker rm -f` of the container on its port ended a session of
+another window. Neither window could tell, since a debug session in one
+extension host is invisible to the others.
+
+So every window publishes the ports it uses, and a launch looks first:
+
+- **Publishing.** `WindowCoordinator` lists, as `GdbPortClaim`s in its
+  entry's `gdbPorts`, the port of each live CMSIS Debugger session
+  (`target.port`, or for a launch the port its GDB server's parameters set,
+  such as the FVP's `GDBServer.port`) and of each live CMSIS Run task (the
+  port its command line sets, else for pyOCD's `gdbserver` the ports of the
+  cbuild-run file it reads, else the server's default) — with the
+  configuration or task name and the server (`windowGdbPorts()` in
+  `src/core/gdbServerPorts.ts`). It looks again when a session or a task
+  starts or ends, and on the heartbeat, and republishes only a change. The
+  field is optional: older windows write none and ignore it, and readers
+  take it through `gdbPortClaimsOf()`, which drops what it does not know.
+  `describeWindow()` names the ports in the window listing.
+- **Checking.** Before `cmsis_action load_and_debug` (for each launch
+  configuration that fixes a port), `run` and `load_and_run` (for the ports
+  of the CMSIS Run task in `tasks.json`), and `start_debugging` of a launch
+  configuration with a fixed port, the handler asks
+  `HandlerHost.gdbPortHolder()`: the other windows' claims first, which the
+  coordinator hands its `DebuggingHandler` from the registry; else a bind
+  test (`portInUse()` in `src/core/gdbPortGuard.ts`) on 127.0.0.1, ::1 and
+  the wildcard, each closed at once. A claimed or taken port refuses the
+  start with `PROBE_BUSY` (`gdbPortRefusal()`): the port, the window and
+  what holds it there, or that another program listens, and the way out —
+  stop it there, or another port.
+- **Never a connection.** A GDB server takes any connection as a client,
+  and pyOCD halts its target for one, so the check binds, never connects.
+  The binds run one after the other: on Linux our own open loopback probe
+  would make the wildcard bind fail. On macOS a bind notices only a
+  listener on the same address, which is why all three are tried: pyOCD
+  listens on 127.0.0.1, Docker on the wildcard.
+- **Not checked.** `attach` connects to a server that is meant to listen.
+  A listener that is no window's — a GDB server started by hand, or a model
+  an earlier session left behind — is refused as "another program": the
+  check cannot tell which of them it is, only that GDB would reach it.
 
 ## Forwarding
 
@@ -503,7 +554,12 @@ releases the window's serial ports, giving that step at most two seconds.
   matching; the directory name, modes, and refused directories; the default
   target file and how its window is found again; a stale router entry
   skipped but kept, a stale worker entry pruned, the heartbeat's patch, and
-  the busy calls and lag in `describeWindow()`
+  the busy calls, lag and GDB ports in `describeWindow()`
+- `src/test/gdbServerPorts.test.ts`, `src/test/gdbPortGuard.test.ts`: the
+  GDB port of a configuration, a session and a CMSIS Run, the cbuild-run
+  file's ports, the claims a window publishes and what readers admit; the
+  bind test against servers on 127.0.0.1 and the wildcard without a client,
+  the holder, the refusal texts
 - `src/test/windowStatus.test.ts`: the item's text and tooltip in every state,
   the Select Target Window entries, and a tool name for every op
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'
@@ -511,7 +567,8 @@ releases the window's serial ports, giving that step at most two seconds.
 - `src/test/windowCoordinator.test.ts`: the serial teardown on dispose; the
   role and version the window publishes; the debug session it publishes — a
   session that ends while still focused, the one that remains of two, a
-  change of focus; the warning about a router that
+  change of focus; the GDB ports it publishes, again on a change, and the
+  other windows' ports it gives its handler; the warning about a router that
   stopped running, once per episode, none for a healthy router, and by
   port for a router of 2.5.0 (injected notifier and clock)
 - `src/test/opTable.test.ts`: the op table and `targetHintOf()`

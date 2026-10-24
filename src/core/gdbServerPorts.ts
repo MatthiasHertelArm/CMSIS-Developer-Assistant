@@ -37,6 +37,14 @@
  * `isFvpSession` tells from a session's configuration whether its GDB server
  * is an Arm FVP's, which ignores GDB's interrupt while the model runs.
  *
+ * Which local port a GDB server will listen on is read the same way, from
+ * the command line and the configuration: `configurationGdbPort` for a
+ * launch configuration or a live session, `runTaskGdbPorts` for a CMSIS Run
+ * task. Each window publishes the ports its live sessions and CMSIS Run
+ * tasks use (`windowGdbPorts`, as `GdbPortClaim`s in its registry entry), so
+ * that a launch in another window on the same port is refused before GDB
+ * connects to the wrong server (`src/core/gdbPortGuard.ts`).
+ *
  * No `vscode`: the launch.json text and the task come in.
  */
 
@@ -129,33 +137,57 @@ export interface CmsisLaunchConfiguration {
     preLaunchTask?: string;
     /** `target.server`: the GDB server program the debug adapter starts for a launch (`pyocd`, `JLinkGDBServerCL.exe`). */
     server?: string;
+    /** The local port the GDB server of a launch will listen on, when the configuration fixes one (`configurationGdbPort`). */
+    gdbPort?: number;
+    /** That GDB server, when its command line names one. */
+    gdbServer?: GdbServerKind;
+}
+
+/** The `configurations` array of a launch.json text, comments and trailing commas allowed; none when it has no such array. */
+function launchConfigurationsOf(launchJson: string): unknown[] {
+    const parsed: unknown = parseJsonc(launchJson, [], { allowTrailingComma: true });
+    const configurations = (parsed as { configurations?: unknown } | undefined)?.configurations;
+    return Array.isArray(configurations) ? configurations : [];
 }
 
 /**
  * The configurations of a launch.json text that CMSIS Solution's Load & Debug
  * and Attach can start: request `launch` or `attach`, with a `cmsis` node;
- * with the pre-launch task and the GDB server program of each.
+ * with the pre-launch task and the GDB server program of each, and for a
+ * launch the GDB port its server will use.
  */
 export function cmsisLaunchConfigurations(launchJson: string): CmsisLaunchConfiguration[] {
-    const parsed: unknown = parseJsonc(launchJson, [], { allowTrailingComma: true });
-    const configurations = (parsed as { configurations?: unknown } | undefined)?.configurations;
-    if (!Array.isArray(configurations)) {
-        return [];
-    }
     const found: CmsisLaunchConfiguration[] = [];
-    for (const entry of configurations) {
+    for (const entry of launchConfigurationsOf(launchJson)) {
         const config = entry as { name?: unknown; request?: unknown; cmsis?: unknown; preLaunchTask?: unknown; target?: { server?: unknown } };
         if ((config?.request !== 'launch' && config?.request !== 'attach') || typeof config.cmsis !== 'object' || config.cmsis === null) {
             continue;
         }
+        const listens = config.request === 'launch' ? configurationGdbPort(config) : undefined;
         found.push({
             name: typeof config.name === 'string' ? config.name : config.request,
             request: config.request,
             ...(typeof config.preLaunchTask === 'string' ? { preLaunchTask: config.preLaunchTask } : {}),
             ...(typeof config.target?.server === 'string' && config.target.server.trim() !== '' ? { server: config.target.server.trim() } : {}),
+            ...(listens ? { gdbPort: listens.port } : {}),
+            ...(listens?.server ? { gdbServer: listens.server } : {}),
         });
     }
     return found;
+}
+
+/** The configuration of a launch.json text with this `name`; undefined when there is none. */
+export function launchConfigurationNamed(launchJson: string, name: string): unknown {
+    return launchConfigurationsOf(launchJson).find((entry) => (entry as { name?: unknown } | undefined)?.name === name);
+}
+
+/** The configuration named `name` in `folder/.vscode/launch.json`; undefined when there is none or the file cannot be read. Reads the file only. */
+export async function folderLaunchConfiguration(folder: string, name: string): Promise<unknown> {
+    try {
+        return launchConfigurationNamed(await fs.promises.readFile(path.join(folder, '.vscode', 'launch.json'), 'utf8'), name);
+    } catch {
+        return undefined;
+    }
 }
 
 /** The CMSIS launch configurations of `folder/.vscode/launch.json`; none when the file cannot be read. Reads the file only. */
@@ -244,4 +276,246 @@ export function isFvpSession(configuration: unknown): boolean {
         const word = wordOf(parameter)?.trim();
         return word !== undefined && (FVP_GDB_SERVER_PLUGIN.test(word) || FVP_GDB_SERVER_PORT.test(word));
     });
+}
+
+// ── The GDB port a server will listen on ────────────────────────────────────
+
+/** A GDB server whose command line the port logic reads. */
+export type GdbServerKind = 'pyOCD' | 'J-Link' | 'Arm FVP';
+
+/**
+ * A local GDB port a window's live debug session or CMSIS Run task uses, as
+ * the window's registry entry publishes it (`gdbPorts`). Windows of earlier
+ * versions publish none, and readers take only what `gdbPortClaimsOf` admits.
+ */
+export interface GdbPortClaim {
+    port: number;
+    /** What uses it: a debug session (its GDB server, or the one it attached to) or the CMSIS Run task. */
+    source: 'session' | 'cmsis-run';
+    /** The session's configuration name or the task's label: `STLink@pyOCD (launch)`, `CMSIS Run`. */
+    label: string;
+    /** The GDB server, when its command line names one. */
+    server?: GdbServerKind;
+}
+
+/** A live debug session, as the window's claims read it. */
+export interface SessionPortFacts {
+    name: string;
+    configuration: unknown;
+}
+
+/** A live CMSIS Run task, as the window's claims read it. */
+export interface RunPortFacts {
+    name: string;
+    /** Its program and arguments (`taskCommandWords`); undefined when it has none. */
+    words: readonly string[] | undefined;
+}
+
+/** pyOCD's executable; its `gdbserver` subcommand hosts the GDB server. */
+const PYOCD_PROGRAM = /^pyocd(?:\.exe)?$/i;
+/** The J-Link GDB server: `JLinkGDBServer`, `JLinkGDBServerCL`, `JLinkGDBServerCLExe`, `JLinkGDBServerCL.exe`. */
+const JLINK_GDB_SERVER = /^JLinkGDBServer/i;
+/** The FVP plugin's port parameter, alone or glued to `-C`: `GDBServer.port=3333`, `-CGDBServer.port=3333`. */
+const FVP_PORT_PARAMETER = /^(?:-C)?GDBServer\.port=(\S*)$/i;
+/** The port pyOCD's `gdbserver` listens on when neither its command line nor the cbuild-run file names one. */
+const PYOCD_DEFAULT_PORT = 3333;
+/** The port of the J-Link GDB server without `-port`. */
+const JLINK_DEFAULT_PORT = 2331;
+/** Hosts a GDB on this machine reaches as itself; a server on any other host holds no local port. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['', 'localhost', '127.0.0.1', '::1', '[::1]']);
+/** The label of the task CMSIS Solution writes for its Run button. */
+const RUN_TASK_LABEL = 'CMSIS Run';
+
+/** The file name of a program word, without its folders. */
+function programName(word: string): string {
+    return word.split(/[\\/]/).pop() ?? word;
+}
+
+/** Which GDB server a command line runs: an FVP (the model, or a shim that loads its GDBServer plugin), pyOCD or J-Link. */
+export function gdbServerKind(words: readonly string[] | undefined): GdbServerKind | undefined {
+    if (!words || words.length === 0) {
+        return undefined;
+    }
+    const program = programName(words[0]);
+    if (FVP_MODEL.test(program) || words.some((word) => FVP_GDB_SERVER_PLUGIN.test(word) || FVP_PORT_PARAMETER.test(word))) {
+        return 'Arm FVP';
+    }
+    if (PYOCD_PROGRAM.test(program)) {
+        return 'pyOCD';
+    }
+    return JLINK_GDB_SERVER.test(program) ? 'J-Link' : undefined;
+}
+
+/**
+ * The port a GDB server's command line sets: `-C GDBServer.port=<n>` (Arm
+ * FVP), `--port <n>`, `--port=<n>` or, for pyOCD, `-p <n>`, and `-port <n>`
+ * (J-Link). Undefined when it sets none, or not as a number.
+ */
+export function commandLinePort(words: readonly string[]): number | undefined {
+    const pyocd = gdbServerKind(words) === 'pyOCD';
+    for (let index = 1; index < words.length; index++) {
+        const word = words[index].trim();
+        const fixed = FVP_PORT_PARAMETER.exec(word) ?? /^--port=(\S*)$/.exec(word);
+        if (fixed) {
+            return portOf(fixed[1]);
+        }
+        if (word === '--port' || /^-port$/i.test(word) || (pyocd && word === '-p')) {
+            return portOf(words[index + 1]);
+        }
+    }
+    return undefined;
+}
+
+/** The GDB server program and its parameters of a configuration's `target`; the adapter's default server when it names none. */
+function serverWords(target: { server?: unknown; serverParameters?: unknown } | undefined): string[] {
+    const server = wordOf(target?.server)?.trim();
+    const parameters: unknown[] = Array.isArray(target?.serverParameters) ? target.serverParameters : [];
+    return [server !== undefined && server !== '' ? server : 'gdbserver',
+        ...parameters.map(wordOf).filter((word): word is string => word !== undefined)];
+}
+
+/**
+ * The local GDB port of a CMSIS Debugger configuration (`gdbtarget`), as a
+ * launch.json holds it or a live session carries it: `target.port`, else for
+ * a launch the port its GDB server's parameters set (an FVP's
+ * `GDBServer.port`, with `target.port` left empty for the port detection).
+ * Undefined for another debug type, a server on another host, and a launch
+ * whose port is not fixed.
+ */
+export function configurationGdbPort(configuration: unknown): { port: number; server?: GdbServerKind } | undefined {
+    const config = configuration as { type?: unknown; request?: unknown; target?: { host?: unknown; port?: unknown; server?: unknown; serverParameters?: unknown } } | undefined;
+    if (config?.type !== 'gdbtarget') {
+        return undefined;
+    }
+    const host = typeof config.target?.host === 'string' ? config.target.host.trim().toLowerCase() : '';
+    if (!LOOPBACK_HOSTS.has(host)) {
+        return undefined;
+    }
+    const launch = config.request === 'launch';
+    const words = serverWords(config.target);
+    const port = portOf(config.target?.port) ?? (launch ? commandLinePort(words) : undefined);
+    if (port === undefined) {
+        return undefined;
+    }
+    const server = launch ? gdbServerKind(words) : undefined;
+    return server ? { port, server } : { port };
+}
+
+/**
+ * The cbuild-run file a pyOCD CMSIS Run reads its GDB ports from: the
+ * argument of `--cbuild-run` when the command line sets no port itself.
+ * Undefined for any other command line.
+ */
+export function runTaskCbuildRun(words: readonly string[] | undefined): string | undefined {
+    if (!words || gdbServerKind(words) !== 'pyOCD' || !words.includes('gdbserver') || commandLinePort(words) !== undefined) {
+        return undefined;
+    }
+    const at = words.indexOf('--cbuild-run');
+    return at >= 0 && at + 1 < words.length ? words[at + 1] : undefined;
+}
+
+/**
+ * The GDB ports a CMSIS Run task serves: the port its command line sets;
+ * else for pyOCD's `gdbserver` the ports of the cbuild-run file it reads
+ * (`cbuildRunPorts`, one per core) or pyOCD's 3333, and for the J-Link GDB
+ * server its 2331. None for a task that hosts no GDB server, such as the FVP
+ * adapter's Run, which is the model without its plugin.
+ */
+export function runTaskGdbPorts(words: readonly string[] | undefined, cbuildRunPorts: readonly number[] = []): number[] {
+    if (!words || runCommandKind(words) !== 'gdbServer') {
+        return [];
+    }
+    const fixed = commandLinePort(words);
+    if (fixed !== undefined) {
+        return [fixed];
+    }
+    switch (gdbServerKind(words)) {
+        case 'pyOCD':
+            return words.includes('gdbserver') ? (cbuildRunPorts.length > 0 ? [...cbuildRunPorts] : [PYOCD_DEFAULT_PORT]) : [];
+        case 'J-Link':
+            return [JLINK_DEFAULT_PORT];
+        default:
+            return [];
+    }
+}
+
+/**
+ * The program and arguments of the `CMSIS Run` task in a tasks.json text, as
+ * CMSIS Solution writes it (`command` and `args`); undefined when there is no
+ * such task or it names no command.
+ */
+export function cmsisRunCommand(tasksJson: string): string[] | undefined {
+    const parsed: unknown = parseJsonc(tasksJson, [], { allowTrailingComma: true });
+    const tasks = (parsed as { tasks?: unknown } | undefined)?.tasks;
+    if (!Array.isArray(tasks)) {
+        return undefined;
+    }
+    const run = tasks.find((task) => (task as { label?: unknown } | undefined)?.label === RUN_TASK_LABEL) as { command?: unknown; args?: unknown } | undefined;
+    return run ? taskCommandWords({ execution: { command: run.command, args: run.args } }) : undefined;
+}
+
+/** The `CMSIS Run` command of `folder/.vscode/tasks.json`; undefined when there is none or the file cannot be read. Reads the file only. */
+export async function folderCmsisRunCommand(folder: string): Promise<string[] | undefined> {
+    try {
+        return cmsisRunCommand(await fs.promises.readFile(path.join(folder, '.vscode', 'tasks.json'), 'utf8'));
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * The GDB ports a window uses, as its registry entry publishes them: its
+ * CMSIS Run tasks first (each one hosts its server), then its debug
+ * sessions; one claim per port. `cbuildRunPorts` reads the ports of the
+ * cbuild-run file a pyOCD Run names (`runTaskCbuildRun`).
+ */
+export async function windowGdbPorts(
+    sessions: readonly SessionPortFacts[],
+    runs: readonly RunPortFacts[],
+    cbuildRunPorts: (file: string) => Promise<readonly number[]>,
+): Promise<GdbPortClaim[]> {
+    const claims: GdbPortClaim[] = [];
+    const add = (claim: GdbPortClaim): void => {
+        if (!claims.some((known) => known.port === claim.port)) {
+            claims.push(claim);
+        }
+    };
+    for (const run of runs) {
+        const file = runTaskCbuildRun(run.words);
+        const fromFile = file !== undefined ? await cbuildRunPorts(file) : [];
+        const server = gdbServerKind(run.words);
+        for (const port of runTaskGdbPorts(run.words, fromFile)) {
+            add({ port, source: 'cmsis-run', label: run.name, ...(server ? { server } : {}) });
+        }
+    }
+    for (const session of sessions) {
+        const listens = configurationGdbPort(session.configuration);
+        if (listens) {
+            add({ port: listens.port, source: 'session', label: session.name, ...(listens.server ? { server: listens.server } : {}) });
+        }
+    }
+    return claims;
+}
+
+const GDB_SERVER_KINDS: ReadonlySet<unknown> = new Set<GdbServerKind>(['pyOCD', 'J-Link', 'Arm FVP']);
+
+/**
+ * The claims a registry entry's `gdbPorts` holds, each field checked: an
+ * entry of an earlier version has none, and one of a later version may carry
+ * what this one does not know, which is left out.
+ */
+export function gdbPortClaimsOf(value: unknown): GdbPortClaim[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const claims: GdbPortClaim[] = [];
+    for (const item of value) {
+        const { port, source, label, server } = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>;
+        const valid = portOf(port);
+        if (valid === undefined || (source !== 'session' && source !== 'cmsis-run') || typeof label !== 'string') {
+            continue;
+        }
+        claims.push({ port: valid, source, label, ...(GDB_SERVER_KINDS.has(server) ? { server: server as GdbServerKind } : {}) });
+    }
+    return claims;
 }

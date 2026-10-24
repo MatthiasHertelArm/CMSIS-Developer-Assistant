@@ -202,6 +202,37 @@ export function cbuildRunProbeId(content: string): string | undefined {
 }
 
 /**
+ * The ports of the `gdbserver:` list of the `debugger:` node, one per core,
+ * in file order: where pyOCD's `gdbserver --cbuild-run` listens when its
+ * command line sets no port. None when the file lists none.
+ *
+ *   cbuild-run:
+ *     debugger:
+ *       gdbserver:
+ *         - port: 3333
+ *         - port: 3334
+ *           pname: cm4
+ */
+export function cbuildRunGdbPorts(content: string): number[] {
+    const lines = content.split(/\r?\n/);
+    const start = lines.findIndex((line) => /^ {2}debugger:\s*$/.test(line));
+    if (start < 0) { return []; }
+    const ports: number[] = [];
+    let inList = false;
+    for (const line of lines.slice(start + 1)) {
+        if (/^ {0,2}\S/.test(line)) { break; }
+        if (/^ {4}\S/.test(line)) {
+            inList = /^ {4}gdbserver:\s*$/.test(line);
+            continue;
+        }
+        const m = inList ? line.match(/^ {6,}(?:-\s+)?port:\s*(\d+)\s*$/) : null;
+        const port = m ? Number(m[1]) : NaN;
+        if (Number.isInteger(port) && port > 0 && port < 65_536) { ports.push(port); }
+    }
+    return ports;
+}
+
+/**
  * `$CMSIS_PACK_ROOT`, else the CMSIS-Toolbox default: `%LOCALAPPDATA%\Arm\Packs`
  * on Windows (`<home>\AppData\Local\Arm\Packs` when LOCALAPPDATA is unset),
  * `~/.cache/arm/packs` elsewhere.
