@@ -46,6 +46,18 @@ suite('Problem codes', () => {
         });
     });
 
+    test('GDB_SERVER_NOT_FOUND: the debug adapter cannot start the GDB server program', () => {
+        // Captured: a tester's load_and_debug with J-Link on Windows (CMSIS Debugger 1.10.0, CDA log of 2026-10-23 17:10:29),
+        // the failed launch response; CMSIS Run and attach worked.
+        const fixture = 'gdbserver has hit error Error: spawn JLinkGDBServerCL.exe ENOENT';
+        const known = classifyProblem(`error response to 'launch': ${fixture}`, 'dap');
+        assert.strictEqual(known?.code, 'GDB_SERVER_NOT_FOUND');
+        assert.strictEqual(known?.severity, 'error');
+        assert.ok(known?.hint.startsWith('The debug adapter could not start the GDB server program of the launch configuration'), known?.hint);
+        assert.ok(known?.hint.includes('cmsis_action run starts CMSIS Run'), known?.hint);
+        assert.strictEqual(classifyProblem('spawn arm-none-eabi-gdb ENOENT', 'dap'), undefined, 'only the GDB server start');
+    });
+
     test('TARGET_RUNNING: GDB refuses a command while the target runs', () => {
         // Captured: issue #48, the same row of the table: GDB's refusal of a request on a running target.
         const fixture = 'Cannot execute this command while the target is running';

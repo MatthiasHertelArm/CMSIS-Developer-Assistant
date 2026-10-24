@@ -674,13 +674,15 @@ once when errors arrived that the agent has not seen, and
 - **Codes.** `classifyProblem()` in `src/core/problemCodes.ts` recognises
   known lines and gives them a code, a weight and the next step as the hint.
   The codes are this repository's: `ErrorCode` (#11) and the journal's own
-  `DAP_POWER_UP_FAILED` and `BUILD_ERROR`. A row ships only with a line
-  captured from a real session, which its test holds as a fixture:
+  `DAP_POWER_UP_FAILED`, `GDB_SERVER_NOT_FOUND` and `BUILD_ERROR`. A row
+  ships only with a line captured from a real session, which its test holds
+  as a fixture:
 
   | Line | Code | Weight | Source |
   | ---- | ---- | ------ | ------ |
   | `Failed to power up DAP` | `DAP_POWER_UP_FAILED` | error | `gdb-server` |
   | `Waiting for a debug probe matching unique ID` | `PROBE_BUSY` | error | `gdb-server` |
+  | `gdbserver has hit error Error: spawn … ENOENT` | `GDB_SERVER_NOT_FOUND` | error | as reported |
   | `target is running` | `TARGET_RUNNING` | warning | as reported |
   | `no active solution` | `CMSIS_NO_SOLUTION` | error | as reported |
 

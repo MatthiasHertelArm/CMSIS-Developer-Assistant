@@ -39,7 +39,7 @@ import type { ProblemSeverity, ProblemSource } from './problemJournal';
 import type { ErrorCode } from './toolResult';
 
 /** What a record's `code` can be: an `ErrorCode`, or a code only the journal uses. */
-export type ProblemCode = ErrorCode | 'DAP_POWER_UP_FAILED' | 'BUILD_ERROR';
+export type ProblemCode = ErrorCode | 'DAP_POWER_UP_FAILED' | 'BUILD_ERROR' | 'GDB_SERVER_NOT_FOUND';
 
 /** What `classifyProblem` knows about a line. */
 export interface ProblemClass {
@@ -77,6 +77,16 @@ const ROWS: readonly ProblemRow[] = [
         source: 'gdb-server',
         hint: 'pyOCD sees no free probe: another task or session holds it (cmsis_action stop_run or stop_debugging, then retry), '
             + 'or the probe is not connected or lacks its USB driver (ask the user).',
+    },
+    {
+        // cdt-gdb-adapter could not start the server program the launch configuration names (Windows: ENOENT).
+        pattern: /gdbserver has hit error Error: spawn \S+ ENOENT/i,
+        code: 'GDB_SERVER_NOT_FOUND',
+        severity: 'error',
+        hint: 'The debug adapter could not start the GDB server program of the launch configuration: it is not installed, or its folder is not '
+            + 'on the PATH VS Code was started with. cmsis_action run starts CMSIS Run, which can find it through the tools environment, then '
+            + 'cmsis_action attach; otherwise ask the user to install the server (J-Link: the SEGGER J-Link Software) or add its folder to PATH '
+            + 'and restart VS Code.',
     },
     {
         pattern: /\btarget is running\b/i,
