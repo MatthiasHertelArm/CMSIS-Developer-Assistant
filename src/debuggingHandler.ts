@@ -1780,6 +1780,7 @@ export class DebuggingHandler
             host: this.host(),
             awaitLiveSession: (overrideMs) => this.awaitLiveSession(overrideMs, true),
             renderFullState: (state) => this.fullState(state),
+            journal: this.journal,
         }, args.action, args.target, waitMs, args.path, args.client, args.pack, args), { capMs: LONG_LIMIT_CAP_MS, advice: CMSIS_FENCE_ADVICE });
         return PROGRAMMING_ACTIONS.has(args.action) ? this.noteHeldSerialPort(run) : run();
     }

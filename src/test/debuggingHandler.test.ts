@@ -32,8 +32,8 @@ import { activeCbuildRunFile, GET_CBUILD_RUN_FILE, type SolutionCommands } from 
 import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from '../core/toolResult';
-import { ProblemInput, ProblemJournal, problemJson } from '../core/problemJournal';
-import type { HandlerHost } from '../handler/host';
+import { ProblemInput, ProblemJournal, problemJournal, problemJson } from '../core/problemJournal';
+import type { HandlerHost, ToolEnvironment } from '../handler/host';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
@@ -3342,6 +3342,175 @@ suite('DebuggingHandler', () => {
                 assert.match(lost.message, /^CMSIS 'load_and_debug' on HE started a debug session but it did NOT survive the initial connect — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-1\); t\+3s: thread probe failed — no answer within 2 s, then t\+6s: thread probe failed — session ended\.$/);
                 assert.strictEqual(lost.hint, 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
                     + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.');
+            });
+
+            suite('the program of a failed Load or launch: J-Link and its PATH', () => {
+                /** CMSIS Load as CMSIS Solution 1.72.0 writes it for the J-Link adapter: on Windows (a tester's XMC4700 project), and on macOS and Linux. */
+                const JLINK_LOAD_WINDOWS = 'echo Connect > .cmd.jlink && echo LoadFile "out/snmp_agent_demo/snmp_agent_demo_flash/snmp_agent_demo.axf" '
+                    + '>> .cmd.jlink && echo Exit >> .cmd.jlink && JLink.exe -device XMC4700-F144x2048 -if swd -speed 4000 -commandfile .cmd.jlink';
+                const JLINK_LOAD_POSIX = 'echo Connect > .cmd.jlink && echo LoadFile "out/blinky/blinky.axf" >> .cmd.jlink && echo Exit >> .cmd.jlink && '
+                    + 'JLinkExe -device XMC4700-F144x2048 -if swd -speed 4000 -commandfile .cmd.jlink';
+                const SEGGER_JLINK = 'C:\\Program Files\\SEGGER\\JLink';
+                const LABELS = ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase'];
+                const loadTask = (commandLine: string): FixtureTask => ({ ...shellTask('CMSIS Load'), execution: { commandLine } });
+                /** A Windows machine whose files are `files`, compared without regard to case; `terminalPath` is the PATH of terminal.integrated.env.windows. */
+                const windowsTools = (files: readonly string[], terminalPath?: string): ToolEnvironment => ({
+                    extension: () => undefined,
+                    pathEnv: 'C:\\Windows\\system32;C:\\Windows',
+                    platform: 'win32',
+                    env: (name) => ({ PATHEXT: '.COM;.EXE;.BAT;.CMD', PROGRAMFILES: 'C:\\Program Files' } as Record<string, string>)[name.toUpperCase()],
+                    terminalEnv: () => (terminalPath === undefined ? undefined : { PATH: terminalPath }),
+                    isFile: (file) => files.some((known) => known.toLowerCase() === file.toLowerCase()),
+                    listDir: () => [],
+                });
+                /** The fix and the pointer every hint about a missing program ends with; the procedure holds the steps. */
+                const STEPS = 'then restart VS Code completely (all windows); knowledge_get { id: "proc-debugger-troubleshooting" } has the steps.';
+                const NOT_FOUND_TAIL = `${STEPS} This is a terminal result — do not wait for an output file.`;
+                const JLINK_MEANING = '"Cannot connect to J-Link" there means J-Link finds no free probe: another task or session holds it '
+                    + '(cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB driver (ask the user); '
+                    + '"Cannot connect to target" means the probe answers but the device does not: its power, the cable, or the device name the task passes. '
+                    + 'This is a terminal result — do not wait for an output file.';
+                let dir = '';
+                setup(() => {
+                    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-jlink-'));
+                });
+                teardown(() => {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                });
+
+                /** The hint of a load whose J-Link task fails with code 1 after `afterMs` of real time, on a clock 20 times as fast. */
+                const failedLoadHint = async (tools: ToolEnvironment, commandLine: string, afterMs = 5): Promise<string | undefined> => {
+                    const w = jobWorld(20, { toolEnvironment: () => tools });
+                    w.tasks.fetched = workspaceTasks(dir, LABELS);
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.cmsisLoad': () => {
+                            const load = w.tasks.execution(loadTask(commandLine));
+                            setTimeout(() => {
+                                w.tasks.start(load);
+                                setTimeout(() => w.tasks.finish(load, 1), afterMs);
+                            }, 5);
+                        },
+                    });
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'load' }), 'TASK_FAILED');
+                    assert.match(failed.message, /^❌ CMSIS 'load' FAILED on HE — task 'CMSIS Load' exited with code 1 after [\d.]+ s \(job l-1\)\.$/);
+                    again();
+                    return failed.hint;
+                };
+
+                test('Windows: a J-Link Load that fails at once names JLink.exe missing, or the SEGGER folder that holds it; found on the tasks\' PATH, J-Link\'s own lines', async () => {
+                    assert.strictEqual(await failedLoadHint(windowsTools([]), JLINK_LOAD_WINDOWS),
+                        'JLink.exe is not on the PATH of the CMSIS tasks (searched: VS Code\'s PATH), so \'CMSIS Load\' could not start it. Ask the user to install '
+                            + `the SEGGER J-Link Software or add its folder to the system or user PATH, ${NOT_FOUND_TAIL}`);
+                    assert.strictEqual(await failedLoadHint(windowsTools([`${SEGGER_JLINK}\\JLink.exe`]), JLINK_LOAD_WINDOWS),
+                        'JLink.exe is not on the PATH of the CMSIS tasks (searched: VS Code\'s PATH), so \'CMSIS Load\' could not start it, but '
+                            + `${SEGGER_JLINK} holds it. Ask the user to add that folder to the system or user PATH, ${NOT_FOUND_TAIL}`);
+                    assert.strictEqual(await failedLoadHint(windowsTools([`${SEGGER_JLINK}\\JLink.exe`], `${SEGGER_JLINK};\${env:PATH}`), JLINK_LOAD_WINDOWS),
+                        'Its output is in the \'CMSIS Load\' terminal, which no tool reads: ask the user for the terminal\'s last lines. JLink.exe is on the PATH '
+                            + `of the CMSIS tasks (${SEGGER_JLINK}\\JLink.exe, from terminal.integrated.env.windows), so it ran and reported the failure there. `
+                            + JLINK_MEANING);
+                });
+
+                test('macOS and Linux: JLinkExe missing from tools-environment.yml and VS Code\'s PATH; a J-Link Load that failed slowly asks for the terminal\'s lines', async () => {
+                    fs.mkdirSync(path.join(dir, '.cmsis'));
+                    fs.writeFileSync(path.join(dir, '.cmsis', 'tools-environment.yml'), ['cmsis-tools-environment:', '  version: 1.0.0', '  environment:',
+                        '    path:', '      - /x/cmsis-toolbox/bin', '      - /x/gcc/bin', ''].join('\n'));
+                    const looked: string[] = [];
+                    const linux: ToolEnvironment = {
+                        extension: () => undefined, pathEnv: '/usr/bin:/bin', platform: 'linux', listDir: () => [],
+                        isFile: (file) => {
+                            looked.push(file);
+                            return false;
+                        },
+                    };
+                    assert.strictEqual(await failedLoadHint(linux, JLINK_LOAD_POSIX),
+                        'JLinkExe is not on the PATH of the CMSIS tasks (searched: .cmsis/tools-environment.yml, VS Code\'s PATH), so \'CMSIS Load\' could not '
+                            + `start it. Ask the user to install the SEGGER J-Link Software or add its folder to the system or user PATH, ${NOT_FOUND_TAIL}`);
+                    assert.deepStrictEqual(looked, ['/x/cmsis-toolbox/bin/JLinkExe', '/x/gcc/bin/JLinkExe', '/usr/bin/JLinkExe', '/bin/JLinkExe',
+                        '/opt/SEGGER/JLink/JLinkExe']);
+                    looked.length = 0;
+                    // 150 ms of real time is 3 s on the handler's clock: J-Link ran, so its own lines are asked for and nothing is looked up.
+                    assert.strictEqual(await failedLoadHint(linux, JLINK_LOAD_POSIX, 150),
+                        `Its output is in the 'CMSIS Load' terminal, which no tool reads: ask the user for the terminal's last lines. ${JLINK_MEANING}`);
+                    assert.deepStrictEqual(looked, []);
+                });
+
+                test('a pyOCD Load keeps the flash hint word for word, at once or not', async () => {
+                    const w = jobWorld(20, { toolEnvironment: () => windowsTools([]) });
+                    const pyocd: FixtureTask = {
+                        ...shellTask('CMSIS Load'),
+                        execution: { command: 'pyocd', args: ['load', '--probe', 'cmsisdap:', '--cbuild-run', '/w/out/demo+HE.cbuild-run.yml'] },
+                    };
+                    solutionOn('HE', { 'cmsis-csolution.cmsisLoad': runs(w.tasks, pyocd, 1) });
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'load' }), 'TASK_FAILED');
+                    assert.strictEqual(failed.hint, 'Its output is in the \'CMSIS Load\' terminal, which no tool reads: call flash, which returns pyOCD\'s own '
+                        + 'error lines, or ask the user for the terminal\'s last lines. "Waiting for a debug probe" there means pyOCD sees no free probe: '
+                        + 'another task or session holds it (cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected '
+                        + 'or lacks its USB driver (ask the user). This is a terminal result — do not wait for an output file.');
+                });
+
+                test('load_and_debug whose adapter cannot spawn JLinkGDBServerCL.exe: on the tasks\' PATH only, in the SEGGER folder only, nowhere, on VS Code\'s PATH', async () => {
+                    fs.mkdirSync(path.join(dir, '.vscode'));
+                    fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({
+                        version: '0.2.0',
+                        configurations: [{
+                            name: 'JLink (launch)', type: 'gdbtarget', request: 'launch', preLaunchTask: 'CMSIS Load',
+                            target: { server: 'JLinkGDBServerCL.exe', serverParameters: ['-device', 'XMC4700-F144x2048'], port: '3333' },
+                            cmsis: { cbuildRunFile: '${command:cmsis-csolution.getCbuildRunFile}' },
+                        }],
+                    }));
+                    const launchHint = async (tools: ToolEnvironment): Promise<string | undefined> => {
+                        const w = jobWorld(50, { toolEnvironment: () => tools });
+                        w.tasks.fetched = workspaceTasks(dir, LABELS);
+                        w.x.getThreads = async () => {
+                            w.x.session = false;
+                            throw new Error('session ended');
+                        };
+                        solutionOn('HE', {
+                            'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                            'cmsis-csolution.cmsisLoadAndDebug': () => {
+                                const load = w.tasks.execution(loadTask(JLINK_LOAD_WINDOWS));
+                                setTimeout(() => {
+                                    w.tasks.start(load);
+                                    w.tasks.finish(load, 0);
+                                    w.x.session = true;
+                                    // What the session tracker journals from cdt-gdb-adapter's output (src/core/problemCodes.ts).
+                                    problemJournal().append({
+                                        source: 'dap', origin: 'JLink (launch)', severity: 'error', code: 'GDB_SERVER_NOT_FOUND',
+                                        message: 'gdbserver has hit error Error: spawn JLinkGDBServerCL.exe ENOENT',
+                                    });
+                                }, 5);
+                            },
+                        });
+                        const lost = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'TASK_FAILED');
+                        assert.match(lost.message, /^CMSIS 'load_and_debug' on HE started a debug session but it did NOT survive the initial connect — 'CMSIS Load' exited 0/);
+                        again();
+                        return lost.hint;
+                    };
+                    const server = `${SEGGER_JLINK}\\JLinkGDBServerCL.exe`;
+                    const onTasksOnly = await launchHint(windowsTools([server], `${SEGGER_JLINK};\${env:PATH}`));
+                    assert.strictEqual(onTasksOnly,
+                        'The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on the PATH of the CMSIS tasks '
+                            + `(${SEGGER_JLINK}, from terminal.integrated.env.windows) but not on the PATH VS Code was started with, which the debug adapter `
+                            + `uses. Ask the user to add ${SEGGER_JLINK} to the system or user PATH, ${STEPS}`);
+                    const inSeggerOnly = await launchHint(windowsTools([server]));
+                    assert.strictEqual(inSeggerOnly,
+                        'The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on neither the PATH VS Code was started with nor the PATH '
+                            + `of the CMSIS tasks (searched: VS Code's PATH), but ${SEGGER_JLINK} holds it. Ask the user to add that folder to the system or `
+                            + `user PATH, ${STEPS}`);
+                    assert.strictEqual(await launchHint(windowsTools([])),
+                        'The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on neither the PATH VS Code was started with nor the PATH '
+                            + 'of the CMSIS tasks (searched: VS Code\'s PATH). Ask the user to install the SEGGER J-Link Software or add its folder to the '
+                            + `system or user PATH, ${STEPS}`);
+                    for (const hint of [onTasksOnly, inSeggerOnly]) {
+                        assert.ok(!/cmsis_action (?:run|attach)/.test(hint ?? ''), hint);
+                    }
+                    // On VS Code's PATH and still ENOENT: Node words a working directory that does not exist the same way.
+                    assert.strictEqual(await launchHint({ ...windowsTools([server]), pathEnv: `C:\\Windows\\system32;${SEGGER_JLINK}` }),
+                        `The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on the PATH VS Code was started with (${server}), so a `
+                            + 'missing working directory is the likelier cause (Node reports it with the same ENOENT): check that the launch configuration\'s '
+                            + 'cwd exists, then cmsis_action load_and_debug again.');
+                });
             });
 
             test('refresh: the panel\'s Refresh, then csolution\'s messages from the rewritten index; an index that stays as it was answers running', async () => {

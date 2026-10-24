@@ -36,6 +36,7 @@
  */
 
 import type { ProblemSeverity, ProblemSource } from './problemJournal';
+import { PROBE_SOFTWARE_STEPS, RESTART_VS_CODE } from './programLookup';
 import type { ErrorCode } from './toolResult';
 
 /** What a record's `code` can be: an `ErrorCode`, or a code only the journal uses. */
@@ -84,9 +85,8 @@ const ROWS: readonly ProblemRow[] = [
         code: 'GDB_SERVER_NOT_FOUND',
         severity: 'error',
         hint: 'The debug adapter could not start the GDB server program of the launch configuration: it is not installed, or its folder is not '
-            + 'on the PATH VS Code was started with. cmsis_action run starts CMSIS Run, which can find it through the tools environment, then '
-            + 'cmsis_action attach; otherwise ask the user to install the server (J-Link: the SEGGER J-Link Software) or add its folder to PATH '
-            + 'and restart VS Code.',
+            + 'on the PATH VS Code was started with. Ask the user to install it (J-Link: the SEGGER J-Link Software) or add its folder to the system '
+            + `or user PATH, ${RESTART_VS_CODE}; ${PROBE_SOFTWARE_STEPS}`,
     },
     {
         pattern: /\btarget is running\b/i,

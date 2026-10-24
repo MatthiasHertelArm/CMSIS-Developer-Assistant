@@ -639,6 +639,57 @@ are coming, and `status` waits for them. The pure parts — the readers of the
 two YAML files, the re-run's command line and environment — are in
 `src/core/buildFailure.ts`.
 
+### Why a Load or a launch failed
+
+A failed Load or Erase leaves its reason in a task terminal no tool reads,
+so its hint says where to get it, and that depends on the program the task
+ran. The tracker keeps each task's command words (`commandOf()`), and
+`taskProgram()` in `src/core/programLookup.ts` reads the kind from them:
+pyOCD, J-Link (the J-Link adapter's Load is a shell line that writes a
+command file and calls `JLink.exe` or `JLinkExe`), an FVP model, another
+program, or unknown. `flashFailedHint()` keeps the pyOCD wording, which
+points at `flash` for pyOCD's own lines, for pyOCD and for an unknown
+command; a J-Link task gets J-Link's two connect failures instead, and any
+other program only the request for the terminal's last lines.
+
+A J-Link task that exits non-zero within `FAILED_AT_ONCE_MS` (2 s) most
+likely never ran: the shell did not find the program. Then the program is
+looked up on the PATH the CMSIS tasks run with — the directories of
+`.cmsis/tools-environment.yml`, then the PATH of the setting
+`terminal.integrated.env.<platform>` with its `${env:PATH}` expanded, or VS
+Code's own PATH when the setting has none — honouring `PATHEXT` and case on
+Windows. Missing, the hint says so with the places searched, and names the
+SEGGER installation folder that holds the program when one does; found, it
+asks for the terminal's lines and says J-Link ran.
+
+A launch that loses its session gets the same treatment when the debug
+adapter journaled `GDB_SERVER_NOT_FOUND` during the call: the adapter
+starts the launch configuration's `target.server` with VS Code's own PATH,
+which a terminal setting does not reach, so the server can be on the
+tasks' PATH and still not start. `gdbServerMissingHint()` looks it up on
+both and says which lacks it, replacing the generic lost-launch hint; with
+that record, a load_and_debug whose session never showed is a failure, not
+`running`. The record's own static hint, which knows only the line, still
+rides along with the same fix and pointer. A server found on VS Code's PATH
+points at the launch configuration's `cwd` instead, since Node reports a
+missing working directory with the same `ENOENT`.
+
+These hints carry only what the tool found out — which program is missing
+from which PATH, where it looked, which folder holds it — and one line of
+fix: install the software or put its folder on the system or user PATH,
+then restart VS Code completely. Why there are two PATHs, the default
+folders per platform and what not to do are knowledge, not findings, and
+live in the troubleshooting procedure (`skills/debugger-troubleshooting/`,
+unit `proc-debugger-troubleshooting`), which every such hint names with
+`knowledge_get`. Starting the server with `cmsis_action run` and attaching
+is deliberately not offered: it programs nothing and leaves `load_and_debug`
+broken.
+
+`src/handler/taskProgram.ts` holds this glue: it reads the tools
+environment file and takes the setting, the environment and the file tests
+from the host's `toolEnvironment()`, so tests fake a Windows machine on any
+platform. Nothing is written and nothing is run.
+
 ## The problem journal
 
 What goes wrong in a window shows up in places the agent cannot see: the
@@ -725,7 +776,8 @@ once when errors arrived that the agent has not seen, and
 Everything else the handler needs comes from a `HandlerHost`
 (`src/handler/host.ts`): clock, timers, VS Code's focused frame, the
 window's CMSIS job tracker, its owned serial port, workspace folders, file
-search, where `flash` looks for pyOCD, what `install_pack` asks of VS
+search, where `flash` looks for pyOCD and the hints of a failed J-Link task
+or GDB server start look a program up, what `install_pack` asks of VS
 Code and the CMSIS Solution extension (`packInstall()`), and the CMSIS
 Solution extension behind `cmsis_query` and `create_solution`
 (`solutionExtension()`, its activation state and exports read at each
@@ -772,7 +824,8 @@ by #56.
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
 | `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
-| `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
+| `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line; `flashFailedHint()` by the task's program |
+| `src/core/programLookup.ts`, `src/handler/taskProgram.ts` | The kind of a task's program, the PATH of the CMSIS tasks and VS Code's, the lookup and the SEGGER folders; `failedTaskProgram()`, `gdbServerMissingHint()` |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
 | `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build or rebuild: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0, and of a clean |
 | `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
@@ -791,6 +844,9 @@ by #56.
   classifier, the job state machine, the guard matrix and the tracker,
   replayed over task sequences derived from CMSIS Solution 1.70.1
   (`src/test/fixtures/cmsisTasks/`)
+- `src/test/programLookup.test.ts`: the kind of a task's program, the
+  PATH of the CMSIS tasks, the lookup on Windows and elsewhere, the SEGGER
+  folders
 - `src/test/buildFailure.test.ts`, `src/test/cmsisBuildDiagnosis.test.ts`:
   the two YAML readers on generated files (`src/test/fixtures/buildinfo/`),
   the re-run's command line and the result block, and the diagnosis over

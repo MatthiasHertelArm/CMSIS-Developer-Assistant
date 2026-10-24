@@ -119,11 +119,14 @@ export interface CmsisLaunchConfiguration {
     request: 'launch' | 'attach';
     /** The task VS Code runs first: `CMSIS Load` for the pyOCD and J-Link launches, none for FVP and Arm Debugger. */
     preLaunchTask?: string;
+    /** `target.server`: the GDB server program the debug adapter starts for a launch (`pyocd`, `JLinkGDBServerCL.exe`). */
+    server?: string;
 }
 
 /**
  * The configurations of a launch.json text that CMSIS Solution's Load & Debug
- * and Attach can start: request `launch` or `attach`, with a `cmsis` node.
+ * and Attach can start: request `launch` or `attach`, with a `cmsis` node;
+ * with the pre-launch task and the GDB server program of each.
  */
 export function cmsisLaunchConfigurations(launchJson: string): CmsisLaunchConfiguration[] {
     const parsed: unknown = parseJsonc(launchJson, [], { allowTrailingComma: true });
@@ -133,7 +136,7 @@ export function cmsisLaunchConfigurations(launchJson: string): CmsisLaunchConfig
     }
     const found: CmsisLaunchConfiguration[] = [];
     for (const entry of configurations) {
-        const config = entry as { name?: unknown; request?: unknown; cmsis?: unknown; preLaunchTask?: unknown };
+        const config = entry as { name?: unknown; request?: unknown; cmsis?: unknown; preLaunchTask?: unknown; target?: { server?: unknown } };
         if ((config?.request !== 'launch' && config?.request !== 'attach') || typeof config.cmsis !== 'object' || config.cmsis === null) {
             continue;
         }
@@ -141,6 +144,7 @@ export function cmsisLaunchConfigurations(launchJson: string): CmsisLaunchConfig
             name: typeof config.name === 'string' ? config.name : config.request,
             request: config.request,
             ...(typeof config.preLaunchTask === 'string' ? { preLaunchTask: config.preLaunchTask } : {}),
+            ...(typeof config.target?.server === 'string' && config.target.server.trim() !== '' ? { server: config.target.server.trim() } : {}),
         });
     }
     return found;

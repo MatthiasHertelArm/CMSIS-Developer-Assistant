@@ -115,6 +115,7 @@ import {
     samePath,
     SOLUTION_EXTENSION_ID,
 } from '../core/bootstrapState';
+import type { ProblemJournal } from '../core/problemJournal';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import {
@@ -146,6 +147,7 @@ import {
     stillRunning,
 } from './jobText';
 import { runInstallPack } from './installPack';
+import { failedTaskProgram, gdbServerMissingHint } from './taskProgram';
 
 export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_environment' | 'load' | 'erase' | 'run' | 'load_and_run'
     | 'load_and_debug' | 'attach' | 'detach' | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
@@ -259,6 +261,8 @@ export interface CmsisActionContext {
     awaitLiveSession(overrideMs: number): Promise<LiveSessionWait>;
     /** The full state rendering, which also records the breakpoint list. */
     renderFullState(state: DebugState): string;
+    /** The window's problem journal: a launch reads what the debug adapter said about its GDB server there. */
+    readonly journal: ProblemJournal;
 }
 
 /** Whether the action runs a CMSIS task (build, rebuild, clean, load, erase, run, load_and_run). */
@@ -506,6 +510,8 @@ interface Issue {
     /** ` on HE` or ` on HP@debug, switched from HE`. */
     readonly tag: string;
     readonly target: string | undefined;
+    /** The active solution's csolution file, when the extension names one: where its tools environment is. */
+    readonly solutionPath?: string;
 }
 
 /** The latest time the call may wait until and still answer before its fence. */
@@ -565,7 +571,8 @@ async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<strin
     }
     tracker.issued(job.id);
     const outcome = await tracker.waitFor(job.id, answerBy(issue)) ?? job;
-    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface });
+    const program = failedTaskProgram(issue.context.host, tracker, issue.solutionPath);
+    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface, program });
 }
 
 /** A repeated build, rebuild, clean, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
@@ -575,6 +582,7 @@ async function attachToJob(
     wanted: TargetRef | undefined,
     active: string | undefined,
     deadline: number,
+    solutionPath?: string,
 ): Promise<ToolText> {
     const { host } = context;
     const runningOn = job.target ?? active;
@@ -588,7 +596,7 @@ async function attachToJob(
     const from = job.origin === 'adopted' ? ' from the CMSIS panel' : '';
     const preface = `Attached to the ${job.action} started${from} ${ago} ago (job ${job.id}, not started again). `;
     const outcome = await host.cmsisJobs().waitFor(job.id, deadline - DEADLINE_MARGIN_MS) ?? job;
-    return jobResult(outcome, { tag: onTarget(runningOn), now: host.now(), preface });
+    return jobResult(outcome, { tag: onTarget(runningOn), now: host.now(), preface, program: failedTaskProgram(host, host.cmsisJobs(), solutionPath) });
 }
 
 /**
@@ -612,7 +620,7 @@ async function reportStatus(context: CmsisActionContext, deadline: number): Prom
     const others = open.filter((job) => job.id !== latest.id).map((job) => `${job.action} (job ${job.id})`);
     const preface = others.length > 0 ? `Also in flight: ${others.join(', ')}. ` : undefined;
     const outcome = await tracker.waitFor(latest.id, deadline - DEADLINE_MARGIN_MS) ?? latest;
-    return jobResult(outcome, { tag: onTarget(outcome.target), now: host.now(), preface });
+    return jobResult(outcome, { tag: onTarget(outcome.target), now: host.now(), preface, program: failedTaskProgram(host, tracker) });
 }
 
 /** Names as a list: `'A'`, `'A' and 'B'`, `'A', 'B' and 'C'`. */
@@ -831,15 +839,35 @@ async function writeCmsisTasks(issue: Pick<Issue, 'context' | 'tracker' | 'deadl
     return { labels, missing: { reason: `Update Debug Tasks (cmsis-csolution.updateDebugTasks) ran for the debugger '${debuggerName}' but wrote none` } };
 }
 
+/** What load_and_debug's session phase needs to name a GDB server the debug adapter could not start. */
+interface LaunchFacts {
+    /** The first journal seq of this call's launch. */
+    sinceSeq: number;
+    /** The `target.server` programs of the solution's CMSIS launch configurations. */
+    servers: readonly string[];
+}
+
 /**
  * The last step of load_and_debug and attach: wait for the session, then
  * probe it twice. A session that ended before it came up is not probed.
+ * For load_and_debug (`launch`), a `GDB_SERVER_NOT_FOUND` the debug adapter
+ * reported during the call makes a lost session, or one that never showed,
+ * a failure whose hint says which PATH lacks the server.
  */
-async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean): Promise<ToolText> {
+async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean, launch?: LaunchFacts): Promise<ToolText> {
     const { executor, host } = issue.context;
     const tag = issue.tag;
+    const serverMissing = (): string | undefined => (launch
+        ? gdbServerMissingHint(host, issue.context.journal, launch.sinceSeq, launch.servers, issue.solutionPath)
+        : undefined);
     const wait = await issue.context.awaitLiveSession(SESSION_WAIT_MS);
     if (wait === 'timeout') {
+        const missing = serverMissing();
+        if (missing !== undefined) {
+            throw new ToolError('TASK_FAILED',
+                `CMSIS '${action}'${tag} started no debug session — ${loadNote ? `${loadNote}; ` : ''}the debug adapter could not start the GDB server.`,
+                missing);
+        }
         return {
             text: `CMSIS '${action}'${tag} issued via '${issue.command}'.${loadNote ? ` ${loadNote}` : ''} `
                 + 'The flash/connect pipeline is running in the CMSIS extension '
@@ -869,7 +897,7 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
     const failed = `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${loaded}${survival.detail}.`;
     if (action !== 'attach') {
         // load_and_debug launched its own GDB server: the server's or GDB's own lines say why the session ended.
-        throw new ToolError('TASK_FAILED', failed, LOST_LAUNCH_HINT);
+        throw new ToolError('TASK_FAILED', failed, serverMissing() ?? LOST_LAUNCH_HINT);
     }
     const noRun = !runAlive
         ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
@@ -991,9 +1019,10 @@ function withoutRunNote(answer: ToolText, endpoints: readonly AttachEndpoint[]):
  * instead of launching, and the job stays in `status` as not started.
  * Without it (FVP, Arm Debugger) the session decides alone.
  */
-async function loadAndDebug(issue: Issue, loadFirst: boolean): Promise<ToolText> {
+async function loadAndDebug(issue: Issue, loadFirst: boolean, servers: readonly string[]): Promise<ToolText> {
     const { tracker } = issue;
     const { host } = issue.context;
+    const launch: LaunchFacts = { sinceSeq: issue.context.journal.counters().seq + 1, servers };
     const job = tracker.begin('load_and_debug', issue.target);
     expectSessionOf(issue);
     try {
@@ -1013,7 +1042,7 @@ async function loadAndDebug(issue: Issue, loadFirst: boolean): Promise<ToolText>
     }
     if (first !== 'load') {
         tracker.discard(job.id);
-        return sessionPhase(issue, 'load_and_debug', '', false);
+        return sessionPhase(issue, 'load_and_debug', '', false, launch);
     }
     const loadBy = Math.max(host.now(), answerBy(issue) - SESSION_WAIT_MS - SURVIVAL_BUDGET_MS);
     const outcome = await tracker.waitFor(job.id, loadBy) ?? job;
@@ -1026,10 +1055,10 @@ async function loadAndDebug(issue: Issue, loadFirst: boolean): Promise<ToolText>
         throw new ToolError('TASK_FAILED',
             `❌ CMSIS 'load_and_debug' FAILED${issue.tag} — its pre-launch task '${load.name}' ${ended} after `
                 + `${formatDuration(runtimeOf(load, host.now()))}; no debug session was started (job ${outcome.id}).`,
-            flashFailedHint(load.name));
+            flashFailedHint(load.name, failedTaskProgram(host, tracker, issue.solutionPath)(load)));
     }
     const loadNote = `'${load.name}' exited 0 after ${formatDuration(runtimeOf(load, host.now()))} (job ${outcome.id})`;
-    return sessionPhase(issue, 'load_and_debug', loadNote, false);
+    return sessionPhase(issue, 'load_and_debug', loadNote, false, launch);
 }
 
 /** The csolution files of the open workspace, at most five, or undefined when the search failed or took too long. */
@@ -1383,7 +1412,7 @@ export async function runCmsisAction(
 
     const inFlight = TASK_ACTIONS.has(action) ? tracker.inFlight(action as JobAction) : undefined;
     if (inFlight) {
-        return attachToJob(context, inFlight, wanted, active, deadline);
+        return attachToJob(context, inFlight, wanted, active, deadline, solution.solutionPath);
     }
     if (isBuildAction(action)) {
         const other = BUILD_ACTIONS.map((kind) => tracker.inFlight(kind)).find((job): job is Job => job !== undefined);
@@ -1426,7 +1455,7 @@ export async function runCmsisAction(
     }
 
     // The label pre-check: a task the debugger adapter does not offer is refused before anything runs.
-    const issue: Issue = { context, tracker, deadline, command, tag, target: active };
+    const issue: Issue = { context, tracker, deadline, command, tag, target: active, solutionPath: solution.solutionPath };
     let labels: ReadonlySet<string> | undefined;
     let preface: string | undefined;
     const label = TASK_ACTIONS.has(action) ? ACTION_PHASES[action as JobAction].label : undefined;
@@ -1497,8 +1526,10 @@ export async function runCmsisAction(
             }
             return activateEnvironment(issue, solution.solutionPath);
         case 'load_and_debug': {
-            const loadFirst = launchConfigurations.some((config) => config.request === 'launch' && config.preLaunchTask === 'CMSIS Load');
-            return withPreface(await loadAndDebug(issue, loadFirst), preface);
+            const launchOnes = launchConfigurations.filter((config) => config.request === 'launch');
+            const loadFirst = launchOnes.some((config) => config.preLaunchTask === 'CMSIS Load');
+            const servers = launchOnes.map((config) => config.server).filter((server): server is string => server !== undefined);
+            return withPreface(await loadAndDebug(issue, loadFirst, servers), preface);
         }
         default:
             return runJob(issue, action as JobAction, labels, preface);

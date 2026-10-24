@@ -28,7 +28,10 @@
  * exit 0 for failed builds too): ✅, ❌ with the error lines, or ⚠️ when an
  * image was not rewritten and the check could not decide. A rebuild reads
  * like a build; a clean says what it removed, or ⚠️ when an image is left. A
- * task that was stopped says so, and that its outputs are incomplete.
+ * task that was stopped says so, and that its outputs are incomplete. The
+ * hint after a failed Load or Erase follows the program the task ran:
+ * pyOCD, J-Link — missing from the tasks' PATH when it failed at once — or
+ * another one.
  */
 
 import {
@@ -49,6 +52,7 @@ import {
     wasStopped,
 } from '../core/cmsisTasks';
 import { DIAGNOSTIC_RERUN_CAP_MS } from '../core/buildFailure';
+import { PROBE_SOFTWARE_STEPS, ProgramFacts, RESTART_VS_CODE } from '../core/programLookup';
 import { JsonObject, ToolError, ToolReply, ToolText } from '../core/toolResult';
 import type { LiveExecution } from '../cmsisJobTracker';
 
@@ -114,8 +118,51 @@ const DATA_MESSAGES = 10;
 const PROBE_WAIT_MEANING = '"Waiting for a debug probe" there means pyOCD sees no free probe: another task or session holds it '
     + '(cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB driver (ask the user).';
 
-/** The hint after a failed Load, Erase, single Load+Run task, or the Load before a debug session. No tool reads a task terminal (#69). */
-export function flashFailedHint(task: string): string {
+/** What J-Link Commander's two connect failures in a task's output mean. */
+const JLINK_CONNECT_MEANING = '"Cannot connect to J-Link" there means J-Link finds no free probe: another task or session holds it '
+    + '(cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB driver (ask the user); '
+    + '"Cannot connect to target" means the probe answers but the device does not: its power, the cable, or the device name the task passes.';
+
+/** The last sentence of a failed task's hint. */
+const TERMINAL_RESULT = 'This is a terminal result — do not wait for an output file.';
+
+/** `(searched: .cmsis/tools-environment.yml, VS Code's PATH)`, or nothing when no PATH was there to search. */
+function searchedPlaces(searched: readonly string[]): string {
+    return searched.length > 0 ? ` (searched: ${searched.join(', ')})` : '';
+}
+
+/** The hint after a failed J-Link task: its program missing from the tasks' PATH, or J-Link's own failure in the terminal. */
+function jlinkFailedHint(task: string, facts: ProgramFacts): string {
+    const program = facts.program ?? 'J-Link';
+    const lookup = facts.lookup;
+    if (lookup && !lookup.found) {
+        const missing = `${program} is not on the PATH of the CMSIS tasks${searchedPlaces(lookup.searched)}, so '${task}' could not start it`;
+        const next = lookup.installedIn
+            ? `, but ${lookup.installedIn} holds it. Ask the user to add that folder to the system or user PATH, ${RESTART_VS_CODE}`
+            : `. Ask the user to install the SEGGER J-Link Software or add its folder to the system or user PATH, ${RESTART_VS_CODE}`;
+        return `${missing}${next}; ${PROBE_SOFTWARE_STEPS} ${TERMINAL_RESULT}`;
+    }
+    const ran = lookup?.found ? ` ${program} is on the PATH of the CMSIS tasks (${lookup.found.file}, from ${lookup.found.place}), so it ran and `
+        + 'reported the failure there.' : '';
+    return `Its output is in the '${task}' terminal, which no tool reads: ask the user for the terminal's last lines.${ran} `
+        + `${JLINK_CONNECT_MEANING} ${TERMINAL_RESULT}`;
+}
+
+/**
+ * The hint after a failed Load, Erase, single Load+Run task, or the Load
+ * before a debug session. No tool reads a task terminal (#69). `facts` says
+ * what the task ran (`src/handler/taskProgram.ts`): a pyOCD task, or one
+ * whose command is not known, is pointed at `flash`, which returns pyOCD's
+ * own lines; a J-Link task at its PATH or at J-Link's own messages; any
+ * other at the terminal alone.
+ */
+export function flashFailedHint(task: string, facts?: ProgramFacts): string {
+    if (facts?.kind === 'jlink') {
+        return jlinkFailedHint(task, facts);
+    }
+    if (facts?.kind === 'fvp' || facts?.kind === 'other') {
+        return `Its output is in the '${task}' terminal, which no tool reads: ask the user for the terminal's last lines. ${TERMINAL_RESULT}`;
+    }
     return `Its output is in the '${task}' terminal, which no tool reads: call flash, which returns pyOCD's own error lines, `
         + `or ask the user for the terminal's last lines. ${PROBE_WAIT_MEANING} `
         + 'This is a terminal result — do not wait for an output file.';
@@ -145,6 +192,8 @@ export interface ResultContext {
     command?: string;
     /** The labels of the solution's tasks, when known: a missing task is not a stuck panel. */
     labels?: ReadonlySet<string>;
+    /** What a failed Load or Erase task ran, for its hint; asked only on a failure. */
+    program?: (execution: JobExecution) => ProgramFacts | undefined;
 }
 
 function ranFor(execution: JobExecution, now: number): string {
@@ -328,7 +377,7 @@ function failed(job: Job, context: ResultContext, decided: JobExecution): ToolEr
             return new ToolError('TASK_FAILED',
                 `${preface}❌ CMSIS 'load_and_run' FAILED${tag} — '${decided.name}' exited with code ${code} after ${ranFor(decided, now)}, `
                     + `so 'CMSIS Run' was not started (job ${id}).${meanwhile(job)}`,
-                flashFailedHint(decided.name));
+                flashFailedHint(decided.name, context.program?.(decided)));
         }
         const load = executionIn(job, 'load');
         const flashed = load ? `flashed ('${load.name}' exited 0 after ${ranFor(load, now)}), but ` : '';
@@ -354,7 +403,7 @@ function failed(job: Job, context: ResultContext, decided: JobExecution): ToolEr
     return new ToolError('TASK_FAILED',
         `${preface}❌ CMSIS '${job.action}' FAILED${tag} — task '${decided.name}' exited with code ${code} after ${ranFor(decided, now)} `
             + `(job ${id}).${meanwhile(job)}`,
-        flashFailedHint(decided.name));
+        flashFailedHint(decided.name, context.program?.(decided)));
 }
 
 /**

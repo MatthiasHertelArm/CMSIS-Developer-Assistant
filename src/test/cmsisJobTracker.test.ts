@@ -20,7 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CmsisJobTracker, JOB_RETENTION_MS, LABEL_FETCH_MS } from '../cmsisJobTracker';
 import { executionIn, Job, JobDiagnosis } from '../core/cmsisTasks';
-import { formatDuration, idleStatus, sessionTaskLine, stillRunning } from '../handler/jobText';
+import { flashFailedHint, formatDuration, idleStatus, sessionTaskLine, stillRunning } from '../handler/jobText';
 import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 
 /**
@@ -353,6 +353,65 @@ suite('CmsisJobTracker', () => {
             const late = stillRunning(tracker.job(job.id) ?? job, { tag: ' on HE', now: clock.now() });
             assert.ok(late.text.endsWith('do not start another build. If VS Code shows the build finished while this stays running, '
                 + 'cmsis_action stop_build ends the task.'), late.text);
+        });
+
+        test('a failed Load: pyOCD, or a command not known, keeps the flash hint word for word; J-Link and other programs get their own', () => {
+            const pyocd = 'Its output is in the \'CMSIS Load\' terminal, which no tool reads: call flash, which returns pyOCD\'s own error lines, '
+                + 'or ask the user for the terminal\'s last lines. "Waiting for a debug probe" there means pyOCD sees no free probe: another task or '
+                + 'session holds it (cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its '
+                + 'USB driver (ask the user). This is a terminal result — do not wait for an output file.';
+            assert.strictEqual(flashFailedHint('CMSIS Load'), pyocd);
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'pyocd' }), pyocd);
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'unknown' }), pyocd);
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'other' }),
+                'Its output is in the \'CMSIS Load\' terminal, which no tool reads: ask the user for the terminal\'s last lines. '
+                + 'This is a terminal result — do not wait for an output file.');
+
+            const jlinkMeaning = '"Cannot connect to J-Link" there means J-Link finds no free probe: another task or session holds it '
+                + '(cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB driver (ask the user); '
+                + '"Cannot connect to target" means the probe answers but the device does not: its power, the cable, or the device name the task passes. '
+                + 'This is a terminal result — do not wait for an output file.';
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'jlink', program: 'JLink.exe' }),
+                `Its output is in the 'CMSIS Load' terminal, which no tool reads: ask the user for the terminal's last lines. ${jlinkMeaning}`);
+            // A program missing from a PATH: the finding, one line of fix, and the procedure for the steps; no run-then-attach detour.
+            const steps = 'then restart VS Code completely (all windows); knowledge_get { id: "proc-debugger-troubleshooting" } has the steps. '
+                + 'This is a terminal result — do not wait for an output file.';
+            const searched = ['.cmsis/tools-environment.yml', 'terminal.integrated.env.windows', 'VS Code\'s PATH'];
+            const notInstalled = flashFailedHint('CMSIS Load', { kind: 'jlink', program: 'JLink.exe', lookup: { searched } });
+            assert.strictEqual(notInstalled,
+                'JLink.exe is not on the PATH of the CMSIS tasks (searched: .cmsis/tools-environment.yml, terminal.integrated.env.windows, VS Code\'s PATH), '
+                + 'so \'CMSIS Load\' could not start it. Ask the user to install the SEGGER J-Link Software or add its folder to the system or user '
+                + `PATH, ${steps}`);
+            const notOnPath = flashFailedHint('CMSIS Erase', {
+                kind: 'jlink', program: 'JLink.exe', lookup: { searched: ['VS Code\'s PATH'], installedIn: 'C:\\Program Files\\SEGGER\\JLink' },
+            });
+            assert.strictEqual(notOnPath, 'JLink.exe is not on the PATH of the CMSIS tasks (searched: VS Code\'s PATH), so \'CMSIS Erase\' could not start it, '
+                + `but C:\\Program Files\\SEGGER\\JLink holds it. Ask the user to add that folder to the system or user PATH, ${steps}`);
+            for (const hint of [notInstalled, notOnPath]) {
+                assert.ok(!/cmsis_action (?:run|attach)/.test(hint), hint);
+            }
+            const found = { file: 'C:\\Program Files\\SEGGER\\JLink\\JLink.exe', folder: 'C:\\Program Files\\SEGGER\\JLink', place: 'terminal.integrated.env.windows' };
+            assert.strictEqual(flashFailedHint('CMSIS Load', { kind: 'jlink', program: 'JLink.exe', lookup: { found, searched } }),
+                'Its output is in the \'CMSIS Load\' terminal, which no tool reads: ask the user for the terminal\'s last lines. JLink.exe is on the PATH '
+                + 'of the CMSIS tasks (C:\\Program Files\\SEGGER\\JLink\\JLink.exe, from terminal.integrated.env.windows), so it ran and reported the '
+                + `failure there. ${jlinkMeaning}`);
+        });
+
+        test('the tracker keeps the command line a task ran, for the hint after its failure', () => {
+            const { tasks, tracker } = world();
+            const job = tracker.begin('load', 'XMC4700');
+            const commandLine = 'echo Connect > .cmd.jlink && echo Exit >> .cmd.jlink && JLink.exe -device XMC4700-F144x2048 -if swd -commandfile .cmd.jlink';
+            tasks.finish(tasks.start(tasks.execution({ ...shell('CMSIS Load'), execution: { commandLine } })), 1);
+            const settled = tracker.job(job.id) ?? job;
+            const load = executionIn(settled, 'main');
+            assert.ok(load);
+            assert.deepStrictEqual(tracker.commandOf(load.key), ['echo', 'Connect', '>', '.cmd.jlink', '&&', 'echo', 'Exit', '>>', '.cmd.jlink', '&&',
+                'JLink.exe', '-device', 'XMC4700-F144x2048', '-if', 'swd', '-commandfile', '.cmd.jlink']);
+            const plain = tracker.begin('erase', 'XMC4700');
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Erase'))), 1);
+            const erase = executionIn(tracker.job(plain.id) ?? plain, 'main');
+            assert.ok(erase);
+            assert.strictEqual(tracker.commandOf(erase.key), undefined, 'a task without an execution has no command');
         });
 
         test('status without a job in flight: the recent results and the live tasks, or that there is nothing', () => {

@@ -80,6 +80,7 @@ import {
     withDiagnosis,
     WORKSPACE_SOURCE,
 } from './core/cmsisTasks';
+import { taskCommandWords } from './core/gdbServerPorts';
 import { logger } from './utils/logger';
 
 /** A task's definition: `type`, and for a build the fields cbuild's command line is made from. */
@@ -91,6 +92,8 @@ export interface ExecutionLike {
         readonly name: string;
         readonly source: string;
         readonly definition?: TaskDefinitionLike;
+        /** `vscode.Task.execution`: what a shell or process task runs (`taskCommandWords`). */
+        readonly execution?: unknown;
     };
     terminate(): void;
 }
@@ -222,6 +225,8 @@ export class CmsisJobTracker {
     private readonly followUps = new Map<string, Promise<void>>();
     /** The task definition of each CMSIS execution seen, by key, while a job or the live list refers to it. */
     private readonly definitions = new Map<number, TaskDefinitionLike>();
+    /** The command words of each CMSIS execution seen, by key, kept as long as its definition. */
+    private readonly commands = new Map<number, readonly string[]>();
     private readonly subscriptions: Array<{ dispose(): unknown }> = [];
     private readonly labelCache = new Map<string, { stamp: number; labels: ReadonlySet<string> }>();
     private flashes: Array<{ id: number; startedAt: number }> = [];
@@ -429,6 +434,15 @@ export class CmsisJobTracker {
     /** The definition of the task an execution the tracker saw ran, by its key; kept while a job or the live list refers to it. */
     definitionOf(key: number): TaskDefinitionLike | undefined {
         return this.definitions.get(key);
+    }
+
+    /**
+     * The program and arguments of the task an execution the tracker saw ran
+     * (`taskCommandWords`), by its key; kept while a job or the live list
+     * refers to it. Undefined for a task without a shell or process execution.
+     */
+    commandOf(key: number): readonly string[] | undefined {
+        return this.commands.get(key);
     }
 
     /** Called with each CMSIS execution when the tracker first sees it start. */
@@ -713,6 +727,10 @@ export class CmsisJobTracker {
             if (definition && typeof definition === 'object') {
                 this.definitions.set(entry.key, { ...definition });
             }
+            const words = taskCommandWords(execution.task);
+            if (words) {
+                this.commands.set(entry.key, words);
+            }
         }
         this.remember(execution, entry.key);
         if (type === 'processStart' && entry.processStartedAt === undefined) {
@@ -837,7 +855,7 @@ export class CmsisJobTracker {
         return `${ID_PREFIX[action]}-${++this.jobCount}`;
     }
 
-    /** Drop settled jobs older than the retention, with anything still waiting on them, and definitions no one refers to. */
+    /** Drop settled jobs older than the retention, with anything still waiting on them, and definitions and commands no one refers to. */
     private prune(): void {
         const cutoff = this.clock.now() - JOB_RETENTION_MS;
         for (const [id, job] of this.jobs) {
@@ -852,9 +870,10 @@ export class CmsisJobTracker {
                 referred.add(execution.key);
             }
         }
-        for (const key of [...this.definitions.keys()]) {
+        for (const key of [...this.definitions.keys(), ...this.commands.keys()]) {
             if (!referred.has(key)) {
                 this.definitions.delete(key);
+                this.commands.delete(key);
             }
         }
     }
