@@ -27,7 +27,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import { componentsOf, packsOf } from '../core/knowledge/projectFacts';
-import { appliesIn, contextEntities, inScope, isIncomplete, knownMessages, messageLines, ProjectFacts, searchKnowledge, sectionOf } from '../core/knowledge/search';
+import { appliesIn, contextEntities, inScope, isIncomplete, knownMessages, messageLines, ProjectFacts, searchKnowledge, sectionOf, unitsNamed } from '../core/knowledge/search';
 import { detailOf, graphAround, overviewOf, renderMarkdown, TYPE_ORDER, unitRows } from '../core/knowledge/browse';
 import { discoverIndexes, installedPackIndexes, localRepositoryIndexes, workspaceIndexes } from '../core/knowledge/packIndexes';
 import { interleaveByRank, KnowledgeIndex, KnowledgeSet, packScopeOf, safeSymptomPattern } from '../core/knowledge/store';
@@ -371,6 +371,26 @@ suite('knowledge tools', () => {
             // A word in the body alone does not count: the long procedure says nothing about that in its triggers.
             assert.deepStrictEqual(index.howToCoverage(['confirmation']), new Map());
         });
+
+        test('a unit named by its id stands first, alone or in a sentence; a short id prefix puts its few units first', () => {
+            // BM25 alone splits the id into words that other units carry as well: m302 is the code of two units.
+            assert.strictEqual(ids('ts-svdconv-m302')[0], 'ts-svdconv-m302');
+            assert.strictEqual(ids('ts-packchk-m302')[0], 'ts-packchk-m302');
+            assert.strictEqual(ids('get procedure full text proc-debug-live')[0], 'proc-debug-live');
+            assert.strictEqual(ids('knowledge_get("proc-bootstrap")')[0], 'proc-bootstrap');
+            assert.strictEqual(searchKnowledge(index, 'PROC-LONG', { types: ['procedure'] }).results[0].id, 'proc-long');
+            // The filters still hold: a procedure named while asking for troubleshooting units is not listed.
+            assert.ok(!searchKnowledge(index, 'proc-long', { types: ['troubleshooting'] }).results.some((hit) => hit.id === 'proc-long'));
+            // An id prefix of one word: its units first, in rank order; a word that starts no id changes nothing.
+            assert.deepStrictEqual(unitsNamed(index, 'fx-'), new Map([['fx-generic', 0.5], ['fx-m55', 0.5]]));
+            assert.strictEqual(ids('fx-')[0], 'fx-m55', 'the general unit stays replaced by the one that refines it');
+            assert.deepStrictEqual(unitsNamed(index, 'ts-csolution'), new Map([
+                ['ts-csolution-board-mounted-device', 0.5], ['ts-csolution-no-board', 0.5], ['ts-csolution-processing-context', 0.5],
+            ]));
+            assert.deepStrictEqual(unitsNamed(index, 'stack sizing ts-csolution'), new Map(), 'a prefix counts only as the whole query');
+            assert.deepStrictEqual(unitsNamed(index, 'cortex-m55'), new Map());
+            assert.deepStrictEqual(unitsNamed(index, 'error: --update-rte'), new Map());
+        });
     });
 
     suite('the shipped core index', () => {
@@ -390,6 +410,26 @@ suite('knowledge tools', () => {
                     const found = top(query, 3);
                     assert.ok(found.includes('route-project') || found.includes('proc-cmsis-bootstrap'), `${query}: ${found.join()}`);
                 }
+            } finally {
+                shipped.close();
+            }
+        });
+
+        test('a unit id as the query finds that unit first, as a tester\'s agent searched for proc-cmsis-debug-live nine times', function () {
+            if (!fs.existsSync(core)) {
+                this.skip();
+            }
+            const shipped = new KnowledgeIndex(core);
+            try {
+                const top = (query: string, n: number, types?: string[]): string[] =>
+                    searchKnowledge(shipped, query, { k: n, types }).results.map((hit) => hit.id);
+                // Before: proc-cmsis-bootstrap first, and proc-cmsis-debug-live not among the first four.
+                assert.strictEqual(top('proc-cmsis-debug-live', 1, ['procedure'])[0], 'proc-cmsis-debug-live');
+                assert.strictEqual(top('get procedure full text proc-cmsis-debug-live', 2, ['procedure'])[0], 'proc-cmsis-debug-live');
+                assert.strictEqual(top('ts-csolution-processing-context', 1)[0], 'ts-csolution-processing-context');
+                assert.deepStrictEqual(new Set(top('proc-cmsis-debug', 2)), new Set(['proc-cmsis-debug-live', 'proc-cmsis-debugger-setup']));
+                // A prefix that starts many ids lifts none of them.
+                assert.ok(searchKnowledge(shipped, 'proc-', { k: 3 }).results.every((hit) => hit.score < 0.5));
             } finally {
                 shipped.close();
             }

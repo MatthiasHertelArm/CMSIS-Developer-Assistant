@@ -27,7 +27,10 @@
  *      name, and the procedure or routing unit whose "when to use" text
  *      holds that name is lifted to the top (`HOW_TO_BONUS`): BM25 alone
  *      ranks a short reference unit that carries the word in its title above
- *      a procedure that names it once in a long description.
+ *      a procedure that names it once in a long description. A query that
+ *      names a unit by its id puts that unit first (`ID_BONUS`), and one
+ *      that is the start of a few ids puts those units first (`ID_PREFIX_BONUS`):
+ *      BM25 splits `proc-cmsis-debug-live` into four common words.
  *   3. A unit a pack ships is scoped to that pack (`scoped_to`, or the pack
  *      of its index): only a project that uses the pack sees it, and
  *      without a project nobody.
@@ -81,6 +84,22 @@ const HOW_TO_BONUS = 0.010;
  * rank scores, so that among exact matches the order of the lines decides.
  */
 const FIRST_LINE_BONUS = 0.05;
+/**
+ * What a unit gets whose id the query names, as the whole query or as one
+ * of its words: above an exact symptom (1 + `FIRST_LINE_BONUS`), since an
+ * agent that names an id wants that unit and no other.
+ */
+const ID_BONUS = 2;
+/**
+ * What a unit gets whose id starts with the query, when the query is one
+ * word that names no unit and starts at most `ID_PREFIX_UNITS` ids (an id
+ * cut short, `proc-cmsis-debug`): above the rank scores and the how-to
+ * bonus, below an exact symptom.
+ */
+const ID_PREFIX_BONUS = 0.5;
+const ID_PREFIX_UNITS = 10;
+/** A word that can be a unit id: lower-case letters, digits, dots and dashes, with a dash after the type prefix. */
+const ID_SHAPE = /^[a-z0-9][a-z0-9._]*-[a-z0-9._-]*$/;
 const CANDIDATES = 60;
 export const DEFAULT_RESULTS = 8;
 export const DEFAULT_BUDGET_TOKENS = 800;
@@ -293,6 +312,29 @@ export function appliesIn(targets: readonly string[], context: ReadonlySet<strin
     return { applies: true, unverified };
 }
 
+/**
+ * The units the query names by id, each with its bonus: every word of the
+ * query that is a unit's id, or, for a query of one word that is none, the
+ * units whose id starts with it when there are few. Quotes and brackets
+ * around a word do not count.
+ */
+export function unitsNamed(index: KnowledgeReader, query: string): Map<string, number> {
+    const words = query.split(/[\s,;`'"()[\]{}<>]+/).map((word) => word.replace(/[.:]+$/, '').toLowerCase()).filter((word) => ID_SHAPE.test(word));
+    const named = new Map<string, number>();
+    for (const word of words) {
+        if (index.node(word)?.kind === 'knowledge') {
+            named.set(word, ID_BONUS);
+        }
+    }
+    if (named.size === 0 && words.length === 1 && query.trim().split(/\s+/).length === 1) {
+        const starting = index.unitIdsWithPrefix(words[0], ID_PREFIX_UNITS + 1);
+        if (starting.length <= ID_PREFIX_UNITS) {
+            starting.forEach((id) => named.set(id, ID_PREFIX_BONUS));
+        }
+    }
+    return named;
+}
+
 /** Search the index; see the head of this file for the steps. */
 export function searchKnowledge(reader: KnowledgeReader, query: string, options: SearchOptions = {}): SearchResult {
     const index = reader.forContext(options.context);
@@ -311,6 +353,9 @@ export function searchKnowledge(reader: KnowledgeReader, query: string, options:
         if (type === 'procedure' && !id.startsWith('route-')) {
             score.set(id, value + HOW_TO_PRIOR);
         }
+    }
+    for (const [id, bonus] of unitsNamed(index, query)) {
+        score.set(id, (score.get(id) ?? 0) + bonus);
     }
     const words = queryWords(query).filter((word) => word.length > 1);
     if (words.length > 0 && words.length <= HOW_TO_QUERY_WORDS) {

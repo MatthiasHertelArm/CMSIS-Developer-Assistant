@@ -70,6 +70,16 @@ pack a csolution names with `path:` outside the pack root
   questions carry specifics the reference text answers better and get none;
   the golden set of the knowledge base (`tests/eval_search.js`) is the
   measure for any change here.
+- **An id leads to its unit.** BM25 splits `proc-cmsis-debug-live` into four
+  words that dozens of units carry, so a search for an id an agent already
+  has did not find that unit first (a tester's agent tried nine times
+  before it found `knowledge_get`). A word of the query that is a unit's id
+  now puts that unit first, above an exact symptom (`ID_BONUS`); a query of
+  one word that is no id but starts the ids of at most ten units
+  (`proc-cmsis-debug`) puts those first (`ID_PREFIX_BONUS`,
+  `unitsNamed()` in `search.ts`, `unitIdsWithPrefix` of the reader). The
+  filters still apply: `types`, `domain` and the project context can leave
+  the named unit out, and `knowledge_get` reads it regardless.
 - **Files of a unit.** A skill's templates and scripts are `asset` entities
   with the file as body, referenced by their procedure. `knowledge_get` on a
   procedure lists them by the path its text uses, and returns one by its id
