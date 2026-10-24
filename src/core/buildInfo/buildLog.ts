@@ -121,8 +121,10 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
     const driverRe = /^(?:clang(?:\+\+)?|gcc|g\+\+|armclang)$/;
     // CMake: CMake Error at CMakeLists.txt:12 (message):  /  CMake Error at D:/x/CMakeLists.txt:12  /  CMake Error: ...
     const cmakeRe = /^CMake (Error|Warning|Deprecation Warning)(?: at ((?:[A-Za-z]:[\\/])?[^:]+):(\d+)(?: \([^)]*\))?)?:\s*(.*?)\s*$/;
-    // cbuild / csolution: `error csolution: ...`, `warning cbuild: ...`, `error cbuild: ...`
-    const cbuildRe = /^(error|warning|info)\s+(csolution|cbuild|cpackget|cbuild2cmake|cbuildgen):\s*(.*?)\s*$/;
+    // cbuild / csolution: `error csolution: ...`, `warning cbuild: ...`, `error cbuild: ...`. An error about a YAML file
+    // comes after its location and ` - `: `C:/x/Demo.csolution.yml:43:7 - error csolution: ...`, also without line and
+    // column (`/.cbuild-pack.yml - error csolution: ...`). The file is absolute, POSIX or Windows, spaces included.
+    const cbuildRe = /^(?:((?:[A-Za-z]:[\\/]|\/)[^:"]*?)(?::(\d+)(?::(\d+))?)?\s+-\s+)?(error|warning|info)\s+(csolution|cbuild|cpackget|cbuild2cmake|cbuildgen):\s*(.*?)\s*$/;
     const ninjaFailedRe = /^FAILED:\s*(?:\[code=\d+\]\s*)?(.*?)\s*$/;
     const contextRe = /^\(\d+\/\d+\) Building context:\s*"?([^"]+)"?\s*$/;
     const compilerRe = /^(?:Using compiler:\s*(.+)|Using (\S+ V[\d.]+) compiler,.*)$/;
@@ -152,8 +154,8 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
             return;
         }
         if ((m = line.match(cbuildRe))) {
-            if (m[1] === 'info') { return; }
-            push({ severity: sev(m[1]), message: m[3], tool: 'cbuild', code: m[2] }, n);
+            if (m[4] === 'info') { return; }
+            push({ severity: sev(m[4]), file: m[1], line: m[2] ? Number(m[2]) : undefined, col: m[3] ? Number(m[3]) : undefined, message: m[6], tool: 'cbuild', code: m[5] }, n);
             return;
         }
         if ((m = line.match(armlinkRe))) {
