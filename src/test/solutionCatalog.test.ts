@@ -19,7 +19,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CatalogQuery, queryCatalog, WebOrigins } from '../core/catalogQuery';
+import { CatalogQuery, PackInstalled, queryCatalog, WebOrigins } from '../core/catalogQuery';
+import { packInstalledIn } from '../core/packInstall';
 import {
     acquireSolutionApi,
     ApiBoard,
@@ -182,8 +183,8 @@ function installed(api: unknown, options: { active?: boolean; getApi?: (version:
     return handle;
 }
 
-async function query(api: SolutionApiV2, args: CatalogQuery, deadline = soon(), web?: WebOrigins): Promise<ToolReply> {
-    return queryCatalog(api, args, CLOCK, deadline, web);
+async function query(api: SolutionApiV2, args: CatalogQuery, deadline = soon(), web?: WebOrigins, installed?: PackInstalled): Promise<ToolReply> {
+    return queryCatalog(api, args, CLOCK, deadline, web, installed);
 }
 
 async function refusalOf(pending: Promise<unknown>, code: ErrorCode): Promise<ToolError> {
@@ -310,6 +311,63 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
                 ['keil::stm32h735g-dk_bsp@1.1.0:cubemx', 'Template', 'installed'],
                 ['keil::stm32h735g-dk_bsp@1.1.0:blinky', 'Example', 'installed'],
             ]);
+        });
+
+        test('a board whose pack is not installed says so, with the call that installs it; installed or unknown, nothing is said', async () => {
+            const api = catalogApi();
+            api.drafts.set(StubApi.draftKey(H735.id), [WEB_BLINKY]);
+            const asked: ApiPackId[] = [];
+            const notInstalled: PackInstalled = (wanted) => {
+                asked.push(wanted);
+                return false;
+            };
+            const missing = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, notInstalled);
+            assert.ok(missing.text.endsWith('\nThe board\'s pack Keil::STM32H735G-DK_BSP@1.1.0 is not installed; its own examples appear after '
+                + 'cmsis_action {action:\'install_pack\', pack:\'Keil::STM32H735G-DK_BSP@1.1.0\'}.\n'
+                + 'Create a project from one: cmsis_action {action:\'create_solution\', board:\'STMicroelectronics::STM32H735G-DK\', draft:\'<id>\', '
+                + 'path:\'<new project folder>\'}.'), missing.text);
+            assert.strictEqual((missing.data as JsonObject).boardPackNotInstalled, 'Keil::STM32H735G-DK_BSP@1.1.0');
+            assert.deepStrictEqual(asked, [BSP]);
+
+            for (const answer of [true, undefined]) {
+                const quiet = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, () => answer);
+                assert.ok(!quiet.text.includes('is not installed'), quiet.text);
+                assert.strictEqual((quiet.data as JsonObject).boardPackNotInstalled, undefined);
+            }
+            const failing = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, () => Promise.reject(new Error('no root')));
+            assert.ok(!failing.text.includes('is not installed'), failing.text);
+
+            // An example from an installed copy of the pack, of any version, shows that it is installed: nothing is asked.
+            api.drafts.set(StubApi.draftKey(H735.id), [WEB_BLINKY, draft('keil::stm32h735g-dk_bsp@1.0.0:cubemx', 'CubeMX', 'Template', 'Local',
+                pack('Keil', 'STM32H735G-DK_BSP', '1.0.0'))]);
+            asked.length = 0;
+            const listed = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, notInstalled);
+            assert.ok(!listed.text.includes('is not installed'), listed.text);
+            assert.deepStrictEqual(asked, []);
+
+            // A board without a pack, and a device without a board, are not asked about.
+            api.drafts.set(StubApi.draftKey(NUCLEO.id), []);
+            const packless = await query(api, { what: 'examples', board: 'STMicroelectronics::NUCLEO-H753ZI' }, soon(), undefined, notInstalled);
+            assert.ok(!packless.text.includes('is not installed'), packless.text);
+            const mcxn = api.devices[0];
+            api.drafts.set(StubApi.draftKey(undefined, mcxn.id), []);
+            const byDevice = await query(api, { what: 'examples', device: 'MCXN947VDF' }, soon(), undefined, notInstalled);
+            assert.ok(!byDevice.text.includes('is not installed'), byDevice.text);
+            assert.deepStrictEqual(asked, []);
+        });
+
+        test('a pack counts as installed when a version folder under the pack root holds its PDSC', () => {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-packroot-'));
+            try {
+                assert.strictEqual(packInstalledIn(root, 'Infineon', 'XMC4000_DFP'), false);
+                fs.mkdirSync(path.join(root, 'Infineon', 'XMC4000_DFP', '2.14.0'), { recursive: true });
+                assert.strictEqual(packInstalledIn(root, 'Infineon', 'XMC4000_DFP'), false, 'an empty version folder is a failed install');
+                fs.writeFileSync(path.join(root, 'Infineon', 'XMC4000_DFP', '2.14.0', 'Infineon.XMC4000_DFP.pdsc'), '<package/>');
+                assert.strictEqual(packInstalledIn(root, 'Infineon', 'XMC4000_DFP'), true);
+                assert.strictEqual(packInstalledIn(path.join(root, 'missing'), 'Infineon', 'XMC4000_DFP'), undefined, 'no pack root, no answer');
+            } finally {
+                fs.rmSync(root, { recursive: true, force: true });
+            }
         });
 
         test('web examples alike are told apart by the pack each comes from, which only Arm\'s web catalog knows', async () => {

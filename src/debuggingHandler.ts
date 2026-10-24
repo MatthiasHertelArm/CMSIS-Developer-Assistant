@@ -91,7 +91,8 @@ import {
     actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction, stateAfterStart,
 } from './handler/cmsisAction';
 import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
-import { acquireSolutionApi } from './core/solutionApi';
+import { acquireSolutionApi, type ApiPackId } from './core/solutionApi';
+import { packInstalledIn } from './core/packInstall';
 import { webExampleOrigins } from './core/webCatalog';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
@@ -1978,8 +1979,18 @@ export class DebuggingHandler
             const host = this.host();
             const deadline = host.now() + QUERY_FENCE_MS - QUERY_MARGIN_MS;
             const api = await acquireSolutionApi(host.solutionExtension(), `cmsis_query {what:'${args.what}'}`, host);
-            return queryCatalog(api, args, host, deadline, (board, ms) => webExampleOrigins(host.webCatalogFetch, board, ms, host));
+            return queryCatalog(api, args, host, deadline, (board, ms) => webExampleOrigins(host.webCatalogFetch, board, ms, host),
+                (pack) => this.packInstalled(pack));
         }, { advice: QUERY_FENCE_ADVICE, capStatus: 'running' });
+    }
+
+    /** Whether any version of a pack is installed in the pack root CMSIS Solution uses; undefined when that cannot be told. */
+    private async packInstalled(pack: ApiPackId): Promise<boolean | undefined> {
+        try {
+            return packInstalledIn(await this.host().packInstall().packRoot(), pack.vendor, pack.name);
+        } catch {
+            return undefined;
+        }
     }
 
     /** `flash`; it notes a serial port this window holds (#49). */

@@ -35,7 +35,10 @@
  * left out when they do not arrive in time. Web examples of a board that
  * share their name (one per pack release that ships the example) are told
  * apart by the pack each comes from, which only Arm's web catalog knows
- * (`WebOrigins`, `webCatalog.ts`).
+ * (`WebOrigins`, `webCatalog.ts`). CMSIS Solution lists a pack's own
+ * examples only once the pack is installed, so the examples of a board whose
+ * pack is not installed say so (`PackInstalled`), with the call that
+ * installs it.
  *
  * The first list request of a window fills the extension's catalog from
  * Arm's web service, which can outlast the call. That is not a failure: the
@@ -51,6 +54,7 @@ import {
     ApiDevice,
     ApiDeviceId,
     ApiDraft,
+    ApiPackId,
     CatalogErrors,
     catalogErrorsOf,
     Clock,
@@ -410,8 +414,42 @@ async function twinOrigins(twins: readonly ApiDraft[], board: ApiBoard | undefin
     };
 }
 
+/**
+ * Whether any version of a pack is installed: true, false, or undefined
+ * when that cannot be told. The caller reads the pack root; this module
+ * touches no file.
+ */
+export type PackInstalled = (pack: ApiPackId) => PromiseLike<boolean | undefined> | boolean | undefined;
+
+/** The same pack, any version: vendor and name compared without regard to case. */
+function samePack(a: ApiPackId | undefined, b: ApiPackId): boolean {
+    const lower = (value: unknown): string | undefined => textField(value)?.toLowerCase();
+    return a !== undefined && a !== null && lower(a.vendor) === lower(b.vendor) && lower(a.name) === lower(b.name);
+}
+
+/**
+ * The board's own pack as `Vendor::Name@version` when it is not installed
+ * and no example comes from an installed copy of it; undefined otherwise,
+ * and whenever the pack or the answer does not arrive in time.
+ */
+async function boardPackMissing(board: ApiBoard, drafts: readonly ApiDraft[], installed: PackInstalled, clock: Clock, deadline: number): Promise<string | undefined> {
+    const pack = (await detail(board.pack, Math.min(DETAIL_MS, left(clock, deadline)), clock))?.value;
+    const id = packText(pack);
+    if (pack === undefined || pack === null || id === undefined || drafts.some((draft) => sourceOf(draft) === 'installed' && samePack(draft.pack, pack))) {
+        return undefined;
+    }
+    let answer: { value: boolean | undefined } | undefined;
+    try {
+        answer = await settleWithin(Promise.resolve(installed(pack)), left(clock, deadline), clock);
+    } catch {
+        return undefined;
+    }
+    return answer?.value === false ? id : undefined;
+}
+
 /** `examples`: the board and device by id, then their drafts, filtered by name, in the API's order. */
-async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number, web?: WebOrigins): Promise<Listing> {
+async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number, web?: WebOrigins,
+    installed?: PackInstalled): Promise<Listing> {
     const what = 'cmsis_query {what:\'examples\'}';
     const boardWanted = textField(query.board);
     const deviceWanted = textField(query.device);
@@ -467,11 +505,17 @@ async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Cloc
     if (device) {
         data.device = keyOf(device);
     }
+    const missing = board && installed ? await boardPackMissing(board, drafts, installed, clock, deadline) : undefined;
+    const packNote: string[] = [];
+    if (missing !== undefined) {
+        data.boardPackNotInstalled = missing;
+        packNote.push(`The board's pack ${missing} is not installed; its own examples appear after cmsis_action {action:'install_pack', pack:'${missing}'}.`);
+    }
     return {
         header: `Examples and templates for ${target}${filterText([['name', query.name]])}`,
         total: matching.length,
         entries,
-        notes: [...twins.notes, ...examplesWebNote(errors, drafts.filter((draft) => sourceOf(draft) === 'web').length, board !== undefined)],
+        notes: [...twins.notes, ...examplesWebNote(errors, drafts.filter((draft) => sourceOf(draft) === 'web').length, board !== undefined), ...packNote],
         next: `Create a project from one: cmsis_action {action:'create_solution', ${ownerArgs}, draft:'<id>', path:'<new project folder>'}.`,
         data,
     };
@@ -497,8 +541,10 @@ function errorNotes(errors: CatalogErrors | undefined): string[] {
  * Answer `cmsis_query` for the catalog kinds from CMSIS Solution's API.
  * `deadline` is on `clock`; a list request still open then is answered as
  * `running`: the catalog is loading, the same call again finds it.
+ * `installed` tells whether a board's pack is installed, for the examples.
  */
-export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number, web?: WebOrigins): Promise<ToolReply> {
+export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number, web?: WebOrigins,
+    installed?: PackInstalled): Promise<ToolReply> {
     let listing: Listing;
     try {
         switch (query.what) {
@@ -509,7 +555,7 @@ export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, cloc
                 listing = await listDevices(api, query, clock, deadline);
                 break;
             case 'examples':
-                listing = await listExamples(api, query, clock, deadline, web);
+                listing = await listExamples(api, query, clock, deadline, web, installed);
                 break;
             default:
                 throw new ToolError('INVALID_ARGUMENT', `cmsis_query not attempted: what must be one of ${QUERY_KINDS.join(', ')}.`);

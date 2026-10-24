@@ -594,6 +594,18 @@ used when it is there (`catalogErrorsOf()`); without it, examples of which
 none came from the web are answered with a note that says the cause is not
 known.
 
+A pack's own examples (a DFP's `RTX_Blinky`, say) are listed only once the
+pack is installed, and Arm's web catalog may not have them: a tester's
+agent saw only web demos for the XMC4700 Relax Kit and never the DFP's
+Blinky, since the pack was installed afterwards. So the examples of a
+board whose pack — the `pack` of the board entry — is not installed, and
+of which none comes from an installed copy of it, end with a line naming
+the pack and the `cmsis_action install_pack` call (`boardPackMissing()`,
+`data.boardPackNotInstalled`). The module reads no files: the handler
+passes `PackInstalled`, which looks for any version of the pack with its
+PDSC in the pack root CMSIS Solution uses (`packInstalledIn()` in
+`src/core/packInstall.ts`); an answer it cannot give says nothing.
+
 Arm's web catalog keeps one example per pack release that ships it: the
 XMC4700 Relax Kit has `snmp_agent_demo` from Oryx-Embedded Middleware 2.6.6
 and from 2.4.4, same name, same description. The API passes on only id,
