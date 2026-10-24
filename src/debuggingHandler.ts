@@ -89,6 +89,7 @@ import {
 import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction } from './handler/cmsisAction';
 import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
 import { acquireSolutionApi } from './core/solutionApi';
+import { webExampleOrigins } from './core/webCatalog';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
 import {
@@ -1879,7 +1880,7 @@ export class DebuggingHandler
             const host = this.host();
             const deadline = host.now() + QUERY_FENCE_MS - QUERY_MARGIN_MS;
             const api = await acquireSolutionApi(host.solutionExtension(), `cmsis_query {what:'${args.what}'}`, host);
-            return queryCatalog(api, args, host, deadline);
+            return queryCatalog(api, args, host, deadline, (board, ms) => webExampleOrigins(host.webCatalogFetch, board, ms, host));
         }, { advice: QUERY_FENCE_ADVICE, capStatus: 'running' });
     }
 

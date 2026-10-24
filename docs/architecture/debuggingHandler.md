@@ -564,6 +564,20 @@ used when it is there (`catalogErrorsOf()`); without it, examples of which
 none came from the web are answered with a note that says the cause is not
 known.
 
+Arm's web catalog keeps one example per pack release that ships it: the
+XMC4700 Relax Kit has `snmp_agent_demo` from Oryx-Embedded Middleware 2.6.6
+and from 2.4.4, same name, same description. The API passes on only id,
+name, description and format of a web example, so the two would be listed
+alike and the agent would have to ask the user for an id. When listed web
+examples share a name, `src/core/webCatalog.ts` asks the catalog itself for
+the one field that tells them apart, the example's origin pack, with the
+same two GraphQL queries CMSIS Solution makes (the board by its CMSIS id,
+then its projects), at most 5 s within the call and only for such a
+listing; the line then reads `web from Oryx-Embedded::Middleware@2.6.6`
+and `data.pack` carries it. When the catalog does not answer, a note says
+that CMSIS Solution does not tell the copies apart. The fetch comes from
+the host (`HandlerHost.webCatalogFetch`), so tests script it.
+
 Programming can make the probe's virtual COM port re-enumerate, which closes
 a serial port the window holds. So `flash` and the programming actions of
 `cmsis_action` (`load`, `erase`, `load_and_run`) add one line to a result
@@ -850,7 +864,7 @@ by #56.
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check and the Update Debug Tasks hand-off, jobs, session waits, verified `stop_run` and `stop_build`, `status`, `open_solution`, the dispatch of `install_pack` and `create_solution`, why no solution is active |
 | `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
-| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data |
+| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts`, `src/core/webCatalog.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data; the origin pack of web examples alike, from Arm's web catalog |
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
 | `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
@@ -893,7 +907,9 @@ by #56.
   Problems panel and the copied text; the adapter tracker's records in
   `src/test/sessionStateTracker.test.ts`
 - `src/test/solutionCatalog.test.ts`: `cmsis_query` and `create_solution`
-  against a stub of CMSIS Solution's API: filters, caps, sources, the web
+  against a stub of CMSIS Solution's API: filters, caps, sources, web
+  examples alike with their origin pack and the lookup behind it against a
+  scripted fetch, the web
   catalog unreachable, the extension missing, inactive or without API
   version 2, unknown ids, the window checks
 - `test/transport/surface-snapshot.js`: every tool's reply without a session

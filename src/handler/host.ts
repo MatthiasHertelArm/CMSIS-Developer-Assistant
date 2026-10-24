@@ -39,6 +39,7 @@ import { SerialController, serialController } from '../core/serialController';
 import { activeCbuildRunFile } from '../utils/solutionQueries';
 import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
 import type { SolutionExtensionHandle } from '../core/solutionApi';
+import type { CatalogFetch } from '../core/webCatalog';
 
 /** An installed extension, as the pyOCD lookup of `flash` needs it. */
 export interface InstalledExtension {
@@ -113,6 +114,8 @@ export interface HandlerHost {
     packInstall(): PackInstallHost;
     /** The CMSIS Solution extension, for its public API (`cmsis_query`, `create_solution`); undefined when it is not installed. */
     solutionExtension(): SolutionExtensionHandle | undefined;
+    /** `fetch` for Arm's web catalog: which pack each of two web examples alike comes from (`cmsis_query`, `webCatalog.ts`). */
+    webCatalogFetch: CatalogFetch;
 }
 
 /** The key under `terminal.integrated.env` per platform. */
@@ -193,4 +196,5 @@ export const VSCODE_HOST: HandlerHost = {
             activate: () => found.activate(),
         };
     },
+    webCatalogFetch: (url, init) => fetch(url, init),
 };

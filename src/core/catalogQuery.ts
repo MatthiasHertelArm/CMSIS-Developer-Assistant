@@ -32,7 +32,10 @@
  * and what is known about the web catalog: unreachable, or nothing said.
  * The pack, the devices and the cores of an entry can cost the web catalog a
  * request each; they are read for the listed entries only, in parallel, and
- * left out when they do not arrive in time.
+ * left out when they do not arrive in time. Web examples of a board that
+ * share their name (one per pack release that ships the example) are told
+ * apart by the pack each comes from, which only Arm's web catalog knows
+ * (`WebOrigins`, `webCatalog.ts`).
  *
  * The first list request of a window fills the extension's catalog from
  * Arm's web service, which can outlast the call. That is not a failure: the
@@ -62,6 +65,7 @@ import {
 } from './solutionApi';
 import { clipValue } from './textBudget';
 import { JsonObject, ToolError, ToolReply } from './toolResult';
+import type { CatalogBoardId } from './webCatalog';
 import { secondsText } from './windowHealth';
 
 /** What `cmsis_query` answers today; #41 adds `context` and `toolchain`. */
@@ -92,6 +96,14 @@ const DESCRIPTION_TEXT_CHARS = 80;
 const DESCRIPTION_DATA_CHARS = 400;
 /** Devices of a board that `data` names at most. */
 const BOARD_DEVICES_LISTED = 8;
+/** How long Arm's web catalog may take to say which pack each of two web examples alike comes from. */
+export const WEB_ORIGINS_MS = 5_000;
+/**
+ * Arm's web catalog asked for the pack each web example of a board comes
+ * from, by the example's id (`webExampleOrigins` with a fetch function);
+ * undefined when it did not answer within `ms`.
+ */
+export type WebOrigins = (board: CatalogBoardId, ms: number) => Promise<ReadonlyMap<string, string> | undefined>;
 /** What a call answers while the extension's first list request still loads the catalog. */
 export const CATALOG_LOADING = 'the CMSIS Solution catalog is still loading (first request fetches Arm\'s web catalog); repeat the same cmsis_query call.';
 
@@ -355,8 +367,51 @@ function examplesWebNote(errors: CatalogErrors | undefined, fromWeb: number, boa
         : ['None came from Arm\'s web catalog: the board has no examples there, or the catalog is switched off (setting cmsis-csolution.useWebServices).'];
 }
 
+/**
+ * The web examples among `drafts` that share their name with another listed
+ * one, by id: Arm's web catalog keeps one example per pack release that
+ * ships it, and CMSIS Solution passes on nothing that tells them apart.
+ */
+function webTwins(drafts: readonly ApiDraft[]): ApiDraft[] {
+    const web = drafts.filter((draft) => sourceOf(draft) === 'web');
+    const named = (draft: ApiDraft): string => (textField(draft.name) ?? '').toLowerCase();
+    return web.filter((draft) => web.some((other) => other !== draft && named(other) === named(draft)));
+}
+
+/**
+ * For listed web examples alike: the pack each comes from, from Arm's web
+ * catalog (`web`), and the note when it could not tell. Nothing to ask
+ * without twins, without a board, or without `web`.
+ */
+async function twinOrigins(twins: readonly ApiDraft[], board: ApiBoard | undefined, web: WebOrigins | undefined,
+    clock: Clock, deadline: number): Promise<{ origins: ReadonlyMap<string, string>; notes: string[] }> {
+    if (twins.length === 0 || board === undefined || web === undefined) {
+        return { origins: new Map(), notes: [] };
+    }
+    const ms = Math.min(WEB_ORIGINS_MS, left(clock, deadline));
+    const id = board.id;
+    const answer = await web({ vendor: textField(id?.vendor) ?? textField(board.vendor) ?? '', name: textField(id?.name) ?? textField(board.name) ?? '',
+        revision: textField(id?.revision) ?? textField(board.revision) }, ms);
+    const origins = new Map<string, string>();
+    for (const draft of twins) {
+        const pack = answer?.get(keyOf(draft)) ?? answer?.get(keyOf(draft).toLowerCase());
+        if (pack !== undefined) {
+            origins.set(keyOf(draft), pack);
+        }
+    }
+    if (twins.every((draft) => origins.has(keyOf(draft)))) {
+        return { origins, notes: [] };
+    }
+    const names = [...new Set(twins.filter((draft) => !origins.has(keyOf(draft))).map((draft) => textField(draft.name) ?? keyOf(draft)))];
+    return {
+        origins,
+        notes: [`${names.join(', ')}: listed more than once by Arm's web catalog, one per pack release that ships the example; CMSIS Solution does not `
+            + `say which is which, and the web catalog did not tell ${answer === undefined ? `within ${secondsText(ms)}` : 'for these'}.`],
+    };
+}
+
 /** `examples`: the board and device by id, then their drafts, filtered by name, in the API's order. */
-async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number): Promise<Listing> {
+async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number, web?: WebOrigins): Promise<Listing> {
     const what = 'cmsis_query {what:\'examples\'}';
     const boardWanted = textField(query.board);
     const deviceWanted = textField(query.device);
@@ -373,13 +428,14 @@ async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Cloc
     const name = matcherOf(query.name);
     const matching = drafts.filter((draft) => nameMatches(name, draft));
     const shown = matching.slice(0, limitOf(query.limit));
+    const twins = await twinOrigins(webTwins(shown), board, web, clock, deadline);
     const entries = shown.map((draft): Entry => {
         const source = sourceOf(draft);
-        const pack = packText(draft.pack);
+        const pack = packText(draft.pack) ?? twins.origins.get(keyOf(draft));
         const type = textField(draft.draftType);
         const format = textField(draft.format);
         const description = textField(draft.description);
-        const origin = source === 'installed' && pack ? `installed ${pack}` : source;
+        const origin = source === 'installed' && pack ? `installed ${pack}` : source === 'web' && pack ? `web from ${pack}` : source;
         const parts = [textField(draft.name), type, origin, formatNote(format)].filter((part) => part !== undefined);
         const data: JsonObject = { id: keyOf(draft), name: textField(draft.name) ?? '' };
         if (type !== undefined) {
@@ -415,7 +471,7 @@ async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Cloc
         header: `Examples and templates for ${target}${filterText([['name', query.name]])}`,
         total: matching.length,
         entries,
-        notes: examplesWebNote(errors, drafts.filter((draft) => sourceOf(draft) === 'web').length, board !== undefined),
+        notes: [...twins.notes, ...examplesWebNote(errors, drafts.filter((draft) => sourceOf(draft) === 'web').length, board !== undefined)],
         next: `Create a project from one: cmsis_action {action:'create_solution', ${ownerArgs}, draft:'<id>', path:'<new project folder>'}.`,
         data,
     };
@@ -442,7 +498,7 @@ function errorNotes(errors: CatalogErrors | undefined): string[] {
  * `deadline` is on `clock`; a list request still open then is answered as
  * `running`: the catalog is loading, the same call again finds it.
  */
-export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number): Promise<ToolReply> {
+export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, clock: Clock, deadline: number, web?: WebOrigins): Promise<ToolReply> {
     let listing: Listing;
     try {
         switch (query.what) {
@@ -453,7 +509,7 @@ export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, cloc
                 listing = await listDevices(api, query, clock, deadline);
                 break;
             case 'examples':
-                listing = await listExamples(api, query, clock, deadline);
+                listing = await listExamples(api, query, clock, deadline, web);
                 break;
             default:
                 throw new ToolError('INVALID_ARGUMENT', `cmsis_query not attempted: what must be one of ${QUERY_KINDS.join(', ')}.`);
