@@ -194,6 +194,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `rebuild` | Build the active context from scratch (`cbuild --rebuild`). | Like `build`. |
 | `clean` | Remove the `out` and `tmp` directories of the whole solution (`cbuild --clean`, every target). | Waits for the task; says which images of the active target it removed. Build again before `load`. |
 | `refresh` | The panel's *Refresh (Reload Packs, Update RTE)*: convert with the RTE update, which writes the files a component brings (a build error "not found; use --update-rte"). | Waits until csolution rewrote `<name>.cbuild-idx.yml`, then ✅ or ❌ with its messages. Build next. |
+| `activate_environment` | The Arm Tools Environment Manager's *Reactivate Environment*: resolve `vcpkg-configuration.json` again and install what is missing; CMSIS Solution then rewrites `.cmsis/tools-environment.yml`, the tools its tasks run with. A build result that starts with "Note: vcpkg-configuration.json is newer than …" or "… has not been activated" needs it. | Waits until the record was rewritten, then ✅ with the tools it names; `running` while tools download or a prompt waits for the user. Build next. |
 | `load` | Flash the built image. | Waits for the flash task. |
 | `erase` | Erase target flash. | Waits for the task. |
 | `run` | Start the CMSIS Run task alone: the GDB server on the probe, no build, no flash — the way to `attach` to a target that is already running. The pyOCD task resets the target and lets the firmware run, the J-Link task leaves it as it was. The FVP task starts the model with the last-built image and hosts no GDB server: use `load_and_debug` there. | Waits until Run stays up. |
@@ -231,6 +232,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |
 | `cbuild …` | `cmsis_action build` |
 | `cbuild … --update-rte`, *CMSIS: Refresh* by hand | `cmsis_action refresh` |
+| `vcpkg activate`, *Arm Tools: Activate Environment* by hand | `cmsis_action activate_environment` |
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |

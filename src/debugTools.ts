@@ -247,13 +247,12 @@ const ABOUT = {
         'Stopping its monitor there frees the port for serial_capture.',
     ),
     cmsis_action: say(
-        'The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel ' +
-        'buttons; each result names its target.',
+        'Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target.',
         'build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code.',
-        'A task still running at the wait returns status running: call action status, never start it again.',
+        'A task still running at the wait returns status running: call status, never start it again.',
         'run: CMSIS Run alone, no build or flash — a probe\'s GDB server, then attach; an FVP hosts none.',
-        'load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end.',
-        'refresh: Update RTE (for "use --update-rte").',
+        'load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks.',
+        'refresh: Update RTE ("use --update-rte"); activate_environment: re-resolve vcpkg-configuration.json.',
         'open_solution (path) opens and activates a csolution; needs no open project.',
     ),
     cmsis_query: say(
@@ -802,7 +801,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
+            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
                 'stop_build', 'status', 'open_solution', 'install_pack', 'create_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
             path: z.string().optional().describe('Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project\'s folder.'),

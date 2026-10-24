@@ -1195,7 +1195,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1207,6 +1207,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "activate_environment",
                   "load",
                   "erase",
                   "run",
@@ -1450,8 +1451,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60083,
-          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
+          "bytes": 60711,
+          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -2712,7 +2713,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2724,6 +2725,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "activate_environment",
                   "load",
                   "erase",
                   "run",
@@ -2967,8 +2969,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60083,
-          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
+          "bytes": 60711,
+          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -4765,7 +4767,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4777,6 +4779,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "activate_environment",
                   "load",
                   "erase",
                   "run",
@@ -5020,8 +5023,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60083,
-          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
+          "bytes": 60711,
+          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -6740,7 +6743,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6752,6 +6755,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "activate_environment",
                   "load",
                   "erase",
                   "run",
@@ -7041,8 +7045,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60083,
-          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
+          "bytes": 60711,
+          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -8847,7 +8851,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call action status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end. refresh: Update RTE (for \"use --update-rte\"). open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8859,6 +8863,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "activate_environment",
                   "load",
                   "erase",
                   "run",
@@ -9148,8 +9153,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60083,
-          "sha256": "399b74f271d2cf502f8d7b47dacc1456b16c44a40564be6ffb90b21b0f18bb48"
+          "bytes": 60711,
+          "sha256": "0dd696c197ae3c33291ff96551c5b8a8b31f6ca7aa7009f89fe3ce4c6a082623"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,

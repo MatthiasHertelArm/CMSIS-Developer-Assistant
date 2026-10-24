@@ -46,6 +46,7 @@ Only the user can lift a rule, by asking for the specific command.
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |
 | `cbuild …` | `cmsis_action build` |
 | `cbuild … --update-rte`, *CMSIS: Refresh* by hand | `cmsis_action refresh` |
+| `vcpkg activate`, *Arm Tools: Activate Environment* by hand | `cmsis_action activate_environment` |
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |

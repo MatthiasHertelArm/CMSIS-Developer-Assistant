@@ -91,7 +91,7 @@ import {
     NOTHING_STARTED_MS,
     runtimeOf,
 } from '../core/cmsisTasks';
-import { DIAGNOSTIC_RERUN_CAP_MS, idxFileName, IdxMessages, idxMessages } from '../core/buildFailure';
+import { DIAGNOSTIC_RERUN_CAP_MS, idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
 import { cbuildRunDebugger } from '../core/packDocs/cbuildRun';
 import {
     applyTargetSelection,
@@ -147,8 +147,22 @@ import {
 } from './jobText';
 import { runInstallPack } from './installPack';
 
-export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach'
-    | 'detach' | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
+export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_environment' | 'load' | 'erase' | 'run' | 'load_and_run'
+    | 'load_and_debug' | 'attach' | 'detach' | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
+
+/**
+ * The Arm Tools Environment Manager's Reactivate Environment: it resolves
+ * `vcpkg-configuration.json` again, downloads what is missing, and CMSIS
+ * Solution then rewrites `.cmsis/tools-environment.yml`, the environment its
+ * tasks run in.
+ */
+const ENVIRONMENT_COMMAND = 'environment-manager.reactivate';
+/** The Arm Tools Environment Manager extension, which registers that command. */
+const ENVIRONMENT_EXTENSION = 'Arm.environment-manager';
+/** CMSIS Solution's record of the tools environment, next to the solution. */
+const TOOLS_ENVIRONMENT_FILE = path.join('.cmsis', 'tools-environment.yml');
+/** The vcpkg manifest the environment is resolved from. */
+const VCPKG_CONFIGURATION_FILE = 'vcpkg-configuration.json';
 
 /** The CMSIS Solution command behind each action. A Map, so `constructor` and friends are not actions. */
 const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
@@ -156,6 +170,7 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['rebuild', 'cmsis-csolution.rebuild'],
     ['clean', 'cmsis-csolution.clean'],
     ['refresh', 'cmsis-csolution.refresh'],
+    ['activate_environment', ENVIRONMENT_COMMAND],
     ['stop_build', 'cmsis-csolution.stopBuild'],
     ['load', 'cmsis-csolution.cmsisLoad'],
     ['erase', 'cmsis-csolution.cmsisErase'],
@@ -171,8 +186,8 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
 const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run']);
 const SESSION_ACTIONS: ReadonlySet<string> = new Set(['load_and_debug', 'attach']);
 /** Actions whose default wait is the long one: they wait for a task. */
-const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'refresh', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug',
-    'status', 'install_pack', 'create_solution']);
+const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'load', 'erase', 'run',
+    'load_and_run', 'load_and_debug', 'status', 'install_pack', 'create_solution']);
 
 /** Waits without a positive `timeoutMs`: 60 s for the task actions and status (#12), 30 s for the rest. */
 const LONG_WAIT_DEFAULT_MS = 60_000;
@@ -1447,6 +1462,13 @@ export async function runCmsisAction(
         }
     }
 
+    if (TASK_ACTIONS.has(action) && solution.solutionPath) {
+        const stale = staleEnvironmentNote(solution.solutionPath, host);
+        if (stale) {
+            preface = `${preface ?? ''}${stale} `;
+        }
+    }
+
     switch (action) {
         case 'stop_run':
             return stopRun(issue);
@@ -1469,6 +1491,11 @@ export async function runCmsisAction(
                 throw new ToolError('INTERNAL', `CMSIS 'refresh'${tag} not attempted: the CMSIS Solution extension names no solution file.`);
             }
             return refreshSolution(issue, solution.solutionPath);
+        case 'activate_environment':
+            if (!solution.solutionPath) {
+                throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${tag} not attempted: the CMSIS Solution extension names no solution file.`);
+            }
+            return activateEnvironment(issue, solution.solutionPath);
         case 'load_and_debug': {
             const loadFirst = launchConfigurations.some((config) => config.request === 'launch' && config.preLaunchTask === 'CMSIS Load');
             return withPreface(await loadAndDebug(issue, loadFirst), preface);
@@ -1551,6 +1578,126 @@ function refreshResult(tag: string, index: string, messages: IdxMessages, tookMs
     const warned = lines.length > 0 ? ` csolution's warnings:\n${lines.join('\n')}\n` : ' ';
     return `✅ CMSIS 'refresh'${tag}: the solution was converted with the RTE update after ${formatDuration(tookMs)}, `
         + `and ${index} records ${counts}.${warned}Next: cmsis_action build.`;
+}
+
+/** The tools a `activate_environment` result lists at most. */
+const ENVIRONMENT_TOOLS_LISTED = 12;
+
+/**
+ * Where the tools environment of a solution is recorded and resolved from:
+ * `.cmsis/tools-environment.yml` next to the solution (else in the folder
+ * that holds it), and the nearest `vcpkg-configuration.json` from the
+ * solution's directory up to that folder.
+ */
+function environmentFiles(solutionPath: string, host: HandlerHost): { environment: string; configuration?: string } {
+    const solutionDir = path.dirname(solutionPath);
+    const folder = selectionFolder(solutionPath, host);
+    const candidates = [path.join(solutionDir, TOOLS_ENVIRONMENT_FILE), path.join(folder, TOOLS_ENVIRONMENT_FILE)];
+    const environment = candidates.find((file) => mtimeOf(file) !== undefined) ?? candidates[0];
+    let configuration: string | undefined;
+    for (let dir = solutionDir; ; dir = path.dirname(dir)) {
+        const file = path.join(dir, VCPKG_CONFIGURATION_FILE);
+        if (mtimeOf(file) !== undefined) {
+            configuration = file;
+            break;
+        }
+        if (dir === folder || path.dirname(dir) === dir || !dir.startsWith(folder)) {
+            break;
+        }
+    }
+    return { environment, configuration };
+}
+
+/**
+ * One sentence before a task's result when the environment it ran in does
+ * not match `vcpkg-configuration.json`: the manifest is newer than
+ * `.cmsis/tools-environment.yml`, or that file is missing. Nothing when the
+ * solution has no manifest, or the record is current.
+ */
+function staleEnvironmentNote(solutionPath: string, host: HandlerHost): string | undefined {
+    const { environment, configuration } = environmentFiles(solutionPath, host);
+    if (configuration === undefined) {
+        return undefined;
+    }
+    const recorded = mtimeOf(environment);
+    const manifest = mtimeOf(configuration) ?? 0;
+    const name = path.relative(path.dirname(solutionPath), configuration) || VCPKG_CONFIGURATION_FILE;
+    if (recorded === undefined) {
+        return `Note: the tools environment of ${name} has not been activated in this window (no .cmsis/tools-environment.yml, the record `
+            + 'of the tools the CMSIS tasks run with): cmsis_action activate_environment does it.';
+    }
+    if (manifest > recorded) {
+        return `Note: ${name} is newer than .cmsis/tools-environment.yml (the record of the tools the CMSIS tasks run with), so the tasks `
+            + 'still run with the tools of the earlier activation: cmsis_action activate_environment re-resolves it.';
+    }
+    return undefined;
+}
+
+/**
+ * `activate_environment`: the Arm Tools Environment Manager's Reactivate
+ * Environment, which an agent could only ask the user for. It resolves
+ * `vcpkg-configuration.json` again and installs what is missing; CMSIS
+ * Solution then rewrites `.cmsis/tools-environment.yml`. The call waits
+ * until that file has changed and stays unchanged for one more look, then
+ * lists the tools it names; a resolution that outlasts the wait (downloads,
+ * a licence dialog) answers `running`.
+ */
+async function activateEnvironment(issue: Issue, solutionPath: string): Promise<ToolText> {
+    const { host } = issue.context;
+    const { environment, configuration } = environmentFiles(solutionPath, host);
+    const known = await vscode.commands.getCommands(true);
+    if (!known.includes(issue.command)) {
+        throw new ToolError('TASK_FAILED',
+            `CMSIS 'activate_environment'${issue.tag} not attempted: the command '${issue.command}' is not registered in this window, so the `
+                + `Arm Tools Environment Manager extension (${ENVIRONMENT_EXTENSION}) is not installed or not active.`,
+            'Ask the user to install the Arm Tools Environment Manager (it comes with the Keil Studio Pack, Arm.keil-studio-pack) and reload the window.');
+    }
+    if (configuration === undefined) {
+        throw new ToolError('INVALID_ARGUMENT',
+            `CMSIS 'activate_environment'${issue.tag} not attempted: no ${VCPKG_CONFIGURATION_FILE} from ${path.dirname(solutionPath)} up to the `
+                + 'workspace folder, so there is no environment to activate.',
+            'The CMSIS tasks run with the tools the CMSIS Solution extension bundles; a project that needs others declares them in vcpkg-configuration.json.');
+    }
+    const before = mtimeOf(environment);
+    const issuedAt = host.now();
+    await issueCommand(issue, 'activate_environment');
+    let seen: number | undefined;
+    for (;;) {
+        const now = mtimeOf(environment);
+        if (now !== undefined && now !== before && now === seen) {
+            break;
+        }
+        seen = now;
+        if (host.now() >= answerBy(issue)) {
+            return {
+                text: `CMSIS 'activate_environment'${issue.tag} issued via '${issue.command}'; CMSIS Solution has not rewritten `
+                    + `${TOOLS_ENVIRONMENT_FILE} after ${formatDuration(host.now() - issuedAt)}. The Environment Manager may still download tools, `
+                    + 'or wait for the user in the window (a licence or an activation prompt): ask the user to look, then call '
+                    + 'cmsis_action activate_environment again — a second activation of the same manifest is harmless.',
+                status: 'running',
+            };
+        }
+        await host.sleep(REFRESH_POLL_MS);
+    }
+    let tools: ToolsEnvironment;
+    try {
+        tools = readToolsEnvironment(fs.readFileSync(environment, 'utf8'));
+    } catch (caught) {
+        throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${issue.tag}: ${environment} was rewritten, but it could not be read (${failureText(caught)}).`);
+    }
+    return activationResult(issue.tag, path.basename(configuration), tools, host.now() - issuedAt);
+}
+
+/** The answer of `activate_environment`: the tools the rewritten record names. */
+function activationResult(tag: string, manifest: string, tools: ToolsEnvironment, tookMs: number): string {
+    const named = tools.tools.map((tool) => (tool.version && !tool.name.includes(tool.version) ? `${tool.name} ${tool.version}` : tool.name));
+    const listed = named.slice(0, ENVIRONMENT_TOOLS_LISTED).map((line) => `  ${line}`);
+    if (named.length > ENVIRONMENT_TOOLS_LISTED) {
+        listed.push(`  … ${named.length - ENVIRONMENT_TOOLS_LISTED} more`);
+    }
+    const inventory = listed.length > 0 ? ` Tools of the CMSIS tasks now:\n${listed.join('\n')}\n` : ' ';
+    return `✅ CMSIS 'activate_environment'${tag}: ${manifest} was resolved and ${TOOLS_ENVIRONMENT_FILE} rewritten after ${formatDuration(tookMs)}.`
+        + `${inventory}Next: cmsis_action build.`;
 }
 
 /** A result with the sentence the tasks repair wrote in front, when there is one. */

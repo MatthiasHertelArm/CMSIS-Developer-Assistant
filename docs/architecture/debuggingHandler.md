@@ -314,6 +314,21 @@ window's CMSIS job tracker (next section):
   more look, and answers with the messages csolution recorded there
   (`idxMessages()`). A failed build whose errors ask for `--update-rte`
   names `refresh` in its hint.
+- `activate_environment` issues `environment-manager.reactivate`, the Arm
+  Tools Environment Manager's Reactivate Environment, which no tool could
+  issue before: an agent could only ask the user, and could not tell
+  afterwards whether it had happened. It resolves `vcpkg-configuration.json`
+  again and installs what is missing; CMSIS Solution then rewrites
+  `.cmsis/tools-environment.yml`, the record of the tools its tasks run
+  with (`environmentFiles()` finds both). The call is refused when the
+  command is not registered (the extension is missing) or the solution has
+  no manifest, and otherwise waits as `refresh` does, for the record to
+  change and stay unchanged one more look, then lists the tools it names
+  (`readToolsEnvironment()`); a resolution that outlasts the wait answers
+  `running`. The task actions compare the two files first
+  (`staleEnvironmentNote()`): a manifest newer than the record, or a record
+  that is missing, puts one sentence before the result, so that a build
+  that ran with the tools of an earlier activation says so.
 
 - `open_solution` needs no active solution either. It takes the path of a
   csolution or of its folder. A folder this window has open, by its path

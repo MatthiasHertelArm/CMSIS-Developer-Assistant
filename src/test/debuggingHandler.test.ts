@@ -3406,6 +3406,87 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(failed.hint, 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — '
                     + 'the Refresh (Update RTE) of the CMSIS view — then cmsis_action build again.');
             });
+
+            test('activate_environment: Reactivate Environment, then the tools of the rewritten record; no rewrite answers running; refusals', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-activate-'));
+                try {
+                    const solutionFile = path.join(dir, 'demo.csolution.yml');
+                    const record = path.join(dir, '.cmsis', 'tools-environment.yml');
+                    const environment = (cmake: string): string => [
+                        'cmsis-tools-environment:', '  version: 1.0.0', '  environment:', '    path:', `      - /x/cmake/${cmake}/bin`,
+                        '  tools:', '    - name: CMSIS-Toolbox', '      version: 2.15.1', `    - name: tools.kitware.cmake/${cmake}/bin`, '      origin: installed', '',
+                    ].join('\n');
+                    fs.mkdirSync(path.dirname(record));
+                    fs.writeFileSync(record, environment('3.25.2'));
+                    let activations = 0;
+                    const rewrites = (): void => {
+                        activations++;
+                        setTimeout(() => fs.writeFileSync(record, environment('3.31.5')), 20);
+                    };
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'environment-manager.reactivate': rewrites });
+                    const w = jobWorld(5);
+                    // No manifest: nothing to activate.
+                    const noManifest = await refusalOf(w.handler.handleCmsisCommand({ action: 'activate_environment' }), 'INVALID_ARGUMENT');
+                    assert.ok(noManifest.message.startsWith(`CMSIS 'activate_environment' on HE not attempted: no vcpkg-configuration.json from ${dir} up to the`), noManifest.message);
+                    assert.strictEqual(activations, 0);
+
+                    fs.writeFileSync(path.join(dir, 'vcpkg-configuration.json'), '{ "requires": { "arm:tools/kitware/cmake": "^3.31.5" } }\n');
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment' })),
+                        /^✅ CMSIS 'activate_environment' on HE: vcpkg-configuration\.json was resolved and \.cmsis\/tools-environment\.yml rewritten after [\d.]+ s\. Tools of the CMSIS tasks now:\n  CMSIS-Toolbox 2\.15\.1\n  tools\.kitware\.cmake\/3\.31\.5\/bin\nNext: cmsis_action build\.$/);
+                    assert.strictEqual(activations, 1);
+
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solutionFile,
+                        'environment-manager.reactivate': () => {
+                            activations++;
+                        },
+                    });
+                    assert.match(await replyAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 3_000 }), 'running'),
+                        /^CMSIS 'activate_environment' on HE issued via 'environment-manager\.reactivate'; CMSIS Solution has not rewritten \.cmsis\/tools-environment\.yml after [\d.]+ s\. /);
+                    assert.strictEqual(activations, 2);
+
+                    // Without the Environment Manager the command is not registered: refused before anything runs.
+                    again();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile });
+                    const missing = await refusalOf(w.handler.handleCmsisCommand({ action: 'activate_environment' }), 'TASK_FAILED');
+                    assert.ok(missing.message.includes('the Arm Tools Environment Manager extension (Arm.environment-manager) is not installed or not active'), missing.message);
+                    assert.ok(missing.hint?.startsWith('Ask the user to install the Arm Tools Environment Manager'), missing.hint);
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
+
+            test('a build whose vcpkg-configuration.json is newer than the tools record, or has none, says so before its result', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-stale-env-'));
+                try {
+                    const solutionFile = path.join(dir, 'demo.csolution.yml');
+                    const manifest = path.join(dir, 'vcpkg-configuration.json');
+                    const record = path.join(dir, '.cmsis', 'tools-environment.yml');
+                    fs.writeFileSync(manifest, '{}\n');
+                    const w = jobWorld();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })),
+                        /^Note: the tools environment of vcpkg-configuration\.json has not been activated in this window \(no \.cmsis\/tools-environment\.yml, the record of the tools the CMSIS tasks run with\): cmsis_action activate_environment does it\. ✅ CMSIS 'build' succeeded on HE/);
+
+                    fs.mkdirSync(path.dirname(record));
+                    fs.writeFileSync(record, 'cmsis-tools-environment:\n  tools: []\n');
+                    const earlier = new Date(Date.now() - 60_000);
+                    fs.utimesSync(record, earlier, earlier);
+                    again();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })),
+                        /^Note: vcpkg-configuration\.json is newer than \.cmsis\/tools-environment\.yml \(the record of the tools the CMSIS tasks run with\), so the tasks still run with the tools of the earlier activation: cmsis_action activate_environment re-resolves it\. ✅ CMSIS 'build' succeeded on HE/);
+
+                    const later = new Date(Date.now() + 60_000);
+                    fs.utimesSync(record, later, later);
+                    again();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })), /^✅ CMSIS 'build' succeeded on HE/, 'a current record adds nothing');
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
         });
 
         suite('the probe guard (#46)', () => {
