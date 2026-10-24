@@ -362,6 +362,10 @@ export interface DiagnosisInput extends TriageInput {
     lockup?: boolean;
 }
 
+/** The exception numbers of the fault handlers: HardFault, MemManage, BusFault, UsageFault, SecureFault. */
+const FIRST_FAULT_EXCEPTION = 3;
+const LAST_FAULT_EXCEPTION = 7;
+
 const IPSR_NAMES: Record<number, string> = { 2: 'NMI', 3: 'HardFault', 4: 'MemManage', 5: 'BusFault', 6: 'UsageFault', 7: 'SecureFault', 11: 'SVCall', 12: 'DebugMonitor', 14: 'PendSV', 15: 'SysTick' };
 
 /** The diagnose_fault report; at most ~40 lines. */
@@ -381,6 +385,11 @@ export function renderDiagnosis(input: DiagnosisInput): string {
             for (const [i, f] of frames.slice(0, input.maxFrames ?? 3).entries()) {
                 lines.push(`  #${i} ${f.name} @ ${f.source ?? '<no source>'}:${f.line ?? '?'}`);
             }
+        }
+        if (ipsr !== undefined && ipsr >= FIRST_FAULT_EXCEPTION && ipsr <= LAST_FAULT_EXCEPTION) {
+            lines.push(`The fault status reads clear (CFSR and HFSR 0), yet the ${IPSR_NAMES[ipsr]} handler is active: the handler cleared it, or the debug server does not report it.`);
+            lines.push('Next: get_call_stack for where the exception came from.');
+            return lines.join('\n');
         }
         lines.push('The target is not in a fault: CFSR and HFSR are clear. If it faulted earlier, the flags were cleared by a reset or by the handler.');
         lines.push('Next: get_call_stack for where it stopped; wait_for_stop after continue_execution to catch the fault when it happens.');

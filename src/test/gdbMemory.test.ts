@@ -16,6 +16,7 @@
 
 import type * as vscode from 'vscode';
 import * as assert from 'assert';
+import { systemControlSpaceWords } from '../core/memoryMap';
 import {
     ageText, attemptsText, CAUSE_MAX_CHARS, classifyReadFailure, coreVerdict, DebugPortProbe, DHCSR_ADDRESS, dhcsrSummary, isLockedUp, LOCKUP_NOTE,
     silentCoreText, wedgeHint,
@@ -409,6 +410,69 @@ suite('the core\'s debug status in check_target_connection and get_session_statu
             answer = () => bytes(0x00030003);
             await executor.probeDebugPort();
             assert.strictEqual((await executor.getSessionStatus()).coreSilentForMs, undefined, 'a DHCSR read that answers');
+        });
+
+        /** An adapter like the Corstone FVP's GDB server: a System Control Space read longer than one word comes back as zeros. */
+        const fvpMemory = (words: Record<number, number>): Answer => (command, args) => {
+            if (command !== 'readMemory') {
+                throw new Error('unrecognized request');
+            }
+            const at = Number(args.memoryReference);
+            const count = Number(args.count);
+            const out = Buffer.alloc(count);
+            if (!(at >= 0xE000E000 && at <= 0xE000EFFF && count > 4)) {
+                for (let index = 0; index < count; index++) {
+                    const address = at + index;
+                    out[index] = ((words[address - (address & 3)] ?? 0) >>> ((address & 3) * 8)) & 0xff;
+                }
+            }
+            return { data: out.toString('base64') };
+        };
+        const FAULTED = { 0xE000ED00: 0x411FD220, 0xE000ED04: 0x00000803, 0xE000ED28: 0x02000000, 0xE000ED2C: 0x40000000, 0xE000DFFC: 0xAABBCCDD, 0x20000000: 0x11223344 };
+        const reads = (made: Live): string[] => made.requests.filter((request) => request.command === 'readMemory')
+            .map((request) => `${String(request.args.memoryReference)}/${String(request.args.count)}`);
+
+        test('the fault registers are read one word each, so a server that zeroes longer SCS reads still shows the fault', async () => {
+            const made = liveSession(fvpMemory(FAULTED));
+            made.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const registers = await new DebuggingExecutor().readFaultRegisters();
+            assert.deepStrictEqual(registers, { CFSR: 0x02000000, HFSR: 0x40000000, DFSR: 0, MMFAR: 0, BFAR: 0, AFSR: 0 });
+            assert.deepStrictEqual(reads(made), ['0xE000ED28/4', '0xE000ED2C/4', '0xE000ED30/4', '0xE000ED34/4', '0xE000ED38/4', '0xE000ED3C/4']);
+        });
+
+        test('a memory read that touches the SCS goes word by word, aligned; other reads stay one block', async () => {
+            const made = liveSession(fvpMemory(FAULTED));
+            made.event('stopped', { reason: 'breakpoint', threadId: 1 });
+            const executor = new DebuggingExecutor();
+            const faultStatus = await executor.readMemory('0xE000ED28', 8);
+            assert.deepStrictEqual([...faultStatus.bytes], [0, 0, 0, 2, 0, 0, 0, 0x40]);
+            assert.strictEqual(faultStatus.offset, 0);
+            assert.deepStrictEqual(reads(made), ['0xe000ed28/4', '0xe000ed2c/4']);
+
+            made.requests.length = 0;
+            const unaligned = await executor.readMemory('E000ED02', 5);
+            assert.deepStrictEqual([...unaligned.bytes], [0x1F, 0x41, 0x03, 0x08, 0x00], 'CPUID\'s upper half, then ICSR\'s first three bytes');
+            assert.deepStrictEqual(reads(made), ['0xe000ed00/4', '0xe000ed04/4']);
+
+            made.requests.length = 0;
+            const straddling = await executor.readMemory('0xE000DFFC', 8);
+            assert.deepStrictEqual([...straddling.bytes], [0xDD, 0xCC, 0xBB, 0xAA, 0, 0, 0, 0]);
+            assert.deepStrictEqual(reads(made), ['0xe000dffc/4', '0xe000e000/4']);
+
+            made.requests.length = 0;
+            const ram = await executor.readMemory('0x20000000', 16);
+            assert.deepStrictEqual([...ram.bytes.subarray(0, 4)], [0x44, 0x33, 0x22, 0x11]);
+            assert.deepStrictEqual(reads(made), ['0x20000000/16']);
+        });
+
+        test('the SCS and its Non-secure alias are read word by word; the rest of the PPB is not', () => {
+            assert.deepStrictEqual(systemControlSpaceWords(0xE000ED28n, 24), { first: 0xE000ED28n, words: 6, skip: 0 });
+            assert.deepStrictEqual(systemControlSpaceWords(0xE000EFFEn, 4), { first: 0xE000EFFCn, words: 2, skip: 2 });
+            assert.deepStrictEqual(systemControlSpaceWords(0xE002ED28n, 4), { first: 0xE002ED28n, words: 1, skip: 0 });
+            assert.strictEqual(systemControlSpaceWords(0xE0001000n, 16), undefined, 'the DWT');
+            assert.strictEqual(systemControlSpaceWords(0xE000F000n, 16), undefined);
+            assert.strictEqual(systemControlSpaceWords(0xE000DFF0n, 16), undefined, 'ends just below');
+            assert.strictEqual(systemControlSpaceWords(0x20000000n, 4096), undefined);
         });
 
         test('a failed memory read\'s DHCSR read is kept too; other debug types keep nothing', async () => {

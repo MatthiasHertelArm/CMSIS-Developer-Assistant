@@ -151,9 +151,13 @@ can fake only the part a case drives.
   `readMemory()` returns its bytes with their offset from the requested
   address (`MemoryRead`, placed by `bytesInRange()`), and fewer of them when
   the end cannot be read; the `read_memory` dump labels its rows from there,
-  and the stacked exception frame and the fault-register block count only
-  when they begin at the address asked for. A one-word read needs all four
-  bytes, so a reply that begins late is a short one there.
+  and the stacked exception frame counts only when it begins at the
+  address asked for. A one-word read needs all four bytes, so a reply that
+  begins late is a short one there. A read that touches the System Control
+  Space (0xE000E000–0xE000EFFF, and its Non-secure alias) goes one aligned
+  word at a time (`systemControlSpaceWords()` in `src/core/memoryMap.ts`):
+  its registers are words, and the Corstone FVP's GDB server answers longer
+  reads there with zeros.
   `writeMemoryWord()` falls back to GDB's `set` and checks its write by
   reading it back. Core registers are
   read as `$<name>` expressions, all at once, with `<timeout>` or
@@ -166,8 +170,8 @@ can fake only the part a case drives.
   fields decoded (`src/core/peripheralReader.ts`), with the SVD of the session
   the read goes to rather than of the one VS Code has focused; the Peripheral
   Inspector extension is not asked, as its API has no register read. The
-  fault status registers are read as one block when possible, else word by
-  word, and decoded by `src/core/faultDecoder.ts`.
+  six fault status registers are read one word each, for the same reason as
+  the System Control Space above, and decoded by `src/core/faultDecoder.ts`.
 - **A failed read.** A memory read that fails in every way keeps why each
   way failed (`MemoryReadFailure`, each cause cut to 200 characters). On the
   CMSIS Debugger each public read then reads DHCSR (0xE000EDF0) once — 4
@@ -179,7 +183,7 @@ can fake only the part a case drives.
   `PROBE_WEDGED` depends on the session's `request`: an attached session
   reconnects with `cmsis_action detach` and `attach`, a launched one owns
   its GDB server (`src/core/probeWedge.ts`). The fault registers are judged
-  once, after the block and the word-by-word read both failed.
+  once, at the first word that fails.
   `probeDebugPort()` offers the same DHCSR read to the handler, which checks
   `S_LOCKUP` with it. Nothing is retried or reconnected: a reconnect replaces
   the session and must not happen as a side effect of a read.

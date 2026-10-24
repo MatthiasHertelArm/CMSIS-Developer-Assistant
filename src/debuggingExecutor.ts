@@ -52,8 +52,9 @@
 
 import * as vscode from 'vscode';
 import { architectureHasCycleCounter, DEMCR_TRCENA, DWT_ADDRESSES, DWT_CTRL_CYCCNTENA, DWT_CTRL_NOCYCCNT } from './core/dwt';
-import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FAULT_REGISTER_BLOCK, FaultRegisters, faultRegistersFromBlock } from './core/faultDecoder';
+import { decodeFaultRegisters, FAULT_REGISTER_ADDRESSES, FaultRegisters } from './core/faultDecoder';
 import { CMSIS_DEBUGGER_TYPE, gdbRequestRefusal, miQuoted, passthroughCommand } from './core/gdbDialect';
+import { systemControlSpaceWords } from './core/memoryMap';
 import { readPeripheralViaMemory } from './core/peripheralReader';
 import { ResetMethod } from './core/resetAssist';
 import { type DapVariable, isDapVariable } from './core/variableView';
@@ -75,7 +76,7 @@ import {
 } from './executor/contract';
 import { GdbReply, runGdbCommand } from './executor/gdbCommand';
 import {
-    attemptsOf, bytesInRange, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
+    bytesInRange, explainReadFailure, nthWordAddress, probeDebugPort, readWordThroughGdb, withEarlierAttempts, withHexPrefix,
 } from './executor/gdbMemory';
 import type { DebugPortProbe, ReadAttempt } from './core/probeWedge';
 import { connectionReport, deviceReport, launchFolderFor, noLaunchFolderText, probeSession, takesRequests } from './executor/sessionReports';
@@ -134,7 +135,7 @@ const CALL_STACK_LEVELS = 50;
 /** Size of the stacked exception frame (R0-R3, R12, LR, PC, xPSR). */
 const EXCEPTION_FRAME_BYTES = 32;
 
-/** The fault status registers in the order the word-by-word read visits them. */
+/** The fault status registers in the order the read visits them, one word each. */
 const FAULT_REGISTER_ORDER: ReadonlyArray<keyof FaultRegisters> = ['CFSR', 'HFSR', 'DFSR', 'MMFAR', 'BFAR', 'AFSR'];
 
 /** The session a child session (a core of a multi-core launch) was started from, or the session itself. */
@@ -638,12 +639,24 @@ export class DebuggingExecutor implements IDebuggingExecutor {
 
     /**
      * `readMemory` without the DHCSR read: the operation fence around DAP
-     * `readMemory`, then the GDB ladder word by word. A failure carries the
-     * cause of every strategy.
+     * `readMemory`, then the GDB ladder word by word. A range that touches
+     * the System Control Space is read one aligned word at a time instead.
+     * A failure carries the cause of every strategy.
      */
     private readMemoryOnce(session: vscode.DebugSession, start: string, length: number, overrideMs: number | undefined): Promise<MemoryRead> {
         const budgetMs = this.budgets.request(overrideMs);
         return withTimeout('readMemory', this.budgets.operation(overrideMs), async () => {
+            // The Corstone FVP's GDB server answers SCS reads longer than one word with zeros.
+            const scs = /^0x[0-9a-f]+$/i.test(start) ? systemControlSpaceWords(BigInt(start), length) : undefined;
+            if (scs) {
+                const words: Buffer[] = [];
+                for (let index = 0; index < scs.words; index++) {
+                    const bytes = Buffer.alloc(4);
+                    bytes.writeUInt32LE(await this.readWordOnce(session, `0x${(scs.first + BigInt(index) * 4n).toString(16)}`, budgetMs) >>> 0, 0);
+                    words.push(bytes);
+                }
+                return { bytes: Buffer.concat(words).subarray(scs.skip, scs.skip + length), offset: 0 };
+            }
             const attempts: ReadAttempt[] = [];
             try {
                 const reply = await customRequestWithTimeout<ReadMemoryBody | undefined>(session, 'readMemory',
@@ -819,40 +832,24 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     }
 
     /**
-     * CFSR, HFSR, DFSR, MMFAR, BFAR and AFSR: one 24-byte read, else one word
-     * at a time. A failure is explained once, after both ways failed, with
-     * the causes of both.
+     * CFSR, HFSR, DFSR, MMFAR, BFAR and AFSR, one word each: they are word
+     * registers, and the Corstone FVP's GDB server answers SCS reads longer
+     * than one word with zeros. A failure is explained once, with the causes
+     * of every strategy of the word that failed.
      */
     async readFaultRegisters(overrideMs?: number): Promise<FaultRegisters> {
         const session = sessionOrThrow();
         const budgetMs = this.budgets.request(overrideMs);
         try {
             return await withTimeout('readFaultRegisters', this.budgets.operation(overrideMs), async () => {
-                let blockAttempts: ReadAttempt[] = [];
-                try {
-                    // The request budget is the nested read's override, fence included (KB10).
-                    const block = await this.readMemoryOnce(session, FAULT_REGISTER_BLOCK.address, FAULT_REGISTER_BLOCK.bytes, budgetMs);
-                    if (block.offset === 0 && block.bytes.length >= FAULT_REGISTER_BLOCK.bytes) {
-                        return faultRegistersFromBlock(block.bytes);
-                    }
-                } catch (err) {
-                    if (err instanceof HardwareTimeoutError) {
-                        throw err;
-                    }
-                    blockAttempts = attemptsOf(err, 'block read');
-                }
                 const registers = {} as FaultRegisters;
                 for (const name of FAULT_REGISTER_ORDER) {
-                    try {
-                        registers[name] = await this.readWordOnce(session, FAULT_REGISTER_ADDRESSES[name], this.budgets.request(budgetMs));
-                    } catch (err) {
-                        throw withEarlierAttempts(err, blockAttempts);
-                    }
+                    registers[name] = await this.readWordOnce(session, FAULT_REGISTER_ADDRESSES[name], budgetMs);
                 }
                 return registers;
             });
         } catch (err) {
-            throw await explainReadFailure(session, FAULT_REGISTER_BLOCK.address, err, budgetMs);
+            throw await explainReadFailure(session, FAULT_REGISTER_ADDRESSES.CFSR, err, budgetMs);
         }
     }
 

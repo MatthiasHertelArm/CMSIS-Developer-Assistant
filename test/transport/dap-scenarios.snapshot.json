@@ -784,7 +784,12 @@
           "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
           ]
         },
@@ -794,7 +799,12 @@
           "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
@@ -860,7 +870,12 @@
           "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (4):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\n  #3 main @ main.c:31 [frameId=1003]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
@@ -892,7 +907,12 @@
           "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: PSP_S @ 0x20016f00, R0 at +0x28 after the integrity signature and R4–R11 (EXC_RETURN 0xfffffff8)\n  R0=0x60000000 R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
@@ -928,7 +948,12 @@
           "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n\nThe core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\n",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
           ]
         },
@@ -938,7 +963,114 @@
           "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nLockup: The core is in lockup (DHCSR.S_LOCKUP=1): it met a fault it could not handle — a fault inside the HardFault or NMI handler, or while entering one — and stopped executing. The fault status shows what went wrong; a reset leaves lockup.\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> 24 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fault-scs-word-reads",
+      "description": "The same fault on a GDB server that answers System Control Space reads longer than one word with zeros, as the Corstone FVP's does: the fault registers and a read_memory there are read one word each, so the fault shows.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"SIGSEGV\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "get_fault_info",
+          "args": {},
+          "text": "=== Cortex-M Fault Analysis ===\n\nHFSR  = 0x40000000\n  FORCED: Escalated fault (check CFSR for root cause)\n\nMMFSR = 0x00\n\nBFSR  = 0x82\n  BFARVALID: Faulting address = 0x60000000\n  PRECISERR: Precise data bus error\n\nUFSR  = 0x0000\n\nDFSR  = 0x00000008\n  VCATCH: Vector catch\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== Fault diagnosis ===\nClass: BusFault escalated to HardFault (FORCED) — FORCED, BFARVALID, PRECISERR\nStop: SIGSEGV, halted in exception 3 (HardFault)\nFault address (BFAR): 0x60000000 (External RAM)\nException frame: MSP @ 0x20017fa8 (EXC_RETURN 0xfffffff9)\n  R0=0x5fffffec R1=0x00000020 R2=0x00000000 R3=0x20000010 R12=0x00000000\n  PC=0x0800027a ← faulting instruction  LR=0x08000303 (caller)  xPSR=0x21000000\n  PC is in Code\nRegisters now: PC=0x080001a4 SP=0x20017fa8 MSP=0x20017fa8 PSP=0x00000000\nCall stack (3):\n  #0 HardFault_Handler @ <no source>:? [frameId=1000]\n  #1 <signal handler called> @ <no source>:? [frameId=1001]\n  #2 led_toggle @ led.c:18 [frameId=1002]\nHypotheses:\n  1. [medium] Access to 0x60000000 (External RAM): a wild or stale pointer, or an index past the end of a buffer.\n     next: get_frame_variables on the faulting frame; read_memory around the address to see what is there\nNext: get_frame_variables on the faulting frame; read_memory around the address to see what is there",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
+            "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$lr\",\"context\":\"watch\",\"frameId\":1000} -> \"-7\"",
+            "dap: evaluate {\"expression\":\"$pc\",\"context\":\"watch\",\"frameId\":1000} -> \"0x80001a4 <HardFault_Handler>\"",
+            "dap: evaluate {\"expression\":\"$xpsr\",\"context\":\"watch\",\"frameId\":1000} -> \"1627389955\"",
+            "dap: evaluate {\"expression\":\"$msp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
+            "dap: evaluate {\"expression\":\"$psp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x0\"",
+            "dap: evaluate {\"expression\":\"$control\",\"context\":\"watch\",\"frameId\":1000} -> \"0\"",
+            "dap: evaluate {\"expression\":\"$msplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: evaluate {\"expression\":\"$psplim\",\"context\":\"watch\",\"frameId\":1000} -> \"void\"",
+            "dap: readMemory {\"memoryReference\":\"0x20017fa8\",\"count\":32} -> 32 bytes",
+            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":3}"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "0xE000ED28",
+            "length": 8
+          },
+          "text": "Memory at 0xE000ED28 (8 bytes):\n\nHex:\n  0xe000ed28: 00 82 00 00 00 00 00 40\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xe000ed28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xe000ed2c\",\"count\":4} -> 4 bytes"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fault-status-clear-in-handler",
+      "description": "Halted in the HardFault handler (IPSR 3) with CFSR and HFSR clear: diagnose_fault does not say the target is not in a fault.",
+      "setup": [
+        "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
+        "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
+      ],
+      "calls": [
+        {
+          "tool": "diagnose_fault",
+          "args": {},
+          "text": "=== No fault flags set ===\nStop: breakpoint, exception 3 (HardFault), PC 0x080001a4\nCall stack:\n  #0 HardFault_Handler @ <no source>:?\n  #1 <signal handler called> @ <no source>:?\n  #2 led_toggle @ led.c:18\nThe fault status reads clear (CFSR and HFSR 0), yet the HardFault handler is active: the handler cleared it, or the debug server does not report it.\nNext: get_call_stack for where the exception came from.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED2C\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED30\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED34\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED38\",\"count\":4} -> 4 bytes",
+            "dap: readMemory {\"memoryReference\":\"0xE000ED3C\",\"count\":4} -> 4 bytes",
             "dap: readMemory {\"memoryReference\":\"0xE000EDF0\",\"count\":4} -> 4 bytes",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"$sp\",\"context\":\"watch\",\"frameId\":1000} -> \"0x20017fa8\"",
@@ -979,10 +1111,6 @@
           "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
@@ -997,10 +1125,6 @@
           "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session launched its own GDB server: detaching or stopping the session stops that server, and restart_debugging or cmsis_action load_and_debug re-flash and reset the target. To keep the fault state, ask the user to restart the GDB server without a reset (J-Link -nohalt -noreset, pyOCD -O connect_mode=attach) — do not start one yourself — then cmsis_action attach and get_fault_info. If the fault state does not matter: cmsis_action load_and_debug.",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
@@ -1059,10 +1183,6 @@
           "text": "[PROBE_WEDGED] Memory reads fail and the debug port does not answer (DHCSR at 0xE000EDF0 unreadable: Unable to read memory. (@ 0xe000edf0)). Reading 0xE000ED28 — DAP readMemory: Unable to read memory. (@ 0xe000ed28); watch expression: empty result; MI read: Unable to read memory.\nThis session is attached to a GDB server that keeps running: cmsis_action detach, then cmsis_action attach — reconnects without a reset; then get_fault_info.",
           "traffic": [
             "dap: threads {}",
-            "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":24} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
-            "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
-            "dap: evaluate {\"expression\":\"*(unsigned int*)0xe000ed28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",
-            "dap: evaluate {\"expression\":\">-data-read-memory-bytes 0xe000ed28 4\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Unable to read memory.\"",
             "dap: readMemory {\"memoryReference\":\"0xE000ED28\",\"count\":4} -> error: \"Unable to read memory. (@ 0xe000ed28)\"",
             "dap: stackTrace {\"threadId\":1,\"startFrame\":0,\"levels\":50}",
             "dap: evaluate {\"expression\":\"*(unsigned int*)0xE000ED28\",\"context\":\"watch\",\"frameId\":1000} -> \"\"",

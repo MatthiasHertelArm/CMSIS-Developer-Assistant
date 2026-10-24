@@ -132,11 +132,6 @@ export function withEarlierAttempts(caught: unknown, earlier: readonly ReadAttem
         : caught;
 }
 
-/** The attempts a failure records; any other error counts as one attempt of `strategy`. */
-export function attemptsOf(caught: unknown, strategy: string): ReadAttempt[] {
-    return caught instanceof MemoryReadFailure ? [...caught.attempts] : [{ strategy, cause: messageOf(caught) }];
-}
-
 /** Why a query's reply held no word: its text, or that there was none. */
 function unreadableReply(answer: unknown): string {
     if (typeof answer !== 'string') {

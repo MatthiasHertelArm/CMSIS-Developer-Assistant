@@ -711,6 +711,10 @@ class FakeTarget {
                 const addr = Number(args.memoryReference) + (args.offset ?? 0);
                 if (this.state !== 'stopped') { throw new Error(`${RUNNING_MSG} (@ ${hex(addr)})`); }
                 if (!args.count) { return undefined; }
+                // The Corstone FVP's GDB server answers System Control Space reads longer than one word with zeros.
+                if (this.spec.zeroScsBlocks && args.count > 4 && addr >= 0xe000e000 && addr <= 0xe000efff) {
+                    return { data: Buffer.alloc(args.count).toString('base64'), address: hex(addr) };
+                }
                 // cdt-gdb-adapter answers with GDB's first block and its begin, later than asked when the range starts in a hole.
                 const [block] = this.readableBlocks(addr, args.count);
                 if (!block) { throw new Error(`Unable to read memory. (@ ${hex(addr)})`); }
@@ -1361,6 +1365,25 @@ const SCENARIOS = [
         session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: { ...FAULT_WORDS, 0xe000edf0: 0x000b0003 } },
         calls: [
             { tool: 'get_fault_info' },
+            { tool: 'diagnose_fault' },
+        ],
+    },
+    {
+        name: 'fault-scs-word-reads',
+        description: 'The same fault on a GDB server that answers System Control Space reads longer than one word with zeros, as the Corstone FVP\'s does: '
+            + 'the fault registers and a read_memory there are read one word each, so the fault shows.',
+        session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, zeroScsBlocks: true },
+        calls: [
+            { tool: 'get_fault_info' },
+            { tool: 'diagnose_fault' },
+            { tool: 'read_memory', args: { address: '0xE000ED28', length: 8 } },
+        ],
+    },
+    {
+        name: 'fault-status-clear-in-handler',
+        description: 'Halted in the HardFault handler (IPSR 3) with CFSR and HFSR clear: diagnose_fault does not say the target is not in a fault.',
+        session: { initial: { at: 'hardFault', reason: 'breakpoint' } },
+        calls: [
             { tool: 'diagnose_fault' },
         ],
     },

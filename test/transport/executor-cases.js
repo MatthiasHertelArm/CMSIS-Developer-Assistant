@@ -893,19 +893,20 @@ async function main() {
     }
     reset();
     {
-        let size = 24;
         const { session, calls } = makeSession((c, a) => {
-            if (c === 'readMemory') { return { data: b64(Array.from({ length: a.count === 24 ? size : 4 }, (_, i) => i)) }; }
+            if (c === 'readMemory') { return { data: b64(Array.from({ length: a.count }, (_, i) => i)) }; }
             throw new Error('?');
         });
         focusOn(session);
         const ex = new DebuggingExecutor();
         const regs = await ex.readFaultRegisters();
-        check('F2 block read', calls.length === 1 && calls[0].json === '{"memoryReference":"0xE000ED28","count":24}' && regs.CFSR === 0x03020100 && regs.AFSR === 0x17161514, regs);
-        size = 20;
+        // No 24-byte block: the Corstone FVP's GDB server answers SCS reads longer than one word with zeros.
+        check('F2 six words from CFSR, one request each', eq(calls.map((c) => c.json), ['0xE000ED28', '0xE000ED2C', '0xE000ED30', '0xE000ED34', '0xE000ED38', '0xE000ED3C'].map((m) => `{"memoryReference":"${m}","count":4}`))
+            && regs.CFSR === 0x03020100 && regs.AFSR === 0x03020100, { regs, calls: calls.map((c) => c.json) });
         calls.length = 0;
-        await ex.readFaultRegisters();
-        check('F2 short → six words', eq(calls.slice(1).map((c) => c.json), ['0xE000ED28', '0xE000ED2C', '0xE000ED30', '0xE000ED34', '0xE000ED38', '0xE000ED3C'].map((m) => `{"memoryReference":"${m}","count":4}`)), calls.map((c) => c.json));
+        const scs = await ex.readMemory('0xE000ED00', 12);
+        check('F2 a read_memory in the SCS goes word by word too', eq(calls.map((c) => c.json), ['0xe000ed00', '0xe000ed04', '0xe000ed08'].map((m) => `{"memoryReference":"${m}","count":4}`))
+            && scs.bytes.length === 12 && scs.offset === 0, calls.map((c) => c.json));
         calls.length = 0;
         await ex.readExceptionFrame(0x20001000);
         check('F3 exception frame', calls[0].json === '{"memoryReference":"0x20001000","count":32}');
@@ -921,7 +922,7 @@ async function main() {
     }
     reset();
     {
-        // The stacked frame and the fault block count only when they begin where they were asked for.
+        // The stacked frame counts only when it begins where it was asked for; the fault registers are words.
         const { session, calls } = makeSession((c, a) => {
             if (c !== 'readMemory') { throw new Error('?'); }
             if (a.memoryReference === '0x1ffffff0') { return { address: '0x20000000', data: b64(Array(16).fill(0xaa)) }; }
@@ -933,15 +934,15 @@ async function main() {
         const frame = await ex.readExceptionFrame(0x1ffffff0);
         check('F4 a stacked frame whose start cannot be read has no bytes, not those after the hole', frame.length === 0, [...frame]);
         const regs = await ex.readFaultRegisters();
-        check('F4 a fault block that begins after 0xE000ED28 is not decoded: the six words are read', regs.CFSR === 0x11 && regs.AFSR === 0x11
-            && calls.filter((c) => c.args.count === 4).length === 6, regs);
+        check('F4 the fault registers are six word reads, none of 24 bytes', regs.CFSR === 0x11 && regs.AFSR === 0x11
+            && calls.filter((c) => c.args.count === 4).length === 6 && !calls.some((c) => c.args.count === 24), regs);
     }
     reset();
     {
         const { session } = makeSession((c) => { if (c === 'readMemory') { return never(); } throw new Error('?'); });
         focusOn(session);
         const e = await rejects(new DebuggingExecutor({ dapRequestMs: 60 }).readFaultRegisters());
-        check('F timeout in the block read, DHCSR times out too → PROBE_WEDGED (#3)', e && e.code === 'PROBE_WEDGED'
+        check('F timeout in the first word read, DHCSR times out too → PROBE_WEDGED (#3)', e && e.code === 'PROBE_WEDGED'
             && e.message.startsWith('Memory reads time out and the debug port does not answer (DHCSR at 0xE000EDF0 timed out). Reading 0xE000ED28'), String(e));
     }
 
