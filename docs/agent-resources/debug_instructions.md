@@ -111,7 +111,7 @@ Every tool call is measured; `get_session_status` ends with the session's tool-c
 
 ## 🪟 Several VS Code windows open
 
-The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one, otherwise from the window this session pinned or used last, then from the default target the user chose in VS Code, then from the window that has an active debug session.
+The MCP server runs in one window (the router) and forwards each call to the window that owns the target. It resolves from a file path when the tool has one (in a pinned session the breakpoint tools go to the pinned window unless only the file's own window debugs), otherwise from the window this session pinned or used last, then from the default target the user chose in VS Code, then from the window that has an active debug session.
 
 `cmsis_action`, `flash`, `reset`, `serial_open`, `serial_capture` and `knowledge_search` also take `window` — a pid, or a path inside that window's workspace (for `knowledge_search` it names the project whose context scopes the search, without changing the session's target). It aims that call, and the session's later calls without a path follow it to the same window: `cmsis_action({ action: 'load_and_debug', window: '4711' })`, then `read_memory` reads that board.
 

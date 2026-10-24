@@ -129,8 +129,15 @@ that applies decides:
    a path, it re-aims the session: the calls after it go to the same window,
    unless the session is pinned.
 2. **Path.** A call that carries `fileFullPath` or `workingDirectory` goes to
-   the window whose workspace folder contains it most deeply. A pin never
-   overrides a path: a named file must not be opened in another window.
+   the window whose workspace folder contains it most deeply. A pin does not
+   override the path of `start_debugging`: a file is launched in the window
+   that holds it. The breakpoint ops (`add_breakpoint`, `add_logpoint`,
+   `remove_breakpoint`) of a pinned session are the exception
+   (`resolveForBreakpoint()`): a breakpoint acts on the debug session that
+   binds it, and the program a session debugs may be built from sources in
+   another window's folder, so they go to the pinned window whatever file
+   they name, unless only the file's own window has a debug session. A file
+   outside the pinned window's folders adds one line to the answer.
 3. **Pin.** The window chosen with `select_debug_window`, by process id or by a
    path inside its workspace, for the rest of the MCP session. A reload gives
    the window a new pid: the pin keeps the window's folders and moves to the
@@ -473,7 +480,7 @@ releases the window's serial ports, giving that step at most two seconds.
 ## Tests
 
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
-  round trip; `serial_list_ports` and `get_session_status` on a tie (the
+  round trip; the breakpoint ops of a pinned session; `serial_list_ports` and `get_session_status` on a tie (the
   router's own window; the status across idle and debugging windows, a
   window that does not answer); typed outcomes — a worker error with its code and the target
   kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the

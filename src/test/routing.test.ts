@@ -371,6 +371,39 @@ suite('Multi-window routing', () => {
             assertAnsweredBy(await router.handleReadMemory({ address: '0x0', length: 4 }), 'idle');
         });
 
+        test('a breakpoint op of a pinned session goes to the pinned window with the debug session, whatever file it names, and says so', async () => {
+            const board = await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            await openWindow('sources', { workspaceFolders: [folder('sources')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: board.pid });
+            const foreign = path.join(folder('sources'), 'Blinky.c');
+            const added = await router.handleAddBreakpoint({ fileFullPath: foreign, line: 48 });
+            assertAnsweredBy(added, 'board');
+            assert.ok(textOf(added).endsWith(`\nRan in the pinned window pid ${board.pid} (board); the file lies outside its folders.`), textOf(added));
+            assertAnsweredBy(await router.handleAddLogpoint({ fileFullPath: foreign, line: 50, logMessage: 'x' }), 'board');
+            assertAnsweredBy(await router.handleRemoveBreakpoint({ fileFullPath: foreign, line: 48 }), 'board');
+            // A file outside every workspace is no refusal for a pinned session.
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }), 'board');
+            // A file of its own folders: no note.
+            const own = await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 3 });
+            assert.ok(!textOf(own).includes('Ran in the pinned window'), textOf(own));
+            assert.deepStrictEqual(router.describeTarget(), { pid: board.pid, name: 'board', reason: 'pinned' });
+            // start_debugging keeps routing by its path: it launches in the window whose folder holds the file.
+            assertAnsweredBy(await router.handleStartDebugging({ fileFullPath: foreign, workingDirectory: folder('sources') }), 'sources');
+        });
+
+        test('a breakpoint op of a pinned session goes to the file\'s window only when that one alone debugs; unpinned, the path decides', async () => {
+            const idle = await openWindow('idle', { workspaceFolders: [folder('idle')] });
+            await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            await openWindow('quiet', { workspaceFolders: [folder('quiet')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: idle.pid });
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 7 }), 'board');
+            // Neither debugs: the pinned window keeps it for the session it will start.
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('quiet'), 'main.c'), line: 7 }), 'idle');
+            assertAnsweredBy(await newRouter().handleAddBreakpoint({ fileFullPath: path.join(folder('quiet'), 'main.c'), line: 7 }), 'quiet');
+        });
+
         test('a selection that matches nothing lists what is registered', async () => {
             await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
             assert.throws(() => newRouter().selectDebugWindow({ workspaceFolder: '/nowhere' }), (failure: unknown) =>

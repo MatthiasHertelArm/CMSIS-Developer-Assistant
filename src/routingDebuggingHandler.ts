@@ -25,8 +25,11 @@
  * user chose in VS Code, the sole window with a debug session, the sole
  * window — and a tie is refused with a listing, never guessed. A newly
  * chosen default drops the established target of every session, never a
- * pin (#16). The two routing tools, `list_debug_windows` and
- * `select_debug_window`, are answered here.
+ * pin (#16). The breakpoint ops of a pinned session go to the pinned
+ * window whatever file they name, unless only the file's own window has a
+ * debug session: a breakpoint belongs to the session that binds it. The two
+ * routing tools, `list_debug_windows` and `select_debug_window`, are
+ * answered here.
  *
  * The worker's outcome comes back typed (#11): its result as it is, its
  * `ToolError` with code and hint, and the session keeps its target either
@@ -151,6 +154,8 @@ const CREATE_SOLUTION = 'create_solution';
 const QUERY_OP = 'handleCmsisQuery';
 /** The op of `serial_list_ports`: the ports belong to the machine, so any window can list them. */
 const LIST_PORTS_OP = 'handleListPorts';
+/** The ops that name a source file but act on a window's debug session: a pin can win over their path. */
+const BREAKPOINT_OPS: ReadonlySet<string> = new Set(['handleAddBreakpoint', 'handleAddLogpoint', 'handleRemoveBreakpoint']);
 /** How long a window with a debug session may take to give its state to the status of a session without a target. */
 const TIE_STATUS_BUDGET_MS = 5_000;
 /** The knowledge op whose reply says which window's project context the search used. */
@@ -189,6 +194,8 @@ type HealthProbe = { kind: 'alive' } | { kind: 'silent' } | { kind: 'failed'; re
 interface Resolved {
     entry: WindowRegistration;
     reason: ResolutionReason;
+    /** One line the answer gets about the choice, if any. */
+    note?: string;
 }
 
 /** What a window answered: its outcome, a failure included, and its journal counters when it sent them. */
@@ -208,6 +215,11 @@ class ChannelFailure extends Error {
     constructor(message: string, readonly reported?: ToolError) {
         super(message);
     }
+}
+
+/** The answer with one more line at the end of its text. */
+function withLine(answer: ToolText, line: string): ToolText {
+    return isToolReply(answer) ? { ...answer, text: `${answer.text}\n${line}` } : `${textOf(answer)}\n${line}`;
 }
 
 /** How a window is named in the watchdog's texts: pid, and the workspace name when it has one. */
@@ -539,6 +551,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
                 return this.statusWithoutTarget();
             }
             resolved = target;
+        } else if (BREAKPOINT_OPS.has(op) && hint?.source === 'path' && this.pinnedPid !== undefined) {
+            resolved = this.resolveForBreakpoint(hint);
         } else {
             resolved = this.resolveTarget(hint);
         }
@@ -565,7 +579,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (noticed instanceof ToolError) {
             throw noticed;
         }
-        const answered = this.withPinNote(noticed);
+        const answered = this.withPinNote(resolved.note === undefined ? noticed : withLine(noticed, resolved.note));
         if (op === KNOWLEDGE_SEARCH_OP) {
             return withKnowledgeWindow(answered, entry, reason, this.registry.list().length);
         }
@@ -579,7 +593,29 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             return answer;
         }
         this.pinNote = undefined;
-        return isToolReply(answer) ? { ...answer, text: `${answer.text}\n${note}` } : `${textOf(answer)}\n${note}`;
+        return withLine(answer, note);
+    }
+
+    /**
+     * The window of a breakpoint op in a pinned session. A breakpoint acts on
+     * the debug session that binds it, and the files of the program a session
+     * debugs may lie in another window's folder, so the pin wins over the
+     * path here: the call goes to the pinned window, unless only the file's
+     * own window has a debug session. A pinned window that is gone leaves the
+     * path to decide. The answer says so when the file lies outside the
+     * pinned window's folders.
+     */
+    private resolveForBreakpoint(hint: TargetHint & { source: 'path' }): Resolved {
+        this.followDefault();
+        const pinned = this.pinnedPid === undefined ? undefined : this.registry.findByPid(this.pinnedPid) ?? this.followPin();
+        const owner = this.registry.findByPath(hint.path);
+        if (pinned === undefined || (owner !== undefined && owner.pid !== pinned.pid && owner.hasActiveSession === true && pinned.hasActiveSession !== true)) {
+            return this.resolveTarget(hint);
+        }
+        const resolved = this.settle(pinned, 'pinned');
+        return holdsPath(pinned, hint.path)
+            ? resolved
+            : { ...resolved, note: `Ran in the pinned window ${windowLabel(pinned)}; the file lies outside its folders.` };
     }
 
     /**
