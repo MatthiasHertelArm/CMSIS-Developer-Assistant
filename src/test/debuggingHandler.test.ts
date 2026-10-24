@@ -1049,6 +1049,21 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('stopDebugging'), [[]]);
             assert.ok(reply.startsWith('The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**'), reply);
             assert.ok(reply.includes('1. Set breakpoints at the places worth investigating with `add_breakpoint`.'), reply);
+            assert.ok(reply.includes('2. Trace the run from its beginning with `start_debugging`.'), reply);
+        });
+
+        test('the root-cause check comes once per MCP session, and names cmsis_action load_and_debug on a CMSIS Debugger session', async () => {
+            const x = new ScriptedExecutor();
+            x.activeSession = { configuration: { request: 'launch' }, type: 'gdbtarget' } as typeof x.activeSession;
+            const handler = handlerFor(x);
+            const stop = (sessionId: string): Promise<string> =>
+                textAnswer(runInCallContext({ callId: `${sessionId}-1`, sessionId }, () => handler.handleStopDebugging()));
+            const first = await stop('mcp-a');
+            assert.ok(first.includes('2. Trace the run from its beginning with `cmsis_action load_and_debug`.'), first);
+            assert.ok(!first.includes('start_debugging'), first);
+            assert.strictEqual(await stop('mcp-a'), 'The debug session has been stopped.');
+            assert.ok((await stop('mcp-b')).includes('Root-cause check'), 'another MCP session gets it once too');
+            assert.strictEqual(await stop('mcp-b'), 'The debug session has been stopped.');
         });
 
         test('a stop that never settles answers status timeout after 10 s while the session is still listed (#14)', async () => {

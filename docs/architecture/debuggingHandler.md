@@ -168,9 +168,12 @@ problem records (see [The problem journal](#the-problem-journal)).
 `handleStopDebugging()` waits at most 10 s for VS Code to end the session
 (`settlesWithin()`, #14): a stop that has not settled by then, while the
 session is still listed, answers with status `timeout` and points to
-`get_session_status`. Its success reply adds a
-short root-cause check: a reminder to explain the bug, not only
-where it showed, before the investigation is closed. `handleRestart()`
+`get_session_status`. The first successful stop of each MCP session
+adds a root-cause check (`withRootCauseCheck()`): a reminder to explain
+the bug, not only where it showed, before the investigation is closed.
+Only once, since a stop also ends sessions in the middle of an
+investigation; its way to run the program again is `cmsis_action
+load_and_debug` on a CMSIS Debugger session, `start_debugging` elsewhere. `handleRestart()`
 pauses a running CMSIS Debugger target first, so the adapter lets go of a
 halted core, and then has the executor stop the session and start its
 launch configuration again; the answer says so, names the configuration's

@@ -254,30 +254,40 @@ const LOGPOINT_COST = 'ℹ️ On Cortex-M a logpoint is not free: the core halts
     + 'In a hot loop or an ISR this distorts timing far more than it would in a host process. '
     + 'For high-rate tracing prefer read_cycle_counter around the region, or have the firmware fill a RAM buffer you read with read_memory.';
 
-/** Appended to a successful stop: make sure the investigation reached a cause. */
-const ROOT_CAUSE_CHECK = [
-    '⚠️ **Root-cause check before you stop**',
-    '',
-    'Ask yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?',
-    '',
-    'Knowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:',
-    '- a variable that turns out null or undefined',
-    '- a function that hands back a value nobody expected',
-    '- an error raised at one particular line',
-    '- a condition that took the wrong branch',
-    '',
-    'The root cause explains *why* it went wrong, for instance:',
-    '- a variable that was initialised with the wrong value',
-    '- faulty logic inside a function',
-    '- an error path that is not handled',
-    '- a condition built on a false assumption',
-    '',
-    'What to do next (required):',
-    '1. Set breakpoints at the places worth investigating with `add_breakpoint`.',
-    '2. Trace the run from its beginning with `start_debugging`.',
-    '3. Work out why it happened, not only what happened.',
-    '4. Repeat until the root cause is identified.',
-].join('\n');
+/** The MCP sessions `stop_debugging` remembers having shown the root-cause check; the oldest is forgotten beyond this. */
+const ROOT_CAUSE_SESSIONS_KEPT = 256;
+
+/**
+ * Appended to the first successful stop of an MCP session: make sure the
+ * investigation reached a cause. `rerun` is the tool that runs the program
+ * again from its start: `cmsis_action load_and_debug` for a CMSIS Debugger
+ * session, `start_debugging` otherwise.
+ */
+function rootCauseCheck(rerun: string): string {
+    return [
+        '⚠️ **Root-cause check before you stop**',
+        '',
+        'Ask yourself one question before closing the investigation: did you find the cause of the problem, or only a symptom of it?',
+        '',
+        'Knowing only *where* things go wrong usually points to a symptom, so keep debugging if all you have is something like:',
+        '- a variable that turns out null or undefined',
+        '- a function that hands back a value nobody expected',
+        '- an error raised at one particular line',
+        '- a condition that took the wrong branch',
+        '',
+        'The root cause explains *why* it went wrong, for instance:',
+        '- a variable that was initialised with the wrong value',
+        '- faulty logic inside a function',
+        '- an error path that is not handled',
+        '- a condition built on a false assumption',
+        '',
+        'What to do next (required):',
+        '1. Set breakpoints at the places worth investigating with `add_breakpoint`.',
+        `2. Trace the run from its beginning with \`${rerun}\`.`,
+        '3. Work out why it happened, not only what happened.',
+        '4. Repeat until the root cause is identified.',
+    ].join('\n');
+}
 
 /** The execution requests the stop waiter drives, with their gate phrase and failure prefix. */
 interface MotionSpec {
@@ -452,6 +462,8 @@ export class DebuggingHandler
      * empty list having been shown.
      */
     private shownBreakpoints: string | undefined;
+    /** The MCP sessions whose `stop_debugging` showed the root-cause check, oldest first; '' for calls outside one. */
+    private readonly rootCauseShown = new Set<string>();
 
     constructor(
         executor: IDebuggingExecutor,
@@ -857,15 +869,37 @@ export class DebuggingHandler
             }
             // Asked before the stop: once it is sent the session may already be on its way out.
             const fvp = this.onFvp();
+            const cmsis = this.dbg.getActiveSession()?.type === CMSIS_DEBUGGER_TYPE;
             const settled = await this.settlesWithin(this.dbg.stopDebugging(), STOP_WAIT_MS);
             if (!settled && this.dbg.hasDebugSession()) {
                 logger.info(`stop_debugging: the session did not end within ${STOP_WAIT_MS} ms`);
                 return { text: fvp ? FVP_STOP_UNCONFIRMED : STOP_UNCONFIRMED, status: 'timeout' };
             }
-            return `${SESSION_STOPPED}\n\n${ROOT_CAUSE_CHECK}`;
+            return this.withRootCauseCheck(SESSION_STOPPED, cmsis);
         } catch (caught) {
             throw wrapError('Could not stop the debug session', caught);
         }
+    }
+
+    /**
+     * The stop's reply with the root-cause check, the first time in an MCP
+     * session (calls outside one count as one session). It reminds the agent
+     * to explain the bug before the investigation closes; on every stop it
+     * is noise, since a stop also ends a session in the middle of an
+     * investigation — to start it again, to switch configurations, twice on
+     * an Arm FVP.
+     */
+    private withRootCauseCheck(reply: string, cmsis: boolean): string {
+        const session = currentCallContext()?.sessionId ?? '';
+        if (this.rootCauseShown.has(session)) {
+            return reply;
+        }
+        if (this.rootCauseShown.size >= ROOT_CAUSE_SESSIONS_KEPT) {
+            const [oldest] = this.rootCauseShown;
+            this.rootCauseShown.delete(oldest);
+        }
+        this.rootCauseShown.add(session);
+        return `${reply}\n\n${rootCauseCheck(cmsis ? 'cmsis_action load_and_debug' : 'start_debugging')}`;
     }
 
     /**
