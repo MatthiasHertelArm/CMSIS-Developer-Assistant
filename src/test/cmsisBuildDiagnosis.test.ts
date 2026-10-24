@@ -182,11 +182,15 @@ async function diagnosed(w: World, id: string): Promise<Job> {
     return w.tracker.job(id) as Job;
 }
 
-/** A build job (or `action`) whose task starts and exits 0, which CMSIS Solution 1.70.1 reports for failed builds too; the check starts from its end. */
-function passBuild(w: World, definition: Record<string, unknown> = {}, action: JobAction = 'build'): { job: Job; execution: FakeExecution } {
+/**
+ * A build job (or `action`) whose task starts and exits 0, which CMSIS Solution 1.70.1 reports for failed builds
+ * too; `during` runs while cbuild would build (write the image there). The check starts from its end.
+ */
+function passBuild(w: World, definition: Record<string, unknown> = {}, action: JobAction = 'build', during: () => void = () => undefined): { job: Job; execution: FakeExecution } {
     const job = w.tracker.begin(action, 'MPS3');
     w.tracker.issued(job.id);
     const execution = w.tasks.start(w.tasks.execution(buildTask(w, definition)));
+    during();
     w.clock.advance(w.clock.now() + 3_000);
     w.tasks.finish(execution, 0);
     return { job, execution };
@@ -495,8 +499,8 @@ suite('build diagnosis (#15)', () => {
     suite('a build that exited 0 is checked before it counts as a success', () => {
         test('an image written since the build started confirms it without a re-run', async () => {
             const w = make();
-            builtLayout(w);
-            const { job } = passBuild(w);
+            const image = builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w, {}, 'build', () => fs.writeFileSync(image, 'ELF, linked again'));
             assert.strictEqual(w.tracker.job(job.id)?.diagnosis?.state, 'pending', 'the success waits for the check');
             const done = await diagnosed(w, job.id);
             assert.strictEqual(done.state, 'ok');
@@ -611,10 +615,32 @@ suite('build diagnosis (#15)', () => {
             assert.match(done.diagnosis?.text ?? '', /It could not be checked: the diagnostic re-run of cbuild was stopped because another build started/);
         });
 
+        test('an image younger than 2 s but unchanged since the build started is not its: the re-run decides', async () => {
+            // A tester's failed build that started under 2 s after a good one read ✅ from the age of that one's image.
+            const w = make();
+            builtLayout(w, { ageMs: 500 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            w.children[0].finish(1, GCC_LOG);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.state, 'failed');
+            assert.strictEqual(done.diagnosis?.check, 'failed');
+            assert.strictEqual(done.diagnosis?.errorCount, 2);
+        });
+
+        test('without a note from the start (a solution named through a variable), an image under 2 s older than the build still counts', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 500 });
+            const { job } = passBuild(w, { solution: '${command:cmsis-csolution.getSolutionFile}' });
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.diagnosis?.check, 'rebuilt');
+            assert.strictEqual(w.children.length, 0);
+        });
+
         test('a rebuild that exited 0 is checked like a build', async () => {
             const w = make();
-            builtLayout(w);
-            const { job } = passBuild(w, { rebuild: true }, 'rebuild');
+            const image = builtLayout(w, 'none');
+            const { job } = passBuild(w, { rebuild: true }, 'rebuild', () => fs.writeFileSync(image, 'ELF'));
             const done = await diagnosed(w, job.id);
             assert.strictEqual(done.diagnosis?.check, 'rebuilt');
             assert.strictEqual(w.children.length, 0);

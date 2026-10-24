@@ -596,7 +596,11 @@ exit 0 is not a success until `BuildDiagnosisRunner.check` agrees:
 - errors in a fresh `*.cbuild-idx.yml` make it a failure;
 - the images the build writes — the primary outputs of each context the
   index names, else those of the cbuild-run file — all written since the
-  build started confirm it;
+  build started confirm it. "Written" means changed since the build task
+  started, when `onStarted` noted their times; only without that note does
+  an image up to 2 s older than the build count, for coarse file times. A
+  failed build that starts right after a good one finds the image of that
+  one younger than 2 s, so the age alone would have confirmed it;
 - otherwise stage B decides. The build is incremental, so the re-run fails
   where the build failed and succeeds at once when there was nothing to
   rebuild; an image that kept its old time is no failure by itself.
@@ -670,13 +674,15 @@ once when errors arrived that the agent has not seen, and
 - **Codes.** `classifyProblem()` in `src/core/problemCodes.ts` recognises
   known lines and gives them a code, a weight and the next step as the hint.
   The codes are this repository's: `ErrorCode` (#11) and the journal's own
-  `DAP_POWER_UP_FAILED` and `BUILD_ERROR`. A row ships only with a line
-  captured from a real session, which its test holds as a fixture:
+  `DAP_POWER_UP_FAILED`, `GDB_SERVER_NOT_FOUND` and `BUILD_ERROR`. A row
+  ships only with a line captured from a real session, which its test holds
+  as a fixture:
 
   | Line | Code | Weight | Source |
   | ---- | ---- | ------ | ------ |
   | `Failed to power up DAP` | `DAP_POWER_UP_FAILED` | error | `gdb-server` |
   | `Waiting for a debug probe matching unique ID` | `PROBE_BUSY` | error | `gdb-server` |
+  | `gdbserver has hit error Error: spawn … ENOENT` | `GDB_SERVER_NOT_FOUND` | error | as reported |
   | `target is running` | `TARGET_RUNNING` | warning | as reported |
   | `no active solution` | `CMSIS_NO_SOLUTION` | error | as reported |
 

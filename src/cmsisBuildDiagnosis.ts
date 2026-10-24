@@ -31,8 +31,9 @@
  * success: CMSIS Solution 1.70.1 closes its build task with 0 whatever cbuild
  * returned (its `BuildRunner` ignores the exit code the toolbox manager
  * hands back, and the pseudoterminal then closes with 0). Errors in a fresh
- * cbuild-idx.yml make it a failure; images all written since the build
- * started confirm it; otherwise stage B below decides — its re-run fails
+ * cbuild-idx.yml make it a failure; images all rewritten since the build
+ * task started (`onStarted` notes their times) confirm it; otherwise stage B
+ * below decides — its re-run fails
  * where the build failed and succeeds when there was nothing to rebuild —
  * and when it cannot run, the result says the build is not confirmed.
  *
@@ -320,6 +321,26 @@ function expectedImages(solution: string, output: string | undefined, active: st
     return outputsOf(path.join(output ?? path.join(base, 'out'), `${stem}+${active}.cbuild-run.yml`), 'cbuild-run');
 }
 
+/** When each image was written last, by path; undefined for one that was not there. */
+type ImageStamps = ReadonlyMap<string, number | undefined>;
+
+/**
+ * Whether the build wrote an image. With what its start found, only a change
+ * counts: a failed build that starts right after a good one leaves an image
+ * younger than the slack. Without it, an image written since the build
+ * started, give or take the slack of coarse file times, counts.
+ */
+function writtenByBuild(image: ImageStamp, before: ImageStamps | undefined, startedAt: number): boolean {
+    if (image.mtimeMs === undefined) {
+        return false;
+    }
+    if (before?.has(image.file)) {
+        const earlier = before.get(image.file);
+        return earlier === undefined || image.mtimeMs > earlier;
+    }
+    return image.mtimeMs + IDX_FRESHNESS_SLACK_MS >= startedAt;
+}
+
 /** A file as the check's text shows it: relative to the solution directory when inside it. */
 function shown(file: string, solutionDir: string): string {
     const relative = path.relative(solutionDir, file);
@@ -375,6 +396,8 @@ export class BuildDiagnosisRunner {
     private readonly running = new Set<RunningRerun>();
     /** The images each clean found at its start, by execution key. */
     private readonly cleanSnapshots = new Map<number, CleanSnapshot>();
+    /** When each image of a build or rebuild was written last, as its start found them, by execution key. */
+    private readonly buildSnapshots = new Map<number, ImageStamps>();
 
     constructor(private readonly tracker: CmsisJobTracker, private readonly host: DiagnosisHost) {}
 
@@ -391,20 +414,28 @@ export class BuildDiagnosisRunner {
         }
         const snapshot = this.cleanSnapshots.get(decided.key);
         this.cleanSnapshots.delete(decided.key);
+        const before = this.buildSnapshots.get(decided.key);
+        this.buildSnapshots.delete(decided.key);
         if (job.state === 'failed' && decided.exitCode !== 0) {
             this.tracker.completeWith(job.id, this.diagnose(decided).then((diagnosis) => this.withKnownMessages(diagnosis)));
         } else if (job.state === 'ok' && decided.exitCode === 0 && job.action === 'clean') {
             this.tracker.completeWith(job.id, Promise.resolve(this.checkClean(snapshot)));
         } else if (job.state === 'ok' && decided.exitCode === 0 && this.tracker.definitionOf(decided.key)?.clean !== true) {
-            this.tracker.completeWith(job.id, this.check(decided).then((diagnosis) => this.withKnownMessages(diagnosis)));
+            this.tracker.completeWith(job.id, this.check(decided, before).then((diagnosis) => this.withKnownMessages(diagnosis)));
         }
     }
 
     /**
      * An `onDidStartExecution` listener: a clean notes the images of its
-     * target that exist now, before cbuild gets to them, for `checkClean`.
+     * target that exist now, before cbuild gets to them, for `checkClean`; a
+     * build or rebuild notes when each image was written last, so that its
+     * check counts only an image written since.
      */
     onStarted(execution: LiveExecution): void {
+        if (execution.kind === 'build' || execution.kind === 'rebuild') {
+            this.noteImageStamps(execution.key);
+            return;
+        }
         if (execution.kind !== 'clean') {
             return;
         }
@@ -422,11 +453,34 @@ export class BuildDiagnosisRunner {
         }
     }
 
-    /** The images the active target's build writes that exist now; none known when the definition names the solution through a variable. */
-    private imagesNow(definition: TaskDefinitionLike): CleanSnapshot {
+    /**
+     * Remember the images of a starting build and when each was written last
+     * (undefined: not there). Nothing is remembered when the definition names
+     * the solution through a variable; the check then falls back to the age
+     * of the images.
+     */
+    private noteImageStamps(key: number): void {
+        try {
+            const where = this.buildFiles(this.tracker.definitionOf(key) ?? {});
+            if (where) {
+                this.buildSnapshots.set(key, new Map(expectedImages(where.solution, where.output, where.target).map((file) => [file, mtimeOf(file)])));
+            }
+        } catch (caught) {
+            logger.debug('Build check: the images before a build could not be read', caught);
+        }
+        for (const old of this.buildSnapshots.keys()) {
+            if (this.buildSnapshots.size <= MAX_CLEAN_SNAPSHOTS) {
+                break;
+            }
+            this.buildSnapshots.delete(old);
+        }
+    }
+
+    /** The solution, output folder and target a task definition names; undefined when the solution is named through a variable. */
+    private buildFiles(definition: TaskDefinitionLike): { solution: string; solutionDir: string; output?: string; target?: string } | undefined {
         const named = definition.solution;
         if (typeof named !== 'string' || named.length === 0 || holdsVariable(named)) {
-            return {};
+            return undefined;
         }
         const cwd = this.host.workingDirectory();
         const solution = path.isAbsolute(named) || !cwd ? named : path.join(cwd, named);
@@ -436,8 +490,17 @@ export class BuildDiagnosisRunner {
         const target = typeof definition.active === 'string' && definition.active.length > 0 && !holdsVariable(definition.active)
             ? definition.active
             : undefined;
-        const images = expectedImages(solution, output, target).filter((file) => mtimeOf(file) !== undefined);
-        return { images, solutionDir, ...(target ? { target } : {}) };
+        return { solution, solutionDir, ...(output ? { output } : {}), ...(target ? { target } : {}) };
+    }
+
+    /** The images the active target's build writes that exist now; none known when the definition names the solution through a variable. */
+    private imagesNow(definition: TaskDefinitionLike): CleanSnapshot {
+        const where = this.buildFiles(definition);
+        if (!where) {
+            return {};
+        }
+        const images = expectedImages(where.solution, where.output, where.target).filter((file) => mtimeOf(file) !== undefined);
+        return { images, solutionDir: where.solutionDir, ...(where.target ? { target: where.target } : {}) };
     }
 
     /**
@@ -477,9 +540,9 @@ export class BuildDiagnosisRunner {
     }
 
     /** The check of the build `decided` ran, which exited 0; never rejects. */
-    async check(decided: JobExecution): Promise<JobDiagnosis> {
+    async check(decided: JobExecution, before?: ImageStamps): Promise<JobDiagnosis> {
         try {
-            return await this.checkResult(decided);
+            return await this.checkResult(decided, before);
         } catch (caught) {
             logger.warn('Build check: looking at the result failed', caught);
             return checked('unverified', `Exit 0 is not confirmed: checking the result failed (${messageOf(caught)}).`);
@@ -536,7 +599,7 @@ export class BuildDiagnosisRunner {
      * diagnostic re-run decides: it fails where the build failed, and
      * succeeds at once when there was nothing to rebuild.
      */
-    private async checkResult(decided: JobExecution): Promise<JobDiagnosis> {
+    private async checkResult(decided: JobExecution, before: ImageStamps | undefined): Promise<JobDiagnosis> {
         const definition: TaskDefinitionLike = this.tracker.definitionOf(decided.key) ?? {};
         const cwd = this.host.workingDirectory();
         const solution = await this.solutionOf(definition, cwd);
@@ -562,7 +625,7 @@ export class BuildDiagnosisRunner {
             ? definition.active
             : await this.host.activeTarget();
         const images: ImageStamp[] = expectedImages(solution, output, active).map((file) => ({ file, mtimeMs: mtimeOf(file) }));
-        const stale = images.filter((image) => image.mtimeMs === undefined || image.mtimeMs + IDX_FRESHNESS_SLACK_MS < decided.startedAt);
+        const stale = images.filter((image) => !writtenByBuild(image, before, decided.startedAt));
         if (images.length > 0 && stale.length === 0) {
             return checked('rebuilt', '');
         }
