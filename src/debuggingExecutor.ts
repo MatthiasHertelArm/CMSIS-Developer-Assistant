@@ -61,8 +61,9 @@ import { type DapVariable, isDapVariable } from './core/variableView';
 import { DebugState, StackFrame } from './debugState';
 import { logger } from './utils/logger';
 import {
-    armFocusWatch, awaitBreakpointsApplied, expectAgentStart, forgetGdbLogpoints, FrameFocusWatch, GdbLogpoint, gdbLogpointsOf, getLiveSessionCount,
-    getLiveSessionNames, getStoppedReason, isSessionStopped, rememberGdbLogpoint, resolveActiveSession, StopWaitResult, waitForSessionEnd, waitForStopEvent,
+    armFocusWatch, armStartFocusWatch, awaitBreakpointsApplied, expectAgentStart, forgetGdbLogpoints, FrameFocusWatch, GdbLogpoint, gdbLogpointsOf,
+    getLiveSessionCount, getLiveSessionNames, getStoppedReason, isSessionStopped, rememberGdbLogpoint, resolveActiveSession, StartFocusWatch,
+    StopWaitResult, waitForSessionEnd, waitForStopEvent,
 } from './utils/sessionStateTracker';
 import { customRequestWithTimeout, HardwareTimeoutError, withTimeout } from './utils/timeout';
 import { ToolError, wrapError } from './core/toolResult';
@@ -87,7 +88,7 @@ import { version as PACKAGE_VERSION } from '../package.json';
 export { DEFAULT_HARDWARE_TIMEOUTS } from './executor/common';
 export type {
     BreakpointBinding, BreakpointRemoval, DapThread, DebugPortProbe, ExecutorDiagnostics, FrameFocusWatch, GdbLogpoint, GdbReply, HardwareTimeouts,
-    IDebuggingExecutor, MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus,
+    IDebuggingExecutor, MemoryRead, ResetOutcome, RestartOutcome, SessionState, SessionStatus, StartFocus, StartFocusWatch,
 } from './executor/contract';
 
 /** The version the MCP server, the server definition and the HTTP user agent report: package.json's `version` at build time. */
@@ -352,6 +353,10 @@ export class DebuggingExecutor implements IDebuggingExecutor {
     watchFrameFocus(): FrameFocusWatch {
         const session = resolveActiveSession();
         return session ? armFocusWatch(session) : { selected: async () => false };
+    }
+
+    watchStartFocus(): StartFocusWatch {
+        return armStartFocusWatch();
     }
 
     /** Sends the operation's request without waiting for the stop; the handler arms the waiter first. */

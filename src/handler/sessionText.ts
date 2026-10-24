@@ -110,6 +110,9 @@ export function stoppedTargetRefusal(operation: string, state: SessionState, req
         `${REFUSAL_HINTS[state]}${reconnect} Use get_session_status for a definitive, never-failing classification.`);
 }
 
+/** Said instead of the state after a stop for which VS Code selected no frame within `FRAME_FOCUS_WAIT_MS`. */
+export const NO_FRAME_SELECTED = 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.';
+
 // ── An Arm FVP: its GDB server ignores GDB's interrupt while the model runs; only a breakpoint stops it ──
 
 /** `pause_execution` on an FVP that did not stop. */

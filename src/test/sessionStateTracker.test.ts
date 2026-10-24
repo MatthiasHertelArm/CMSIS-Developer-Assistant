@@ -19,6 +19,7 @@ import * as assert from 'assert';
 import { ProblemJournal, type ProblemRecord } from '../core/problemJournal';
 import {
     armFocusWatch,
+    armStartFocusWatch,
     awaitBreakpointsApplied,
     captureOutput,
     coreSilentSince,
@@ -422,6 +423,32 @@ suite('Session state tracker', () => {
             const b = track();
             assert.strictEqual(await armFocusWatch(b.session, focus.source).selected(0), false);
             assert.strictEqual(focus.listeners(), 0, 'nothing subscribed for a wait of 0');
+        });
+    });
+
+    suite('the frame VS Code selects for a session that came up', () => {
+        test('a stopped session waits for a frame of its own; a frame of an earlier session focused at arming does not count', async () => {
+            const old = track();
+            const a = track();
+            const focus = fakeFocus(frameOf(old.session));
+            const watch = armStartFocusWatch(focus.source, () => a.session, () => true);
+            assert.strictEqual(await watch.settled(30), 'none', 'no frame of the new session yet');
+            const pending = watch.settled(2_000);
+            focus.select(frameOf(a.session));
+            assert.strictEqual(await pending, 'selected');
+            assert.strictEqual(focus.listeners(), 0);
+            // Armed after VS Code focused it, that frame is the stale item: the watch is taken before the start.
+            focus.hold(frameOf(a.session));
+            assert.strictEqual(await armStartFocusWatch(focus.source, () => a.session, () => true).settled(0), 'none',
+                'the item focused when armed is never the start\'s');
+        });
+
+        test('a target that runs needs no frame, and without a session there is none', async () => {
+            const a = track();
+            const focus = fakeFocus();
+            assert.strictEqual(await armStartFocusWatch(focus.source, () => a.session, () => false).settled(5_000), 'running');
+            assert.strictEqual(await armStartFocusWatch(focus.source, () => undefined, () => true).settled(5_000), 'none');
+            assert.strictEqual(focus.listeners(), 0);
         });
     });
 

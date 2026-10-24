@@ -31,10 +31,10 @@ import type { DebugPortProbe } from '../core/probeWedge';
 import { ResetMethod, ResetOutcomeView } from '../core/resetAssist';
 import type { DapVariable } from '../core/variableView';
 import { DebugState, StackFrame } from '../debugState';
-import type { FrameFocusWatch, GdbLogpoint, StopWaitResult } from '../utils/sessionStateTracker';
+import type { FrameFocusWatch, GdbLogpoint, StartFocusWatch, StopWaitResult } from '../utils/sessionStateTracker';
 import type { GdbReply } from './gdbCommand';
 
-export type { FrameFocusWatch, GdbLogpoint } from '../utils/sessionStateTracker';
+export type { FrameFocusWatch, GdbLogpoint, StartFocus, StartFocusWatch } from '../utils/sessionStateTracker';
 export type { GdbReply } from './gdbCommand';
 export type { DebugPortProbe } from '../core/probeWedge';
 
@@ -172,6 +172,13 @@ export interface RunControl {
      * false at once.
      */
     watchFrameFocus(): FrameFocusWatch;
+    /**
+     * Taken before a session starts: once it came up, `settled` waits,
+     * bounded, for the frame VS Code selects when the session stopped, which
+     * the state is read through. It answers `running` at once for a target
+     * that runs, and `none` without a session.
+     */
+    watchStartFocus(): StartFocusWatch;
 }
 
 /** How the session's adapter reports one breakpoint of VS Code's model (`getDebugProtocolBreakpoint`). */

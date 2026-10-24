@@ -139,7 +139,14 @@ starts with the `stopped` event. The focus watch is taken before the
 request, so a frame VS Code still holds from before it does not count. When
 the wait runs out, the answer says so in one line instead of showing an
 empty state. `wait_for_stop` waits the same way after a stop event, not for
-a target that was stopped before the call.
+a target that was stopped before the call. A session that comes up during
+the call — `start_debugging`, and the session phases of `cmsis_action`
+`load_and_debug` and `attach` — is read the same way (`stateAfterStart()`
+in `src/handler/cmsisAction.ts`): the watch (`watchStartFocus()`) is taken
+before the start, so a frame of an earlier session does not count; once
+the session is live and stopped it waits for a frame of that session,
+bounded the same way by what is left of the call, and a target that runs
+is read at once. `restart_debugging` reads no state, so it does not wait.
 
 After a stop the handler takes a `DebugState` from the executor and returns
 its compact form. `compactState()` includes the breakpoint list only when it

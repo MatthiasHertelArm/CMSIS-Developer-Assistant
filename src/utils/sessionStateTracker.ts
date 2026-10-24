@@ -359,6 +359,47 @@ function isFrameOf(item: StackItem, session: vscode.DebugSession): boolean {
 }
 
 /**
+ * Resolves true once VS Code has selected a stack frame of `session` that is
+ * not `stale` — at once when it has — false when `limitMs` passes first or
+ * the session ends. Event-driven: nothing is polled.
+ */
+function frameSelectedFor(session: vscode.DebugSession, focus: FocusSource, stale: StackItem, limitMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+        const began = Date.now();
+        const finish = (selected: boolean): void => {
+            logger.debug(selected
+                ? `[session-tracker] focus selected after ${Date.now() - began} ms on ${session.name}`
+                : `[session-tracker] no frame selected within ${limitMs} ms on ${session.name}`);
+            resolve(selected);
+        };
+        const now = focus.current();
+        if (now !== stale && isFrameOf(now, session)) {
+            finish(true);
+            return;
+        }
+        if (limitMs <= 0 || endedSessions.has(session)) {
+            finish(false);
+            return;
+        }
+        let subscription: vscode.Disposable | undefined;
+        const waiter: FocusWaiter = { session, settle: () => undefined };
+        const timer = setTimeout(() => waiter.settle(false), limitMs);
+        waiter.settle = (selected) => {
+            clearTimeout(timer);
+            subscription?.dispose();
+            focusWaiters.delete(waiter);
+            finish(selected);
+        };
+        focusWaiters.add(waiter);
+        subscription = focus.onDidChange((item) => {
+            if (focusWaiters.has(waiter) && isFrameOf(item, session)) {
+                waiter.settle(true);
+            }
+        });
+    });
+}
+
+/**
  * Armed before a request that may stop the target, it remembers the item VS
  * Code has focused then. Until VS Code hears the `continued` or `stopped` of
  * a request sent as a custom request it may still hold the frame from
@@ -369,40 +410,47 @@ function isFrameOf(item: StackItem, session: vscode.DebugSession): boolean {
  */
 export function armFocusWatch(session: vscode.DebugSession, focus: FocusSource = VSCODE_FOCUS): FrameFocusWatch {
     const stale = focus.current();
+    return { selected: (limitMs) => frameSelectedFor(session, focus, stale, limitMs) };
+}
+
+/** What VS Code shows of a session that came up: the frame it selected for its stop, a target that runs, or no frame in time. */
+export type StartFocus = 'selected' | 'running' | 'none';
+
+/** The wait, after a session came up, for the frame VS Code selects when the session stopped. */
+export interface StartFocusWatch {
+    /**
+     * `running` at once when the session active now is not stopped;
+     * `selected` once VS Code has selected a stack frame of it other than the
+     * item it had focused when the watch was armed; `none` when `limitMs`
+     * passes first, the session ends, or there is no session. Never rejects.
+     */
+    settled(limitMs: number): Promise<StartFocus>;
+}
+
+/**
+ * Armed before a session starts (`start_debugging`, the session phases of
+ * `cmsis_action`): it remembers the item VS Code has focused then, which
+ * belongs to an earlier session or stop and does not count. The session is
+ * the one active when `settled` is called; whether it stopped is the
+ * tracker's view (`isSessionStopped`).
+ */
+export function armStartFocusWatch(
+    focus: FocusSource = VSCODE_FOCUS,
+    sessionOf: () => vscode.DebugSession | undefined = resolveActiveSession,
+    stopped: (session: vscode.DebugSession) => boolean = isSessionStopped,
+): StartFocusWatch {
+    const stale = focus.current();
     return {
-        selected: (limitMs) => new Promise<boolean>((resolve) => {
-            const began = Date.now();
-            const finish = (selected: boolean): void => {
-                logger.debug(selected
-                    ? `[session-tracker] focus selected after ${Date.now() - began} ms on ${session.name}`
-                    : `[session-tracker] no frame selected within ${limitMs} ms on ${session.name}`);
-                resolve(selected);
-            };
-            const now = focus.current();
-            if (now !== stale && isFrameOf(now, session)) {
-                finish(true);
-                return;
+        settled: async (limitMs) => {
+            const session = sessionOf();
+            if (session === undefined) {
+                return 'none';
             }
-            if (limitMs <= 0 || endedSessions.has(session)) {
-                finish(false);
-                return;
+            if (!stopped(session)) {
+                return 'running';
             }
-            let subscription: vscode.Disposable | undefined;
-            const waiter: FocusWaiter = { session, settle: () => undefined };
-            const timer = setTimeout(() => waiter.settle(false), limitMs);
-            waiter.settle = (selected) => {
-                clearTimeout(timer);
-                subscription?.dispose();
-                focusWaiters.delete(waiter);
-                finish(selected);
-            };
-            focusWaiters.add(waiter);
-            subscription = focus.onDidChange((item) => {
-                if (focusWaiters.has(waiter) && isFrameOf(item, session)) {
-                    waiter.settle(true);
-                }
-            });
-        }),
+            return (await frameSelectedFor(session, focus, stale, limitMs)) ? 'selected' : 'none';
+        },
     };
 }
 

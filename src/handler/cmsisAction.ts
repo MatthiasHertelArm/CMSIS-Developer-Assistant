@@ -130,7 +130,7 @@ import {
     runCommandKind,
     taskCommandWords,
 } from '../core/gdbServerPorts';
-import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
+import { AGENT_START_WINDOW_MS, expectAgentStart, FRAME_FOCUS_WAIT_MS, type StartFocusWatch } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
 import { survivesWindowReload } from '../core/clientHosting';
@@ -150,7 +150,7 @@ import {
     stillRunning,
 } from './jobText';
 import { runInstallPack } from './installPack';
-import { FVP_BREAK_FIRST } from './sessionText';
+import { FVP_BREAK_FIRST, NO_FRAME_SELECTED } from './sessionText';
 import { failedTaskProgram, gdbServerMissingHint } from './taskProgram';
 
 export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_environment' | 'load' | 'erase' | 'run' | 'load_and_run'
@@ -849,6 +849,21 @@ interface SessionFacts {
     sinceSeq: number;
     /** load_and_debug only: the `target.server` programs of the solution's CMSIS launch configurations. */
     servers?: readonly string[];
+    /** Taken before the launch or attach was issued: the wait for the frame VS Code selects when the session stopped. */
+    focus: StartFocusWatch;
+}
+
+/**
+ * The state of a session that came up during the call (`start_debugging`,
+ * the session phases of `cmsis_action`): read at once when the target
+ * runs, and once VS Code has selected a frame for the stop when it stopped,
+ * waiting at most `FRAME_FOCUS_WAIT_MS` and never past `leftMs`. Undefined
+ * when VS Code selected none in that time: the reply then says
+ * `NO_FRAME_SELECTED` instead of showing an empty state.
+ */
+export async function stateAfterStart(executor: IDebuggingExecutor, focus: StartFocusWatch, leftMs: number): Promise<DebugState | undefined> {
+    const seen = await focus.settled(Math.max(Math.min(FRAME_FOCUS_WAIT_MS, leftMs), 0));
+    return seen === 'none' ? undefined : executor.getCurrentDebugState(3);
 }
 
 /** The journal position a launch or attach about to be issued starts from. */
@@ -935,10 +950,10 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
     }
     const survival = wait === 'gone' ? ENDED_BEFORE_UP : await checkSurvival(executor, host);
     if (survival.stable) {
-        const state = await executor.getCurrentDebugState(3);
+        const state = await stateAfterStart(executor, facts.focus, answerBy(issue) - host.now());
+        const shown = state === undefined ? NO_FRAME_SELECTED : `State: ${issue.context.renderFullState(state)}`;
         const fvp = isFvpSession(executor.getActiveSession()?.configuration) ? `\n${FVP_BREAK_FIRST}` : '';
-        return `CMSIS '${action}' completed${tag} — ${loaded}debug session survived the connect (${survival.detail}). `
-            + `State: ${issue.context.renderFullState(state)}${fvp}`;
+        return `CMSIS '${action}' completed${tag} — ${loaded}debug session survived the connect (${survival.detail}). ${shown}${fvp}`;
     }
     if (survival.present) {
         // A slow multi-core start still has no threads at the second probe: not up yet, not failed (#47).
@@ -1069,7 +1084,8 @@ function withoutRunNote(answer: ToolText, endpoints: readonly AttachEndpoint[]):
 async function loadAndDebug(issue: Issue, loadFirst: boolean, servers: readonly string[]): Promise<ToolText> {
     const { tracker } = issue;
     const { host } = issue.context;
-    const launch: SessionFacts = { sinceSeq: journalStart(issue), servers };
+    // Before the command: a frame VS Code holds from an earlier session is not this one's.
+    const launch: SessionFacts = { sinceSeq: journalStart(issue), servers, focus: issue.context.executor.watchStartFocus() };
     const job = tracker.begin('load_and_debug', issue.target);
     expectSessionOf(issue);
     try {
@@ -1558,9 +1574,10 @@ export async function runCmsisAction(
                 await refuseAttachToBareModel(issue, endpoints);
             }
             const sinceSeq = journalStart(issue);
+            const focus = executor.watchStartFocus();
             expectSessionOf(issue);
             await issueCommand(issue, action);
-            const answer = await sessionPhase(issue, action, '', runAlive, { sinceSeq });
+            const answer = await sessionPhase(issue, action, '', runAlive, { sinceSeq, focus });
             return withPreface(runAlive ? answer : withoutRunNote(answer, endpoints), preface);
         }
         case 'refresh':

@@ -212,6 +212,23 @@ async function main() {
     }
     reset();
     {
+        check('RC8 start focus watch without a session: none at once', (await new DebuggingExecutor().watchStartFocus().settled(5000)) === 'none');
+        stub.debug.activeStackItem = undefined;
+        const ex = new DebuggingExecutor();
+        const watch = ex.watchStartFocus();
+        const { session } = makeSession(() => undefined);
+        focusOn(session);
+        const t = trackerFor(session);
+        event(t, 'continued', { threadId: 1 });
+        check('RC8 a session that runs: running at once', (await watch.settled(5000)) === 'running');
+        event(t, 'stopped', { reason: 'breakpoint', threadId: 1 });
+        const t0 = Date.now();
+        check('RC8 a halted session without a frame: none at the bound', (await watch.settled(60)) === 'none' && Date.now() - t0 >= 50);
+        stub.debug.activeStackItem = { session, threadId: 1, frameId: 7 };
+        check('RC8 a halted session with its frame: selected', (await watch.settled(60)) === 'selected');
+    }
+    reset();
+    {
         const ex = new DebuggingExecutor();
         const how = await ex.restart();
         check('RC6 restart without session', commandLog.length === 1 && commandLog[0].command === 'workbench.action.debug.restart' && commandLog[0].args.length === 0

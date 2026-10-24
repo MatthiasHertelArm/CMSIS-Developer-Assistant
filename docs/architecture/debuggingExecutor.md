@@ -109,6 +109,10 @@ can fake only the part a case drives.
   tracker's `armFocusWatch()`, driven by `onDidChangeActiveStackItem`),
   since every frame-based read goes through VS Code's focused frame; the
   reset waits for it too when a stop event follows the reset commands.
+  `watchStartFocus()` (`armStartFocusWatch()`) is its counterpart for a
+  session that is about to start: taken before the start, it waits for a
+  frame of whichever session is active once it came up, when the tracker
+  saw it stop, and answers `running` at once for a target that runs.
 - **Breakpoints.** VS Code's breakpoint model on every adapter: add, remove,
   list, clear. `breakpointBinding()` asks VS Code how the session's adapter
   bound a breakpoint (`getDebugProtocolBreakpoint`: verified, message, line,

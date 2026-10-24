@@ -56,7 +56,7 @@
 
 import * as vscode from 'vscode';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
-import type { BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
+import type { BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor, StartFocusWatch } from './debuggingExecutor';
 import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { logger } from './utils/logger';
 import { isSensitiveName, REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
@@ -87,7 +87,9 @@ import {
     renderVariableNames,
     selectVariables,
 } from './core/variableView';
-import { actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction } from './handler/cmsisAction';
+import {
+    actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction, stateAfterStart,
+} from './handler/cmsisAction';
 import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
 import { acquireSolutionApi } from './core/solutionApi';
 import { webExampleOrigins } from './core/webCatalog';
@@ -101,8 +103,8 @@ import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
 import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from './handler/problemText';
 import {
-    FVP_KEEPS_RUNNING, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, fvpChangeRefusal, renderCallStack, renderSessionStatus, renderThreads,
-    stoppedTargetRefusal,
+    FVP_KEEPS_RUNNING, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, fvpChangeRefusal, NO_FRAME_SELECTED, renderCallStack, renderSessionStatus,
+    renderThreads, stoppedTargetRefusal,
 } from './handler/sessionText';
 import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
@@ -233,8 +235,6 @@ const PICKER_UNANSWERED = 'without configurationName, start_debugging asks the u
 const NOTHING_TO_RESTART = 'Nothing to restart — no debug session is active';
 const SESSION_RESTARTED = 'The debug session has been restarted.';
 const NO_FOCUSED_FRAME = 'There is no active stack frame.';
-/** Said instead of the state after a stop for which VS Code selected no frame within `FRAME_FOCUS_WAIT_MS`. */
-const NO_FRAME_SELECTED = 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.';
 /** The frame is missing while VS Code has not yet shown the stop, or because the target runs after all. */
 const NO_FOCUSED_FRAME_HINT = 'Call wait_for_stop, which returns once the target is stopped at a frame, '
     + 'or pause_execution if it is running; then retry.';
@@ -797,28 +797,31 @@ export class DebuggingHandler
         try {
             const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
+                const began = this.host().now();
+                // Before the start: a frame VS Code holds from an earlier session is not this one's.
+                const focus = this.dbg.watchStartFocus();
                 if (!(await this.dbg.startDebuggingByName(args.workingDirectory, chosen))) {
                     throw new Error(`Failed to start debug session with configuration '${chosen}'.`);
                 }
                 await this.requireLiveStart();
-                const started = await this.dbg.getCurrentDebugState(3);
+                const shown = await this.startedState(focus, began);
                 const subject = args.fileFullPath ? args.fileFullPath : chosen;
-                return `Debug session started successfully for: ${subject} using configuration '${chosen}'. `
-                    + `Current state: ${this.fullState(started)}`;
+                return `Debug session started successfully for: ${subject} using configuration '${chosen}'. ${shown}`;
             }
             if (!args.fileFullPath) {
                 throw new ToolError('INVALID_ARGUMENT', 'fileFullPath is required when no named configuration is provided.');
             }
             const launch = await this.launchConfigs.getDebugConfig(args.workingDirectory, args.fileFullPath, chosen, args.testName);
+            const began = this.host().now();
+            const focus = this.dbg.watchStartFocus();
             if (!(await this.dbg.startDebugging(args.workingDirectory, launch))) {
                 throw new Error(START_REFUSED);
             }
             await this.requireLiveStart();
-            const started = await this.dbg.getCurrentDebugState(3);
+            const shown = await this.startedState(focus, began);
             const using = chosen ? ` using configuration '${chosen}'` : ' with default configuration';
             const forTest = args.testName ? ` for test '${args.testName}'` : '';
-            return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. `
-                + `Current state: ${this.fullState(started)}`;
+            return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. ${shown}`;
         } catch (caught) {
             // What the adapter and the GDB server said rides along as problem records (#48).
             throw wrapError('Error starting debug session', caught);
@@ -829,6 +832,18 @@ export class DebuggingHandler
         if ((await this.awaitLiveSession()) !== 'live') {
             throw new Error('Debug session started but failed to become active within timeout period');
         }
+    }
+
+    /**
+     * `Current state: …` of a session that came up during this call, read
+     * through the frame VS Code selected for its stop; `NO_FRAME_SELECTED`
+     * when VS Code selected none within the focus wait, which never runs past
+     * the call's own limit from `began`.
+     */
+    private async startedState(focus: StartFocusWatch, began: number): Promise<string> {
+        const leftMs = waitLimitMs(this.configuredSeconds, undefined) - (this.host().now() - began);
+        const state = await stateAfterStart(this.dbg, focus, leftMs);
+        return state === undefined ? NO_FRAME_SELECTED : `Current state: ${this.fullState(state)}`;
     }
 
     /**

@@ -22,11 +22,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { SerialPortMock } from 'serialport';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
-import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
+import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor, StartFocus } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
 import { PickerCancelled, type IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
-import type { StopWaitResult } from '../utils/sessionStateTracker';
+import { FRAME_FOCUS_WAIT_MS, type StopWaitResult } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
 import { activeCbuildRunFile, GET_CBUILD_RUN_FILE, type SolutionCommands } from '../utils/solutionQueries';
 import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
@@ -201,6 +201,17 @@ class ScriptedExecutor {
             selected: async (limitMs) => {
                 this.note('frameSelected', limitMs);
                 return this.frameSelected(limitMs);
+            },
+        };
+    };
+    /** What the focus wait after a session came up answers, given its bound: by default VS Code has selected a frame. */
+    startFocus: (limitMs: number) => StartFocus | Promise<StartFocus> = () => 'selected';
+    watchStartFocus: IDebuggingExecutor['watchStartFocus'] = () => {
+        this.note('watchStartFocus');
+        return {
+            settled: async (limitMs) => {
+                this.note('startFocusSettled', limitMs);
+                return this.startFocus(limitMs);
             },
         };
     };
@@ -1001,6 +1012,26 @@ suite('DebuggingHandler', () => {
             assert.ok((await textAnswer(h.handleStepOver())).includes('"breakpointsUnchanged": 0'));
             x.state.breakpoints = ['main.c:7'];
             assert.ok((await textAnswer(h.handleStepOver())).includes('"breakpoints": [\n    "main.c:7"\n  ]'));
+        });
+
+        test('a start that comes up halted waits for VS Code\'s frame, bounded, and says so in one line when none comes', async () => {
+            const x = new ScriptedExecutor();
+            x.session = false;
+            x.sessionStatus = status('stopped');
+            x.startFocus = () => 'none';
+            const reply = await textAnswer(handlerFor(x).handleStartDebugging({ workingDirectory: '/w', configurationName: 'CMSIS Debugger: pyOCD' }));
+            assert.strictEqual(reply, 'Debug session started successfully for: CMSIS Debugger: pyOCD using configuration \'CMSIS Debugger: pyOCD\'. '
+                + 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.');
+            const order = x.calls.map((call) => call[0]);
+            assert.ok(order.indexOf('watchStartFocus') < order.indexOf('startDebuggingByName'), 'armed before the start');
+            const [[bound]] = x.argsOf('startFocusSettled') as number[][];
+            assert.ok(bound > 0 && bound <= FRAME_FOCUS_WAIT_MS, `bound ${bound}`);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [], 'no state read without the frame');
+
+            x.session = false;
+            x.startFocus = () => 'running';
+            const running = await textAnswer(handlerFor(x).handleStartDebugging({ workingDirectory: '/w', configurationName: 'CMSIS Debugger: pyOCD' }));
+            assert.ok(running.includes('. Current state: {'), running);
         });
 
         test('Default Configuration without a file is refused', async () => {
@@ -4334,8 +4365,9 @@ suite('DebuggingHandler', () => {
         });
 
         test('attach waits for the session and probes it twice; no threads yet is not a failure, a vanished session is', async () => {
-            const attach = async (threadCounts: Array<number | 'gone'> | undefined, fvp = false): Promise<ToolText> => {
+            const attach = async (threadCounts: Array<number | 'gone'> | undefined, fvp = false, focus: StartFocus = 'selected'): Promise<ToolText> => {
                 const x = new ScriptedExecutor();
+                x.startFocus = () => focus;
                 if (fvp) {
                     x.activeSession = { configuration: { type: 'gdbtarget', name: 'Arm-FVP@GDB (attach)', request: 'attach' } } as unknown as ScriptedExecutor['activeSession'];
                 }
@@ -4367,6 +4399,9 @@ suite('DebuggingHandler', () => {
             assert.ok(survived.startsWith('CMSIS \'attach\' completed on HE — debug session survived the connect '
                 + '(t+3s: 1 thread(s), t+6s: 1 thread(s) — target threads present). State: {'), survived);
             assert.ok(!survived.includes('Arm FVP'), survived);
+            assert.strictEqual(await textAnswer(attach([1, 1], false, 'none')), 'CMSIS \'attach\' completed on HE — debug session survived the connect '
+                + '(t+3s: 1 thread(s), t+6s: 1 thread(s) — target threads present). '
+                + 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.');
             const onFvp = await textAnswer(attach([1, 1], true));
             assert.ok(onFvp.endsWith('\nOn the Arm FVP pause_execution will not stop the running model: set breakpoints '
                 + '(for a fault, HardFault_Handler) before continue_execution.'), onFvp);
