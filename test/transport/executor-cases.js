@@ -198,6 +198,20 @@ async function main() {
     }
     reset();
     {
+        check('RC7 focus watch without a session: false at once', (await new DebuggingExecutor().watchFrameFocus().selected(5000)) === false);
+        const { session } = makeSession(() => undefined);
+        focusOn(session);
+        trackerFor(session);
+        stub.debug.activeStackItem = { session, threadId: 1, frameId: 5 };
+        const ex = new DebuggingExecutor();
+        const watch = ex.watchFrameFocus();
+        const t0 = Date.now();
+        check('RC7 the frame focused when the watch was taken is not the stop\'s', (await watch.selected(60)) === false && Date.now() - t0 >= 50);
+        stub.debug.activeStackItem = { session, threadId: 1, frameId: 5 };
+        check('RC7 a new frame object of the session is', (await watch.selected(60)) === true);
+    }
+    reset();
+    {
         const ex = new DebuggingExecutor();
         const how = await ex.restart();
         check('RC6 restart without session', commandLog.length === 1 && commandLog[0].command === 'workbench.action.debug.restart' && commandLog[0].args.length === 0

@@ -18,7 +18,8 @@
  * What this window knows about its debug sessions from the DAP traffic the
  * adapter tracker sees: the live sessions, the one to act on and the one the
  * window's registry entry names, whether each target is stopped, waits for
- * the next stop and for a session's end, the
+ * the next stop, for the frame VS Code selects after it and for a session's
+ * end, the
  * output a GDB command prints (#56), when the adapter has answered VS Code's
  * `setBreakpoints`, the GDB `dprintf` logpoints set in a session, and when
  * the last DHCSR read of a session got no answer (#3). Everything a session
@@ -307,6 +308,99 @@ export function waitForStopEvent(session: vscode.DebugSession, timeoutMs: number
         waiter.timer = setTimeout(() => settle({ kind: 'timeout' }), ms);
         stopWaiters.add(waiter);
     });
+}
+
+// ── VS Code's focus after a stop ──────────────────────────────────
+
+/**
+ * How long a read right after a stop waits for VS Code to select a frame.
+ * VS Code focuses one only after it has fetched the threads and the stack of
+ * the stop, which over a probe with an RTOS (pyOCD and CMSIS-RTX on a
+ * B-L475E-IOT01A) comes after a read that starts with the `stopped` event.
+ */
+export const FRAME_FOCUS_WAIT_MS = 2_000;
+
+type StackItem = vscode.DebugThread | vscode.DebugStackFrame | undefined;
+
+/** Where VS Code's focused stack item is read and its changes heard; tests pass their own. */
+export interface FocusSource {
+    current(): StackItem;
+    onDidChange(listener: (item: StackItem) => void): vscode.Disposable;
+}
+
+const VSCODE_FOCUS: FocusSource = {
+    current: () => vscode.debug.activeStackItem,
+    onDidChange: (listener) => vscode.debug.onDidChangeActiveStackItem(listener),
+};
+
+/** The wait, after a stop, for the frame VS Code selects for it. */
+export interface FrameFocusWatch {
+    /**
+     * Resolves true once VS Code has selected a stack frame of the session
+     * for the stop, false when `limitMs` passes first or the session ends.
+     * Never rejects.
+     */
+    selected(limitMs: number): Promise<boolean>;
+}
+
+interface FocusWaiter {
+    session: vscode.DebugSession;
+    settle: (selected: boolean) => void;
+}
+
+const focusWaiters = new Set<FocusWaiter>();
+
+/** True for a stack frame (an item with a `frameId`) of `session`. */
+function isFrameOf(item: StackItem, session: vscode.DebugSession): boolean {
+    return item !== undefined && 'frameId' in item && (item.session === session || item.session?.id === session.id);
+}
+
+/**
+ * Armed before a request that may stop the target, it remembers the item VS
+ * Code has focused then. Until VS Code hears the `continued` or `stopped` of
+ * a request sent as a custom request it may still hold the frame from
+ * before, and that frame does not count. After the stop, `selected` takes a
+ * frame of `session` that is not that item (VS Code makes a new frame object
+ * for every focus it reports), or any frame of `session` that the change
+ * event delivers once the wait has begun. Event-driven: nothing is polled.
+ */
+export function armFocusWatch(session: vscode.DebugSession, focus: FocusSource = VSCODE_FOCUS): FrameFocusWatch {
+    const stale = focus.current();
+    return {
+        selected: (limitMs) => new Promise<boolean>((resolve) => {
+            const began = Date.now();
+            const finish = (selected: boolean): void => {
+                logger.debug(selected
+                    ? `[session-tracker] focus selected after ${Date.now() - began} ms on ${session.name}`
+                    : `[session-tracker] no frame selected within ${limitMs} ms on ${session.name}`);
+                resolve(selected);
+            };
+            const now = focus.current();
+            if (now !== stale && isFrameOf(now, session)) {
+                finish(true);
+                return;
+            }
+            if (limitMs <= 0 || endedSessions.has(session)) {
+                finish(false);
+                return;
+            }
+            let subscription: vscode.Disposable | undefined;
+            const waiter: FocusWaiter = { session, settle: () => undefined };
+            const timer = setTimeout(() => waiter.settle(false), limitMs);
+            waiter.settle = (selected) => {
+                clearTimeout(timer);
+                subscription?.dispose();
+                focusWaiters.delete(waiter);
+                finish(selected);
+            };
+            focusWaiters.add(waiter);
+            subscription = focus.onDidChange((item) => {
+                if (focusWaiters.has(waiter) && isFrameOf(item, session)) {
+                    waiter.settle(true);
+                }
+            });
+        }),
+    };
 }
 
 // ── Problems on the adapter channel (#48) ─────────────────────────
@@ -715,6 +809,11 @@ function sessionEnded(session: vscode.DebugSession): void {
     for (const waiter of [...endWaiters]) {
         if (waiter.session === session) {
             waiter.settle(true);
+        }
+    }
+    for (const waiter of [...focusWaiters]) {
+        if (waiter.session === session) {
+            waiter.settle(false);
         }
     }
 }

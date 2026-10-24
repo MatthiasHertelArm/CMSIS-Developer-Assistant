@@ -98,7 +98,11 @@ can fake only the part a case drives.
   where it becomes a toast (#13). Other adapters run the workbench command
   for the same action instead. None of them waits for the stop:
   `armStopWaiter()` and `waitForStop()` do, and the handler arms the waiter
-  before it sends the request.
+  before it sends the request. `watchFrameFocus()`, taken at the same time,
+  waits after the stop for the frame VS Code selects for it (the session
+  tracker's `armFocusWatch()`, driven by `onDidChangeActiveStackItem`),
+  since every frame-based read goes through VS Code's focused frame; the
+  reset waits for it too when a stop event follows the reset commands.
 - **Breakpoints.** VS Code's breakpoint model on every adapter: add, remove,
   list, clear. `breakpointBinding()` asks VS Code how the session's adapter
   bound a breakpoint (`getDebugProtocolBreakpoint`: verified, message, line,
@@ -255,7 +259,7 @@ Code update needs a look at this.
 | `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP`; `coreVerdict()` and the texts of a core that answers or does not |
 | `src/executor/sessionReports.ts` | `probeSession()`, `takesRequests()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
-| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`), the last DHCSR read that got no answer (`noteCoreVerdict()`, `coreSilentSince()`) |
+| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, the wait for VS Code's frame after a stop (`armFocusWatch()`), session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`), the last DHCSR read that got no answer (`noteCoreVerdict()`, `coreSilentSince()`) |
 | `src/utils/timeout.ts` | `withTimeout()`, `customRequestWithTimeout()`, `HardwareTimeoutError` |
 
 ## Tests

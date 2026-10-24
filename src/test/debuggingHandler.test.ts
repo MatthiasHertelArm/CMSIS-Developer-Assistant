@@ -193,6 +193,17 @@ class ScriptedExecutor {
         this.note('waitForStop', ms);
         return { kind: 'timeout' };
     };
+    /** What the focus wait after a stop answers, given its bound: by default VS Code has selected a frame. */
+    frameSelected: (limitMs: number) => boolean | Promise<boolean> = () => true;
+    watchFrameFocus: IDebuggingExecutor['watchFrameFocus'] = () => {
+        this.note('watchFrameFocus');
+        return {
+            selected: async (limitMs) => {
+                this.note('frameSelected', limitMs);
+                return this.frameSelected(limitMs);
+            },
+        };
+    };
     addBreakpoint: IDebuggingExecutor['addBreakpoint'] = async (uri, line, options) => {
         this.moves.push('addBreakpoint');
         // uri.path, not fsPath: forward slashes on every OS, so the expectations hold on Windows too.
@@ -540,7 +551,7 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [[5000, ['pc', 'lr']]]);
             assert.deepStrictEqual(x.argsOf('pause'), [[5000]]);
 
-            // Right after the pause VS Code may not have focused a frame yet (pyOCD, RTX on a B-L475E-IOT01A): no empty state block.
+            // A frame was selected, but the stack read after it came back empty: no empty state block.
             const unfocused = new ScriptedExecutor();
             unfocused.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: null });
             unfocused.getCurrentDebugState = async () => new DebugState();
@@ -635,6 +646,133 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(failure.message, 'Cannot step over: session state is \'running\'.');
             assert.match(failure.hint ?? '', /^The target is running: call pause_execution first, or set a breakpoint and wait_for_stop\./);
             assert.deepStrictEqual(x.moves, [], 'nothing was sent');
+        });
+    });
+
+    suite('after a stop the state waits for the frame VS Code selects', () => {
+        const NOT_SELECTED = 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.';
+        /** The position of a call's first record in the executor's log. */
+        const positionOf = (x: ScriptedExecutor, name: string): number => x.calls.findIndex((call) => call[0] === name);
+
+        test('the focus watch is taken before the request; once a frame is selected the state is read and shown', async () => {
+            const x = new ScriptedExecutor();
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            const reply = await textAnswer(handlerFor(x, {}, 180).handleContinue());
+            assert.ok(positionOf(x, 'armStopWaiter') < positionOf(x, 'watchFrameFocus'), 'the stop waiter first, as before');
+            assert.ok(positionOf(x, 'watchFrameFocus') < positionOf(x, 'continue'), 'a frame VS Code holds before the request is not the stop\'s');
+            assert.ok(positionOf(x, 'frameSelected') < positionOf(x, 'getCurrentDebugState'), 'the state is read after the frame is selected');
+            assert.deepStrictEqual(x.argsOf('frameSelected'), [[2000]], 'the wait is bounded at 2 s');
+            assert.ok(reply.startsWith('Target stopped (reason: breakpoint).\n\n{'), reply);
+        });
+
+        test('no frame within the bound: one line instead of the state, for continue, steps and pause; nothing is read', async () => {
+            const stopped = new ScriptedExecutor();
+            stopped.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            stopped.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(handlerFor(stopped).handleContinue()), `Target stopped (reason: breakpoint). ${NOT_SELECTED}`);
+            assert.deepStrictEqual(stopped.argsOf('getCurrentDebugState'), []);
+
+            const stepped = new ScriptedExecutor();
+            stepped.waiters.push({ kind: 'stopped', reason: null, threadId: 1 });
+            stepped.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(handlerFor(stepped).handleStepOver()), `Target stopped. ${NOT_SELECTED}`);
+
+            const paused = new ScriptedExecutor();
+            paused.waiters.push({ kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            paused.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(handlerFor(paused).handlePause()), `Target paused. ${NOT_SELECTED}`);
+            assert.deepStrictEqual(paused.argsOf('getCurrentDebugState'), []);
+        });
+
+        test('the call returns within the bound when no frame comes, and the bound shrinks to what is left of the call\'s timeout', async () => {
+            const x = new ScriptedExecutor();
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            // As the tracker does: no frame, so the wait runs out at its bound.
+            x.frameSelected = (limitMs) => delay(limitMs).then(() => false);
+            const began = Date.now();
+            const reply = await textAnswer(handlerFor(x).handleContinue({ timeoutMs: 300 }));
+            const tookMs = Date.now() - began;
+            assert.strictEqual(reply, `Target stopped (reason: breakpoint). ${NOT_SELECTED}`);
+            const [[boundMs]] = x.argsOf('frameSelected') as number[][];
+            assert.ok(boundMs > 0 && boundMs <= 300, `a 300 ms call waits at most 300 ms, not 2 s: ${boundMs}`);
+            assert.ok(tookMs < 1_000, `answered after ${tookMs} ms`);
+
+            // The request took 4.6 s of a 5 s call: 400 ms are left for VS Code.
+            let clock = 1_000_000;
+            const late = new ScriptedExecutor();
+            late.waiters.push({ kind: 'stopped', reason: 'step', threadId: 1 });
+            late.stepOver = async () => {
+                clock += 4_600;
+            };
+            await textAnswer(handlerFor(late, { now: () => clock }).handleStepOver({ timeoutMs: 5000 }));
+            assert.deepStrictEqual(late.argsOf('frameSelected'), [[400]]);
+
+            // Nothing left: the focus is looked at once, without waiting.
+            const spent = new ScriptedExecutor();
+            spent.waiters.push({ kind: 'stopped', reason: 'step', threadId: 1 });
+            spent.stepInto = async () => {
+                clock += 9_000;
+            };
+            await textAnswer(handlerFor(spent, { now: () => clock }).handleStepInto({ timeoutMs: 5000 }));
+            assert.deepStrictEqual(spent.argsOf('frameSelected'), [[0]]);
+        });
+
+        test('a reply without the state leaves the breakpoint bookkeeping alone', async () => {
+            const x = new ScriptedExecutor();
+            const h = handlerFor(x);
+            x.state.breakpoints = ['main.c:10'];
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            assert.ok((await textAnswer(h.handleContinue())).includes('"breakpoints": [\n    "main.c:10"\n  ]'));
+
+            x.state.breakpoints = ['main.c:10', 'main.c:20'];
+            x.frameSelected = () => false;
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            await textAnswer(h.handleContinue());
+
+            // The list changed since the agent last saw one, so the next state shows it.
+            x.frameSelected = () => true;
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            const next = await textAnswer(h.handleContinue());
+            assert.ok(next.endsWith(x.state.toCompactString({ includeBreakpoints: true })), next);
+        });
+
+        test('the recovery pause keeps the PC/LR line only with values when no frame was selected, and shows no state', async () => {
+            const read = new ScriptedExecutor();
+            read.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            read.frameSelected = () => false;
+            const located = await replyAnswer(handlerFor(read).handleStepOver(), 'timeout');
+            assert.ok(located.includes('\nPaused successfully. PC = 0x08000100, LR = 0x08000200.\nThe breakpoint you expected was not hit'), located);
+            assert.ok(located.endsWith('or step from here with step_over / continue_execution.'), located);
+            assert.deepStrictEqual(read.argsOf('getCurrentDebugState'), []);
+            assert.deepStrictEqual(read.argsOf('frameSelected'), [[2000]], 'the recovery pause waits for the frame too');
+
+            const unread = new ScriptedExecutor();
+            unread.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            unread.frameSelected = () => false;
+            unread.registers = { pc: '<unavailable>', lr: '<unavailable>' };
+            const pointer = await replyAnswer(handlerFor(unread).handleStepOver(), 'timeout');
+            assert.ok(pointer.includes(`\nPaused successfully. ${NOT_SELECTED}\nThe breakpoint you expected was not hit`), pointer);
+            assert.ok(!pointer.includes('<unavailable>'), pointer);
+        });
+
+        test('wait_for_stop waits for the frame after a stop event, not when the target was already stopped', async () => {
+            const x = new ScriptedExecutor();
+            const h = handlerFor(x, { now: () => 0 });
+            x.waitForStop = async () => ({ kind: 'stopped', reason: 'breakpoint', threadId: 2 });
+            assert.ok((await textAnswer(h.handleWaitForStop({ timeoutMs: 2500 }))).startsWith('Target stopped (reason: breakpoint, threadId=2).\n\n{'));
+            assert.ok(positionOf(x, 'watchFrameFocus') < positionOf(x, 'frameSelected'));
+            assert.deepStrictEqual(x.argsOf('frameSelected'), [[1000]], 'never past the wait\'s own budget (2500 ms less the 1500 ms margin)');
+
+            x.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(h.handleWaitForStop()), `Target stopped (reason: breakpoint, threadId=2). ${NOT_SELECTED}`);
+            assert.deepStrictEqual(x.argsOf('frameSelected')[1], [2000]);
+            assert.strictEqual(x.argsOf('getCurrentDebugState').length, 1, 'no state is read without a frame');
+
+            const already = new ScriptedExecutor();
+            already.waitForStop = async () => ({ kind: 'already-stopped', reason: 'breakpoint' });
+            assert.ok((await textAnswer(handlerFor(already).handleWaitForStop())).startsWith('Target was already stopped (reason: breakpoint).\n\n{'));
+            assert.deepStrictEqual(already.argsOf('frameSelected'), [], 'the stop came before the call: no wait');
+            assert.deepStrictEqual(already.argsOf('getCurrentDebugState'), [[3]]);
         });
     });
 

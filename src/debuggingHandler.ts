@@ -42,6 +42,9 @@
  * Steps, continue and pause wait only for the DAP `stopped` event the
  * executor arms before the request goes out; VS Code's stack-item events,
  * which also fire when the item is cleared on resume, never end a wait.
+ * After the stop, and after the stop event of `wait_for_stop`, the state is
+ * read once VS Code has selected a frame for it, at most 2 s later; when it
+ * has not, the answer says so in one line instead of showing an empty state.
  *
  * Breakpoints live in VS Code's breakpoint model on every adapter, and the
  * answer reports how the adapter bound them. On the CMSIS Debugger a
@@ -53,11 +56,11 @@
 
 import * as vscode from 'vscode';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
-import type { BreakpointBinding, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
+import type { BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor } from './debuggingExecutor';
 import { PickerCancelled, type IDebugConfigurationManager } from './utils/debugConfigurationManager';
 import { logger } from './utils/logger';
 import { isSensitiveName, REDACTION_NOTICE, redactExpressionResult, redactVariableValue } from './utils/secretRedaction';
-import { getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/sessionStateTracker';
+import { FRAME_FOCUS_WAIT_MS, getStoppedReason, resolveActiveSession, StopWaitResult } from './utils/sessionStateTracker';
 import { HardwareTimeoutError } from './utils/timeout';
 import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
@@ -194,8 +197,6 @@ const RECOVERY_PAUSE_MS = 5_000;
 /** `wait_for_stop` without `timeoutMs`, and the margin that lets its own text beat the fence. */
 const WAIT_FOR_STOP_DEFAULT_MS = 28_500;
 const WAIT_FOR_STOP_MARGIN_MS = 1_500;
-/** Pause between a stop and reading the state, so VS Code has focused the new frame. */
-const STOP_SETTLE_MS = 300;
 /** How long a CMSIS Debugger target may take to stop before a breakpoint change or a restart. */
 const CHANGE_PAUSE_MS = 5_000;
 /** How long a new breakpoint waits for the adapter to report whether it bound (#13 proposal: 2 s). */
@@ -225,6 +226,8 @@ const PICKER_UNANSWERED = 'without configurationName, start_debugging asks the u
 const NOTHING_TO_RESTART = 'Nothing to restart — no debug session is active';
 const SESSION_RESTARTED = 'The debug session has been restarted.';
 const NO_FOCUSED_FRAME = 'There is no active stack frame.';
+/** Said instead of the state after a stop for which VS Code selected no frame within `FRAME_FOCUS_WAIT_MS`. */
+const NO_FRAME_SELECTED = 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.';
 /** The frame is missing while VS Code has not yet shown the stop, or because the target runs after all. */
 const NO_FOCUSED_FRAME_HINT = 'Call wait_for_stop, which returns once the target is stopped at a frame, '
     + 'or pause_execution if it is running; then retry.';
@@ -301,9 +304,12 @@ interface StopOutcome {
     /**
      * The state read after the stop; an empty one after a timeout or the
      * session's end, when nothing is read: the target may still run, and a
-     * `stackTrace` to a running target waits out its whole deadline.
+     * `stackTrace` to a running target waits out its whole deadline. Empty
+     * too when VS Code selected no frame for the stop (`focused` false).
      */
     state: DebugState;
+    /** VS Code selected a frame for the stop within the focus wait; false when nothing stopped. */
+    focused: boolean;
     timedOut: boolean;
     /** How long the wait for the stop was allowed to take. */
     waitedMs: number;
@@ -568,32 +574,55 @@ export class DebuggingHandler
     }
 
     /**
-     * Arm the executor's stop waiter, send the request, then wait for the
-     * armed DAP event (or its timeout, or the session's end). A request that
-     * throws leaves the armed waiter to run out on its own. The state is read
-     * only after a stop: a target whose wait ran out may still run, and
-     * reading its stack would hold the call for the adapter's request
-     * deadline.
+     * After a stop event: wait for VS Code to select a frame for the stop,
+     * at most `FRAME_FOCUS_WAIT_MS` and never past the call's own limit
+     * (`limitMs` from `began`). The state, registers and variables are read
+     * through VS Code's focused frame, which it selects only after it has
+     * fetched the threads and the stack of the stop: over a probe with an
+     * RTOS that comes after a read that starts with the stop event.
+     */
+    private frameSelected(focus: FrameFocusWatch, began: number, limitMs: number): Promise<boolean> {
+        const leftMs = limitMs - (this.host().now() - began);
+        return focus.selected(Math.max(Math.min(FRAME_FOCUS_WAIT_MS, leftMs), 0));
+    }
+
+    /**
+     * Arm the executor's stop waiter and the focus watch, send the request,
+     * then wait for the armed DAP event (or its timeout, or the session's
+     * end). A request that throws leaves the armed waiter to run out on its
+     * own. The state is read only after a stop: a target whose wait ran out
+     * may still run, and reading its stack would hold the call for the
+     * adapter's request deadline. After the stop it is read once VS Code
+     * has selected a frame for it, and not at all when it has not within
+     * the focus wait.
      */
     private async sendAndAwaitStop(send: () => Promise<void>, overrideMs: number | undefined): Promise<StopOutcome> {
+        const began = this.host().now();
         const limitMs = waitLimitMs(this.configuredSeconds, overrideMs);
         const armed: Promise<StopWaitResult> = this.dbg.armStopWaiter(limitMs);
         armed.catch(() => undefined);
+        // Before the request: a frame VS Code still holds from before it is not the stop's.
+        const focus = this.dbg.watchFrameFocus();
         await send();
         const result = await armed;
         if (result.kind === 'timeout') {
             logger.debug(`No DAP stopped event within ${limitMs} ms`);
         }
         let state = new DebugState();
+        let focused = false;
         if (result.kind === 'stopped') {
-            try {
-                state = await this.dbg.getCurrentDebugState(3);
-            } catch {
-                // The empty state stands.
+            focused = await this.frameSelected(focus, began, limitMs);
+            if (focused) {
+                try {
+                    state = await this.dbg.getCurrentDebugState(3);
+                } catch {
+                    // The empty state stands.
+                }
             }
         }
         return {
             state,
+            focused,
             timedOut: result.kind === 'timeout',
             waitedMs: limitMs,
             ended: result.kind === 'ended',
@@ -635,15 +664,19 @@ export class DebuggingHandler
                 + 'Consider adding a breakpoint, checking the hardware connection, or calling check_target_connection.';
             return { text: overrun + await this.locateRunawayTarget(spec.tool), status: 'timeout' };
         }
-        return outcome.reason
-            ? `Target stopped (reason: ${outcome.reason}).\n\n${this.compactState(outcome.state)}`
-            : this.compactState(outcome.state);
+        const stopped = outcome.reason ? `Target stopped (reason: ${outcome.reason}).` : 'Target stopped.';
+        if (!outcome.focused) {
+            return `${stopped} ${NO_FRAME_SELECTED}`;
+        }
+        return outcome.reason ? `${stopped}\n\n${this.compactState(outcome.state)}` : this.compactState(outcome.state);
     }
 
     /**
      * After a step that did not stop: pause the target and say where it is,
      * ending with the compact state read after that stop. Nothing is read
-     * while the target may still run. Never throws.
+     * while the target may still run. When VS Code selected no frame for
+     * the pause, the PC/LR line stays only when the registers have values,
+     * and no state is shown. Never throws.
      */
     private async locateRunawayTarget(tool: string): Promise<string> {
         const report = ['\n🩹 Recovery attempt: target did not stop on its own — issuing DAP pause to find out where it is.'];
@@ -673,15 +706,17 @@ export class DebuggingHandler
             const lrPart = lr !== undefined ? `, LR = ${lr}` : '';
             const framePart = where.frameName ? ` in ${where.frameName}` : '';
             const filePart = where.fileName ? ` at ${where.fileName}:${where.currentLine}` : '';
-            report.push(`Paused successfully. PC = ${pc}${lrPart}${framePart}${filePart}.`);
+            report.push(paused.focused || registerNumber(pc) !== undefined
+                ? `Paused successfully. PC = ${pc}${lrPart}${framePart}${filePart}.`
+                : `Paused successfully. ${NO_FRAME_SELECTED}`);
             if (where.currentLineContent) {
                 report.push(`  Current line: ${where.currentLineContent}`);
             }
             report.push('The breakpoint you expected was not hit — the firmware did not reach it. '
                 + 'Verify the breakpoint location, check the call stack with get_call_stack, '
                 + 'or step from here with step_over / continue_execution.');
-            // Right after a pause VS Code may not have focused a frame yet (seen with pyOCD on an RTX target): no empty state then.
-            if (where.frameName !== null || where.stackTrace.length > 0) {
+            // No empty state block: VS Code selected no frame, or the stack read after it failed.
+            if (paused.focused && (where.frameName !== null || where.stackTrace.length > 0)) {
                 report.push('', this.compactState(where));
             }
         }
@@ -1069,7 +1104,7 @@ export class DebuggingHandler
         if (outcome.ended) {
             throw new ToolError('NO_SESSION', 'Pause requested but the debug session ended. The target may have crashed.');
         }
-        return `Target paused. ${this.compactState(outcome.state)}`;
+        return outcome.focused ? `Target paused. ${this.compactState(outcome.state)}` : `Target paused. ${NO_FRAME_SELECTED}`;
     }
 
     handleWaitForStop(args?: TimeoutArg): Answer {
@@ -1077,9 +1112,12 @@ export class DebuggingHandler
             if (!this.dbg.hasDebugSession()) {
                 throw new ToolError('NO_SESSION', NO_ACTIVE_SESSION, `wait_for_stop waits on a live session. ${START_FIRST}`);
             }
+            const began = this.host().now();
             const budgetMs = args?.timeoutMs
                 ? Math.max(args.timeoutMs - WAIT_FOR_STOP_MARGIN_MS, 100)
                 : WAIT_FOR_STOP_DEFAULT_MS;
+            // Before the wait: a frame VS Code still holds from before the stop is not the stop's.
+            const focus = this.dbg.watchFrameFocus();
             const outcome = await this.dbg.waitForStop(budgetMs);
             if (outcome.kind === 'timeout') {
                 return {
@@ -1095,14 +1133,17 @@ export class DebuggingHandler
                         + 'or the session was stopped in the UI.',
                     'Call get_session_status to confirm.');
             }
-            await this.host().sleep(STOP_SETTLE_MS);
-            const state = await this.dbg.getCurrentDebugState(3);
             const reason = outcome.reason ?? 'unknown';
             if (outcome.kind === 'already-stopped') {
-                return `Target was already stopped (reason: ${reason}).\n\n${this.compactState(state)}`;
+                // The stop came before this call, so VS Code has had its time to select a frame.
+                return `Target was already stopped (reason: ${reason}).\n\n${this.compactState(await this.dbg.getCurrentDebugState(3))}`;
             }
             const thread = outcome.threadId !== null && outcome.threadId !== undefined ? `, threadId=${outcome.threadId}` : '';
-            return `Target stopped (reason: ${reason}${thread}).\n\n${this.compactState(state)}`;
+            const stopped = `Target stopped (reason: ${reason}${thread}).`;
+            if (!(await this.frameSelected(focus, began, budgetMs))) {
+                return `${stopped} ${NO_FRAME_SELECTED}`;
+            }
+            return `${stopped}\n\n${this.compactState(await this.dbg.getCurrentDebugState(3))}`;
         });
     }
 

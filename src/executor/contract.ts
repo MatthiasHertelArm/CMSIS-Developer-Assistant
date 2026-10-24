@@ -31,10 +31,10 @@ import type { DebugPortProbe } from '../core/probeWedge';
 import { ResetMethod, ResetOutcomeView } from '../core/resetAssist';
 import type { DapVariable } from '../core/variableView';
 import { DebugState, StackFrame } from '../debugState';
-import type { GdbLogpoint, StopWaitResult } from '../utils/sessionStateTracker';
+import type { FrameFocusWatch, GdbLogpoint, StopWaitResult } from '../utils/sessionStateTracker';
 import type { GdbReply } from './gdbCommand';
 
-export type { GdbLogpoint } from '../utils/sessionStateTracker';
+export type { FrameFocusWatch, GdbLogpoint } from '../utils/sessionStateTracker';
 export type { GdbReply } from './gdbCommand';
 export type { DebugPortProbe } from '../core/probeWedge';
 
@@ -156,6 +156,14 @@ export interface RunControl {
     /** Not async: without a session it throws before the caller sends its request. */
     armStopWaiter(limitMs: number): Promise<StopWaitResult>;
     waitForStop(limitMs?: number): Promise<StopWaitResult | AlreadyStopped>;
+    /**
+     * Taken before the request, with the stop waiter: after the stop,
+     * `selected` waits, bounded, for the frame VS Code selects for it, which
+     * the state and register reads go through. A frame VS Code still held
+     * from before the request does not count. Without a session it answers
+     * false at once.
+     */
+    watchFrameFocus(): FrameFocusWatch;
 }
 
 /** How the session's adapter reports one breakpoint of VS Code's model (`getDebugProtocolBreakpoint`). */

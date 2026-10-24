@@ -74,7 +74,9 @@
 //     request, or answers it with GDB's error (`connectFails`).
 // VS Code itself is modelled only as far as the code under test can see it:
 // after a stopped event `activeStackItem` becomes frame 1000 of the focused
-// session at once, a continued event clears it; a change of the breakpoint
+// session at once, a continued event and the session's end clear it, and
+// each change fires `onDidChangeActiveStackItem` with a new item object, as
+// VS Code does; a change of the breakpoint
 // model makes VS Code send `setBreakpoints` for each file concerned a moment
 // later, which the adapter answers as cdt-gdb-adapter does (the file's GDB
 // breakpoints whose location names the file and that VS Code did not send are
@@ -1150,6 +1152,7 @@ class ScenarioContext {
         if (stub.debug.activeDebugSession === session) {
             stub.debug.activeDebugSession = undefined;
             stub.debug.activeStackItem = undefined;
+            bus.didChangeStackItem.fire(undefined);
             bus.didChangeActiveSession.fire(undefined);
         }
         bus.didTerminate.fire(session);

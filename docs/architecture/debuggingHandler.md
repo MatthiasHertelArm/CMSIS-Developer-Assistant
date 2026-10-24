@@ -117,6 +117,17 @@ status `timeout`. A session that ends meanwhile rejects with `NO_SESSION`,
 in a step or continue as in `pause_execution` and `wait_for_stop`, with the
 calls that confirm it and start a new session as the hint.
 
+Before it reads anything after a stop, the handler waits for the frame VS
+Code selects for it (`frameSelected()`), at most 2 s and never past the
+call's own limit: the state, registers and variables go through VS Code's
+focused frame, and VS Code selects one only after it has fetched the stop's
+threads and stack, which over a probe with an RTOS comes after a read that
+starts with the `stopped` event. The focus watch is taken before the
+request, so a frame VS Code still holds from before it does not count. When
+the wait runs out, the answer says so in one line instead of showing an
+empty state. `wait_for_stop` waits the same way after a stop event, not for
+a target that was stopped before the call.
+
 After a stop the handler takes a `DebugState` from the executor and returns
 its compact form. `compactState()` includes the breakpoint list only when it
 differs from the list the agent saw last; `fullState()`, used after a session

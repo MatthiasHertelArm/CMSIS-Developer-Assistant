@@ -18,11 +18,13 @@ import * as vscode from 'vscode';
 import * as assert from 'assert';
 import { ProblemJournal, type ProblemRecord } from '../core/problemJournal';
 import {
+    armFocusWatch,
     awaitBreakpointsApplied,
     captureOutput,
     coreSilentSince,
     createSessionTracker,
     expectAgentStart,
+    type FocusSource,
     forgetAgentStarts,
     forgetGdbLogpoints,
     gdbLogpointsOf,
@@ -62,6 +64,45 @@ function track(type = 'gdbtarget', journal?: ProblemJournal): Tracked {
 }
 
 const delay = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
+
+type StackItem = ReturnType<FocusSource['current']>;
+
+/** VS Code's focused stack item as a test drives it: `select` fires the change event, `hold` does not. */
+interface FakeFocus {
+    source: FocusSource;
+    select(item: StackItem): void;
+    hold(item: StackItem): void;
+    listeners(): number;
+}
+
+function fakeFocus(initial: StackItem = undefined): FakeFocus {
+    let item = initial;
+    const listeners = new Set<(next: StackItem) => void>();
+    return {
+        source: {
+            current: () => item,
+            onDidChange: (listener) => {
+                listeners.add(listener);
+                return { dispose: () => listeners.delete(listener) };
+            },
+        },
+        select: (next) => {
+            item = next;
+            for (const listener of [...listeners]) {
+                listener(next);
+            }
+        },
+        hold: (next) => {
+            item = next;
+        },
+        listeners: () => listeners.size,
+    };
+}
+
+/** A stack frame of `session`, as VS Code makes a new one for every focus it reports. */
+function frameOf(session: vscode.DebugSession, frameId = 1000): StackItem {
+    return { session, threadId: 1, frameId } as unknown as vscode.DebugStackFrame;
+}
 
 /**
  * The session tracker's hooks for #13 and #56: the output a GDB command
@@ -290,6 +331,60 @@ suite('Session state tracker', () => {
             again.onDidSendMessage?.({ type: 'event', event: 'stopped', body: { reason: 'breakpoint', threadId: 1 } });
             assert.deepStrictEqual(await stop, { kind: 'stopped', reason: 'breakpoint', threadId: 1 });
             again.onWillStopSession?.();
+        });
+    });
+
+    suite('the frame VS Code selects after a stop', () => {
+        test('a frame object other than the one focused when the watch was armed counts at once; the stale one never does', async () => {
+            const a = track();
+            const before = frameOf(a.session);
+            const focus = fakeFocus(before);
+            const watch = armFocusWatch(a.session, focus.source);
+            // VS Code has not yet heard the stop of a request sent as a custom request: it still holds the frame from before.
+            const began = Date.now();
+            assert.strictEqual(await watch.selected(80), false);
+            assert.ok(Date.now() - began >= 70, 'the wait ran to its bound');
+            assert.strictEqual(focus.listeners(), 0, 'the subscription went with the wait');
+
+            focus.hold(frameOf(a.session));
+            assert.strictEqual(await armFocusWatch(a.session, focus.source).selected(0), false, 'armed now, the new frame is the stale one');
+            assert.strictEqual(await watch.selected(0), true, 'for the watch armed before, it is the stop\'s');
+        });
+
+        test('a frame of the session delivered by the change event ends the wait; threads and other sessions\' frames do not', async () => {
+            const a = track();
+            const b = track();
+            const focus = fakeFocus();
+            const pending = armFocusWatch(a.session, focus.source).selected(2_000);
+            let settled: boolean | undefined;
+            void pending.then((selected) => {
+                settled = selected;
+            });
+            focus.select({ session: a.session, threadId: 1 } as unknown as vscode.DebugThread);
+            focus.select(frameOf(b.session));
+            await delay(20);
+            assert.strictEqual(settled, undefined, 'a thread item and another session\'s frame leave it waiting');
+            const began = Date.now();
+            focus.select(frameOf(a.session));
+            assert.strictEqual(await pending, true);
+            assert.ok(Date.now() - began < 500, 'the event ends the wait, no poll');
+            assert.strictEqual(focus.listeners(), 0);
+        });
+
+        test('the end of the session ends the wait; a session that has ended and a bound of 0 answer at once', async () => {
+            const a = track();
+            const focus = fakeFocus();
+            const pending = armFocusWatch(a.session, focus.source).selected(5_000);
+            const began = Date.now();
+            a.tracker.onWillStopSession?.();
+            assert.strictEqual(await pending, false);
+            assert.ok(Date.now() - began < 500);
+            assert.strictEqual(focus.listeners(), 0);
+            assert.strictEqual(await armFocusWatch(a.session, focus.source).selected(5_000), false, 'ended before the wait');
+
+            const b = track();
+            assert.strictEqual(await armFocusWatch(b.session, focus.source).selected(0), false);
+            assert.strictEqual(focus.listeners(), 0, 'nothing subscribed for a wait of 0');
         });
     });
 
