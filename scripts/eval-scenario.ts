@@ -191,6 +191,31 @@ async function ensureWindow(endpoint: string, work: string, waitMs: number): Pro
     }
 }
 
+/**
+ * The window's CMSIS Solution extension must list the work copy's solution
+ * again before the agent starts: materialise() deletes and copies the folder
+ * that window has open, and until the extension has seen the new files,
+ * `open_solution` is refused ("does not list") and the environment has no
+ * solution context. Activate it through the server, as the agent would;
+ * undefined when it is active, else why not.
+ */
+async function ensureSolution(endpoint: string, work: string, waitMs: number): Promise<string | undefined> {
+    const solution = fs.readdirSync(work).find(f => f.endsWith('.csolution.yml'));
+    if (!solution) { return `no *.csolution.yml in ${work}`; }
+    const deadline = Date.now() + Math.max(waitMs, 60_000);
+    for (;;) {
+        const answer = await withClient(endpoint, async client => {
+            const r = await client.callTool({ name: 'cmsis_action', arguments: { action: 'open_solution', path: path.join(work, solution), window: work } });
+            return { failed: r.isError === true, text: (r.content as Array<{ text?: string }>).map(c => c.text ?? '').join('\n') };
+        }).catch(err => ({ failed: true, text: `<${err instanceof Error ? err.message : String(err)}>` }));
+        if (!answer.failed) { return undefined; }
+        if (Date.now() >= deadline) {
+            return `the window does not activate ${solution} (open_solution: ${answer.text.slice(0, 200).replace(/\n/g, ' | ')})`;
+        }
+        await new Promise(r => setTimeout(r, 5000));
+    }
+}
+
 function copilotHome(): string {
     return process.env.COPILOT_HOME || path.join(os.homedir(), '.copilot');
 }
@@ -288,7 +313,8 @@ async function main(): Promise<number> {
     const results: unknown[] = [];
     let anyFail = false;
     try {
-        const infra = await ensureWindow(opts.endpoint, work, opts.waitForWindowMs);
+        const infra = await ensureWindow(opts.endpoint, work, opts.waitForWindowMs)
+            ?? await ensureSolution(opts.endpoint, work, opts.waitForWindowMs);
         for (let runIndex = 1; runIndex <= opts.runs; runIndex++) {
             const before = await readStats(opts.endpoint);
             const started = Date.now();

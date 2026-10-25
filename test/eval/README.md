@@ -29,7 +29,10 @@ reported as `infra_error`, not as the agent's failure.
    with `--no-mcp-config` when it is already registered).
 3. Checks with `list_debug_windows` that a VS Code window has the work directory open —
    that window runs the debug session the agent drives. `--wait-for-window N` polls for N
-   seconds instead of failing at once.
+   seconds instead of failing at once. Then activates the work copy's solution there with
+   `cmsis_action open_solution`, retrying for up to a minute (or N seconds): step 1 has just
+   replaced the folder that window has open, and until CMSIS Solution has seen the new files
+   it lists no solution, so the agent would start in a window without one.
 4. Snapshots `cmsis-developer-assistant://stats`, runs
    `copilot -p "<prompt>" --output-format json …`, keeps the raw event stream in
    `reports/events.<id>.<time>.<run>.jsonl`, snapshots again. The run passes
