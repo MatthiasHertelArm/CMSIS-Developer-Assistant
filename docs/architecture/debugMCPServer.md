@@ -200,9 +200,12 @@ is on. `src/test/debugSkillGuidance.test.ts` pins the phrases agents rely on.
 The first `get_session_status` of a session repeats the rules in one line
 (`TOOL_RULES_REMINDER`), between the status and the call statistics: by then
 the instructions may lie far back in the conversation, or have been
-compacted away. A flag in the closure of that registration keeps it to one
-reply per session; the state lives where the session is built, in the router
-window, so no worker takes part.
+compacted away. A client whose model never sees the instructions at all
+(`NO_INSTRUCTIONS_CLIENTS` in `src/core/clientHosting.ts`: Kimi Code) gets
+the whole rules block there instead of a line that points at them. A flag in
+the closure of that registration keeps it to one reply per session; the state
+lives where the session is built, in the router window, so no worker takes
+part.
 
 Neither the rules, nor the sentence on results, nor the reminder is in a tool
 description: `tools/list` goes along with every turn, and

@@ -31,6 +31,9 @@
  * that shows both then reads every result with data twice; its sessions get
  * the text alone (`TEXT_ONLY_CLIENTS`).
  *
+ * Some clients never pass the server's `instructions` to the model, so the
+ * tool rules at their top do not arrive (`NO_INSTRUCTIONS_CLIENTS`).
+ *
  * Pure: no vscode.
  */
 
@@ -58,6 +61,23 @@ const OUTSIDE_THE_WINDOW: readonly string[] = ['claude-code', 'codex', 'gemini']
  * its exact client name goes here once it is known.
  */
 export const TEXT_ONLY_CLIENTS: readonly string[] = ['kimi-code'];
+
+/**
+ * Names of the clients that do not hand the server's `instructions` to the
+ * model, matched exactly: the first `get_session_status` of their sessions
+ * carries the tool rules themselves instead of a line that points at the
+ * instructions.
+ *
+ * - `kimi-code`: Kimi Code's MCP client lists and calls tools and nothing
+ *   else (MoonshotAI/kimi-code `mcpCore/types.ts` at 743f140, issue 4142);
+ *   the system prompt of a Kimi Code 2.3.2 session holds no line of ours.
+ */
+export const NO_INSTRUCTIONS_CLIENTS: readonly string[] = ['kimi-code'];
+
+/** Whether a client of this name is one whose model never sees the server instructions. An absent name never is. */
+export function dropsInstructions(clientName: string | undefined): boolean {
+    return clientName !== undefined && NO_INSTRUCTIONS_CLIENTS.includes(clientName);
+}
 
 /**
  * Whether a client of this name keeps working while the VS Code window it

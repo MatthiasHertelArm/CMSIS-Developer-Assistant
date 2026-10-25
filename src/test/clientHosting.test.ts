@@ -15,7 +15,7 @@
  */
 
 import * as assert from 'assert';
-import { survivesWindowReload, wantsTextOnly } from '../core/clientHosting';
+import { dropsInstructions, survivesWindowReload, wantsTextOnly } from '../core/clientHosting';
 
 suite('Which MCP clients survive a window reload', () => {
     test('the CLIs do: Claude Code, Codex, Gemini CLI, by name prefix, case-insensitively', () => {
@@ -48,5 +48,14 @@ suite('Which MCP clients get tool results as text alone', () => {
     test('an absent or empty name never does, whatever the shipped list holds', () => {
         assert.strictEqual(wantsTextOnly(undefined), false);
         assert.strictEqual(wantsTextOnly(''), false);
+    });
+});
+
+suite('Which MCP clients never show the model the server instructions', () => {
+    test('Kimi Code, by its exact name; an absent or other name does not count', () => {
+        assert.strictEqual(dropsInstructions('kimi-code'), true);
+        for (const name of ['Kimi-Code', 'claude-code', 'Visual Studio Code', '', undefined]) {
+            assert.strictEqual(dropsInstructions(name), false, String(name));
+        }
     });
 });
