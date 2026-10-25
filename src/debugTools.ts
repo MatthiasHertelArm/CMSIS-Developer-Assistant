@@ -42,7 +42,8 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/
 import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { QUERY_KINDS } from './core/catalogQuery';
-import { TOPICS, sliceTopic } from './core/instructionTopics';
+import { TEXT_ONLY_CLIENTS, dropsInstructions } from './core/clientHosting';
+import { TOPIC_NAMES, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
 import { journalLocally } from './core/problemFeed';
@@ -57,6 +58,7 @@ import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
 import { registerKnowledgeTools } from './knowledgeTools';
 import { registerPackDocsTools } from './packDocsTools';
+import { actionTimeoutMs } from './handler/cmsisAction';
 import { logger } from './utils/logger';
 
 /** The name in the initialize result, and the scheme of every resource URI. */
@@ -70,7 +72,7 @@ const say = (...sentences: string[]): string => sentences.join(' ');
 const ABOUT = {
     get_debug_instructions: say(
         'Debugging guide for harnesses that do not load the "cmsis-help" Agent Skill.',
-        'Default: a short overview plus the topic list; pass topic for one section (bootstrap, session, build, breakpoints, inspection, faults, troubleshooting).',
+        'Default: a short overview plus the topic list; pass topic for one section.',
     ),
     start_debugging: say(
         'Start a debug session through the VS Code debug pipeline (launch.json).',
@@ -175,10 +177,11 @@ const ABOUT = {
         'Return information about the connected debug target: session name, debug type, program path, GDB path, GDB server, ' +
         'port, and CMSIS config details.',
     check_target_connection: say(
-        'Probe the hardware debug connection with a short-timeout DAP ping.',
+        'Probe the hardware debug connection with a short-timeout DAP ping; on a stopped target, also read the core\'s debug ' +
+        'status (DHCSR).',
         'Use this when other tool calls start timing out or returning "unavailable" to determine whether the probe/GDB server ' +
         'is alive and whether the target is stopped (so DAP reads are valid).',
-        'Never hangs — uses an internal short timeout.',
+        'Never hangs.',
     ),
     get_call_stack: say(
         'Return the full call stack (function names, source, line, frameId) for the active thread, or a specific thread when ' +
@@ -245,13 +248,12 @@ const ABOUT = {
         'Stopping its monitor there frees the port for serial_capture.',
     ),
     cmsis_action: say(
-        'The entry point for CMSIS / Cortex-M debugging: drives CMSIS Solution on the active csolution target like its panel ' +
-        'buttons; each result names its target.',
+        'Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target.',
         'build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code.',
-        'A task still running at the wait returns status running: call action status, never start it again.',
+        'A task still running at the wait returns status running: call status, never start it again.',
         'run: CMSIS Run alone, no build or flash — a probe\'s GDB server, then attach; an FVP hosts none.',
-        'load_and_debug (flash + debug) and attach return with the session state; stop_run / stop_build wait for the tasks to end.',
-        'refresh: Update RTE (for "use --update-rte").',
+        'load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks.',
+        'refresh: Update RTE ("use --update-rte"); activate_environment: re-resolve vcpkg-configuration.json.',
         'open_solution (path) opens and activates a csolution; needs no open project.',
     ),
     cmsis_query: say(
@@ -518,7 +520,13 @@ export function buildSessionServer(parts: SessionParts): MeasuredMcpServer {
         { name: SERVER_NAME, version: SERVER_VERSION },
         { instructions: buildServerInstructions(parts.toolRules, parts.options) },
         parts.ring,
+        TEXT_ONLY_CLIENTS,
+        { log: (line) => logger.info(line) },
     );
+    // Waits a client that gives up sooner may have cut: cmsis_action's default depends on the action;
+    // flash's wait is pyOCD's budget, which a cut would end early.
+    mcp.declareWait('cmsis_action', { defaultMs: (args) => actionTimeoutMs(String(args.action), undefined) });
+    mcp.declareWait('flash', { endsWork: true });
     const handlers = parts.handlers();
     // A router's tools that start or own something can name the window they run in.
     if (windowRoutingOf(handlers.debug) !== undefined) {
@@ -536,7 +544,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('get_debug_instructions', {
         description: ABOUT.get_debug_instructions,
         inputSchema: {
-            topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
+            topic: z.enum(TOPIC_NAMES).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
         },
         annotations: LOOK_ONLY,
     }, async (args) => reply(guideSection(await docs.read(GUIDE_FILE), args.topic)));
@@ -636,7 +644,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('read_memory', {
         description: ABOUT.read_memory,
         inputSchema: {
-            address: z.string().describe('Memory address as hex string, e.g. \'0x20000000\''),
+            address: z.string().describe('Hex address (\'0x20000000\') or a C expression for one (\'&buf\', an array, a pointer)'),
             length: z.number().int().min(1).max(4096).describe('Number of bytes to read (1-4096)'),
             format: z.enum(['hex', 'ascii', 'both']).default('hex').describe('\'hex\' (default), \'ascii\', or \'both\''),
             timeoutMs: CALL_TIMEOUT,
@@ -794,7 +802,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
+            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
                 'stop_build', 'status', 'open_solution', 'install_pack', 'create_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
             path: z.string().optional().describe('Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project\'s folder.'),
@@ -816,8 +824,8 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             what: z.enum(QUERY_KINDS),
             vendor: z.string().optional(),
             name: z.string().optional(),
-            board: z.string().optional().describe('examples: board id'),
-            device: z.string().optional().describe('boards: pattern; examples: device id'),
+            board: z.string().optional().describe('boards: pattern; examples: board id'),
+            device: z.string().optional().describe('boards, devices: pattern; examples: device id'),
             limit: z.number().int().min(1).max(100).optional().describe('Default 20'),
         },
         annotations: LOOK_ONLY,
@@ -832,11 +840,14 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         annotations: ALTERS_TARGET,
     }, (args) => debug.handleFlash(args).then(reply));
 
-    // The first status of the session repeats the tool rules in one line (#50); the state lives in this closure.
+    // The first status of the session repeats the tool rules in one line (#50), or whole for a client whose model
+    // never sees the instructions (Kimi Code, #103); the state lives in this closure.
     let rulesRepeated = parts.toolRules === undefined;
     mcp.registerTool('get_session_status', { description: ABOUT.get_session_status, annotations: LOOK_ONLY }, async () => {
         const state = await debug.handleGetSessionStatus();
-        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}`;
+        const whole = parts.toolRules !== undefined && dropsInstructions(mcp.server.getClientVersion()?.name);
+        const reminder = rulesRepeated ? ''
+            : whole ? `\n\n${parts.toolRules}\n\n${KNOWLEDGE_REMINDER}` : `\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}`;
         rulesRepeated = true;
         // Read after the handler: the totals cover this session's earlier calls, not this one.
         return reply(`${textOf(state)}${reminder}\n\n${ring.formatTotals()}`);

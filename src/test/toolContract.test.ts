@@ -149,14 +149,14 @@ suite('Tool contract', () => {
         assert.ok(skill.includes(`${endMarker(RULES_BLOCK)}\n\n${beginMarker(TABLE_BLOCK)}\n`), 'the table does not follow the rules');
     });
 
-    test('the guide\'s overview starts with the rules and its build topic carries the table', () => {
+    test('the guide\'s overview starts with the rules and its flash topic carries the table', () => {
         const guide = read('docs/agent-resources/debug_instructions.md');
         const overview = sliceTopic(guide);
         const [title] = guide.split('\n');
         assert.ok(overview.startsWith(`${title}\n\n${renderContractBlock(RULES_BLOCK, contract)}\n\n## Work through these steps in order\n`),
             overview.slice(0, 200));
-        assert.ok(sliceTopic(guide, 'build').includes(renderContractBlock(TABLE_BLOCK, contract)), 'the build topic lacks the table');
-        for (const topic of ['session', 'breakpoints', 'inspection', 'faults', 'troubleshooting']) {
+        assert.ok(sliceTopic(guide, 'flash').includes(renderContractBlock(TABLE_BLOCK, contract)), 'the flash topic lacks the table');
+        for (const topic of ['bootstrap', 'session', 'target', 'cmsis-action', 'breakpoints', 'inspection', 'faults', 'troubleshooting']) {
             assert.ok(!sliceTopic(guide, topic).includes(beginMarker(TABLE_BLOCK)), `the ${topic} topic carries the table`);
         }
         assert.ok(!overview.includes(beginMarker(TABLE_BLOCK)), 'the overview carries the table');
@@ -183,7 +183,7 @@ suite('Tool contract', () => {
 
     suite('in a session', () => {
         /** A session whose only working tool is get_session_status, and a client connected to it. */
-        async function connect(toolRules: string | undefined): Promise<{ client: Client; close: () => Promise<void> }> {
+        async function connect(toolRules: string | undefined, clientName = 'tool-contract-check'): Promise<{ client: Client; close: () => Promise<void> }> {
             const debug = { handleGetSessionStatus: async () => 'State: no-session' } as unknown as IDebuggingHandler;
             const server = buildSessionServer({
                 options: {},
@@ -195,7 +195,7 @@ suite('Tool contract', () => {
             });
             const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
             await server.connect(serverEnd);
-            const client = new Client({ name: 'tool-contract-check', version: '1.0.0' });
+            const client = new Client({ name: clientName, version: '1.0.0' });
             await client.connect(clientEnd);
             return { client, close: async () => { await client.close(); await server.close(); } };
         }
@@ -214,6 +214,19 @@ suite('Tool contract', () => {
                 assert.ok(first.startsWith(`State: no-session\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}\n\nTool stats (this session):`), first);
                 const second = await statusText(client);
                 assert.ok(!second.includes(TOOL_RULES_REMINDER), second);
+                assert.ok(second.startsWith('State: no-session\n\nTool stats (this session):'), second);
+            } finally {
+                await close();
+            }
+        });
+
+        test('a client that drops the instructions (Kimi Code) gets the whole rules in the first status, once', async () => {
+            const { client, close } = await connect(contract.rules, 'kimi-code');
+            try {
+                const first = await statusText(client);
+                assert.ok(first.startsWith(`State: no-session\n\n${contract.rules}\n\n${KNOWLEDGE_REMINDER}\n\nTool stats (this session):`), first);
+                assert.ok(!first.includes('see the server instructions'), 'no pointer to instructions the model never sees');
+                const second = await statusText(client);
                 assert.ok(second.startsWith('State: no-session\n\nTool stats (this session):'), second);
             } finally {
                 await close();

@@ -371,6 +371,39 @@ suite('Multi-window routing', () => {
             assertAnsweredBy(await router.handleReadMemory({ address: '0x0', length: 4 }), 'idle');
         });
 
+        test('a breakpoint op of a pinned session goes to the pinned window with the debug session, whatever file it names, and says so', async () => {
+            const board = await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            await openWindow('sources', { workspaceFolders: [folder('sources')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: board.pid });
+            const foreign = path.join(folder('sources'), 'Blinky.c');
+            const added = await router.handleAddBreakpoint({ fileFullPath: foreign, line: 48 });
+            assertAnsweredBy(added, 'board');
+            assert.ok(textOf(added).endsWith(`\nRan in the pinned window pid ${board.pid} (board); the file lies outside its folders.`), textOf(added));
+            assertAnsweredBy(await router.handleAddLogpoint({ fileFullPath: foreign, line: 50, logMessage: 'x' }), 'board');
+            assertAnsweredBy(await router.handleRemoveBreakpoint({ fileFullPath: foreign, line: 48 }), 'board');
+            // A file outside every workspace is no refusal for a pinned session.
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }), 'board');
+            // A file of its own folders: no note.
+            const own = await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 3 });
+            assert.ok(!textOf(own).includes('Ran in the pinned window'), textOf(own));
+            assert.deepStrictEqual(router.describeTarget(), { pid: board.pid, name: 'board', reason: 'pinned' });
+            // start_debugging keeps routing by its path: it launches in the window whose folder holds the file.
+            assertAnsweredBy(await router.handleStartDebugging({ fileFullPath: foreign, workingDirectory: folder('sources') }), 'sources');
+        });
+
+        test('a breakpoint op of a pinned session goes to the file\'s window only when that one alone debugs; unpinned, the path decides', async () => {
+            const idle = await openWindow('idle', { workspaceFolders: [folder('idle')] });
+            await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            await openWindow('quiet', { workspaceFolders: [folder('quiet')] });
+            const router = newRouter();
+            router.selectDebugWindow({ pid: idle.pid });
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('board'), 'main.c'), line: 7 }), 'board');
+            // Neither debugs: the pinned window keeps it for the session it will start.
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('quiet'), 'main.c'), line: 7 }), 'idle');
+            assertAnsweredBy(await newRouter().handleAddBreakpoint({ fileFullPath: path.join(folder('quiet'), 'main.c'), line: 7 }), 'quiet');
+        });
+
         test('a selection that matches nothing lists what is registered', async () => {
             await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
             assert.throws(() => newRouter().selectDebugWindow({ workspaceFolder: '/nowhere' }), (failure: unknown) =>
@@ -666,6 +699,62 @@ suite('Multi-window routing', () => {
             assert.ok(Date.now() - started < 2_000, 'no wait for a new window');
             const nested = path.join(folder('beta'), 'app');
             assertAnsweredBy(await router.handleCmsisCommand({ action: 'create_solution', path: nested, draft: 'D' }), 'beta');
+        });
+    });
+
+    suite('calls that never fail for want of a target window', () => {
+        const typedText = (text: string) => (reply: http.ServerResponse): void => {
+            reply.writeHead(200, TYPED_JSON).end(JSON.stringify({ result: text }));
+        };
+
+        test('serial_list_ports runs in any window: the ports belong to the machine, and the router\'s own window lists them on a tie', async () => {
+            // Scripted windows: the router's choice is what counts, not the serial handler of the test VS Code.
+            const { ops } = await openScripted('own', (op, reply) => typedText(`own: ${op}`)(reply),
+                { pid: process.pid, workspaceFolders: [folder('own')], role: 'router' });
+            const { ops: otherOps } = await openScripted('other', (op, reply) => typedText(`other: ${op}`)(reply),
+                { workspaceFolders: [folder('other')], role: 'worker' });
+            const router = newRouter();
+            assert.strictEqual(textOf(await router.serialOp('handleListPorts')), 'own: handleListPorts');
+            assert.ok(ops.includes('handleListPorts') && !otherOps.includes('handleListPorts'), `${ops.join()} / ${otherOps.join()}`);
+            assert.strictEqual(router.describeTarget(), undefined, 'the window does not become the session\'s target');
+            // Any other serial call is still a tie.
+            await refusedAs('AMBIGUOUS_WINDOW', router.serialOp('handleStatus'));
+        });
+
+        test('get_session_status on a tie of idle windows answers no-session with the windows and how to choose, never AMBIGUOUS_WINDOW', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            const status = textOf(await router.handleGetSessionStatus());
+            const lines = status.split('\n');
+            assert.strictEqual(lines[0], 'State: no-session (2 VS Code windows are registered and none has an active debug session; '
+                + 'this session has no target window yet)');
+            assert.ok(lines.slice(1, 3).every((line) => line.startsWith('  • pid=')) && status.includes(folder('alpha')) && status.includes(folder('beta')), status);
+            assert.strictEqual(lines[3], 'Hint: Start a session in one with cmsis_action load_and_debug and window set to its pid, pin one with '
+                + 'select_debug_window, or ask the user to pick one: click the CDA robot icon in the VS Code status bar → Select Target Window.');
+            assert.strictEqual(router.describeTarget(), undefined);
+            await refusedAs('AMBIGUOUS_WINDOW', router.handleReadMemory({ address: '0x0', length: 4 }));
+            // Once chosen, the status is the window's own again.
+            router.selectDebugWindow({ workspaceFolder: folder('beta') });
+            assertAnsweredBy(await router.handleGetSessionStatus(), 'beta');
+        });
+
+        test('get_session_status on a tie of debugging windows gives each one\'s state line; a window that does not answer is unknown', async () => {
+            await openScripted('boardA', (op, reply) => typedText(op === 'handleGetSessionStatus' ? 'State: stopped\nDAP responsive: true' : 'other')(reply),
+                { workspaceFolders: [folder('a')], hasActiveSession: true, activeConfigurationName: 'A Debug' });
+            await openScripted('boardB', (op, reply) => typedText('State: running\nDAP responsive: true')(reply),
+                { workspaceFolders: [folder('b')], hasActiveSession: true });
+            await openWindow('idle', { workspaceFolders: [folder('idle')] });
+            const silent = await openStandIn((reply) => { reply.destroy(); }, 'gone', { workspaceFolders: [folder('gone')], hasActiveSession: true });
+            const status = textOf(await newRouter().handleGetSessionStatus());
+            const lines = status.split('\n');
+            assert.strictEqual(lines[0], 'State: no target window (3 VS Code windows have an active debug session; this session has not chosen one)');
+            assert.ok(status.includes(`${folder('a')} | debugging: A Debug — State: stopped`), status);
+            assert.ok(status.includes(`${folder('b')} | debugging — State: running`), status);
+            assert.ok(status.includes(`pid=${silent.pid} | ${folder('gone')} | debugging — State: unknown (the window did not answer)`), status);
+            assert.ok(lines.some((line) => line.endsWith(folder('idle'))), 'an idle window is listed without a state');
+            assert.strictEqual(lines[lines.length - 1], 'Hint: Pin one with select_debug_window, or ask the user to pick one: '
+                + 'click the CDA robot icon in the VS Code status bar → Select Target Window.');
         });
     });
 
@@ -1270,7 +1359,8 @@ suite('Multi-window routing', () => {
     suite('fences and health checks (#14)', () => {
         const READ = { address: '0x0', length: 4 };
         const HEALTH = '{"op":"health","args":{}}';
-        const FENCE_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
+        const FENCE_HINT = 'The debug adapter or GDB has not answered: call get_session_status, then check_target_connection.';
+        const PICKER_HINT = 'A picker or dialog may be open in that window: ask the user, or call get_session_status.';
         /** An op that never settles. */
         const never = (): Promise<ToolText> => new Promise<ToolText>(() => { /* waits for a person nobody is */ });
         /** Fences 300 ms inside the budget, and what the window says about itself. */
@@ -1334,6 +1424,36 @@ suite('Multi-window routing', () => {
             // The late result went nowhere: the next call is answered as usual.
             const next = await rawPost(port, 'tok', ['{"op":"handleGetSessionStatus","args":{}}']);
             assert.deepStrictEqual(JSON.parse(next.body), { result: echo('solo', 'debug', 'handleGetSessionStatus', {}) });
+        });
+
+        test('the hint names a picker or dialog only for the ops that can open one; the journal record carries the same hint', async () => {
+            const journal = new ProblemJournal();
+            const { port } = await startControl({ handleRestart: never, handleCmsisCommand: never, handleStartDebugging: never, handleStepOver: never },
+                journal, quickFence);
+            const hintOf = async (op: string): Promise<unknown> => {
+                const reply = await rawPost(port, 'tok', [JSON.stringify({ op, args: {}, budgetMs: 350 })], 0, { [CONTROL_ENVELOPE_HEADER]: '2' });
+                assert.strictEqual(reply.status, 500, reply.body);
+                const error = (JSON.parse(reply.body) as { error: JsonObject }).error;
+                assert.strictEqual(error.code, 'WORKER_TIMEOUT');
+                return error.hint;
+            };
+            assert.strictEqual(await hintOf('handleStartDebugging'), PICKER_HINT, 'the launch.json picker');
+            assert.strictEqual(await hintOf('handleRestart'), PICKER_HINT, 'a preLaunchTask\'s prompt or dialog');
+            assert.strictEqual(await hintOf('handleCmsisCommand'), PICKER_HINT, 'the CMSIS Solution extension\'s pickers');
+            assert.strictEqual(await hintOf('handleStepOver'), FENCE_HINT, 'a step waits for the debug adapter, not for the user');
+            assert.deepStrictEqual(journal.query({ minSeverity: 'warning' }).records.map((record) => record.hint),
+                [PICKER_HINT, PICKER_HINT, PICKER_HINT, FENCE_HINT]);
+
+            // An op outside the debugging handler waits for its own work: neither a picker nor the debug adapter.
+            const knowledge = { ...echoing<object>('solo', 'knowledge', KNOWLEDGE_OPS), handleKnowledgeSearch: never };
+            const control = new ControlServer(echoing<IDebuggingHandler>('solo', 'debug', DEBUG_OPS), 'tok',
+                { ...echoingPackDocs('solo'), knowledge: knowledge as unknown as PackDocsHandlers['knowledge'] }, new ProblemJournal(), quickFence);
+            const other = await control.start();
+            running.push(() => control.stop());
+            const reply = await rawPost(other, 'tok', [JSON.stringify({ op: 'handleKnowledgeSearch', args: {}, budgetMs: 350 })], 0,
+                { [CONTROL_ENVELOPE_HEADER]: '2' });
+            assert.strictEqual((JSON.parse(reply.body) as { error: JsonObject }).error.hint,
+                'list_debug_windows shows when it has finished; get_recent_problems shows what that window reported.');
         });
 
         test('without a budget in the envelope (a router of 2.5.0) the window\'s own timeout sets the fence', async () => {

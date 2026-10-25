@@ -95,7 +95,7 @@ the reply names `Skipped (timeout or read failure): …` rather than failing.
 | "The firmware faults right after boot. Find out why." | First tool: the `cmsis-debug-live` skill; then `get_session_status`; on `stopped` it calls **`diagnose_fault`** (not six separate calls); no `add_logpoint`/printf edits |
 | "Which bit in RCC enables I2C1?" (no session) | `lookup_register` / `lookup_peripheral`, no attempt to start a session |
 | "What is at 0x40005400?" | `lookup_peripheral { address }` |
-| "Explain how to bring up the target" (Copilot Chat, no skills) | `get_debug_instructions { topic: "build" }` — not the whole guide |
+| "Explain how to bring up the target" (Copilot Chat, no skills) | `get_debug_instructions { topic: "cmsis-action" }` (or `target`) — not the whole guide |
 
 ## 5. Evaluation runner (10 min) — machine with Copilot CLI + FVP/board
 

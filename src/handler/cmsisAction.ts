@@ -91,8 +91,7 @@ import {
     NOTHING_STARTED_MS,
     runtimeOf,
 } from '../core/cmsisTasks';
-import { DIAGNOSTIC_RERUN_CAP_MS, idxFileName, IdxMessages, idxMessages } from '../core/buildFailure';
-import { cbuildRunDebugger } from '../core/packDocs/cbuildRun';
+import { DIAGNOSTIC_RERUN_CAP_MS, idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
 import {
     applyTargetSelection,
     formatTargetChoices,
@@ -115,18 +114,28 @@ import {
     samePath,
     SOLUTION_EXTENSION_ID,
 } from '../core/bootstrapState';
+import { currentCallContext } from '../core/callContext';
+import { failedResponseMessage } from '../core/problemFeed';
+import type { ProblemJournal } from '../core/problemJournal';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import {
     AttachEndpoint,
     CmsisLaunchConfiguration,
     folderCmsisLaunchConfigurations,
+    folderCmsisRunCommand,
+    gdbServerKind,
     isFvpDebugger,
+    isFvpSession,
     launchAttachEndpoints,
     runCommandKind,
+    runTaskCbuildRun,
+    runTaskGdbPorts,
     taskCommandWords,
 } from '../core/gdbServerPorts';
-import { AGENT_START_WINDOW_MS, expectAgentStart } from '../utils/sessionStateTracker';
+import { gdbPortRefusal, type PortStart } from '../core/gdbPortGuard';
+import { cbuildRunDebugger, cbuildRunGdbPorts } from '../core/packDocs/cbuildRun';
+import { AGENT_START_WINDOW_MS, expectAgentStart, FRAME_FOCUS_WAIT_MS, type StartFocusWatch } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
 import { survivesWindowReload } from '../core/clientHosting';
@@ -146,9 +155,28 @@ import {
     stillRunning,
 } from './jobText';
 import { runInstallPack } from './installPack';
+import { FVP_BREAK_FIRST, NO_FRAME_SELECTED } from './sessionText';
+import { failedTaskProgram, gdbServerMissingHint } from './taskProgram';
 
-export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'load' | 'erase' | 'run' | 'load_and_run' | 'load_and_debug' | 'attach'
-    | 'detach' | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
+export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_environment' | 'load' | 'erase' | 'run' | 'load_and_run'
+    | 'load_and_debug' | 'attach' | 'detach' | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
+
+/**
+ * The Arm Tools Environment Manager's Reactivate Environment: it resolves
+ * `vcpkg-configuration.json` again, downloads what is missing, and CMSIS
+ * Solution then rewrites `.cmsis/tools-environment.yml`, the environment its
+ * tasks run in. The command is hidden from the palette and runs from the
+ * Explorer's context menu of the manifest, whose Uri it takes as its
+ * argument; without one it fails ("reading 'fsPath'", Environment Manager
+ * 1.26.0).
+ */
+const ENVIRONMENT_COMMAND = 'environment-manager.reactivate';
+/** The Arm Tools Environment Manager extension, which registers that command. */
+const ENVIRONMENT_EXTENSION = 'Arm.environment-manager';
+/** CMSIS Solution's record of the tools environment, next to the solution. */
+const TOOLS_ENVIRONMENT_FILE = path.join('.cmsis', 'tools-environment.yml');
+/** The vcpkg manifest the environment is resolved from. */
+const VCPKG_CONFIGURATION_FILE = 'vcpkg-configuration.json';
 
 /** The CMSIS Solution command behind each action. A Map, so `constructor` and friends are not actions. */
 const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
@@ -156,6 +184,7 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
     ['rebuild', 'cmsis-csolution.rebuild'],
     ['clean', 'cmsis-csolution.clean'],
     ['refresh', 'cmsis-csolution.refresh'],
+    ['activate_environment', ENVIRONMENT_COMMAND],
     ['stop_build', 'cmsis-csolution.stopBuild'],
     ['load', 'cmsis-csolution.cmsisLoad'],
     ['erase', 'cmsis-csolution.cmsisErase'],
@@ -171,8 +200,8 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
 const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run']);
 const SESSION_ACTIONS: ReadonlySet<string> = new Set(['load_and_debug', 'attach']);
 /** Actions whose default wait is the long one: they wait for a task. */
-const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'refresh', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug',
-    'status', 'install_pack', 'create_solution']);
+const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'load', 'erase', 'run',
+    'load_and_run', 'load_and_debug', 'status', 'install_pack', 'create_solution']);
 
 /** Waits without a positive `timeoutMs`: 60 s for the task actions and status (#12), 30 s for the rest. */
 const LONG_WAIT_DEFAULT_MS = 60_000;
@@ -244,6 +273,8 @@ export interface CmsisActionContext {
     awaitLiveSession(overrideMs: number): Promise<LiveSessionWait>;
     /** The full state rendering, which also records the breakpoint list. */
     renderFullState(state: DebugState): string;
+    /** The window's problem journal: a launch reads what the debug adapter said about its GDB server there. */
+    readonly journal: ProblemJournal;
 }
 
 /** Whether the action runs a CMSIS task (build, rebuild, clean, load, erase, run, load_and_run). */
@@ -491,6 +522,8 @@ interface Issue {
     /** ` on HE` or ` on HP@debug, switched from HE`. */
     readonly tag: string;
     readonly target: string | undefined;
+    /** The active solution's csolution file, when the extension names one: where its tools environment is. */
+    readonly solutionPath?: string;
 }
 
 /** The latest time the call may wait until and still answer before its fence. */
@@ -499,16 +532,17 @@ function answerBy(issue: Issue): number {
 }
 
 /**
- * Issue the command and give it the kick-off (4 s, or what is left of the
- * call) to fail; a failure within it rejects the call, a later one is
- * dropped (KB11). `returned` sees what the command resolves with.
+ * Issue the command, with `args` when it takes any, and give it the kick-off
+ * (4 s, or what is left of the call) to fail; a failure within it rejects the
+ * call, a later one is dropped (KB11). `returned` sees what the command
+ * resolves with.
  */
-async function issueCommand(issue: Issue, action: string, returned?: (value: unknown) => void): Promise<void> {
+async function issueCommand(issue: Issue, action: string, returned?: (value: unknown) => void, args: readonly unknown[] = []): Promise<void> {
     const { executor, host } = issue.context;
     let failure: ToolError | undefined;
     let pending: Thenable<unknown>;
     try {
-        pending = vscode.commands.executeCommand(issue.command);
+        pending = vscode.commands.executeCommand(issue.command, ...args);
     } catch (caught) {
         pending = Promise.reject(caught);
     }
@@ -550,7 +584,8 @@ async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<strin
     }
     tracker.issued(job.id);
     const outcome = await tracker.waitFor(job.id, answerBy(issue)) ?? job;
-    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface });
+    const program = failedTaskProgram(issue.context.host, tracker, issue.solutionPath);
+    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface, program });
 }
 
 /** A repeated build, rebuild, clean, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
@@ -560,6 +595,7 @@ async function attachToJob(
     wanted: TargetRef | undefined,
     active: string | undefined,
     deadline: number,
+    solutionPath?: string,
 ): Promise<ToolText> {
     const { host } = context;
     const runningOn = job.target ?? active;
@@ -573,7 +609,7 @@ async function attachToJob(
     const from = job.origin === 'adopted' ? ' from the CMSIS panel' : '';
     const preface = `Attached to the ${job.action} started${from} ${ago} ago (job ${job.id}, not started again). `;
     const outcome = await host.cmsisJobs().waitFor(job.id, deadline - DEADLINE_MARGIN_MS) ?? job;
-    return jobResult(outcome, { tag: onTarget(runningOn), now: host.now(), preface });
+    return jobResult(outcome, { tag: onTarget(runningOn), now: host.now(), preface, program: failedTaskProgram(host, host.cmsisJobs(), solutionPath) });
 }
 
 /**
@@ -597,7 +633,7 @@ async function reportStatus(context: CmsisActionContext, deadline: number): Prom
     const others = open.filter((job) => job.id !== latest.id).map((job) => `${job.action} (job ${job.id})`);
     const preface = others.length > 0 ? `Also in flight: ${others.join(', ')}. ` : undefined;
     const outcome = await tracker.waitFor(latest.id, deadline - DEADLINE_MARGIN_MS) ?? latest;
-    return jobResult(outcome, { tag: onTarget(outcome.target), now: host.now(), preface });
+    return jobResult(outcome, { tag: onTarget(outcome.target), now: host.now(), preface, program: failedTaskProgram(host, tracker) });
 }
 
 /** Names as a list: `'A'`, `'A' and 'B'`, `'A', 'B' and 'C'`. */
@@ -816,15 +852,100 @@ async function writeCmsisTasks(issue: Pick<Issue, 'context' | 'tracker' | 'deadl
     return { labels, missing: { reason: `Update Debug Tasks (cmsis-csolution.updateDebugTasks) ran for the debugger '${debuggerName}' but wrote none` } };
 }
 
+/** What the session phase of load_and_debug and attach reads in the journal. */
+interface SessionFacts {
+    /** The first journal seq of this call's launch or attach. */
+    sinceSeq: number;
+    /** load_and_debug only: the `target.server` programs of the solution's CMSIS launch configurations. */
+    servers?: readonly string[];
+    /** Taken before the launch or attach was issued: the wait for the frame VS Code selects when the session stopped. */
+    focus: StartFocusWatch;
+}
+
+/**
+ * The state of a session that came up during the call (`start_debugging`,
+ * the session phases of `cmsis_action`): read at once when the target
+ * runs, and once VS Code has selected a frame for the stop when it stopped,
+ * waiting at most `FRAME_FOCUS_WAIT_MS` and never past `leftMs`. Undefined
+ * when VS Code selected none in that time: the reply then says
+ * `NO_FRAME_SELECTED` instead of showing an empty state.
+ */
+export async function stateAfterStart(executor: IDebuggingExecutor, focus: StartFocusWatch, leftMs: number): Promise<DebugState | undefined> {
+    const seen = await focus.settled(Math.max(Math.min(FRAME_FOCUS_WAIT_MS, leftMs), 0));
+    return seen === 'none' ? undefined : executor.getCurrentDebugState(3);
+}
+
+/** The journal position a launch or attach about to be issued starts from. */
+function journalStart(issue: Issue): number {
+    return issue.context.journal.counters().seq + 1;
+}
+
+/** The start of the line the session tracker journals for a launch or attach request the debug adapter refused. */
+const REFUSED_START = [failedResponseMessage('launch', ''), failedResponseMessage('attach', '')];
+
+/**
+ * Whether a load_and_debug or attach whose wait saw no live session failed:
+ * the debug adapter or the GDB server journaled an error during this call
+ * (from `sinceSeq`, not another call's). The wait polls at growing gaps, so
+ * a session can start and fail between two polls; its records stay. While a
+ * session is still there, only a refused launch or attach request counts:
+ * other lines of a session coming up are no verdict. Records of VS Code's
+ * views are `info` and never count.
+ */
+function startFailed(journal: ProblemJournal, sinceSeq: number, sessionThere: boolean): boolean {
+    const callId = currentCallContext()?.callId;
+    const errors = journal.query({ sinceSeq, sources: ['dap', 'gdb-server'], minSeverity: 'error' }).records
+        .filter((record) => record.toolCallId === undefined || record.toolCallId === callId);
+    if (!sessionThere) {
+        return errors.length > 0;
+    }
+    return errors.some((record) => record.source === 'dap' && REFUSED_START.some((start) => record.message.startsWith(start)));
+}
+
+/** The next step after an attach whose session never came up or did not survive the connect. */
+function attachFailedHint(runAlive: boolean): string {
+    const noRun = !runAlive
+        ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
+            + '(the pyOCD task resets the target first); load_and_run programs first.'
+        : '';
+    return 'For \'attach\' this almost always means no GDB server is listening on the configured port: '
+        + `start the GDB server first, or use 'load_and_debug' (which launches one).${noRun} `
+        + 'Confirm with get_session_status / check_target_connection.';
+}
+
 /**
  * The last step of load_and_debug and attach: wait for the session, then
  * probe it twice. A session that ended before it came up is not probed.
+ * For load_and_debug (`facts.servers`), a `GDB_SERVER_NOT_FOUND` the debug
+ * adapter reported during the call makes a lost session, or one that never
+ * showed, a failure whose hint says which PATH lacks the server. A session
+ * that never showed is a failure too when the debug adapter or the GDB
+ * server journaled an error during the call (`startFailed`); the problem
+ * feed lists those records under the failure. Otherwise it is `running`.
+ * A session that came up on an Arm FVP adds that only a breakpoint stops it.
  */
-async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean): Promise<ToolText> {
+async function sessionPhase(issue: Issue, action: string, loadNote: string, runAlive: boolean, facts: SessionFacts): Promise<ToolText> {
     const { executor, host } = issue.context;
     const tag = issue.tag;
+    const servers = facts.servers;
+    const serverMissing = (): string | undefined => (servers
+        ? gdbServerMissingHint(host, issue.context.journal, facts.sinceSeq, servers, issue.solutionPath)
+        : undefined);
+    const loaded = loadNote ? `${loadNote}; ` : '';
     const wait = await issue.context.awaitLiveSession(SESSION_WAIT_MS);
     if (wait === 'timeout') {
+        const missing = serverMissing();
+        if (missing !== undefined) {
+            throw new ToolError('TASK_FAILED',
+                `CMSIS '${action}'${tag} started no debug session — ${loaded}the debug adapter could not start the GDB server.`,
+                missing);
+        }
+        if (startFailed(issue.context.journal, facts.sinceSeq, executor.hasDebugSession())) {
+            const attach = action === 'attach';
+            throw new ToolError('TASK_FAILED',
+                `CMSIS '${action}'${tag} started no debug session — ${loaded}the debug adapter's ${attach ? 'attach' : 'launch'} failed.`,
+                attach ? attachFailedHint(runAlive) : LOST_LAUNCH_HINT);
+        }
         return {
             text: `CMSIS '${action}'${tag} issued via '${issue.command}'.${loadNote ? ` ${loadNote}` : ''} `
                 + 'The flash/connect pipeline is running in the CMSIS extension '
@@ -837,11 +958,11 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
         };
     }
     const survival = wait === 'gone' ? ENDED_BEFORE_UP : await checkSurvival(executor, host);
-    const loaded = loadNote ? `${loadNote}; ` : '';
     if (survival.stable) {
-        const state = await executor.getCurrentDebugState(3);
-        return `CMSIS '${action}' completed${tag} — ${loaded}debug session survived the connect (${survival.detail}). `
-            + `State: ${issue.context.renderFullState(state)}`;
+        const state = await stateAfterStart(executor, facts.focus, answerBy(issue) - host.now());
+        const shown = state === undefined ? NO_FRAME_SELECTED : `State: ${issue.context.renderFullState(state)}`;
+        const fvp = isFvpSession(executor.getActiveSession()?.configuration) ? `\n${FVP_BREAK_FIRST}` : '';
+        return `CMSIS '${action}' completed${tag} — ${loaded}debug session survived the connect (${survival.detail}). ${shown}${fvp}`;
     }
     if (survival.present) {
         // A slow multi-core start still has no threads at the second probe: not up yet, not failed (#47).
@@ -854,19 +975,12 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
     const failed = `CMSIS '${action}'${tag} started a debug session but it did NOT survive the initial connect — ${loaded}${survival.detail}.`;
     if (action !== 'attach') {
         // load_and_debug launched its own GDB server: the server's or GDB's own lines say why the session ended.
-        throw new ToolError('TASK_FAILED', failed, LOST_LAUNCH_HINT);
+        throw new ToolError('TASK_FAILED', failed, serverMissing() ?? LOST_LAUNCH_HINT);
     }
-    const noRun = !runAlive
-        ? ' No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming '
-            + '(the pyOCD task resets the target first); load_and_run programs first.'
-        : '';
-    throw new ToolError('TASK_FAILED', failed,
-        'For \'attach\' this almost always means no GDB server is listening on the configured port: '
-            + `start the GDB server first, or use 'load_and_debug' (which launches one).${noRun} `
-            + 'Confirm with get_session_status / check_target_connection.');
+    throw new ToolError('TASK_FAILED', failed, attachFailedHint(runAlive));
 }
 
-/** The next step after a load_and_debug whose session ended during the connect. */
+/** The next step after a load_and_debug whose session ended during the connect or never came up. */
 const LOST_LAUNCH_HINT = 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
     + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.';
 
@@ -976,9 +1090,11 @@ function withoutRunNote(answer: ToolText, endpoints: readonly AttachEndpoint[]):
  * instead of launching, and the job stays in `status` as not started.
  * Without it (FVP, Arm Debugger) the session decides alone.
  */
-async function loadAndDebug(issue: Issue, loadFirst: boolean): Promise<ToolText> {
+async function loadAndDebug(issue: Issue, loadFirst: boolean, servers: readonly string[]): Promise<ToolText> {
     const { tracker } = issue;
     const { host } = issue.context;
+    // Before the command: a frame VS Code holds from an earlier session is not this one's.
+    const launch: SessionFacts = { sinceSeq: journalStart(issue), servers, focus: issue.context.executor.watchStartFocus() };
     const job = tracker.begin('load_and_debug', issue.target);
     expectSessionOf(issue);
     try {
@@ -998,7 +1114,7 @@ async function loadAndDebug(issue: Issue, loadFirst: boolean): Promise<ToolText>
     }
     if (first !== 'load') {
         tracker.discard(job.id);
-        return sessionPhase(issue, 'load_and_debug', '', false);
+        return sessionPhase(issue, 'load_and_debug', '', false, launch);
     }
     const loadBy = Math.max(host.now(), answerBy(issue) - SESSION_WAIT_MS - SURVIVAL_BUDGET_MS);
     const outcome = await tracker.waitFor(job.id, loadBy) ?? job;
@@ -1011,10 +1127,10 @@ async function loadAndDebug(issue: Issue, loadFirst: boolean): Promise<ToolText>
         throw new ToolError('TASK_FAILED',
             `❌ CMSIS 'load_and_debug' FAILED${issue.tag} — its pre-launch task '${load.name}' ${ended} after `
                 + `${formatDuration(runtimeOf(load, host.now()))}; no debug session was started (job ${outcome.id}).`,
-            flashFailedHint(load.name));
+            flashFailedHint(load.name, failedTaskProgram(host, tracker, issue.solutionPath)(load)));
     }
     const loadNote = `'${load.name}' exited 0 after ${formatDuration(runtimeOf(load, host.now()))} (job ${outcome.id})`;
-    return sessionPhase(issue, 'load_and_debug', loadNote, false);
+    return sessionPhase(issue, 'load_and_debug', loadNote, false, launch);
 }
 
 /** The csolution files of the open workspace, at most five, or undefined when the search failed or took too long. */
@@ -1368,7 +1484,7 @@ export async function runCmsisAction(
 
     const inFlight = TASK_ACTIONS.has(action) ? tracker.inFlight(action as JobAction) : undefined;
     if (inFlight) {
-        return attachToJob(context, inFlight, wanted, active, deadline);
+        return attachToJob(context, inFlight, wanted, active, deadline, solution.solutionPath);
     }
     if (isBuildAction(action)) {
         const other = BUILD_ACTIONS.map((kind) => tracker.inFlight(kind)).find((job): job is Job => job !== undefined);
@@ -1411,7 +1527,7 @@ export async function runCmsisAction(
     }
 
     // The label pre-check: a task the debugger adapter does not offer is refused before anything runs.
-    const issue: Issue = { context, tracker, deadline, command, tag, target: active };
+    const issue: Issue = { context, tracker, deadline, command, tag, target: active, solutionPath: solution.solutionPath };
     let labels: ReadonlySet<string> | undefined;
     let preface: string | undefined;
     const label = TASK_ACTIONS.has(action) ? ACTION_PHASES[action as JobAction].label : undefined;
@@ -1447,6 +1563,13 @@ export async function runCmsisAction(
         }
     }
 
+    if (TASK_ACTIONS.has(action) && solution.solutionPath) {
+        const stale = staleEnvironmentNote(solution.solutionPath, host);
+        if (stale) {
+            preface = `${preface ?? ''}${stale} `;
+        }
+    }
+
     switch (action) {
         case 'stop_run':
             return stopRun(issue);
@@ -1459,9 +1582,11 @@ export async function runCmsisAction(
             if (runAlive && solution.solutionPath) {
                 await refuseAttachToBareModel(issue, endpoints);
             }
+            const sinceSeq = journalStart(issue);
+            const focus = executor.watchStartFocus();
             expectSessionOf(issue);
             await issueCommand(issue, action);
-            const answer = await sessionPhase(issue, action, '', runAlive);
+            const answer = await sessionPhase(issue, action, '', runAlive, { sinceSeq, focus });
             return withPreface(runAlive ? answer : withoutRunNote(answer, endpoints), preface);
         }
         case 'refresh':
@@ -1469,13 +1594,79 @@ export async function runCmsisAction(
                 throw new ToolError('INTERNAL', `CMSIS 'refresh'${tag} not attempted: the CMSIS Solution extension names no solution file.`);
             }
             return refreshSolution(issue, solution.solutionPath);
+        case 'activate_environment':
+            if (!solution.solutionPath) {
+                throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${tag} not attempted: the CMSIS Solution extension names no solution file.`);
+            }
+            return activateEnvironment(issue, solution.solutionPath);
         case 'load_and_debug': {
-            const loadFirst = launchConfigurations.some((config) => config.request === 'launch' && config.preLaunchTask === 'CMSIS Load');
-            return withPreface(await loadAndDebug(issue, loadFirst), preface);
+            const launchOnes = launchConfigurations.filter((config) => config.request === 'launch');
+            await refuseHeldLaunchPorts(issue, launchOnes);
+            const loadFirst = launchOnes.some((config) => config.preLaunchTask === 'CMSIS Load');
+            const servers = launchOnes.map((config) => config.server).filter((server): server is string => server !== undefined);
+            return withPreface(await loadAndDebug(issue, loadFirst, servers), preface);
         }
+        case 'run':
+        case 'load_and_run':
+            if (solution.solutionPath) {
+                await refuseHeldRunPorts(issue, action, selectionFolder(solution.solutionPath, host));
+            }
+            return runJob(issue, action, labels, preface);
         default:
             return runJob(issue, action as JobAction, labels, preface);
     }
+}
+
+/**
+ * Refuse a start whose GDB port another window or another program holds
+ * (`HandlerHost.gdbPortHolder`, `src/core/gdbPortGuard.ts`): GDB would reach
+ * that server instead of the new one, and halt that target. Each port is
+ * asked once, in order.
+ */
+async function refuseHeldPorts(issue: Issue, ports: ReadonlyArray<{ port: number; start: PortStart }>): Promise<void> {
+    const asked = new Set<number>();
+    for (const { port, start } of ports) {
+        if (asked.has(port)) {
+            continue;
+        }
+        asked.add(port);
+        const holder = await issue.context.host.gdbPortHolder(port);
+        if (holder) {
+            logger.info(`${start.subject}: GDB port ${port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
+            throw gdbPortRefusal(start, port, holder);
+        }
+    }
+}
+
+/** load_and_debug: the GDB ports the launch configurations fix for their servers. */
+async function refuseHeldLaunchPorts(issue: Issue, launches: readonly CmsisLaunchConfiguration[]): Promise<void> {
+    const subject = `CMSIS 'load_and_debug'${issue.tag} not started`;
+    await refuseHeldPorts(issue, launches.flatMap((config) => (config.gdbPort === undefined ? [] : [{
+        port: config.gdbPort,
+        start: { what: 'launch' as const, subject, configuration: config.name, server: config.gdbServer },
+    }])));
+}
+
+/**
+ * run and load_and_run: the GDB ports of the CMSIS Run task that tasks.json
+ * holds, for pyOCD from the active target's cbuild-run file when its command
+ * line names that file and no port. A Run that hosts no GDB server (the FVP
+ * adapter's model) has none.
+ */
+async function refuseHeldRunPorts(issue: Issue, action: string, folder: string): Promise<void> {
+    const words = await folderCmsisRunCommand(folder);
+    const file = runTaskCbuildRun(words);
+    let fromFile: number[] = [];
+    if (file !== undefined) {
+        const runFile = file.includes('${') ? await issue.context.host.activeCbuildRunFile() : path.resolve(folder, file);
+        try {
+            fromFile = runFile ? cbuildRunGdbPorts(await fs.promises.readFile(runFile, 'utf8')) : [];
+        } catch {
+            fromFile = [];
+        }
+    }
+    const start: PortStart = { what: 'run', subject: `CMSIS '${action}'${issue.tag} not started`, server: gdbServerKind(words) };
+    await refuseHeldPorts(issue, runTaskGdbPorts(words, fromFile).map((port) => ({ port, start })));
 }
 
 /** How often `refresh` looks at the index csolution rewrites. */
@@ -1551,6 +1742,126 @@ function refreshResult(tag: string, index: string, messages: IdxMessages, tookMs
     const warned = lines.length > 0 ? ` csolution's warnings:\n${lines.join('\n')}\n` : ' ';
     return `✅ CMSIS 'refresh'${tag}: the solution was converted with the RTE update after ${formatDuration(tookMs)}, `
         + `and ${index} records ${counts}.${warned}Next: cmsis_action build.`;
+}
+
+/** The tools a `activate_environment` result lists at most. */
+const ENVIRONMENT_TOOLS_LISTED = 12;
+
+/**
+ * Where the tools environment of a solution is recorded and resolved from:
+ * `.cmsis/tools-environment.yml` next to the solution (else in the folder
+ * that holds it), and the nearest `vcpkg-configuration.json` from the
+ * solution's directory up to that folder.
+ */
+function environmentFiles(solutionPath: string, host: HandlerHost): { environment: string; configuration?: string } {
+    const solutionDir = path.dirname(solutionPath);
+    const folder = selectionFolder(solutionPath, host);
+    const candidates = [path.join(solutionDir, TOOLS_ENVIRONMENT_FILE), path.join(folder, TOOLS_ENVIRONMENT_FILE)];
+    const environment = candidates.find((file) => mtimeOf(file) !== undefined) ?? candidates[0];
+    let configuration: string | undefined;
+    for (let dir = solutionDir; ; dir = path.dirname(dir)) {
+        const file = path.join(dir, VCPKG_CONFIGURATION_FILE);
+        if (mtimeOf(file) !== undefined) {
+            configuration = file;
+            break;
+        }
+        if (dir === folder || path.dirname(dir) === dir || !dir.startsWith(folder)) {
+            break;
+        }
+    }
+    return { environment, configuration };
+}
+
+/**
+ * One sentence before a task's result when the environment it ran in does
+ * not match `vcpkg-configuration.json`: the manifest is newer than
+ * `.cmsis/tools-environment.yml`, or that file is missing. Nothing when the
+ * solution has no manifest, or the record is current.
+ */
+function staleEnvironmentNote(solutionPath: string, host: HandlerHost): string | undefined {
+    const { environment, configuration } = environmentFiles(solutionPath, host);
+    if (configuration === undefined) {
+        return undefined;
+    }
+    const recorded = mtimeOf(environment);
+    const manifest = mtimeOf(configuration) ?? 0;
+    const name = path.relative(path.dirname(solutionPath), configuration) || VCPKG_CONFIGURATION_FILE;
+    if (recorded === undefined) {
+        return `Note: the tools environment of ${name} has not been activated in this window (no .cmsis/tools-environment.yml, the record `
+            + 'of the tools the CMSIS tasks run with): cmsis_action activate_environment does it.';
+    }
+    if (manifest > recorded) {
+        return `Note: ${name} is newer than .cmsis/tools-environment.yml (the record of the tools the CMSIS tasks run with), so the tasks `
+            + 'still run with the tools of the earlier activation: cmsis_action activate_environment re-resolves it.';
+    }
+    return undefined;
+}
+
+/**
+ * `activate_environment`: the Arm Tools Environment Manager's Reactivate
+ * Environment, which an agent could only ask the user for. It resolves
+ * `vcpkg-configuration.json` again and installs what is missing; CMSIS
+ * Solution then rewrites `.cmsis/tools-environment.yml`. The call waits
+ * until that file has changed and stays unchanged for one more look, then
+ * lists the tools it names; a resolution that outlasts the wait (downloads,
+ * a licence dialog) answers `running`.
+ */
+async function activateEnvironment(issue: Issue, solutionPath: string): Promise<ToolText> {
+    const { host } = issue.context;
+    const { environment, configuration } = environmentFiles(solutionPath, host);
+    const known = await vscode.commands.getCommands(true);
+    if (!known.includes(issue.command)) {
+        throw new ToolError('TASK_FAILED',
+            `CMSIS 'activate_environment'${issue.tag} not attempted: the command '${issue.command}' is not registered in this window, so the `
+                + `Arm Tools Environment Manager extension (${ENVIRONMENT_EXTENSION}) is not installed or not active.`,
+            'Ask the user to install the Arm Tools Environment Manager (it comes with the Keil Studio Pack, Arm.keil-studio-pack) and reload the window.');
+    }
+    if (configuration === undefined) {
+        throw new ToolError('INVALID_ARGUMENT',
+            `CMSIS 'activate_environment'${issue.tag} not attempted: no ${VCPKG_CONFIGURATION_FILE} from ${path.dirname(solutionPath)} up to the `
+                + 'workspace folder, so there is no environment to activate.',
+            'The CMSIS tasks run with the tools the CMSIS Solution extension bundles; a project that needs others declares them in vcpkg-configuration.json.');
+    }
+    const before = mtimeOf(environment);
+    const issuedAt = host.now();
+    await issueCommand(issue, 'activate_environment', undefined, [vscode.Uri.file(configuration)]);
+    let seen: number | undefined;
+    for (;;) {
+        const now = mtimeOf(environment);
+        if (now !== undefined && now !== before && now === seen) {
+            break;
+        }
+        seen = now;
+        if (host.now() >= answerBy(issue)) {
+            return {
+                text: `CMSIS 'activate_environment'${issue.tag} issued via '${issue.command}'; CMSIS Solution has not rewritten `
+                    + `${TOOLS_ENVIRONMENT_FILE} after ${formatDuration(host.now() - issuedAt)}. The Environment Manager may still download tools, `
+                    + 'or wait for the user in the window (a licence or an activation prompt): ask the user to look, then call '
+                    + 'cmsis_action activate_environment again — a second activation of the same manifest is harmless.',
+                status: 'running',
+            };
+        }
+        await host.sleep(REFRESH_POLL_MS);
+    }
+    let tools: ToolsEnvironment;
+    try {
+        tools = readToolsEnvironment(fs.readFileSync(environment, 'utf8'));
+    } catch (caught) {
+        throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${issue.tag}: ${environment} was rewritten, but it could not be read (${failureText(caught)}).`);
+    }
+    return activationResult(issue.tag, path.basename(configuration), tools, host.now() - issuedAt);
+}
+
+/** The answer of `activate_environment`: the tools the rewritten record names. */
+function activationResult(tag: string, manifest: string, tools: ToolsEnvironment, tookMs: number): string {
+    const named = tools.tools.map((tool) => (tool.version && !tool.name.includes(tool.version) ? `${tool.name} ${tool.version}` : tool.name));
+    const listed = named.slice(0, ENVIRONMENT_TOOLS_LISTED).map((line) => `  ${line}`);
+    if (named.length > ENVIRONMENT_TOOLS_LISTED) {
+        listed.push(`  … ${named.length - ENVIRONMENT_TOOLS_LISTED} more`);
+    }
+    const inventory = listed.length > 0 ? ` Tools of the CMSIS tasks now:\n${listed.join('\n')}\n` : ' ';
+    return `✅ CMSIS 'activate_environment'${tag}: ${manifest} was resolved and ${TOOLS_ENVIRONMENT_FILE} rewritten after ${formatDuration(tookMs)}.`
+        + `${inventory}Next: cmsis_action build.`;
 }
 
 /** A result with the sentence the tasks repair wrote in front, when there is one. */

@@ -1,6 +1,6 @@
 ---
 name: debugger-troubleshooting
-description: "Diagnose a failing embedded debug or flash session: the GDB server will not start, the target will not connect, \"Failed to power up DAP\", \"Could not find core in Coresight setup\", \"Could not read memory\", \"Waiting for a debug probe\", flashing succeeds but the firmware faults or is silent, or programming is implausibly slow. Covers pyOCD and J-Link sessions of the CMSIS Debugger, CMSIS-Toolbox cbuild-run files and FVP setups, and works through the CMSIS Developer Assistant tools first. Use when cmsis_action load_and_debug, attach, load or flash fails and the cause is not obvious from the error text."
+description: "Diagnose a failing embedded debug or flash session: the probe's software is missing or not on PATH (\"'JLink.exe' is not recognized as an internal or external command, operable program or batch file\", \"JLinkExe: command not found\", \"gdbserver has hit error Error: spawn JLinkGDBServerCL.exe ENOENT\", a CMSIS Load that fails within a second), the GDB server will not start, the target will not connect, \"Failed to power up DAP\", \"Could not find core in Coresight setup\", \"Could not read memory\", \"Waiting for a debug probe\", flashing succeeds but the firmware faults or is silent, or programming is implausibly slow. Covers pyOCD and J-Link sessions of the CMSIS Debugger, CMSIS-Toolbox cbuild-run files and FVP setups, and works through the CMSIS Developer Assistant tools first. Use when cmsis_action load_and_debug, attach, load or flash fails and the cause is not obvious from the error text."
 ---
 
 # Debugger troubleshooting
@@ -46,7 +46,63 @@ Several of these errors name a consequence, not a cause. A GDB client that dies 
 exited first and the client wrote into a dead pipe. Read the server's own last lines
 in the `gdb-server` records.
 
-## 1. Is something already holding the probe or the port?
+## 1. The probe's software is missing or not on PATH
+
+The cheapest check when a Load or a launch fails at once: the probe's program never
+started.
+
+```text
+'JLink.exe' is not recognized as an internal or external command, operable program or batch file.
+JLinkExe: command not found
+gdbserver has hit error Error: spawn JLinkGDBServerCL.exe ENOENT
+```
+
+- The first two come from the shell of a CMSIS Load, Erase or Run task: cmd.exe on
+  Windows; on macOS and Linux `command not found`, or `No such file or directory`
+  for a program named with a folder that does not exist. The task ends within a
+  second: `'CMSIS Load' exited with code 1 after 0.4 s`.
+- `spawn <program> ENOENT` comes from the debug adapter: it could not start the
+  launch configuration's `target.server`. `get_recent_problems` records it as
+  `GDB_SERVER_NOT_FOUND`.
+- The `cmsis_action` result says which PATH lacks the program: for a J-Link Load
+  or Erase that failed at once, the places it searched and the SEGGER folder that
+  holds the program, if one does; for `load_and_debug`, whether the GDB server is on
+  VS Code's PATH, on the tasks' PATH, or on neither.
+- The agent's own shell has a PATH of its own: `command -v` or `where` there proves
+  nothing about VS Code's. Looking for the installation is allowed:
+  `ls -d /Applications/SEGGER/JLink* /opt/SEGGER/JLink*` (macOS, Linux),
+  `dir "C:\Program Files\SEGGER"` (Windows).
+
+There are two PATHs:
+
+- The CMSIS tasks run with the folders of `.cmsis/tools-environment.yml` in front,
+  then the PATH of `terminal.integrated.env.<windows|osx|linux>`, then VS Code's PATH.
+- The debug adapter starts the GDB server with VS Code's own process PATH alone,
+  the one VS Code inherited when it started.
+- A folder added to `terminal.integrated.env` therefore fixes CMSIS Load and CMSIS
+  Run, but not `load_and_debug`.
+
+The fix is the user's; ask, and wait:
+
+1. Install the probe vendor's software where it is missing: for J-Link the SEGGER
+   J-Link Software and Documentation Pack.
+2. Or add its folder to the system or user PATH (on macOS and Linux, the login
+   shell's profile, which VS Code reads at start). The installer's default folders:
+   `C:\Program Files\SEGGER\JLink` (Windows), `/Applications/SEGGER/JLink`
+   (macOS), `/opt/SEGGER/JLink` (Linux), or a versioned `JLink_V…` folder beside
+   it. CMSIS Solution names `JLink.exe` and `JLinkGDBServerCL.exe` on Windows,
+   `JLinkExe` with `JLinkGDBServerCL` (macOS) or `JLinkGDBServerCLExe` (Linux)
+   elsewhere; the generated `tasks.json` and `launch.json` (`target.server`) show
+   the names this project uses.
+3. Quit VS Code entirely, every window, and start it again: a reloaded or new
+   window of a running VS Code keeps the old PATH.
+4. Repeat the action that failed.
+
+Do not write absolute program paths into the generated `tasks.json` or
+`launch.json`: CMSIS Solution rewrites them. `cmsis_action run` followed by `attach`
+is no fix either: it programs nothing and leaves `load_and_debug` broken.
+
+## 2. Is something already holding the probe or the port?
 
 ```text
 Waiting for a debug probe matching unique ID ...
@@ -74,7 +130,7 @@ gdbserver exited with code 254
   Identify the process before anything is stopped: it may be a session the user
   wants. Tell the user what holds the port and let them decide.
 
-## 2. Is it the core you think it is?
+## 3. Is it the core you think it is?
 
 Multi-core parts (Alif Ensemble E7/E8 with `M55_HP` and `M55_HE`, anything with a
 Cortex-A next to a Cortex-M) let you attach to a core that is not running your
@@ -93,11 +149,11 @@ image. The symptoms are then arbitrary: halted at a reset vector, a garbage PC,
   `0x20000000`, the HE core from `0x80000000` with TCM at `0x58000000` and
   `0x58800000`. An image linked for one core cannot be running on the other.
 
-## 3. Connection failures, in increasing severity
+## 4. Connection failures, in increasing severity
 
 | Message | Meaning | Action |
 |---|---|---|
-| `AP[n]: Skipped. Not an AHB-AP` | The AP type is not declared (SoC-600 needs an explicit AP map) | The device pack's debug description, or for J-Link a script that declares the map; see section 8 |
+| `AP[n]: Skipped. Not an AHB-AP` | The AP type is not declared (SoC-600 needs an explicit AP map) | The device pack's debug description, or for J-Link a script that declares the map; see section 9 |
 | `AP[n]: Skipped. Could not read AHB ROM register` | The AP is typed correctly but reads fail: the bus hangs, or debug power-up is missing | Retry once; then power-cycle |
 | `Could not find core in Coresight setup` | Consequence of the row above | As above |
 | `Failed to power up DAP` | The SoC's debug power domain is down | Power-cycle the board |
@@ -116,7 +172,7 @@ that recovers on a second or third `cmsis_action load_and_debug` is the signatur
 not is `PROBE_WEDGED` in the calls that follow, and their hint names the way to
 reconnect.
 
-## 4. `Could not read memory` at an external-memory window
+## 5. `Could not read memory` at an external-memory window
 
 For XIP windows (OSPI, QSPI, HyperRAM, PSRAM) a debugger read fails until the
 firmware has configured the controller. Beyond that:
@@ -126,13 +182,15 @@ firmware has configured the controller. Beyond that:
   read strobe. Check RXDS or DQS delay, wait cycles and the DDR drive edge in the
   board configuration against the vendor's values for that exact part.
 - A `read_memory` of such a window can hang the bus, after which the debug connection
-  itself starts failing (section 3). If `check_target_connection` degrades right
+  itself starts failing (section 4). If `check_target_connection` degrades right
   after you read an XIP address, that read is the cause.
 
-## 5. It flashed, but the firmware faults or prints nothing
+## 6. It flashed, but the firmware faults or prints nothing
 
 **Get the fault status first**, with a session attached (`cmsis_action attach` for
-firmware that runs, else `load_and_debug`) and the target halted:
+firmware that runs, else `load_and_debug`) and the target halted (on an Arm FVP,
+which ignores `pause_execution`, by a breakpoint on `HardFault_Handler` set before
+`continue_execution`):
 
 ```text
 diagnose_fault
@@ -145,7 +203,7 @@ decoded status registers alone, `lookup_symbol` resolves any other address.
 
 **Garbage pointers (`0xFFFFFFFF`, or values that look like erased flash) during
 static initialisation mean that RW data was never initialised.** The usual cause is
-a flashing mistake, not a linker bug: see section 6.
+a flashing mistake, not a linker bug: see section 7.
 
 **Silent firmware is not necessarily hung.** If the project mirrors stdout into a RAM
 buffer (a `g_log` / `g_log_len` pair, common when the console UART sits on a
@@ -154,7 +212,7 @@ length, `read_memory` at the buffer's address. An empty buffer means it faulted
 before the first print; a partial one says how far it got. Otherwise
 `serial_capture` on the probe's virtual COM port while the board resets.
 
-## 6. Flashing an ELF that drops its RW init data (LMA and VMA)
+## 7. Flashing an ELF that drops its RW init data (LMA and VMA)
 
 This one produces a flash that looks successful and a fault that looks mysterious.
 
@@ -164,16 +222,26 @@ RAM, where the next reset discards them, and never programs the flash copy. The
 startup code then copies erased flash into RAM, and the image dies in static
 initialisation.
 
-- `flash` and `cmsis_action load` program from the cbuild-run file with pyOCD, which
-  uses the load addresses. Prefer them over any hand-made `objcopy` binary or a
-  probe tool's "load file" on an ELF.
+- `flash` programs from the cbuild-run file with pyOCD, which uses the load
+  addresses; so does `cmsis_action load` with a pyOCD adapter (CMSIS-DAP, ST-Link,
+  ULINK). Prefer them over any hand-made `objcopy` binary or a probe tool's "load
+  file" on an ELF.
+- With the J-Link adapter, `cmsis_action load` (CMSIS Load) runs J-Link Commander's
+  `LoadFile` on the `.axf`, not pyOCD. Whether that programs the RW init data at its
+  load address is not established: a tester's AC6 image faulted in `__decompress`
+  at start-up after a J-Link load, and the flash at its RW load address read as
+  erased. For a J-Link target, verify the RW init data after every load (next
+  point); `flash` (pyOCD, load addresses) is the other way to program it.
 - Verify instead of assuming: `get_section_layout` gives the load address of the RW
-  section; `read_memory` there must show the initial values, not `0xFF`.
+  section, `(load 0x…)` after it (GNU ld maps, and armlink maps written with
+  `--load_addr_map_info`; an armlink map without that option shows none);
+  `read_memory` there must show the initial values, not the part's erased value
+  (`0xFF` on most flash, `0x00` on Infineon XMC4).
 - When the image has to be programmed with a vendor tool, program the LOAD segment by
   its physical address: `get_section_layout` lists the sections with their load
   addresses, which is what the vendor tool needs.
 
-## 7. Programming is implausibly slow
+## 8. Programming is implausibly slow
 
 If a flash write is orders of magnitude slower than the link allows, the cost is
 usually per-call overhead times the number of calls, not bandwidth. A CMSIS flash
@@ -195,7 +263,7 @@ a working algorithm times out in `Init()`. `flash` and `cmsis_action load` take
 `timeoutMs` up to 600 000; a result with status `running` means it still runs, and
 `cmsis_action { action: 'status' }` waits for it.
 
-## 8. J-Link device definitions (for the user, or on request)
+## 9. J-Link device definitions (for the user, or on request)
 
 These need J-Link's own tools. Explain, and let the user run them.
 
@@ -228,7 +296,7 @@ These need J-Link's own tools. Explain, and let the user run them.
   nothing else works. It separates "the board is off" from "the debug domain is
   down".
 
-## 9. pyOCD specifics
+## 10. pyOCD specifics
 
 - The pyOCD in use is the one the CMSIS Debugger bundles; `flash` names the one it
   ran. Never install another.

@@ -27,7 +27,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import { componentsOf, packsOf } from '../core/knowledge/projectFacts';
-import { appliesIn, contextEntities, inScope, isIncomplete, knownMessages, messageLines, ProjectFacts, searchKnowledge, sectionOf } from '../core/knowledge/search';
+import { appliesIn, contextEntities, inScope, isIncomplete, knownMessages, messageLines, ProjectFacts, searchKnowledge, sectionOf, unitsNamed } from '../core/knowledge/search';
 import { detailOf, graphAround, overviewOf, renderMarkdown, TYPE_ORDER, unitRows } from '../core/knowledge/browse';
 import { discoverIndexes, installedPackIndexes, localRepositoryIndexes, workspaceIndexes } from '../core/knowledge/packIndexes';
 import { interleaveByRank, KnowledgeIndex, KnowledgeSet, packScopeOf, safeSymptomPattern } from '../core/knowledge/store';
@@ -70,7 +70,8 @@ const UNITS: Unit[] = [
         id: 'ts-csolution-processing-context', type: 'troubleshooting', title: "csolution: processing context '…' failed",
         body: '## Symptom\n\n`x`\n\n## Cause\n\nAn earlier error stopped the context.\n\n## Fix\n\nFix that error first.',
         domain: 'error-catalog', appliesTo: ['tool:csolution'],
-        meta: { tool: 'csolution', symptoms: ["processing context '<…>' failed"], symptom_regex: "^processing context '.+?' failed$" },
+        // A summary unit, as the knowledge base marks csolution's line after every error of a context.
+        meta: { tool: 'csolution', role: 'summary', symptoms: ["processing context '<…>' failed"], symptom_regex: "^processing context '.+?' failed$" },
     },
     {
         id: 'ts-csolution-no-board', type: 'troubleshooting', title: 'csolution: no installed board was found', body: NO_CAUSE,
@@ -129,13 +130,19 @@ const UNITS: Unit[] = [
     { id: 'ref-rtx', type: 'concept', title: 'Create an RTX5 project', summary: 'A new project with RTX5.', body: 'Add the RTX component.' },
     { id: 'ref-blinky', type: 'concept', title: 'Blinky: run on a board', summary: 'The Blinky example on a board.', body: 'Flash and watch the LED.' },
     { id: 'ref-start', type: 'concept', title: 'Start a project', summary: 'Start a project with west.', body: 'west init, west build.' },
+    // A unit for one vendor's startup component, as a pack's knowledge may scope it.
+    {
+        id: 'pat-keil-startup', type: 'pattern', title: 'Keil startup file: weak handlers', summary: 'Override a weak handler of the Keil startup file.',
+        body: 'Every vector of the Keil startup file is a weak alias of Default_Handler.', appliesTo: ['component:Keil::Device:Startup'],
+    },
 ];
 
 const ENTITIES: [id: string, type: string, title: string][] = [
     ['device:AE722F80F55D5LS', 'device', 'AE722F80F55D5LS'], ['core:Cortex-M55', 'core', 'Cortex-M55'], ['core:Cortex-M33', 'core', 'Cortex-M33'],
     ['device:STM32U585AIIx', 'device', 'STM32U585AIIx'], ['family:STMicroelectronics::STM32U5 Series', 'family', 'STM32U5 Series'],
     ['toolchain:AC6', 'toolchain', 'AC6'], ['toolchain:GCC', 'toolchain', 'GCC'], ['pack:Big::Pack', 'pack', 'Big::Pack'],
-    ['component:ARM::CMSIS:CORE', 'component', 'CMSIS:CORE'],
+    ['component:ARM::CMSIS:CORE', 'component', 'CMSIS:CORE'], ['component:ARM::CMSIS:RTOS2:Keil RTX5', 'component', 'CMSIS:RTOS2:Keil RTX5'],
+    ['component:Keil::Device:Startup', 'component', 'Device:Startup'], ['component:Infineon::Device:Startup', 'component', 'Device:Startup'],
     ['tool:csolution', 'tool', 'csolution'], ['tool:packchk', 'tool', 'packchk'], ['tool:svdconv', 'tool', 'svdconv'],
 ];
 
@@ -285,6 +292,22 @@ suite('knowledge tools', () => {
             assert.ok(context.has('board:STMicroelectronics::B-U585I-IOT02A') && context.has('pack:Keil::STM32U5xx_DFP'));
         });
 
+        test('a component with its vendor brings that vendor\'s entity alone, without bundle and variant', () => {
+            // The components of an XMC4700 project's cbuild.yml: Device:Startup used to bring every vendor's.
+            const components = ['ARM::CMSIS:CORE@6.1.0', 'Infineon::Device:Startup@2.14.0', 'ARM::CMSIS:RTOS2:Keil RTX5&Source@5.9.0'];
+            const context = contextEntities(index, { device: 'XMC4700-F144x2048', components });
+            assert.deepStrictEqual([...context].filter((id) => id.startsWith('component:')).sort(), [
+                'component:ARM::CMSIS:CORE', 'component:ARM::CMSIS:RTOS2:Keil RTX5', 'component:Infineon::Device:Startup',
+            ]);
+            // The unit of Keil's startup file is not this project's; a project with Keil's startup component sees it.
+            assert.ok(!ids('weak handlers startup file', { device: 'XMC4700-F144x2048', components }).includes('pat-keil-startup'));
+            assert.strictEqual(ids('weak handlers startup file', { device: 'STM32U585AIIx', components: ['Keil::Device:Startup&C Startup@2.0.0'] })[0], 'pat-keil-startup');
+            // Without a vendor the name finds every vendor's, as before; the vendor's spelling is compared without case.
+            const bare = contextEntities(index, { components: ['Device:Startup'] });
+            assert.ok(bare.has('component:Keil::Device:Startup') && bare.has('component:Infineon::Device:Startup'));
+            assert.ok(contextEntities(index, { components: ['infineon::Device:Startup'] }).has('component:Infineon::Device:Startup'));
+        });
+
         test('units without a cause or text are left out and counted, unless asked for', () => {
             const hidden = searchKnowledge(index, 'no installed board was found');
             assert.ok(!hidden.results.some((hit) => hit.id === 'ts-csolution-no-board'));
@@ -321,6 +344,28 @@ suite('knowledge tools', () => {
                 [{ message: 'board mounted device STM32U585AIIx not found', id: 'ts-csolution-board-mounted-device' }]);
         });
 
+        test('a failed build keeps the message order of its units; a summary unit comes last, and only when no unit was found before it', () => {
+            const vendor = 'No vendor tag found in the PDSC file';
+            const board = 'board mounted device STM32U585AIIx not found';
+            const context = (name: string): string => `processing context '${name}' failed`;
+            const knownIds = (messages: string[]): string[] => knownMessages(index, messages).map((known) => known.id);
+            // Units without a role, as before: in the order of their messages, without a summary flag.
+            assert.deepStrictEqual(knownIds([vendor, board]), ['ts-packchk-m302', 'ts-csolution-board-mounted-device']);
+            assert.deepStrictEqual(knownIds([board, vendor]), ['ts-csolution-board-mounted-device', 'ts-packchk-m302']);
+            assert.ok(knownMessages(index, [vendor, board]).every((known) => !('summary' in known)));
+            // The summary alone, also after an error the index does not know.
+            assert.deepStrictEqual(knownMessages(index, ['something else', context('app+U5')]),
+                [{ message: context('app+U5'), id: 'ts-csolution-processing-context', summary: true }]);
+            // A unit for an earlier error is what the agent needs: the summary is left out.
+            assert.deepStrictEqual(knownIds([board, context('app+U5')]), ['ts-csolution-board-mounted-device']);
+            assert.deepStrictEqual(knownIds([vendor, context('a'), board, context('b')]), ['ts-packchk-m302', 'ts-csolution-board-mounted-device']);
+            // A summary before every other unit stays, after them.
+            assert.deepStrictEqual(knownMessages(index, ['something else', context('a'), board, context('b')]), [
+                { message: board, id: 'ts-csolution-board-mounted-device' },
+                { message: context('a'), id: 'ts-csolution-processing-context', summary: true },
+            ]);
+        });
+
         test('a task name of a few words leads to the procedure whose "when to use" text names it, past the reference units', () => {
             // BM25 alone: a short reference title with the word beats a long description that names it once.
             assert.deepStrictEqual(index.bm25('HardFault', 3), ['ref-hardfault', 'ref-hardfault-mpu', 'proc-debug-live']);
@@ -348,6 +393,26 @@ suite('knowledge tools', () => {
             // A word in the body alone does not count: the long procedure says nothing about that in its triggers.
             assert.deepStrictEqual(index.howToCoverage(['confirmation']), new Map());
         });
+
+        test('a unit named by its id stands first, alone or in a sentence; a short id prefix puts its few units first', () => {
+            // BM25 alone splits the id into words that other units carry as well: m302 is the code of two units.
+            assert.strictEqual(ids('ts-svdconv-m302')[0], 'ts-svdconv-m302');
+            assert.strictEqual(ids('ts-packchk-m302')[0], 'ts-packchk-m302');
+            assert.strictEqual(ids('get procedure full text proc-debug-live')[0], 'proc-debug-live');
+            assert.strictEqual(ids('knowledge_get("proc-bootstrap")')[0], 'proc-bootstrap');
+            assert.strictEqual(searchKnowledge(index, 'PROC-LONG', { types: ['procedure'] }).results[0].id, 'proc-long');
+            // The filters still hold: a procedure named while asking for troubleshooting units is not listed.
+            assert.ok(!searchKnowledge(index, 'proc-long', { types: ['troubleshooting'] }).results.some((hit) => hit.id === 'proc-long'));
+            // An id prefix of one word: its units first, in rank order; a word that starts no id changes nothing.
+            assert.deepStrictEqual(unitsNamed(index, 'fx-'), new Map([['fx-generic', 0.5], ['fx-m55', 0.5]]));
+            assert.strictEqual(ids('fx-')[0], 'fx-m55', 'the general unit stays replaced by the one that refines it');
+            assert.deepStrictEqual(unitsNamed(index, 'ts-csolution'), new Map([
+                ['ts-csolution-board-mounted-device', 0.5], ['ts-csolution-no-board', 0.5], ['ts-csolution-processing-context', 0.5],
+            ]));
+            assert.deepStrictEqual(unitsNamed(index, 'stack sizing ts-csolution'), new Map(), 'a prefix counts only as the whole query');
+            assert.deepStrictEqual(unitsNamed(index, 'cortex-m55'), new Map());
+            assert.deepStrictEqual(unitsNamed(index, 'error: --update-rte'), new Map());
+        });
     });
 
     suite('the shipped core index', () => {
@@ -367,6 +432,26 @@ suite('knowledge tools', () => {
                     const found = top(query, 3);
                     assert.ok(found.includes('route-project') || found.includes('proc-cmsis-bootstrap'), `${query}: ${found.join()}`);
                 }
+            } finally {
+                shipped.close();
+            }
+        });
+
+        test('a unit id as the query finds that unit first, as a tester\'s agent searched for proc-cmsis-debug-live nine times', function () {
+            if (!fs.existsSync(core)) {
+                this.skip();
+            }
+            const shipped = new KnowledgeIndex(core);
+            try {
+                const top = (query: string, n: number, types?: string[]): string[] =>
+                    searchKnowledge(shipped, query, { k: n, types }).results.map((hit) => hit.id);
+                // Before: proc-cmsis-bootstrap first, and proc-cmsis-debug-live not among the first four.
+                assert.strictEqual(top('proc-cmsis-debug-live', 1, ['procedure'])[0], 'proc-cmsis-debug-live');
+                assert.strictEqual(top('get procedure full text proc-cmsis-debug-live', 2, ['procedure'])[0], 'proc-cmsis-debug-live');
+                assert.strictEqual(top('ts-csolution-processing-context', 1)[0], 'ts-csolution-processing-context');
+                assert.deepStrictEqual(new Set(top('proc-cmsis-debug', 2)), new Set(['proc-cmsis-debug-live', 'proc-cmsis-debugger-setup']));
+                // A prefix that starts many ids lifts none of them.
+                assert.ok(searchKnowledge(shipped, 'proc-', { k: 3 }).results.every((hit) => hit.score < 0.5));
             } finally {
                 shipped.close();
             }
@@ -400,6 +485,9 @@ suite('knowledge tools', () => {
             assert.match(text, /\n1\. ts-csolution-board-mounted-device · troubleshooting · draft · exact symptom · full text about \d+ tokens\n/);
             assert.match(text, /Next: knowledge_get \{ id \}/);
             assert.strictEqual(reply.data?.contextFilter, true);
+            // The context's entities are counted, not listed: the ids cost every reply about 1.7 KB.
+            assert.ok(typeof reply.data?.contextEntities === 'number' && reply.data.contextEntities > 0, String(reply.data?.contextEntities));
+            assert.strictEqual(reply.data?.context, undefined);
         });
 
         test('knowledge_search without a project says why, and tools still filter', async () => {
@@ -498,6 +586,16 @@ suite('knowledge tools', () => {
                 ['Known message: knowledge_get { id: "ts-csolution-board-mounted-device" } has its cause and fix.']);
             assert.deepStrictEqual(await handlerFor({}).knownMessageLines(['board mounted device X not found']), []);
             assert.deepStrictEqual(await handlerFor({ indexPath: path.join(dir, 'absent.db') }).knownMessageLines(['x']), []);
+        });
+
+        test('the line of a summary unit promises no cause, comes last and is left out after a unit for an earlier error', async () => {
+            const board = 'Known message: knowledge_get { id: "ts-csolution-board-mounted-device" } has its cause and fix.';
+            const summary = 'Known message: knowledge_get { id: "ts-csolution-processing-context" } — the error line it matches only sums up the errors before it; '
+                + 'fix the first of those.';
+            assert.deepStrictEqual(await handler.knownMessageLines(["processing context 'app+U5' failed"]), [summary]);
+            assert.deepStrictEqual(await handler.knownMessageLines(['board mounted device X not found', "processing context 'app+U5' failed"]), [board]);
+            assert.deepStrictEqual(await handler.knownMessageLines(
+                ['something else', "processing context 'a' failed", 'board mounted device X not found', "processing context 'b' failed"]), [board, summary]);
         });
     });
 

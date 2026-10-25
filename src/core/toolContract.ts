@@ -78,7 +78,7 @@ export function endOfTopic(name: string): BlockPlacement {
 /**
  * The hand-written files that carry the contract. The rules go to every one
  * of them; the table goes where agents plan builds and probe work: the
- * debugging skill and the build topic of the guide. The generated cmsis-help
+ * debugging skill and the flash topic of the guide. The generated cmsis-help
  * skill is rendered with both blocks by `renderHelpSkillMarkdown`.
  */
 export const CONTRACT_COPIES: readonly ContractCopy[] = [
@@ -100,7 +100,7 @@ export const CONTRACT_COPIES: readonly ContractCopy[] = [
         file: 'docs/agent-resources/debug_instructions.md',
         blocks: [
             { id: RULES_BLOCK, placement: AFTER_HEADING_1 },
-            { id: TABLE_BLOCK, placement: endOfTopic('build') },
+            { id: TABLE_BLOCK, placement: endOfTopic('flash') },
         ],
     },
 ];

@@ -22,7 +22,8 @@
 //   3. A request with a missing id is rejected with 400; POST, GET and
 //      DELETE with an unknown id get 404 and JSON-RPC -32001 "Session not
 //      found", as the SDK's own transport answers, which tells a client to
-//      initialize again (#14)
+//      initialize again (#14); a request on another path gets JSON that
+//      names the endpoint; a GET of a Kimi Code session gets 405
 //   4. DELETE /mcp tears the session down
 //   5. REGRESSION: three consecutive get_threads calls on one session all
 //      return — the bug the old per-request model was built to fix.
@@ -53,6 +54,10 @@
 //      later request with its id gets 404, and its port is
 //      released. Mock ports only: the serial controller's port factory is
 //      swapped for serialport's SerialPortMock.
+//  13. A wait the client gives up on (2.7.0 tester feedback): a pending call
+//      cancelled over the socket with another reason teaches nothing; one
+//      cancelled with the SDK client's "Request timed out" teaches the
+//      session its client's limit, which is logged once.
 
 const stub = require('./vscode-stub.js');
 
@@ -70,11 +75,11 @@ function check(name, ok, detail) {
     if (!ok) { failures++; }
 }
 
-function request(port, method, extraHeaders, body, agent) {
+function request(port, method, extraHeaders, body, agent, route = '/mcp') {
     return new Promise((resolve, reject) => {
         const payload = body ? JSON.stringify(body) : undefined;
         const req = http.request({
-            host: '127.0.0.1', port, path: '/mcp', method, ...(agent ? { agent } : {}),
+            host: '127.0.0.1', port, path: route, method, ...(agent ? { agent } : {}),
             headers: {
                 'Host': `127.0.0.1:${port}`,
                 'Content-Type': 'application/json',
@@ -206,6 +211,28 @@ async function main() {
     const unknownDelete = await request(port, 'DELETE', unknownSession);
     check('DELETE /mcp with an unknown session id gets 404 and -32001', sessionNotFound(unknownDelete),
         `status=${unknownDelete.status} ${unknownDelete.body}`);
+    // Kimi Code is offered no GET stream: when one drops at a server restart it marks the server failed for good.
+    const kimiInit = await request(port, 'POST', {}, {
+        jsonrpc: '2.0', id: 94, method: 'initialize',
+        params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'kimi-code', version: '2.3.2' } },
+    });
+    const kimiSid = kimiInit.headers['mcp-session-id'];
+    await request(port, 'POST', { 'mcp-session-id': kimiSid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const kimiStream = await request(port, 'GET', { 'mcp-session-id': kimiSid, 'Accept': 'text/event-stream' });
+    check('a GET of a Kimi Code session gets 405 with Allow: POST, DELETE, so its client opens no stream',
+        kimiStream.status === 405 && kimiStream.headers.allow === 'POST, DELETE' && JSON.parse(kimiStream.body).error?.code === -32000,
+        `status=${kimiStream.status} allow=${kimiStream.headers.allow} ${kimiStream.body}`);
+    const kimiList = await request(port, 'POST', { 'mcp-session-id': kimiSid }, { jsonrpc: '2.0', id: 95, method: 'tools/list', params: {} });
+    check('the Kimi Code session itself keeps working', kimiList.status === 200 && (parseSse(kimiList.body)?.result?.tools?.length ?? 0) > 0,
+        `status=${kimiList.status}`);
+    await request(port, 'DELETE', { 'mcp-session-id': kimiSid });
+
+    // An entry that names the port without /mcp (a hand-written Kimi Code entry did): JSON naming the endpoint.
+    const wrongPath = await request(port, 'POST', {}, { jsonrpc: '2.0', id: 93, method: 'initialize', params: {} }, undefined, '/');
+    const wrongPathError = /application\/json/.test(String(wrongPath.headers['content-type'])) ? JSON.parse(wrongPath.body).error : undefined;
+    check('POST / gets a JSON 404 that names the endpoint, not Express\'s HTML "Cannot POST /"',
+        wrongPath.status === 404 && wrongPathError?.message === `POST / is not the MCP endpoint of the CMSIS Developer Assistant: it serves Streamable HTTP at http://localhost:${port}/mcp.`,
+        `status=${wrongPath.status} ${wrongPath.body}`);
 
     // 4. tools/list works on the session
     const list = await request(port, 'POST', { 'mcp-session-id': sid }, {
@@ -263,11 +290,23 @@ async function main() {
         jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_debug_instructions', arguments: {} },
     });
     const overviewText = parseSse(overviewCall.body)?.result?.content?.[0]?.text ?? '';
-    // The overview leads with the tool rules (#50, under 1 600 bytes) before its own 3 500.
+    // The overview leads with the tool rules (#50, under 1 600 bytes) before its own 3 700.
+    // Capped at 5 100 chars until 2.7.0 split `build` into three topics, two more lines in the list.
     check('get_debug_instructions defaults to the overview with the topic list, the tool rules first',
-        /## Topics/.test(overviewText) && overviewText.length < 5100 && overviewText.length < topicText.length * 2
+        /## Topics/.test(overviewText) && overviewText.length < 5500 && overviewText.length < topicText.length * 2
             && /^# .*\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n/.test(overviewText),
         `${overviewText.length} chars`);
+    // `build`, a topic until 2.7.0, is still accepted by the schema and serves its successor.
+    const retiredCall = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 7, method: 'tools/call',
+        params: { name: 'get_debug_instructions', arguments: { topic: 'build' } },
+    });
+    const retiredResult = parseSse(retiredCall.body)?.result;
+    const retiredText = retiredResult?.content?.[0]?.text ?? '';
+    check('get_debug_instructions still takes topic build: the cmsis-action topic under a line naming the split',
+        retiredResult?.isError !== true && /^_Topic `build` is split in three: `target`/.test(retiredText)
+            && /load_and_debug/.test(retiredText) && retiredText.length < 7000,
+        `${retiredText.length} chars: ${retiredText.slice(0, 80)}`);
 
     // 4c. The SVD lookups need no session; with no workspace (this stub) they
     //     explain where an SVD was looked for instead of failing.
@@ -430,13 +469,13 @@ async function main() {
     try { statsJson = JSON.parse(statsText); } catch { /* reported by the check */ }
     check('stats resource counts the tool calls',
         !!statsJson && statsJson.session.calls >= 6 && statsJson.session.perTool.get_threads?.calls === 3
-            && statsJson.session.perTool.get_debug_instructions?.calls === 2,
+            && statsJson.session.perTool.get_debug_instructions?.calls === 3,
         statsJson ? `session.calls=${statsJson.session.calls}` : statsText.slice(0, 120));
     const status = await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 16 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 17 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);
@@ -563,6 +602,44 @@ async function main() {
     check('serial_open holds the port for this session, released after 300 s without a serial call',
         serialOpened.isError !== true && /held by this session, released after 300 s without a serial call/.test(heldBy.content?.[0]?.text ?? ''),
         (heldBy.content?.[0]?.text ?? '').split('\n')[0]);
+
+    // 6e. A wait the client gives up on: serial_read waits on the held, silent port while the
+    //     client cancels it over the socket, then hangs up, as the SDK client does at its timeout.
+    const { logger } = require(path.join(OUT, 'utils', 'logger.js'));
+    const learned = [];
+    const logInfo = logger.info;
+    logger.info = function (message, detail) {
+        if (/gave up on/.test(String(message))) { learned.push(String(message)); }
+        return logInfo.call(this, message, detail);
+    };
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const giveUp = async (id, afterMs, reason) => {
+        const payload = JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'serial_read', arguments: { waitMs: afterMs + 300 } } });
+        const pendingCall = http.request({
+            host: '127.0.0.1', port, path: '/mcp', method: 'POST',
+            headers: {
+                'Host': `127.0.0.1:${port}`, 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
+                'Content-Length': Buffer.byteLength(payload), 'mcp-session-id': sid,
+            },
+        });
+        pendingCall.on('error', () => undefined);
+        pendingCall.end(payload);
+        await sleep(afterMs);
+        const cancelled = await request(port, 'POST', { 'mcp-session-id': sid }, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id, reason } });
+        pendingCall.destroy();
+        // The read's own wait ends before the next step uses the port.
+        await sleep(350);
+        return cancelled.status;
+    };
+    const userStop = await giveUp(52, 100, 'The user stopped the agent.');
+    check('a call cancelled for another reason teaches the session nothing', userStop === 202 && learned.length === 0,
+        `status=${userStop} ${learned.join(' | ')}`);
+    const timedOut = await giveUp(53, 1000, 'McpError: MCP error -32001: Request timed out');
+    check('a call the client gives up on with "Request timed out" teaches the session its client\'s limit, logged once',
+        timedOut === 202 && learned.length === 1
+            && new RegExp(`^MCP session ${sid}: the client gave up on serial_read after \\d s; long waits are cut to 1 s$`).test(learned[0]),
+        `status=${timedOut} ${learned.join(' | ')}`);
+    logger.info = logInfo;
 
     // 7. DELETE tears the session down
     const del = await request(port, 'DELETE', { 'mcp-session-id': sid });

@@ -18,7 +18,7 @@ The Arm® CMSIS Developer Assistant extension connects AI coding agents to the d
 - Starts the CMSIS Solution actions (build, load, load & debug, attach) and controls execution with breakpoints, logpoints, and stepping.
 - Reads memory, core registers, and device peripheral registers (from CMSIS-SVD), decodes fault status registers, and measures cycles with the DWT counter.
 - Programs Flash, resets the target, and communicates over serial (UART) ports.
-- Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Roo Code, Antigravity, and any other MCP-compatible assistant.
+- Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Kimi Code, Roo Code, Antigravity, and any other MCP-compatible assistant.
 - Runs entirely on the local machine: the MCP server binds to `localhost` only, needs no credentials, and sends nothing to an external service.
 - Also debugs applications in other languages (Python, JavaScript/TypeScript, Java, C#, C/C++, Go, Rust, PHP, Ruby) through the respective VS Code debug extensions.
 - Nine palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents (which also installs the `cmsis-help` skill), choosing the target window when several VS Code windows are open, releasing a serial port, copying the recent problems, and — with the experimental documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel. See [Commands](#commands).
@@ -100,7 +100,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 
 | Tool | Description |
 |------|-------------|
-| `cmsis_action` | Runs the action buttons of the CMSIS Solution view: `build`, `rebuild`, `clean`, `refresh` (Refresh with the RTE update, for a build that reports "use --update-rte"), `load`, `erase`, `run`, `load_and_run`, `load_and_debug`, `attach`, `detach`, `stop_run`, and `stop_build`, which stops a build that hangs. `run` starts the CMSIS Run task alone — the GDB server on the probe, without building or programming — so that `attach` can debug a target that is already running; the pyOCD task resets the target and lets the firmware run, the J-Link task leaves it as it was. `open_solution` with `path` (a `*.csolution.yml` or its folder) opens a project: a folder that a window already has open is activated there, any other opens in a new VS Code window that the agent's session then follows; it, `install_pack` and `create_solution` are the actions that work without an open project. `install_pack` with `pack` (`Vendor::Name@version`, the version required) installs one pack through the CMSIS Solution extension (1.72.0 or later) and names the knowledge units it ships; when the pack declares a licence, you are asked in a dialog first, and Cancel installs nothing. Without an active solution every other action says what is missing: a folder (`NO_WORKSPACE`), the CMSIS Solution extension, a csolution file, or the extension's loading of one (`CMSIS_NO_SOLUTION`). `load_and_debug` builds (if needed), programs the device, and attaches the debugger in one step. Every result names the target-type / target-set it ran on; the optional `target` (`MPS3` or `HP@debug`) switches a differing one first and verifies it through the extension. Each run is followed as a job: the result names the task, its exit code and the job; a task still running when the wait ends answers with status `running`, `status` waits for it, and a repeated call attaches to it instead of starting it again. A failed `build` adds its error lines with file and line: those csolution recorded in `cbuild-idx.yml`, else those of a diagnostic re-run of `cbuild --log` (setting `build.diagnosticRerun`). Probe actions are refused while a CMSIS Run task, a flash or a debug session holds the probe. When `.vscode/tasks.json` has no CMSIS tasks although the target's cbuild-run.yml names a debugger, the tool runs the CMSIS Solution's _Update Debug Tasks and Launch Configurations_ once and goes on; otherwise it asks for a debugger in **Manage Solution Settings**. |
+| `cmsis_action` | Runs the action buttons of the CMSIS Solution view: `build`, `rebuild`, `clean`, `refresh` (Refresh with the RTE update, for a build that reports "use --update-rte"), `activate_environment` (the Arm Tools Environment Manager's Reactivate Environment, when `vcpkg-configuration.json` changed), `load`, `erase`, `run`, `load_and_run`, `load_and_debug`, `attach`, `detach`, `stop_run`, and `stop_build`, which stops a build that hangs. `run` starts the CMSIS Run task alone — the GDB server on the probe, without building or programming — so that `attach` can debug a target that is already running; the pyOCD task resets the target and lets the firmware run, the J-Link task leaves it as it was. `open_solution` with `path` (a `*.csolution.yml` or its folder) opens a project: a folder that a window already has open is activated there, any other opens in a new VS Code window that the agent's session then follows; it, `install_pack` and `create_solution` are the actions that work without an open project. `install_pack` with `pack` (`Vendor::Name@version`, the version required) installs one pack through the CMSIS Solution extension (1.72.0 or later) and names the knowledge units it ships; when the pack declares a licence, you are asked in a dialog first, and Cancel installs nothing. Without an active solution every other action says what is missing: a folder (`NO_WORKSPACE`), the CMSIS Solution extension, a csolution file, or the extension's loading of one (`CMSIS_NO_SOLUTION`). `load_and_debug` builds (if needed), programs the device, and attaches the debugger in one step. Every result names the target-type / target-set it ran on; the optional `target` (`MPS3` or `HP@debug`) switches a differing one first and verifies it through the extension. Each run is followed as a job: the result names the task, its exit code and the job; a task still running when the wait ends answers with status `running`, `status` waits for it, and a repeated call attaches to it instead of starting it again. A failed `build` adds its error lines with file and line: those csolution recorded in `cbuild-idx.yml`, else those of a diagnostic re-run of `cbuild --log` (setting `build.diagnosticRerun`). Probe actions are refused while a CMSIS Run task, a flash or a debug session holds the probe. When `.vscode/tasks.json` has no CMSIS tasks although the target's cbuild-run.yml names a debugger, the tool runs the CMSIS Solution's _Update Debug Tasks and Launch Configurations_ once and goes on; otherwise it asks for a debugger in **Manage Solution Settings**. |
 | `cmsis_query` | Looks up the catalog of the CMSIS Solution extension, Arm's web catalog merged with the installed packs, without a project or a debug session: `what: 'boards'`, `'devices'` or `'examples'`, with `vendor` and `name` (for boards also `device`) as case-insensitive regular expressions, and `board` or `device` ids for the examples and templates of a board or device. Each example says whether it comes from the web or an installed pack, a list is capped at `limit` entries (20) and counts the rest, and the answer says when the web catalog could not be reached. With an example's or template's id, `cmsis_action create_solution` (`board` or `device`, `draft`, `path`, and `git` for `git init`) creates the project through CMSIS Solution, which then opens the folder in the window that ran the call: it runs in the window that has that folder open, or, for an agent outside VS Code, in a window without a folder, which reloads. |
 
 ### Run control
@@ -136,7 +136,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 
 | Tool | Description |
 |------|-------------|
-| `read_memory` | Reads a range of bytes (up to 4096) from the target as hex, ASCII, or both. |
+| `read_memory` | Reads a range of bytes (up to 4096) from the target as hex, ASCII, or both, at an address or at a C expression for one (`&buffer`). |
 | `read_core_registers` | Reads R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, and PRIMASK. |
 | `read_peripheral_register` | Reads and decodes a peripheral register, or all registers of a peripheral, using the CMSIS-SVD description of the device (read by a built-in SVD parser). |
 | `get_fault_info` | Reads CFSR, HFSR, DFSR, MMFAR, BFAR, and AFSR and decodes them bit by bit for HardFault analysis. |
@@ -204,7 +204,7 @@ The CMSIS procedures, rules, concepts and the causes and fixes of tool messages,
 | `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state, counts the errors recorded since the agent last looked, and names the serial port the window holds or why it was released. Never throws. |
 | `get_recent_problems` | The problem journal of the window the session drives: failed debug-adapter requests (including those of breakpoints set in the editor while the target runs), GDB-server errors, failed CMSIS tasks and build errors with file and line, Problems-panel errors, the extension's notifications, serial ports that went away. One line per record with number, severity, source, code and next step; `sinceSeq`, `sources`, `minSeverity` and `limit` narrow it. |
 | `check_target_connection` | Low-cost liveness check of the debug adapter and probe. |
-| `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot): a short overview with the topic list by default, or one section with `topic` (`session`, `build`, `breakpoints`, `inspection`, `faults`, `troubleshooting`). |
+| `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources (such as GitHub Copilot): a short overview with the topic list by default, or one section with `topic` (`bootstrap`, `session`, `target`, `cmsis-action`, `flash`, `breakpoints`, `inspection`, `faults`, `troubleshooting`; `build`, the name before 2.7.0, serves `cmsis-action`). |
 | `list_debug_windows`, `select_debug_window` | Shows the VS Code windows the server can reach, with the router and the default target marked and the calls busy in each, and pins one for this session. Relevant when more than one window is open; then `cmsis_action`, `flash`, `reset`, `serial_open` and `serial_capture` also take `window`, a pid or a path inside the window's workspace. |
 
 ### MCP resources
@@ -267,6 +267,7 @@ Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a sh
 | Codex | `~/.codex/AGENTS.md` (`CODEX_HOME`; a non-empty `AGENTS.override.md` wins, as in Codex) | `AGENTS.md` |
 | GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` (`COPILOT_HOME`) | `AGENTS.md` |
 | Antigravity | `~/.gemini/AGENTS.md` | `AGENTS.md` |
+| Kimi Code | `~/.kimi-code/AGENTS.md` (`KIMI_CODE_HOME`) | `AGENTS.md` |
 | VS Code Copilot Chat | — | `AGENTS.md` (`.github/copilot-instructions.md` when `chat.useAgentsMdFile` is off) |
 | Cursor | — | `.cursor/rules/cmsis-developer-assistant.mdc` (`alwaysApply: true`) |
 | Cline | — | `.clinerules/cmsis-developer-assistant.md` |
@@ -274,7 +275,7 @@ Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a sh
 
 The step lists the files of the agents you set up in step 1, of the agents that have the server registered already, and of Copilot Chat. A file several agents read, such as a workspace `AGENTS.md`, is listed and written once. The user-level files are preselected: the MCP registration is per user too, and a workspace file ends up in the repository, where colleagues without this extension read it as well. Each change opens a diff of the file as it is against the file with the rules, and a dialog; nothing is written unless you choose **Write**.
 
-The rules go between `<!-- cmsis-developer-assistant:rules:begin -->` and `<!-- cmsis-developer-assistant:rules:end -->`, with a comment saying who manages them; nothing else in the file changes, line endings included. To take the rules out, run the command again and uncheck the file, then choose **Remove**: the file is back to what it was, and a file that was created for the rules is deleted. When a new release of the extension changes the rules, activation asks once whether to review the update of the blocks it wrote: **Review** shows each file as a diff and writes it only when you choose **Write**; **Not Now** leaves the files as they are, and **Configure Agent** offers the update again. Activation never adds a block to a file. Set `cmsis-developer-assistant.agentRules.install` to `never` to skip the step and leave every rule file alone. Claude Desktop has no rule file and relies on the server instructions.
+The rules go between `<!-- cmsis-developer-assistant:rules:begin -->` and `<!-- cmsis-developer-assistant:rules:end -->`, with a comment saying who manages them; nothing else in the file changes, line endings included. To take the rules out, run the command again and uncheck the file, then choose **Remove**: the file is back to what it was, and a file that was created for the rules is deleted. When a new release of the extension changes the rules, activation asks once whether to review the update of the blocks it wrote: **Review** shows each file as a diff and writes it only when you choose **Write**; **Not Now** leaves the files as they are, and **Configure Agent** offers the update again. Activation never adds a block to a file. Set `cmsis-developer-assistant.agentRules.install` to `never` to skip the step and leave every rule file alone. Claude Desktop has no rule file and relies on the server instructions. Kimi Code is the other way round: it does not pass the server instructions to its model, so its rule file is the only way the rules reach it.
 
 ## Configuration
 
@@ -312,7 +313,7 @@ When none of these decides, for example with two windows debugging or two idle o
 
 Every window shows the robot icon followed by **R** (router) or **W** (worker) in the status bar, with **· default** on the default target and a spinner while an agent call runs in it. Its tooltip names the MCP endpoint, the default target under **Default target windows:** and the last agent call; in the router window it also lists the agent sessions with the window each one drives and why. A click on the item opens **Select Target Window**, which saves your choice for every window. It survives a reload of the chosen window, since the window is found again by its folder. Hide the item from the status bar's context menu (**CMSIS Developer Assistant**) if you do not need it.
 
-A call that hangs in a window ends in time. When a call does not finish, for example because a picker or dialog in that window waits for you, the window tells the agent `WORKER_TIMEOUT` shortly before the router would give up. The call keeps running there: the window shows a warning, and its status-bar item turns to the warning background until the call ends. A window whose extension host is blocked, or that was closed, fails a health check within seconds, and the agent gets `WINDOW_UNREACHABLE` instead of waiting minutes. When the router window itself stops responding, it keeps the port and no other window can take over; the other windows then show a warning that names it. Reload or close that window, and another window takes over automatically.
+A call that hangs in a window ends in time. When a call does not finish, for example because a picker or dialog in that window waits for you, the window tells the agent `WORKER_TIMEOUT` shortly before the router would give up. The call keeps running there: its status-bar item turns to the warning background until the call ends, and when the call can wait for you (`start_debugging`, `restart_debugging`, `cmsis_action`) the window also shows a warning. A call that waits for the debug adapter or GDB shows none, since there is nothing for you to answer. A window whose extension host is blocked, or that was closed, fails a health check within seconds, and the agent gets `WINDOW_UNREACHABLE` instead of waiting minutes. When the router window itself stops responding, it keeps the port and no other window can take over; the other windows then show a warning that names it. Reload or close that window, and another window takes over automatically.
 
 ### Manual agent registration
 
@@ -353,6 +354,19 @@ The popup described in [Connecting an AI agent](#connecting-an-ai-agent) writes 
   "mcpServers": {
     "cmsis-developer-assistant": {
       "url": "http://localhost:3001/mcp"
+    }
+  }
+}
+```
+
+**Kimi Code** (`~/.kimi-code/mcp.json`, or `$KIMI_CODE_HOME/mcp.json`; the CLI and the VS Code extension share it). Kimi Code ends a tool call after 60 s unless `toolTimeoutMs` says otherwise, and builds, loads and the `flash` tool may take up to 600 s:
+
+```json
+{
+  "mcpServers": {
+    "cmsis-developer-assistant": {
+      "url": "http://localhost:3001/mcp",
+      "toolTimeoutMs": 630000
     }
   }
 }
@@ -441,6 +455,16 @@ Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the 
 
 The Serial Monitor extension (0.13) gives other extensions an API (version 0) that lists ports and starts or stops monitoring a port, but has no event for the data it receives. `serial_subscribe_monitor` therefore reports that no data event is available. Stop monitoring the port in the Serial Monitor so that the agent can read it with `serial_capture`, or `serial_open` and `serial_read`, which own the port from the MCP server; or read the output in the Serial Monitor panel yourself.
 
+### Kimi Code has no CMSIS tools, or asks before every call
+
+Kimi Code connects to its MCP servers only when it starts, and does not retry a server that did not answer then: start VS Code with the extension first, then `kimi` (restart it if it was already running; `/reload` does not reconnect). In the Kimi Code extension for VS Code, reload the window that runs it. A restart of this server later on (a reload of the VS Code window that serves it, for example) no longer costs Kimi the tools: the server offers Kimi Code no event stream that could break, and Kimi reconnects at the next call. `/mcp` in Kimi Code shows the state of each server. Kimi Code asks before every MCP call in its default mode; to allow the CMSIS Developer Assistant tools without asking, add this rule to `~/.kimi-code/config.toml`:
+
+```toml
+[[permission.rules]]
+decision = "allow"
+pattern = "mcp__cmsis-developer-assistant__*"
+```
+
 ### Claude Desktop cannot connect
 
 Claude Desktop only supports stdio MCP servers and is connected through `mcp-remote`, which needs Node.js with `npx` on the `PATH` of the Claude Desktop process. Install Node.js and restart Claude Desktop.
@@ -449,7 +473,7 @@ Claude Desktop only supports stdio MCP servers and is connected through `mcp-rem
 
 - **Visual Studio Code** 1.109.0 or newer.
 - **Arm CMSIS Debugger** extension for Cortex-M targets, together with a debug probe supported by pyOCD (CMSIS-DAP, ST-Link) or a SEGGER® J-LINK® with the J-Link software installed. The **Arm CMSIS Solution** extension generates the debug configuration.
-- **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, or Codex.
+- **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, or Kimi Code.
 - **pyOCD** for the `flash` tool comes with the Arm CMSIS Debugger (`tools/pyocd`); `flash` otherwise takes the one the solution's `.cmsis/tools-environment.yml` or the `PATH` names. `cmsis_action load` programs the device through the CMSIS Solution extension instead.
 - **Node.js** with `npx` only for Claude Desktop (stdio bridge).
 

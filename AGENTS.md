@@ -160,7 +160,8 @@ holds the tool rules (#50), which keep agents on the MCP tools instead of
 pyOCD, GDB, cbuild or a serial terminal in the shell, and a table of shell
 commands with the tools that replace them. The server starts its
 `instructions` with the rules, and the first `get_session_status` of a session
-repeats them in one line. `npm run skills:sync` copies both
+repeats them in one line, or whole for a client that never shows the model the
+instructions (Kimi Code). `npm run skills:sync` copies both
 blocks between `<!-- cmsis-developer-assistant:<block>:begin -->` and `…:end -->`
 markers into the bundled skills, `cmsis-help` and `debug_instructions.md`
 (`src/core/toolContract.ts`). Edit the contract, never a copy;

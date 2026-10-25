@@ -87,8 +87,14 @@ can fake only the part a case drives.
   configuration's commands, and again while the session shuts down. A
   `threads` reply without a thread list is therefore `initializing` there,
   and `hasActiveSession()` false (`takesRequests()`); the replies of other
-  adapters count as they are. `getDiagnostics()` adds the server version and
-  the live sessions of the window.
+  adapters count as they are. Starting and shutting down are told apart by
+  the session tracker, which sees the `disconnect` or `terminate` request go
+  to the adapter (`endRequestOf()`): a session asked to end that gives no
+  thread list, a probe timeout included, is `initializing` with
+  `endRequestedForMs`, since an adapter that halts the target before it
+  disconnects can wait there indefinitely (an Arm FVP ignores the halt). The
+  five states stay as they are. `getDiagnostics()` adds the server version
+  and the live sessions of the window.
 - **Run control.** Steps, continue and pause send the DAP request (`next`,
   `stepIn`, `stepOut`, `continue`, `pause`) for the focused thread. When the
   request fails for any reason except a timeout, a CMSIS Debugger session
@@ -98,7 +104,15 @@ can fake only the part a case drives.
   where it becomes a toast (#13). Other adapters run the workbench command
   for the same action instead. None of them waits for the stop:
   `armStopWaiter()` and `waitForStop()` do, and the handler arms the waiter
-  before it sends the request.
+  before it sends the request. `watchFrameFocus()`, taken at the same time,
+  waits after the stop for the frame VS Code selects for it (the session
+  tracker's `armFocusWatch()`, driven by `onDidChangeActiveStackItem`),
+  since every frame-based read goes through VS Code's focused frame; the
+  reset waits for it too when a stop event follows the reset commands.
+  `watchStartFocus()` (`armStartFocusWatch()`) is its counterpart for a
+  session that is about to start: taken before the start, it waits for a
+  frame of whichever session is active once it came up, when the tracker
+  saw it stop, and answers `running` at once for a target that runs.
 - **Breakpoints.** VS Code's breakpoint model on every adapter: add, remove,
   list, clear. `breakpointBinding()` asks VS Code how the session's adapter
   bound a breakpoint (`getDebugProtocolBreakpoint`: verified, message, line,
@@ -108,6 +122,9 @@ can fake only the part a case drives.
   logpoints are GDB `dprintf`s instead: MI `-dprintf-insert`, `condition`,
   `delete` with numbers (never a bare `delete`) and MI `-break-list`; the
   session tracker remembers them per session under their GDB number.
+  `adoptedBreakpoints()` returns the breakpoints the tracker saw an adapter
+  announce as new, which VS Code adopts without listing them in
+  `vscode.debug.breakpoints` until the window reloads.
 - **GDB commands.** `runGdbCommand()` (`src/executor/gdbCommand.ts`) sends a
   raw GDB command as a REPL evaluate in the prefix of the session's adapter
   (`src/core/gdbDialect.ts`, #56): `>` on the CMSIS Debugger, `-exec` and a
@@ -147,9 +164,13 @@ can fake only the part a case drives.
   `readMemory()` returns its bytes with their offset from the requested
   address (`MemoryRead`, placed by `bytesInRange()`), and fewer of them when
   the end cannot be read; the `read_memory` dump labels its rows from there,
-  and the stacked exception frame and the fault-register block count only
-  when they begin at the address asked for. A one-word read needs all four
-  bytes, so a reply that begins late is a short one there.
+  and the stacked exception frame counts only when it begins at the
+  address asked for. A one-word read needs all four bytes, so a reply that
+  begins late is a short one there. A read that touches the System Control
+  Space (0xE000E000–0xE000EFFF, and its Non-secure alias) goes one aligned
+  word at a time (`systemControlSpaceWords()` in `src/core/memoryMap.ts`):
+  its registers are words, and the Corstone FVP's GDB server answers longer
+  reads there with zeros.
   `writeMemoryWord()` falls back to GDB's `set` and checks its write by
   reading it back. Core registers are
   read as `$<name>` expressions, all at once, with `<timeout>` or
@@ -162,8 +183,8 @@ can fake only the part a case drives.
   fields decoded (`src/core/peripheralReader.ts`), with the SVD of the session
   the read goes to rather than of the one VS Code has focused; the Peripheral
   Inspector extension is not asked, as its API has no register read. The
-  fault status registers are read as one block when possible, else word by
-  word, and decoded by `src/core/faultDecoder.ts`.
+  six fault status registers are read one word each, for the same reason as
+  the System Control Space above, and decoded by `src/core/faultDecoder.ts`.
 - **A failed read.** A memory read that fails in every way keeps why each
   way failed (`MemoryReadFailure`, each cause cut to 200 characters). On the
   CMSIS Debugger each public read then reads DHCSR (0xE000EDF0) once — 4
@@ -173,12 +194,21 @@ can fake only the part a case drives.
   only the address cannot be read in this state, `INVALID_ARGUMENT`. A read
   that timed out on a port that answers keeps its timeout. The hint of
   `PROBE_WEDGED` depends on the session's `request`: an attached session
-  reconnects with `cmsis_action detach` and `attach`, a launched one owns
+  reconnects with `cmsis_action detach` and `attach`, since the CMSIS Run
+  task's pyOCD (`--persist`) outlives every detach and ends only with its
+  task, after which `cmsis_action run` starts it again; a launched one owns
   its GDB server (`src/core/probeWedge.ts`). The fault registers are judged
-  once, after the block and the word-by-word read both failed.
+  once, at the first word that fails.
   `probeDebugPort()` offers the same DHCSR read to the handler, which checks
   `S_LOCKUP` with it. Nothing is retried or reconnected: a reconnect replaces
   the session and must not happen as a side effect of a read.
+- **Does the core answer?** The `threads` probe behind the status asks only
+  the debug adapter, which answers from GDB's state while every target read
+  fails. So `checkTargetConnection()` reads DHCSR once on a stopped CMSIS
+  Debugger session, and every DHCSR read leaves its verdict with the session
+  tracker (`noteCoreVerdict()`): a read that got no answer is kept until a
+  stop event, a DHCSR read that answers or the session's end, and
+  `getSessionStatus()` reports its age without reading the target.
 - **Reset.** `resetTarget()` hands over to `performReset()` in
   `src/executor/targetReset.ts`. A running target is halted first; each
   method is sent as GDB monitor commands in the dialect of the GDB server
@@ -245,10 +275,10 @@ Code update needs a look at this.
 | `src/executor/gdbCommand.ts` | `runGdbCommand()`: the adapter's prefix, output capture and settle |
 | `src/core/gdbDialect.ts` | GDB prefix per adapter, the agent's passthrough spellings, MI memory results, GDB's refusal of a run-control request |
 | `src/executor/gdbMemory.ts` | address helpers, `bytesInRange()` for a DAP `readMemory` reply, `readWordThroughGdb()`, `MemoryReadFailure`, the DHCSR read `probeDebugPort()`, `explainReadFailure()` |
-| `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP` |
+| `src/core/probeWedge.ts` | `classifyReadFailure()`: `PROBE_WEDGED` or `INVALID_ARGUMENT` after the DHCSR read, the reconnect hint per `request`, `S_LOCKUP`; `coreVerdict()` and the texts of a core that answers or does not |
 | `src/executor/sessionReports.ts` | `probeSession()`, `takesRequests()`, `connectionReport()`, `deviceReport()`, `launchFolderFor()` |
 | `src/executor/targetReset.ts` | `performReset()`, `programCounterFrom()` |
-| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`) |
+| `src/utils/sessionStateTracker.ts` | session choice, stop events and waits, the wait for VS Code's frame after a stop (`armFocusWatch()`), session end, the adapter channel's problems for the problem journal (#48), GDB command output, answers to `setBreakpoints`, GDB logpoints per session, the starts an agent asked for (`expectAgentStart()`, `quietStartFailure()`), the last DHCSR read that got no answer (`noteCoreVerdict()`, `coreSilentSince()`) |
 | `src/utils/timeout.ts` | `withTimeout()`, `customRequestWithTimeout()`, `HardwareTimeoutError` |
 
 ## Tests
@@ -261,7 +291,8 @@ Code update needs a look at this.
   end sooner than asked, the GDB word-read ladder and the DHCSR read after a
   failed read
 - `src/test/gdbMemory.test.ts`: the ladder's causes, `PROBE_WEDGED` and
-  `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints
+  `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints; the
+  DHCSR read of `check_target_connection` and the verdict the status keeps
 - `test/transport/dap-scenarios.js`: the executor behind the handler and the
   server in 40 scripted scenarios, mostly `gdbtarget` sessions, a wedged
   probe and an adapter that is still connecting among them

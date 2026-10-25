@@ -19,8 +19,10 @@
  * executor: a clock, VS Code's focused stack frame, the window's CMSIS job
  * tracker, its owned serial port, the workspace folders, the active target's
  * cbuild-run file (for `flash` and `cmsis_action`), where `flash` looks for
- * pyOCD and which probe it selects, what `cmsis_action install_pack` asks,
- * and the CMSIS Solution extension behind `cmsis_query`.
+ * pyOCD and which probe it selects, where the hints after a failed J-Link
+ * task or GDB server start look its program up, what `cmsis_action
+ * install_pack` asks, the CMSIS Solution extension behind `cmsis_query`, and
+ * who holds a GDB port a launch is about to use.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
@@ -30,12 +32,16 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { CmsisJobTracker, windowJobTracker } from '../cmsisJobTracker';
 import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
+import { fileExists } from '../core/flashController';
+import { findGdbPortHolder, type GdbPortHolder } from '../core/gdbPortGuard';
 import { SerialController, serialController } from '../core/serialController';
 import { activeCbuildRunFile } from '../utils/solutionQueries';
 import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
 import type { SolutionExtensionHandle } from '../core/solutionApi';
+import type { CatalogFetch } from '../core/webCatalog';
 
 /** An installed extension, as the pyOCD lookup of `flash` needs it. */
 export interface InstalledExtension {
@@ -43,11 +49,24 @@ export interface InstalledExtension {
     version?: string;
 }
 
-/** Where `flash` looks for pyOCD: an extension's folder, this process's PATH, the platform. */
+/**
+ * Where `flash` looks for pyOCD — an extension's folder, this process's
+ * PATH, the platform — and what the hints after a failed J-Link task or
+ * GDB server start read to look a program up (`src/handler/taskProgram.ts`).
+ * The optional members fall back to this process and the file system.
+ */
 export interface ToolEnvironment {
     extension(id: string): InstalledExtension | undefined;
     pathEnv: string | undefined;
     platform: NodeJS.Platform;
+    /** Another variable of this process's environment (`PATHEXT`, `ProgramFiles`); case-insensitive on Windows. */
+    env?(name: string): string | undefined;
+    /** The setting `terminal.integrated.env.<windows|osx|linux>` of this platform: what VS Code adds to its terminals' environment. */
+    terminalEnv?(): Readonly<Record<string, unknown>> | undefined;
+    /** Whether a file is there; read-only. */
+    isFile?(file: string): boolean;
+    /** The names in a folder; none when it cannot be read. */
+    listDir?(folder: string): readonly string[];
 }
 
 export interface HandlerHost {
@@ -97,7 +116,20 @@ export interface HandlerHost {
     packInstall(): PackInstallHost;
     /** The CMSIS Solution extension, for its public API (`cmsis_query`, `create_solution`); undefined when it is not installed. */
     solutionExtension(): SolutionExtensionHandle | undefined;
+    /** `fetch` for Arm's web catalog: which pack each of two web examples alike comes from (`cmsis_query`, `webCatalog.ts`). */
+    webCatalogFetch: CatalogFetch;
+    /**
+     * Who holds a local GDB port that a launch or a CMSIS Run is about to use:
+     * another window's session or CMSIS Run task, as its registry entry says,
+     * or another program that listens there (a bind test, never a
+     * connection); undefined when the port is free. The default knows no
+     * other window; the window's `DebuggingHandler` is given the registry.
+     */
+    gdbPortHolder(port: number): Promise<GdbPortHolder | undefined>;
 }
+
+/** The key under `terminal.integrated.env` per platform. */
+const TERMINAL_ENV_KEY: Partial<Record<NodeJS.Platform, string>> = { win32: 'windows', darwin: 'osx', linux: 'linux' };
 
 /** The real thing: Node timers and the VS Code API, looked up per call. */
 export const VSCODE_HOST: HandlerHost = {
@@ -129,6 +161,19 @@ export const VSCODE_HOST: HandlerHost = {
         },
         pathEnv: process.env.PATH,
         platform: process.platform,
+        env: (name) => process.env[name],
+        terminalEnv: () => {
+            const value: unknown = vscode.workspace.getConfiguration('terminal.integrated.env').get(TERMINAL_ENV_KEY[process.platform] ?? 'linux');
+            return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
+        },
+        isFile: (file) => fileExists(file),
+        listDir: (folder) => {
+            try {
+                return fs.readdirSync(folder);
+            } catch {
+                return [];
+            }
+        },
     }),
     solutionProbeId: () => {
         const value: unknown = vscode.workspace.getConfiguration('cmsis-csolution').get('probe-id');
@@ -161,4 +206,6 @@ export const VSCODE_HOST: HandlerHost = {
             activate: () => found.activate(),
         };
     },
+    webCatalogFetch: (url, init) => fetch(url, init),
+    gdbPortHolder: (port) => findGdbPortHolder(port, []),
 };

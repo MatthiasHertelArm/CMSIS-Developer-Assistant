@@ -96,6 +96,29 @@ export function packFolder(packRoot: string, pack: PackRequest): string {
     return path.join(packRoot, pack.vendor, pack.name, pack.version);
 }
 
+/**
+ * Whether any version of the pack `vendor::name` is installed under
+ * `packRoot`: a version folder that holds its `<Vendor>.<Name>.pdsc`.
+ * Undefined when the pack root itself is not a folder that can be read.
+ */
+export function packInstalledIn(packRoot: string, vendor: string, name: string): boolean | undefined {
+    try {
+        if (!fs.statSync(packRoot).isDirectory()) {
+            return undefined;
+        }
+    } catch {
+        return undefined;
+    }
+    const folder = path.join(packRoot, vendor, name);
+    let versions: string[];
+    try {
+        versions = fs.readdirSync(folder);
+    } catch {
+        return false;
+    }
+    return versions.some((version) => fs.existsSync(path.join(folder, version, `${vendor}.${name}.pdsc`)));
+}
+
 /** What the pack's PDSC in `.Web/` says about a licence. */
 export type LicenceCheck =
     /** The PDSC names a licence file: the user is asked. */

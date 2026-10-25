@@ -74,7 +74,9 @@
 //     request, or answers it with GDB's error (`connectFails`).
 // VS Code itself is modelled only as far as the code under test can see it:
 // after a stopped event `activeStackItem` becomes frame 1000 of the focused
-// session at once, a continued event clears it; a change of the breakpoint
+// session at once, a continued event and the session's end clear it, and
+// each change fires `onDidChangeActiveStackItem` with a new item object, as
+// VS Code does; a change of the breakpoint
 // model makes VS Code send `setBreakpoints` for each file concerned a moment
 // later, which the adapter answers as cdt-gdb-adapter does (the file's GDB
 // breakpoints whose location names the file and that VS Code did not send are
@@ -85,7 +87,8 @@
 // de-duplication.
 //
 // Scenarios are independent: each gets a fresh server, a fresh fake session
-// and an empty breakpoint model. Module-level state in the code under test
+// and an empty breakpoint model, the breakpoints the session tracker saw VS
+// Code adopt from an adapter included. Module-level state in the code under test
 // (the window's problem journal, whose record numbers count on across
 // scenarios and are masked in the replies, the pack-root answer, the parsed
 // SVD cache) persists across scenarios as it does across sessions in one
@@ -160,6 +163,7 @@ Object.assign(stub.debug, {
     },
     async stopDebugging(session) {
         current.record(`vscode: debug.stopDebugging session=${JSON.stringify(session?.name ?? null)}`);
+        if (session && current.holdsStop(session)) { return new Promise(() => {}); }
         if (session) { current.endSession(session); }
     },
     addBreakpoints(bps) {
@@ -407,6 +411,7 @@ function baseMemory() {
     // System control space and DWT.
     words.set(0xe000ed00, 0x410fc241); words.set(0xe000ed08, 0x08000000);          // CPUID, VTOR
     words.set(0xe0001000, 0x40000000); words.set(0xe0001004, 0x00a3c1f5);          // DWT_CTRL, CYCCNT
+    words.set(0xe000edf0, 0x00030003);                                             // DHCSR: halted, C_DEBUGEN
     return words;
 }
 const FAULT_WORDS = { 0xe000ed28: 0x00008200, 0xe000ed2c: 0x40000000, 0xe000ed30: 0x00000008, 0xe000ed34: 0x60000000, 0xe000ed38: 0x60000000 };
@@ -538,7 +543,8 @@ class FakeTarget {
             this.sc.record(`${line} -> error: ${msg}`);
             return Promise.reject(new Error(msg));
         }
-        if (this.hung) {
+        // `threadsHangWhileRunning`: GDB busy with the running target answers no `threads` until a pause stops it.
+        if (this.hung || (command === 'threads' && this.spec.threadsHangWhileRunning && this.state === 'running')) {
             this.sc.record(`${line} -> no answer`);
             return new Promise(() => {});
         }
@@ -587,6 +593,10 @@ class FakeTarget {
         const regs = { ...BASE_REGS, ...(REG_OVERRIDES[this.at] ?? {}) };
         regs.pc = LOCATIONS[this.at][level]?.addr ?? 0;
         regs.msp = regs.sp;
+        // An Arm FVP's target description has no msp, psp, control or masks (`noSystemRegisters`): GDB answers void.
+        if (this.spec.noSystemRegisters) {
+            for (const name of ['msp', 'psp', 'control', 'faultmask', 'basepri', 'primask']) { delete regs[name]; }
+        }
         return regs;
     }
 
@@ -708,6 +718,10 @@ class FakeTarget {
                 const addr = Number(args.memoryReference) + (args.offset ?? 0);
                 if (this.state !== 'stopped') { throw new Error(`${RUNNING_MSG} (@ ${hex(addr)})`); }
                 if (!args.count) { return undefined; }
+                // The Corstone FVP's GDB server answers System Control Space reads longer than one word with zeros.
+                if (this.spec.zeroScsBlocks && args.count > 4 && addr >= 0xe000e000 && addr <= 0xe000efff) {
+                    return { data: Buffer.alloc(args.count).toString('base64'), address: hex(addr) };
+                }
                 // cdt-gdb-adapter answers with GDB's first block and its begin, later than asked when the range starts in a hole.
                 const [block] = this.readableBlocks(addr, args.count);
                 if (!block) { throw new Error(`Unable to read memory. (@ ${hex(addr)})`); }
@@ -727,7 +741,8 @@ class FakeTarget {
                 this.perform(command);
                 return command === 'continue' ? { allThreadsContinued: true } : undefined;
             case 'pause':
-                if (this.state !== 'stopped') { setTimeout(() => this.stopAt(this.runningAt, 'SIGINT'), 5); }
+                // An Arm FVP's GDB server ignores GDB's interrupt while the model runs (`ignoresPause`).
+                if (this.state !== 'stopped' && !this.spec.ignoresPause) { setTimeout(() => this.stopAt(this.runningAt, 'SIGINT'), 5); }
                 return undefined;
             default:
                 throw new Error('unrecognized request');
@@ -1008,6 +1023,10 @@ function sessionConfig(env, kind) {
         case 'pyocd-attach':
             return { ...common, name: 'CMSIS Debugger: pyOCD (attach)', request: 'attach',
                 target: { server: 'pyocd', port: '3333' } };
+        case 'fvp':
+            return { ...common, name: 'Arm-FVP@GDB (launch)', request: 'launch', initCommands: ['tbreak main'],
+                target: { server: path.join(project, '.vscode', 'fvp.sh'), port: '',
+                    serverParameters: ['-D', '--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3333', '-f', 'fvp_config.txt'] } };
         case 'jlink':
             return { ...common, name: 'CMSIS Debugger: J-LINK', request: 'launch', initCommands: ['load', 'break main'],
                 target: { server: 'JLinkGDBServer', serverParameters: ['-device', 'STM32F401RE', '-endian', 'little',
@@ -1101,6 +1120,8 @@ class ScenarioContext {
         this.syncBreakpoints(stub.debug.breakpoints);
         // cdt-gdb-adapter prints this at configurationDone, which a failed launch never reaches.
         if (spec.banner !== false) { target.output('console', GDB_BANNER); }
+        // The GDB server's output as some servers write it, a few characters per output event (`serverPieces`).
+        for (const piece of spec.serverPieces ?? []) { target.output('server', piece); }
         if (spec.initial === 'running') {
             target.stopAt('main31', 'breakpoint');
             target.run();
@@ -1140,6 +1161,21 @@ class ScenarioContext {
         return true;
     }
 
+    /**
+     * The first stop of a running target whose adapter halts it before it disconnects (`disconnectWaitsForHalt`, an Arm FVP
+     * that ignores the halt): the disconnect goes to the adapter, which takes no requests from then on and never ends the
+     * session; VS Code's second stop ends it.
+     */
+    holdsStop(session) {
+        const target = this.targets.find((t) => t.session === session);
+        if (!target || target.dead || !target.spec.disconnectWaitsForHalt || target.state !== 'running' || target.disconnecting) { return false; }
+        target.disconnecting = true;
+        target.tracker.receive({ type: 'request', seq: target.seq++, command: 'disconnect', arguments: { restart: false } });
+        this.record('adapter: disconnect waits for a halt the target never reports');
+        target.ready = false;
+        return true;
+    }
+
     endSession(session, { quiet = false } = {}) {
         const target = this.targets.find((t) => t.session === session);
         if (!target || target.dead) { return; }
@@ -1149,6 +1185,7 @@ class ScenarioContext {
         if (stub.debug.activeDebugSession === session) {
             stub.debug.activeDebugSession = undefined;
             stub.debug.activeStackItem = undefined;
+            bus.didChangeStackItem.fire(undefined);
             bus.didChangeActiveSession.fire(undefined);
         }
         bus.didTerminate.fire(session);
@@ -1361,15 +1398,37 @@ const SCENARIOS = [
         ],
     },
     {
+        name: 'fault-scs-word-reads',
+        description: 'The same fault on a GDB server that answers System Control Space reads longer than one word with zeros, as the Corstone FVP\'s does: '
+            + 'the fault registers and a read_memory there are read one word each, so the fault shows.',
+        session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, zeroScsBlocks: true },
+        calls: [
+            { tool: 'get_fault_info' },
+            { tool: 'diagnose_fault' },
+            { tool: 'read_memory', args: { address: '0xE000ED28', length: 8 } },
+        ],
+    },
+    {
+        name: 'fault-status-clear-in-handler',
+        description: 'Halted in the HardFault handler (IPSR 3) with CFSR and HFSR clear: diagnose_fault does not say the target is not in a fault.',
+        session: { initial: { at: 'hardFault', reason: 'breakpoint' } },
+        calls: [
+            { tool: 'diagnose_fault' },
+        ],
+    },
+    {
         name: 'probe-wedged',
         description: 'Halted in HardFault, then the probe wedges (#3): GDB answers threads, stack and registers from its caches, but every memory read '
-            + 'fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy\'s cause and the hint of a launch session.',
+            + 'fails, DHCSR included. The fault tools and read_memory answer PROBE_WEDGED with each strategy\'s cause and the hint of a launch session. '
+            + 'Afterwards get_session_status names the DHCSR read that got no answer without reading, and check_target_connection reads DHCSR again.',
         session: { initial: { at: 'hardFault', reason: 'SIGSEGV' }, memory: FAULT_WORDS, wedged: true },
         calls: [
             { tool: 'get_session_status' },
             { tool: 'get_fault_info' },
             { tool: 'diagnose_fault' },
             { tool: 'read_memory', args: { address: '0x20017fa8', length: 32 } },
+            { tool: 'get_session_status' },
+            { tool: 'check_target_connection' },
         ],
     },
     {
@@ -1401,6 +1460,29 @@ const SCENARIOS = [
             { tool: 'continue_execution' },
             { tool: 'wait_for_stop' },
             { tool: 'pause_execution' },
+        ],
+    },
+    {
+        name: 'fvp-ignores-pause',
+        description: 'An Arm FVP, whose GDB server ignores GDB\'s interrupt while the model runs: a continue that does not stop, a pause and a '
+            + 'breakpoint change on the running model say that only a breakpoint stops it, and how to set one, instead of advising a pause.',
+        session: { initial: { at: 'main31', reason: 'breakpoint' }, config: 'fvp', ignoresPause: true },
+        calls: [
+            { tool: 'continue_execution', args: { timeoutMs: 300 } },
+            { tool: 'pause_execution', args: { timeoutMs: 1000 } },
+            { tool: 'add_breakpoint', args: { fileFullPath: '@main.c', line: 29 } },
+        ],
+    },
+    {
+        name: 'fvp-stop-waits-for-halt',
+        description: 'stop_debugging on a running Arm FVP: the adapter halts the target before it disconnects and the model ignores the halt, so '
+            + 'the first stop answers timeout and says to stop again, the status says the session is shutting down rather than starting, '
+            + 'and the second stop ends it.',
+        session: { initial: 'running', config: 'fvp', ignoresPause: true, disconnectWaitsForHalt: true },
+        calls: [
+            { tool: 'stop_debugging' },
+            { tool: 'get_session_status' },
+            { tool: 'stop_debugging' },
         ],
     },
     {
@@ -1637,7 +1719,7 @@ const SCENARIOS = [
     },
     {
         name: 'unresponsive-adapter',
-        description: 'Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is refused, stop works.',
+        description: 'Session halted, then every DAP request hangs: status and connection probes time out, a fenced read_memory returns the handler cap (its background probes are recorded as late traffic), pause is tried once and refused when it gets no answer, stop works.',
         session: { initial: { at: 'main31', reason: 'breakpoint' }, hangAfterStart: true },
         calls: [
             { tool: 'get_session_status' },
@@ -1645,6 +1727,40 @@ const SCENARIOS = [
             { tool: 'read_memory', args: { address: '0x20000000', length: 16, timeoutMs: 1000 }, settleMs: 6500 },
             { tool: 'pause_execution' },
             { tool: 'stop_debugging' },
+        ],
+    },
+    {
+        name: 'fvp-fault-without-system-registers',
+        description: 'A HardFault on an Arm FVP: the GDB server zeroes SCS reads longer than a word and reports no msp, psp, control or masks '
+            + '(GDB says void). The fault registers are read word by word, read_core_registers says which registers are not reported and '
+            + 'takes MSP from the SP in Handler mode, and diagnose_fault reads the stacked frame there.',
+        session: { initial: { at: 'hardFault', reason: 'breakpoint' }, memory: FAULT_WORDS, config: 'fvp', zeroScsBlocks: true, noSystemRegisters: true },
+        calls: [
+            { tool: 'read_core_registers' },
+            { tool: 'diagnose_fault' },
+        ],
+    },
+    {
+        name: 'server-output-in-pieces',
+        description: 'The GDB server writes its lines a few characters per output event, as the Corstone FVP\'s model output does: '
+            + 'get_recent_problems lists each line once, whole, not one record per piece.',
+        session: {
+            initial: { at: 'main31', reason: 'breakpoint' },
+            serverPieces: ['= Bl', 'in', 'ky i', 's running =\r', '\nFailed to po', 'wer up DAP\n', 'telnetterminal0: Listening for serial connection on port 5000\n'],
+        },
+        calls: [
+            { tool: 'get_recent_problems', args: { sources: ['gdb-server'], minSeverity: 'info', limit: 3 } },
+        ],
+    },
+    {
+        name: 'unresponsive-pause-recovers',
+        description: 'A running target whose adapter answers no threads probe (GDB busy with it): the status says unresponsive, yet pause_execution '
+            + 'is not refused: its one pause stops the target, and the status is stopped again.',
+        session: { initial: 'running', threadsHangWhileRunning: true },
+        calls: [
+            { tool: 'get_session_status' },
+            { tool: 'pause_execution' },
+            { tool: 'get_session_status' },
         ],
     },
     {
@@ -2029,8 +2145,9 @@ function normalise(text, ctx) {
         .replace(/\b127\.0\.0\.1:\d+/g, '127.0.0.1:<port>')
         // The release number (with a pre-release suffix when CI set one), so that a version bump leaves the snapshot alone.
         .replace(/\bserverVersion=\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/g, 'serverVersion=<version>')
-        // Problem-journal numbers count on across scenarios, so they depend on every scenario before.
-        .replace(/(^|\n) {2}#\d+ (error|warning|info) /g, '$1  #<seq> $2 ')
+        // Problem-journal numbers count on across scenarios, so they depend on every scenario before, as do the records a page leaves out.
+        .replace(/(^|\n)( {2})?#\d+ (error|warning|info) /g, '$1$2#<seq> $3 ')
+        .replace(/… \d+ older records? left out/g, '… <n> older record(s) left out')
         .replace(/\b(sinceSeq: |nextSeq=| since #)\d+/g, '$1<seq>');
 }
 
@@ -2054,6 +2171,7 @@ async function runScenario(def, index, env, ctx, DebugMCPServer) {
     const sc = new ScenarioContext(def, index, env);
     current = sc;
     stub.debug.breakpoints = [];
+    require(path.join(OUT, 'utils', 'sessionStateTracker.js')).forgetAdoptedBreakpoints();
     stub.debug.activeDebugSession = undefined;
     stub.debug.activeStackItem = undefined;
 

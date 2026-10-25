@@ -50,6 +50,7 @@ release after it are debug lines.
 | `src/windowStatus.ts`, `src/core/windowStatus.ts` | the status-bar item and Select Target Window: the wiring, and the pure rendering |
 | `assets/icons/cda-robot.svg`, `assets/icons/cda-icons.woff` | the robot artwork and its one-glyph font, contributed by `package.json` as the product icon `cda-robot` |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
+| `src/core/gdbServerPorts.ts`, `src/core/gdbPortGuard.ts` | the GDB ports a window publishes (`windowGdbPorts()`, `gdbPortClaimsOf()`), and who holds one before a launch (`findGdbPortHolder()`, the bind test, `gdbPortRefusal()`) |
 
 ## The registry
 
@@ -62,11 +63,19 @@ activate it; a changed answer is published at once), and its role (`router`
 or `worker`; windows of 2.5.0 and earlier write none). Since 2.5.1 it also
 holds the extension `version`, and from the first heartbeat on `lagMs`, the
 event-loop delay of the last 20 s, and `busy`, the agent calls running there
-for more than 10 s (#14). The file is written atomically, refreshed every
-20 s, and rewritten at once when a debug session starts or ends or the
-folders change — the session state is what routes every call that names no
-file. The heartbeat takes a patch, so it brings `busy` and `lagMs` up to
-date as it refreshes the time. Readers drop the files of processes that no
+for more than 10 s (#14). Since 2.7.0 it lists `gdbPorts`, the local GDB
+ports the window's live debug sessions and CMSIS Run tasks use (see
+[GDB ports](#gdb-ports)). The file is written atomically, refreshed every
+20 s, and rewritten at once when a debug session starts or ends, VS Code's
+focused session changes, or the folders change — the session state is what
+routes every call that names no file. `hasActiveSession` comes from the
+session tracker's live sessions, not from `vscode.debug.activeDebugSession`
+alone, which still names a session while `onDidTerminateDebugSession`
+announces its end (VS Code moves the focus afterwards); the configuration
+is the focused session's while it is live, else the most recent live
+session's (`registrySession()` in `src/utils/sessionStateTracker.ts`). The
+heartbeat takes a patch, so it brings `busy` and `lagMs` up to date as it
+refreshes the time. Readers drop the files of processes that no
 longer exist and of other windows not refreshed for 60 s, with one
 exception: the router's entry stays, skipped, while its process lives (up to
 an hour), because it names the window that holds the MCP port when that
@@ -123,8 +132,15 @@ that applies decides:
    a path, it re-aims the session: the calls after it go to the same window,
    unless the session is pinned.
 2. **Path.** A call that carries `fileFullPath` or `workingDirectory` goes to
-   the window whose workspace folder contains it most deeply. A pin never
-   overrides a path: a named file must not be opened in another window.
+   the window whose workspace folder contains it most deeply. A pin does not
+   override the path of `start_debugging`: a file is launched in the window
+   that holds it. The breakpoint ops (`add_breakpoint`, `add_logpoint`,
+   `remove_breakpoint`) of a pinned session are the exception
+   (`resolveForBreakpoint()`): a breakpoint acts on the debug session that
+   binds it, and the program a session debugs may be built from sources in
+   another window's folder, so they go to the pinned window whatever file
+   they name, unless only the file's own window has a debug session. A file
+   outside the pinned window's folders adds one line to the answer.
 3. **Pin.** The window chosen with `select_debug_window`, by process id or by a
    path inside its workspace, for the rest of the MCP session. A reload gives
    the window a new pid: the pin keeps the window's folders and moves to the
@@ -166,6 +182,19 @@ folder; nothing is followed afterwards. `cmsis_query` reads CMSIS Solution's
 catalog, which every window answers alike, so it takes the ladder and, where
 the ladder would refuse a tie, the router's own window
 (`resolveAnyWindow()`, which `open_solution` uses for its tie too).
+`serial_list_ports` goes the same way: the serial ports belong to the
+machine, and every window lists the same ones. The other serial tools keep
+the ladder, since a port is opened and read in one window.
+
+`get_session_status` is the call agents make when another one failed, and
+its description promises that it never fails. On a tie it is therefore
+answered, not refused (`resolveForStatus()`, `statusWithoutTarget()`): with
+idle windows `State: no-session`, why there is no target, and the windows;
+with several debugging windows `State: no target window`, and each of them
+with the state line its own status gives within 5 s, asked all at once
+(`State: stopped`, or `State: unknown` with why); then the same ways to
+choose as the refusal (`tieOf()`). Nothing becomes the session's target. An
+empty registry and a pinned window that is gone still fail as below.
 
 The knowledge ops are routed with the documentation ops, because the
 project context of a `knowledge_search` is the active target of one window;
@@ -186,8 +215,9 @@ effect at once all the same, every session remembers the `setAt` of the
 default it last saw (`followDefault()`): a new one drops the session's cache,
 never its pin. Removing the default leaves each session where it is.
 
-Otherwise the call is refused with the list of windows and the ways to pick
-one — when two windows are debugging, reading memory from the wrong board
+Otherwise the call — except for the ones above, which any window can
+answer, and `get_session_status` — is refused with the list of windows and
+the ways to pick one — when two windows are debugging, reading memory from the wrong board
 would look exactly like a firmware bug, so the router never guesses. The
 refusal is `AMBIGUOUS_WINDOW`, and its `data.candidates` lists every
 registered window (`pid`, `name`, `workspaceFolders`, `hasActiveSession`,
@@ -203,6 +233,54 @@ reply of `select_debug_window` says when the pin overrides a default. Its
 lines (`describeWindow()`) also name the calls busy in a window, with their
 age and whether they are past their fence, and an event-loop lag above 1 s:
 `pid=4711 | … | router | busy: cmsis_action 240 s | event-loop lag 4.2 s`.
+
+## GDB ports
+
+Routing keeps each call in its own window, but GDB servers share the
+machine's ports, and CMSIS Solution gives its pyOCD, J-Link and FVP set-ups
+the same one, 3333. A live test showed what follows. Window A's CMSIS Run task (pyOCD) listened on
+127.0.0.1:3333; an FVP launch in window B, whose container Docker publishes
+on `*:3333`, connected GDB to pyOCD before the model was up, halted A's
+board, and the launch still read as a success with an empty stack. And the
+FVP shim's `docker rm -f` of the container on its port ended a session of
+another window. Neither window could tell, since a debug session in one
+extension host is invisible to the others.
+
+So every window publishes the ports it uses, and a launch looks first:
+
+- **Publishing.** `WindowCoordinator` lists, as `GdbPortClaim`s in its
+  entry's `gdbPorts`, the port of each live CMSIS Debugger session
+  (`target.port`, or for a launch the port its GDB server's parameters set,
+  such as the FVP's `GDBServer.port`) and of each live CMSIS Run task (the
+  port its command line sets, else for pyOCD's `gdbserver` the ports of the
+  cbuild-run file it reads, else the server's default) — with the
+  configuration or task name and the server (`windowGdbPorts()` in
+  `src/core/gdbServerPorts.ts`). It looks again when a session or a task
+  starts or ends, and on the heartbeat, and republishes only a change. The
+  field is optional: older windows write none and ignore it, and readers
+  take it through `gdbPortClaimsOf()`, which drops what it does not know.
+  `describeWindow()` names the ports in the window listing.
+- **Checking.** Before `cmsis_action load_and_debug` (for each launch
+  configuration that fixes a port), `run` and `load_and_run` (for the ports
+  of the CMSIS Run task in `tasks.json`), and `start_debugging` of a launch
+  configuration with a fixed port, the handler asks
+  `HandlerHost.gdbPortHolder()`: the other windows' claims first, which the
+  coordinator hands its `DebuggingHandler` from the registry; else a bind
+  test (`portInUse()` in `src/core/gdbPortGuard.ts`) on 127.0.0.1, ::1 and
+  the wildcard, each closed at once. A claimed or taken port refuses the
+  start with `PROBE_BUSY` (`gdbPortRefusal()`): the port, the window and
+  what holds it there, or that another program listens, and the way out —
+  stop it there, or another port.
+- **Never a connection.** A GDB server takes any connection as a client,
+  and pyOCD halts its target for one, so the check binds, never connects.
+  The binds run one after the other: on Linux our own open loopback probe
+  would make the wildcard bind fail. On macOS a bind notices only a
+  listener on the same address, which is why all three are tried: pyOCD
+  listens on 127.0.0.1, Docker on the wildcard.
+- **Not checked.** `attach` connects to a server that is meant to listen.
+  A listener that is no window's — a GDB server started by hand, or a model
+  an earlier session left behind — is refused as "another program": the
+  check cannot tell which of them it is, only that GDB would reach it.
 
 ## Forwarding
 
@@ -283,18 +361,24 @@ from both ends (#14):
 - **The worker's fence.** `ControlServer.dispatch()` races every op
   against a timer of the budget minus 5 s, at least 1 s
   (`workerFenceMs()`). When it fires, the router is answered
-  `WORKER_TIMEOUT` — the tool, the window, and that it still runs there,
-  with the hint that a picker or dialog may wait for the user — and the
-  window journals a warning with that code. Nothing is cancelled: no API
-  withdraws a DAP request, a task or a picker. The op stays in the busy
-  table (`BusyTable`) until its promise settles; only then does the op hook
-  hear its end, and its late result is logged and dropped. A router that
-  gives up and closes the request is logged too.
+  `WORKER_TIMEOUT` — the tool, the window, and that it still runs there —
+  and the window journals a warning with that code. The hint depends on
+  what the op can wait for: a picker or dialog only for the ops that can
+  open one (`USER_WAIT_OPS` in `src/core/opTable.ts`: `start_debugging`,
+  `restart_debugging`, `cmsis_action`), the debug adapter or GDB for the
+  other debugging ops, the op's own work for the rest. Nothing is
+  cancelled: no API withdraws a DAP request, a task or a picker. The op
+  stays in the busy table (`BusyTable`) until its promise settles; only
+  then does the op hook hear its end, and its late result is logged and
+  dropped. A router that gives up and closes the request is logged too.
 - **What the user sees.** The op hook's `fenced` phase turns the window's
-  status-bar item to the warning background while the call runs on, and
-  the coordinator shows a warning, at most one per tool in ten minutes
-  (`NoticeGate`), through `notifyWarning`, which journals it: often the
-  user is the only one who can close the picker or dialog.
+  status-bar item to the warning background while the call runs on. For an
+  op that can wait for a picker or dialog, the coordinator also shows a
+  warning, at most one per tool in ten minutes (`NoticeGate`), through
+  `notifyWarning`, which journals it: the user is the only one who can
+  close the picker or dialog. Any other op gets no warning, since the user
+  cannot answer a debug adapter that is slow; the fence's journal record
+  stays.
 - **`health`.** An internal op (`INTERNAL_OPS` in `src/core/opTable.ts`):
   no tool, answered by the control server itself at once, never queued
   behind an op, never journaled or shown in the status bar. It answers the
@@ -447,7 +531,9 @@ releases the window's serial ports, giving that step at most two seconds.
 ## Tests
 
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
-  round trip; typed outcomes — a worker error with its code and the target
+  round trip; the breakpoint ops of a pinned session; `serial_list_ports` and `get_session_status` on a tie (the
+  router's own window; the status across idle and debugging windows, a
+  window that does not answer); typed outcomes — a worker error with its code and the target
   kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the
   gate — wrong, doubled and non-ASCII tokens, `Origin`, a foreign `Host`; the
   default target, the `window` argument, the candidates' `isDefault` and
@@ -468,13 +554,21 @@ releases the window's serial ports, giving that step at most two seconds.
   matching; the directory name, modes, and refused directories; the default
   target file and how its window is found again; a stale router entry
   skipped but kept, a stale worker entry pruned, the heartbeat's patch, and
-  the busy calls and lag in `describeWindow()`
+  the busy calls, lag and GDB ports in `describeWindow()`
+- `src/test/gdbServerPorts.test.ts`, `src/test/gdbPortGuard.test.ts`: the
+  GDB port of a configuration, a session and a CMSIS Run, the cbuild-run
+  file's ports, the claims a window publishes and what readers admit; the
+  bind test against servers on 127.0.0.1 and the wildcard without a client,
+  the holder, the refusal texts
 - `src/test/windowStatus.test.ts`: the item's text and tooltip in every state,
   the Select Target Window entries, and a tool name for every op
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'
   `mode` option and the loopback checks
 - `src/test/windowCoordinator.test.ts`: the serial teardown on dispose; the
-  role and version the window publishes; the warning about a router that
+  role and version the window publishes; the debug session it publishes — a
+  session that ends while still focused, the one that remains of two, a
+  change of focus; the GDB ports it publishes, again on a change, and the
+  other windows' ports it gives its handler; the warning about a router that
   stopped running, once per episode, none for a healthy router, and by
   port for a router of 2.5.0 (injected notifier and clock)
 - `src/test/opTable.test.ts`: the op table and `targetHintOf()`

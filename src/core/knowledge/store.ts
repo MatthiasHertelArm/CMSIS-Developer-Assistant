@@ -245,6 +245,8 @@ export interface KnowledgeReader {
      * (`hard fault` finds `HardFault`).
      */
     howToCoverage(words: readonly string[]): Map<string, number>;
+    /** Knowledge unit ids that start with `prefix`, in id order, at most `limit`. */
+    unitIdsWithPrefix(prefix: string, limit: number): string[];
     exactSymptoms(lines: readonly string[]): string[];
     exactSymptomLines(lines: readonly string[]): Map<string, number>;
     appliesTo(id: string): string[];
@@ -407,6 +409,12 @@ export class KnowledgeIndex implements KnowledgeReader {
             }
         }
         return count;
+    }
+
+    /** Knowledge unit ids that start with `prefix`, in id order, at most `limit`: an agent that names a unit by the start of its id. */
+    unitIdsWithPrefix(prefix: string, limit: number): string[] {
+        return this.db.prepare("SELECT id FROM nodes WHERE kind = 'knowledge' AND id LIKE ? ESCAPE '\\' ORDER BY id LIMIT ?")
+            .all(`${prefix.replace(/[\\%_]/g, '\\$&')}%`, limit).map((row) => text(row.id));
     }
 
     /** Troubleshooting units whose symptom pattern matches one of the lines, in the order of the first line each matches. */
@@ -661,6 +669,10 @@ class MemberView implements KnowledgeReader {
             }
         }
         return count;
+    }
+
+    unitIdsWithPrefix(prefix: string, limit: number): string[] {
+        return [...new Set(this.each((index) => index.unitIdsWithPrefix(prefix, limit)))].sort().slice(0, limit);
     }
 
     exactSymptoms(lines: readonly string[]): string[] {

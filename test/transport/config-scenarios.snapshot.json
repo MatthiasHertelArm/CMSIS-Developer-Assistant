@@ -304,7 +304,7 @@
     },
     {
       "id": "agents/roster-darwin",
-      "about": "configure all eight on darwin, no files yet; the skills go to the personal directories",
+      "about": "configure all nine on darwin, no files yet; the skills go to the personal directories",
       "events": [
         {
           "ev": "createQuickPick"
@@ -355,6 +355,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -376,6 +382,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -454,6 +461,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -557,13 +577,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -588,6 +615,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -645,6 +673,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -666,6 +700,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -744,6 +779,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -847,13 +895,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -880,7 +935,8 @@
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
     {
@@ -935,6 +991,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -956,6 +1018,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1034,6 +1097,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -1137,13 +1213,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -1168,6 +1251,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/AppData/Roaming/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -1225,6 +1309,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -1246,6 +1336,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1324,6 +1415,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -1427,13 +1531,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -1458,6 +1569,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "xdg/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "xdg/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "xdg/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -1515,6 +1627,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -1536,6 +1654,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1614,6 +1733,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -1717,13 +1849,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -1750,7 +1889,8 @@
         "home/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
     {
@@ -1805,6 +1945,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -1826,6 +1972,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1904,6 +2051,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -2007,13 +2167,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -2040,12 +2207,13 @@
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
     {
       "id": "agents/roster-env-overrides",
-      "about": "CODEX_HOME / COPILOT_HOME honoured, CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME not (darwin)",
+      "about": "CODEX_HOME / COPILOT_HOME / KIMI_CODE_HOME honoured, CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME not (darwin)",
       "events": [
         {
           "ev": "createQuickPick"
@@ -2096,6 +2264,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -2117,6 +2291,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -2195,6 +2370,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/kimi-home/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -2301,13 +2489,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "<w>/kimi-home/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "<w>/claude-config/CLAUDE.md",
             "<w>/codex-home/AGENTS.md",
             "<w>/copilot-home/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "<w>/kimi-home/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -2336,7 +2531,8 @@
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "kimi-home/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
     {
@@ -2392,6 +2588,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -2413,6 +2615,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -2491,6 +2694,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -2594,13 +2810,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -2625,6 +2848,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/AppData/Roaming/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -2682,6 +2906,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -2703,6 +2933,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -2781,6 +3012,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -2884,13 +3128,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -2915,6 +3166,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"a\": {\n      \"type\": \"http\",\n      \"url\": \"http://a/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"z\": {}\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"other\": {},\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"note\": \"servers were null\"\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"linear\": {\n      \"url\": \"https://mcp.linear.app/mcp\"\n    },\n    \"fs\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"fs-mcp\"\n      ],\n      \"toolTimeoutMs\": 5000\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"fs\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"@modelcontextprotocol/server-filesystem\",\n        \"/data\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  },\n  \"globalShortcut\": \"Ctrl+Space\"\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"other-server\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4000/mcp\",\n      \"disabled\": true\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"unrelated\": {\n    \"keep\": [\n      1,\n      2,\n      3\n    ]\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"foo\": 1,\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -2973,6 +3225,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -2994,6 +3252,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -3072,6 +3331,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -3175,13 +3447,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -3206,6 +3485,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"sse\",\n      \"url\": \"http://localhost:3001/sse\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"transport\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"autoApprove\": [\n        \"read_memory\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 60,\n      \"type\": \"sse\",\n      \"url\": \"http://localhost:3001/sse\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -3263,6 +3543,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -3284,6 +3570,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -3362,6 +3649,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -3465,13 +3765,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -3496,6 +3803,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -3554,6 +3862,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -3575,6 +3889,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -3617,6 +3932,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -3711,13 +4039,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -3742,6 +4077,7 @@
         "home/.copilot/mcp-config.json": "<unchanged seed>",
         "home/.cursor/mcp.json": "<unchanged seed>",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": []\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "<unchanged seed>",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "<unchanged seed>",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
@@ -3800,6 +4136,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -3821,6 +4163,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -3885,6 +4228,19 @@
         {
           "ev": "error",
           "message": "The CMSIS Developer Assistant MCP server could not be added to Codex: Error: ENOTDIR: not a directory, open '<w>/home/.codex/config.toml.<pid>.<rand>.tmp'"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
         },
         {
           "ev": "write",
@@ -3984,13 +4340,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -4015,6 +4378,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini": "<unchanged seed>",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -4070,6 +4434,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -4238,6 +4608,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -4447,6 +4823,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -4468,6 +4850,7 @@
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
+            "$(add) Set up Kimi Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -4546,6 +4929,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Codex.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
           "items": [
             "View File"
           ],
@@ -4649,13 +5045,20 @@
               "description": "Antigravity",
               "detail": "New file.",
               "picked": true
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
             }
           ],
           "selected": [
             "~/.claude/CLAUDE.md",
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
-            "~/.gemini/AGENTS.md"
+            "~/.gemini/AGENTS.md",
+            "~/.kimi-code/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -4677,6 +5080,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:4555/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}"
@@ -4731,6 +5135,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -4895,6 +5305,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -5053,6 +5469,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -5217,6 +5639,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -5361,6 +5789,11 @@
         },
         {
           "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "write",
           "path": "<w>/home/.claude.json",
           "atomic": true
         },
@@ -5371,7 +5804,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 8 agent configuration(s)."
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 9 agent configuration(s)."
         }
       ],
       "globalState": {},
@@ -5381,6 +5814,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"transport\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"read_memory\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -5416,6 +5850,11 @@
         },
         {
           "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "write",
           "path": "<w>/home/.claude.json",
           "atomic": true
         },
@@ -5436,6 +5875,7 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
@@ -5675,6 +6115,11 @@
         },
         {
           "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "write",
           "path": "<w>/home/.claude.json",
           "atomic": true
         },
@@ -5695,9 +6140,66 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:4555/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-kimi-adds-tool-timeout",
+      "about": "a hand-written Kimi Code entry without toolTimeoutMs gets it and keeps its other fields; reported",
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 1 agent configuration(s)."
+        }
+      ],
+      "globalState": {},
+      "files": {
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"transport\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"headers\": {\n        \"a\": \"b\"\n      },\n      \"toolTimeoutMs\": 630000\n    },\n    \"other\": {\n      \"url\": \"http://other/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-kimi-own-tool-timeout",
+      "about": "a toolTimeoutMs the user set stays; nothing is written",
+      "events": [],
+      "globalState": {},
+      "files": {
+        "home/.kimi-code/mcp.json": "<unchanged seed>"
+      }
+    },
+    {
+      "id": "agents/migrate-kimi-sse",
+      "about": "a Kimi Code entry on transport \"sse\" is replaced by the current shape",
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 1 agent configuration(s)."
+        }
+      ],
+      "globalState": {},
+      "files": {
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-kimi-odd-entry",
+      "about": "a non-object entry under our key is left alone",
+      "events": [],
+      "globalState": {},
+      "files": {
+        "home/.kimi-code/mcp.json": "<unchanged seed>"
       }
     },
     {
@@ -5988,6 +6490,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -6180,6 +6688,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -6263,6 +6777,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -6374,6 +6894,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -6573,6 +7099,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -6751,6 +7283,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -6850,6 +7388,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -7135,6 +7679,262 @@
       }
     },
     {
+      "id": "agents/rules-kimi-code",
+      "about": "Kimi Code: its user AGENTS.md under KIMI_CODE_HOME is preselected, the workspace AGENTS.md is offered unchecked",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Kimi Code"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/kimi-home/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills",
+            "<w>/wsA/.agents/skills",
+            "<w>/wsA/.claude/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+        },
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "<w>/kimi-home/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "kind": "separator",
+              "label": "Workspace folder wsA"
+            },
+            {
+              "label": "wsA/AGENTS.md",
+              "description": "Kimi Code, VS Code Copilot Chat",
+              "detail": "New file.",
+              "picked": false
+            }
+          ],
+          "selected": [
+            "<w>/kimi-home/AGENTS.md"
+          ],
+          "action": "accept",
+          "chosen": [
+            "<w>/kimi-home/AGENTS.md"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "registerTextDocumentContentProvider",
+          "scheme": "cmsis-developer-assistant-rules"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "vscode.diff",
+          "args": [
+            "<uri cmsis-developer-assistant-rules:/1/empty/AGENTS.md>",
+            "<uri cmsis-developer-assistant-rules:/1/AGENTS.md>",
+            "AGENTS.md: now ↔ with the tool rules",
+            {
+              "preview": true
+            }
+          ],
+          "shows": [
+            "",
+            "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "Create <w>/kimi-home/AGENTS.md with the CMSIS Developer Assistant tool rules?",
+          "options": {
+            "modal": true,
+            "detail": "Read by Kimi Code. The diff editor shows the change; nothing is written unless you choose Write."
+          },
+          "items": [
+            "Write"
+          ],
+          "answer": "Write"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/kimi-home/AGENTS.md",
+          "atomic": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.agentRules.files",
+          "value": [
+            {
+              "file": "<w>/kimi-home/AGENTS.md",
+              "scope": "user",
+              "form": "block",
+              "agents": [
+                "kimi-code"
+              ],
+              "created": true,
+              "createdDirs": []
+            }
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: the tool rules were written to 1 file(s)."
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v5",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.agentRules.files": [
+          {
+            "file": "<w>/kimi-home/AGENTS.md",
+            "scope": "user",
+            "form": "block",
+            "agents": [
+              "kimi-code"
+            ],
+            "created": true,
+            "createdDirs": []
+          }
+        ],
+        "cmsis-developer-assistant.popupShown.v5": true
+      },
+      "files": {
+        "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
+        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
+        "kimi-home/AGENTS.md": "<!-- cmsis-developer-assistant:rules:begin -->\n<!-- Managed by the CMSIS Developer Assistant extension; edits between these markers are replaced. To take the rules out, uncheck this file in \"CMSIS Developer Assistant: Configure Agent\", or delete the block with its markers. -->\n## CMSIS Developer Assistant tool rules\n\n- Fixture rule one.\n- Fixture rule two.\n<!-- cmsis-developer-assistant:rules:end -->\n",
+        "kimi-home/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
+      },
+      "emptyDirs": [
+        "wsA"
+      ]
+    },
+    {
       "id": "agents/rules-preview-declined",
       "about": "the diff is shown and the dialog dismissed: no rule file is written",
       "events": [
@@ -7184,6 +7984,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -7381,6 +8187,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -7678,6 +8490,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -8259,6 +9077,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -8573,6 +9397,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -8703,6 +9533,12 @@
               "label": "$(add) Set up Codex",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
               "picked": false
             },
             {
@@ -11219,7 +12055,19 @@
         },
         {
           "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
           "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
         },
         {
           "ev": "getExtension",
@@ -11505,6 +12353,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -11718,6 +12572,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -11909,7 +12769,10 @@
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
@@ -12210,7 +13073,19 @@
         },
         {
           "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
           "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
         },
         {
           "ev": "createStatusBarItem",
@@ -12424,7 +13299,10 @@
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
@@ -13368,7 +14246,19 @@
         },
         {
           "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
           "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
         },
         {
           "ev": "getExtension",
@@ -13585,7 +14475,10 @@
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
             "event:workspace.onDidChangeWorkspaceFolders",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
             "mcpServerDefinitionProvider:cmsis-developer-assistant",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",

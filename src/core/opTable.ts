@@ -215,6 +215,33 @@ const SLOW_OPS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Ops that can wait for the user in VS Code (#14): `start_debugging` (the
+ * launch.json picker) and `restart_debugging`, both also through a
+ * preLaunchTask's prompt or VS Code's "Errors exist after running
+ * preLaunchTask" dialog, and `cmsis_action` (the CMSIS Solution extension's
+ * pickers and save prompt, the licence dialog of `install_pack`). Only for
+ * these can a call that outlives its fence be waiting for a picker or
+ * dialog, and only for these is the user told; every other op waits for the
+ * debug adapter, GDB, the probe or its own work, which the user cannot
+ * answer.
+ */
+const USER_WAIT_OPS: ReadonlySet<string> = new Set([
+    'handleStartDebugging',
+    'handleRestart',
+    'handleCmsisCommand',
+]);
+
+/** True for an op that can wait for a picker or dialog in VS Code (`USER_WAIT_OPS`). */
+export function mayWaitForUser(op: string): boolean {
+    return USER_WAIT_OPS.has(op);
+}
+
+/** True for an op the debugging handler serves (`DEBUG_OPS`). */
+export function isDebugOp(op: string): op is DebugOpName {
+    return DEBUG_OP_SET.has(op);
+}
+
+/**
  * The timings of the control channel (#14). Every figure can be injected, so
  * that the tests of the fences and the watchdog run in milliseconds.
  */

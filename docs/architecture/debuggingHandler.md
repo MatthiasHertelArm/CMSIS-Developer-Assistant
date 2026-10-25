@@ -65,7 +65,11 @@ halted target is an answer, since there is
 nothing to do; it is neither fenced nor wrapped, so its refusals keep their
 own text and code (`PROBE_WEDGED` for an unresponsive probe, built by
 `stoppedTargetRefusal()` like every gate's, `NO_SESSION` while the session
-starts or after it ended). `get_session_status` and
+starts or after it ended). On an unresponsive session it is the one call
+that is not refused at once: a threads probe that timed out can be a GDB
+busy with a running target, which a pause brings back, so
+`pauseUnresponsive()` sends one pause with a 5 s deadline and answers
+`PROBE_WEDGED` only when that does not stop the target. `get_session_status` and
 `check_target_connection` never reject for the state they report:
 `check_target_connection` answers a hardware timeout as text.
 
@@ -94,11 +98,16 @@ the DAP `stopped` event of the session, *before* the request goes out, then
 waits for that event, the end of the session, or the limit: the call's
 `timeoutMs` or the configured `timeoutInSeconds`, capped at 60 s either way.
 VS Code's stack-item events never end a wait, because they also fire when
-the item is cleared on resume.
+the item is cleared on resume. The state is read only after a stop: a
+target whose wait ran out may still run, and a `stackTrace` to a running
+target holds the call for the whole DAP request deadline, which made every
+continue that ended `running` 10 s slower and pushed short ones past the
+window's fence.
 
 What a wait that runs out means depends on the request (`MotionSpec.onWaitOut`).
 A step should have stopped, so `locateRunawayTarget()` pauses the target and
-reports where it is — PC, LR, function and source line — so the agent learns
+reports where it is — PC, LR, function and source line, then the compact
+state read after that stop, behind the overrun line — so the agent learns
 whether the firmware sits in a loop, an ISR or a fault handler before it sets
 more breakpoints; that answer has status `timeout`, as has a pause that sees
 no stop in time. A continue is meant to run: the target is left running, and
@@ -112,6 +121,36 @@ status `timeout`. A session that ends meanwhile rejects with `NO_SESSION`,
 in a step or continue as in `pause_execution` and `wait_for_stop`, with the
 calls that confirm it and start a new session as the hint.
 
+An Arm FVP's GDB server ignores GDB's interrupt while the model runs; only a
+breakpoint stops it. `isFvpSession()` (`src/core/gdbServerPorts.ts`) tells
+such a session from its configuration, and the replies that would advise a
+pause say so instead (`FVP_*` in `src/handler/sessionText.ts`): a pause that
+sees no stop, a continue that keeps running, a breakpoint change the model
+did not stop for (`TARGET_RUNNING`), a stop the adapter holds while it waits
+for a halt (stop again), a session that came up through `cmsis_action`
+(set breakpoints first), the `running` refusal of the gates and the
+`running` hint of `get_session_status`, and a `wait_for_stop` that runs
+out. A step that does not stop sends no recovery pause there
+(`locateRunawayTarget()` is skipped), since the model would ignore it too.
+
+Before it reads anything after a stop, the handler waits for the frame VS
+Code selects for it (`frameSelected()`), at most 2 s and never past the
+call's own limit: the state, registers and variables go through VS Code's
+focused frame, and VS Code selects one only after it has fetched the stop's
+threads and stack, which over a probe with an RTOS comes after a read that
+starts with the `stopped` event. The focus watch is taken before the
+request, so a frame VS Code still holds from before it does not count. When
+the wait runs out, the answer says so in one line instead of showing an
+empty state. `wait_for_stop` waits the same way after a stop event, not for
+a target that was stopped before the call. A session that comes up during
+the call — `start_debugging`, and the session phases of `cmsis_action`
+`load_and_debug` and `attach` — is read the same way (`stateAfterStart()`
+in `src/handler/cmsisAction.ts`): the watch (`watchStartFocus()`) is taken
+before the start, so a frame of an earlier session does not count; once
+the session is live and stopped it waits for a frame of that session,
+bounded the same way by what is left of the call, and a target that runs
+is read at once. `restart_debugging` reads no state, so it does not wait.
+
 After a stop the handler takes a `DebugState` from the executor and returns
 its compact form. `compactState()` includes the breakpoint list only when it
 differs from the list the agent saw last; `fullState()`, used after a session
@@ -122,7 +161,9 @@ start or a `cmsis_action` attach, shows everything. See
 
 `handleStartDebugging()` refuses while a session exists. With a
 `configurationName` it starts that `launch.json` entry by name through the
-executor. Without one it lets the user choose through
+executor; a CMSIS Debugger launch whose GDB server has a fixed local port is
+refused first while another window or another program holds that port
+(`refuseHeldGdbPort()`, see [GDB ports](windowRouting.md#gdb-ports)). Without one it lets the user choose through
 `promptForConfiguration()`, and the entry `Default Configuration` gets a
 configuration synthesized from the source file (see
 [debugConfigurationManager.md](debugConfigurationManager.md)). The picker
@@ -139,9 +180,12 @@ problem records (see [The problem journal](#the-problem-journal)).
 `handleStopDebugging()` waits at most 10 s for VS Code to end the session
 (`settlesWithin()`, #14): a stop that has not settled by then, while the
 session is still listed, answers with status `timeout` and points to
-`get_session_status`. Its success reply adds a
-short root-cause check: a reminder to explain the bug, not only
-where it showed, before the investigation is closed. `handleRestart()`
+`get_session_status`. The first successful stop of each MCP session
+adds a root-cause check (`withRootCauseCheck()`): a reminder to explain
+the bug, not only where it showed, before the investigation is closed.
+Only once, since a stop also ends sessions in the middle of an
+investigation; its way to run the program again is `cmsis_action
+load_and_debug` on a CMSIS Debugger session, `start_debugging` elsewhere. `handleRestart()`
 pauses a running CMSIS Debugger target first, so the adapter lets go of a
 halted core, and then has the executor stop the session and start its
 launch configuration again; the answer says so, names the configuration's
@@ -159,6 +203,20 @@ with the adapter's reason), waiting at most 2 s for the adapter.
 evaluated by GDB at every hit, which halts the core each time; the session
 stops only when it holds. The deprecated `lineContent` argument still works
 and sets a breakpoint on every line that contains the text.
+
+VS Code adds a breakpoint the adapter announces as new (a `breakpoint`
+event with reason `new` and a source line: a GDB `break` in the launch
+configuration's `initCommands`, or typed in the Debug Console) to its own
+model without telling extensions: `vscode.debug.breakpoints` lists it only
+after a window reload, yet VS Code saves it and sends it to the next
+session. A live test listed "The breakpoint list is empty." while the
+workspace held five such breakpoints and the next session stopped at one.
+The session tracker therefore keeps the breakpoints it saw announced, for
+the window, and forgets one when its adapter announces its removal
+(`adoptedBreakpointsOf()`); `list_breakpoints` lists those the API does not
+show apart, saying that only VS Code's Breakpoints view removes them, and
+`clear_all_breakpoints` says they stay (`unlistedAdopted()`). A removal in
+that view is not seen, so the list may keep one until the window reloads.
 
 On the CMSIS Debugger a logpoint is a GDB `dprintf` (#56), because
 cdt-gdb-adapter prints a VS Code logpoint's message without filling in the
@@ -183,8 +241,8 @@ applies the change and resumes it, also when the change fails
 (`withTargetHalted()`, #13); the answer says for how long the target was
 paused. The change is refused while the session initialises (`NO_SESSION`),
 when the probe hangs (`TIMEOUT`) or when the pause does not stop the target
-within 5 s (`TIMEOUT`). Other adapters take breakpoint changes while their
-target runs.
+within 5 s (`TIMEOUT`; `TARGET_RUNNING` on an Arm FVP, which never stops for
+it). Other adapters take breakpoint changes while their target runs.
 
 ## Reading the target
 
@@ -214,16 +272,30 @@ target runs.
   GDB commands (`-exec …` or `>…`) are never redacted: real SVDs name
   registers `KEY` or `UNLOCK`. On the CMSIS Debugger the executor sends such
   a command in the adapter's `>` prefix and returns the text GDB printed.
+- `read_memory` takes a hex address or a C expression for one, as the
+  guide itself writes it (`&adc_buffer`): anything that is not hex digits
+  is evaluated as `(unsigned long)(expression)` in the focused frame
+  (`addressOfExpression()`), and the dump names both. Before, the executor
+  put `0x` in front of the expression and the read failed inside the
+  adapter (a Kimi Code session hit it). An expression GDB cannot place is
+  refused with `INVALID_ARGUMENT` and GDB's words.
 - The memory dump, the core-register table and the cycle-counter text come
   from `src/handler/targetText.ts`. A dump labels its rows from the first
   byte the read returned and, when part of the range could not be read,
-  says how much was read and which part was not.
+  says how much was read and which part was not. A register the GDB
+  server's target description lacks comes back from GDB as `void` (the Arm
+  FVP has no msp, psp, control or masks); the table says it is not
+  reported, and in Handler mode it shows the SP as the MSP, which
+  `diagnose_fault` then uses for a frame on the MSP (`mspFromHandlerSp()`).
 - `diagnose_fault` combines the decoded fault registers, the stacked
   exception frame chosen by `EXC_RETURN`, the top of the call stack and the
   SVD's view of the faulting address into one report with ranked hypotheses
-  (`src/core/faultTriage.ts`). With TrustZone, `EXC_RETURN` can put the frame
-  on the stack of the Security state the core is not in, and the integrity
-  signature and R4–R11 below the stacked R0 (`selectExceptionFrame()`). The
+  (`src/core/faultTriage.ts`). Clear fault status while a fault handler is
+  active (IPSR 3–7) is not reported as "not in a fault": the handler may
+  have cleared it, or the debug server may not report it. With TrustZone,
+  `EXC_RETURN` can put the frame on the stack of the Security state the
+  core is not in, and the integrity signature and R4–R11 below the stacked
+  R0 (`selectExceptionFrame()`). The
   other state's banked stack pointers are read only for such a frame
   (`bankedStackRegisters()`); a server that does not report them gets a note,
   never a frame read from the current state's MSP or PSP. Each read after the
@@ -232,7 +304,10 @@ target runs.
   `get_fault_info` and `diagnose_fault` answer the executor's `PROBE_WEDGED`
   itself rather than a diagnosis built on registers that were not read (#3).
   Both read DHCSR once more (`probeDebugPort()`) and add a lockup note when
-  `S_LOCKUP` is set.
+  `S_LOCKUP` is set. `read_core_registers` reads DHCSR only when a register
+  could not be read, and then says whether the core answers; the stopped hint of
+  `get_session_status` names a DHCSR read that got no answer, which the
+  executor's status carries.
 - `lookup_peripheral` and `lookup_register` answer from the device SVD
   (`src/core/svdParser.ts`, `src/core/svdLookup.ts`) without a session.
   During one, they and `diagnose_fault` take the SVD of the session the
@@ -275,7 +350,14 @@ window's CMSIS job tracker (next section):
   connecting when the wait runs out, or one without threads yet, is
   answered with status `running`; `TASK_FAILED` is kept for a session that
   is gone, and one that ends before it came up ends the wait at once, where
-  a start or a restart waits on (`awaitLiveSession()`).
+  a start or a restart waits on (`awaitLiveSession()`). The wait polls at
+  growing gaps and can miss a session that starts and fails between two
+  polls, so a wait that saw none reads the journal from the call's start:
+  an error of the debug adapter or the GDB server in this call — while a
+  session is still there, only a refused launch or attach request — makes
+  it `TASK_FAILED`, with those records listed (`startFailed()`). Without
+  one it stays `running`, since a slow multi-core flash may still be on
+  its way.
 - `attach` connects to a GDB server it does not start, so before the
   command it checks only what the window knows
   (`refuseAttachToBareModel()`, `src/core/gdbServerPorts.ts`): while the
@@ -314,6 +396,22 @@ window's CMSIS job tracker (next section):
   more look, and answers with the messages csolution recorded there
   (`idxMessages()`). A failed build whose errors ask for `--update-rte`
   names `refresh` in its hint.
+- `activate_environment` issues `environment-manager.reactivate`, the Arm
+  Tools Environment Manager's Reactivate Environment, which no tool could
+  issue before: an agent could only ask the user, and could not tell
+  afterwards whether it had happened. It resolves `vcpkg-configuration.json`
+  again and installs what is missing; CMSIS Solution then rewrites
+  `.cmsis/tools-environment.yml`, the record of the tools its tasks run
+  with (`environmentFiles()` finds both). The command takes the manifest's
+  Uri, as the Explorer's context menu hands it, and fails without one. The call is refused when the
+  command is not registered (the extension is missing) or the solution has
+  no manifest, and otherwise waits as `refresh` does, for the record to
+  change and stay unchanged one more look, then lists the tools it names
+  (`readToolsEnvironment()`); a resolution that outlasts the wait answers
+  `running`. The task actions compare the two files first
+  (`staleEnvironmentNote()`): a manifest newer than the record, or a record
+  that is missing, puts one sentence before the result, so that a build
+  that ran with the tools of an earlier activation says so.
 
 - `open_solution` needs no active solution either. It takes the path of a
   csolution or of its folder. A folder this window has open, by its path
@@ -389,7 +487,15 @@ Before any command: a debug session refuses `load_and_debug` and `attach`,
 the probe guard refuses what another owner blocks (`PROBE_BUSY`), a window
 without an active solution is refused, an unknown target or action is
 `INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does not
-have (`load` on an Arm Debugger adapter, for example).
+have (`load` on an Arm Debugger adapter, for example). The probe guard
+knows this window only; a GDB port is shared by the machine. So
+`load_and_debug`, `run` and `load_and_run` then ask who holds the GDB ports
+they would start a server on — each launch configuration's fixed port, the
+CMSIS Run task's ports (`refuseHeldLaunchPorts()`, `refuseHeldRunPorts()`)
+— and refuse with `PROBE_BUSY` naming the other window and what holds the
+port there, or another program, before the command goes out. GDB would
+otherwise connect to that server and halt its target, while the session
+here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)).
 
 A `tasks.json` without any CMSIS task is a hand-off to the CMSIS Solution
 extension rather than a dead end: when the active target's cbuild-run.yml
@@ -496,7 +602,11 @@ draft by id, case-insensitively, with near ids when none matches.
 regular expressions (the API's name filter is case-sensitive and its vendor
 filter exact); a name is tried against the entry's name and its id, and
 also as text without separators, so the user's `micro:bit` finds the board
-`microbit-v2` (`matcherOf`). It sorts boards and devices by id, caps the list at `limit`
+`microbit-v2` (`matcherOf`). No filter an agent passes is ignored: `board`
+for boards and `device` for devices, the arguments the other kinds take, are
+patterns for the name as well (`nameMatches()`), since an agent that names
+the device it means and gets the whole catalog of 13 000 devices back has
+nothing to read. It sorts boards and devices by id, caps the list at `limit`
 (20, at most 100) and counts the rest. The pack, devices and cores of an
 entry can cost the web catalog one request each, so they are read for the
 listed entries only, in parallel, and left out with a note when they do not
@@ -518,6 +628,32 @@ reachable is read from the API object's data manager (`dataManager.errors`,
 used when it is there (`catalogErrorsOf()`); without it, examples of which
 none came from the web are answered with a note that says the cause is not
 known.
+
+A pack's own examples (a DFP's `RTX_Blinky`, say) are listed only once the
+pack is installed, and Arm's web catalog may not have them: a tester's
+agent saw only web demos for the XMC4700 Relax Kit and never the DFP's
+Blinky, since the pack was installed afterwards. So the examples of a
+board whose pack — the `pack` of the board entry — is not installed, and
+of which none comes from an installed copy of it, end with a line naming
+the pack and the `cmsis_action install_pack` call (`boardPackMissing()`,
+`data.boardPackNotInstalled`). The module reads no files: the handler
+passes `PackInstalled`, which looks for any version of the pack with its
+PDSC in the pack root CMSIS Solution uses (`packInstalledIn()` in
+`src/core/packInstall.ts`); an answer it cannot give says nothing.
+
+Arm's web catalog keeps one example per pack release that ships it: the
+XMC4700 Relax Kit has `snmp_agent_demo` from Oryx-Embedded Middleware 2.6.6
+and from 2.4.4, same name, same description. The API passes on only id,
+name, description and format of a web example, so the two would be listed
+alike and the agent would have to ask the user for an id. When listed web
+examples share a name, `src/core/webCatalog.ts` asks the catalog itself for
+the one field that tells them apart, the example's origin pack, with the
+same two GraphQL queries CMSIS Solution makes (the board by its CMSIS id,
+then its projects), at most 5 s within the call and only for such a
+listing; the line then reads `web from Oryx-Embedded::Middleware@2.6.6`
+and `data.pack` carries it. When the catalog does not answer, a note says
+that CMSIS Solution does not tell the copies apart. The fetch comes from
+the host (`HandlerHost.webCatalogFetch`), so tests script it.
 
 Programming can make the probe's virtual COM port re-enumerate, which closes
 a serial port the window holds. So `flash` and the programming actions of
@@ -560,8 +696,11 @@ the panel are seen too. It keeps the live CMSIS executions and the jobs:
 - a build, rebuild, clean, load or erase started elsewhere is adopted as a
   job of its own, so that a repeated call attaches to it instead of
   starting another;
-- settled jobs are kept for 10 minutes, in memory only; `get_session_status`
-  shows one line from them and the live tasks.
+- the latest settled job of each action is kept until a newer one of that
+  action settles, since an agent may ask `status` long after a build
+  failed, while it waited for the user; older settled jobs are kept for 10
+  minutes; all in memory only. `get_session_status` shows one line from
+  them and the live tasks.
 
 A call has one deadline (#12): the solution checks and a target switch come
 out of it, and a job still going when it passes is answered with status
@@ -624,6 +763,57 @@ are coming, and `status` waits for them. The pure parts — the readers of the
 two YAML files, the re-run's command line and environment — are in
 `src/core/buildFailure.ts`.
 
+### Why a Load or a launch failed
+
+A failed Load or Erase leaves its reason in a task terminal no tool reads,
+so its hint says where to get it, and that depends on the program the task
+ran. The tracker keeps each task's command words (`commandOf()`), and
+`taskProgram()` in `src/core/programLookup.ts` reads the kind from them:
+pyOCD, J-Link (the J-Link adapter's Load is a shell line that writes a
+command file and calls `JLink.exe` or `JLinkExe`), an FVP model, another
+program, or unknown. `flashFailedHint()` keeps the pyOCD wording, which
+points at `flash` for pyOCD's own lines, for pyOCD and for an unknown
+command; a J-Link task gets J-Link's two connect failures instead, and any
+other program only the request for the terminal's last lines.
+
+A J-Link task that exits non-zero within `FAILED_AT_ONCE_MS` (2 s) most
+likely never ran: the shell did not find the program. Then the program is
+looked up on the PATH the CMSIS tasks run with — the directories of
+`.cmsis/tools-environment.yml`, then the PATH of the setting
+`terminal.integrated.env.<platform>` with its `${env:PATH}` expanded, or VS
+Code's own PATH when the setting has none — honouring `PATHEXT` and case on
+Windows. Missing, the hint says so with the places searched, and names the
+SEGGER installation folder that holds the program when one does; found, it
+asks for the terminal's lines and says J-Link ran.
+
+A launch that loses its session gets the same treatment when the debug
+adapter journaled `GDB_SERVER_NOT_FOUND` during the call: the adapter
+starts the launch configuration's `target.server` with VS Code's own PATH,
+which a terminal setting does not reach, so the server can be on the
+tasks' PATH and still not start. `gdbServerMissingHint()` looks it up on
+both and says which lacks it, replacing the generic lost-launch hint; with
+that record, a load_and_debug whose session never showed is a failure, not
+`running`. The record's own static hint, which knows only the line, still
+rides along with the same fix and pointer. A server found on VS Code's PATH
+points at the launch configuration's `cwd` instead, since Node reports a
+missing working directory with the same `ENOENT`.
+
+These hints carry only what the tool found out — which program is missing
+from which PATH, where it looked, which folder holds it — and one line of
+fix: install the software or put its folder on the system or user PATH,
+then restart VS Code completely. Why there are two PATHs, the default
+folders per platform and what not to do are knowledge, not findings, and
+live in the troubleshooting procedure (`skills/debugger-troubleshooting/`,
+unit `proc-debugger-troubleshooting`), which every such hint names with
+`knowledge_get`. Starting the server with `cmsis_action run` and attaching
+is deliberately not offered: it programs nothing and leaves `load_and_debug`
+broken.
+
+`src/handler/taskProgram.ts` holds this glue: it reads the tools
+environment file and takes the setting, the environment and the file tests
+from the host's `toolEnvironment()`, so tests fake a Windows machine on any
+platform. Nothing is written and nothing is run.
+
 ## The problem journal
 
 What goes wrong in a window shows up in places the agent cannot see: the
@@ -652,7 +842,11 @@ once when errors arrived that the agent has not seen, and
   line is known or, for the server's log, pyOCD's level column says `W`
   (warning) or `E`/`C` (error), so that a server that ends at once leaves
   its reason among the errors a failed `load_and_debug` carries; colour codes
-  are stripped; never the target's `stdout` or GDB's `log` stream. A failed
+  are stripped; never the target's `stdout` or GDB's `log` stream. A line
+  arrives in pieces when the server writes a few characters at a time (an
+  FVP's model output), so the start of a line waits for the output event
+  with its newline, at most 500 ms and 4 096 characters, and the session's
+  end journals what is left. A failed
   response is an error when VS Code sent the request and a warning when a
   tool did, since the tool reports its own outcome; an `evaluate` that a
   view sent on its own (Watch, hover, the CMSIS Debugger's Live Watch) is
@@ -710,11 +904,14 @@ once when errors arrived that the agent has not seen, and
 Everything else the handler needs comes from a `HandlerHost`
 (`src/handler/host.ts`): clock, timers, VS Code's focused frame, the
 window's CMSIS job tracker, its owned serial port, workspace folders, file
-search, where `flash` looks for pyOCD, what `install_pack` asks of VS
+search, where `flash` looks for pyOCD and the hints of a failed J-Link task
+or GDB server start look a program up, what `install_pack` asks of VS
 Code and the CMSIS Solution extension (`packInstall()`), and the CMSIS
 Solution extension behind `cmsis_query` and `create_solution`
 (`solutionExtension()`, its activation state and exports read at each
-use). `get_session_status` adds a line
+use), and who holds a GDB port before a launch (`gdbPortHolder()`: the
+other windows' claims, which the window's coordinator hands the handler's
+constructor, then a bind test). `get_session_status` adds a line
 on the serial port from it (#49): the port held, for whom and how long idle,
 or why it was released, seen from the MCP session that asks. `VSCODE_HOST` looks each of them up in VS Code at the
 moment of the call. Unit tests override `host()` with a scaled clock, so a
@@ -753,15 +950,17 @@ by #56.
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check and the Update Debug Tasks hand-off, jobs, session waits, verified `stop_run` and `stop_build`, `status`, `open_solution`, the dispatch of `install_pack` and `create_solution`, why no solution is active |
 | `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
-| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data |
+| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts`, `src/core/webCatalog.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data; the origin pack of web examples alike, from Arm's web catalog |
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
 | `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
-| `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line |
+| `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line; `flashFailedHint()` by the task's program |
+| `src/core/programLookup.ts`, `src/handler/taskProgram.ts` | The kind of a task's program, the PATH of the CMSIS tasks and VS Code's, the lookup and the SEGGER folders; `failedTaskProgram()`, `gdbServerMissingHint()` |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
 | `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build or rebuild: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0, and of a clean |
 | `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
 | `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
+| `src/core/gdbServerPorts.ts`, `src/core/gdbPortGuard.ts` | The GDB port of a launch configuration, a session and a CMSIS Run task, the claims a window publishes; who holds a port (the other windows' claims, the bind test) and the `PROBE_BUSY` refusal |
 | `src/handler/flashTool.ts` | `flash`: choice of the cbuild-run file, probe guard, pyOCD lookup |
 | `src/core/flashController.ts` | `resolvePyocd()`, the pyOCD process and its output |
 
@@ -776,6 +975,9 @@ by #56.
   classifier, the job state machine, the guard matrix and the tracker,
   replayed over task sequences derived from CMSIS Solution 1.70.1
   (`src/test/fixtures/cmsisTasks/`)
+- `src/test/programLookup.test.ts`: the kind of a task's program, the
+  PATH of the CMSIS tasks, the lookup on Windows and elsewhere, the SEGGER
+  folders
 - `src/test/buildFailure.test.ts`, `src/test/cmsisBuildDiagnosis.test.ts`:
   the two YAML readers on generated files (`src/test/fixtures/buildinfo/`),
   the re-run's command line and the result block, and the diagnosis over
@@ -792,7 +994,9 @@ by #56.
   Problems panel and the copied text; the adapter tracker's records in
   `src/test/sessionStateTracker.test.ts`
 - `src/test/solutionCatalog.test.ts`: `cmsis_query` and `create_solution`
-  against a stub of CMSIS Solution's API: filters, caps, sources, the web
+  against a stub of CMSIS Solution's API: filters, caps, sources, web
+  examples alike with their origin pack and the lookup behind it against a
+  scripted fetch, the web
   catalog unreachable, the extension missing, inactive or without API
   version 2, unknown ids, the window checks
 - `test/transport/surface-snapshot.js`: every tool's reply without a session

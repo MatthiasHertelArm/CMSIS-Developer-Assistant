@@ -23,9 +23,25 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { SERVER_VERSION } from '../debuggingExecutor';
-import { WindowCoordinator } from '../windowCoordinator';
+import { WindowCoordinator, type DebugSessionEvents } from '../windowCoordinator';
 import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
 import { logger } from '../utils/logger';
+import { createSessionTracker } from '../utils/sessionStateTracker';
+import type { PortClaimingWindow } from '../core/gdbPortGuard';
+import type { GdbPortClaim } from '../core/gdbServerPorts';
+
+/** Poll `registry` until this window's entry lists `expected` as its GDB ports (none: undefined). */
+async function publishedPorts(registry: WorkspaceRegistry, expected: GdbPortClaim[] | undefined): Promise<void> {
+    let seen: unknown;
+    for (let tries = 0; tries < 50; tries++) {
+        seen = registry.list().find((entry) => entry.pid === process.pid)?.gdbPorts;
+        if (JSON.stringify(seen) === JSON.stringify(expected)) {
+            return;
+        }
+        await new Promise((later) => setTimeout(later, 20));
+    }
+    assert.fail(`gdbPorts is ${JSON.stringify(seen)}, not ${JSON.stringify(expected)}`);
+}
 
 suite('WindowCoordinator serial teardown', () => {
     let dir: string;
@@ -189,6 +205,35 @@ suite('WindowCoordinator and the router window (#14)', () => {
         }
     });
 
+    test('the window publishes the GDB ports its sessions and CMSIS Run tasks use, again when they change, and gives its handler the other windows\' ports', async () => {
+        const registry = registryView();
+        const run: GdbPortClaim = { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' };
+        let claims: GdbPortClaim[] = [run];
+        const coordinator = new WindowCoordinator({
+            port: 0, timeoutInSeconds: 1, hardwareTimeouts: {}, registry, serialTeardown: noTeardown,
+            solutionFile: () => undefined,
+            gdbPorts: async () => claims,
+        });
+        const context = { subscriptions: [] as vscode.Disposable[] };
+        try {
+            await coordinator.start(context as unknown as vscode.ExtensionContext);
+            await publishedPorts(registry, [run]);
+            claims = [];
+            coordinator.publish();
+            await publishedPorts(registry, undefined);
+
+            plant('item13', { name: 'item13', gdbPorts: [{ ...run }] });
+            plant('older', { name: 'older' });
+            const others = (coordinator as unknown as { otherWindowPorts(): PortClaimingWindow[] }).otherWindowPorts();
+            assert.deepStrictEqual(others, [{ pid: ROUTER_PID, name: 'item13', claims: [run] }], 'its own entry and a window without ports are left out');
+        } finally {
+            await coordinator.dispose();
+            for (const subscription of context.subscriptions) {
+                subscription.dispose();
+            }
+        }
+    });
+
     test('a stale router entry and a silent port raise one warning per episode', async () => {
         const port = await holdSilently();
         const base = Date.now();
@@ -285,5 +330,130 @@ suite('WindowCoordinator and the router window (#14)', () => {
         await coordinator.pollPromotion();
         assert.deepStrictEqual(shown, [`CMSIS Developer Assistant: the window serving port ${port} has not responded for 70 s, `
             + 'so agents cannot reach any window. Reload or close that window; another window takes over automatically.']);
+    });
+});
+
+/**
+ * The debug session the window publishes: the session tracker's live
+ * sessions decide, not VS Code's focus alone, which still names a session
+ * while its end is announced. The fake events stand for `vscode.debug`; a
+ * session's end reaches the coordinator's listener before the tracker drops
+ * the session, the harder of the two orders.
+ */
+suite('WindowCoordinator and the debug session it publishes', () => {
+    /** VS Code's debug API as the coordinator reads it, with events the test fires. */
+    class FakeDebug implements DebugSessionEvents {
+        activeDebugSession: vscode.DebugSession | undefined;
+        readonly started = new vscode.EventEmitter<vscode.DebugSession>();
+        readonly terminated = new vscode.EventEmitter<vscode.DebugSession>();
+        readonly focused = new vscode.EventEmitter<vscode.DebugSession | undefined>();
+        readonly onDidStartDebugSession = this.started.event;
+        readonly onDidTerminateDebugSession = this.terminated.event;
+        readonly onDidChangeActiveDebugSession = this.focused.event;
+    }
+
+    let dir: string;
+    let trackers: Map<vscode.DebugSession, vscode.DebugAdapterTracker>;
+    let debug: FakeDebug;
+    let registry: WorkspaceRegistry;
+    let coordinator: WindowCoordinator;
+    let context: { subscriptions: vscode.Disposable[] };
+
+    setup(async () => {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-coordinator-'));
+        trackers = new Map();
+        debug = new FakeDebug();
+        registry = new WorkspaceRegistry(process.pid, dir, (pid) => pid === process.pid);
+        coordinator = new WindowCoordinator({
+            port: 0, timeoutInSeconds: 1, hardwareTimeouts: {}, registry, debug,
+            serialTeardown: async () => undefined,
+            solutionFile: () => undefined,
+        });
+        context = { subscriptions: [] };
+        await coordinator.start(context as unknown as vscode.ExtensionContext);
+    });
+    teardown(async () => {
+        await coordinator.dispose();
+        for (const subscription of context.subscriptions) {
+            subscription.dispose();
+        }
+        for (const tracker of trackers.values()) {
+            tracker.onWillStopSession?.();
+        }
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    /** A session the adapter tracker holds live, as VS Code hands it one at the session's start. */
+    function live(name: string): vscode.DebugSession {
+        const session = { id: `coordinator-${name}`, name, type: 'gdbtarget', configuration: { name } } as unknown as vscode.DebugSession;
+        trackers.set(session, createSessionTracker(session));
+        return session;
+    }
+
+    /** VS Code announces the end of `session`, maybe still focused; then the tracker's own end listener drops it. */
+    function end(session: vscode.DebugSession): void {
+        debug.terminated.fire(session);
+        trackers.get(session)?.onWillStopSession?.();
+    }
+
+    /** What this window's registry entry says about its debug session. */
+    function published(): [boolean | undefined, string | undefined] {
+        const own = registry.list().find((entry) => entry.pid === process.pid);
+        return [own?.hasActiveSession, own?.activeConfigurationName];
+    }
+
+    test('a session that ends while VS Code still has it focused is published as ended', () => {
+        const session = live('STLink@pyOCD (launch)');
+        debug.activeDebugSession = session;
+        debug.started.fire(session);
+        assert.deepStrictEqual(published(), [true, 'STLink@pyOCD (launch)']);
+        // VS Code announces the end before it moves the focus.
+        end(session);
+        assert.deepStrictEqual(published(), [false, undefined]);
+    });
+
+    test('of two sessions, the one that remains keeps the flag and gives its name when the other ends', () => {
+        const fvp = live('Arm-FVP@GDB (launch)');
+        const board = live('STLink@pyOCD (launch)');
+        debug.activeDebugSession = board;
+        debug.started.fire(board);
+        assert.deepStrictEqual(published(), [true, 'STLink@pyOCD (launch)']);
+        end(board);
+        assert.deepStrictEqual(published(), [true, 'Arm-FVP@GDB (launch)']);
+        debug.activeDebugSession = fvp;
+        end(fvp);
+        assert.deepStrictEqual(published(), [false, undefined]);
+    });
+
+    test('a live CMSIS Debugger session on an FVP publishes the GDB port of its model; its end withdraws it', async () => {
+        const name = 'Arm-FVP@GDB (launch)';
+        const session = {
+            id: 'coordinator-fvp', name, type: 'gdbtarget',
+            configuration: { name, type: 'gdbtarget', request: 'launch', target: { server: '/w/.vscode/fvp.sh', serverParameters: ['-C', 'GDBServer.port=3333'], port: '' } },
+        } as unknown as vscode.DebugSession;
+        trackers.set(session, createSessionTracker(session));
+        debug.activeDebugSession = session;
+        debug.started.fire(session);
+        await publishedPorts(registry, [{ port: 3333, source: 'session', label: name, server: 'Arm FVP' }]);
+        end(session);
+        await publishedPorts(registry, undefined);
+    });
+
+    test('a change of the focused session is published, and so is a focus that leaves an ended session', () => {
+        const core0 = live('Core0');
+        const core1 = live('Core1');
+        debug.activeDebugSession = core0;
+        debug.started.fire(core1);
+        assert.deepStrictEqual(published(), [true, 'Core0'], 'the focused session, though not the most recent');
+        debug.activeDebugSession = core1;
+        debug.focused.fire(core1);
+        assert.deepStrictEqual(published(), [true, 'Core1']);
+        // The adapters stop, VS Code's end events not yet delivered: the focus that leaves them publishes.
+        for (const tracker of trackers.values()) {
+            tracker.onWillStopSession?.();
+        }
+        debug.activeDebugSession = undefined;
+        debug.focused.fire(undefined);
+        assert.deepStrictEqual(published(), [false, undefined]);
     });
 });

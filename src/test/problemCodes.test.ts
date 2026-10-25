@@ -53,8 +53,11 @@ suite('Problem codes', () => {
         const known = classifyProblem(`error response to 'launch': ${fixture}`, 'dap');
         assert.strictEqual(known?.code, 'GDB_SERVER_NOT_FOUND');
         assert.strictEqual(known?.severity, 'error');
-        assert.ok(known?.hint.startsWith('The debug adapter could not start the GDB server program of the launch configuration'), known?.hint);
-        assert.ok(known?.hint.includes('cmsis_action run starts CMSIS Run'), known?.hint);
+        // The finding, one line of fix, the procedure for the steps; run-then-attach is no fix (it programs nothing).
+        assert.strictEqual(known?.hint, 'The debug adapter could not start the GDB server program of the launch configuration: it is not installed, '
+            + 'or its folder is not on the PATH VS Code was started with. Ask the user to install it (J-Link: the SEGGER J-Link Software) or add its '
+            + 'folder to the system or user PATH, then restart VS Code completely (all windows); '
+            + 'knowledge_get { id: "proc-debugger-troubleshooting" } has the steps.');
         assert.strictEqual(classifyProblem('spawn arm-none-eabi-gdb ENOENT', 'dap'), undefined, 'only the GDB server start');
     });
 

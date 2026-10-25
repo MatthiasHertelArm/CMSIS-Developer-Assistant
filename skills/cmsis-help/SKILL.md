@@ -1,6 +1,7 @@
 ---
 name: cmsis-help
 description: "Health check and entry point for the CMSIS Developer Assistant, and the first skill for any CMSIS or Cortex-M task. Use when firmware misbehaves on a board: faults, crashes, hangs, failing tests, wrong/null values, unexpected output, runtime bugs, a board that does not respond or a debug session that will not start. Also use to check whether the board, the debug session, the build or a serial port is ready, and for any other CMSIS task. It checks the session read-only, reads recent problems and names the debug topic or knowledge procedure that fits. Use it whenever live inspection is practical, instead of adding temporary printf/UART logging, LED toggles, or console output: halting the CPU and looking is cheaper and does not perturb the target."
+when_to_use: "First, before any work on a board's firmware; when a board, a probe or a debug session does not respond; to check that the board, the debug session, the build or a serial port is ready; instead of adding printf/UART logging; and when the cmsis-developer-assistant tools seem to be missing."
 allowed-tools:
   - get_session_status
   - list_debug_windows
@@ -44,6 +45,7 @@ Only the user can lift a rule, by asking for the specific command.
 | `pip install pyocd` | nothing to install: `flash` uses the pyOCD bundled with the CMSIS Debugger, then the one `.cmsis/tools-environment.yml` names, then PATH |
 | `cbuild …` | `cmsis_action build` |
 | `cbuild … --update-rte`, *CMSIS: Refresh* by hand | `cmsis_action refresh` |
+| `vcpkg activate`, *Arm Tools: Activate Environment* by hand | `cmsis_action activate_environment` |
 | `arm-none-eabi-nm`, `readelf -s` | `lookup_symbol` |
 | `arm-none-eabi-size`, a grep over the `.map` file | `get_memory_usage`, `get_section_layout` |
 | a grep over the build log | `get_build_diagnostics` |
@@ -63,12 +65,18 @@ Run these in order and stop as soon as an answer decides the next step:
 
 Report the answer in five short lines: session, target, windows, problems, next step. Name the next tool; do not run a tool that changes the board, the session or a file unless the user asks for it.
 
+## When the tools are missing
+
+No `get_session_status` in your tool list means this agent session is not connected to the CMSIS Developer Assistant. Its MCP server runs inside VS Code while a window has the extension active, and the command *CMSIS Developer Assistant: Configure Agent* in that window registers it with the agent. Most agents connect to their MCP servers only when a session starts: once VS Code serves, ask the user to start a new agent session (Kimi Code: restart `kimi`, `/reload` does not reconnect). A sub-agent has no tools its parent lacks, so do not hand the board to one. Meanwhile do not reach the board another way: no pyOCD or GDB in a shell.
+
 ## Where a task's procedure is
 
 | Task | Where it comes from |
 |---|---|
 | A new project, a board or device, the toolchain, the environment | `knowledge_search` with the task's name in two or three words (`new project`, `board layer`), then `knowledge_get`; the `route-project` unit says the order |
-| Build, flash, load or attach | `get_debug_instructions` topic `build` |
+| The project's files, which target, `launch.json` | `get_debug_instructions` topic `target` |
+| Build, load, run or attach; a build error, a long build | topic `cmsis-action` |
+| `flash`, `PROBE_BUSY`, `start_debugging` | topic `flash` |
 | Breakpoints, logpoints, the breakpoint budget | topic `breakpoints` |
 | Variables, registers, memory, peripherals, run control | topic `inspection` |
 | A HardFault or another fault | topic `faults`: its first step is `diagnose_fault` (`get_fault_info` for the registers alone); `knowledge_search HardFault` for the live-debugging procedure (`proc-cmsis-debug-live`) |

@@ -22,18 +22,20 @@ import * as os from 'os';
 import * as path from 'path';
 import { SerialPortMock } from 'serialport';
 import { DebugState, formatBreakpointModifiers, StackFrame } from '../debugState';
-import type { BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor } from '../debuggingExecutor';
+import type { AdoptedBreakpoint, BreakpointBinding, DebugPortProbe, GdbLogpoint, GdbReply, IDebuggingExecutor, StartFocus } from '../debuggingExecutor';
 import { DebuggingHandler, probeSchedule } from '../debuggingHandler';
 import { PickerCancelled, type IDebugConfigurationManager } from '../utils/debugConfigurationManager';
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
-import type { StopWaitResult } from '../utils/sessionStateTracker';
+import { FRAME_FOCUS_WAIT_MS, type StopWaitResult } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
 import { activeCbuildRunFile, GET_CBUILD_RUN_FILE, type SolutionCommands } from '../utils/solutionQueries';
 import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from '../core/toolResult';
-import { ProblemInput, ProblemJournal, problemJson } from '../core/problemJournal';
-import type { HandlerHost } from '../handler/host';
+import { ProblemInput, ProblemJournal, problemJournal, problemJson } from '../core/problemJournal';
+import { renderProblemsBlock, runJournaled } from '../core/problemFeed';
+import type { HandlerHost, ToolEnvironment } from '../handler/host';
+import type { GdbPortHolder } from '../core/gdbPortGuard';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
@@ -192,6 +194,28 @@ class ScriptedExecutor {
         this.note('waitForStop', ms);
         return { kind: 'timeout' };
     };
+    /** What the focus wait after a stop answers, given its bound: by default VS Code has selected a frame. */
+    frameSelected: (limitMs: number) => boolean | Promise<boolean> = () => true;
+    watchFrameFocus: IDebuggingExecutor['watchFrameFocus'] = () => {
+        this.note('watchFrameFocus');
+        return {
+            selected: async (limitMs) => {
+                this.note('frameSelected', limitMs);
+                return this.frameSelected(limitMs);
+            },
+        };
+    };
+    /** What the focus wait after a session came up answers, given its bound: by default VS Code has selected a frame. */
+    startFocus: (limitMs: number) => StartFocus | Promise<StartFocus> = () => 'selected';
+    watchStartFocus: IDebuggingExecutor['watchStartFocus'] = () => {
+        this.note('watchStartFocus');
+        return {
+            settled: async (limitMs) => {
+                this.note('startFocusSettled', limitMs);
+                return this.startFocus(limitMs);
+            },
+        };
+    };
     addBreakpoint: IDebuggingExecutor['addBreakpoint'] = async (uri, line, options) => {
         this.moves.push('addBreakpoint');
         // uri.path, not fsPath: forward slashes on every OS, so the expectations hold on Windows too.
@@ -212,6 +236,9 @@ class ScriptedExecutor {
         return matching.length > 0 ? { removed: matching.length, applied: this.session ? this.removalApplied : undefined } : { removed: 0 };
     };
     getBreakpoints: IDebuggingExecutor['getBreakpoints'] = () => this.breakpoints;
+    /** The breakpoints VS Code adopted from the adapter: none by default. */
+    adopted: AdoptedBreakpoint[] = [];
+    adoptedBreakpoints: IDebuggingExecutor['adoptedBreakpoints'] = () => this.adopted.map((bp) => ({ ...bp }));
     clearAllBreakpoints: IDebuggingExecutor['clearAllBreakpoints'] = async () => {
         this.moves.push('clearAllBreakpoints');
         this.note('clearAllBreakpoints');
@@ -322,7 +349,8 @@ class HostedHandler extends DebuggingHandler {
     }
 
     protected host(): HandlerHost {
-        return { ...super.host(), ...this.replaced };
+        // No GDB port is taken unless a test says so: the bind test would see whatever listens on this machine.
+        return { ...super.host(), gdbPortHolder: async () => undefined, ...this.replaced };
     }
 }
 
@@ -370,6 +398,19 @@ async function textAnswer(pending: Promise<ToolText>): Promise<string> {
     const answered = await pending;
     assert.strictEqual(typeof answered, 'string', `expected a plain text, got ${JSON.stringify(answered)}`);
     return answered as string;
+}
+
+/**
+ * A call run the way the control server runs it (`runJournaled`), in the
+ * call context `callId`: a failure rejects with the records it produced in
+ * `data.problems`.
+ */
+async function journaled(callId: string, run: () => Promise<ToolText>): Promise<ToolText> {
+    const { outcome } = await runJournaled(problemJournal(), { callId }, run);
+    if (outcome instanceof ToolError) {
+        throw outcome;
+    }
+    return outcome;
 }
 
 /** The text of a call that ends with a reply of the given status. */
@@ -488,6 +529,7 @@ suite('DebuggingHandler', () => {
             const reply = await replyAnswer(handlerFor(x, {}, 180).handleContinue({ timeoutMs: 500 }), 'running');
             assert.deepStrictEqual(x.moves, ['arm', 'continue'], 'nothing is paused');
             assert.deepStrictEqual(x.argsOf('pause'), []);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [], 'a running target is not asked for its state');
             assert.strictEqual(reply, 'Target is running: no stop within 500 ms of \'continue_execution\', and it keeps running; '
                 + 'nothing was paused. Call wait_for_stop to wait for the next stop (a breakpoint, a fault), '
                 + 'or pause_execution to halt it and see where it is.');
@@ -498,16 +540,39 @@ suite('DebuggingHandler', () => {
                 'without timeoutMs the wait is the setting under the 60 s cap');
         });
 
+        test('a continue whose wait runs out answers at once: no state read that would wait out the adapter\'s deadline', async () => {
+            const x = new ScriptedExecutor();
+            x.waiters.push({ kind: 'timeout' });
+            // A stackTrace to a running target can hang until its 10 s deadline; here it never answers.
+            x.getCurrentDebugState = () => new Promise<DebugState>(() => undefined);
+            const first = await Promise.race([
+                replyAnswer(handlerFor(x).handleContinue({ timeoutMs: 100 }), 'running').then((text) => text),
+                delay(1_000).then(() => 'still waiting'),
+            ]);
+            assert.ok(first.startsWith('Target is running: no stop within 100 ms of \'continue_execution\''), first);
+        });
+
         test('a step that does not stop pauses the target and says where it is, with status timeout', async () => {
             const x = new ScriptedExecutor();
             x.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
             const reply = await replyAnswer(handlerFor(x).handleStepOver(), 'timeout');
             assert.deepStrictEqual(x.moves, ['arm', 'stepOver', 'arm', 'pause']);
-            assert.ok(reply.includes('\'step_over\' did not complete within 5 s'), reply);
-            assert.ok(reply.includes('Recovery attempt'), reply);
+            // The reply leads with the overrun and the recovery; the state is read once, after the recovery pause stopped the target.
+            assert.ok(reply.startsWith('⚠️ \'step_over\' did not complete within 5 s. The target is still running or the probe is unresponsive. '), reply);
+            assert.ok(reply.includes('check_target_connection.\n🩹 Recovery attempt: target did not stop on its own'), reply);
             assert.ok(reply.includes('Paused successfully. PC = 0x08000100, LR = 0x08000200 in main at main.c:42.'), reply);
+            assert.ok(reply.endsWith('or step from here with step_over / continue_execution.\n\n'
+                + x.state.toCompactString({ includeBreakpoints: true })), reply);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [[3]]);
             assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [[5000, ['pc', 'lr']]]);
             assert.deepStrictEqual(x.argsOf('pause'), [[5000]]);
+
+            // A frame was selected, but the stack read after it came back empty: no empty state block.
+            const unfocused = new ScriptedExecutor();
+            unfocused.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: null });
+            unfocused.getCurrentDebugState = async () => new DebugState();
+            const bare = await replyAnswer(handlerFor(unfocused).handleStepOver(), 'timeout');
+            assert.ok(bare.endsWith('or step from here with step_over / continue_execution.'), bare);
         });
 
         test('the end of the session during a continue rejects with NO_SESSION, unwrapped, like pause and wait_for_stop', async () => {
@@ -538,9 +603,10 @@ suite('DebuggingHandler', () => {
 
             const silent = new ScriptedExecutor();
             silent.waiters.push({ kind: 'timeout' }, { kind: 'timeout' });
-            assert.ok((await replyAnswer(handlerFor(silent).handleStepOver(), 'timeout')).includes(
+            assert.ok((await replyAnswer(handlerFor(silent).handleStepOver(), 'timeout')).endsWith(
                 'Pause did not produce a stop event within 5s — probe/GDB server may be unresponsive. '
                 + 'Call check_target_connection, then restart_debugging if needed.'));
+            assert.deepStrictEqual(silent.argsOf('getCurrentDebugState'), [], 'the target never stopped, so no state is read');
 
             const gone = new ScriptedExecutor();
             gone.waiters.push({ kind: 'timeout' }, { kind: 'ended' });
@@ -596,6 +662,133 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(failure.message, 'Cannot step over: session state is \'running\'.');
             assert.match(failure.hint ?? '', /^The target is running: call pause_execution first, or set a breakpoint and wait_for_stop\./);
             assert.deepStrictEqual(x.moves, [], 'nothing was sent');
+        });
+    });
+
+    suite('after a stop the state waits for the frame VS Code selects', () => {
+        const NOT_SELECTED = 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.';
+        /** The position of a call's first record in the executor's log. */
+        const positionOf = (x: ScriptedExecutor, name: string): number => x.calls.findIndex((call) => call[0] === name);
+
+        test('the focus watch is taken before the request; once a frame is selected the state is read and shown', async () => {
+            const x = new ScriptedExecutor();
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            const reply = await textAnswer(handlerFor(x, {}, 180).handleContinue());
+            assert.ok(positionOf(x, 'armStopWaiter') < positionOf(x, 'watchFrameFocus'), 'the stop waiter first, as before');
+            assert.ok(positionOf(x, 'watchFrameFocus') < positionOf(x, 'continue'), 'a frame VS Code holds before the request is not the stop\'s');
+            assert.ok(positionOf(x, 'frameSelected') < positionOf(x, 'getCurrentDebugState'), 'the state is read after the frame is selected');
+            assert.deepStrictEqual(x.argsOf('frameSelected'), [[2000]], 'the wait is bounded at 2 s');
+            assert.ok(reply.startsWith('Target stopped (reason: breakpoint).\n\n{'), reply);
+        });
+
+        test('no frame within the bound: one line instead of the state, for continue, steps and pause; nothing is read', async () => {
+            const stopped = new ScriptedExecutor();
+            stopped.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            stopped.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(handlerFor(stopped).handleContinue()), `Target stopped (reason: breakpoint). ${NOT_SELECTED}`);
+            assert.deepStrictEqual(stopped.argsOf('getCurrentDebugState'), []);
+
+            const stepped = new ScriptedExecutor();
+            stepped.waiters.push({ kind: 'stopped', reason: null, threadId: 1 });
+            stepped.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(handlerFor(stepped).handleStepOver()), `Target stopped. ${NOT_SELECTED}`);
+
+            const paused = new ScriptedExecutor();
+            paused.waiters.push({ kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            paused.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(handlerFor(paused).handlePause()), `Target paused. ${NOT_SELECTED}`);
+            assert.deepStrictEqual(paused.argsOf('getCurrentDebugState'), []);
+        });
+
+        test('the call returns within the bound when no frame comes, and the bound shrinks to what is left of the call\'s timeout', async () => {
+            const x = new ScriptedExecutor();
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            // As the tracker does: no frame, so the wait runs out at its bound.
+            x.frameSelected = (limitMs) => delay(limitMs).then(() => false);
+            const began = Date.now();
+            const reply = await textAnswer(handlerFor(x).handleContinue({ timeoutMs: 300 }));
+            const tookMs = Date.now() - began;
+            assert.strictEqual(reply, `Target stopped (reason: breakpoint). ${NOT_SELECTED}`);
+            const [[boundMs]] = x.argsOf('frameSelected') as number[][];
+            assert.ok(boundMs > 0 && boundMs <= 300, `a 300 ms call waits at most 300 ms, not 2 s: ${boundMs}`);
+            assert.ok(tookMs < 1_000, `answered after ${tookMs} ms`);
+
+            // The request took 4.6 s of a 5 s call: 400 ms are left for VS Code.
+            let clock = 1_000_000;
+            const late = new ScriptedExecutor();
+            late.waiters.push({ kind: 'stopped', reason: 'step', threadId: 1 });
+            late.stepOver = async () => {
+                clock += 4_600;
+            };
+            await textAnswer(handlerFor(late, { now: () => clock }).handleStepOver({ timeoutMs: 5000 }));
+            assert.deepStrictEqual(late.argsOf('frameSelected'), [[400]]);
+
+            // Nothing left: the focus is looked at once, without waiting.
+            const spent = new ScriptedExecutor();
+            spent.waiters.push({ kind: 'stopped', reason: 'step', threadId: 1 });
+            spent.stepInto = async () => {
+                clock += 9_000;
+            };
+            await textAnswer(handlerFor(spent, { now: () => clock }).handleStepInto({ timeoutMs: 5000 }));
+            assert.deepStrictEqual(spent.argsOf('frameSelected'), [[0]]);
+        });
+
+        test('a reply without the state leaves the breakpoint bookkeeping alone', async () => {
+            const x = new ScriptedExecutor();
+            const h = handlerFor(x);
+            x.state.breakpoints = ['main.c:10'];
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            assert.ok((await textAnswer(h.handleContinue())).includes('"breakpoints": [\n    "main.c:10"\n  ]'));
+
+            x.state.breakpoints = ['main.c:10', 'main.c:20'];
+            x.frameSelected = () => false;
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            await textAnswer(h.handleContinue());
+
+            // The list changed since the agent last saw one, so the next state shows it.
+            x.frameSelected = () => true;
+            x.waiters.push({ kind: 'stopped', reason: 'breakpoint', threadId: 1 });
+            const next = await textAnswer(h.handleContinue());
+            assert.ok(next.endsWith(x.state.toCompactString({ includeBreakpoints: true })), next);
+        });
+
+        test('the recovery pause keeps the PC/LR line only with values when no frame was selected, and shows no state', async () => {
+            const read = new ScriptedExecutor();
+            read.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            read.frameSelected = () => false;
+            const located = await replyAnswer(handlerFor(read).handleStepOver(), 'timeout');
+            assert.ok(located.includes('\nPaused successfully. PC = 0x08000100, LR = 0x08000200.\nThe breakpoint you expected was not hit'), located);
+            assert.ok(located.endsWith('or step from here with step_over / continue_execution.'), located);
+            assert.deepStrictEqual(read.argsOf('getCurrentDebugState'), []);
+            assert.deepStrictEqual(read.argsOf('frameSelected'), [[2000]], 'the recovery pause waits for the frame too');
+
+            const unread = new ScriptedExecutor();
+            unread.waiters.push({ kind: 'timeout' }, { kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            unread.frameSelected = () => false;
+            unread.registers = { pc: '<unavailable>', lr: '<unavailable>' };
+            const pointer = await replyAnswer(handlerFor(unread).handleStepOver(), 'timeout');
+            assert.ok(pointer.includes(`\nPaused successfully. ${NOT_SELECTED}\nThe breakpoint you expected was not hit`), pointer);
+            assert.ok(!pointer.includes('<unavailable>'), pointer);
+        });
+
+        test('wait_for_stop waits for the frame after a stop event, not when the target was already stopped', async () => {
+            const x = new ScriptedExecutor();
+            const h = handlerFor(x, { now: () => 0 });
+            x.waitForStop = async () => ({ kind: 'stopped', reason: 'breakpoint', threadId: 2 });
+            assert.ok((await textAnswer(h.handleWaitForStop({ timeoutMs: 2500 }))).startsWith('Target stopped (reason: breakpoint, threadId=2).\n\n{'));
+            assert.ok(positionOf(x, 'watchFrameFocus') < positionOf(x, 'frameSelected'));
+            assert.deepStrictEqual(x.argsOf('frameSelected'), [[1000]], 'never past the wait\'s own budget (2500 ms less the 1500 ms margin)');
+
+            x.frameSelected = () => false;
+            assert.strictEqual(await textAnswer(h.handleWaitForStop()), `Target stopped (reason: breakpoint, threadId=2). ${NOT_SELECTED}`);
+            assert.deepStrictEqual(x.argsOf('frameSelected')[1], [2000]);
+            assert.strictEqual(x.argsOf('getCurrentDebugState').length, 1, 'no state is read without a frame');
+
+            const already = new ScriptedExecutor();
+            already.waitForStop = async () => ({ kind: 'already-stopped', reason: 'breakpoint' });
+            assert.ok((await textAnswer(handlerFor(already).handleWaitForStop())).startsWith('Target was already stopped (reason: breakpoint).\n\n{'));
+            assert.deepStrictEqual(already.argsOf('frameSelected'), [], 'the stop came before the call: no wait');
+            assert.deepStrictEqual(already.argsOf('getCurrentDebugState'), [[3]]);
         });
     });
 
@@ -677,7 +870,7 @@ suite('DebuggingHandler', () => {
         test('each session state has its own refusal code and hint', async () => {
             const hints: Record<StatusShape['state'], string> = {
                 'no-session': 'No active debug session: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.',
-                initializing: 'The debug adapter is still starting. Wait briefly and retry; the session has not torn down.',
+                initializing: 'The debug adapter is still starting, or the session is shutting down, and takes no requests. Wait briefly and retry.',
                 running: 'The target is running: call pause_execution first, or set a breakpoint and wait_for_stop.',
                 unresponsive: 'The probe/GDB server is unresponsive. Call check_target_connection to confirm.',
                 stopped: 'Session reports stopped — please retry the operation.',
@@ -707,7 +900,7 @@ suite('DebuggingHandler', () => {
             x.sessionStatus = status('unresponsive');
             x.activeSession = { configuration: { request: 'attach' } };
             const attached = await refusalOf(handlerFor(x).handleGetFaultInfo(), 'PROBE_WEDGED');
-            assert.ok(attached.hint?.includes('cmsis_action detach, then cmsis_action attach — reconnects without a reset; then get_fault_info.'),
+            assert.ok(attached.hint?.includes('cmsis_action detach, then cmsis_action attach reconnects without a reset (pyOCD lets the target run while detached and halts it on attach); then get_fault_info.'),
                 attached.hint);
             x.activeSession = { configuration: { request: 'launch' } };
             const launched = await refusalOf(handlerFor(x).handleDiagnoseFault(), 'PROBE_WEDGED');
@@ -826,6 +1019,26 @@ suite('DebuggingHandler', () => {
             assert.ok((await textAnswer(h.handleStepOver())).includes('"breakpoints": [\n    "main.c:7"\n  ]'));
         });
 
+        test('a start that comes up halted waits for VS Code\'s frame, bounded, and says so in one line when none comes', async () => {
+            const x = new ScriptedExecutor();
+            x.session = false;
+            x.sessionStatus = status('stopped');
+            x.startFocus = () => 'none';
+            const reply = await textAnswer(handlerFor(x).handleStartDebugging({ workingDirectory: '/w', configurationName: 'CMSIS Debugger: pyOCD' }));
+            assert.strictEqual(reply, 'Debug session started successfully for: CMSIS Debugger: pyOCD using configuration \'CMSIS Debugger: pyOCD\'. '
+                + 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.');
+            const order = x.calls.map((call) => call[0]);
+            assert.ok(order.indexOf('watchStartFocus') < order.indexOf('startDebuggingByName'), 'armed before the start');
+            const [[bound]] = x.argsOf('startFocusSettled') as number[][];
+            assert.ok(bound > 0 && bound <= FRAME_FOCUS_WAIT_MS, `bound ${bound}`);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [], 'no state read without the frame');
+
+            x.session = false;
+            x.startFocus = () => 'running';
+            const running = await textAnswer(handlerFor(x).handleStartDebugging({ workingDirectory: '/w', configurationName: 'CMSIS Debugger: pyOCD' }));
+            assert.ok(running.includes('. Current state: {'), running);
+        });
+
         test('Default Configuration without a file is refused', async () => {
             const x = new ScriptedExecutor();
             x.session = false;
@@ -872,6 +1085,21 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(x.argsOf('stopDebugging'), [[]]);
             assert.ok(reply.startsWith('The debug session has been stopped.\n\n⚠️ **Root-cause check before you stop**'), reply);
             assert.ok(reply.includes('1. Set breakpoints at the places worth investigating with `add_breakpoint`.'), reply);
+            assert.ok(reply.includes('2. Trace the run from its beginning with `start_debugging`.'), reply);
+        });
+
+        test('the root-cause check comes once per MCP session, and names cmsis_action load_and_debug on a CMSIS Debugger session', async () => {
+            const x = new ScriptedExecutor();
+            x.activeSession = { configuration: { request: 'launch' }, type: 'gdbtarget' } as typeof x.activeSession;
+            const handler = handlerFor(x);
+            const stop = (sessionId: string): Promise<string> =>
+                textAnswer(runInCallContext({ callId: `${sessionId}-1`, sessionId }, () => handler.handleStopDebugging()));
+            const first = await stop('mcp-a');
+            assert.ok(first.includes('2. Trace the run from its beginning with `cmsis_action load_and_debug`.'), first);
+            assert.ok(!first.includes('start_debugging'), first);
+            assert.strictEqual(await stop('mcp-a'), 'The debug session has been stopped.');
+            assert.ok((await stop('mcp-b')).includes('Root-cause check'), 'another MCP session gets it once too');
+            assert.strictEqual(await stop('mcp-b'), 'The debug session has been stopped.');
         });
 
         test('a stop that never settles answers status timeout after 10 s while the session is still listed (#14)', async () => {
@@ -1030,11 +1258,27 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(await textAnswer(h.handlePause()), 'Target is already stopped (reason: breakpoint). No pause needed — proceed with inspection tools.');
             x.sessionStatus = status('stopped');
             assert.ok((await textAnswer(h.handlePause())).startsWith('Target is already stopped (reason: n/a).'));
-            // Unresponsive is PROBE_WEDGED, as at every gate, with the way to reconnect instead of a re-flash (#3).
+            // Unresponsive: one pause with a 5 s deadline; when it does not stop the target, PROBE_WEDGED as at every gate,
+            // with the way to reconnect instead of a re-flash (#3).
             x.sessionStatus = status('unresponsive');
-            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'PROBE_WEDGED')),
+            x.waiters.push({ kind: 'timeout' });
+            assert.strictEqual(errorDetail(await refusalOf(h.handlePause({ timeoutMs: 30_000 }), 'PROBE_WEDGED')),
                 'Cannot pause: session state is \'unresponsive\'.\nThe probe/GDB server is unresponsive. Call check_target_connection to confirm. '
                 + `${wedgeHint('launch')} Use get_session_status for a definitive, never-failing classification.`);
+            assert.deepStrictEqual(x.argsOf('pause'), [[5_000]], 'one pause, with the short deadline whatever timeoutMs says');
+            assert.deepStrictEqual(x.argsOf('armStopWaiter'), [[5_000]]);
+            x.failures.pause = new Error('Remote communication error.');
+            x.waiters.push({ kind: 'timeout' });
+            assert.strictEqual((await refusalOf(h.handlePause(), 'PROBE_WEDGED')).message, 'Cannot pause: session state is \'unresponsive\'.',
+                'a pause that fails is the same refusal');
+            delete x.failures.pause;
+            x.waiters.push({ kind: 'stopped', reason: 'SIGINT', threadId: 1 });
+            const recovered = await textAnswer(h.handlePause());
+            assert.ok(recovered.startsWith('Target paused. '), recovered);
+            x.waiters.push({ kind: 'ended' });
+            assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
+                'Pause requested but the debug session ended. The target may have crashed.');
+            x.calls.length = 0;
             x.sessionStatus = status('initializing');
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
                 'Cannot pause yet: session is still initializing.\nWait briefly and retry.');
@@ -1044,11 +1288,90 @@ suite('DebuggingHandler', () => {
             x.waiters.push({ kind: 'timeout' });
             assert.ok((await replyAnswer(h.handlePause({ timeoutMs: 700 }), 'timeout')).startsWith('Pause requested but target did not stop within the timeout.'));
             assert.deepStrictEqual(x.argsOf('pause'), [[700]]);
+            assert.deepStrictEqual(x.argsOf('getCurrentDebugState'), [], 'a pause that did not stop the target reads no state');
             x.waiters.push({ kind: 'ended' });
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')),
                 'Pause requested but the debug session ended. The target may have crashed.');
             x.session = false;
             assert.strictEqual(errorDetail(await refusalOf(h.handlePause(), 'NO_SESSION')), 'No active debug session.\nStart a session first: cmsis_action load_and_debug for CMSIS projects, start_debugging otherwise.');
+        });
+
+        test('on an Arm FVP, whose GDB server ignores the interrupt, the replies that would advise a pause say that only a breakpoint stops it', async () => {
+            const fvp = (): ScriptedExecutor => {
+                const x = new ScriptedExecutor();
+                x.activeSession = {
+                    name: 'Arm-FVP@GDB (launch)',
+                    configuration: {
+                        type: 'gdbtarget', name: 'Arm-FVP@GDB (launch)', request: 'launch',
+                        target: { server: '/w/.vscode/fvp.sh', serverParameters: ['--plugin', '/opt/fvp/plugins/GDBServer.so', '-C', 'GDBServer.port=3333'] },
+                    },
+                } as unknown as ScriptedExecutor['activeSession'];
+                x.sessionStatus = status('running');
+                return x;
+            };
+
+            const paused = fvp();
+            paused.waiters.push({ kind: 'timeout' });
+            assert.strictEqual(await replyAnswer(handlerFor(paused).handlePause({ timeoutMs: 700 }), 'timeout'),
+                'Pause requested, but the Arm FVP did not stop: its GDB server ignores GDB\'s interrupt while the model runs, so only a breakpoint stops it. '
+                + 'To see where it runs: stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop (for a fault, HardFault_Handler), '
+                + 'then continue_execution.');
+
+            const continued = fvp();
+            continued.sessionStatus = status('stopped');
+            continued.waiters.push({ kind: 'timeout' });
+            assert.strictEqual(await replyAnswer(handlerFor(continued, {}, 180).handleContinue({ timeoutMs: 500 }), 'running'),
+                'Target is running: no stop within 500 ms of \'continue_execution\', and it keeps running; nothing was paused. '
+                + 'Call wait_for_stop to wait for a breakpoint. On the Arm FVP pause_execution will not stop it, nor will a fault: '
+                + 'to set a breakpoint, stop_debugging and cmsis_action load_and_debug first.');
+
+            const breakpoint = fvp();
+            breakpoint.waiters.push({ kind: 'timeout' });
+            const refused = await refusalOf(handlerFor(breakpoint).handleAddBreakpoint({ fileFullPath: '/w/main.c', line: 10 }), 'TARGET_RUNNING');
+            assert.strictEqual(errorDetail(refused), 'Cannot add a breakpoint while the Arm FVP runs: the change needs a halted target, '
+                + 'and its GDB server ignores the pause request.\nstop_debugging, cmsis_action load_and_debug (it stops at main), make the change, '
+                + 'then continue_execution.');
+            assert.ok(!breakpoint.moves.includes('addBreakpoint') && !breakpoint.moves.includes('continue'), breakpoint.moves.join(', '));
+
+            const stuck = fvp();
+            stuck.stopDebugging = () => new Promise<void>(() => { /* the adapter waits for a halt the model never reports */ });
+            assert.strictEqual(await replyAnswer(handlerFor(stuck, fastClock(1000)).handleStopDebugging(), 'timeout'),
+                'Stop requested, but the session is still listed: the debug adapter halts the target before it disconnects, '
+                + 'and the Arm FVP ignores that interrupt. Call stop_debugging once more: VS Code then ends the adapter.');
+
+            const running = 'On the Arm FVP pause_execution will not stop it, only a breakpoint does: wait_for_stop for one that is set, '
+                + 'or stop_debugging, cmsis_action load_and_debug and add_breakpoint before continue_execution.';
+            const read = fvp();
+            read.stopped = false;
+            assert.strictEqual(errorDetail(await refusalOf(handlerFor(read).handleReadMemory({ address: '0x20000000', length: 4 }), 'TARGET_RUNNING')),
+                `Cannot read memory: session state is 'running'.\n${running} Use get_session_status for a definitive, never-failing classification.`);
+            assert.ok((await textAnswer(handlerFor(fvp()).handleGetSessionStatus())).endsWith(`\nHint: target is running. ${running}`));
+
+            const waited = fvp();
+            waited.waitForStop = async () => ({ kind: 'timeout' });
+            assert.strictEqual(await replyAnswer(handlerFor(waited).handleWaitForStop({ timeoutMs: 2_000 }), 'timeout'),
+                'Target did not stop within the timeout — it is still running. On the Arm FVP pause_execution will not stop it, only a breakpoint does: '
+                + 'call wait_for_stop again with a larger timeoutMs, or stop_debugging and cmsis_action load_and_debug to set one.');
+
+            const stepped = fvp();
+            stepped.sessionStatus = status('stopped');
+            stepped.waiters.push({ kind: 'timeout' });
+            const runaway = await replyAnswer(handlerFor(stepped).handleStepOver({ timeoutMs: 500 }), 'timeout');
+            assert.ok(runaway.endsWith('\n🩹 No recovery pause: the Arm FVP ignores it while the model runs, so only a breakpoint stops it — '
+                + 'stop_debugging, cmsis_action load_and_debug, add_breakpoint where it should stop, then continue_execution.'), runaway);
+            assert.deepStrictEqual(stepped.moves, ['arm', 'stepOver'], 'no pause sent');
+
+            // Other sessions keep their texts.
+            const board = new ScriptedExecutor();
+            board.sessionStatus = status('running');
+            board.waiters.push({ kind: 'timeout' });
+            assert.ok((await replyAnswer(handlerFor(board).handlePause(), 'timeout')).startsWith('Pause requested but target did not stop within the timeout.'));
+            board.stopped = false;
+            assert.ok(errorDetail(await refusalOf(handlerFor(board).handleReadMemory({ address: '0x20000000', length: 4 }), 'TARGET_RUNNING'))
+                .includes('call pause_execution first'));
+            const boardWait = new ScriptedExecutor();
+            boardWait.waitForStop = async () => ({ kind: 'timeout' });
+            assert.ok((await replyAnswer(handlerFor(boardWait).handleWaitForStop({ timeoutMs: 2_000 }), 'timeout')).includes('pause_execution to see where it is'));
         });
     });
 
@@ -1410,6 +1733,31 @@ suite('DebuggingHandler', () => {
             idle.breakpoints = [sourceBreakpoint('/w/src/main.c', 41)];
             assert.strictEqual(await textAnswer(handlerFor(idle).handleListBreakpoints()), 'Breakpoints that are set:\n1. main.c:42\n');
         });
+
+        test('the breakpoints VS Code adopted from the adapter, which extensions do not see, are listed apart, and clear_all says they stay', async () => {
+            const head = 'VS Code also holds these, adopted from the debug adapter (GDB break commands, such as those in the launch configuration\'s '
+                + 'initCommands): it sends them to the next session and saves them with the workspace, but shows them to extensions only after a window '
+                + 'reload, so remove_breakpoint and clear_all_breakpoints cannot reach them; VS Code\'s Breakpoints view can.';
+            const x = new ScriptedExecutor();
+            x.session = false;
+            x.adopted = [
+                { path: '/w/RTE/startup_SSE300MPS3.c', line: 53, sessionName: 'Arm-FVP@GDB (launch)' },
+                { path: '/w/RTE/startup_SSE300MPS3.c', line: 54, sessionName: 'Arm-FVP@GDB (launch)' },
+            ];
+            assert.strictEqual(await textAnswer(handlerFor(x).handleListBreakpoints()),
+                `${head}\n  startup_SSE300MPS3.c:53 (announced by 'Arm-FVP@GDB (launch)')\n  startup_SSE300MPS3.c:54 (announced by 'Arm-FVP@GDB (launch)')\n`);
+            assert.strictEqual(await textAnswer(handlerFor(x).handleClearAllBreakpoints()),
+                'Nothing this tool can clear. 2 breakpoint(s) VS Code adopted from the debug adapter stay: only its Breakpoints view removes them '
+                + 'before a window reload (list_breakpoints names them).');
+
+            // One that extensions see already (after a reload, or a duplicate of one set through the API) is listed once, in its place.
+            x.breakpoints = [sourceBreakpoint('/w/RTE/startup_SSE300MPS3.c', 52), sourceBreakpoint('/w/main.c', 9)];
+            assert.strictEqual(await textAnswer(handlerFor(x).handleListBreakpoints()),
+                `Breakpoints that are set:\n1. startup_SSE300MPS3.c:53\n2. main.c:10\n${head}\n  startup_SSE300MPS3.c:54 (announced by 'Arm-FVP@GDB (launch)')\n`);
+            assert.strictEqual(await textAnswer(handlerFor(x).handleClearAllBreakpoints()),
+                'Cleared 2 breakpoint(s) from the model.\n1 breakpoint(s) VS Code adopted from the debug adapter stay: only its Breakpoints view '
+                + 'removes them before a window reload (list_breakpoints names them).');
+        });
     });
 
     suite('variables and expressions', () => {
@@ -1546,7 +1894,40 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(reply, 'Memory at 0x20000000 (20 bytes):\n'
                 + '\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 00 01 61 62\n'
                 + '\nASCII:\n  Hello, Cortex-M!..ab\n');
-            await refusalOf(handlerFor(x).handleReadMemory({ address: 'zz', length: 4 }), 'INTERNAL');
+        });
+
+        test('an address expression is read where GDB says it points; one GDB cannot place is refused with the way to pass one', async () => {
+            const x = new ScriptedExecutor();
+            const readAt: string[] = [];
+            x.readMemory = async (address) => {
+                readAt.push(address);
+                return { bytes: Buffer.from([1, 2, 3, 4]), offset: 0 };
+            };
+            x.evaluateExpression = async (expression, frameId) => {
+                x.calls.push(['evaluateExpression', expression, frameId]);
+                if (expression === '(unsigned long)(&bulkOutBuffer)') {
+                    return { result: '536871168' };
+                }
+                if (expression === '(unsigned long)(usbState)') {
+                    return { result: '{state = 2, address = 5}' };
+                }
+                throw new Error('No symbol "zz" in current context.');
+            };
+            const atFrame = { focusedFrameId: () => 1 };
+            // Kimi Code's call: read_memory {address: "&bulkOutBuffer"} failed with "Cannot convert 0x&bulkOutBuffer to a BigInt".
+            assert.strictEqual(await textAnswer(handlerFor(x, atFrame).handleReadMemory({ address: '&bulkOutBuffer', length: 4, format: 'hex' })),
+                'Memory at 0x20000100 = &bulkOutBuffer (4 bytes):\n\nHex:\n  0x20000100: 01 02 03 04\n');
+            assert.deepStrictEqual(readAt, ['0x20000100']);
+            assert.deepStrictEqual(x.calls.find((call) => call[0] === 'evaluateExpression'), ['evaluateExpression', '(unsigned long)(&bulkOutBuffer)', 1],
+                'in the focused frame');
+            const unknown = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address: 'zz', length: 4 }), 'INVALID_ARGUMENT');
+            assert.strictEqual(unknown.message, 'Cannot read memory at "zz": it is no hex address, and GDB found no address for it. GDB: No symbol "zz" in current context.');
+            assert.ok(unknown.hint?.startsWith('Pass a hex address such as 0x20000000, or an expression for one such as &buffer'), unknown.hint);
+            const struct = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address: 'usbState', length: 4 }), 'INVALID_ARGUMENT');
+            assert.ok(struct.message.endsWith('GDB gave "{state = 2, address = 5}".'), struct.message);
+            assert.deepStrictEqual(readAt, ['0x20000100'], 'no read without an address');
+            // Without a focused frame the expression cannot be placed: the same refusal as evaluate_expression's.
+            await refusalOf(handlerFor(x, { focusedFrameId: () => undefined }).handleReadMemory({ address: '&bulkOutBuffer', length: 4 }), 'TARGET_RUNNING');
         });
 
         test('a partial read labels its rows from the first byte read and names the part that could not be read', async () => {
@@ -1585,13 +1966,86 @@ suite('DebuggingHandler', () => {
             const reply = await textAnswer(handlerFor(x).handleReadCoreRegisters());
             const cell = (name: string, value: string): string => `${name.padEnd(4)}= ${value.padEnd(14)}`;
             assert.strictEqual(reply, 'Core Registers:\n'
-                + `  ${cell('r0', '0x20000000')}${cell('r1', '0x8000123')}${cell('r2', '0X1F <x>')}${cell('r3', '-7')}\n`
+                + `  ${cell('r0', '0x20000000')}${cell('r1', '0x8000123')}${cell('r2', '0x1F')}${cell('r3', '0xfffffff9')}\n`
                 + `  ${cell('r4', '<?>')}${cell('r5', '<?>')}${cell('r6', '0x00000000')}${cell('r7', '0x00000001')}\n`
                 + `  ${cell('r8', '0x00000002')}${cell('r9', '0x00000003')}${cell('r10', '0x00000004')}${cell('r11', '0x00000005')}\n`
                 + `  ${cell('r12', '0x00000006')}${cell('sp', '0x20017fd0')}${cell('lr', '0x080001b1')}${cell('pc', '0x80002fe')}\n`
                 + '  xpsr = [ Z C ]\n  msp  = 0x20017fd0\n  psp  = 0x0\n  control   = 0\n'
                 + '  faultmask = 0x00000000\n  basepri   = 0x00000000\n  primask   = 0x00000001\n');
             assert.deepStrictEqual(x.argsOf('readCoreRegisters'), [[undefined, undefined]]);
+        });
+
+        test('registers the GDB server does not report (the Arm FVP: GDB says void) read as such; in Handler mode MSP is the SP', async () => {
+            const x = new ScriptedExecutor();
+            const fvp = (xpsr: string): Record<string, string> => ({
+                r0: '0', r1: '0', r2: '0', r3: '0', r4: '0', r5: '0', r6: '0', r7: '0', r8: '0', r9: '0', r10: '0', r11: '0', r12: '0',
+                sp: '0x2005ffb0', lr: '-7', pc: '0x1000219e <HardFault_Handler+2>', xpsr,
+                msp: 'void', psp: 'void', control: 'void', faultmask: 'void', basepri: 'void', primask: 'void',
+            });
+            x.registers = fvp('1627389955');
+            const handler = await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.ok(handler.endsWith('  xpsr = 1627389955\n'
+                + '  msp  = 0x2005ffb0 (the SP: Handler mode runs on the MSP; the GDB server does not report msp)\n'
+                + '  psp  = <not reported by the GDB server>\n  control   = <not reported by the GDB server>\n'
+                + '  faultmask = <not reported by the GDB server>\n  basepri   = <not reported by the GDB server>\n'
+                + '  primask   = <not reported by the GDB server>\n'), handler);
+            assert.ok(!handler.includes('void'), handler);
+
+            x.registers = fvp('16777216');
+            const thread = await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.ok(thread.includes('\n  msp  = <not reported by the GDB server>\n'), 'in Thread mode the SP may be the PSP');
+        });
+
+        test('diagnose_fault reads the frame at the SP in Handler mode when the GDB server does not report msp', async () => {
+            const x = new ScriptedExecutor();
+            x.registers = { sp: '0x20017fa8', lr: '-7', pc: '0x080001a4 <HardFault_Handler>', xpsr: '1627389955',
+                msp: 'void', psp: 'void', control: 'void', msplim: 'void', psplim: 'void' };
+            const reply = await textAnswer(handlerFor(x).handleDiagnoseFault());
+            assert.match(reply, /\nException frame: MSP @ 0x20017fa8 /);
+            assert.deepStrictEqual(x.argsOf('readExceptionFrame')[0]?.[0], 0x20017fa8);
+        });
+
+        test('a register unavailable on the CMSIS Debugger: one DHCSR read, and when the core does not answer, why and how to reconnect (#3)', async () => {
+            const names = ['r0', 'sp', 'lr', 'pc'];
+            const unavailable = Object.fromEntries(names.map((name) => [name, '<unavailable>']));
+            const x = new ScriptedExecutor();
+            x.registers = unavailable;
+            x.activeSession = { configuration: { request: 'launch' } };
+            (x.activeSession as { type?: string }).type = 'gdbtarget';
+            const table = await textAnswer(handlerFor(x).handleReadCoreRegisters({ timeoutMs: 4000 }));
+            assert.ok(table.startsWith('Core Registers:\n') && !table.includes('DHCSR'), 'a core that answers leaves the table as it is');
+
+            x.debugPort = { readable: false, timedOut: false, cause: 'Unable to read memory. (@ 0xe000edf0)' };
+            const reply = await textAnswer(handlerFor(x).handleReadCoreRegisters({ timeoutMs: 4000 }));
+            assert.strictEqual(reply, `${table}Every register is unavailable: the core does not answer (DHCSR at 0xE000EDF0 unreadable: `
+                + `Unable to read memory. (@ 0xe000edf0)): memory and register reads will fail with PROBE_WEDGED.\n${wedgeHint('launch')}\n`);
+            assert.deepStrictEqual(x.argsOf('probeDebugPort'), [[4000], [4000]], 'one DHCSR read per call');
+
+            x.debugPort = { readable: false, timedOut: true, cause: 'timed out' };
+            assert.ok((await textAnswer(handlerFor(x).handleReadCoreRegisters())).includes('(DHCSR at 0xE000EDF0 timed out)'));
+            x.debugPort = { readable: false, timedOut: false, cause: 'unrecognized request' };
+            assert.strictEqual(await textAnswer(handlerFor(x).handleReadCoreRegisters({ timeoutMs: 4000 })), table,
+                'an adapter that cannot read DHCSR adds nothing');
+
+            // A board that lost power (B-L475E-IOT01A, pyOCD): GDB still has the registers it read at the last stop, the rest come back
+            // `<unavailable>` or without text.
+            x.debugPort = { readable: false, timedOut: false, cause: 'Unable to read memory. (@ 0xe000edf0)' };
+            x.registers = { r0: '<unavailable>', sp: '0x200098c8', lr: '134218335', pc: '' };
+            const partial = await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.ok(partial.includes('2 of 4 registers are unavailable: the core does not answer (DHCSR at 0xE000EDF0 unreadable: '
+                + 'Unable to read memory. (@ 0xe000edf0)): memory and register reads will fail with PROBE_WEDGED. '
+                + 'The values shown may be GDB\'s copies from before it lost the target.\n'), partial);
+
+            const calls = x.argsOf('probeDebugPort').length;
+            x.registers = { r0: '0x0', sp: '0x200098c8', lr: '134218335', pc: '0x080002fe <main+22>' };
+            await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            x.registers = Object.fromEntries(names.map((name) => [name, '<timeout>']));
+            await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            x.registers = unavailable;
+            x.activeSession = { configuration: { request: 'launch' } };
+            await textAnswer(handlerFor(x).handleReadCoreRegisters());
+            assert.strictEqual(x.argsOf('probeDebugPort').length, calls,
+                'not read when every register answered or timed out, or on other debug types');
         });
 
         test('cycle counter, present or not', async () => {
@@ -1703,6 +2157,30 @@ suite('DebuggingHandler', () => {
             assert.ok((await textAnswer(handlerFor(x).handleDiagnoseFault())).includes('Exception frame: PSP unavailable — read_core_registers'));
             assert.deepStrictEqual(x.argsOf('readCoreRegisters').map(([, names]) => (names as string[])[0]), ['sp', 'sp', 'sp'],
                 'a frame on the current state\'s stack reads no banked register');
+        });
+
+        test('an LR and xPSR that GDB prints as signed decimals (int registers) decode like hex', async () => {
+            // J-Link and pyOCD type lr and xpsr as int: EXC_RETURN 0xfffffff9 arrives as "-7", 0xfffffffd as "-3" (a tester's XMC4700 run).
+            const x = new ScriptedExecutor();
+            x.registers = { sp: '0x200299b8', lr: '-3', pc: '0x8000460', xpsr: '1090519046', msp: '0x200299b8', psp: '0x20007db0' };
+            const frame = Buffer.alloc(32);
+            frame.writeUInt32LE(0x08007169, 20);
+            frame.writeUInt32LE(0x00000000, 24);
+            x.readExceptionFrame = async (sp, ms) => {
+                x.note('readExceptionFrame', sp, ms);
+                return frame;
+            };
+            const reply = await textAnswer(handlerFor(x).handleDiagnoseFault());
+            assert.deepStrictEqual(x.argsOf('readExceptionFrame'), [[0x20007db0, undefined]], 'EXC_RETURN 0xfffffffd selects PSP');
+            assert.ok(reply.includes('Exception frame: PSP @ 0x20007db0 (EXC_RETURN 0xfffffffd)'), reply);
+            assert.ok(reply.includes('PC=0x00000000'), reply);
+            assert.ok(!reply.includes('LR unavailable'), reply);
+
+            const y = new ScriptedExecutor();
+            y.registers = { sp: '0x20029a28', lr: '-7', pc: '0x8000480', xpsr: '-1593835515', msp: '0x20029a28', psp: '0x0' };
+            const stacked = await textAnswer(handlerFor(y).handleDiagnoseFault());
+            assert.deepStrictEqual(y.argsOf('readExceptionFrame'), [[0x20029a28, undefined]], 'EXC_RETURN 0xfffffff9 selects MSP');
+            assert.ok(stacked.includes('Exception frame: MSP @ 0x20029a28 (EXC_RETURN 0xfffffff9)'), stacked);
         });
 
         test('a frame on the other Security state\'s stack is read through that state\'s banked stack pointer', async () => {
@@ -1843,7 +2321,7 @@ suite('DebuggingHandler', () => {
 
             const hints: Array<[StatusShape['state'], string]> = [
                 ['no-session', 'Hint: call start_debugging or cmsis_action load_and_debug to attach.'],
-                ['initializing', 'Hint: the adapter is still starting — wait a moment and retry.'],
+                ['initializing', 'Hint: the adapter is still starting or shutting down — wait a moment and retry.'],
                 ['running', 'Hint: target is running. Add a breakpoint then continue_execution, or call pause_execution to inspect now.'],
                 ['unresponsive', `Hint: probe/GDB server is hung. ${wedgeHint('launch')}`],
             ];
@@ -1859,6 +2337,38 @@ suite('DebuggingHandler', () => {
             const empty = await textAnswer(handlerFor(x, withFolder).handleGetSessionStatus());
             assert.ok(empty.includes('liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\n'
                 + 'Hint: no debug session is running in the VS Code window this call was routed to.'), empty);
+        });
+
+        test('an initializing session that was asked to end is shutting down, not starting: its hint says what ends it', async () => {
+            const x = new ScriptedExecutor();
+            const detail = 'The session was asked to end (terminate sent 12 s ago); its adapter takes no requests while it shuts down.';
+            x.sessionStatus = { state: 'initializing', sessionName: 'Arm-FVP@GDB (launch)', sessionType: 'gdbtarget', configurationName: null,
+                dapResponsive: true, dapProbeMs: 3, detail, endRequestedForMs: 12_000 };
+            const text = await textAnswer(handlerFor(x).handleGetSessionStatus());
+            assert.ok(text.startsWith('State: initializing\n'), text);
+            assert.ok(text.includes(`\nDetail: ${detail}\n`), text);
+            assert.ok(text.endsWith('\nHint: the session is shutting down — call get_session_status again in a moment; if it is still listed, '
+                + 'stop_debugging once more makes VS Code end the adapter.'), text);
+            assert.ok(!text.includes('still starting'), text);
+        });
+
+        test('a stopped session whose last DHCSR read got no answer says so instead of "full inspection", still stopped (#3)', async () => {
+            const x = new ScriptedExecutor();
+            x.sessionStatus = { state: 'stopped', sessionName: 'S', sessionType: 'gdbtarget', configurationName: 'C',
+                dapResponsive: true, dapProbeMs: 12, detail: 'Stopped reason: breakpoint', coreSilentForMs: 12_400 };
+            const text = await textAnswer(handlerFor(x).handleGetSessionStatus());
+            assert.ok(text.startsWith('State: stopped\n'), text);
+            assert.ok(text.endsWith('\nHint: the session is stopped, but the last read of the core\'s debug status (DHCSR, 12 s ago) got no answer: '
+                + `memory and register reads fail with PROBE_WEDGED. check_target_connection reads it again. ${wedgeHint('launch')}`), text);
+            assert.deepStrictEqual(x.argsOf('probeDebugPort'), [], 'the status reads nothing');
+
+            x.sessionStatus = { ...x.sessionStatus, coreSilentForMs: 2_400_000 };
+            x.activeSession = { configuration: { request: 'attach' } };
+            const later = await textAnswer(handlerFor(x).handleGetSessionStatus());
+            assert.ok(later.includes('(DHCSR, 40 min ago)') && later.endsWith(wedgeHint('attach')), later);
+
+            x.sessionStatus = { ...x.sessionStatus, coreSilentForMs: undefined };
+            assert.ok((await textAnswer(handlerFor(x).handleGetSessionStatus())).endsWith('\nHint: full inspection (variables, memory, registers) is available.'));
         });
 
         test('session status without a session says what an empty window lacks: a folder, the CMSIS extensions', async () => {
@@ -2660,7 +3170,7 @@ suite('DebuggingHandler', () => {
                     + 'This is a terminal result — do not wait for an output file.');
                 setTimeout(() => deliver(), 50);
                 const idle = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
-                assert.match(idle, /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE ❌ exit 2 [\d.]+ s ago \(job b-2, '.*'\)\.\nBuild job b-2 failed: 1 error \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0\):\n {2}main\.c:42:5 error: 'ledx' undeclared\nNo CMSIS task is running in this window\.$/);
+                assert.match(idle, /^No CMSIS job in flight in this window\. Last results: build on HE ❌ exit 2 [\d.]+ s ago \(job b-2, '.*'\)\.\nBuild job b-2 failed: 1 error \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 0\):\n {2}main\.c:42:5 error: 'ledx' undeclared\nNo CMSIS task is running in this window\.$/);
             });
 
             test('a build that exited 0 is answered after its check: failed with the lines, or not confirmed (CMSIS Solution reports 0 for failed builds)', async () => {
@@ -2751,7 +3261,7 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(builds, 1, 'the repeat did not issue a second build');
 
                 const idle = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
-                assert.match(idle, /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE ✅ [\d.]+ s ago \(job b-1, '.*'\)\.\nNo CMSIS task is running in this window\.$/);
+                assert.match(idle, /^No CMSIS job in flight in this window\. Last results: build on HE ✅ [\d.]+ s ago \(job b-1, '.*'\)\.\nNo CMSIS task is running in this window\.$/);
             });
 
             test('a build of another target while one runs is refused; one from the panel is attached to', async () => {
@@ -2779,7 +3289,7 @@ suite('DebuggingHandler', () => {
             test('status needs no solution and launches nothing', async () => {
                 const w = jobWorld();
                 assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
-                    'No CMSIS job in this window: nothing is in flight and nothing finished in the last 10 min.\n'
+                    'No CMSIS job in this window: nothing is in flight and none has finished since the window started.\n'
                     + 'No CMSIS task is running in this window.');
             });
 
@@ -2940,7 +3450,7 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(stops, 1);
                 assert.strictEqual(w.tracker.last('build')?.state, 'cancelled');
                 assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
-                    /^No CMSIS job in flight in this window\. Last results \(10 min\): build on HE stopped [\d.]+ s ago \(job b-1, 'cbuild demo\.csolution\.yml --active HE'\)\.\nNo CMSIS task is running in this window\.$/);
+                    /^No CMSIS job in flight in this window\. Last results: build on HE stopped [\d.]+ s ago \(job b-1, 'cbuild demo\.csolution\.yml --active HE'\)\.\nNo CMSIS task is running in this window\.$/);
 
                 assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
                     'CMSIS \'stop_build\' on HE: nothing to stop — no build is running in this window.');
@@ -3320,6 +3830,225 @@ suite('DebuggingHandler', () => {
                     + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.');
             });
 
+            test('load_and_debug whose session never showed: a launch the debug adapter refused during the call fails it, its records listed; without one it is running', async () => {
+                const LOST_LAUNCH = 'The GDB server or GDB ended while connecting: their error lines, listed below when there are any, say why '
+                    + '(get_recent_problems {sources:[\'gdb-server\',\'dap\']} has the whole server log). Fix that, then cmsis_action load_and_debug again.';
+                /** One load_and_debug whose session is never seen: its command journals `records`, after a CMSIS Load that exits 0 when `load`. */
+                const launch = (records: ProblemInput[], load = false): Promise<ToolText> => {
+                    const w = jobWorld(50);
+                    w.x.sessionStatus = status('no-session');
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.cmsisLoadAndDebug': () => {
+                            const execution = load ? w.tasks.execution(shellTask('CMSIS Load')) : undefined;
+                            setTimeout(() => {
+                                if (execution) {
+                                    w.tasks.start(execution);
+                                    w.tasks.finish(execution, 0);
+                                }
+                                // What the session tracker journals from the adapter's failed response and the GDB server's output.
+                                records.forEach((record) => problemJournal().append(record));
+                            }, 5);
+                        },
+                    });
+                    return journaled('launch01-1', () => w.handler.handleCmsisCommand({ action: 'load_and_debug' }));
+                };
+
+                // Corstone-300 FVP: GDB lost the model's GDB server during the launch, and the session ended between two polls.
+                const reset = 'error response to \'launch\': Remote communication error.  Target disconnected: error while reading: Connection reset by peer.';
+                const fvp = await refusalOf(launch([{ source: 'dap', origin: 'Arm-FVP (launch)', severity: 'error', message: reset, debugSessionId: 'fvp-1' }]),
+                    'TASK_FAILED');
+                assert.strictEqual(fvp.message, 'CMSIS \'load_and_debug\' on HE started no debug session — the debug adapter\'s launch failed.');
+                assert.strictEqual(fvp.hint, LOST_LAUNCH);
+                assert.match(renderProblemsBlock(fvp.data?.problems), new RegExp(`^\\nRecent problems:\\n  #\\d+ error dap ${reset.replace(/[.()]/g, '\\$&')}$`));
+
+                // pyOCD after its Load, on a port another window's FVP held: the Load leads the message, the server's error line rides along.
+                const unexpected = 'error response to \'launch\': Remote replied unexpectedly to \'vMustReplyEmpty\': timeout';
+                const pyocd = await refusalOf(launch([
+                    { source: 'gdb-server', origin: 'CMSIS_DAP@pyOCD (launch)', severity: 'error', message: '0001234 E Address already in use [gdbserver]' },
+                    { source: 'dap', origin: 'CMSIS_DAP@pyOCD (launch)', severity: 'error', message: unexpected },
+                ], true), 'TASK_FAILED');
+                assert.match(pyocd.message, /^CMSIS 'load_and_debug' on HE started no debug session — 'CMSIS Load' exited 0 after [\d.]+ s \(job d-\d+\); the debug adapter's launch failed\.$/);
+                assert.strictEqual(pyocd.hint, LOST_LAUNCH);
+                const listed = renderProblemsBlock(pyocd.data?.problems).split('\n').slice(2);
+                assert.deepStrictEqual(listed.map((line) => line.replace(/^  #\d+ /, '')),
+                    ['error gdb-server 0001234 E Address already in use [gdbserver]', `error dap ${unexpected}`]);
+
+                // Nothing journaled: a slow flash may still be on its way.
+                const quiet = await replyAnswer(launch([]), 'running');
+                assert.ok(quiet.startsWith('CMSIS \'load_and_debug\' on HE issued via \'cmsis-csolution.cmsisLoadAndDebug\'. '
+                    + 'The flash/connect pipeline is running in the CMSIS extension'), quiet);
+            });
+
+            suite('the program of a failed Load or launch: J-Link and its PATH', () => {
+                /** CMSIS Load as CMSIS Solution 1.72.0 writes it for the J-Link adapter: on Windows (a tester's XMC4700 project), and on macOS and Linux. */
+                const JLINK_LOAD_WINDOWS = 'echo Connect > .cmd.jlink && echo LoadFile "out/snmp_agent_demo/snmp_agent_demo_flash/snmp_agent_demo.axf" '
+                    + '>> .cmd.jlink && echo Exit >> .cmd.jlink && JLink.exe -device XMC4700-F144x2048 -if swd -speed 4000 -commandfile .cmd.jlink';
+                const JLINK_LOAD_POSIX = 'echo Connect > .cmd.jlink && echo LoadFile "out/blinky/blinky.axf" >> .cmd.jlink && echo Exit >> .cmd.jlink && '
+                    + 'JLinkExe -device XMC4700-F144x2048 -if swd -speed 4000 -commandfile .cmd.jlink';
+                const SEGGER_JLINK = 'C:\\Program Files\\SEGGER\\JLink';
+                const LABELS = ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase'];
+                const loadTask = (commandLine: string): FixtureTask => ({ ...shellTask('CMSIS Load'), execution: { commandLine } });
+                /** A Windows machine whose files are `files`, compared without regard to case; `terminalPath` is the PATH of terminal.integrated.env.windows. */
+                const windowsTools = (files: readonly string[], terminalPath?: string): ToolEnvironment => ({
+                    extension: () => undefined,
+                    pathEnv: 'C:\\Windows\\system32;C:\\Windows',
+                    platform: 'win32',
+                    env: (name) => ({ PATHEXT: '.COM;.EXE;.BAT;.CMD', PROGRAMFILES: 'C:\\Program Files' } as Record<string, string>)[name.toUpperCase()],
+                    terminalEnv: () => (terminalPath === undefined ? undefined : { PATH: terminalPath }),
+                    isFile: (file) => files.some((known) => known.toLowerCase() === file.toLowerCase()),
+                    listDir: () => [],
+                });
+                /** The fix and the pointer every hint about a missing program ends with; the procedure holds the steps. */
+                const STEPS = 'then restart VS Code completely (all windows); knowledge_get { id: "proc-debugger-troubleshooting" } has the steps.';
+                const NOT_FOUND_TAIL = `${STEPS} This is a terminal result — do not wait for an output file.`;
+                const JLINK_MEANING = '"Cannot connect to J-Link" there means J-Link finds no free probe: another task or session holds it '
+                    + '(cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB driver (ask the user); '
+                    + '"Cannot connect to target" means the probe answers but the device does not: its power, the cable, or the device name the task passes. '
+                    + 'This is a terminal result — do not wait for an output file.';
+                let dir = '';
+                setup(() => {
+                    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-jlink-'));
+                });
+                teardown(() => {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                });
+
+                /** The hint of a load whose J-Link task fails with code 1 after `afterMs` of real time, on a clock 20 times as fast. */
+                const failedLoadHint = async (tools: ToolEnvironment, commandLine: string, afterMs = 5): Promise<string | undefined> => {
+                    const w = jobWorld(20, { toolEnvironment: () => tools });
+                    w.tasks.fetched = workspaceTasks(dir, LABELS);
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                        'cmsis-csolution.cmsisLoad': () => {
+                            const load = w.tasks.execution(loadTask(commandLine));
+                            setTimeout(() => {
+                                w.tasks.start(load);
+                                setTimeout(() => w.tasks.finish(load, 1), afterMs);
+                            }, 5);
+                        },
+                    });
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'load' }), 'TASK_FAILED');
+                    assert.match(failed.message, /^❌ CMSIS 'load' FAILED on HE — task 'CMSIS Load' exited with code 1 after [\d.]+ s \(job l-1\)\.$/);
+                    again();
+                    return failed.hint;
+                };
+
+                test('Windows: a J-Link Load that fails at once names JLink.exe missing, or the SEGGER folder that holds it; found on the tasks\' PATH, J-Link\'s own lines', async () => {
+                    assert.strictEqual(await failedLoadHint(windowsTools([]), JLINK_LOAD_WINDOWS),
+                        'JLink.exe is not on the PATH of the CMSIS tasks (searched: VS Code\'s PATH), so \'CMSIS Load\' could not start it. Ask the user to install '
+                            + `the SEGGER J-Link Software or add its folder to the system or user PATH, ${NOT_FOUND_TAIL}`);
+                    assert.strictEqual(await failedLoadHint(windowsTools([`${SEGGER_JLINK}\\JLink.exe`]), JLINK_LOAD_WINDOWS),
+                        'JLink.exe is not on the PATH of the CMSIS tasks (searched: VS Code\'s PATH), so \'CMSIS Load\' could not start it, but '
+                            + `${SEGGER_JLINK} holds it. Ask the user to add that folder to the system or user PATH, ${NOT_FOUND_TAIL}`);
+                    assert.strictEqual(await failedLoadHint(windowsTools([`${SEGGER_JLINK}\\JLink.exe`], `${SEGGER_JLINK};\${env:PATH}`), JLINK_LOAD_WINDOWS),
+                        'Its output is in the \'CMSIS Load\' terminal, which no tool reads: ask the user for the terminal\'s last lines. JLink.exe is on the PATH '
+                            + `of the CMSIS tasks (${SEGGER_JLINK}\\JLink.exe, from terminal.integrated.env.windows), so it ran and reported the failure there. `
+                            + JLINK_MEANING);
+                });
+
+                test('macOS and Linux: JLinkExe missing from tools-environment.yml and VS Code\'s PATH; a J-Link Load that failed slowly asks for the terminal\'s lines', async () => {
+                    fs.mkdirSync(path.join(dir, '.cmsis'));
+                    fs.writeFileSync(path.join(dir, '.cmsis', 'tools-environment.yml'), ['cmsis-tools-environment:', '  version: 1.0.0', '  environment:',
+                        '    path:', '      - /x/cmsis-toolbox/bin', '      - /x/gcc/bin', ''].join('\n'));
+                    const looked: string[] = [];
+                    const linux: ToolEnvironment = {
+                        extension: () => undefined, pathEnv: '/usr/bin:/bin', platform: 'linux', listDir: () => [],
+                        isFile: (file) => {
+                            looked.push(file);
+                            return false;
+                        },
+                    };
+                    assert.strictEqual(await failedLoadHint(linux, JLINK_LOAD_POSIX),
+                        'JLinkExe is not on the PATH of the CMSIS tasks (searched: .cmsis/tools-environment.yml, VS Code\'s PATH), so \'CMSIS Load\' could not '
+                            + `start it. Ask the user to install the SEGGER J-Link Software or add its folder to the system or user PATH, ${NOT_FOUND_TAIL}`);
+                    assert.deepStrictEqual(looked, ['/x/cmsis-toolbox/bin/JLinkExe', '/x/gcc/bin/JLinkExe', '/usr/bin/JLinkExe', '/bin/JLinkExe',
+                        '/opt/SEGGER/JLink/JLinkExe']);
+                    looked.length = 0;
+                    // 150 ms of real time is 3 s on the handler's clock: J-Link ran, so its own lines are asked for and nothing is looked up.
+                    assert.strictEqual(await failedLoadHint(linux, JLINK_LOAD_POSIX, 150),
+                        `Its output is in the 'CMSIS Load' terminal, which no tool reads: ask the user for the terminal's last lines. ${JLINK_MEANING}`);
+                    assert.deepStrictEqual(looked, []);
+                });
+
+                test('a pyOCD Load keeps the flash hint word for word, at once or not', async () => {
+                    const w = jobWorld(20, { toolEnvironment: () => windowsTools([]) });
+                    const pyocd: FixtureTask = {
+                        ...shellTask('CMSIS Load'),
+                        execution: { command: 'pyocd', args: ['load', '--probe', 'cmsisdap:', '--cbuild-run', '/w/out/demo+HE.cbuild-run.yml'] },
+                    };
+                    solutionOn('HE', { 'cmsis-csolution.cmsisLoad': runs(w.tasks, pyocd, 1) });
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'load' }), 'TASK_FAILED');
+                    assert.strictEqual(failed.hint, 'Its output is in the \'CMSIS Load\' terminal, which no tool reads: call flash, which returns pyOCD\'s own '
+                        + 'error lines, or ask the user for the terminal\'s last lines. "Waiting for a debug probe" there means pyOCD sees no free probe: '
+                        + 'another task or session holds it (cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected '
+                        + 'or lacks its USB driver (ask the user). This is a terminal result — do not wait for an output file.');
+                });
+
+                test('load_and_debug whose adapter cannot spawn JLinkGDBServerCL.exe: on the tasks\' PATH only, in the SEGGER folder only, nowhere, on VS Code\'s PATH', async () => {
+                    fs.mkdirSync(path.join(dir, '.vscode'));
+                    fs.writeFileSync(path.join(dir, '.vscode', 'launch.json'), JSON.stringify({
+                        version: '0.2.0',
+                        configurations: [{
+                            name: 'JLink (launch)', type: 'gdbtarget', request: 'launch', preLaunchTask: 'CMSIS Load',
+                            target: { server: 'JLinkGDBServerCL.exe', serverParameters: ['-device', 'XMC4700-F144x2048'], port: '3333' },
+                            cmsis: { cbuildRunFile: '${command:cmsis-csolution.getCbuildRunFile}' },
+                        }],
+                    }));
+                    const launchHint = async (tools: ToolEnvironment): Promise<string | undefined> => {
+                        const w = jobWorld(50, { toolEnvironment: () => tools });
+                        w.tasks.fetched = workspaceTasks(dir, LABELS);
+                        w.x.getThreads = async () => {
+                            w.x.session = false;
+                            throw new Error('session ended');
+                        };
+                        solutionOn('HE', {
+                            'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                            'cmsis-csolution.cmsisLoadAndDebug': () => {
+                                const load = w.tasks.execution(loadTask(JLINK_LOAD_WINDOWS));
+                                setTimeout(() => {
+                                    w.tasks.start(load);
+                                    w.tasks.finish(load, 0);
+                                    w.x.session = true;
+                                    // What the session tracker journals from cdt-gdb-adapter's output (src/core/problemCodes.ts).
+                                    problemJournal().append({
+                                        source: 'dap', origin: 'JLink (launch)', severity: 'error', code: 'GDB_SERVER_NOT_FOUND',
+                                        message: 'gdbserver has hit error Error: spawn JLinkGDBServerCL.exe ENOENT',
+                                    });
+                                }, 5);
+                            },
+                        });
+                        const lost = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'TASK_FAILED');
+                        assert.match(lost.message, /^CMSIS 'load_and_debug' on HE started a debug session but it did NOT survive the initial connect — 'CMSIS Load' exited 0/);
+                        again();
+                        return lost.hint;
+                    };
+                    const server = `${SEGGER_JLINK}\\JLinkGDBServerCL.exe`;
+                    const onTasksOnly = await launchHint(windowsTools([server], `${SEGGER_JLINK};\${env:PATH}`));
+                    assert.strictEqual(onTasksOnly,
+                        'The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on the PATH of the CMSIS tasks '
+                            + `(${SEGGER_JLINK}, from terminal.integrated.env.windows) but not on the PATH VS Code was started with, which the debug adapter `
+                            + `uses. Ask the user to add ${SEGGER_JLINK} to the system or user PATH, ${STEPS}`);
+                    const inSeggerOnly = await launchHint(windowsTools([server]));
+                    assert.strictEqual(inSeggerOnly,
+                        'The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on neither the PATH VS Code was started with nor the PATH '
+                            + `of the CMSIS tasks (searched: VS Code's PATH), but ${SEGGER_JLINK} holds it. Ask the user to add that folder to the system or `
+                            + `user PATH, ${STEPS}`);
+                    assert.strictEqual(await launchHint(windowsTools([])),
+                        'The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on neither the PATH VS Code was started with nor the PATH '
+                            + 'of the CMSIS tasks (searched: VS Code\'s PATH). Ask the user to install the SEGGER J-Link Software or add its folder to the '
+                            + `system or user PATH, ${STEPS}`);
+                    for (const hint of [onTasksOnly, inSeggerOnly]) {
+                        assert.ok(!/cmsis_action (?:run|attach)/.test(hint ?? ''), hint);
+                    }
+                    // On VS Code's PATH and still ENOENT: Node words a working directory that does not exist the same way.
+                    assert.strictEqual(await launchHint({ ...windowsTools([server]), pathEnv: `C:\\Windows\\system32;${SEGGER_JLINK}` }),
+                        `The debug adapter could not start the GDB server: JLinkGDBServerCL.exe is on the PATH VS Code was started with (${server}), so a `
+                            + 'missing working directory is the likelier cause (Node reports it with the same ENOENT): check that the launch configuration\'s '
+                            + 'cwd exists, then cmsis_action load_and_debug again.');
+                });
+            });
+
             test('refresh: the panel\'s Refresh, then csolution\'s messages from the rewritten index; an index that stays as it was answers running', async () => {
                 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-refresh-'));
                 try {
@@ -3381,6 +4110,91 @@ suite('DebuggingHandler', () => {
                 const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
                 assert.strictEqual(failed.hint, 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — '
                     + 'the Refresh (Update RTE) of the CMSIS view — then cmsis_action build again.');
+            });
+
+            test('activate_environment: Reactivate Environment, then the tools of the rewritten record; no rewrite answers running; refusals', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-activate-'));
+                try {
+                    const solutionFile = path.join(dir, 'demo.csolution.yml');
+                    const record = path.join(dir, '.cmsis', 'tools-environment.yml');
+                    const environment = (cmake: string): string => [
+                        'cmsis-tools-environment:', '  version: 1.0.0', '  environment:', '    path:', `      - /x/cmake/${cmake}/bin`,
+                        '  tools:', '    - name: CMSIS-Toolbox', '      version: 2.15.1', `    - name: tools.kitware.cmake/${cmake}/bin`, '      origin: installed', '',
+                    ].join('\n');
+                    fs.mkdirSync(path.dirname(record));
+                    fs.writeFileSync(record, environment('3.25.2'));
+                    let activations = 0;
+                    const handed: unknown[] = [];
+                    const rewrites = (resource?: unknown): void => {
+                        activations++;
+                        handed.push(resource);
+                        setTimeout(() => fs.writeFileSync(record, environment('3.31.5')), 20);
+                    };
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'environment-manager.reactivate': rewrites });
+                    const w = jobWorld(5);
+                    // No manifest: nothing to activate.
+                    const noManifest = await refusalOf(w.handler.handleCmsisCommand({ action: 'activate_environment' }), 'INVALID_ARGUMENT');
+                    assert.ok(noManifest.message.startsWith(`CMSIS 'activate_environment' on HE not attempted: no vcpkg-configuration.json from ${dir} up to the`), noManifest.message);
+                    assert.strictEqual(activations, 0);
+
+                    fs.writeFileSync(path.join(dir, 'vcpkg-configuration.json'), '{ "requires": { "arm:tools/kitware/cmake": "^3.31.5" } }\n');
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment' })),
+                        /^✅ CMSIS 'activate_environment' on HE: vcpkg-configuration\.json was resolved and \.cmsis\/tools-environment\.yml rewritten after [\d.]+ s\. Tools of the CMSIS tasks now:\n  CMSIS-Toolbox 2\.15\.1\n  tools\.kitware\.cmake\/3\.31\.5\/bin\nNext: cmsis_action build\.$/);
+                    assert.strictEqual(activations, 1);
+                    // The command reads the manifest's Uri, as the Explorer's context menu hands it; without one it throws.
+                    assert.strictEqual((handed[0] as vscode.Uri | undefined)?.fsPath, vscode.Uri.file(path.join(dir, 'vcpkg-configuration.json')).fsPath);
+
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solutionFile,
+                        'environment-manager.reactivate': () => {
+                            activations++;
+                        },
+                    });
+                    assert.match(await replyAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 3_000 }), 'running'),
+                        /^CMSIS 'activate_environment' on HE issued via 'environment-manager\.reactivate'; CMSIS Solution has not rewritten \.cmsis\/tools-environment\.yml after [\d.]+ s\. /);
+                    assert.strictEqual(activations, 2);
+
+                    // Without the Environment Manager the command is not registered: refused before anything runs.
+                    again();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile });
+                    const missing = await refusalOf(w.handler.handleCmsisCommand({ action: 'activate_environment' }), 'TASK_FAILED');
+                    assert.ok(missing.message.includes('the Arm Tools Environment Manager extension (Arm.environment-manager) is not installed or not active'), missing.message);
+                    assert.ok(missing.hint?.startsWith('Ask the user to install the Arm Tools Environment Manager'), missing.hint);
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
+
+            test('a build whose vcpkg-configuration.json is newer than the tools record, or has none, says so before its result', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-stale-env-'));
+                try {
+                    const solutionFile = path.join(dir, 'demo.csolution.yml');
+                    const manifest = path.join(dir, 'vcpkg-configuration.json');
+                    const record = path.join(dir, '.cmsis', 'tools-environment.yml');
+                    fs.writeFileSync(manifest, '{}\n');
+                    const w = jobWorld();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })),
+                        /^Note: the tools environment of vcpkg-configuration\.json has not been activated in this window \(no \.cmsis\/tools-environment\.yml, the record of the tools the CMSIS tasks run with\): cmsis_action activate_environment does it\. ✅ CMSIS 'build' succeeded on HE/);
+
+                    fs.mkdirSync(path.dirname(record));
+                    fs.writeFileSync(record, 'cmsis-tools-environment:\n  tools: []\n');
+                    const earlier = new Date(Date.now() - 60_000);
+                    fs.utimesSync(record, earlier, earlier);
+                    again();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })),
+                        /^Note: vcpkg-configuration\.json is newer than \.cmsis\/tools-environment\.yml \(the record of the tools the CMSIS tasks run with\), so the tasks still run with the tools of the earlier activation: cmsis_action activate_environment re-resolves it\. ✅ CMSIS 'build' succeeded on HE/);
+
+                    const later = new Date(Date.now() + 60_000);
+                    fs.utimesSync(record, later, later);
+                    again();
+                    solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })), /^✅ CMSIS 'build' succeeded on HE/, 'a current record adds nothing');
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
             });
         });
 
@@ -3646,8 +4460,12 @@ suite('DebuggingHandler', () => {
         });
 
         test('attach waits for the session and probes it twice; no threads yet is not a failure, a vanished session is', async () => {
-            const attach = async (threadCounts: Array<number | 'gone'> | undefined): Promise<ToolText> => {
+            const attach = async (threadCounts: Array<number | 'gone'> | undefined, fvp = false, focus: StartFocus = 'selected'): Promise<ToolText> => {
                 const x = new ScriptedExecutor();
+                x.startFocus = () => focus;
+                if (fvp) {
+                    x.activeSession = { configuration: { type: 'gdbtarget', name: 'Arm-FVP@GDB (attach)', request: 'attach' } } as unknown as ScriptedExecutor['activeSession'];
+                }
                 x.session = false;
                 x.sessionStatus = status(threadCounts ? 'running' : 'initializing');
                 x.getThreads = async () => {
@@ -3675,6 +4493,13 @@ suite('DebuggingHandler', () => {
             const survived = await textAnswer(attach([1, 1]));
             assert.ok(survived.startsWith('CMSIS \'attach\' completed on HE — debug session survived the connect '
                 + '(t+3s: 1 thread(s), t+6s: 1 thread(s) — target threads present). State: {'), survived);
+            assert.ok(!survived.includes('Arm FVP'), survived);
+            assert.strictEqual(await textAnswer(attach([1, 1], false, 'none')), 'CMSIS \'attach\' completed on HE — debug session survived the connect '
+                + '(t+3s: 1 thread(s), t+6s: 1 thread(s) — target threads present). '
+                + 'VS Code has not selected a frame yet, so the state is not shown: get_call_stack shows where.');
+            const onFvp = await textAnswer(attach([1, 1], true));
+            assert.ok(onFvp.endsWith('\nOn the Arm FVP pause_execution will not stop the running model: set breakpoints '
+                + '(for a fault, HardFault_Handler) before continue_execution.'), onFvp);
             assert.strictEqual(await replyAnswer(attach([1, 0]), 'running'),
                 'CMSIS \'attach\' on HE: the debug session is up but the target is not reporting threads yet — '
                 + 't+3s: 1 thread(s), then t+6s: session object present, 0 threads so far. '
@@ -3737,6 +4562,58 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(lost.x.argsOf('getSessionStatus').length, 2, 'the wait ends with the session');
         });
 
+        test('attach whose session never showed: an attach the debug adapter refused fails it with the attach hint; a view\'s evaluate, a tool\'s warning, another call\'s error, or a server line while the session still connects do not', async () => {
+            /** One attach whose command journals `records`; the session is never seen, or, with `connecting`, stays initializing. */
+            const attach = async (records: ProblemInput[], connecting = false): Promise<ToolText> => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                x.sessionStatus = status(connecting ? 'initializing' : 'no-session');
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisAttachDebugger': () => {
+                        x.session = connecting;
+                        setTimeout(() => records.forEach((record) => problemJournal().append(record)), 5);
+                    },
+                });
+                try {
+                    const clock = fastClock(50);
+                    const tracker = cmsisTasksTracker(clock);
+                    return await journaled('attach01-1', () => handlerFor(x, { ...clock, cmsisJobs: () => tracker }).handleCmsisCommand({ action: 'attach' }));
+                } finally {
+                    registrations?.dispose();
+                    registrations = undefined;
+                }
+            };
+            const origin = 'CMSIS_DAP@pyOCD (attach)';
+
+            // No GDB server listening: GDB's connect timed out and the session ended between two polls.
+            const timedOut = 'error response to \'attach\': could not connect: Operation timed out.';
+            const refused = await refusalOf(attach([{ source: 'dap', origin, severity: 'error', message: timedOut, debugSessionId: 'a-1' }]), 'TASK_FAILED');
+            assert.strictEqual(refused.message, 'CMSIS \'attach\' on HE started no debug session — the debug adapter\'s attach failed.');
+            assert.strictEqual(refused.hint, 'For \'attach\' this almost always means no GDB server is listening on the configured port: '
+                + 'start the GDB server first, or use \'load_and_debug\' (which launches one). No CMSIS Run task is alive in this window — '
+                + 'cmsis_action run starts the GDB server without programming (the pyOCD task resets the target first); load_and_run programs first. '
+                + 'Confirm with get_session_status / check_target_connection.');
+            assert.match(renderProblemsBlock(refused.data?.problems), /^\nRecent problems:\n  #\d+ error dap error response to 'attach': could not connect: Operation timed out\.$/);
+
+            // A Watch expression VS Code evaluated on its own (info), a tool's own failed request (warning), an error of another call: still running.
+            const unrelated = await replyAnswer(attach([
+                { source: 'dap', origin, severity: 'info', message: 'error response to \'evaluate\': <no message>' },
+                { source: 'dap', origin, severity: 'warning', message: 'error response to \'threads\': Thread is running.' },
+                { source: 'dap', origin, severity: 'error', message: timedOut, toolCallId: 'other001-9' },
+            ]), 'running');
+            assert.ok(unrelated.startsWith('CMSIS \'attach\' on HE issued via \'cmsis-csolution.cmsisAttachDebugger\'. '), unrelated);
+
+            // A session still connecting: a server's error line is no verdict yet; the attach request itself refused is one.
+            const serverLine = { source: 'gdb-server', origin, severity: 'error', message: '0000500 E Failed to get unique id for open [dap_access_cmsis_dap]' } as const;
+            await replyAnswer(attach([serverLine], true), 'running');
+            const refusedWhileThere = await refusalOf(attach([serverLine, { source: 'dap', origin, severity: 'error', message: timedOut }], true), 'TASK_FAILED');
+            assert.strictEqual(refusedWhileThere.message, 'CMSIS \'attach\' on HE started no debug session — the debug adapter\'s attach failed.');
+            assert.strictEqual(renderProblemsBlock(refusedWhileThere.data?.problems).split('\n').length, 4, 'both records listed');
+
+            // Nothing journaled.
+            await replyAnswer(attach([]), 'running');
+        });
+
         test('the fence honours the long cap for cmsis_action and flash only', async () => {
             const timers: number[] = [];
             const x = new ScriptedExecutor();
@@ -3753,6 +4630,148 @@ suite('DebuggingHandler', () => {
             timers.length = 0;
             await textAnswer(handler.handleReadMemory({ address: '0x20000000', length: 4, timeoutMs: 120_000 }));
             assert.strictEqual(timers[0], 60_000, 'a read keeps the 60 s cap');
+        });
+
+        /**
+         * Two windows on one GDB port (live test): an FVP launch in one window while pyOCD's CMSIS Run of
+         * another listened on 127.0.0.1:3333 connected GDB to pyOCD and halted that board. A launch, a
+         * CMSIS Run and start_debugging now ask who holds their GDB port before anything starts.
+         */
+        suite('two windows on one GDB port', () => {
+            const FVP_LAUNCH = {
+                name: 'Arm-FVP@GDB (launch)', type: 'gdbtarget', request: 'launch', cwd: '${workspaceFolder}/',
+                target: {
+                    server: '${workspaceFolder}/.vscode/fvp.sh',
+                    serverParameters: ['-D', '--plugin', '${env:AVH_FVP_PLUGINS}/GDBServer.so', '-C', 'GDBServer.port=3333', '-f', 'fvp_config.txt'],
+                    port: '', serverPortRegExp: 'GDBServer: Listening .*port=([0-9]+)',
+                },
+                cmsis: { cbuildRunFile: '${command:cmsis-csolution.getCbuildRunFile}', updateConfiguration: 'manual' },
+            };
+            const FVP_ATTACH = { name: 'Arm-FVP@GDB (attach)', type: 'gdbtarget', request: 'attach', target: { port: '3333' }, cmsis: {} };
+            const PYOCD_LAUNCH = { name: 'STLink@pyOCD (launch)', type: 'gdbtarget', request: 'launch', target: { server: 'pyocd', port: '3333' }, cmsis: {} };
+            const PYOCD_ATTACH = { name: 'STLink@pyOCD (attach)', type: 'gdbtarget', request: 'attach', target: { port: '3333' }, cmsis: {} };
+            const PYOCD_RUN_TASK = { label: 'CMSIS Run', type: 'shell', command: 'pyocd',
+                args: ['gdbserver', '--probe', 'stlink:', '--persist', '--reset-run', '--cbuild-run', '${command:cmsis-csolution.getCbuildRunFile}', '--quiet'] };
+            const FVP_RUN_TASK = { label: 'CMSIS Run', type: 'shell', command: 'FVP_Corstone_SSE-300_Ethos-U55', args: ['-f', 'fvp_config.txt', '-a', 'Blinky.axf'] };
+            const ITEM13_RUN: GdbPortHolder = { kind: 'window', pid: 70401, name: 'item13', claim: { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' } };
+
+            let dir: string;
+            const writeVscode = (file: string, content: unknown): void => {
+                fs.writeFileSync(path.join(dir, '.vscode', file), JSON.stringify(content));
+            };
+            setup(() => {
+                dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-gdbport-'));
+                fs.mkdirSync(path.join(dir, '.vscode'));
+                writeVscode('launch.json', { version: '0.2.0', configurations: [FVP_LAUNCH, FVP_ATTACH] });
+                writeVscode('tasks.json', { version: '2.0.0', tasks: [PYOCD_RUN_TASK] });
+                // pyOCD's gdbserver --cbuild-run listens where the cbuild-run file says.
+                fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), 'cbuild-run:\n  debugger:\n    name: ST-Link@pyOCD\n    gdbserver:\n      - port: 3334\n');
+            });
+            teardown(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+            /** A window with that folder open; `holder` answers for each GDB port a call asks about, which `asked` records. */
+            const portWorld = (holder: (port: number) => GdbPortHolder | undefined) => {
+                const clock = fastClock(20);
+                const tasks = new FakeTasks();
+                tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
+                const tracker = new CmsisJobTracker(tasks, clock);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const asked: number[] = [];
+                const issued: string[] = [];
+                const record = (name: string) => () => {
+                    issued.push(name);
+                };
+                registrations?.dispose();
+                registrations = standIns({
+                    'cmsis-csolution.getSolutionFile': () => path.join(dir, 'demo.csolution.yml'),
+                    'cmsis-csolution.getActiveTargetSet': () => 'HE',
+                    'cmsis-csolution.cmsisLoadAndDebug': record('load_and_debug'),
+                    'cmsis-csolution.cmsisRun': record('run'),
+                    'cmsis-csolution.cmsisLoadAndRun': record('load_and_run'),
+                });
+                const handler = handlerFor(x, {
+                    ...clock,
+                    cmsisJobs: () => tracker,
+                    workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }],
+                    activeCbuildRunFile: async () => path.join(dir, 'demo+HE.cbuild-run.yml'),
+                    gdbPortHolder: async (port) => {
+                        asked.push(port);
+                        return holder(port);
+                    },
+                }, 5, {});
+                return { handler, asked, issued, x };
+            };
+
+            test('load_and_debug is refused before its command while another window\'s CMSIS Run uses the FVP\'s GDB port', async () => {
+                const w = portWorld((port) => (port === 3333 ? ITEM13_RUN : undefined));
+                const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'PROBE_BUSY');
+                assert.strictEqual(refused.message, 'CMSIS \'load_and_debug\' on HE not started: the Arm FVP GDB server of \'Arm-FVP@GDB (launch)\' would use '
+                    + 'port 3333, which window \'item13\' (pid 70401) uses for its CMSIS Run task (pyOCD GDB server). GDB would connect to that server '
+                    + 'instead of the new one, and debug — and halt — that target.');
+                assert.strictEqual(refused.hint, 'Stop that task there once the user agrees (cmsis_action stop_run with window: \'70401\'), or give this project another port: '
+                    + 'GDBServer.port in .vscode/launch.json.');
+                assert.deepStrictEqual(w.asked, [3333], 'the launch configuration is asked about, the attach configuration is not');
+                assert.deepStrictEqual(w.issued, []);
+            });
+
+            test('run and load_and_run are refused while another program listens where pyOCD\'s CMSIS Run would; its port comes from the cbuild-run file', async () => {
+                const w = portWorld(() => ({ kind: 'listener' }));
+                for (const action of ['run', 'load_and_run'] as const) {
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action }), 'PROBE_BUSY');
+                    assert.strictEqual(refused.message, `CMSIS '${action}' on HE not started: its pyOCD GDB server (CMSIS Run) would use port 3334, and another `
+                        + 'program already listens on that port of this computer — no window of the CMSIS Developer Assistant claims it: a GDB server started '
+                        + 'elsewhere, or one an earlier session left running. Two GDB servers on one port: the new one fails to start, or a GDB meant for one '
+                        + 'of them reaches the other.');
+                    assert.strictEqual(refused.hint, 'Free the port (the user can end that program), or give this project\'s GDB server another port.');
+                }
+                assert.deepStrictEqual(w.asked, [3334, 3334]);
+                assert.deepStrictEqual(w.issued, []);
+            });
+
+            test('a free port lets the launch and the CMSIS Run through; the FVP adapter\'s Run hosts no GDB server and asks nothing', async () => {
+                const w = portWorld(() => undefined);
+                await w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 2_000 }).catch(() => undefined);
+                await w.handler.handleCmsisCommand({ action: 'run', timeoutMs: 2_000 }).catch(() => undefined);
+                assert.deepStrictEqual(w.asked, [3333, 3334]);
+                assert.deepStrictEqual(w.issued, ['load_and_debug', 'run']);
+
+                writeVscode('tasks.json', { version: '2.0.0', tasks: [FVP_RUN_TASK] });
+                const bare = portWorld(() => ({ kind: 'listener' }));
+                await bare.handler.handleCmsisCommand({ action: 'run', timeoutMs: 2_000 }).catch(() => undefined);
+                assert.deepStrictEqual(bare.asked, []);
+                assert.deepStrictEqual(bare.issued, ['run']);
+            });
+
+            test('start_debugging of a launch configuration with a fixed port asks before the start; an attach configuration does not', async () => {
+                writeVscode('launch.json', { version: '0.2.0', configurations: [PYOCD_LAUNCH, PYOCD_ATTACH] });
+                const held = portWorld(() => ({ kind: 'listener' }));
+                const refused = await refusalOf(held.handler.handleStartDebugging({ workingDirectory: dir, configurationName: 'STLink@pyOCD (launch)' }), 'PROBE_BUSY');
+                assert.ok(refused.message.startsWith('Debug session not started: the pyOCD GDB server of \'STLink@pyOCD (launch)\' would use port 3333, '
+                    + 'and another program already listens'), refused.message);
+                assert.strictEqual(refused.hint, 'Free the port (the user can end that program), or give this project another port: '
+                    + 'target.port of \'STLink@pyOCD (launch)\' in .vscode/launch.json.');
+                assert.deepStrictEqual(held.x.argsOf('startDebuggingByName'), []);
+
+                await held.handler.handleStartDebugging({ workingDirectory: dir, configurationName: 'STLink@pyOCD (attach)', timeoutMs: 1_000 }).catch(() => undefined);
+                assert.deepStrictEqual(held.asked, [3333], 'the attach connects to a server that is meant to listen');
+                assert.deepStrictEqual(held.x.argsOf('startDebuggingByName'), [[dir, 'STLink@pyOCD (attach)']]);
+            });
+
+            test('the window\'s handler reads the other windows\' GDB ports it was given, and names the session that holds one', async () => {
+                writeVscode('launch.json', { version: '0.2.0', configurations: [PYOCD_LAUNCH] });
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const windows = [{ pid: 4047, name: 'eval1', claims: [{ port: 3333, source: 'session' as const, label: 'Arm-FVP@GDB (launch)', server: 'Arm FVP' as const }] }];
+                const handler = new DebuggingHandler(x as unknown as IDebuggingExecutor, {} as IDebugConfigurationManager, 5, problemJournal(), () => windows);
+                const refused = await refusalOf(handler.handleStartDebugging({ workingDirectory: dir, configurationName: 'STLink@pyOCD (launch)' }), 'PROBE_BUSY');
+                assert.strictEqual(refused.message, 'Debug session not started: the pyOCD GDB server of \'STLink@pyOCD (launch)\' would use port 3333, which '
+                    + 'window \'eval1\' (pid 4047) uses for its debug session \'Arm-FVP@GDB (launch)\' (Arm FVP GDB server). GDB would connect to that server '
+                    + 'instead of the new one, and debug — and halt — that target.');
+                assert.strictEqual(refused.hint, 'Stop that session there once the user agrees (select_debug_window {pid: 4047}, then stop_debugging), or give this project another '
+                    + 'port: target.port of \'STLink@pyOCD (launch)\' in .vscode/launch.json.');
+                assert.deepStrictEqual(x.argsOf('startDebuggingByName'), []);
+            });
         });
     });
 

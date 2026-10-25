@@ -218,20 +218,23 @@ suite('Tool rules in agents\' rule files', () => {
 
     // --- which file each agent reads ------------------------------------------------------
 
-    test('the user files of Claude Code, Codex, Copilot CLI and Antigravity are offered and preselected', () => {
-        const offered = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli', 'antigravity'], { folders: [] });
+    test('the user files of Claude Code, Codex, Copilot CLI, Antigravity and Kimi Code are offered and preselected', () => {
+        const offered = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'kimi-code'], { folders: [] });
         assert.deepStrictEqual(offered.map((target) => [target.file, target.scope, target.form, target.agents, target.preselect]), [
             [at(HOME, '.claude', 'CLAUDE.md'), 'user', 'block', ['claude-code'], true],
             [at(HOME, '.codex', 'AGENTS.md'), 'user', 'block', ['codex'], true],
             [at(HOME, '.copilot', 'copilot-instructions.md'), 'user', 'block', ['copilot-cli'], true],
             [at(HOME, '.gemini', 'AGENTS.md'), 'user', 'block', ['antigravity'], true],
+            [at(HOME, '.kimi-code', 'AGENTS.md'), 'user', 'block', ['kimi-code'], true],
         ]);
     });
 
-    test('CLAUDE_CONFIG_DIR, CODEX_HOME and COPILOT_HOME move the user files', () => {
-        const env = { CLAUDE_CONFIG_DIR: at(ROOT, 'claude'), CODEX_HOME: at(ROOT, 'codex'), COPILOT_HOME: at(ROOT, 'copilot') };
-        const files = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli'], { folders: [], env }).map((target) => target.file);
-        assert.deepStrictEqual(files, [at(ROOT, 'claude', 'CLAUDE.md'), at(ROOT, 'codex', 'AGENTS.md'), at(ROOT, 'copilot', 'copilot-instructions.md')]);
+    test('CLAUDE_CONFIG_DIR, CODEX_HOME, COPILOT_HOME and KIMI_CODE_HOME move the user files', () => {
+        const env = { CLAUDE_CONFIG_DIR: at(ROOT, 'claude'), CODEX_HOME: at(ROOT, 'codex'), COPILOT_HOME: at(ROOT, 'copilot'), KIMI_CODE_HOME: at(ROOT, 'kimi') };
+        const files = targets(new FakeDisk(), ['claude-code', 'codex', 'copilot-cli', 'kimi-code'], { folders: [], env }).map((target) => target.file);
+        assert.deepStrictEqual(files, [
+            at(ROOT, 'claude', 'CLAUDE.md'), at(ROOT, 'codex', 'AGENTS.md'), at(ROOT, 'copilot', 'copilot-instructions.md'), at(ROOT, 'kimi', 'AGENTS.md'),
+        ]);
     });
 
     test('Copilot Chat, Cursor, Cline and Roo Code get a workspace file only, and none is preselected', () => {
@@ -246,11 +249,11 @@ suite('Tool rules in agents\' rule files', () => {
     });
 
     test('a workspace AGENTS.md that several agents read is one target naming them all', () => {
-        const offered = targets(new FakeDisk(), ['codex', 'copilot-cli', 'copilot-chat', 'antigravity', 'claude-code'], { folders: [FOLDER] })
+        const offered = targets(new FakeDisk(), ['codex', 'kimi-code', 'copilot-cli', 'copilot-chat', 'antigravity', 'claude-code'], { folders: [FOLDER] })
             .filter((target) => target.scope === 'workspace');
         assert.strictEqual(offered.length, 1);
         assert.strictEqual(offered[0].file, at(WS, 'AGENTS.md'));
-        assert.deepStrictEqual(offered[0].agents, ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'copilot-chat']);
+        assert.deepStrictEqual(offered[0].agents, ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'kimi-code', 'copilot-chat']);
     });
 
     test('Claude Code keeps to a project CLAUDE.md, and never creates one that would hide AGENTS.md', () => {

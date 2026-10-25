@@ -27,7 +27,10 @@
  *      name, and the procedure or routing unit whose "when to use" text
  *      holds that name is lifted to the top (`HOW_TO_BONUS`): BM25 alone
  *      ranks a short reference unit that carries the word in its title above
- *      a procedure that names it once in a long description.
+ *      a procedure that names it once in a long description. A query that
+ *      names a unit by its id puts that unit first (`ID_BONUS`), and one
+ *      that is the start of a few ids puts those units first (`ID_PREFIX_BONUS`):
+ *      BM25 splits `proc-cmsis-debug-live` into four common words.
  *   3. A unit a pack ships is scoped to that pack (`scoped_to`, or the pack
  *      of its index): only a project that uses the pack sees it, and
  *      without a project nobody.
@@ -81,6 +84,22 @@ const HOW_TO_BONUS = 0.010;
  * rank scores, so that among exact matches the order of the lines decides.
  */
 const FIRST_LINE_BONUS = 0.05;
+/**
+ * What a unit gets whose id the query names, as the whole query or as one
+ * of its words: above an exact symptom (1 + `FIRST_LINE_BONUS`), since an
+ * agent that names an id wants that unit and no other.
+ */
+const ID_BONUS = 2;
+/**
+ * What a unit gets whose id starts with the query, when the query is one
+ * word that names no unit and starts at most `ID_PREFIX_UNITS` ids (an id
+ * cut short, `proc-cmsis-debug`): above the rank scores and the how-to
+ * bonus, below an exact symptom.
+ */
+const ID_PREFIX_BONUS = 0.5;
+const ID_PREFIX_UNITS = 10;
+/** A word that can be a unit id: lower-case letters, digits, dots and dashes, with a dash after the type prefix. */
+const ID_SHAPE = /^[a-z0-9][a-z0-9._]*-[a-z0-9._-]*$/;
 const CANDIDATES = 60;
 export const DEFAULT_RESULTS = 8;
 export const DEFAULT_BUDGET_TOKENS = 800;
@@ -203,9 +222,16 @@ function withoutVersion(value: string): string {
     return value.replace(/@.*$/, '').trim();
 }
 
+/** `infineon` for `component:Infineon::Device:Startup`; empty for an id without a vendor. */
+function componentVendor(id: string): string {
+    const rest = id.replace(/^component:/, '');
+    return rest.includes('::') ? rest.slice(0, rest.indexOf('::')).trim().toLowerCase() : '';
+}
+
 /**
  * The entity ids of a project: the ids its facts name, and for a device or
- * board the index knows, what stands above it there.
+ * board the index knows, what stands above it there. A component with its
+ * vendor is that vendor's alone.
  */
 export function contextEntities(index: KnowledgeReader, facts: ProjectFacts): Set<string> {
     const entities = new Set<string>();
@@ -238,12 +264,19 @@ export function contextEntities(index: KnowledgeReader, facts: ProjectFacts): Se
         entities.add(`pack:${withoutVersion(pack)}`);
     }
     for (const given of facts.components ?? []) {
-        const component = withoutVersion(given);
-        if (component.includes('::')) {
+        // `Vendor::Class&Bundle:Group&Variant@1.0.0` is the entity `component:Vendor::Class:Group`.
+        const component = withoutVersion(given).replace(/&[^:]*/g, '');
+        const separator = component.indexOf('::');
+        const vendor = separator >= 0 ? component.slice(0, separator).trim() : undefined;
+        if (vendor !== undefined) {
             entities.add(`component:${component}`);
         }
-        for (const id of index.componentIds(component.split('::').pop()!)) {
-            entities.add(id);
+        // By the name alone, which finds the vendor of `CMSIS:CORE`; a component that names its vendor keeps to
+        // it: `Device:Startup` is the name of some 40 vendors' components, and their units are not this project's.
+        for (const id of index.componentIds(separator >= 0 ? component.slice(separator + 2) : component)) {
+            if (vendor === undefined || componentVendor(id) === vendor.toLowerCase()) {
+                entities.add(id);
+            }
         }
     }
     if (facts.compiler) {
@@ -293,6 +326,29 @@ export function appliesIn(targets: readonly string[], context: ReadonlySet<strin
     return { applies: true, unverified };
 }
 
+/**
+ * The units the query names by id, each with its bonus: every word of the
+ * query that is a unit's id, or, for a query of one word that is none, the
+ * units whose id starts with it when there are few. Quotes and brackets
+ * around a word do not count.
+ */
+export function unitsNamed(index: KnowledgeReader, query: string): Map<string, number> {
+    const words = query.split(/[\s,;`'"()[\]{}<>]+/).map((word) => word.replace(/[.:]+$/, '').toLowerCase()).filter((word) => ID_SHAPE.test(word));
+    const named = new Map<string, number>();
+    for (const word of words) {
+        if (index.node(word)?.kind === 'knowledge') {
+            named.set(word, ID_BONUS);
+        }
+    }
+    if (named.size === 0 && words.length === 1 && query.trim().split(/\s+/).length === 1) {
+        const starting = index.unitIdsWithPrefix(words[0], ID_PREFIX_UNITS + 1);
+        if (starting.length <= ID_PREFIX_UNITS) {
+            starting.forEach((id) => named.set(id, ID_PREFIX_BONUS));
+        }
+    }
+    return named;
+}
+
 /** Search the index; see the head of this file for the steps. */
 export function searchKnowledge(reader: KnowledgeReader, query: string, options: SearchOptions = {}): SearchResult {
     const index = reader.forContext(options.context);
@@ -311,6 +367,9 @@ export function searchKnowledge(reader: KnowledgeReader, query: string, options:
         if (type === 'procedure' && !id.startsWith('route-')) {
             score.set(id, value + HOW_TO_PRIOR);
         }
+    }
+    for (const [id, bonus] of unitsNamed(index, query)) {
+        score.set(id, (score.get(id) ?? 0) + bonus);
     }
     const words = queryWords(query).filter((word) => word.length > 1);
     if (words.length > 0 && words.length <= HOW_TO_QUERY_WORDS) {
@@ -380,21 +439,42 @@ export function searchKnowledge(reader: KnowledgeReader, query: string, options:
     return { results, budgetUsed: used, matched: kept.length, incompleteHidden, incompleteExact, contextFilter: options.context !== undefined };
 }
 
+/** A unit a failed build's error message points to; `summary` when the message only sums up the errors before it. */
+export interface KnownMessage {
+    message: string;
+    id: string;
+    summary?: true;
+}
+
+/**
+ * True for a unit whose message only sums up the errors printed before it
+ * (`role: summary`, such as csolution's `processing context '…' failed`):
+ * it has no cause of its own to tell.
+ */
+function isSummary(node: KnowledgeNode): boolean {
+    return node.meta.role === 'summary';
+}
+
 /**
  * The complete unit behind each message that the index knows by its exact
- * symptom: what a failed build's error lines can point to. A pack's unit
- * only when `context`, the project's entities, has the pack.
+ * symptom: what a failed build's error lines can point to, in the order of
+ * the messages. A pack's unit only when `context`, the project's entities,
+ * has the pack. A summary unit comes after all others, and is left out when
+ * another unit was found for an earlier message (or the same one): that
+ * unit is what the agent needs.
  */
-export function knownMessages(reader: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): { message: string; id: string }[] {
+export function knownMessages(reader: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): KnownMessage[] {
     const index = reader.forContext(context);
-    const found: { message: string; id: string }[] = [];
-    for (const message of messages) {
+    const found: { message: string; id: string; at: number; summary: boolean }[] = [];
+    messages.forEach((message, at) => {
         for (const id of index.exactSymptoms(messageLines(message))) {
             const node = index.node(id);
             if (node !== undefined && !isIncomplete(node) && inScope(index.scopesOf(id), context) && !found.some((f) => f.id === id)) {
-                found.push({ message, id });
+                found.push({ message, id, at, summary: isSummary(node) });
             }
         }
-    }
-    return found;
+    });
+    const causes = found.filter((f) => !f.summary);
+    const summaries = found.filter((f) => f.summary && !causes.some((cause) => cause.at <= f.at));
+    return [...causes, ...summaries].map(({ message, id, summary }) => ({ message, id, ...(summary ? { summary: true as const } : {}) }));
 }

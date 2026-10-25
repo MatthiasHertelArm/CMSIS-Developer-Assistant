@@ -767,7 +767,7 @@ suite('build diagnosis (#15)', () => {
             w.children[0].finish(1, GCC_LOG);
             await status;
             const idle = idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now());
-            assert.match(idle, /^No CMSIS job in flight in this window\. Last results \(10 min\): build on MPS3 ❌ exit 2 [\d.]+ s ago \(job b-1, '.*'\)\.\nBuild job b-1 failed: 2 errors \(from a diagnostic re-run of cbuild with --log; /);
+            assert.match(idle, /^No CMSIS job in flight in this window\. Last results: build on MPS3 ❌ exit 2 [\d.]+ s ago \(job b-1, '.*'\)\.\nBuild job b-1 failed: 2 errors \(from a diagnostic re-run of cbuild with --log; /);
             assert.ok(idle.includes('\n  Blinky/main.c:42:5 error:') || idle.includes('main.c:42:5 error:'), idle);
         });
 

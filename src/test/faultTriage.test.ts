@@ -244,6 +244,20 @@ suite('Fault triage', () => {
         assert.strictEqual(lines[0], '=== No fault flags set ===');
         assert.strictEqual(lines[1], 'Stop: breakpoint, thread mode, PC 0x08000100');
         assert.match(out, /Next: get_call_stack/);
+        assert.match(out, /The target is not in a fault: CFSR and HFSR are clear/);
+    });
+
+    test('with no fault flags but a fault handler active, the report does not say the target is not in a fault', () => {
+        for (const [xpsr, handler] of [[0x61000003, 'HardFault'], [0x01000004, 'MemManage'], [0x01000007, 'SecureFault']] as const) {
+            const out = renderDiagnosis(input({ stopReason: 'breakpoint', regs: { pc: 0x1000219e, xpsr } }));
+            assert.doesNotMatch(out, /not in a fault/);
+            assert.ok(out.includes(`The fault status reads clear (CFSR and HFSR 0), yet the ${handler} handler is active: `
+                + 'the handler cleared it, or the debug server does not report it.'), out);
+            assert.match(out, /Next: get_call_stack for where the exception came from\.$/);
+        }
+        for (const xpsr of [0x01000002, 0x0100000b, 0x01000010]) {
+            assert.match(renderDiagnosis(input({ regs: { xpsr } })), /The target is not in a fault/, `exception ${xpsr & 0x1ff} is no fault handler`);
+        }
     });
 
     test('a missing frame and skipped sections are stated, not hidden', () => {

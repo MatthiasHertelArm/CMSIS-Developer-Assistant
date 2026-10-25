@@ -174,6 +174,7 @@ On macOS warn that the very first run builds the container image (~100MB downloa
 ## Caveats to tell the user
 
 - **Run restarts the model, it does not resume a halted one** — RSP detach leaves the core halted and the plugin has no resume command (§2).
+- **The running model ignores `pause_execution`** — the GDBServer plugin does not act on GDB's interrupt while the simulation runs (with vCont on or off), so only a breakpoint stops it: set breakpoints (for a fault, `HardFault_Handler`) before `continue_execution`. A breakpoint change needs a halted model too, and `stop_debugging` on a running model takes a second call, since the adapter first waits for a halt.
 - Only one model can hold the GDB port at a time; a stale `fvp-gdb` or an older container will block it. `lsof -nP -iTCP:3333 -sTCP:LISTEN` finds the culprit.
 - The launch config is `manual`: after changing target-type or build-type, its `program`/`serverParameters` paths need re-syncing (§5).
 - Windows: the shim is POSIX shell, so fix 5(b) is not available; point `model:` straight at `FVP_Corstone_SSE-320.exe`, keep `port` set and use `"serverStartupDelay": 3000` (a fixed wait instead of the banner match) in the launch configuration; raise it when `gdb connection lost` still appears before the banner. The `chmod +x` of step 6 does not apply.

@@ -88,7 +88,7 @@ When a `step_*` does not stop in time, the server **auto-heals**: it pauses the 
 |---|---|
 | `cmsis_action` | ⭐ Drive the CMSIS Solution panel buttons (build/load/erase/load_and_debug/attach/…) |
 | `get_session_status` | 5-state classifier (no-session/initializing/running/stopped/unresponsive) |
-| `check_target_connection` | Fast DAP `threads` liveness probe |
+| `check_target_connection` | Fast DAP `threads` liveness probe; on a stopped target also reads DHCSR: does the core answer, halted, in lockup |
 | `pause_execution` | DAP pause — halt a running target without ending the session |
 | `read_memory` | Read a range of bytes from target memory (hex/ASCII dump) |
 | `read_core_registers` | Read all Cortex-M core registers (R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK) |

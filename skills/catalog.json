@@ -98,7 +98,7 @@
     },
     {
       "name": "debugger-troubleshooting",
-      "description": "Diagnose a failing embedded debug or flash session: the GDB server will not start, the target will not connect, \"Failed to power up DAP\", \"Could not find core in Coresight setup\", \"Could not read memory\", \"Waiting for a debug probe\", flashing succeeds but the firmware faults or is silent, or programming is implausibly slow. Covers pyOCD and J-Link sessions of the CMSIS Debugger, CMSIS-Toolbox cbuild-run files and FVP setups, and works through the CMSIS Developer Assistant tools first. Use when cmsis_action load_and_debug, attach, load or flash fails and the cause is not obvious from the error text.",
+      "description": "Diagnose a failing embedded debug or flash session: the probe's software is missing or not on PATH (\"'JLink.exe' is not recognized as an internal or external command, operable program or batch file\", \"JLinkExe: command not found\", \"gdbserver has hit error Error: spawn JLinkGDBServerCL.exe ENOENT\", a CMSIS Load that fails within a second), the GDB server will not start, the target will not connect, \"Failed to power up DAP\", \"Could not find core in Coresight setup\", \"Could not read memory\", \"Waiting for a debug probe\", flashing succeeds but the firmware faults or is silent, or programming is implausibly slow. Covers pyOCD and J-Link sessions of the CMSIS Debugger, CMSIS-Toolbox cbuild-run files and FVP setups, and works through the CMSIS Developer Assistant tools first. Use when cmsis_action load_and_debug, attach, load or flash fails and the cause is not obvious from the error text.",
       "category": "debug",
       "kind": "skill",
       "source": "extension",

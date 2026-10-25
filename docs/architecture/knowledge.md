@@ -70,6 +70,16 @@ pack a csolution names with `path:` outside the pack root
   questions carry specifics the reference text answers better and get none;
   the golden set of the knowledge base (`tests/eval_search.js`) is the
   measure for any change here.
+- **An id leads to its unit.** BM25 splits `proc-cmsis-debug-live` into four
+  words that dozens of units carry, so a search for an id an agent already
+  has did not find that unit first (a tester's agent tried nine times
+  before it found `knowledge_get`). A word of the query that is a unit's id
+  now puts that unit first, above an exact symptom (`ID_BONUS`); a query of
+  one word that is no id but starts the ids of at most ten units
+  (`proc-cmsis-debug`) puts those first (`ID_PREFIX_BONUS`,
+  `unitsNamed()` in `search.ts`, `unitIdsWithPrefix` of the reader). The
+  filters still apply: `types`, `domain` and the project context can leave
+  the named unit out, and `knowledge_get` reads it regardless.
 - **Files of a unit.** A skill's templates and scripts are `asset` entities
   with the file as body, referenced by their procedure. `knowledge_get` on a
   procedure lists them by the path its text uses, and returns one by its id
@@ -88,7 +98,11 @@ pack a csolution names with `path:` outside the pack root
   `CANDIDATES` BM25 hits of its own (`MemberView.bm25`), so pack hits do
   not crowd the core's out before the filters run. The context itself is
   built on the whole set (`contextEntities`): a pack's board entity is what
-  brings the pack into the context.
+  brings the pack into the context. A component of the cbuild file names
+  its vendor (`Infineon::Device:Startup`), and only that vendor's entity
+  joins the context, without bundle and variant; the lookup by the name
+  alone, which would bring `Device:Startup` of some 40 vendors and so their
+  units, is left to a component given without a vendor (`CMSIS:CORE`).
 - **Symptom patterns are guarded.** The `symptom_regex` of every
   troubleshooting unit runs synchronously on the extension host; a pattern
   with an unbounded quantifier inside an unbounded group backtracks for
@@ -102,6 +116,12 @@ pack a csolution names with `path:` outside the pack root
   `KnowledgeHandler.knownMessageLines`) read the facts of the window's
   active target at each build, not the context of the last search, so a
   build in another project names that project's pack units.
+- **A summary line is no cause.** csolution follows the errors of a context
+  with `processing context '…' failed`. A unit the index marks
+  `role: summary` is named after the others and worded as a summary, and
+  left out when a real unit was found for an earlier error line
+  (`knownMessages()`), so a failed build does not send the agent to a unit
+  that only says "fix the errors before this line".
 
 ## The knowledge browser
 

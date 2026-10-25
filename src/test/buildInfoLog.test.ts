@@ -120,6 +120,30 @@ suite('buildInfo/buildLog', () => {
         assert.deepStrictEqual(s.failedSteps, ['…/Test/DUT/startup_stm32f746xx.o']);
     });
 
+    test('csolution lines with the YAML file\'s location before " - ": Windows and POSIX paths, spaces, no line, CRLF', () => {
+        // A tester's schema error (Windows), the forms the knowledge index cites, and the plain form without a location.
+        const s = parseBuildLog([
+            'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml:18:11 - error csolution: schema check failed, verify syntax',
+            'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml:1:1 - error csolution: cproject not parsed, adding context failed',
+            'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml:18:11 - error csolution: String does not match the pattern of "^([^=:]+)$".',
+            '/Users/dev/AWS MQTT Demo/Demo.csolution.yml:43:7 - error csolution: unexpected instance type',
+            '/.cbuild-pack.yml - error csolution: file cannot be written',
+            'C:\\Users\\dev one\\Blinky\\Blinky.csolution.yml:9:3 - warning csolution: unknown key \'packs-dir\'',
+            'error csolution: undefined variables in Blinky.cproject.yml: $Board-Layer$',
+        ].join('\r\n'), 'csolution.log');
+        const shown = s.diagnostics.map((d) => [d.severity, d.tool, d.code, d.file, d.line, d.col, d.message]);
+        assert.deepStrictEqual(shown, [
+            ['error', 'cbuild', 'csolution', 'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml', 18, 11, 'schema check failed, verify syntax'],
+            ['error', 'cbuild', 'csolution', 'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml', 1, 1, 'cproject not parsed, adding context failed'],
+            ['error', 'cbuild', 'csolution', 'C:/Temp/XMC4700-Blinky/snmp_agent_demo.cproject.yml', 18, 11, 'String does not match the pattern of "^([^=:]+)$".'],
+            ['error', 'cbuild', 'csolution', '/Users/dev/AWS MQTT Demo/Demo.csolution.yml', 43, 7, 'unexpected instance type'],
+            ['error', 'cbuild', 'csolution', '/.cbuild-pack.yml', undefined, undefined, 'file cannot be written'],
+            ['warning', 'cbuild', 'csolution', 'C:\\Users\\dev one\\Blinky\\Blinky.csolution.yml', 9, 3, 'unknown key \'packs-dir\''],
+            ['error', 'cbuild', 'csolution', undefined, undefined, undefined, 'undefined variables in Blinky.cproject.yml: $Board-Layer$'],
+        ]);
+        assert.deepStrictEqual([s.errors, s.warnings, s.notes, s.ok], [6, 1, 0, false]);
+    });
+
     test('looksLikeBuildLog and shortPath', () => {
         assert.ok(looksLikeBuildLog(path.join(BUILDINFO_FIXTURES, 'build-ok.log')));
         const tmp = path.join(BUILDINFO_FIXTURES, '..', '..', '..', '..', 'out', 'not-a-build.log.tmp');

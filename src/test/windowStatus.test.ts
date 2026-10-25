@@ -67,7 +67,8 @@ suite('Window status', () => {
             const view = renderWindowStatus(state());
             assert.strictEqual(view.text, '$(cda-robot) R');
             assert.deepStrictEqual(view.tooltip.split('\n'), [
-                'CMSIS Developer Assistant: router window. It serves the MCP endpoint and forwards each agent call.',
+                'CMSIS Developer Assistant',
+                'Router window: serves MCP, forwards agent calls.',
                 `MCP endpoint: ${ENDPOINT}`,
                 'Default target windows: none, agents choose automatically',
                 'Last agent call here: none yet',
@@ -80,7 +81,7 @@ suite('Window status', () => {
         test('a worker names its role and lists no sessions', () => {
             const view = renderWindowStatus(state({ role: 'worker', sessions: undefined }));
             assert.strictEqual(view.text, '$(cda-robot) W');
-            assert.strictEqual(view.tooltip.split('\n')[0], 'CMSIS Developer Assistant: worker window. It runs the agent calls the router window forwards to it.');
+            assert.deepStrictEqual(view.tooltip.split('\n').slice(0, 2), ['CMSIS Developer Assistant', 'Worker window: runs the calls the router forwards.']);
             assert.ok(!view.tooltip.includes('Agent sessions'), view.tooltip);
         });
 
@@ -112,12 +113,18 @@ suite('Window status', () => {
             const view = renderWindowStatus(state({
                 role: 'worker',
                 sessions: undefined,
-                running: [{ tool: 'start_debugging', since: NOW - 200_000, fenced: true }, { tool: 'read_memory', since: NOW - 400 }],
+                running: [
+                    { tool: 'start_debugging', since: NOW - 200_000, fenced: true, waitsForUser: true },
+                    { tool: 'continue_execution', since: NOW - 11_000, fenced: true, waitsForUser: false },
+                    { tool: 'read_memory', since: NOW - 400 },
+                ],
             }));
             assert.strictEqual(view.warning, true);
             assert.strictEqual(view.text, '$(cda-robot) W $(sync~spin)');
+            // A picker or dialog only for the call that can open one.
             assert.ok(view.tooltip.split('\n').includes('Running here: start_debugging for 3 min (the agent was told it timed out; '
-                + 'a picker or dialog here may be waiting for you), read_memory for 0 s'), view.tooltip);
+                + 'a picker or dialog here may be waiting for you), continue_execution for 11 s (the agent was told it timed out), '
+                + 'read_memory for 0 s'), view.tooltip);
             assert.strictEqual(renderWindowStatus(state({ running: [{ tool: 'read_memory', since: NOW }] })).warning, false);
         });
 

@@ -21,8 +21,9 @@
  *
  * GDB hands registers back in whatever format its target description
  * implies: decimal for `int` registers, `0x…` with a symbol for code
- * pointers, `[ Z C ]` for decoded flags. `normaliseRegister` brings the
- * numeric ones to one hex form. Pure: no `vscode` import.
+ * pointers, `[ Z C ]` for decoded flags, `void` for a register its target
+ * description lacks. `normaliseRegister` brings the numeric ones to one hex
+ * form. Pure: no `vscode` import.
  */
 
 import type { MemoryRead } from '../executor/contract';
@@ -43,9 +44,11 @@ const ASCII_LINE_CHARS = 64;
 
 /**
  * One register value in a comparable form. Decoded flags and placeholders
- * stay as they are; `0x…` loses a trailing annotation such as `<main+12>`;
- * a non-negative decimal becomes `0x` and eight hex digits. A `0X…` value
- * and a negative decimal come back unchanged (KB14).
+ * stay as they are; `0x…` and `0X…` lose a trailing annotation such as
+ * `<main+12>`; a decimal becomes `0x` and eight hex digits. GDB prints a
+ * register typed `int` (lr, xpsr, r0–r12 on pyOCD's and J-Link's target
+ * descriptions) as a signed decimal, so EXC_RETURN 0xfffffff9 arrives as
+ * `-7`: a negative 32-bit value is read as its two's complement.
  */
 export function normaliseRegister(raw: string): string {
     const text = raw.trim();
@@ -53,14 +56,15 @@ export function normaliseRegister(raw: string): string {
         return text;
     }
     if (text.startsWith('0x') || text.startsWith('0X')) {
-        const leadingHex = /^0x[0-9a-fA-F]+/.exec(text);
-        return leadingHex ? leadingHex[0] : text;
+        const leadingHex = /^0[xX][0-9a-fA-F]+/.exec(text);
+        return leadingHex ? `0x${leadingHex[0].slice(2)}` : text;
     }
     const decimal = parseInt(text, 10);
-    if (Number.isNaN(decimal) || decimal < 0) {
+    if (Number.isNaN(decimal) || decimal < -(WORD_SPAN / 2)) {
         return text;
     }
-    return `0x${(decimal % WORD_SPAN).toString(16).padStart(8, '0')}`;
+    const unsigned = decimal < 0 ? decimal + WORD_SPAN : decimal % WORD_SPAN;
+    return `0x${unsigned.toString(16).padStart(8, '0')}`;
 }
 
 /**
@@ -76,20 +80,52 @@ export function registerNumber(raw: string | undefined): number | undefined {
     return /^0x[0-9a-fA-F]+$/.test(shown) ? Number(shown) >>> 0 : undefined;
 }
 
-/** The `read_core_registers` table. `xpsr` and `control` are printed as GDB gave them. */
+/** What GDB gives for `$name` when its target description has no such register: an unset convenience variable. */
+const GDB_VOID = 'void';
+/** Shown instead of `void` for a register the GDB server does not report (the Arm FVP's lacks msp, psp, control and the masks). */
+const NOT_REPORTED = '<not reported by the GDB server>';
+
+/** True when GDB's text for a register means the GDB server does not report it. */
+export function isUnreportedRegister(raw: string | undefined): boolean {
+    return raw !== undefined && raw.trim() === GDB_VOID;
+}
+
+/**
+ * MSP when the GDB server does not report it but the core is in Handler
+ * mode (IPSR, the low nine bits of xPSR, not 0): Handler mode always runs on
+ * the MSP, so it is the SP. Undefined otherwise.
+ */
+export function mspFromHandlerSp(registers: Record<string, string | undefined>): number | undefined {
+    if (!isUnreportedRegister(registers.msp)) {
+        return undefined;
+    }
+    const xpsr = registerNumber(registers.xpsr);
+    return xpsr !== undefined && (xpsr & 0x1FF) !== 0 ? registerNumber(registers.sp) : undefined;
+}
+
+/**
+ * The `read_core_registers` table. `xpsr` and `control` are printed as GDB
+ * gave them. A register the GDB server does not report reads as such, not
+ * as GDB's `void`; MSP then comes from the SP in Handler mode.
+ */
 export function renderCoreRegisters(registers: Record<string, string>): string {
     const raw = (name: string): string => registers[name] ? registers[name] : '<?>';
-    const value = (name: string): string => normaliseRegister(raw(name));
+    const value = (name: string): string => isUnreportedRegister(raw(name)) ? NOT_REPORTED : normaliseRegister(raw(name));
+    const verbatim = (name: string): string => isUnreportedRegister(raw(name)) ? NOT_REPORTED : raw(name);
     const cell = (name: string): string => `${name.padEnd(4)}= ${value(name).padEnd(14)}`;
+    const handlerMsp = mspFromHandlerSp(registers);
+    const msp = handlerMsp === undefined
+        ? value('msp')
+        : `0x${handlerMsp.toString(16).padStart(8, '0')} (the SP: Handler mode runs on the MSP; the GDB server does not report msp)`;
     const lines = ['Core Registers:'];
     for (const row of GENERAL_ROWS) {
         lines.push(`  ${row.map(cell).join('')}`);
     }
     lines.push(
-        `  xpsr = ${raw('xpsr')}`,
-        `  msp  = ${value('msp')}`,
+        `  xpsr = ${verbatim('xpsr')}`,
+        `  msp  = ${msp}`,
         `  psp  = ${value('psp')}`,
-        `  control   = ${raw('control')}`,
+        `  control   = ${verbatim('control')}`,
         `  faultmask = ${value('faultmask')}`,
         `  basepri   = ${value('basepri')}`,
         `  primask   = ${value('primask')}`,
@@ -110,11 +146,11 @@ const dumpAddress = (address: bigint): string => `0x${address.toString(16).padSt
  * the read returned; when part of the range could not be read, the line
  * after the header says how much was read and which part was not.
  */
-export function renderMemoryDump(addressText: string, length: number, read: MemoryRead, format: string): string {
+export function renderMemoryDump(addressText: string, length: number, read: MemoryRead, format: string, expression?: string): string {
     const prefixed = /^0x/i.test(addressText) ? addressText : `0x${addressText}`;
     const base = BigInt(prefixed);
     const { bytes, offset } = read;
-    let text = `Memory at ${prefixed} (${length} bytes):\n`;
+    let text = `Memory at ${prefixed}${expression === undefined ? '' : ` = ${expression}`} (${length} bytes):\n`;
     const unread = unreadRanges(base, length, offset, bytes.length);
     if (unread.length > 0) {
         text += `Read ${bytes.length} of ${length} bytes: ${unread.join(' and ')} could not be read.\n`;
@@ -138,6 +174,21 @@ export function renderMemoryDump(addressText: string, length: number, read: Memo
         text += `\nASCII:\n  ${printable}\n`;
     }
     return text;
+}
+
+/** A `read_memory` address written as a number: hex digits, with or without `0x`. Anything else is an expression. */
+export function isAddressLiteral(text: string): boolean {
+    return /^(0x)?[0-9a-f]+$/i.test(text);
+}
+
+/**
+ * The address in GDB's value of `(unsigned long)(expression)`, as `0x` and
+ * lower-case hex: the value is decimal, or hex after `0x`, and may have more
+ * after it. Undefined for a value that does not start with a number.
+ */
+export function addressFromValue(value: unknown): string | undefined {
+    const number = /^\s*(0x[0-9a-f]+|\d+)(?![0-9a-z_])/i.exec(typeof value === 'string' ? value : '');
+    return number === null ? undefined : `0x${BigInt(number[1]).toString(16)}`;
 }
 
 /** The parts of the `length` bytes from `base` that a read of `count` bytes at `offset` did not return, first and last address. */

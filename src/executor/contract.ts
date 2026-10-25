@@ -31,10 +31,10 @@ import type { DebugPortProbe } from '../core/probeWedge';
 import { ResetMethod, ResetOutcomeView } from '../core/resetAssist';
 import type { DapVariable } from '../core/variableView';
 import { DebugState, StackFrame } from '../debugState';
-import type { GdbLogpoint, StopWaitResult } from '../utils/sessionStateTracker';
+import type { AdoptedBreakpoint, FrameFocusWatch, GdbLogpoint, StartFocusWatch, StopWaitResult } from '../utils/sessionStateTracker';
 import type { GdbReply } from './gdbCommand';
 
-export type { GdbLogpoint } from '../utils/sessionStateTracker';
+export type { AdoptedBreakpoint, FrameFocusWatch, GdbLogpoint, StartFocus, StartFocusWatch } from '../utils/sessionStateTracker';
 export type { GdbReply } from './gdbCommand';
 export type { DebugPortProbe } from '../core/probeWedge';
 
@@ -50,7 +50,9 @@ export interface HardwareTimeouts {
  * Where a session stands, judged by the `threads` probe and the stop tracker.
  * `initializing` is an adapter that does not take requests: the probe failed
  * without a timeout, or the CMSIS Debugger's adapter answered without a
- * thread list while GDB connects or the session shuts down.
+ * thread list while GDB connects or the session shuts down. A session that
+ * was asked to end is `initializing` whenever the probe gets no thread list,
+ * a timeout included, with `endRequestedForMs`.
  */
 export type SessionState = 'no-session' | 'initializing' | 'running' | 'stopped' | 'unresponsive';
 
@@ -65,6 +67,18 @@ export interface SessionStatus {
     dapProbeMs: number | null;
     /** Why the probe failed or the adapter takes no requests, or why the target is stopped. */
     detail?: string;
+    /**
+     * Stopped only: how long ago the last DHCSR read of the session got no
+     * answer, when neither a stop nor a DHCSR read that answered came since
+     * (#3). Nothing is read for it.
+     */
+    coreSilentForMs?: number;
+    /**
+     * Initializing only: how long ago a `disconnect` or `terminate` request
+     * went to the session's adapter, which then takes no requests while it
+     * shuts down. Nothing is read for it.
+     */
+    endRequestedForMs?: number;
 }
 
 /** One entry of the thread list, with the thread's innermost frame when that could be read. */
@@ -128,7 +142,7 @@ export interface Readiness {
     hasActiveSession(): Promise<boolean>;
     /** Never rejects. */
     getSessionStatus(): Promise<SessionStatus>;
-    /** The status as the `check_target_connection` text. Never rejects. */
+    /** The status as the `check_target_connection` text, with one DHCSR read on a stopped CMSIS Debugger session. Never rejects. */
     checkTargetConnection(): Promise<string>;
     getDiagnostics(): ExecutorDiagnostics;
     getDeviceInfo(): Promise<string>;
@@ -150,6 +164,21 @@ export interface RunControl {
     /** Not async: without a session it throws before the caller sends its request. */
     armStopWaiter(limitMs: number): Promise<StopWaitResult>;
     waitForStop(limitMs?: number): Promise<StopWaitResult | AlreadyStopped>;
+    /**
+     * Taken before the request, with the stop waiter: after the stop,
+     * `selected` waits, bounded, for the frame VS Code selects for it, which
+     * the state and register reads go through. A frame VS Code still held
+     * from before the request does not count. Without a session it answers
+     * false at once.
+     */
+    watchFrameFocus(): FrameFocusWatch;
+    /**
+     * Taken before a session starts: once it came up, `settled` waits,
+     * bounded, for the frame VS Code selects when the session stopped, which
+     * the state is read through. It answers `running` at once for a target
+     * that runs, and `none` without a session.
+     */
+    watchStartFocus(): StartFocusWatch;
 }
 
 /** How the session's adapter reports one breakpoint of VS Code's model (`getDebugProtocolBreakpoint`). */
@@ -191,6 +220,12 @@ export interface BreakpointControl {
      */
     removeBreakpoint(file: vscode.Uri, line: number, options?: { logpointsOnly?: boolean }): Promise<BreakpointRemoval>;
     getBreakpoints(): ReadonlyArray<vscode.Breakpoint>;
+    /**
+     * The breakpoints VS Code adopted from an adapter's announcement of a new
+     * one in this window, which `getBreakpoints` lacks until the window
+     * reloads; some may also be in `getBreakpoints` already.
+     */
+    adoptedBreakpoints(): AdoptedBreakpoint[];
     /** Removes every breakpoint of the model and waits, bounded, until the adapter has taken the change. */
     clearAllBreakpoints(): Promise<BreakpointRemoval>;
     /**

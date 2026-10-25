@@ -25,8 +25,11 @@
  * user chose in VS Code, the sole window with a debug session, the sole
  * window — and a tie is refused with a listing, never guessed. A newly
  * chosen default drops the established target of every session, never a
- * pin (#16). The two routing tools, `list_debug_windows` and
- * `select_debug_window`, are answered here.
+ * pin (#16). The breakpoint ops of a pinned session go to the pinned
+ * window whatever file they name, unless only the file's own window has a
+ * debug session: a breakpoint belongs to the session that binds it. The two
+ * routing tools, `list_debug_windows` and `select_debug_window`, are
+ * answered here.
  *
  * The worker's outcome comes back typed (#11): its result as it is, its
  * `ToolError` with code and hint, and the session keeps its target either
@@ -61,7 +64,10 @@
  * `create_solution` is routed by its path too, first to a window that has
  * exactly that folder open: CMSIS Solution opens the folder it created in
  * the window that created it. `cmsis_query` asks the catalog, which every
- * window can answer, so a tie runs it in the router's own window.
+ * window can answer, so a tie runs it in the router's own window, and so
+ * does `serial_list_ports`: the ports belong to the machine.
+ * `get_session_status` never fails for want of a target: a tie is answered
+ * with the windows, each debugging one with its own state line.
  *
  * The session remembers the windows it forwarded to. When it ends, the MCP
  * server calls `sessionEnded`, which tells each of them with the internal op
@@ -87,7 +93,7 @@ import {
     targetHintOf,
 } from './core/opTable';
 import { liesInside, samePath } from './core/bootstrapState';
-import { ProblemNotices } from './core/problemFeed';
+import { ProblemNotices, SESSION_STATUS_OP } from './core/problemFeed';
 import type { JournalCounters } from './core/problemJournal';
 import {
     JsonObject,
@@ -146,6 +152,12 @@ const INSTALL_PACK = 'install_pack';
 const CREATE_SOLUTION = 'create_solution';
 /** The op of `cmsis_query`, which any window can answer. */
 const QUERY_OP = 'handleCmsisQuery';
+/** The op of `serial_list_ports`: the ports belong to the machine, so any window can list them. */
+const LIST_PORTS_OP = 'handleListPorts';
+/** The ops that name a source file but act on a window's debug session: a pin can win over their path. */
+const BREAKPOINT_OPS: ReadonlySet<string> = new Set(['handleAddBreakpoint', 'handleAddLogpoint', 'handleRemoveBreakpoint']);
+/** How long a window with a debug session may take to give its state to the status of a session without a target. */
+const TIE_STATUS_BUDGET_MS = 5_000;
 /** The knowledge op whose reply says which window's project context the search used. */
 const KNOWLEDGE_SEARCH_OP = 'handleKnowledgeSearch';
 /** How long, and how often, the router looks for the window `open_solution` opened. */
@@ -182,6 +194,8 @@ type HealthProbe = { kind: 'alive' } | { kind: 'silent' } | { kind: 'failed'; re
 interface Resolved {
     entry: WindowRegistration;
     reason: ResolutionReason;
+    /** One line the answer gets about the choice, if any. */
+    note?: string;
 }
 
 /** What a window answered: its outcome, a failure included, and its journal counters when it sent them. */
@@ -201,6 +215,11 @@ class ChannelFailure extends Error {
     constructor(message: string, readonly reported?: ToolError) {
         super(message);
     }
+}
+
+/** The answer with one more line at the end of its text. */
+function withLine(answer: ToolText, line: string): ToolText {
+    return isToolReply(answer) ? { ...answer, text: `${answer.text}\n${line}` } : `${textOf(answer)}\n${line}`;
 }
 
 /** How a window is named in the watchdog's texts: pid, and the workspace name when it has one. */
@@ -522,10 +541,18 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         let resolved: Resolved;
         if (routed !== undefined) {
             resolved = routed.action === CREATE_SOLUTION ? this.resolveForCreate(routed.path, hint) : this.resolveForOpen(routed.path, hint);
-        } else if (op === QUERY_OP || installsPack(op, given)) {
+        } else if (op === QUERY_OP || op === LIST_PORTS_OP || installsPack(op, given)) {
             resolved = this.resolveAnyWindow(hint);
         } else if (isKnowledgeOp(op)) {
             resolved = this.resolveForKnowledge(hint);
+        } else if (op === SESSION_STATUS_OP) {
+            const target = this.resolveForStatus(hint);
+            if (target === undefined) {
+                return this.statusWithoutTarget();
+            }
+            resolved = target;
+        } else if (BREAKPOINT_OPS.has(op) && hint?.source === 'path' && this.pinnedPid !== undefined) {
+            resolved = this.resolveForBreakpoint(hint);
         } else {
             resolved = this.resolveTarget(hint);
         }
@@ -552,7 +579,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (noticed instanceof ToolError) {
             throw noticed;
         }
-        const answered = this.withPinNote(noticed);
+        const answered = this.withPinNote(resolved.note === undefined ? noticed : withLine(noticed, resolved.note));
         if (op === KNOWLEDGE_SEARCH_OP) {
             return withKnowledgeWindow(answered, entry, reason, this.registry.list().length);
         }
@@ -566,7 +593,29 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             return answer;
         }
         this.pinNote = undefined;
-        return isToolReply(answer) ? { ...answer, text: `${answer.text}\n${note}` } : `${textOf(answer)}\n${note}`;
+        return withLine(answer, note);
+    }
+
+    /**
+     * The window of a breakpoint op in a pinned session. A breakpoint acts on
+     * the debug session that binds it, and the files of the program a session
+     * debugs may lie in another window's folder, so the pin wins over the
+     * path here: the call goes to the pinned window, unless only the file's
+     * own window has a debug session. A pinned window that is gone leaves the
+     * path to decide. The answer says so when the file lies outside the
+     * pinned window's folders.
+     */
+    private resolveForBreakpoint(hint: TargetHint & { source: 'path' }): Resolved {
+        this.followDefault();
+        const pinned = this.pinnedPid === undefined ? undefined : this.registry.findByPid(this.pinnedPid) ?? this.followPin();
+        const owner = this.registry.findByPath(hint.path);
+        if (pinned === undefined || (owner !== undefined && owner.pid !== pinned.pid && owner.hasActiveSession === true && pinned.hasActiveSession !== true)) {
+            return this.resolveTarget(hint);
+        }
+        const resolved = this.settle(pinned, 'pinned');
+        return holdsPath(pinned, hint.path)
+            ? resolved
+            : { ...resolved, note: `Ran in the pinned window ${windowLabel(pinned)}; the file lies outside its folders.` };
     }
 
     /**
@@ -626,10 +675,62 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     }
 
     /**
+     * The window `get_session_status` reports on: the ladder's, or undefined
+     * on a tie, which `statusWithoutTarget` answers instead of refusing: the
+     * tool never fails for want of a choice.
+     */
+    private resolveForStatus(hint: TargetHint | undefined): Resolved | undefined {
+        try {
+            return this.resolveTarget(hint);
+        } catch (failure) {
+            if (failure instanceof ToolError && failure.code === 'AMBIGUOUS_WINDOW') {
+                return undefined;
+            }
+            throw failure;
+        }
+    }
+
+    /**
+     * `get_session_status` of a session that has no target window on a tie:
+     * the state across the registered windows, each window listed — those
+     * with a debug session with the state line their own status gives within
+     * 5 s, asked all at once — and how to choose. Never throws.
+     */
+    private async statusWithoutTarget(): Promise<string> {
+        const windows = this.registry.list();
+        const tie = this.tieOf(windows, this.registry.readDefaultTarget());
+        const debugging = windows.filter((w) => w.hasActiveSession === true);
+        const rows = await Promise.all(windows.map(async (w) => `  • ${describeWindow(w)}`
+            + (debugging.length > 1 && w.hasActiveSession === true ? ` — ${await this.stateLineOf(w)}` : '')));
+        const state = debugging.length > 1
+            ? `State: no target window (${tie.why}; this session has not chosen one)`
+            : `State: no-session (${tie.why}; this session has no target window yet)`;
+        return [state, ...rows, `Hint: ${tie.closedDefault}${tie.ways}`].join('\n');
+    }
+
+    /** The first line of a window's own `get_session_status` (`State: stopped`), or `State: unknown` with why. Never throws. */
+    private async stateLineOf(entry: WindowRegistration): Promise<string> {
+        let answer: WorkerAnswer;
+        try {
+            answer = await this.post(entry, SESSION_STATUS_OP, {}, TIE_STATUS_BUDGET_MS);
+        } catch (failure) {
+            logger.debug(`Routing: no state from pid=${entry.pid} for a status without target`, failure);
+            return failure instanceof ToolError && failure.code === 'WORKER_TIMEOUT'
+                ? `State: unknown (no answer within ${secondsText(TIE_STATUS_BUDGET_MS)})`
+                : 'State: unknown (the window did not answer)';
+        }
+        if (answer.outcome instanceof ToolError) {
+            return `State: unknown (${answer.outcome.code})`;
+        }
+        const line = textOf(answer.outcome).split('\n', 1)[0];
+        return line.startsWith('State: ') ? line : 'State: unknown';
+    }
+
+    /**
      * For a call any window can run (`open_solution` of a folder no window
-     * has open, `install_pack`, `cmsis_query`): this session's target as for
-     * any call, and on a tie the router's own window, or the first listed,
-     * without making it the session's target.
+     * has open, `install_pack`, `cmsis_query`, `serial_list_ports`): this
+     * session's target as for any call, and on a tie the router's own
+     * window, or the first listed, without making it the session's target.
      */
     private resolveAnyWindow(hint: TargetHint | undefined): Resolved {
         try {
@@ -816,22 +917,33 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             return new ToolError('INVALID_ARGUMENT', `No open VS Code window has "${hint}" inside its workspace.`,
                 `Open the folder containing it, or pass a path that is inside one of these:\n${listing}`);
         }
+        const tie = this.tieOf(windows, chosenDefault);
+        return new ToolError('AMBIGUOUS_WINDOW', `${tie.why}, so there is no unambiguous target for this call.`,
+            `${tie.closedDefault}${tie.ways}\n${listing}`, { candidates: windows.map((w) => candidateOf(w, tie.defaultPid)) });
+    }
+
+    /**
+     * What makes the registered windows a tie, for `AMBIGUOUS_WINDOW` and for
+     * the status of a session without a target: why, a default target whose
+     * window is not open, and the ways to choose.
+     */
+    private tieOf(windows: WindowRegistration[], chosenDefault: DefaultTarget | undefined): {
+        why: string; closedDefault: string; ways: string; defaultPid: number | undefined;
+    } {
         const preferred = chosenDefault === undefined ? undefined : this.registry.findDefaultTarget(chosenDefault, windows);
-        const candidates = { candidates: windows.map((w) => candidateOf(w, preferred?.pid)) };
         const closedDefault = chosenDefault !== undefined && preferred === undefined
             ? `The default target the user set in VS Code (${chosenDefault.name ?? `pid ${chosenDefault.pid}`}) is not open.\n`
             : '';
         const debugging = windows.filter((w) => w.hasActiveSession).length;
         if (debugging > 1) {
-            return new ToolError('AMBIGUOUS_WINDOW',
-                `${debugging} VS Code windows have an active debug session, so there is no unambiguous target for this call.`,
-                `${closedDefault}Pin one with select_debug_window, ${ASK_THE_USER}\n${listing}`, candidates);
+            return { why: `${debugging} VS Code windows have an active debug session`, closedDefault,
+                ways: `Pin one with select_debug_window, ${ASK_THE_USER}`, defaultPid: preferred?.pid };
         }
-        return new ToolError('AMBIGUOUS_WINDOW',
-            `${windows.length} VS Code windows are registered and none has an active debug session, `
-                + 'so there is no unambiguous target for this call.',
-            `${closedDefault}Start a session in one with cmsis_action load_and_debug and window set to its pid, `
-                + `pin one with select_debug_window, ${ASK_THE_USER}\n${listing}`, candidates);
+        return {
+            why: `${windows.length} VS Code windows are registered and none has an active debug session`, closedDefault,
+            ways: `Start a session in one with cmsis_action load_and_debug and window set to its pid, pin one with select_debug_window, ${ASK_THE_USER}`,
+            defaultPid: preferred?.pid,
+        };
     }
 
     /**
