@@ -395,7 +395,8 @@ window's CMSIS job tracker (next section):
   afterwards whether it had happened. It resolves `vcpkg-configuration.json`
   again and installs what is missing; CMSIS Solution then rewrites
   `.cmsis/tools-environment.yml`, the record of the tools its tasks run
-  with (`environmentFiles()` finds both). The call is refused when the
+  with (`environmentFiles()` finds both). The command takes the manifest's
+  Uri, as the Explorer's context menu hands it, and fails without one. The call is refused when the
   command is not registered (the extension is missing) or the solution has
   no manifest, and otherwise waits as `refresh` does, for the record to
   change and stay unchanged one more look, then lists the tools it names

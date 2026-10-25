@@ -165,7 +165,10 @@ export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_
  * The Arm Tools Environment Manager's Reactivate Environment: it resolves
  * `vcpkg-configuration.json` again, downloads what is missing, and CMSIS
  * Solution then rewrites `.cmsis/tools-environment.yml`, the environment its
- * tasks run in.
+ * tasks run in. The command is hidden from the palette and runs from the
+ * Explorer's context menu of the manifest, whose Uri it takes as its
+ * argument; without one it fails ("reading 'fsPath'", Environment Manager
+ * 1.26.0).
  */
 const ENVIRONMENT_COMMAND = 'environment-manager.reactivate';
 /** The Arm Tools Environment Manager extension, which registers that command. */
@@ -529,16 +532,17 @@ function answerBy(issue: Issue): number {
 }
 
 /**
- * Issue the command and give it the kick-off (4 s, or what is left of the
- * call) to fail; a failure within it rejects the call, a later one is
- * dropped (KB11). `returned` sees what the command resolves with.
+ * Issue the command, with `args` when it takes any, and give it the kick-off
+ * (4 s, or what is left of the call) to fail; a failure within it rejects the
+ * call, a later one is dropped (KB11). `returned` sees what the command
+ * resolves with.
  */
-async function issueCommand(issue: Issue, action: string, returned?: (value: unknown) => void): Promise<void> {
+async function issueCommand(issue: Issue, action: string, returned?: (value: unknown) => void, args: readonly unknown[] = []): Promise<void> {
     const { executor, host } = issue.context;
     let failure: ToolError | undefined;
     let pending: Thenable<unknown>;
     try {
-        pending = vscode.commands.executeCommand(issue.command);
+        pending = vscode.commands.executeCommand(issue.command, ...args);
     } catch (caught) {
         pending = Promise.reject(caught);
     }
@@ -1820,7 +1824,7 @@ async function activateEnvironment(issue: Issue, solutionPath: string): Promise<
     }
     const before = mtimeOf(environment);
     const issuedAt = host.now();
-    await issueCommand(issue, 'activate_environment');
+    await issueCommand(issue, 'activate_environment', undefined, [vscode.Uri.file(configuration)]);
     let seen: number | undefined;
     for (;;) {
         const now = mtimeOf(environment);

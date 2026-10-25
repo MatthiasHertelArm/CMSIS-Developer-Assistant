@@ -4091,8 +4091,10 @@ suite('DebuggingHandler', () => {
                     fs.mkdirSync(path.dirname(record));
                     fs.writeFileSync(record, environment('3.25.2'));
                     let activations = 0;
-                    const rewrites = (): void => {
+                    const handed: unknown[] = [];
+                    const rewrites = (resource?: unknown): void => {
                         activations++;
+                        handed.push(resource);
                         setTimeout(() => fs.writeFileSync(record, environment('3.31.5')), 20);
                     };
                     solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile, 'environment-manager.reactivate': rewrites });
@@ -4106,6 +4108,8 @@ suite('DebuggingHandler', () => {
                     assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment' })),
                         /^✅ CMSIS 'activate_environment' on HE: vcpkg-configuration\.json was resolved and \.cmsis\/tools-environment\.yml rewritten after [\d.]+ s\. Tools of the CMSIS tasks now:\n  CMSIS-Toolbox 2\.15\.1\n  tools\.kitware\.cmake\/3\.31\.5\/bin\nNext: cmsis_action build\.$/);
                     assert.strictEqual(activations, 1);
+                    // The command reads the manifest's Uri, as the Explorer's context menu hands it; without one it throws.
+                    assert.strictEqual((handed[0] as vscode.Uri | undefined)?.fsPath, vscode.Uri.file(path.join(dir, 'vcpkg-configuration.json')).fsPath);
 
                     again();
                     solutionOn('HE', {
