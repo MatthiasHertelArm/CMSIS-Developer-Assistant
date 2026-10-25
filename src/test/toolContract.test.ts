@@ -149,14 +149,14 @@ suite('Tool contract', () => {
         assert.ok(skill.includes(`${endMarker(RULES_BLOCK)}\n\n${beginMarker(TABLE_BLOCK)}\n`), 'the table does not follow the rules');
     });
 
-    test('the guide\'s overview starts with the rules and its build topic carries the table', () => {
+    test('the guide\'s overview starts with the rules and its flash topic carries the table', () => {
         const guide = read('docs/agent-resources/debug_instructions.md');
         const overview = sliceTopic(guide);
         const [title] = guide.split('\n');
         assert.ok(overview.startsWith(`${title}\n\n${renderContractBlock(RULES_BLOCK, contract)}\n\n## Work through these steps in order\n`),
             overview.slice(0, 200));
-        assert.ok(sliceTopic(guide, 'build').includes(renderContractBlock(TABLE_BLOCK, contract)), 'the build topic lacks the table');
-        for (const topic of ['session', 'breakpoints', 'inspection', 'faults', 'troubleshooting']) {
+        assert.ok(sliceTopic(guide, 'flash').includes(renderContractBlock(TABLE_BLOCK, contract)), 'the flash topic lacks the table');
+        for (const topic of ['bootstrap', 'session', 'target', 'cmsis-action', 'breakpoints', 'inspection', 'faults', 'troubleshooting']) {
             assert.ok(!sliceTopic(guide, topic).includes(beginMarker(TABLE_BLOCK)), `the ${topic} topic carries the table`);
         }
         assert.ok(!overview.includes(beginMarker(TABLE_BLOCK)), 'the overview carries the table');

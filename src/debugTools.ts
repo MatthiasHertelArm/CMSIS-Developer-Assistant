@@ -43,7 +43,7 @@ import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { QUERY_KINDS } from './core/catalogQuery';
 import { TEXT_ONLY_CLIENTS } from './core/clientHosting';
-import { TOPICS, sliceTopic } from './core/instructionTopics';
+import { TOPIC_NAMES, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
 import { journalLocally } from './core/problemFeed';
@@ -72,7 +72,7 @@ const say = (...sentences: string[]): string => sentences.join(' ');
 const ABOUT = {
     get_debug_instructions: say(
         'Debugging guide for harnesses that do not load the "cmsis-help" Agent Skill.',
-        'Default: a short overview plus the topic list; pass topic for one section (bootstrap, session, build, breakpoints, inspection, faults, troubleshooting).',
+        'Default: a short overview plus the topic list; pass topic for one section.',
     ),
     start_debugging: say(
         'Start a debug session through the VS Code debug pipeline (launch.json).',
@@ -544,7 +544,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('get_debug_instructions', {
         description: ABOUT.get_debug_instructions,
         inputSchema: {
-            topic: z.enum(TOPICS).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
+            topic: z.enum(TOPIC_NAMES).optional().describe('Section to return. Default: overview (~5 KB) with the topic list.'),
         },
         annotations: LOOK_ONLY,
     }, async (args) => reply(guideSection(await docs.read(GUIDE_FILE), args.topic)));

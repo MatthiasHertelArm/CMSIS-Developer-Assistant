@@ -165,10 +165,13 @@ Debugger's bundled pyOCD — never install one.
 If `launch.json` is stale, the user has to regenerate it: **CMSIS Solution →
 Manage Solution → Debugger → Apply**. You cannot do that step for them.
 
-`get_debug_instructions` with `topic: 'build'` returns the full version of this,
-including the pack documentation notes; without `topic` it returns a short
-overview and the list of topics (`bootstrap`, `session`, `build`,
-`breakpoints`, `inspection`, `faults`, `troubleshooting`).
+`get_debug_instructions` returns the full version of this in three topics:
+`target` (the files above, the target selection and the pack documentation
+notes), `cmsis-action` (the actions, the result line, long builds) and `flash`
+(the probe, `flash`, `start_debugging`); without `topic` it returns a short
+overview and the list of topics (`bootstrap`, `session`, `target`,
+`cmsis-action`, `flash`, `breakpoints`, `inspection`, `faults`,
+`troubleshooting`).
 
 ---
 

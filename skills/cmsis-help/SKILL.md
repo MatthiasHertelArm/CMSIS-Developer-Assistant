@@ -69,7 +69,9 @@ Report the answer in five short lines: session, target, windows, problems, next 
 | Task | Where it comes from |
 |---|---|
 | A new project, a board or device, the toolchain, the environment | `knowledge_search` with the task's name in two or three words (`new project`, `board layer`), then `knowledge_get`; the `route-project` unit says the order |
-| Build, flash, load or attach | `get_debug_instructions` topic `build` |
+| The project's files, which target, `launch.json` | `get_debug_instructions` topic `target` |
+| Build, load, run or attach; a build error, a long build | topic `cmsis-action` |
+| `flash`, `PROBE_BUSY`, `start_debugging` | topic `flash` |
 | Breakpoints, logpoints, the breakpoint budget | topic `breakpoints` |
 | Variables, registers, memory, peripherals, run control | topic `inspection` |
 | A HardFault or another fault | topic `faults`: its first step is `diagnose_fault` (`get_fault_info` for the registers alone); `knowledge_search HardFault` for the live-debugging procedure (`proc-cmsis-debug-live`) |

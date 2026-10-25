@@ -62,7 +62,7 @@ as it is:
 |------|--------|
 | `cmsis-debug-live/SKILL.md` | rules and table, right below the title |
 | `cmsis-pack-docs/SKILL.md`, `add-board-layer/SKILL.md` | rules, right below the title |
-| `docs/agent-resources/debug_instructions.md` | rules below the title (the overview of `get_debug_instructions`), table at the end of the `build` topic |
+| `docs/agent-resources/debug_instructions.md` | rules below the title (the overview of `get_debug_instructions`), table at the end of the `flash` topic |
 | `cmsis-help/SKILL.md` | rules first, the table after them, then the health check (authored; `scripts/sync-skills.ts` copies the blocks in) |
 
 Edit the contract, never a copy: `src/test/toolContract.test.ts` fails when a

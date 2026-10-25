@@ -133,7 +133,8 @@ twice more, and never called `list_target_docs`. Its own diagnosis:
 
 **Shipped (unreleased):** the MCP instructions, the tool descriptions, the
 `cmsis-pack-docs` / `cmsis-debug-live` / `add-board-layer` skills and the
-`build` topic say that third-party parts (sensors, ADCs, codecs, radios) are
+`target` topic (part of `build` until 2.7.0) say that third-party parts
+(sensors, ADCs, codecs, radios) are
 documented the same way — any part number starts at `list_target_docs`, an
 unlisted datasheet is fetched by URL with `fetch_doc` (the web finds the URL,
 the tools read the document), never read as a PDF — and that a document the

@@ -267,11 +267,23 @@ async function main() {
         jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'get_debug_instructions', arguments: {} },
     });
     const overviewText = parseSse(overviewCall.body)?.result?.content?.[0]?.text ?? '';
-    // The overview leads with the tool rules (#50, under 1 600 bytes) before its own 3 500.
+    // The overview leads with the tool rules (#50, under 1 600 bytes) before its own 3 700.
+    // Capped at 5 100 chars until 2.7.0 split `build` into three topics, two more lines in the list.
     check('get_debug_instructions defaults to the overview with the topic list, the tool rules first',
-        /## Topics/.test(overviewText) && overviewText.length < 5100 && overviewText.length < topicText.length * 2
+        /## Topics/.test(overviewText) && overviewText.length < 5500 && overviewText.length < topicText.length * 2
             && /^# .*\n\n<!-- cmsis-developer-assistant:rules:begin -->\n## CMSIS Developer Assistant tool rules\n/.test(overviewText),
         `${overviewText.length} chars`);
+    // `build`, a topic until 2.7.0, is still accepted by the schema and serves its successor.
+    const retiredCall = await request(port, 'POST', { 'mcp-session-id': sid }, {
+        jsonrpc: '2.0', id: 7, method: 'tools/call',
+        params: { name: 'get_debug_instructions', arguments: { topic: 'build' } },
+    });
+    const retiredResult = parseSse(retiredCall.body)?.result;
+    const retiredText = retiredResult?.content?.[0]?.text ?? '';
+    check('get_debug_instructions still takes topic build: the cmsis-action topic under a line naming the split',
+        retiredResult?.isError !== true && /^_Topic `build` is split in three: `target`/.test(retiredText)
+            && /load_and_debug/.test(retiredText) && retiredText.length < 7000,
+        `${retiredText.length} chars: ${retiredText.slice(0, 80)}`);
 
     // 4c. The SVD lookups need no session; with no workspace (this stub) they
     //     explain where an SVD was looked for instead of failing.
@@ -434,13 +446,13 @@ async function main() {
     try { statsJson = JSON.parse(statsText); } catch { /* reported by the check */ }
     check('stats resource counts the tool calls',
         !!statsJson && statsJson.session.calls >= 6 && statsJson.session.perTool.get_threads?.calls === 3
-            && statsJson.session.perTool.get_debug_instructions?.calls === 2,
+            && statsJson.session.perTool.get_debug_instructions?.calls === 3,
         statsJson ? `session.calls=${statsJson.session.calls}` : statsText.slice(0, 120));
     const status = await request(port, 'POST', { 'mcp-session-id': sid }, {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 16 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 17 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

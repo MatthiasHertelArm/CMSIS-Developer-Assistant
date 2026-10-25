@@ -18,10 +18,10 @@ Only the user can lift a rule, by asking for the specific command.
 
 ## Work through these steps in order
 
-1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `build`); otherwise you guess at addresses, peripheral names and the launch configuration.
+1. **Establish target awareness.** Read the project's CMSIS YAMLs and `launch.json` (topic `target`); otherwise you guess at addresses, peripheral names and the launch configuration.
 2. **Check the session.** Call `get_session_status` and branch on the result (topic `session`). `start_debugging` and `cmsis_action load_and_debug` refuse while a session is active.
 3. **Place breakpoints.** Set an initial breakpoint with `add_breakpoint` (`line`, optionally `condition`), then a few strategic ones within the FPB budget (topic `breakpoints`).
-4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations.
+4. **Bring the target up** only from `no-session`: `cmsis_action load_and_debug` for CMSIS solutions (builds, flashes, attaches — the panel's *Debug* button), `attach` for an already-flashed target, `start_debugging` only for non-CMSIS launch configurations (topics `cmsis-action`, `flash`).
 5. **Run, wait, look, read:** `continue_execution` / `wait_for_stop`; `list_variable_names` before `get_variables_values`; cross-check variables against the hardware with `read_peripheral_register` / `read_memory` (topic `inspection`). On a fault, `diagnose_fault` once stopped (topic `faults`).
 6. **Explain, then clean up.** Trace back to the root cause, not the symptom (topic `troubleshooting`), then clean up (topic `session`).
 
@@ -136,7 +136,7 @@ This repository has not verified what a session stop does to the CPU: it depends
 Read-only checks (`get_session_status`, `check_target_connection`, `list_breakpoints`) and inspection-only requests never clear breakpoints, stop the session or resume the target.
 <!-- /topic -->
 
-<!-- topic: build | Target awareness from the CMSIS YAMLs and launch.json; build, flash and attach with cmsis_action / flash / start_debugging; long builds and the result line -->
+<!-- topic: target | Target awareness before the first debug call: the CMSIS YAMLs and launch.json to read, which target the panel acts on, the pack documentation, get_device_info -->
 ## 🛰️ Target awareness (do this *before* any breakpoint or debug call)
 
 Embedded debugging without target context is guesswork. Before issuing any debug command, gather the following from the workspace. After a successful build these files exist; if any are missing, build first (`cmsis_action` with `action='build'`).
@@ -185,8 +185,10 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 - [ ] Confirmed `launch.json` has a `gdbtarget` entry whose name to pass to `start_debugging`.
 - [ ] Documentation questions go to `search_target_docs` / `get_peripheral_docs` (or the `packDocs.enabled` suggestion) — never to the user, never to a PDF read whole.
 - [ ] (After attaching) `get_device_info` matches expectations.
+<!-- /topic -->
 
-## 🔨 Build, flash, attach
+<!-- topic: cmsis-action | Build, load, run and attach with cmsis_action: its actions, the result line, build errors, the exit-0 check, long builds as jobs -->
+## 🔨 Build, load and attach with `cmsis_action`
 
 `cmsis_action` drives the CMSIS Solution extension on the currently active csolution target — the same as clicking the panel's buttons. `target` (`MPS3` or `HP@debug`) selects the target-type / target-set: a differing one is switched and verified first, an undeclared one is refused with the declared list; every result names the target it ran on. For embedded debugging it is the entry point; `start_debugging` uses the plain VS Code debug tab and skips the build / flash pipeline.
 
@@ -215,11 +217,17 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 
 **Long builds.** A call waits 60 s by default; `timeoutMs` takes up to 600000 for `cmsis_action` and `flash` when your client allows calls that long (other tools: 60000). Pack resolution or a first build can outlast the wait. That is not a failure: the reply has status `running` and names the job. Call `cmsis_action {action:'status'}` to wait for the result — never start a build again to learn its status; a repeated `build`, `rebuild`, `clean`, `load`, `erase`, `run` or `load_and_run` attaches to the job in flight instead of starting another, and a `build`, `rebuild` or `clean` while another of the three runs is refused. A build that hangs ends with `cmsis_action {action:'stop_build'}`. For `load_and_debug` / `attach`, `timeoutMs` bounds the session-readiness wait.
 
+**`PROBE_BUSY`** from `load`, `erase`, `run`, `load_and_run` or `load_and_debug` means that something else holds the probe or the GDB port: topic `flash` says what, and the step that frees it.
+<!-- /topic -->
+
+<!-- topic: flash | Who holds the probe and the GDB port (PROBE_BUSY), the flash tool, start_debugging for launch.json configurations, the shell commands and the tools that replace them -->
+## 🔌 The probe, `flash` and `start_debugging`
+
 **One probe, one owner.** After `run` or `load_and_run` the CMSIS Run task holds the probe. While it does, `load`, `erase`, `load_and_run`, `load_and_debug` and `flash` answer `PROBE_BUSY`: call `cmsis_action {action:'stop_run'}` first — or `attach` to debug the running firmware. A `PROBE_BUSY` error names what holds the probe and the step that frees it; `get_session_status` lists the CMSIS tasks of the window in one line.
 
 **One GDB port, one server.** CMSIS Solution gives the pyOCD, J-Link and FVP set-ups the same GDB port, 3333. `load_and_debug`, `run`, `load_and_run` and `start_debugging` of a launch configuration with a fixed port answer `PROBE_BUSY` when another window's session or CMSIS Run task, or another program, already listens on that port: GDB would reach that server and halt its target. The error names the window and what holds the port (`list_debug_windows` shows each window's GDB ports); stop it there as the hint says once the user agrees, or give the project another port.
 
-**`flash`** programs the target with `pyocd load --no-wait --cbuild-run` and returns synchronously: bytes programmed and rate with the warnings pyOCD logged, or the exit code with its error lines. A ⚠️ result means that pyOCD exited 0 but could not add part of the image ("Failed to add data chunk"): the target does not hold the image as built, so check which sections load at the addresses it names (`get_section_layout`, `lookup_symbol {address}`) before you debug. It selects the probe as the CMSIS Load task does: by the probe type of the target's debugger, and by the probe ID CMSIS Solution is given (normally the setting `cmsis-csolution.probe-id`). With several probes and none selected it fails and lists them with their unique IDs: ask the user which one is connected to the board and to set its ID where the hint says — never pick one yourself. Without a free probe it fails at once with "No connected debug probe…": another task or session holds the probe, or the board is not connected or its probe lacks the USB driver — a serial port of the board does not prove the probe is reachable. It programs every image listed under `output:` in the cbuild-run file (multi-core safe), auto-resolves that file when `cbuildRunFile` is omitted (the CMSIS Solution extension's active target, else `launch.json` / `out/`), and uses the pyOCD bundled with the CMSIS Debugger extension — never install pyOCD yourself. It **refuses while a debug session or a CMSIS Run task holds the probe** — programming under a live session wedges most probes — so the sequence is `stop_debugging` (or `cmsis_action stop_run`) → `flash` → a new session. `cmsis_action load` is the alternative that uses the CMSIS extension's own flash pipeline.
+**`flash`** programs the target with `pyocd load --no-wait --cbuild-run` and returns synchronously: bytes programmed and rate with the warnings pyOCD logged, or the exit code with its error lines. A ⚠️ result means that pyOCD exited 0 but could not add part of the image ("Failed to add data chunk"): the target does not hold the image as built, so check which sections load at the addresses it names (`get_section_layout`, `lookup_symbol {address}`) before you debug. It selects the probe as the CMSIS Load task does: by the probe type of the target's debugger, and by the probe ID CMSIS Solution is given (normally the setting `cmsis-csolution.probe-id`). With several probes and none selected it fails and lists them with their unique IDs: ask the user which one is connected to the board and to set its ID where the hint says — never pick one yourself. Without a free probe it fails at once with "No connected debug probe…": another task or session holds the probe, or the board is not connected or its probe lacks the USB driver — a serial port of the board does not prove the probe is reachable. It programs every image listed under `output:` in the cbuild-run file (multi-core safe), auto-resolves that file when `cbuildRunFile` is omitted (the CMSIS Solution extension's active target, else `launch.json` / `out/`), and uses the pyOCD bundled with the CMSIS Debugger extension — never install pyOCD yourself. It **refuses while a debug session or a CMSIS Run task holds the probe** — programming under a live session wedges most probes — so the sequence is `stop_debugging` (or `cmsis_action stop_run`) → `flash` → a new session. `cmsis_action load` (topic `cmsis-action`) is the alternative that uses the CMSIS extension's own flash pipeline.
 
 **`start_debugging`** launches a `launch.json` configuration through the normal VS Code pipeline (`configurationName` = the `name` of a `gdbtarget` entry; `workingDirectory` is required). Use it for non-CMSIS projects, or to attach to an already-flashed CMSIS target without reprogramming. It refuses while a session is active. Always pass `configurationName`: without it the tool asks the user in a picker in the VS Code window, and after 30 s (`timeoutMs`, at most 60 s) it fails with `INVALID_ARGUMENT` and names the configurations to pass.
 
