@@ -78,7 +78,8 @@ instead of `pyocd`, `gdb` or `cbuild` in a shell. Every scenario checks that:
   and `write_powershell` with their `input`, Kimi Code's `Bash` with its `command` — are matched against a default deny list:
   `pyocd`, `arm-none-eabi-gdb`, `gdb-multiarch`, `JLinkExe`, `JLinkGDBServer…`, `openocd`,
   `cbuild` (not `….cbuild-run.yml` and other file names), `cpackget`, `pip install` /
-  `pip3 install`, and `curl` against `localhost` or `127.0.0.1`
+  `pip3 install`, `curl` against `localhost` or `127.0.0.1`, and the simulated board: an
+  `FVP_…` model, the fixture's `fvp.sh`, and `docker run`/`rm`/`kill`/`stop`/`start`/`exec`
   (`DEFAULT_SHELL_DENY_LIST` in `src/core/evalScenario.ts`). The names of the shell tools
   follow Copilot CLI's hook documentation; check them against the first recorded stream.
 - `forbidden.shell` adds a regex of the scenario's own; `"defaultShellDenyList": false`

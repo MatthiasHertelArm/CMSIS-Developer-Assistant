@@ -123,19 +123,20 @@ suite('Evaluation scenario logic', () => {
         assert.deepStrictEqual(findBypasses(spec, agg), [], 'a cbuild-run file name in a shell command is not the cbuild command');
     });
 
-    test('the default deny list: the board, the build and the packs through their CLIs, pip install and curl to the control server', () => {
+    test('the default deny list: the board (the FVP too), the build and the packs through their CLIs, pip install and curl to the control server', () => {
         const denied = new RegExp(DEFAULT_SHELL_DENY_LIST, 'i');
         for (const command of [
             'pyocd list', 'python3 -m pip install pyocd', 'pip3 install --user pyocd', 'arm-none-eabi-gdb -batch -ex "x/4x 0x20000000" out/app.elf',
             'gdb-multiarch app.elf', 'JLinkExe -device STM32F756ZG', 'JLinkGDBServerCLExe -if SWD', 'openocd -f board.cfg',
             'cbuild Blinky.csolution.yml --packs', 'cpackget add ARM::CMSIS', 'curl -s -H "x-token: t" http://127.0.0.1:52345/op',
-            'curl localhost:3001/mcp',
+            'curl localhost:3001/mcp', 'bash .vscode/fvp.sh -f fvp_config.txt -a out/app.elf', 'docker rm -f cmsis-fvp-3333',
+            'docker run --rm --init --name cmsis-fvp-manual cmsis-fvp:11.32.23', 'FVP_Corstone_SSE-300_Ethos-U55 -a out/app.elf',
         ]) {
             assert.ok(denied.test(command), command);
         }
         for (const command of [
             'ls out', 'cat out/app.cbuild-run.yml', 'ls out/*.cbuild-idx.yml', 'git status', 'arm-none-eabi-size out/app.elf',
-            'curl https://example.com/data.json | grep localhost',
+            'curl https://example.com/data.json | grep localhost', 'docker ps', 'docker images', 'cat fvp_config.txt',
         ]) {
             assert.ok(!denied.test(command), command);
         }

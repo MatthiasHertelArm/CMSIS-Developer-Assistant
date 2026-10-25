@@ -169,11 +169,16 @@ export function aggregateEvents(events: unknown[]): EvalAggregate {
  * packs through their own CLIs, installing pyOCD, and curl against the
  * control server (#50, #45). Proposal 50's list with two corrections: `cbuild`
  * followed by `-` is a file name (`app.cbuild-run.yml`), not the command, and
- * curl may take options before the URL. Matched case-insensitively.
+ * curl may take options before the URL. The simulated board counts as the
+ * board: an FVP model run as a command (not a file such as `fvp_config.txt`),
+ * the fixture's model shim `fvp.sh`, and a docker
+ * command that starts or ends a container (a Kimi Code run started the model
+ * by hand and removed the extension's container). Matched case-insensitively.
  */
 export const DEFAULT_SHELL_DENY_LIST =
     String.raw`\b(pyocd|arm-none-eabi-gdb|gdb-multiarch|JLink(Exe|GDBServer\w*)|openocd|cbuild(?!-)|cpackget|pip3? install)\b`
-    + String.raw`|\bcurl\b[^|;&\n]*\b(localhost|127\.0\.0\.1)`;
+    + String.raw`|\bcurl\b[^|;&\n]*\b(localhost|127\.0\.0\.1)`
+    + String.raw`|\bFVP_[\w-]+(?=\s|$)|\bfvp\.sh\b|\bdocker\s+(run|rm|kill|stop|start|exec)\b`;
 
 /**
  * The agent tools that run shell commands, and the argument that holds the
