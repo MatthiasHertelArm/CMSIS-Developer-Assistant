@@ -149,6 +149,8 @@ const SESSION_NOT_FOUND_CODE = -32001;
 const REQUEST_FAILED = 'The MCP server failed while handling this request.';
 const SSE_RETIRED = 'The legacy SSE endpoint /sse has been retired.';
 const SSE_SUCCESSOR = 'Connect over Streamable HTTP instead: POST /mcp.';
+/** The answer on any other path, such as an entry that names the port without /mcp; the client shows it. */
+const NOT_THE_ENDPOINT = 'is not the MCP endpoint of the CMSIS Developer Assistant: it serves Streamable HTTP at';
 const START_FAILED = 'Could not start the CMSIS Developer Assistant MCP server';
 /** A session idle this long ends (#49), unless it holds a GET stream; the sweep looks this often. */
 const SESSION_IDLE_MS = 30 * 60_000;
@@ -459,6 +461,11 @@ export class DebugMCPServer {
         app.delete(MCP_ROUTE, (req: Request, res: Response) => this.acceptSessionRequest(req, res));
         app.get('/sse', (_req: Request, res: Response) => {
             res.status(410).json({ error: SSE_RETIRED, message: SSE_SUCCESSOR, newEndpoint: MCP_ROUTE });
+        });
+        // Every other path gets JSON that names the endpoint, not Express's HTML "Cannot POST /".
+        app.use((req: Request, res: Response) => {
+            const endpoint = `http://localhost:${req.socket.localPort ?? this.port}${MCP_ROUTE}`;
+            refuse(res, 404, -32000, `${req.method} ${req.path} ${NOT_THE_ENDPOINT} ${endpoint}.`);
         });
         return app;
     }

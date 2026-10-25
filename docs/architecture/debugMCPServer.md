@@ -42,6 +42,7 @@ Three constraints shape the code:
 | `GET /mcp` | The server-sent event stream of the named session. |
 | `DELETE /mcp` | Ends the named session. |
 | `GET /sse` | 410 with a pointer to `POST /mcp`: the SSE transport of older releases is retired. |
+| any other | 404 with a JSON-RPC error that names the endpoint, for example for an agent entry that names the port without `/mcp`: the client shows that text, where Express's HTML "Cannot POST /" told the user nothing. |
 
 - `loopbackOnly` answers 403 to a `Host` header that does not name this
   machine and to an `Origin` that is not local (`isLoopbackHostHeader()`,
@@ -291,8 +292,10 @@ whose client sent a name in `TEXT_ONLY_CLIENTS` (`src/core/clientHosting.ts`,
 matched exactly, `wantsTextOnly()`). The text is complete without it, and a
 failure keeps `isError` and its `[CODE]`. The wrapper classifies the outcome
 from the whole result before, and records the bytes the client receives.
-The list is empty until the Copilot SDK's client name is known; the
-constructor takes another one for tests.
+The list holds `kimi-code`, Kimi Code's name for its CLI and its VS Code
+extension, which append `structuredContent` to the text as JSON; the Copilot
+SDK's name joins it once known. The constructor takes another list for
+tests.
 
 The problem records that ride along with a failure or a timeout
 (`data.problems`, #48) reach `structuredContent.problems` like any other

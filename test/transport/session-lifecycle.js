@@ -22,7 +22,8 @@
 //   3. A request with a missing id is rejected with 400; POST, GET and
 //      DELETE with an unknown id get 404 and JSON-RPC -32001 "Session not
 //      found", as the SDK's own transport answers, which tells a client to
-//      initialize again (#14)
+//      initialize again (#14); a request on another path gets JSON that
+//      names the endpoint
 //   4. DELETE /mcp tears the session down
 //   5. REGRESSION: three consecutive get_threads calls on one session all
 //      return — the bug the old per-request model was built to fix.
@@ -74,11 +75,11 @@ function check(name, ok, detail) {
     if (!ok) { failures++; }
 }
 
-function request(port, method, extraHeaders, body, agent) {
+function request(port, method, extraHeaders, body, agent, route = '/mcp') {
     return new Promise((resolve, reject) => {
         const payload = body ? JSON.stringify(body) : undefined;
         const req = http.request({
-            host: '127.0.0.1', port, path: '/mcp', method, ...(agent ? { agent } : {}),
+            host: '127.0.0.1', port, path: route, method, ...(agent ? { agent } : {}),
             headers: {
                 'Host': `127.0.0.1:${port}`,
                 'Content-Type': 'application/json',
@@ -210,6 +211,12 @@ async function main() {
     const unknownDelete = await request(port, 'DELETE', unknownSession);
     check('DELETE /mcp with an unknown session id gets 404 and -32001', sessionNotFound(unknownDelete),
         `status=${unknownDelete.status} ${unknownDelete.body}`);
+    // An entry that names the port without /mcp (a hand-written Kimi Code entry did): JSON naming the endpoint.
+    const wrongPath = await request(port, 'POST', {}, { jsonrpc: '2.0', id: 93, method: 'initialize', params: {} }, undefined, '/');
+    const wrongPathError = /application\/json/.test(String(wrongPath.headers['content-type'])) ? JSON.parse(wrongPath.body).error : undefined;
+    check('POST / gets a JSON 404 that names the endpoint, not Express\'s HTML "Cannot POST /"',
+        wrongPath.status === 404 && wrongPathError?.message === `POST / is not the MCP endpoint of the CMSIS Developer Assistant: it serves Streamable HTTP at http://localhost:${port}/mcp.`,
+        `status=${wrongPath.status} ${wrongPath.body}`);
 
     // 4. tools/list works on the session
     const list = await request(port, 'POST', { 'mcp-session-id': sid }, {
