@@ -34,7 +34,11 @@
  * Pure: no vscode.
  */
 
-/** Name prefixes of the clients that run outside the VS Code window: the CLIs. */
+/**
+ * Name prefixes of the clients that run outside the VS Code window: the CLIs.
+ * Not `kimi-code`: the Kimi Code CLI and its VS Code extension, which lives in
+ * the window, share the SDK that sends the name.
+ */
 const OUTSIDE_THE_WINDOW: readonly string[] = ['claude-code', 'codex', 'gemini'];
 
 /**
@@ -44,11 +48,16 @@ const OUTSIDE_THE_WINDOW: readonly string[] = ['claude-code', 'codex', 'gemini']
  * (`linesMissingFromStructured`), and a failure keeps `isError` and its
  * `[CODE]`. A name matches exactly, in the case the client sends it.
  *
- * Empty for now. The GitHub Copilot SDK agent shows both (a tester's log of
+ * - `kimi-code`: Kimi Code, the CLI and the VS Code extension, appends
+ *   `structuredContent` to the text as `<mcp-result-extras>` JSON; releases
+ *   before 2.0 dropped it (MoonshotAI/kimi-code `agent/mcp/output.ts` at
+ *   743f140; 17 KB of 95 KB in a session of September 2026).
+ *
+ * The GitHub Copilot SDK agent shows both too (a tester's log of
  * 2.7.0-preview3: 635 KB of `structuredContent` on top of 764 KB of text);
  * its exact client name goes here once it is known.
  */
-export const TEXT_ONLY_CLIENTS: readonly string[] = [];
+export const TEXT_ONLY_CLIENTS: readonly string[] = ['kimi-code'];
 
 /**
  * Whether a client of this name keeps working while the VS Code window it

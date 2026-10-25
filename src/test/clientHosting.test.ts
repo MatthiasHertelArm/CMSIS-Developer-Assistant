@@ -40,6 +40,11 @@ suite('Which MCP clients get tool results as text alone', () => {
         }
     });
 
+    test('the shipped list: Kimi Code, which appends structuredContent to the text', () => {
+        assert.strictEqual(wantsTextOnly('kimi-code'), true);
+        assert.strictEqual(wantsTextOnly('claude-code'), false);
+    });
+
     test('an absent or empty name never does, whatever the shipped list holds', () => {
         assert.strictEqual(wantsTextOnly(undefined), false);
         assert.strictEqual(wantsTextOnly(''), false);
