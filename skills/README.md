@@ -65,6 +65,12 @@ as it is:
 | `docs/agent-resources/debug_instructions.md` | rules below the title (the overview of `get_debug_instructions`), table at the end of the `flash` topic |
 | `cmsis-help/SKILL.md` | rules first, the table after them, then the health check (authored; `scripts/sync-skills.ts` copies the blocks in) |
 
+`cmsis-help`'s frontmatter also has `when_to_use`. Kimi Code lists only the
+first 250 characters of a skill's `description` but its `when_to_use` in
+full, and Claude Code shows it after the description; harnesses that do not
+know the field ignore it. Keep the start of the description able to stand
+alone.
+
 Edit the contract, never a copy: `src/test/toolContract.test.ts` fails when a
 copy differs, and the next sync would overwrite it. The MCP server leads its
 `instructions` with the same rules at run time.

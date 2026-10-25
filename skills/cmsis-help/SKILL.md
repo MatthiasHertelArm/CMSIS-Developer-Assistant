@@ -1,6 +1,7 @@
 ---
 name: cmsis-help
 description: "Health check and entry point for the CMSIS Developer Assistant, and the first skill for any CMSIS or Cortex-M task. Use when firmware misbehaves on a board: faults, crashes, hangs, failing tests, wrong/null values, unexpected output, runtime bugs, a board that does not respond or a debug session that will not start. Also use to check whether the board, the debug session, the build or a serial port is ready, and for any other CMSIS task. It checks the session read-only, reads recent problems and names the debug topic or knowledge procedure that fits. Use it whenever live inspection is practical, instead of adding temporary printf/UART logging, LED toggles, or console output: halting the CPU and looking is cheaper and does not perturb the target."
+when_to_use: "First, before any work on a board's firmware; when a board, a probe or a debug session does not respond; to check that the board, the debug session, the build or a serial port is ready; instead of adding printf/UART logging; and when the cmsis-developer-assistant tools seem to be missing."
 allowed-tools:
   - get_session_status
   - list_debug_windows
@@ -63,6 +64,10 @@ Run these in order and stop as soon as an answer decides the next step:
 4. `get_recent_problems`: what went wrong in this window since the last check (adapter and GDB-server errors, failed builds, notifications).
 
 Report the answer in five short lines: session, target, windows, problems, next step. Name the next tool; do not run a tool that changes the board, the session or a file unless the user asks for it.
+
+## When the tools are missing
+
+No `get_session_status` in your tool list means this agent session is not connected to the CMSIS Developer Assistant. Its MCP server runs inside VS Code while a window has the extension active, and the command *CMSIS Developer Assistant: Configure Agent* in that window registers it with the agent. Most agents connect to their MCP servers only when a session starts: once VS Code serves, ask the user to start a new agent session (Kimi Code: restart `kimi`, `/reload` does not reconnect). A sub-agent has no tools its parent lacks, so do not hand the board to one. Meanwhile do not reach the board another way: no pyOCD or GDB in a shell.
 
 ## Where a task's procedure is
 

@@ -18,7 +18,7 @@ The Arm® CMSIS Developer Assistant extension connects AI coding agents to the d
 - Starts the CMSIS Solution actions (build, load, load & debug, attach) and controls execution with breakpoints, logpoints, and stepping.
 - Reads memory, core registers, and device peripheral registers (from CMSIS-SVD), decodes fault status registers, and measures cycles with the DWT counter.
 - Programs Flash, resets the target, and communicates over serial (UART) ports.
-- Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Roo Code, Antigravity, and any other MCP-compatible assistant.
+- Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Kimi Code, Roo Code, Antigravity, and any other MCP-compatible assistant.
 - Runs entirely on the local machine: the MCP server binds to `localhost` only, needs no credentials, and sends nothing to an external service.
 - Also debugs applications in other languages (Python, JavaScript/TypeScript, Java, C#, C/C++, Go, Rust, PHP, Ruby) through the respective VS Code debug extensions.
 - Nine palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents (which also installs the `cmsis-help` skill), choosing the target window when several VS Code windows are open, releasing a serial port, copying the recent problems, and — with the experimental documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel. See [Commands](#commands).
@@ -267,6 +267,7 @@ Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a sh
 | Codex | `~/.codex/AGENTS.md` (`CODEX_HOME`; a non-empty `AGENTS.override.md` wins, as in Codex) | `AGENTS.md` |
 | GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` (`COPILOT_HOME`) | `AGENTS.md` |
 | Antigravity | `~/.gemini/AGENTS.md` | `AGENTS.md` |
+| Kimi Code | `~/.kimi-code/AGENTS.md` (`KIMI_CODE_HOME`) | `AGENTS.md` |
 | VS Code Copilot Chat | — | `AGENTS.md` (`.github/copilot-instructions.md` when `chat.useAgentsMdFile` is off) |
 | Cursor | — | `.cursor/rules/cmsis-developer-assistant.mdc` (`alwaysApply: true`) |
 | Cline | — | `.clinerules/cmsis-developer-assistant.md` |
@@ -274,7 +275,7 @@ Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a sh
 
 The step lists the files of the agents you set up in step 1, of the agents that have the server registered already, and of Copilot Chat. A file several agents read, such as a workspace `AGENTS.md`, is listed and written once. The user-level files are preselected: the MCP registration is per user too, and a workspace file ends up in the repository, where colleagues without this extension read it as well. Each change opens a diff of the file as it is against the file with the rules, and a dialog; nothing is written unless you choose **Write**.
 
-The rules go between `<!-- cmsis-developer-assistant:rules:begin -->` and `<!-- cmsis-developer-assistant:rules:end -->`, with a comment saying who manages them; nothing else in the file changes, line endings included. To take the rules out, run the command again and uncheck the file, then choose **Remove**: the file is back to what it was, and a file that was created for the rules is deleted. When a new release of the extension changes the rules, activation asks once whether to review the update of the blocks it wrote: **Review** shows each file as a diff and writes it only when you choose **Write**; **Not Now** leaves the files as they are, and **Configure Agent** offers the update again. Activation never adds a block to a file. Set `cmsis-developer-assistant.agentRules.install` to `never` to skip the step and leave every rule file alone. Claude Desktop has no rule file and relies on the server instructions.
+The rules go between `<!-- cmsis-developer-assistant:rules:begin -->` and `<!-- cmsis-developer-assistant:rules:end -->`, with a comment saying who manages them; nothing else in the file changes, line endings included. To take the rules out, run the command again and uncheck the file, then choose **Remove**: the file is back to what it was, and a file that was created for the rules is deleted. When a new release of the extension changes the rules, activation asks once whether to review the update of the blocks it wrote: **Review** shows each file as a diff and writes it only when you choose **Write**; **Not Now** leaves the files as they are, and **Configure Agent** offers the update again. Activation never adds a block to a file. Set `cmsis-developer-assistant.agentRules.install` to `never` to skip the step and leave every rule file alone. Claude Desktop has no rule file and relies on the server instructions. Kimi Code is the other way round: it does not pass the server instructions to its model, so its rule file is the only way the rules reach it.
 
 ## Configuration
 
@@ -353,6 +354,19 @@ The popup described in [Connecting an AI agent](#connecting-an-ai-agent) writes 
   "mcpServers": {
     "cmsis-developer-assistant": {
       "url": "http://localhost:3001/mcp"
+    }
+  }
+}
+```
+
+**Kimi Code** (`~/.kimi-code/mcp.json`, or `$KIMI_CODE_HOME/mcp.json`; the CLI and the VS Code extension share it). Kimi Code ends a tool call after 60 s unless `toolTimeoutMs` says otherwise, and builds, loads and the `flash` tool may take up to 600 s:
+
+```json
+{
+  "mcpServers": {
+    "cmsis-developer-assistant": {
+      "url": "http://localhost:3001/mcp",
+      "toolTimeoutMs": 630000
     }
   }
 }
@@ -441,6 +455,16 @@ Tools without a file path (`read_memory`, `cmsis_action`, `flash`, `reset`, the 
 
 The Serial Monitor extension (0.13) gives other extensions an API (version 0) that lists ports and starts or stops monitoring a port, but has no event for the data it receives. `serial_subscribe_monitor` therefore reports that no data event is available. Stop monitoring the port in the Serial Monitor so that the agent can read it with `serial_capture`, or `serial_open` and `serial_read`, which own the port from the MCP server; or read the output in the Serial Monitor panel yourself.
 
+### Kimi Code has no CMSIS tools, or asks before every call
+
+Kimi Code connects to its MCP servers only when it starts, and does not retry a server that did not answer then: start VS Code with the extension first, then `kimi` (restart it if it was already running; `/reload` does not reconnect). `/mcp` in Kimi Code shows the state of each server. Kimi Code asks before every MCP call in its default mode; to allow the CMSIS Developer Assistant tools without asking, add this rule to `~/.kimi-code/config.toml`:
+
+```toml
+[[permission.rules]]
+decision = "allow"
+pattern = "mcp__cmsis-developer-assistant__*"
+```
+
 ### Claude Desktop cannot connect
 
 Claude Desktop only supports stdio MCP servers and is connected through `mcp-remote`, which needs Node.js with `npx` on the `PATH` of the Claude Desktop process. Install Node.js and restart Claude Desktop.
@@ -449,7 +473,7 @@ Claude Desktop only supports stdio MCP servers and is connected through `mcp-rem
 
 - **Visual Studio Code** 1.109.0 or newer.
 - **Arm CMSIS Debugger** extension for Cortex-M targets, together with a debug probe supported by pyOCD (CMSIS-DAP, ST-Link) or a SEGGER® J-LINK® with the J-Link software installed. The **Arm CMSIS Solution** extension generates the debug configuration.
-- **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, or Codex.
+- **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, or Kimi Code.
 - **pyOCD** for the `flash` tool comes with the Arm CMSIS Debugger (`tools/pyocd`); `flash` otherwise takes the one the solution's `.cmsis/tools-environment.yml` or the `PATH` names. `cmsis_action load` programs the device through the CMSIS Solution extension instead.
 - **Node.js** with `npx` only for Claude Desktop (stdio bridge).
 
