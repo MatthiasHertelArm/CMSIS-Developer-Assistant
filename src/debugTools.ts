@@ -42,7 +42,7 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/
 import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { QUERY_KINDS } from './core/catalogQuery';
-import { TEXT_ONLY_CLIENTS } from './core/clientHosting';
+import { TEXT_ONLY_CLIENTS, dropsInstructions } from './core/clientHosting';
 import { TOPIC_NAMES, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
@@ -644,7 +644,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('read_memory', {
         description: ABOUT.read_memory,
         inputSchema: {
-            address: z.string().describe('Memory address as hex string, e.g. \'0x20000000\''),
+            address: z.string().describe('Hex address (\'0x20000000\') or a C expression for one (\'&buf\', an array, a pointer)'),
             length: z.number().int().min(1).max(4096).describe('Number of bytes to read (1-4096)'),
             format: z.enum(['hex', 'ascii', 'both']).default('hex').describe('\'hex\' (default), \'ascii\', or \'both\''),
             timeoutMs: CALL_TIMEOUT,
@@ -840,11 +840,14 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         annotations: ALTERS_TARGET,
     }, (args) => debug.handleFlash(args).then(reply));
 
-    // The first status of the session repeats the tool rules in one line (#50); the state lives in this closure.
+    // The first status of the session repeats the tool rules in one line (#50), or whole for a client whose model
+    // never sees the instructions (Kimi Code, #103); the state lives in this closure.
     let rulesRepeated = parts.toolRules === undefined;
     mcp.registerTool('get_session_status', { description: ABOUT.get_session_status, annotations: LOOK_ONLY }, async () => {
         const state = await debug.handleGetSessionStatus();
-        const reminder = rulesRepeated ? '' : `\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}`;
+        const whole = parts.toolRules !== undefined && dropsInstructions(mcp.server.getClientVersion()?.name);
+        const reminder = rulesRepeated ? ''
+            : whole ? `\n\n${parts.toolRules}\n\n${KNOWLEDGE_REMINDER}` : `\n\n${TOOL_RULES_REMINDER} ${KNOWLEDGE_REMINDER}`;
         rulesRepeated = true;
         // Read after the handler: the totals cover this session's earlier calls, not this one.
         return reply(`${textOf(state)}${reminder}\n\n${ring.formatTotals()}`);

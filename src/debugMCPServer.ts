@@ -49,6 +49,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest, type Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { ConfigurationManager, DebuggingExecutor, DebuggingHandler, type IDebuggingHandler } from '.';
+import { offersNoGetStream } from './core/clientHosting';
 import type { MeasuredMcpServer } from './core/measuredMcpServer';
 import type { SerialOpName } from './core/opTable';
 import { ToolMetrics, formatBytes, type ToolSample } from './core/toolMetrics';
@@ -149,6 +150,10 @@ const SESSION_NOT_FOUND_CODE = -32001;
 const REQUEST_FAILED = 'The MCP server failed while handling this request.';
 const SSE_RETIRED = 'The legacy SSE endpoint /sse has been retired.';
 const SSE_SUCCESSOR = 'Connect over Streamable HTTP instead: POST /mcp.';
+/** The answer to a GET of a client that is offered no stream (NO_GET_STREAM_CLIENTS). */
+const NO_GET_STREAM = 'This server offers this client no SSE stream at GET /mcp; results come with each POST.';
+/** The answer on any other path, such as an entry that names the port without /mcp; the client shows it. */
+const NOT_THE_ENDPOINT = 'is not the MCP endpoint of the CMSIS Developer Assistant: it serves Streamable HTTP at';
 const START_FAILED = 'Could not start the CMSIS Developer Assistant MCP server';
 /** A session idle this long ends (#49), unless it holds a GET stream; the sweep looks this often. */
 const SESSION_IDLE_MS = 30 * 60_000;
@@ -460,6 +465,11 @@ export class DebugMCPServer {
         app.get('/sse', (_req: Request, res: Response) => {
             res.status(410).json({ error: SSE_RETIRED, message: SSE_SUCCESSOR, newEndpoint: MCP_ROUTE });
         });
+        // Every other path gets JSON that names the endpoint, not Express's HTML "Cannot POST /".
+        app.use((req: Request, res: Response) => {
+            const endpoint = `http://localhost:${req.socket.localPort ?? this.port}${MCP_ROUTE}`;
+            refuse(res, 404, -32000, `${req.method} ${req.path} ${NOT_THE_ENDPOINT} ${endpoint}.`);
+        });
         return app;
     }
 
@@ -508,6 +518,12 @@ export class DebugMCPServer {
             return;
         }
         this.seen(live, res);
+        if (req.method === 'GET' && offersNoGetStream(live.server.server.getClientVersion()?.name)) {
+            // For this client a stream that drops when the server restarts ends the server for good (Kimi Code).
+            res.set('Allow', 'POST, DELETE');
+            refuse(res, 405, -32000, NO_GET_STREAM);
+            return;
+        }
         if (req.method === 'GET') {
             // An open stream keeps the session from expiring, however long nothing is asked.
             live.openStreams += 1;

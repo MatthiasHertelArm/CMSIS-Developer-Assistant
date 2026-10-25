@@ -40,7 +40,7 @@
 //
 // Isolation. Everything the code can derive a path from — HOME, USERPROFILE,
 // APPDATA, LOCALAPPDATA, XDG_*, CODEX_HOME, COPILOT_HOME, CLAUDE_CONFIG_DIR,
-// GEMINI_HOME, CMSIS_PACK_ROOT, TMPDIR/TMP/TEMP, os.homedir(), os.tmpdir(),
+// GEMINI_HOME, KIMI_CODE_HOME, CMSIS_PACK_ROOT, TMPDIR/TMP/TEMP, os.homedir(), os.tmpdir(),
 // the context's extensionPath and globalStorageUri — points into one fresh
 // temporary directory. That is asserted before every scenario, and a write
 // fence on `fs` refuses and reports any write outside it. Sockets: 127.0.0.1
@@ -87,7 +87,7 @@ fs.mkdirSync(WORLDS, { recursive: true });
 /** Variables that can steer a path; all are reset for every scenario. */
 const CONTROLLED_ENV = [
     'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
-    'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_CONFIG_DIR', 'GEMINI_HOME', 'ANTIGRAVITY_ENV', 'CMSIS_PACK_ROOT',
+    'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_CONFIG_DIR', 'GEMINI_HOME', 'KIMI_CODE_HOME', 'ANTIGRAVITY_ENV', 'CMSIS_PACK_ROOT',
     'TMPDIR', 'TMP', 'TEMP',
 ];
 const PATH_ENV = CONTROLLED_ENV.filter((k) => k !== 'ANTIGRAVITY_ENV');
@@ -738,6 +738,7 @@ const AGENT_FILES = {
     'copilot-cli': 'home/.copilot/mcp-config.json',
     'cursor': 'home/.cursor/mcp.json',
     'codex': 'home/.codex/config.toml',
+    'kimi-code': 'home/.kimi-code/mcp.json',
     'claude-code': 'home/.claude.json',
     'claude-desktop': 'home/Library/Application Support/Claude/claude_desktop_config.json',
 };
@@ -1344,6 +1345,7 @@ const SEED_OTHERS = agentSeeds({
     'copilot-cli': JSON.stringify({ mcpServers: { a: { type: 'http', url: 'http://a/mcp' }, [KEY]: { type: 'http', url: URL_3001, tools: ['read_memory'], custom: true }, z: {} } }),
     'cursor': '{\n\t"mcpServers": {\n\t\t"other": {}\n\t}\n}\n',
     'codex': '# Codex config\nmodel = "o3"\n\n[mcp_servers.other]\ncommand = "npx"\nargs = ["-y", "other-mcp"]\n\n[profiles.fast]\nmodel = "o4-mini"\n',
+    'kimi-code': json({ mcpServers: { linear: { url: 'https://mcp.linear.app/mcp' }, fs: { command: 'npx', args: ['-y', 'fs-mcp'], toolTimeoutMs: 5000 } } }),
     'claude-code': JSON.stringify({ numStartups: 3, projects: { '/p': { allowedTools: [], history: ['x'] } }, mcpServers: { other: { type: 'stdio', command: 'x' }, [KEY]: { x: 1 } }, userID: 'abc' }),
     'claude-desktop': json({ mcpServers: { fs: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/data'] } }, globalShortcut: 'Ctrl+Space' }),
 });
@@ -1356,6 +1358,7 @@ const SEED_LEGACY = agentSeeds({
     'copilot-cli': json({ mcpServers: { [LEGACY]: { type: 'http', url: URL_3001, tools: ['*'] } } }),
     'cursor': json({ mcpServers: { [LEGACY]: { type: 'sse', url: 'http://localhost:3001/sse' } } }),
     'codex': '[mcp_servers.cmsis-debugmcp]\nurl = "http://localhost:3001/sse"\nstartup_timeout_sec = 30\n\n[mcp_servers.cmsis-debugmcp.env]\nX = "1"\n',
+    'kimi-code': json({ mcpServers: { [LEGACY]: { transport: 'http', url: URL_3001 } } }),
     'claude-code': json({ numStartups: 1, mcpServers: { [LEGACY]: { type: 'http', url: URL_3001 } } }),
     'claude-desktop': json({ mcpServers: { [LEGACY]: { command: 'npx', args: ['-y', 'mcp-remote', URL_3001] } } }),
 });
@@ -1368,6 +1371,7 @@ const SEED_STALE = agentSeeds({
     'copilot-cli': json({ mcpServers: { [KEY]: { type: 'streamableHttp', url: 'http://localhost:9999/mcp' } } }),
     'cursor': json({ mcpServers: { [KEY]: { url: 'http://localhost:9999/sse' } } }),
     'codex': '[mcp_servers.cmsis-developer-assistant]\n  url = "http://localhost:9999/mcp" # old port\nstartup_timeout_sec = 10\n',
+    'kimi-code': json({ mcpServers: { [KEY]: { url: 'http://localhost:9999/mcp', enabledTools: ['read_memory'] } } }),
     'claude-code': json({ mcpServers: { [KEY]: { type: 'http', url: 'http://localhost:9999/mcp', headers: { a: 'b' } } } }),
     'claude-desktop': json({ mcpServers: { [KEY]: { command: 'npx', args: ['-y', 'mcp-remote', 'http://localhost:9999/mcp'], env: { X: '1' } } } }),
 });
@@ -1466,20 +1470,20 @@ function agentScenarios() {
         { id: 'agents/pure-helpers', about: 'exported TOML helpers and agentConfigHasServer', run: async () => pureHelperCases() },
 
         // --- roster: where each agent's file lives -----------------------------------------
-        { id: 'agents/roster-darwin', about: 'configure all eight on darwin, no files yet; the skills go to the personal directories', ...configureAll() },
+        { id: 'agents/roster-darwin', about: 'configure all nine on darwin, no files yet; the skills go to the personal directories', ...configureAll() },
         { id: 'agents/roster-win32-appdata', platform: 'win32', env: { APPDATA: '<w>/appdata' }, ...configureAll() },
         { id: 'agents/roster-win32-no-appdata', platform: 'win32', ...configureAll() },
         { id: 'agents/roster-linux-xdg', platform: 'linux', env: { XDG_CONFIG_HOME: '<w>/xdg' }, ...configureAll() },
         { id: 'agents/roster-linux-default', platform: 'linux', ...configureAll() },
         { id: 'agents/roster-unknown-platform', platform: 'aix', env: { APPDATA: '<w>/appdata' }, ...configureAll() },
         {
-            id: 'agents/roster-env-overrides', about: 'CODEX_HOME / COPILOT_HOME honoured, CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME not (darwin)',
-            env: { CODEX_HOME: '<w>/codex-home', COPILOT_HOME: '<w>/copilot-home', CLAUDE_CONFIG_DIR: '<w>/claude-config', XDG_CONFIG_HOME: '<w>/xdg' },
+            id: 'agents/roster-env-overrides', about: 'CODEX_HOME / COPILOT_HOME / KIMI_CODE_HOME honoured, CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME not (darwin)',
+            env: { CODEX_HOME: '<w>/codex-home', COPILOT_HOME: '<w>/copilot-home', KIMI_CODE_HOME: '<w>/kimi-home', CLAUDE_CONFIG_DIR: '<w>/claude-config', XDG_CONFIG_HOME: '<w>/xdg' },
             ...configureAll(),
         },
         {
             id: 'agents/roster-empty-env', about: 'empty variables count as unset (win32)', platform: 'win32',
-            env: { APPDATA: '', CODEX_HOME: '', COPILOT_HOME: '' }, ...configureAll(),
+            env: { APPDATA: '', CODEX_HOME: '', COPILOT_HOME: '', KIMI_CODE_HOME: '' }, ...configureAll(),
         },
 
         // --- configure over existing files ---------------------------------------------------
@@ -1578,6 +1582,26 @@ function agentScenarios() {
             run: migrate(),
         },
         { id: 'agents/migrate-other-port', about: 'constructed with port 4555 and timeout 42', seed: SEED_STALE, run: migrate(42, 4555) },
+        {
+            id: 'agents/migrate-kimi-adds-tool-timeout', about: 'a hand-written Kimi Code entry without toolTimeoutMs gets it and keeps its other fields; reported',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: { transport: 'http', url: URL_3001, headers: { a: 'b' } }, other: { url: 'http://other/mcp' } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-own-tool-timeout', about: 'a toolTimeoutMs the user set stays; nothing is written',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: { url: URL_3001, toolTimeoutMs: 120000 } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-sse', about: 'a Kimi Code entry on transport "sse" is replaced by the current shape',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: { transport: 'sse', url: 'http://localhost:3001/sse' } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-odd-entry', about: 'a non-object entry under our key is left alone',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: 'not an entry' } }) }),
+            run: migrate(),
+        },
         {
             id: 'agents/migrate-cursor-old-location', about: 'the entry an earlier release wrote where Cursor does not read moves to ~/.cursor/mcp.json; the old file goes',
             seed: { [OLD_CURSOR_FILE]: json({ mcpServers: { [KEY]: { autoApprove: [], disabled: false, timeout: 180, type: 'streamableHttp', url: URL_3001 } } }) },
@@ -1680,6 +1704,13 @@ function agentScenarios() {
             id: 'agents/rules-user-files-written', about: 'Claude Code and Codex set up: their user files are preselected, each shown as a diff and written on Write',
             seed: { 'home/.codex/AGENTS.md': '# My Codex notes\n\nUse tabs.\n' },
             ui: { agents: ['Claude Code', 'Codex'], rules: 'keep', message: answerWhen(/tool rules/) },
+            run: async (h) => { await h.manager().runSetupFlow(); },
+        },
+        {
+            id: 'agents/rules-kimi-code', about: 'Kimi Code: its user AGENTS.md under KIMI_CODE_HOME is preselected, the workspace AGENTS.md is offered unchecked',
+            folders: [{ name: 'wsA' }],
+            env: { KIMI_CODE_HOME: '<w>/kimi-home' },
+            ui: { agents: ['Kimi Code'], rules: 'keep', message: answerWhen(/tool rules/) },
             run: async (h) => { await h.manager().runSetupFlow(); },
         },
         {

@@ -47,6 +47,8 @@ node_modules/**
 !node_modules/ms/**
 coverage/**
 .qlty/**
+# Local agent settings of a working copy (git ignores them only through a user's global ignore file).
+.claude/**
 .github/**
 .npmrc
 # pdf.js runs on a worker thread of its own (dist/pdfWorker.js, the library

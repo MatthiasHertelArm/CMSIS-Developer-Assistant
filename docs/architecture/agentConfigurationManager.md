@@ -53,15 +53,19 @@ releases had one, with three settings and a monthly prompt).
 Home-directory config files only; the GitHub Copilot *extension* in VS Code
 is served by the `McpServerDefinitionProvider` registered in `extension.ts`
 and needs no file. The roster: Roo Code, Antigravity, Cline, GitHub Copilot
-CLI, Cursor, Codex (TOML), Claude Code, Claude Desktop (stdio bridge via
-`mcp-remote`). Paths under the platform's application-data directory follow
-`%APPDATA%`, `~/Library/Application Support` or `$XDG_CONFIG_HOME`;
-`CODEX_HOME` and `COPILOT_HOME` move those two agents' files. Cursor reads
-`~/.cursor/mcp.json` on every platform. Roo Code, Antigravity and Cline share
-one `streamableHttp` entry shape; Copilot CLI, Cursor (`url` only, as its
-documentation shows a remote server), Claude Code and Claude Desktop have
-their own (`ENTRY_SHAPES`). Each path carries the vendor source it was checked
-against in a code comment.
+CLI, Cursor, Codex (TOML), Kimi Code, Claude Code, Claude Desktop (stdio
+bridge via `mcp-remote`). Paths under the platform's application-data
+directory follow `%APPDATA%`, `~/Library/Application Support` or
+`$XDG_CONFIG_HOME`; `CODEX_HOME`, `COPILOT_HOME` and `KIMI_CODE_HOME` move
+those three agents' files. Cursor reads `~/.cursor/mcp.json` and Kimi Code
+`~/.kimi-code/mcp.json` on every platform. Roo Code, Antigravity and Cline
+share one `streamableHttp` entry shape; Copilot CLI, Cursor (`url` only, as
+its documentation shows a remote server), Kimi Code, Claude Code and Claude
+Desktop have their own (`ENTRY_SHAPES`). Kimi Code's entry is `url` and
+`toolTimeoutMs`: without it Kimi ends every tool call after 60 s, while
+`cmsis_action` and `flash` may wait 600 s; and nothing else goes in, since
+one entry its schema rejects disables every server of the file. Each path
+carries the vendor source it was checked against in a code comment.
 
 ### Migration of earlier entries
 
@@ -69,7 +73,9 @@ against in a code comment.
 JSON files it moves an entry from the pre-2.1.0 key `cmsis-debugmcp` to
 `cmsis-developer-assistant` and replaces an entry that still uses SSE,
 another transport or another endpoint by the current shape, keeping its
-`autoApprove` list (`migrateServers()`). In Codex's TOML it drops the legacy
+`autoApprove` list (`migrateServers()`). A Kimi Code entry that is current
+but has no `toolTimeoutMs` gets it and keeps everything else, so an entry
+written by hand stops failing at 60 s. In Codex's TOML it drops the legacy
 table and points ours at the current endpoint when that table existed or ours
 still uses SSE (`migrateCodexAgent()`, with the text helpers
 `stripLegacyCodexSection()` and `upsertCodexDebugMCPConfig()`).
@@ -167,12 +173,14 @@ was, byte for byte.
 
 *Which file.* `ruleFileTargets()` maps each agent to the file it reads, from
 the vendors' documentation (the sources sit next to the map in
-`core/agentRules.ts`). Claude Code, Codex, Copilot CLI and Antigravity have a
-user-level file, which is preselected: the MCP registration is per user too,
+`core/agentRules.ts`). Claude Code, Codex, Copilot CLI, Antigravity and Kimi
+Code have a user-level file, which is preselected: the MCP registration is per user too,
 and a workspace file ends up in the repository for colleagues who may not have
 the extension. VS Code Copilot Chat, Cursor, Cline and Roo Code get their
 workspace file only. Most agents read the workspace `AGENTS.md`; a file several
-agents read is offered and written once. Cursor, Cline and Roo Code get a file
+agents read is offered and written once. For Kimi Code the rule file is the
+only way the rules reach the model: it does not pass the server
+instructions on. Cursor, Cline and Roo Code get a file
 of their own (`own` form) in their rule folder, which a removal deletes. The
 map never picks a file whose creation would hide one the project uses: Claude
 Code writes into the project's `CLAUDE.md` only when there is one (a new

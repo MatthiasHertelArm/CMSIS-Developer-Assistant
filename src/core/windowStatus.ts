@@ -113,10 +113,10 @@ const CLICK_LINE = 'Click to choose the target window.';
  */
 const MAX_LISTED_SESSIONS = 10;
 
-/** The first line of the tooltip: what the window does. */
+/** The first lines of the tooltip: the product, then what the window does. */
 const ROLE_LINES: Readonly<Record<WindowRole, string>> = {
-    router: 'CMSIS Developer Assistant: router window. It serves the MCP endpoint and forwards each agent call.',
-    worker: 'CMSIS Developer Assistant: worker window. It runs the agent calls the router window forwards to it.',
+    router: 'CMSIS Developer Assistant\nRouter window: serves MCP, forwards agent calls.',
+    worker: 'CMSIS Developer Assistant\nWorker window: runs the calls the router forwards.',
 };
 
 /** Why a session drives its window, as the router's tooltip says it. */

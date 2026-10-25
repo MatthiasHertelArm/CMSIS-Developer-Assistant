@@ -67,7 +67,8 @@ suite('Window status', () => {
             const view = renderWindowStatus(state());
             assert.strictEqual(view.text, '$(cda-robot) R');
             assert.deepStrictEqual(view.tooltip.split('\n'), [
-                'CMSIS Developer Assistant: router window. It serves the MCP endpoint and forwards each agent call.',
+                'CMSIS Developer Assistant',
+                'Router window: serves MCP, forwards agent calls.',
                 `MCP endpoint: ${ENDPOINT}`,
                 'Default target windows: none, agents choose automatically',
                 'Last agent call here: none yet',
@@ -80,7 +81,7 @@ suite('Window status', () => {
         test('a worker names its role and lists no sessions', () => {
             const view = renderWindowStatus(state({ role: 'worker', sessions: undefined }));
             assert.strictEqual(view.text, '$(cda-robot) W');
-            assert.strictEqual(view.tooltip.split('\n')[0], 'CMSIS Developer Assistant: worker window. It runs the agent calls the router window forwards to it.');
+            assert.deepStrictEqual(view.tooltip.split('\n').slice(0, 2), ['CMSIS Developer Assistant', 'Worker window: runs the calls the router forwards.']);
             assert.ok(!view.tooltip.includes('Agent sessions'), view.tooltip);
         });
 

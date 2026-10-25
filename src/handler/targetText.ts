@@ -146,11 +146,11 @@ const dumpAddress = (address: bigint): string => `0x${address.toString(16).padSt
  * the read returned; when part of the range could not be read, the line
  * after the header says how much was read and which part was not.
  */
-export function renderMemoryDump(addressText: string, length: number, read: MemoryRead, format: string): string {
+export function renderMemoryDump(addressText: string, length: number, read: MemoryRead, format: string, expression?: string): string {
     const prefixed = /^0x/i.test(addressText) ? addressText : `0x${addressText}`;
     const base = BigInt(prefixed);
     const { bytes, offset } = read;
-    let text = `Memory at ${prefixed} (${length} bytes):\n`;
+    let text = `Memory at ${prefixed}${expression === undefined ? '' : ` = ${expression}`} (${length} bytes):\n`;
     const unread = unreadRanges(base, length, offset, bytes.length);
     if (unread.length > 0) {
         text += `Read ${bytes.length} of ${length} bytes: ${unread.join(' and ')} could not be read.\n`;
@@ -174,6 +174,21 @@ export function renderMemoryDump(addressText: string, length: number, read: Memo
         text += `\nASCII:\n  ${printable}\n`;
     }
     return text;
+}
+
+/** A `read_memory` address written as a number: hex digits, with or without `0x`. Anything else is an expression. */
+export function isAddressLiteral(text: string): boolean {
+    return /^(0x)?[0-9a-f]+$/i.test(text);
+}
+
+/**
+ * The address in GDB's value of `(unsigned long)(expression)`, as `0x` and
+ * lower-case hex: the value is decimal, or hex after `0x`, and may have more
+ * after it. Undefined for a value that does not start with a number.
+ */
+export function addressFromValue(value: unknown): string | undefined {
+    const number = /^\s*(0x[0-9a-f]+|\d+)(?![0-9a-z_])/i.exec(typeof value === 'string' ? value : '');
+    return number === null ? undefined : `0x${BigInt(number[1]).toString(16)}`;
 }
 
 /** The parts of the `length` bytes from `base` that a read of `count` bytes at `offset` did not return, first and last address. */

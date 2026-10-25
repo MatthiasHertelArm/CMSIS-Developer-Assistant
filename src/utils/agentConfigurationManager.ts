@@ -18,7 +18,7 @@
  * Onboarding of AI agents onto the CMSIS Developer Assistant.
  *
  * - Registers this extension's MCP server in the home-directory configuration
- *   files of eight agents (seven JSON files and Codex's TOML file), and
+ *   files of nine agents (eight JSON files and Codex's TOML file), and
  *   migrates the entries earlier releases wrote there.
  * - Runs the two-step setup: which agents to register (the CMSIS skills are
  *   installed into the personal skills directories at the same time), and
@@ -71,6 +71,7 @@ import {
     refreshRecordedRules,
     runRuleStep,
 } from './agentRuleFiles';
+import { LONG_LIMIT_CAP_MS } from '../handler/fence';
 import { writeFileAtomic } from './atomicFile';
 import { rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
@@ -108,12 +109,16 @@ export type AgentInfo =
 /** Every field any of the JSON entry shapes uses; each agent gets a subset (see `ENTRY_SHAPES`). */
 export interface MCPServerConfig {
     type?: string;
+    /** Kimi Code's name for `type`; an entry with `url` and without it is Streamable HTTP. */
+    transport?: string;
     url?: string;
     command?: string;
     args?: string[];
     autoApprove?: string[];
     disabled?: boolean;
     timeout?: number;
+    /** Kimi Code: how long one tool call may take, in ms. */
+    toolTimeoutMs?: number;
     tools?: string[];
 }
 
@@ -207,6 +212,7 @@ function supportedAgents(): AgentInfo[] {
         viaJson('copilot-cli', 'GitHub Copilot CLI', path.join(process.env.COPILOT_HOME || below(homeRoot, '.copilot'), 'mcp-config.json')),
         viaJson('cursor', 'Cursor', below(homeRoot, '.cursor/mcp.json')),
         codex,
+        viaJson('kimi-code', 'Kimi Code', path.join(process.env.KIMI_CODE_HOME || below(homeRoot, '.kimi-code'), 'mcp.json')),
         viaJson('claude-code', 'Claude Code', path.join(homeRoot, '.claude.json')),
         viaJson('claude-desktop', 'Claude Desktop', below(appData, 'Claude/claude_desktop_config.json')),
     ];
@@ -218,6 +224,14 @@ function agentsWithFiles(): AgentInfo[] {
 }
 
 /**
+ * Kimi Code ends a tool call after 60 s unless the entry says otherwise
+ * (`toolTimeoutMs`, https://moonshotai.github.io/kimi-code/en/customization/mcp,
+ * checked 2026-10-25). `cmsis_action` and `flash` may wait 600 s, and their
+ * reply needs a moment after that.
+ */
+export const KIMI_TOOL_TIMEOUT_MS = LONG_LIMIT_CAP_MS + 30_000;
+
+/**
  * Entry shapes of the JSON agents that do not take the default one. The key
  * order is part of the bytes written.
  */
@@ -227,6 +241,9 @@ const ENTRY_SHAPES: Readonly<Record<string, (url: string) => MCPServerConfig>> =
     // the fields of the default shape are not in its schema (https://cursor.com/docs/context/mcp).
     'cursor': (url) => ({ url }),
     'claude-code': (url) => ({ type: 'http', url }),
+    // Kimi Code reads an entry with `url` and no `transport` as Streamable HTTP. One entry
+    // its schema rejects disables every server of the file, so nothing else goes in.
+    'kimi-code': (url) => ({ url, toolTimeoutMs: KIMI_TOOL_TIMEOUT_MS }),
     // Claude Desktop starts stdio servers only; mcp-remote bridges to the HTTP endpoint.
     'claude-desktop': (url) => ({ command: 'npx', args: ['-y', 'mcp-remote', url] }),
 };
@@ -376,7 +393,9 @@ interface EntryMigration {
  * Bring one servers object up to date, in place. The pre-rename key moves to
  * ours (an entry already under ours wins). An entry on the SSE transport, on
  * another transport than `wanted`, or at another endpoint is replaced by a
- * copy of `wanted` that keeps only its `autoApprove` list. Recomputed from the
+ * copy of `wanted` that keeps only its `autoApprove` list. An entry that is
+ * current but lacks the `toolTimeoutMs` of `wanted` gets it, and keeps the
+ * rest: without it, Kimi Code ends every call after 60 s. Recomputed from the
  * parsed file on every attempt, so it has no effect outside `servers`.
  */
 function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigration {
@@ -393,7 +412,7 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
     if (!table || !present) {
         return { changed: renamed, reported: renamed };
     }
-    const onSse = present.type === 'sse' || (typeof present.url === 'string' && present.url.endsWith('/sse'));
+    const onSse = present.type === 'sse' || present.transport === 'sse' || (typeof present.url === 'string' && present.url.endsWith('/sse'));
     const otherTransport = wanted.type !== undefined && present.type !== undefined && wanted.type !== present.type;
     const movedUrl = typeof present.url === 'string' && wanted.url !== undefined && present.url !== wanted.url;
     const movedArgs = Array.isArray(present.args) && wanted.args !== undefined
@@ -406,7 +425,11 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
         }
         table[SERVER_KEY] = fresh;
     }
-    return { changed: replace || renamed, reported: onSse || otherTransport || renamed };
+    const noToolTimeout = !replace && wanted.toolTimeoutMs !== undefined && isJsonObject(present) && present.toolTimeoutMs === undefined;
+    if (noToolTimeout) {
+        present.toolTimeoutMs = wanted.toolTimeoutMs;
+    }
+    return { changed: replace || renamed || noToolTimeout, reported: onSse || otherTransport || renamed || noToolTimeout };
 }
 
 /** A JSON object, not an array or null. */

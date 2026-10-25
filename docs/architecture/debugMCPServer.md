@@ -39,9 +39,10 @@ Three constraints shape the code:
 | Route | Answer |
 | ----- | ------ |
 | `POST /mcp` | An `initialize` request without a session id opens a session; every other request must name an open session in `mcp-session-id`. |
-| `GET /mcp` | The server-sent event stream of the named session. |
+| `GET /mcp` | The server-sent event stream of the named session; 405 for a session whose client is on `NO_GET_STREAM_CLIENTS` (Kimi Code). |
 | `DELETE /mcp` | Ends the named session. |
 | `GET /sse` | 410 with a pointer to `POST /mcp`: the SSE transport of older releases is retired. |
+| any other | 404 with a JSON-RPC error that names the endpoint, for example for an agent entry that names the port without `/mcp`: the client shows that text, where Express's HTML "Cannot POST /" told the user nothing. |
 
 - `loopbackOnly` answers 403 to a `Host` header that does not name this
   machine and to an `Origin` that is not local (`isLoopbackHostHeader()`,
@@ -92,6 +93,19 @@ Three constraints shape the code:
    had no request for 30 minutes and holds no `GET` stream open; a request
    with its id is then refused like any unknown id. Clock, idle time and sweep
    interval come from the `sessionExpiry` option, which tests use.
+
+A client that takes the loss of its `GET` stream as the end of the server
+gets no stream (`NO_GET_STREAM_CLIENTS` in `src/core/clientHosting.ts`):
+its `GET` is answered 405, as the specification allows for a server that
+offers none, and the SDK client then opens none. The stream drops at every
+restart of the endpoint (a reload or close of the router window, a router
+change); the SDK client retries it twice within about 2.5 s and gives up
+with "Maximum reconnection attempts (2) exceeded", which Kimi Code treats as
+final: the server is marked failed, and a Kimi session opened or resumed
+afterwards has none of its tools until the window reloads. Without the
+stream the first call after a restart gets 404, and Kimi reconnects and
+retries it. Such a session expires after 30 idle minutes like one of a
+client that never opens a stream, and is opened again the same way.
 
 A session's end matters beyond the server: the serial ports it held stay
 held otherwise (see [serial.md](serial.md)). `SessionHandlers.ended` hears
@@ -199,9 +213,12 @@ is on. `src/test/debugSkillGuidance.test.ts` pins the phrases agents rely on.
 The first `get_session_status` of a session repeats the rules in one line
 (`TOOL_RULES_REMINDER`), between the status and the call statistics: by then
 the instructions may lie far back in the conversation, or have been
-compacted away. A flag in the closure of that registration keeps it to one
-reply per session; the state lives where the session is built, in the router
-window, so no worker takes part.
+compacted away. A client whose model never sees the instructions at all
+(`NO_INSTRUCTIONS_CLIENTS` in `src/core/clientHosting.ts`: Kimi Code) gets
+the whole rules block there instead of a line that points at them. A flag in
+the closure of that registration keeps it to one reply per session; the state
+lives where the session is built, in the router window, so no worker takes
+part.
 
 Neither the rules, nor the sentence on results, nor the reminder is in a tool
 description: `tools/list` goes along with every turn, and
@@ -291,8 +308,10 @@ whose client sent a name in `TEXT_ONLY_CLIENTS` (`src/core/clientHosting.ts`,
 matched exactly, `wantsTextOnly()`). The text is complete without it, and a
 failure keeps `isError` and its `[CODE]`. The wrapper classifies the outcome
 from the whole result before, and records the bytes the client receives.
-The list is empty until the Copilot SDK's client name is known; the
-constructor takes another one for tests.
+The list holds `kimi-code`, Kimi Code's name for its CLI and its VS Code
+extension, which append `structuredContent` to the text as JSON; the Copilot
+SDK's name joins it once known. The constructor takes another list for
+tests.
 
 The problem records that ride along with a failure or a timeout
 (`data.problems`, #48) reach `structuredContent.problems` like any other
