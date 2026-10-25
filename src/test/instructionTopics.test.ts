@@ -135,9 +135,10 @@ suite('Instruction topics', () => {
             assert.match(sliceTopic(doc, 'troubleshooting'), /ROOT CAUSE/i);
         });
 
-        test('the topics that replaced `build` stay well under the 8 KB a Copilot agent takes inline', () => {
-            // `build` was 17 106 bytes; GitHub Copilot's agent writes a result over about 8 KB to a file.
-            for (const topic of ['target', 'cmsis-action', 'flash', 'build']) {
+        test('every name the tool takes serves well under the 8 KB a Copilot agent takes inline', () => {
+            // GitHub Copilot's agent writes a result over about 8 KB to a file. In 2.7.0 `build` (17 106 bytes)
+            // became three topics, and bootstrap (8 417), session (8 205) and inspection (8 773) were tightened.
+            for (const topic of TOPIC_NAMES) {
                 const bytes = Buffer.byteLength(sliceTopic(doc, topic));
                 assert.ok(bytes <= 7000, `topic ${topic} is ${bytes} bytes`);
             }

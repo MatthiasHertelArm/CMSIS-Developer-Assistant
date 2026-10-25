@@ -363,7 +363,10 @@ whole guide is served and a warning is logged.
 
 A topic is sized to be read in one piece: GitHub Copilot's agent writes a
 result over about 8 KB to a file and pages through it, which is why the
-`build` topic became `target`, `cmsis-action` and `flash` in 2.7.0. A retired
+`build` topic became `target`, `cmsis-action` and `flash` in 2.7.0, and why
+every topic is held under 7 000 bytes as served. A topic that grows past it
+first loses what the tool descriptions and replies already say; it is split
+only where it has two halves an agent asks for apart. A retired
 name stays in the tool's enum (`RETIRED_TOPICS`) and serves the topic that
 took over most of it, under one line that says where the rest went, so that a
 skill, a knowledge procedure or an agent's memory written before the split
