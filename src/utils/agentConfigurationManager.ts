@@ -229,7 +229,7 @@ function agentsWithFiles(): AgentInfo[] {
  * checked 2026-10-25). `cmsis_action` and `flash` may wait 600 s, and their
  * reply needs a moment after that.
  */
-const KIMI_TOOL_TIMEOUT_MS = LONG_LIMIT_CAP_MS + 30_000;
+export const KIMI_TOOL_TIMEOUT_MS = LONG_LIMIT_CAP_MS + 30_000;
 
 /**
  * Entry shapes of the JSON agents that do not take the default one. The key
