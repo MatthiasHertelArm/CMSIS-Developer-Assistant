@@ -644,7 +644,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('read_memory', {
         description: ABOUT.read_memory,
         inputSchema: {
-            address: z.string().describe('Memory address as hex string, e.g. \'0x20000000\''),
+            address: z.string().describe('Hex address (\'0x20000000\') or a C expression for one (\'&buf\', an array, a pointer)'),
             length: z.number().int().min(1).max(4096).describe('Number of bytes to read (1-4096)'),
             format: z.enum(['hex', 'ascii', 'both']).default('hex').describe('\'hex\' (default), \'ascii\', or \'both\''),
             timeoutMs: CALL_TIMEOUT,

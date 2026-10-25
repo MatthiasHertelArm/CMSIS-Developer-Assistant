@@ -504,7 +504,7 @@
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Memory address as hex string, e.g. '0x20000000'"
+                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
               },
               "length": {
                 "type": "integer",
@@ -2322,7 +2322,7 @@
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Memory address as hex string, e.g. '0x20000000'"
+                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
               },
               "length": {
                 "type": "integer",
@@ -3500,7 +3500,7 @@
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Memory address as hex string, e.g. '0x20000000'"
+                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
               },
               "length": {
                 "type": "integer",
@@ -5946,7 +5946,7 @@
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Memory address as hex string, e.g. '0x20000000'"
+                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
               },
               "length": {
                 "type": "integer",
@@ -8057,7 +8057,7 @@
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Memory address as hex string, e.g. '0x20000000'"
+                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
               },
               "length": {
                 "type": "integer",

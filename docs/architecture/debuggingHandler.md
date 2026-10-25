@@ -272,6 +272,13 @@ it). Other adapters take breakpoint changes while their target runs.
   GDB commands (`-exec …` or `>…`) are never redacted: real SVDs name
   registers `KEY` or `UNLOCK`. On the CMSIS Debugger the executor sends such
   a command in the adapter's `>` prefix and returns the text GDB printed.
+- `read_memory` takes a hex address or a C expression for one, as the
+  guide itself writes it (`&adc_buffer`): anything that is not hex digits
+  is evaluated as `(unsigned long)(expression)` in the focused frame
+  (`addressOfExpression()`), and the dump names both. Before, the executor
+  put `0x` in front of the expression and the read failed inside the
+  adapter (a Kimi Code session hit it). An expression GDB cannot place is
+  refused with `INVALID_ARGUMENT` and GDB's words.
 - The memory dump, the core-register table and the cycle-counter text come
   from `src/handler/targetText.ts`. A dump labels its rows from the first
   byte the read returned and, when part of the range could not be read,

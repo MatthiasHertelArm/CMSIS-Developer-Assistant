@@ -110,7 +110,9 @@ import {
     renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal,
 } from './handler/sessionText';
 import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
-import { mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump } from './handler/targetText';
+import {
+    addressFromValue, isAddressLiteral, mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump,
+} from './handler/targetText';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
 import { secondsText } from './core/windowHealth';
 import { syncProblemsPanel } from './windowProblems';
@@ -194,6 +196,11 @@ export interface IDebuggingHandler {
 }
 
 // ── Fixed texts ────────────────────────────────────────────────────────────
+
+/** A read_memory address that is no number and no expression GDB can turn into one. */
+const notAnAddress = (expression: string): string => `Cannot read memory at "${expression}": it is no hex address, and GDB found no address for it.`;
+const ADDRESS_HINT = 'Pass a hex address such as 0x20000000, or an expression for one such as &buffer, an array name or a pointer; '
+    + 'for a struct, take its address with &. lookup_symbol gives a symbol\'s address from the ELF.';
 
 /** The launch.json entry name that means "synthesise a configuration for the file". */
 const SYNTHESISED_CONFIGURATION = 'Default Configuration';
@@ -1812,9 +1819,36 @@ export class DebuggingHandler
         return this.fence('read_memory', args.timeoutMs, 'error', async () => {
             await this.requireStoppedTarget('read memory');
             const format = args.format ?? 'hex';
-            const read = await this.dbg.readMemory(args.address, args.length, args.timeoutMs);
-            return renderMemoryDump(args.address, args.length, read, format);
+            const given = args.address.trim();
+            const address = isAddressLiteral(given) ? given : await this.addressOfExpression(given, args.timeoutMs);
+            const read = await this.dbg.readMemory(address, args.length, args.timeoutMs);
+            return renderMemoryDump(address, args.length, read, format, address === given ? undefined : given);
         });
+    }
+
+    /**
+     * The address an expression such as `&buffer`, `buffer` (an array) or
+     * `ptr->data` stands for, as GDB evaluates `(unsigned long)(expression)`
+     * in the focused frame. Agents pass such expressions to read_memory
+     * (Kimi Code did), and GDB reads its value where a number is expected.
+     */
+    private async addressOfExpression(expression: string, overrideMs?: number): Promise<string> {
+        const frameId = this.focusedFrame();
+        let value: unknown;
+        try {
+            const reply: EvaluateReply = await this.dbg.evaluateExpression(`(unsigned long)(${expression})`, frameId, overrideMs);
+            value = reply?.result;
+        } catch (caught) {
+            if (caught instanceof HardwareTimeoutError) {
+                throw caught;
+            }
+            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB: ${failureText(caught)}`, ADDRESS_HINT);
+        }
+        const address = addressFromValue(value);
+        if (address === undefined) {
+            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB gave "${String(value)}".`, ADDRESS_HINT);
+        }
+        return address;
     }
 
     /** The register table; when no register could be read on the CMSIS Debugger, also whether the core answers (#3). */

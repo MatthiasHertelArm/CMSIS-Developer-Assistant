@@ -136,7 +136,7 @@ Every tool that touches the hardware accepts an optional `timeoutMs` parameter (
 
 | Tool | Description |
 |------|-------------|
-| `read_memory` | Reads a range of bytes (up to 4096) from the target as hex, ASCII, or both. |
+| `read_memory` | Reads a range of bytes (up to 4096) from the target as hex, ASCII, or both, at an address or at a C expression for one (`&buffer`). |
 | `read_core_registers` | Reads R0–R15, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, and PRIMASK. |
 | `read_peripheral_register` | Reads and decodes a peripheral register, or all registers of a peripheral, using the CMSIS-SVD description of the device (read by a built-in SVD parser). |
 | `get_fault_info` | Reads CFSR, HFSR, DFSR, MMFAR, BFAR, and AFSR and decodes them bit by bit for HardFault analysis. |

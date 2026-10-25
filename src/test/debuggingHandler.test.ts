@@ -1894,7 +1894,40 @@ suite('DebuggingHandler', () => {
             assert.strictEqual(reply, 'Memory at 0x20000000 (20 bytes):\n'
                 + '\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 00 01 61 62\n'
                 + '\nASCII:\n  Hello, Cortex-M!..ab\n');
-            await refusalOf(handlerFor(x).handleReadMemory({ address: 'zz', length: 4 }), 'INTERNAL');
+        });
+
+        test('an address expression is read where GDB says it points; one GDB cannot place is refused with the way to pass one', async () => {
+            const x = new ScriptedExecutor();
+            const readAt: string[] = [];
+            x.readMemory = async (address) => {
+                readAt.push(address);
+                return { bytes: Buffer.from([1, 2, 3, 4]), offset: 0 };
+            };
+            x.evaluateExpression = async (expression, frameId) => {
+                x.calls.push(['evaluateExpression', expression, frameId]);
+                if (expression === '(unsigned long)(&bulkOutBuffer)') {
+                    return { result: '536871168' };
+                }
+                if (expression === '(unsigned long)(usbState)') {
+                    return { result: '{state = 2, address = 5}' };
+                }
+                throw new Error('No symbol "zz" in current context.');
+            };
+            const atFrame = { focusedFrameId: () => 1 };
+            // Kimi Code's call: read_memory {address: "&bulkOutBuffer"} failed with "Cannot convert 0x&bulkOutBuffer to a BigInt".
+            assert.strictEqual(await textAnswer(handlerFor(x, atFrame).handleReadMemory({ address: '&bulkOutBuffer', length: 4, format: 'hex' })),
+                'Memory at 0x20000100 = &bulkOutBuffer (4 bytes):\n\nHex:\n  0x20000100: 01 02 03 04\n');
+            assert.deepStrictEqual(readAt, ['0x20000100']);
+            assert.deepStrictEqual(x.calls.find((call) => call[0] === 'evaluateExpression'), ['evaluateExpression', '(unsigned long)(&bulkOutBuffer)', 1],
+                'in the focused frame');
+            const unknown = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address: 'zz', length: 4 }), 'INVALID_ARGUMENT');
+            assert.strictEqual(unknown.message, 'Cannot read memory at "zz": it is no hex address, and GDB found no address for it. GDB: No symbol "zz" in current context.');
+            assert.ok(unknown.hint?.startsWith('Pass a hex address such as 0x20000000, or an expression for one such as &buffer'), unknown.hint);
+            const struct = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address: 'usbState', length: 4 }), 'INVALID_ARGUMENT');
+            assert.ok(struct.message.endsWith('GDB gave "{state = 2, address = 5}".'), struct.message);
+            assert.deepStrictEqual(readAt, ['0x20000100'], 'no read without an address');
+            // Without a focused frame the expression cannot be placed: the same refusal as evaluate_expression's.
+            await refusalOf(handlerFor(x, { focusedFrameId: () => undefined }).handleReadMemory({ address: '&bulkOutBuffer', length: 4 }), 'TARGET_RUNNING');
         });
 
         test('a partial read labels its rows from the first byte read and names the part that could not be read', async () => {
