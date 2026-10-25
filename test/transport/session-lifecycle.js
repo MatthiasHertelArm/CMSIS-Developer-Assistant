@@ -23,7 +23,7 @@
 //      DELETE with an unknown id get 404 and JSON-RPC -32001 "Session not
 //      found", as the SDK's own transport answers, which tells a client to
 //      initialize again (#14); a request on another path gets JSON that
-//      names the endpoint
+//      names the endpoint; a GET of a Kimi Code session gets 405
 //   4. DELETE /mcp tears the session down
 //   5. REGRESSION: three consecutive get_threads calls on one session all
 //      return — the bug the old per-request model was built to fix.
@@ -211,6 +211,22 @@ async function main() {
     const unknownDelete = await request(port, 'DELETE', unknownSession);
     check('DELETE /mcp with an unknown session id gets 404 and -32001', sessionNotFound(unknownDelete),
         `status=${unknownDelete.status} ${unknownDelete.body}`);
+    // Kimi Code is offered no GET stream: when one drops at a server restart it marks the server failed for good.
+    const kimiInit = await request(port, 'POST', {}, {
+        jsonrpc: '2.0', id: 94, method: 'initialize',
+        params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'kimi-code', version: '2.3.2' } },
+    });
+    const kimiSid = kimiInit.headers['mcp-session-id'];
+    await request(port, 'POST', { 'mcp-session-id': kimiSid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const kimiStream = await request(port, 'GET', { 'mcp-session-id': kimiSid, 'Accept': 'text/event-stream' });
+    check('a GET of a Kimi Code session gets 405 with Allow: POST, DELETE, so its client opens no stream',
+        kimiStream.status === 405 && kimiStream.headers.allow === 'POST, DELETE' && JSON.parse(kimiStream.body).error?.code === -32000,
+        `status=${kimiStream.status} allow=${kimiStream.headers.allow} ${kimiStream.body}`);
+    const kimiList = await request(port, 'POST', { 'mcp-session-id': kimiSid }, { jsonrpc: '2.0', id: 95, method: 'tools/list', params: {} });
+    check('the Kimi Code session itself keeps working', kimiList.status === 200 && (parseSse(kimiList.body)?.result?.tools?.length ?? 0) > 0,
+        `status=${kimiList.status}`);
+    await request(port, 'DELETE', { 'mcp-session-id': kimiSid });
+
     // An entry that names the port without /mcp (a hand-written Kimi Code entry did): JSON naming the endpoint.
     const wrongPath = await request(port, 'POST', {}, { jsonrpc: '2.0', id: 93, method: 'initialize', params: {} }, undefined, '/');
     const wrongPathError = /application\/json/.test(String(wrongPath.headers['content-type'])) ? JSON.parse(wrongPath.body).error : undefined;

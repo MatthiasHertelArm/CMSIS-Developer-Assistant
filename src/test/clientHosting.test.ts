@@ -15,7 +15,7 @@
  */
 
 import * as assert from 'assert';
-import { dropsInstructions, survivesWindowReload, wantsTextOnly } from '../core/clientHosting';
+import { dropsInstructions, offersNoGetStream, survivesWindowReload, wantsTextOnly } from '../core/clientHosting';
 
 suite('Which MCP clients survive a window reload', () => {
     test('the CLIs do: Claude Code, Codex, Gemini CLI, by name prefix, case-insensitively', () => {
@@ -56,6 +56,15 @@ suite('Which MCP clients never show the model the server instructions', () => {
         assert.strictEqual(dropsInstructions('kimi-code'), true);
         for (const name of ['Kimi-Code', 'claude-code', 'Visual Studio Code', '', undefined]) {
             assert.strictEqual(dropsInstructions(name), false, String(name));
+        }
+    });
+});
+
+suite('Which MCP clients are offered no GET stream', () => {
+    test('Kimi Code, by its exact name; every other client keeps its stream', () => {
+        assert.strictEqual(offersNoGetStream('kimi-code'), true);
+        for (const name of ['Kimi-Code', 'claude-code', 'codex-mcp-client', 'Visual Studio Code', '', undefined]) {
+            assert.strictEqual(offersNoGetStream(name), false, String(name));
         }
     });
 });

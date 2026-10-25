@@ -34,6 +34,9 @@
  * Some clients never pass the server's `instructions` to the model, so the
  * tool rules at their top do not arrive (`NO_INSTRUCTIONS_CLIENTS`).
  *
+ * Some clients take the loss of the GET stream as the end of the server, so
+ * their sessions are offered none (`NO_GET_STREAM_CLIENTS`).
+ *
  * Pure: no vscode.
  */
 
@@ -77,6 +80,29 @@ export const NO_INSTRUCTIONS_CLIENTS: readonly string[] = ['kimi-code'];
 /** Whether a client of this name is one whose model never sees the server instructions. An absent name never is. */
 export function dropsInstructions(clientName: string | undefined): boolean {
     return clientName !== undefined && NO_INSTRUCTIONS_CLIENTS.includes(clientName);
+}
+
+/**
+ * Names of the clients whose sessions are offered no GET stream, matched
+ * exactly: their GET gets 405, which the MCP specification provides for a
+ * server that offers no stream at the endpoint, and the SDK client then opens
+ * none and reports nothing.
+ *
+ * - `kimi-code`: the stream drops whenever the server restarts (the router
+ *   window reloads or closes, another window takes over); the SDK client
+ *   retries it twice within about 2.5 s, then reports "Maximum reconnection
+ *   attempts (2) exceeded", which Kimi Code takes as final
+ *   (`isTerminalTransportError`, MoonshotAI/kimi-code at 743f140). It marks
+ *   the server failed, and a session opened or resumed afterwards gets none
+ *   of its tools until the window reloads. Without the stream nothing fails:
+ *   the first call after a restart gets 404, and Kimi reconnects and retries
+ *   it. Kimi ignores what a server sends outside a request (tools/list_changed).
+ */
+export const NO_GET_STREAM_CLIENTS: readonly string[] = ['kimi-code'];
+
+/** Whether a client of this name gets 405 for a GET stream. An absent name never does. */
+export function offersNoGetStream(clientName: string | undefined): boolean {
+    return clientName !== undefined && NO_GET_STREAM_CLIENTS.includes(clientName);
 }
 
 /**

@@ -39,7 +39,7 @@ Three constraints shape the code:
 | Route | Answer |
 | ----- | ------ |
 | `POST /mcp` | An `initialize` request without a session id opens a session; every other request must name an open session in `mcp-session-id`. |
-| `GET /mcp` | The server-sent event stream of the named session. |
+| `GET /mcp` | The server-sent event stream of the named session; 405 for a session whose client is on `NO_GET_STREAM_CLIENTS` (Kimi Code). |
 | `DELETE /mcp` | Ends the named session. |
 | `GET /sse` | 410 with a pointer to `POST /mcp`: the SSE transport of older releases is retired. |
 | any other | 404 with a JSON-RPC error that names the endpoint, for example for an agent entry that names the port without `/mcp`: the client shows that text, where Express's HTML "Cannot POST /" told the user nothing. |
@@ -93,6 +93,19 @@ Three constraints shape the code:
    had no request for 30 minutes and holds no `GET` stream open; a request
    with its id is then refused like any unknown id. Clock, idle time and sweep
    interval come from the `sessionExpiry` option, which tests use.
+
+A client that takes the loss of its `GET` stream as the end of the server
+gets no stream (`NO_GET_STREAM_CLIENTS` in `src/core/clientHosting.ts`):
+its `GET` is answered 405, as the specification allows for a server that
+offers none, and the SDK client then opens none. The stream drops at every
+restart of the endpoint (a reload or close of the router window, a router
+change); the SDK client retries it twice within about 2.5 s and gives up
+with "Maximum reconnection attempts (2) exceeded", which Kimi Code treats as
+final: the server is marked failed, and a Kimi session opened or resumed
+afterwards has none of its tools until the window reloads. Without the
+stream the first call after a restart gets 404, and Kimi reconnects and
+retries it. Such a session expires after 30 idle minutes like one of a
+client that never opens a stream, and is opened again the same way.
 
 A session's end matters beyond the server: the serial ports it held stay
 held otherwise (see [serial.md](serial.md)). `SessionHandlers.ended` hears
