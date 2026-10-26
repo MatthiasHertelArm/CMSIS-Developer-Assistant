@@ -20,7 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CmsisJobTracker, JOB_RETENTION_MS, LABEL_FETCH_MS } from '../cmsisJobTracker';
 import { executionIn, Job, JobDiagnosis } from '../core/cmsisTasks';
-import { flashFailedHint, formatDuration, idleStatus, sessionTaskLine, stillRunning } from '../handler/jobText';
+import { flashFailedHint, formatDuration, idleStatus, LONG_FLASH_MS, sessionTaskLine, stillRunning, stuckFlashTask } from '../handler/jobText';
 import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 
 /**
@@ -387,6 +387,53 @@ suite('CmsisJobTracker', () => {
             const late = stillRunning(tracker.job(job.id) ?? job, { tag: ' on HE', now: clock.now() });
             assert.ok(late.text.endsWith('do not start another build. If VS Code shows the build finished while this stays running, '
                 + 'cmsis_action stop_build ends the task.'), late.text);
+        });
+
+        const STUCK = 'far longer than programming takes: it is stuck, almost always waiting for a debug probe. Its terminal, which no tool reads, '
+            + 'then shows "Waiting for a debug probe" or a probe error. "Waiting for a debug probe" there means pyOCD sees no free probe: another task '
+            + 'or session holds it (cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks), or the probe is not connected or lacks its USB '
+            + 'driver (ask the user). cmsis_action {action:\'stop_run\'} ends the task; load again only once the probe is free and visible.';
+
+        test('a Load still running after 2 min is called stuck, with the probe causes and stop_run; earlier it is merely running', () => {
+            const { tasks, clock, tracker } = world();
+            const job = tracker.begin('load', 'B-L475E-IOT01A');
+            tasks.start(tasks.execution(shell('CMSIS Load')));
+            clock.advance(clock.now() + LONG_FLASH_MS - 1_000);
+            const early = stillRunning(tracker.job(job.id) ?? job, { tag: ' on L475', now: clock.now() });
+            assert.match(early.text, /This is not a failure/);
+            assert.strictEqual(stuckFlashTask(tracker.job(job.id) ?? job, clock.now()), undefined);
+            clock.advance(clock.now() + 31 * 60_000);
+            const late = stillRunning(tracker.job(job.id) ?? job, { tag: ' on L475', now: clock.now() });
+            assert.strictEqual(late.text, `CMSIS 'load' on L475 has not finished after 33 min (job ${job.id}). 'CMSIS Load' has run for 33 min, ${STUCK}`);
+            assert.strictEqual(late.status, 'running');
+            assert.strictEqual((late.data?.job as { stuck?: boolean } | undefined)?.stuck, true);
+            assert.ok(!late.text.includes('not a failure'), late.text);
+        });
+
+        test('the stuck verdict: Load and Erase only, never CMSIS Run, and only while the task runs', () => {
+            const { tasks, clock, tracker } = world();
+            const run = tracker.begin('run', 'HP');
+            tasks.start(tasks.execution(shell('CMSIS Run')));
+            clock.advance(clock.now() + 10 * 60_000);
+            assert.strictEqual(stuckFlashTask(tracker.job(run.id) ?? run, clock.now()), undefined, 'a GDB server runs for hours');
+            const erase = tracker.begin('erase', 'HP');
+            const execution = tasks.start(tasks.execution(shell('CMSIS Erase')));
+            clock.advance(clock.now() + LONG_FLASH_MS);
+            assert.strictEqual(stuckFlashTask(tracker.job(erase.id) ?? erase, clock.now())?.name, 'CMSIS Erase');
+            tasks.finish(execution, 0);
+            assert.strictEqual(stuckFlashTask(tracker.job(erase.id) ?? erase, clock.now()), undefined, 'settled');
+        });
+
+        test('a Load the user started stuck shows in status without a job and in the get_session_status line', () => {
+            const { tasks, clock, tracker } = world();
+            tasks.start(tasks.execution(shell('CMSIS Load')));
+            clock.advance(clock.now() + 3 * 60_000);
+            assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
+                'No CMSIS job in this window: nothing is in flight and none has finished since the window started.\n'
+                + 'CMSIS tasks running: \'CMSIS Load\' for 3 min (holds the probe).\n'
+                + `'CMSIS Load' has run for 3 min, ${STUCK}`);
+            assert.strictEqual(sessionTaskLine(tracker.recent(), tracker.liveExecutions(), clock.now()),
+                `CMSIS tasks: 'CMSIS Load' alive 3 min (holds the probe)\n'CMSIS Load' has run for 3 min, ${STUCK}`);
         });
 
         test('a failed Load: pyOCD, or a command not known, keeps the flash hint word for word; J-Link and other programs get their own', () => {

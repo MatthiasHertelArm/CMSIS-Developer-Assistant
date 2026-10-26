@@ -379,7 +379,14 @@ window's CMSIS job tracker (next section):
   what happens when none does.
 - `status` launches nothing and needs no solution: it waits for the job in
   flight, or lists the recent results and the live CMSIS tasks, with the
-  error lines of a failed build once they are in.
+  error lines of a failed build once they are in. A Load or Erase task alive
+  for `LONG_FLASH_MS` (2 min, `src/handler/jobText.ts`) is stuck, not
+  programming: pyOCD waits without a limit for a probe it cannot see or that
+  another holds, and says so only in its terminal, which no tool reads.
+  `status` then answers at once, and its reply, the `running` reply of the
+  action and the task line of `get_session_status` say that the task is
+  stuck, give the probe causes and name `stop_run`, which ends it; `data.job`
+  carries `stuck: true`.
 - `stop_run` waits until the CMSIS tasks it stops have ended, terminates
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
   alive after 10 s. Builds are not its tasks, but CMSIS Solution's Stop

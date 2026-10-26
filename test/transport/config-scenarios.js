@@ -1488,7 +1488,12 @@ function agentScenarios() {
 
         // --- configure over existing files ---------------------------------------------------
         { id: 'agents/configure-existing-other-servers', seed: SEED_OTHERS, ...configureAll() },
-        { id: 'agents/configure-legacy-key', about: 'configure adds the new key and leaves the legacy entry', seed: SEED_LEGACY, ...configureAll() },
+        { id: 'agents/configure-legacy-key', about: 'configure adds the new key; the legacy entries, all on our endpoint, go as duplicates', seed: SEED_LEGACY, ...configureAll() },
+        {
+            id: 'agents/configure-kimi-duplicate', about: 'Configure Agent → Kimi Code over a hand-written entry for the same server: ours replaces it, and the toast says so',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { 'CMSIS Developer Assistant': { url: 'http://localhost:3001/mcp' }, linear: { url: 'https://mcp.linear.app/mcp' } } }) }),
+            ...configureOne('Kimi Code'),
+        },
         { id: 'agents/configure-stale-entries', seed: SEED_STALE, ...configureAll() },
         {
             id: 'agents/configure-invalid-files', about: 'JSONC, empty, non-object and odd mcpServers values',
@@ -1595,6 +1600,38 @@ function agentScenarios() {
         {
             id: 'agents/migrate-kimi-sse', about: 'a Kimi Code entry on transport "sse" is replaced by the current shape',
             seed: agentSeeds({ 'kimi-code': json({ mcpServers: { [KEY]: { transport: 'sse', url: 'http://localhost:3001/sse' } } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-kimi-duplicate-entry',
+            about: 'the tester\'s file: a hand-written "CMSIS Developer Assistant" next to ours goes, a loopback entry on another port and a remote one stay; the toast names the key',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: {
+                'CMSIS Developer Assistant': { url: 'http://localhost:3001/mcp', transport: 'http' },
+                [KEY]: { url: URL_3001, toolTimeoutMs: 630000 },
+                'other-local': { url: 'http://127.0.0.1:4000/mcp' },
+                linear: { url: 'https://mcp.linear.app/mcp' },
+            } }) }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-duplicates-merge-autoapprove',
+            about: 'Roo Code: entries at 127.0.0.1:3001/mcp/ and localhost:3001/sse next to ours go, their autoApprove lists join ours; Claude Desktop: an mcp-remote bridge to our port goes',
+            seed: agentSeeds({
+                'roo': json({ mcpServers: {
+                    [KEY]: { autoApprove: ['a'], disabled: false, timeout: 180, type: 'streamableHttp', url: URL_3001 },
+                    mine: { url: 'http://127.0.0.1:3001/mcp/', autoApprove: ['b', 'a'] },
+                    old: { url: 'http://localhost:3001/sse' },
+                } }),
+                'claude-desktop': json({ mcpServers: {
+                    [KEY]: { command: 'npx', args: ['-y', 'mcp-remote', URL_3001] },
+                    bridge: { command: 'npx', args: ['mcp-remote', 'http://localhost:3001/mcp'] },
+                } }),
+            }),
+            run: migrate(),
+        },
+        {
+            id: 'agents/migrate-duplicate-without-ours', about: 'a hand-written entry alone is no duplicate: nothing is written',
+            seed: agentSeeds({ 'kimi-code': json({ mcpServers: { 'CMSIS Developer Assistant': { url: URL_3001 } } }) }),
             run: migrate(),
         },
         {

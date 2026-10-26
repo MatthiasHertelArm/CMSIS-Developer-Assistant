@@ -204,6 +204,7 @@ export function createPackDocsHandlers(context: vscode.ExtensionContext, timeout
     const host = makePackDocsHost(context);
     const timeoutMs = timeoutInSeconds * 1000;
     const docs = new PackDocsHandler(host, { timeoutMs, workspaceRoot });
+    context.subscriptions.push({ dispose: () => docs.dispose() });
     const buildHost = makeBuildInfoHost();
     const build = new BuildInfoHandler(buildHost, { timeoutMs, workspaceRoot });
     const knowledge = new KnowledgeHandler(makeKnowledgeHost(host, buildHost, bundledKnowledgeIndex(context.extensionPath)), { timeoutMs });

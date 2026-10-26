@@ -106,6 +106,22 @@ export function offersNoGetStream(clientName: string | undefined): boolean {
 }
 
 /**
+ * Where a client sets how long it waits for one tool call, by client name,
+ * matched exactly: the sentence a cut wait's note adds. Kimi Code ends a call
+ * after 60 s unless its server entry has `toolTimeoutMs`, which Configure
+ * Agent writes; a hand-written entry often lacks it.
+ */
+const WAIT_SETTINGS: Readonly<Record<string, string>> = {
+    'kimi-code': 'To wait longer, give this server\'s entry in Kimi Code\'s mcp.json a toolTimeoutMs, as Configure Agent writes it: '
+        + 'run CMSIS Developer Assistant: Configure Agent, then start a new Kimi session.',
+};
+
+/** The sentence that names a client's own wait setting; undefined for a client without one on record. */
+export function waitSettingOf(clientName: string | undefined): string | undefined {
+    return clientName === undefined ? undefined : WAIT_SETTINGS[clientName];
+}
+
+/**
  * Whether a client of this name keeps working while the VS Code window it
  * talks to reloads. Unknown and absent names count as inside the window.
  */
