@@ -52,6 +52,7 @@
     "url": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant.git"
   },
   "activationEvents": [
+    "workspaceContains:**/*.csolution.yml",
     "onStartupFinished",
     "onDebug"
   ],

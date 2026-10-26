@@ -290,13 +290,6 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     const hostsTests = hostedByTestRunner(extensionContext);
     const manager = new AgentConfigurationManager(extensionContext, active.timeoutInSeconds, active.serverPort);
     agentManager = manager;
-    if (!hostsTests) {
-        try {
-            await manager.syncSkills('activation');
-        } catch (failure) {
-            logger.error('Installing the agent skills at activation failed', failure);
-        }
-    }
 
     // Every window gets the documentation handlers and commands, router or worker.
     const packDocs = createPackDocsHandlers(extensionContext, active.timeoutInSeconds);
@@ -306,7 +299,15 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     if (hostsTests) {
         logger.info('Running under the extension test runner: no skill installation, agent configuration, rule file, prompt or MCP server');
     } else {
+        // The endpoint before anything that touches the file system: an agent that connects to its MCP
+        // servers once, at its own activation, and never retries (Kimi Code's VS Code extension) must
+        // find the port bound. The skill install alone took 0.7–1.7 s in the field, and that lost the race.
         await startCoordinator(extensionContext, active, packDocs, manager);
+        try {
+            await manager.syncSkills('activation');
+        } catch (failure) {
+            logger.error('Installing the agent skills at activation failed', failure);
+        }
         try {
             await manager.migrateExistingConfigurations();
         } catch (failure) {

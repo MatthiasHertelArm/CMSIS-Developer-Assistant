@@ -91,6 +91,18 @@ const BUILD_FAILED_HINT = 'get_recent_problems lists what the Problems panel sho
 const BUILD_ERRORS_HINT = 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.';
 /** A build still running after this long gets the way out of a task that outlived its build. */
 const LONG_BUILD_MS = 120_000;
+/**
+ * A Load or Erase task alive this long is stuck, not programming. Programming
+ * a 2 MB image over SWD takes well under a minute; pyOCD's tasks wait without
+ * a limit for a probe they cannot see or that another holds, and print their
+ * "Waiting for a debug probe" once, in a terminal no tool reads (#69). In the
+ * field such a Load ran 30 and 43 minutes while every status reply called it
+ * merely running.
+ */
+export const LONG_FLASH_MS = 120_000;
+/** The task kinds that program the target and then end; CMSIS Run and the single Load+Run task stay alive on purpose. */
+const FLASH_KINDS: ReadonlySet<string> = new Set(['load', 'erase']);
+
 /** csolution's word for files a component brings that are not there yet: `file '…/RTX_Config.c' not found; use --update-rte`. */
 const NEEDS_RTE_UPDATE = /use --update-rte/;
 const RTE_UPDATE_HINT = 'csolution misses files that a component brings ("use --update-rte"): cmsis_action refresh writes them — the Refresh '
@@ -237,20 +249,60 @@ export function jobData(job: Job, now: number): JsonObject {
     };
 }
 
+/** One Load or Erase task that has run `LONG_FLASH_MS` or more: what it is and how long it ran. */
+interface StuckTask {
+    name: string;
+    ranMs: number;
+}
+
+/** The sentences for a stuck Load or Erase: why it is stuck, what that usually means, the way out. */
+function stuckFlashText(stuck: StuckTask): string {
+    return `'${stuck.name}' has run for ${formatDuration(stuck.ranMs)}, far longer than programming takes: it is stuck, almost always waiting for a `
+        + `debug probe. Its terminal, which no tool reads, then shows "Waiting for a debug probe" or a probe error. ${PROBE_WAIT_MEANING} `
+        + 'cmsis_action {action:\'stop_run\'} ends the task; load again only once the probe is free and visible.';
+}
+
+/** The job's Load or Erase task when it is still running and has run `LONG_FLASH_MS` or more. */
+export function stuckFlashTask(job: Job, now: number): StuckTask | undefined {
+    if (job.state !== 'armed' && job.state !== 'started') {
+        return undefined;
+    }
+    const task = currentTask(job);
+    if (!task || !FLASH_KINDS.has(task.kind) || task.processEndedAt !== undefined || task.endedAt !== undefined) {
+        return undefined;
+    }
+    const ranMs = now - task.startedAt;
+    return ranMs >= LONG_FLASH_MS ? { name: task.name, ranMs } : undefined;
+}
+
+/** A live Load or Erase task of the window that has run `LONG_FLASH_MS` or more; one already running at start-up never counts. */
+function stuckLive(live: readonly LiveExecution[], now: number): StuckTask | undefined {
+    const found = live.find((execution) => FLASH_KINDS.has(execution.kind) && !execution.seeded && now - execution.startedAt >= LONG_FLASH_MS);
+    return found ? { name: found.name, ranMs: now - found.startedAt } : undefined;
+}
+
 /** A job that has not settled when the call's wait ends: status `running`, never an error (#12). */
 export function stillRunning(job: Job, context: ResultContext): ToolReply {
     const elapsed = formatDuration(context.now - job.armedAt);
+    const stuck = stuckFlashTask(job, context.now);
+    if (stuck) {
+        return {
+            text: `${context.preface ?? ''}CMSIS '${job.action}'${context.tag} has not finished after ${elapsed} (job ${job.id}). ${stuckFlashText(stuck)}`,
+            status: 'running',
+            data: { job: { ...jobData(job, context.now), stuck: true } },
+        };
+    }
     const task = currentTask(job);
     const again = isBuildAction(job.action) ? `do not start another ${job.action}` : 'do not start it again';
     const head = task
         ? `CMSIS '${job.action}'${context.tag} is still running after ${elapsed} (task '${task.name}', job ${job.id}).`
         : `CMSIS '${job.action}'${context.tag} was issued ${elapsed} ago and its task has not started yet (job ${job.id}).`;
     // A build task can outlive its build: VS Code still lists it while no cbuild runs any more.
-    const stuck = task && isBuildAction(job.action) && context.now - job.armedAt >= LONG_BUILD_MS
+    const outlived = task && isBuildAction(job.action) && context.now - job.armedAt >= LONG_BUILD_MS
         ? ' If VS Code shows the build finished while this stays running, cmsis_action stop_build ends the task.'
         : '';
     return {
-        text: `${context.preface ?? ''}${head} This is not a failure. Call cmsis_action {action:'status'} to wait for the result — ${again}.${stuck}`,
+        text: `${context.preface ?? ''}${head} This is not a failure. Call cmsis_action {action:'status'} to wait for the result — ${again}.${outlived}`,
         status: 'running',
         data: { job: jobData(job, context.now) },
     };
@@ -592,8 +644,12 @@ export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[
         lines.push('No CMSIS task is running in this window.');
     } else {
         const entries = live.map((execution) => liveEntry(execution, now, (kind) => PROBE_HOLDERS.has(kind)));
-        const probe = live.some((execution) => PROBE_HOLDERS.has(execution.kind)) ? ' cmsis_action {action:\'stop_run\'} ends them.' : '';
+        const stuck = stuckLive(live, now);
+        const probe = !stuck && live.some((execution) => PROBE_HOLDERS.has(execution.kind)) ? ' cmsis_action {action:\'stop_run\'} ends them.' : '';
         lines.push(`CMSIS tasks running: ${entries.join('; ')}.${probe}`);
+        if (stuck) {
+            lines.push(stuckFlashText(stuck));
+        }
     }
     return lines.join('\n');
 }
@@ -607,7 +663,12 @@ export function sessionTaskLine(recent: readonly Job[], live: readonly LiveExecu
     for (const job of recent) {
         parts.push(`last ${job.action} ${verdictMark(job)} ${formatDuration(now - (job.settledAt ?? now))} ago`);
     }
-    return parts.length > 0 ? `CMSIS tasks: ${parts.join('; ')}` : undefined;
+    if (parts.length === 0) {
+        return undefined;
+    }
+    // A stuck Load comes before any advice to start a session: a new one would wait for the same probe.
+    const stuck = stuckLive(live, now);
+    return `CMSIS tasks: ${parts.join('; ')}${stuck ? `\n${stuckFlashText(stuck)}` : ''}`;
 }
 
 function ownerPhrase(owner: ProbeOwner, now: number): string {

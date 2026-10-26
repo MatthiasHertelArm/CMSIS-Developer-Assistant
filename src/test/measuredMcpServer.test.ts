@@ -20,7 +20,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { currentCallContext } from '../core/callContext';
-import { TEXT_ONLY_CLIENTS } from '../core/clientHosting';
+import { TEXT_ONLY_CLIENTS, waitSettingOf } from '../core/clientHosting';
 import {
     MeasuredMcpServer, PROGRESS_EVERY_MS, WaitClock, clientLimitNote, cutWaitMs, linesMissingFromStructured, toCallToolResult,
 } from '../core/measuredMcpServer';
@@ -443,6 +443,12 @@ suite('MeasuredMcpServer and the client\'s request timeout', () => {
         assert.strictEqual(clientLimitNote('cmsis_action', 179_970, 170_000),
             'Note: your MCP client stops waiting after about 180 s, so this wait was cut to 170 s; '
             + 'the work goes on — call cmsis_action {action:\'status\'} again.');
+        assert.strictEqual(clientLimitNote('read_memory', 60_000, 50_000, waitSettingOf('kimi-code')),
+            'Note: your MCP client stops waiting after about 60 s, so this wait was cut to 50 s; the work goes on — repeat the call for its result. '
+            + 'To wait longer, give this server\'s entry in Kimi Code\'s mcp.json a toolTimeoutMs, as Configure Agent writes it: '
+            + 'run CMSIS Developer Assistant: Configure Agent, then start a new Kimi session.');
+        assert.strictEqual(waitSettingOf('claude-code'), undefined);
+        assert.strictEqual(waitSettingOf(undefined), undefined);
     });
 
     test('a call the client gives up on with a timeout teaches the limit; a longer wait is then cut and its reply says so', async () => {

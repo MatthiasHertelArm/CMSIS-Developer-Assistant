@@ -50,6 +50,10 @@ export interface ResolveContext {
     maxBytes: number;
     /** Tests and loopback fixtures only: skip the private-address block. */
     allowPrivateHosts?: boolean;
+    /** Ends every request and the download early, as the time limit does: a download job that is disposed. */
+    signal?: AbortSignal;
+    /** Told the bytes received so far, and the length the server announced, as a PDF arrives. */
+    onProgress?: (bytes: number, total: number | undefined) => void;
 }
 
 /** Redirect hops followed before giving up. */
@@ -176,7 +180,8 @@ function headers(ctx: ResolveContext, accept: string, extra: Record<string, stri
 }
 
 function signal(ctx: ResolveContext): AbortSignal {
-    return AbortSignal.timeout(Math.max(100, ctx.timeoutMs));
+    const timeout = AbortSignal.timeout(Math.max(100, ctx.timeoutMs));
+    return ctx.signal ? AbortSignal.any([timeout, ctx.signal]) : timeout;
 }
 
 function describeError(e: unknown): string {
@@ -354,6 +359,9 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
     const t0 = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(100, ctx.timeoutMs));
+    const stop = (): void => controller.abort();
+    ctx.signal?.addEventListener('abort', stop, { once: true });
+    if (ctx.signal?.aborted) { controller.abort(); }
     const part = `${dest}.part`;
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const out = fs.createWriteStream(part);
@@ -371,6 +379,8 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
         if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
         const length = Number(res.headers.get('content-length') ?? 0);
         if (length > ctx.maxBytes) { throw new Error(`${(length / 1024 / 1024).toFixed(0)} MB is above the maxPdfMb limit`); }
+        const total = length > 0 ? length : undefined;
+        ctx.onProgress?.(0, total);
         if (!res.body) { throw new Error('empty response'); }
         for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
             if (first) {
@@ -381,6 +391,7 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
             }
             bytes += chunk.length;
             if (bytes > ctx.maxBytes) { throw new Error(`download exceeded the maxPdfMb limit`); }
+            ctx.onProgress?.(bytes, total);
             hash.update(chunk);
             if (!out.write(chunk)) { await Promise.race([new Promise<void>(resolve => out.once('drain', resolve)), failed]); }
         }
@@ -402,9 +413,11 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
             out.destroy();
         });
         try { fs.unlinkSync(part); } catch { /* nothing to clean */ }
-        throw new Error(`download of ${url} failed: ${describeError(e)}`);
+        const received = bytes > 0 ? ` after ${(bytes / 1024 / 1024).toFixed(1)} MB` : '';
+        throw new Error(`download of ${url} failed: ${ctx.signal?.aborted ? 'stopped' : describeError(e)}${received}`);
     } finally {
         clearTimeout(timer);
+        ctx.signal?.removeEventListener('abort', stop);
     }
 }
 

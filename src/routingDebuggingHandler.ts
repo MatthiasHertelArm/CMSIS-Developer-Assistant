@@ -821,13 +821,34 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             return this.settle(this.namedWindow(hint, chosenDefault), 'window-arg');
         }
         if (hint !== undefined) {
-            // A named file must never run in another window, cached or pinned.
+            // A file inside a window's folders must never run in another window, cached or pinned.
             const owner = this.registry.findByPath(hint.path);
-            if (!owner) {
+            if (owner) {
+                return this.settle(owner, 'path');
+            }
+            // A file no window owns, such as a pack source the firmware is built from: the window
+            // the session's path-less calls go to takes it, and the answer says so.
+            const fallback = this.resolvePathless(chosenDefault);
+            if (fallback === undefined) {
                 throw this.unroutable(hint.path, chosenDefault);
             }
-            return this.settle(owner, 'path');
+            logger.info(`Routing: "${hint.path}" lies in no window's folders; it goes to pid=${fallback.entry.pid} (via ${fallback.reason})`);
+            return { ...fallback, note: `"${hint.path}" lies outside every open workspace; the call went to ${windowLabel(fallback.entry)}, `
+                + 'the window this session\'s calls without a file go to.' };
         }
+        const pathless = this.resolvePathless(chosenDefault);
+        if (pathless === undefined) {
+            throw this.unroutable(undefined, chosenDefault);
+        }
+        return pathless;
+    }
+
+    /**
+     * The rungs of the ladder for a call that names no window and no file
+     * any window owns: the pin, the session's target, the default target,
+     * the only debug session, the only window. Undefined when none applies.
+     */
+    private resolvePathless(chosenDefault: DefaultTarget | undefined): Resolved | undefined {
         if (this.pinnedPid !== undefined) {
             const pinned = this.registry.findByPid(this.pinnedPid) ?? this.followPin();
             if (!pinned) {
@@ -853,7 +874,7 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (only) {
             return this.settle(only, 'only-window');
         }
-        throw this.unroutable(undefined, chosenDefault);
+        return undefined;
     }
 
     /** Make `entry` this session's target, chosen for `reason`. */
@@ -903,9 +924,10 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
 
     /**
      * Why no window could take the call, from a fresh look at the registry:
-     * no window at all, a path outside every workspace, or a tie, which lists
-     * every registered window as a candidate and names a default target
-     * whose window is not open.
+     * no window at all, or a tie, which lists every registered window as a
+     * candidate and names a default target whose window is not open. A file
+     * outside every workspace is named first: the tie is why it found no
+     * window either.
      */
     private unroutable(hint: string | undefined, chosenDefault: DefaultTarget | undefined): ToolError {
         const windows = this.registry.list();
@@ -913,12 +935,10 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             return new ToolError('WINDOW_UNREACHABLE', NO_WINDOW_ERROR, NO_WINDOW_HINT);
         }
         const listing = bulletList(windows);
-        if (hint !== undefined) {
-            return new ToolError('INVALID_ARGUMENT', `No open VS Code window has "${hint}" inside its workspace.`,
-                `Open the folder containing it, or pass a path that is inside one of these:\n${listing}`);
-        }
         const tie = this.tieOf(windows, chosenDefault);
-        return new ToolError('AMBIGUOUS_WINDOW', `${tie.why}, so there is no unambiguous target for this call.`,
+        const outside = hint === undefined ? '' : `No open VS Code window has "${hint}" inside its workspace, and `;
+        const why = outside === '' ? tie.why : `${tie.why.charAt(0).toLowerCase()}${tie.why.slice(1)}`;
+        return new ToolError('AMBIGUOUS_WINDOW', `${outside}${why}, so there is no unambiguous target for this call.`,
             `${tie.closedDefault}${tie.ways}\n${listing}`, { candidates: windows.map((w) => candidateOf(w, tie.defaultPid)) });
     }
 

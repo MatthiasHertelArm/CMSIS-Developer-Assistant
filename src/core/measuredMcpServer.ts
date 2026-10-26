@@ -26,7 +26,7 @@
 import { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult, ServerNotification } from '@modelcontextprotocol/sdk/types.js';
 import { runInCallContext } from './callContext';
-import { TEXT_ONLY_CLIENTS, wantsTextOnly } from './clientHosting';
+import { TEXT_ONLY_CLIENTS, waitSettingOf, wantsTextOnly } from './clientHosting';
 import { renderProblemsBlock } from './problemFeed';
 import { ToolMetrics, classifyOutcome } from './toolMetrics';
 import { JsonObject, ToolError, ToolText, errorText, toToolError } from './toolResult';
@@ -120,10 +120,10 @@ export function cutWaitMs(limitMs: number): number {
     return Math.max(limitS - CLIENT_LIMIT_MARGIN_S, Math.ceil(limitS / 2), 1) * 1000;
 }
 
-/** The line a call whose wait was cut gets when the wait ran out. */
-export function clientLimitNote(tool: string, limitMs: number, cutMs: number): string {
+/** The line a call whose wait was cut gets when the wait ran out; `setting`, the client's own wait setting, closes it. */
+export function clientLimitNote(tool: string, limitMs: number, cutMs: number, setting?: string): string {
     return `Note: your MCP client stops waiting after about ${Math.round(limitMs / 1000)} s, so this wait was cut to ${cutMs / 1000} s; `
-        + `the work goes on — ${PICK_UP[tool] ?? PICK_UP_OTHERS}.`;
+        + `the work goes on — ${PICK_UP[tool] ?? PICK_UP_OTHERS}.${setting === undefined ? '' : ` ${setting}`}`;
 }
 
 /** Whether a zod input shape declares the input `name`. */
@@ -406,7 +406,7 @@ export class MeasuredMcpServer extends McpServer {
         if (waitMs === undefined || waitMs <= cutMs) {
             return undefined;
         }
-        return { waitMs: cutMs, note: clientLimitNote(tool, this.clientLimitMs, cutMs) };
+        return { waitMs: cutMs, note: clientLimitNote(tool, this.clientLimitMs, cutMs, waitSettingOf(this.server.getClientVersion()?.name)) };
     }
 
     /**

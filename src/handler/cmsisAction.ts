@@ -153,6 +153,7 @@ import {
     missingTaskRefusal,
     probeRefusal,
     stillRunning,
+    stuckFlashTask,
 } from './jobText';
 import { runInstallPack } from './installPack';
 import { FVP_BREAK_FIRST, NO_FRAME_SELECTED } from './sessionText';
@@ -632,7 +633,8 @@ async function reportStatus(context: CmsisActionContext, deadline: number): Prom
     }
     const others = open.filter((job) => job.id !== latest.id).map((job) => `${job.action} (job ${job.id})`);
     const preface = others.length > 0 ? `Also in flight: ${others.join(', ')}. ` : undefined;
-    const outcome = await tracker.waitFor(latest.id, deadline - DEADLINE_MARGIN_MS) ?? latest;
+    // A stuck Load or Erase is answered at once: waiting out the budget on every call only hides it.
+    const outcome = stuckFlashTask(latest, host.now()) ? latest : await tracker.waitFor(latest.id, deadline - DEADLINE_MARGIN_MS) ?? latest;
     return jobResult(outcome, { tag: onTarget(outcome.target), now: host.now(), preface, program: failedTaskProgram(host, tracker) });
 }
 

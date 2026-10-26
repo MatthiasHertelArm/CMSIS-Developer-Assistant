@@ -140,7 +140,11 @@ that applies decides:
    binds it, and the program a session debugs may be built from sources in
    another window's folder, so they go to the pinned window whatever file
    they name, unless only the file's own window has a debug session. A file
-   outside the pinned window's folders adds one line to the answer.
+   outside the pinned window's folders adds one line to the answer. A file
+   that no window's folders contain, such as a pack source the firmware is
+   built from, does not end the ladder: the call takes the rungs below, as a
+   call without a path would, and the answer says where it went. Only when
+   they find no window either is it refused, as a tie that names the file.
 3. **Pin.** The window chosen with `select_debug_window`, by process id or by a
    path inside its workspace, for the rest of the MCP session. A reload gives
    the window a new pid: the pin keeps the window's folders and moves to the

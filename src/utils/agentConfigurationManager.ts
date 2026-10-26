@@ -387,6 +387,8 @@ interface EntryMigration {
     changed: boolean;
     /** The change is one the user is told about; a pure endpoint refresh is not. */
     reported: boolean;
+    /** Keys of other entries for this server that were removed (`dropDuplicates`). */
+    duplicates: string[];
 }
 
 /**
@@ -395,8 +397,9 @@ interface EntryMigration {
  * another transport than `wanted`, or at another endpoint is replaced by a
  * copy of `wanted` that keeps only its `autoApprove` list. An entry that is
  * current but lacks the `toolTimeoutMs` of `wanted` gets it, and keeps the
- * rest: without it, Kimi Code ends every call after 60 s. Recomputed from the
- * parsed file on every attempt, so it has no effect outside `servers`.
+ * rest: without it, Kimi Code ends every call after 60 s. Other entries for
+ * this server next to ours are removed (`dropDuplicates`). Recomputed from
+ * the parsed file on every attempt, so it has no effect outside `servers`.
  */
 function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigration {
     const table = servers as Record<string, unknown> | null | undefined;
@@ -410,8 +413,9 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
     }
     const present = (table ? table[SERVER_KEY] : undefined) as MCPServerConfig | undefined;
     if (!table || !present) {
-        return { changed: renamed, reported: renamed };
+        return { changed: renamed, reported: renamed, duplicates: [] };
     }
+    const duplicates = dropDuplicates(table, wanted);
     const onSse = present.type === 'sse' || present.transport === 'sse' || (typeof present.url === 'string' && present.url.endsWith('/sse'));
     const otherTransport = wanted.type !== undefined && present.type !== undefined && wanted.type !== present.type;
     const movedUrl = typeof present.url === 'string' && wanted.url !== undefined && present.url !== wanted.url;
@@ -429,12 +433,89 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
     if (noToolTimeout) {
         present.toolTimeoutMs = wanted.toolTimeoutMs;
     }
-    return { changed: replace || renamed || noToolTimeout, reported: onSse || otherTransport || renamed || noToolTimeout };
+    const deduplicated = duplicates.length > 0;
+    return {
+        changed: replace || renamed || noToolTimeout || deduplicated,
+        reported: onSse || otherTransport || renamed || noToolTimeout || deduplicated,
+        duplicates,
+    };
 }
 
 /** A JSON object, not an array or null. */
 function isJsonObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** The host names an entry may use for this machine's loopback address. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
+/** The routes of this server: `/mcp`, and `/sse` of releases before 2.1. */
+const SERVER_ROUTES: ReadonlySet<string> = new Set(['/mcp', '/sse']);
+
+/** The URL an entry reaches its server by: `url`, or the URL argument of a bridge such as mcp-remote. */
+function entryUrl(entry: Record<string, unknown>): string | undefined {
+    if (typeof entry.url === 'string') {
+        return entry.url;
+    }
+    if (Array.isArray(entry.args)) {
+        return entry.args.find((arg): arg is string => typeof arg === 'string' && /^https?:\/\//i.test(arg));
+    }
+    return undefined;
+}
+
+/** The port of a loopback URL on one of this server's routes; undefined for any other URL. */
+function serverPortOf(url: string | undefined): string | undefined {
+    if (url === undefined) {
+        return undefined;
+    }
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return undefined;
+    }
+    if (!LOOPBACK_HOSTS.has(parsed.hostname) || !SERVER_ROUTES.has(parsed.pathname.replace(/\/+$/, ''))) {
+        return undefined;
+    }
+    return parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+}
+
+/**
+ * Remove, in place, every entry other than ours that reaches this server: a
+ * loopback URL on the port of `wanted`, at `/mcp` or `/sse`. An entry the
+ * user wrote by hand under a name of its own ("CMSIS Developer Assistant")
+ * next to ours made Kimi Code list every tool twice, and its model called
+ * the hand-written one, which lacked `toolTimeoutMs`. An entry on another
+ * port is another server and stays. Where `wanted` has an `autoApprove`
+ * list, a removed entry's list is merged into ours. Returns the removed keys.
+ */
+function dropDuplicates(table: Record<string, unknown>, wanted: MCPServerConfig): string[] {
+    const port = serverPortOf(entryUrl(wanted as Record<string, unknown>));
+    const ours = table[SERVER_KEY];
+    if (port === undefined || !isJsonObject(ours)) {
+        return [];
+    }
+    const removed: string[] = [];
+    for (const key of Object.keys(table)) {
+        const other = table[key];
+        if (key === SERVER_KEY || !isJsonObject(other) || serverPortOf(entryUrl(other)) !== port) {
+            continue;
+        }
+        if (wanted.autoApprove !== undefined && Array.isArray(other.autoApprove)) {
+            const merged = new Set([...(Array.isArray(ours.autoApprove) ? ours.autoApprove : []), ...other.autoApprove]);
+            ours.autoApprove = [...merged];
+        }
+        delete table[key];
+        removed.push(key);
+    }
+    return removed;
+}
+
+/** "the entry 'A'", "the entries 'A' and 'B'": the keys `dropDuplicates` removed, for a message. */
+function duplicatePhrase(keys: readonly string[]): string {
+    const quoted = keys.map((key) => `'${key}'`);
+    return quoted.length === 1
+        ? `the entry ${quoted[0]}`
+        : `the entries ${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
 }
 
 /**
@@ -487,15 +568,19 @@ async function moveCursorEntry(cursor: JsonAgentInfo, oldPath: string, entry: MC
     return true;
 }
 
-/** Migrate one JSON agent file. True when it was written with a change worth reporting. */
-async function migrateJsonAgent(agent: JsonAgentInfo, wanted: MCPServerConfig): Promise<boolean> {
-    let reported = false;
+/**
+ * Migrate one JSON agent file. `reported` when it was written with a change
+ * worth reporting; `duplicates`, the keys of the other entries for this
+ * server it lost.
+ */
+async function migrateJsonAgent(agent: JsonAgentInfo, wanted: MCPServerConfig): Promise<{ reported: boolean; duplicates: string[] }> {
+    let step: EntryMigration = { changed: false, reported: false, duplicates: [] };
     const outcome = await rewriteJsonFile(agent.configPath, (tree) => {
-        const step = migrateServers(tree[agent.mcpServerFieldName], wanted);
-        reported = step.reported;
+        step = migrateServers(tree[agent.mcpServerFieldName], wanted);
         return step.changed;
     });
-    return outcome === 'written' && reported;
+    const written = outcome === 'written';
+    return { reported: written && step.reported, duplicates: written ? step.duplicates : [] };
 }
 
 /**
@@ -734,10 +819,11 @@ export class AgentConfigurationManager {
     private async configureAgents(queue: AgentInfo[]): Promise<void> {
         for (const agent of queue) {
             try {
-                if (!(await this.registerServer(agent))) {
+                const registered = await this.registerServer(agent);
+                if (registered === false) {
                     continue;
                 }
-                const configured = `✅ Registered the ${PRODUCT} MCP server with ${agent.displayName}.`;
+                const configured = `✅ Registered the ${PRODUCT} MCP server with ${agent.displayName}.${registered}`;
                 if (await vscode.window.showInformationMessage(configured, OPEN_FILE_BUTTON) === OPEN_FILE_BUTTON) {
                     const written = vscode.Uri.file(agent.configPath);
                     await vscode.commands.executeCommand('vscode.open', written);
@@ -751,12 +837,15 @@ export class AgentConfigurationManager {
 
     /**
      * Write this server's entry into one agent's file, creating the file and
-     * its directory when needed. An existing entry is replaced whole. False
-     * when it did not work out; the user has been told why.
+     * its directory when needed. An existing entry is replaced whole, and
+     * other entries for this server are removed (`dropDuplicates`). The
+     * sentence the success toast adds about removed entries ('' when there
+     * were none); false when it did not work out, and the user has been told why.
      */
-    private async registerServer(agent: AgentInfo): Promise<boolean> {
+    private async registerServer(agent: AgentInfo): Promise<string | false> {
         const file = agent.configPath;
         const url = this.endpointUrl();
+        let duplicates: string[] = [];
         try {
             await ensureParentDir(file);
             const fileExists = fs.existsSync(file);
@@ -769,7 +858,11 @@ export class AgentConfigurationManager {
                 if (!fileExists) {
                     // Nothing to keep: 2-space JSON without a final newline, like the rewrite below.
                     await writeFileAtomic(file, JSON.stringify({ [field]: { [SERVER_KEY]: entry } }, null, 2));
-                } else if (await rewriteJsonFile(file, (tree) => placeEntry(tree, field, entry)) === 'unparseable') {
+                } else if (await rewriteJsonFile(file, (tree) => {
+                    placeEntry(tree, field, entry);
+                    duplicates = dropDuplicates(tree[field] as Record<string, unknown>, entry);
+                    return true;
+                }) === 'unparseable') {
                     logger.warn(`Left ${file} alone: it is not a JSON object`);
                     void notifyError(
                         `Cannot configure ${agent.displayName}: ${file} exists but is not valid JSON. Please fix or remove the file and try again.`);
@@ -777,7 +870,11 @@ export class AgentConfigurationManager {
                 }
             }
             logger.info(`Registered the MCP server with ${agent.displayName} in ${file}`);
-            return true;
+            if (duplicates.length > 0) {
+                logger.info(`Removed ${duplicatePhrase(duplicates)} from ${file}: ${duplicates.length === 1 ? 'it points' : 'they point'} at this server`);
+                return ` Removed ${duplicatePhrase(duplicates)}, which pointed at the same server, so that ${agent.displayName} lists each tool once.`;
+            }
+            return '';
         } catch (failure) {
             logger.error(`Could not register the MCP server with ${agent.displayName}`, failure);
             void notifyError(`The ${PRODUCT} MCP server could not be added to ${agent.displayName}: ${String(failure)}`);
@@ -799,11 +896,21 @@ export class AgentConfigurationManager {
                 logger.warn(`Could not move the Cursor entry from ${oldPath} to ${cursor.configPath}`, failure);
             }
         }
+        const deduplicated: string[] = [];
         for (const agent of agentsWithFiles()) {
             try {
-                const counted = agent.configFormat === 'json'
-                    ? await migrateJsonAgent(agent, entryFor(agent.id, url, this.entryTimeoutSeconds))
-                    : await migrateCodexAgent(agent, url);
+                let counted: boolean;
+                if (agent.configFormat === 'json') {
+                    const step = await migrateJsonAgent(agent, entryFor(agent.id, url, this.entryTimeoutSeconds));
+                    counted = step.reported;
+                    if (step.duplicates.length > 0) {
+                        deduplicated.push(`${agent.displayName}: ${duplicatePhrase(step.duplicates)}`);
+                        logger.info(`Removed ${duplicatePhrase(step.duplicates)} from ${agent.configPath}: `
+                            + `${step.duplicates.length === 1 ? 'it points' : 'they point'} at this server, which '${SERVER_KEY}' registers`);
+                    }
+                } else {
+                    counted = await migrateCodexAgent(agent, url);
+                }
                 if (counted) {
                     reported++;
                     logger.info(`Migrated the ${agent.displayName} configuration at ${agent.configPath}`);
@@ -812,7 +919,10 @@ export class AgentConfigurationManager {
                 logger.warn(`Could not migrate the ${agent.displayName} configuration at ${agent.configPath}`, failure);
             }
         }
-        if (reported > 0) {
+        if (deduplicated.length > 0) {
+            void vscode.window.showInformationMessage(`${PRODUCT}: removed second entries for this MCP server, so that agents `
+                + `list each tool once (${deduplicated.join('; ')}).`);
+        } else if (reported > 0) {
             void vscode.window.showInformationMessage(`${PRODUCT}: brought the MCP server entry up to date in ${reported} agent configuration(s).`);
         }
     }

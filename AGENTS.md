@@ -82,7 +82,10 @@ the agent guide), where most modules do not import `vscode` at all.
 
 - **Activation:** `activate()` in `src/extension.ts`. esbuild bundles it into
   `dist/extension.js`, the `main` of `package.json`; the extension activates
-  on `onStartupFinished` and `onDebug`.
+  on `onStartupFinished` and `onDebug`, and earlier, during start-up, in a
+  workspace with a `*.csolution.yml`. It binds the MCP endpoint before it
+  installs the skill or migrates agent files: Kimi Code's VS Code extension
+  connects once, at its own activation, and never retries.
 - **MCP endpoint:** `http://localhost:{serverPort}/mcp` (port 3001 by
   default), Streamable HTTP, bound to 127.0.0.1. The legacy `/sse` route
   answers 410.

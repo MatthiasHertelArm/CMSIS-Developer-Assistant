@@ -316,12 +316,30 @@ suite('Multi-window routing', () => {
             });
         });
 
-        test('a path in no workspace is refused even when the session has a target', async () => {
+        test('a file in no workspace, such as a pack source, goes to the session\'s target, and the answer says so', async () => {
             await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
             const router = newRouter();
-            assertAnsweredBy(await router.handleGetSessionStatus(), 'alpha');
-            await refusedAs('INVALID_ARGUMENT', router.handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
-                /No open VS Code window has/);
+            await router.handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 10 });
+            const packSource = '/packs/ExecuTorch/1.5.1/src/program.cpp';
+            const result = await router.handleAddBreakpoint({ fileFullPath: packSource, line: 1 });
+            assertAnsweredBy(result, 'beta');
+            assert.match(textOf(result),
+                /\n"\/packs\/ExecuTorch\/1\.5\.1\/src\/program\.cpp" lies outside every open workspace; the call went to pid \d+[^,]*, the window this session's calls without a file go to\.$/);
+        });
+
+        test('a file in no workspace goes to the only debug session, or to the only window', async () => {
+            await openWindow('idle', { workspaceFolders: [folder('idle')] });
+            await openWindow('board', { workspaceFolders: [folder('board')], hasActiveSession: true });
+            assertAnsweredBy(await newRouter().handleAddBreakpoint({ fileFullPath: '/packs/sds/sdsio_client_usb_mdk.c', line: 5 }), 'board');
+        });
+
+        test('a file in no workspace with two idle windows and no target is refused as a tie that names the file', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            await refusedAs('AMBIGUOUS_WINDOW', newRouter().handleAddBreakpoint({ fileFullPath: '/not/in/any/workspace.c', line: 1 }),
+                /^No open VS Code window has "\/not\/in\/any\/workspace\.c" inside its workspace, and 2 VS Code windows are registered and none has an active debug session, so there is no unambiguous target/,
+                /select_debug_window/);
         });
 
         test('an empty registry is reported as such', async () => {

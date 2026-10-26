@@ -3174,7 +3174,7 @@
     },
     {
       "id": "agents/configure-legacy-key",
-      "about": "configure adds the new key and leaves the legacy entry",
+      "about": "configure adds the new key; the legacy entries, all on our endpoint, go as duplicates",
       "events": [
         {
           "ev": "createQuickPick"
@@ -3265,7 +3265,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Roo Code.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Roo Code. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Roo Code lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3278,7 +3278,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Antigravity lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3291,7 +3291,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Cline.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Cline. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Cline lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3304,7 +3304,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with GitHub Copilot CLI.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with GitHub Copilot CLI. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that GitHub Copilot CLI lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3317,7 +3317,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Cursor.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Cursor. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Cursor lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3343,7 +3343,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Kimi Code lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3356,7 +3356,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Code.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Code. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Claude Code lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3369,7 +3369,7 @@
         },
         {
           "ev": "info",
-          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Desktop.",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Claude Desktop. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Claude Desktop lists each tool once.",
           "items": [
             "View File"
           ],
@@ -3480,15 +3480,183 @@
       "files": {
         "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
-        "home/.claude.json": "{\n  \"numStartups\": 1,\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.claude.json": "{\n  \"numStartups\": 1,\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-debugmcp]\nurl = \"http://localhost:3001/sse\"\nstartup_timeout_sec = 30\n\n[mcp_servers.cmsis-debugmcp.env]\nX = \"1\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
-        "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
-        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"sse\",\n      \"url\": \"http://localhost:3001/sse\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"transport\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
-        "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"autoApprove\": [\n        \"read_memory\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 60,\n      \"type\": \"sse\",\n      \"url\": \"http://localhost:3001/sse\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-debugmcp\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
+        "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
+        "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
+        "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"read_memory\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/configure-kimi-duplicate",
+      "about": "Configure Agent → Kimi Code over a hand-written entry for the same server: ours replaces it, and the toast says so",
+      "events": [
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (1/2) - Connect AI Agents to the MCP Server",
+          "placeholder": "Select the AI agents to register the CMSIS Developer Assistant MCP server with (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "label": "$(add) Set up Roo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Roo Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Antigravity",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cline",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cline",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up GitHub Copilot CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "GitHub Copilot CLI",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Cursor",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Cursor",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Codex",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Codex",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kimi Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Claude Desktop",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Claude Desktop",
+              "picked": false
+            }
+          ],
+          "selected": [],
+          "action": "accept",
+          "chosen": [
+            "$(add) Set up Kimi Code"
+          ],
+          "disposed": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code. Removed the entry 'CMSIS Developer Assistant', which pointed at the same server, so that Kimi Code lists each tool once.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: 1 CMSIS skills (+0 hidden member skills) installed into ~/.agents/skills. 1 failed — see the output log."
+        },
+        {
+          "ev": "createQuickPick"
+        },
+        {
+          "ev": "quickPick",
+          "title": "CMSIS Developer Assistant Setup (2/2) - Add the Tool Rules to Your Agents' Rule Files",
+          "placeholder": "Check the files that get the CMSIS Developer Assistant tool rules; each change is shown as a diff and written only when you confirm it (Esc to skip)",
+          "canSelectMany": true,
+          "ignoreFocusOut": true,
+          "matchOnDescription": false,
+          "matchOnDetail": false,
+          "items": [
+            {
+              "kind": "separator",
+              "label": "This user: read in every project"
+            },
+            {
+              "label": "~/.kimi-code/AGENTS.md",
+              "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            }
+          ],
+          "selected": [
+            "~/.kimi-code/AGENTS.md"
+          ],
+          "action": "dismiss",
+          "disposed": true
+        },
+        {
+          "ev": "globalState",
+          "key": "cmsis-developer-assistant.popupShown.v5",
+          "value": true
+        }
+      ],
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v5": true
+      },
+      "files": {
+        "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
+        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"linear\": {\n      \"url\": \"https://mcp.linear.app/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
     {
@@ -6191,6 +6359,59 @@
       "globalState": {},
       "files": {
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-kimi-duplicate-entry",
+      "about": "the tester's file: a hand-written \"CMSIS Developer Assistant\" next to ours goes, a loopback entry on another port and a remote one stay; the toast names the key",
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/.kimi-code/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: removed second entries for this MCP server, so that agents list each tool once (Kimi Code: the entry 'CMSIS Developer Assistant')."
+        }
+      ],
+      "globalState": {},
+      "files": {
+        "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    },\n    \"other-local\": {\n      \"url\": \"http://127.0.0.1:4000/mcp\"\n    },\n    \"linear\": {\n      \"url\": \"https://mcp.linear.app/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-duplicates-merge-autoapprove",
+      "about": "Roo Code: entries at 127.0.0.1:3001/mcp/ and localhost:3001/sse next to ours go, their autoApprove lists join ours; Claude Desktop: an mcp-remote bridge to our port goes",
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/Library/Application Support/Claude/claude_desktop_config.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: removed second entries for this MCP server, so that agents list each tool once (Roo Code: the entries 'mine' and 'old'; Claude Desktop: the entry 'bridge')."
+        }
+      ],
+      "globalState": {},
+      "files": {
+        "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
+        "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"a\",\n        \"b\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+      }
+    },
+    {
+      "id": "agents/migrate-duplicate-without-ours",
+      "about": "a hand-written entry alone is no duplicate: nothing is written",
+      "events": [],
+      "globalState": {},
+      "files": {
+        "home/.kimi-code/mcp.json": "<unchanged seed>"
       }
     },
     {
@@ -11643,6 +11864,7 @@
       "result": {
         "main": "./dist/extension.js",
         "activationEvents": [
+          "workspaceContains:**/*.csolution.yml",
           "onStartupFinished",
           "onDebug"
         ],
@@ -11914,47 +12136,6 @@
         },
         {
           "ev": "call",
-          "fn": "manager.syncSkills",
-          "args": [
-            "activation"
-          ]
-        },
-        {
-          "ev": "skillSync",
-          "call": 1,
-          "install": [
-            "<w>/home/.agents/skills"
-          ],
-          "sweepOnly": [
-            "<w>/home/.copilot/skills"
-          ],
-          "explicit": [
-            "fx-broken",
-            "fx-help"
-          ],
-          "implied": []
-        },
-        {
-          "ev": "skillSyncDone",
-          "call": 1,
-          "report": {
-            "installed": [
-              "<w>/home/.agents/skills/fx-help"
-            ],
-            "removed": [],
-            "skippedForeign": [],
-            "failed": [
-              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
-            ]
-          }
-        },
-        {
-          "ev": "settled",
-          "fn": "manager.syncSkills",
-          "value": "<object>"
-        },
-        {
-          "ev": "call",
           "fn": "createPackDocsHandlers",
           "args": [
             "<context>",
@@ -12105,6 +12286,47 @@
         {
           "ev": "registerMcpServerDefinitionProvider",
           "id": "cmsis-developer-assistant"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.syncSkills",
+          "args": [
+            "activation"
+          ]
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.syncSkills",
+          "value": "<object>"
         },
         {
           "ev": "call",
@@ -12761,6 +12983,7 @@
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
@@ -12934,49 +13157,6 @@
         },
         {
           "ev": "call",
-          "fn": "manager.syncSkills",
-          "args": [
-            "activation"
-          ]
-        },
-        {
-          "ev": "skillSync",
-          "call": 1,
-          "install": [
-            "<w>/home/.agents/skills"
-          ],
-          "sweepOnly": [
-            "<w>/home/.copilot/skills",
-            "<w>/ws/.agents/skills",
-            "<w>/ws/.claude/skills"
-          ],
-          "explicit": [
-            "fx-broken",
-            "fx-help"
-          ],
-          "implied": []
-        },
-        {
-          "ev": "skillSyncDone",
-          "call": 1,
-          "report": {
-            "installed": [
-              "<w>/home/.agents/skills/fx-help"
-            ],
-            "removed": [],
-            "skippedForeign": [],
-            "failed": [
-              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
-            ]
-          }
-        },
-        {
-          "ev": "settled",
-          "fn": "manager.syncSkills",
-          "value": "<object>"
-        },
-        {
-          "ev": "call",
           "fn": "createPackDocsHandlers",
           "args": [
             "<context>",
@@ -13115,6 +13295,49 @@
         {
           "ev": "registerMcpServerDefinitionProvider",
           "id": "cmsis-developer-assistant"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.syncSkills",
+          "args": [
+            "activation"
+          ]
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills",
+            "<w>/ws/.agents/skills",
+            "<w>/ws/.claude/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.syncSkills",
+          "value": "<object>"
         },
         {
           "ev": "call",
@@ -13291,6 +13514,7 @@
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
@@ -13441,47 +13665,6 @@
         },
         {
           "ev": "call",
-          "fn": "manager.syncSkills",
-          "args": [
-            "activation"
-          ]
-        },
-        {
-          "ev": "skillSync",
-          "call": 1,
-          "install": [
-            "<w>/home/.agents/skills"
-          ],
-          "sweepOnly": [
-            "<w>/home/.copilot/skills"
-          ],
-          "explicit": [
-            "fx-broken",
-            "fx-help"
-          ],
-          "implied": []
-        },
-        {
-          "ev": "skillSyncDone",
-          "call": 1,
-          "report": {
-            "installed": [
-              "<w>/home/.agents/skills/fx-help"
-            ],
-            "removed": [],
-            "skippedForeign": [],
-            "failed": [
-              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
-            ]
-          }
-        },
-        {
-          "ev": "settled",
-          "fn": "manager.syncSkills",
-          "value": "<object>"
-        },
-        {
-          "ev": "call",
           "fn": "createPackDocsHandlers",
           "args": [
             "<context>",
@@ -13568,6 +13751,47 @@
         {
           "ev": "error",
           "message": "CMSIS Developer Assistant could not start its MCP server: Error: injected coordinator start failure"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.syncSkills",
+          "args": [
+            "activation"
+          ]
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.syncSkills",
+          "value": "<object>"
         },
         {
           "ev": "call",
@@ -13730,6 +13954,7 @@
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
@@ -14012,6 +14237,7 @@
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
@@ -14110,47 +14336,6 @@
             60,
             "<port>"
           ]
-        },
-        {
-          "ev": "call",
-          "fn": "manager.syncSkills",
-          "args": [
-            "activation"
-          ]
-        },
-        {
-          "ev": "skillSync",
-          "call": 1,
-          "install": [
-            "<w>/home/.agents/skills"
-          ],
-          "sweepOnly": [
-            "<w>/home/.copilot/skills"
-          ],
-          "explicit": [
-            "fx-broken",
-            "fx-help"
-          ],
-          "implied": []
-        },
-        {
-          "ev": "skillSyncDone",
-          "call": 1,
-          "report": {
-            "installed": [
-              "<w>/home/.agents/skills/fx-help"
-            ],
-            "removed": [],
-            "skippedForeign": [],
-            "failed": [
-              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
-            ]
-          }
-        },
-        {
-          "ev": "settled",
-          "fn": "manager.syncSkills",
-          "value": "<object>"
         },
         {
           "ev": "call",
@@ -14296,6 +14481,47 @@
         {
           "ev": "registerMcpServerDefinitionProvider",
           "id": "cmsis-developer-assistant"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.syncSkills",
+          "args": [
+            "activation"
+          ]
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.syncSkills",
+          "value": "<object>"
         },
         {
           "ev": "call",
@@ -14467,6 +14693,7 @@
             "event:extensions.onDidChange",
             "event:workspace.onDidChangeConfiguration",
             "event:debug.onDidTerminateDebugSession",
+            "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",

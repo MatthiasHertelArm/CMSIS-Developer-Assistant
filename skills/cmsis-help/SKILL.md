@@ -67,7 +67,7 @@ Report the answer in five short lines: session, target, windows, problems, next 
 
 ## When the tools are missing
 
-No `get_session_status` in your tool list means this agent session is not connected to the CMSIS Developer Assistant. Its MCP server runs inside VS Code while a window has the extension active, and the command *CMSIS Developer Assistant: Configure Agent* in that window registers it with the agent. Most agents connect to their MCP servers only when a session starts: once VS Code serves, ask the user to start a new agent session (Kimi Code: restart `kimi`, `/reload` does not reconnect). A sub-agent has no tools its parent lacks, so do not hand the board to one. Meanwhile do not reach the board another way: no pyOCD or GDB in a shell.
+No `get_session_status` in your tool list means this agent session is not connected to the CMSIS Developer Assistant. Its MCP server runs inside VS Code while a window has the extension active, and the command *CMSIS Developer Assistant: Configure Agent* in that window registers it with the agent. Most agents connect to their MCP servers only when a session starts: once VS Code serves, ask the user to start a new agent session (Kimi Code: restart `kimi`, `/reload` does not reconnect; in Kimi's VS Code extension, Developer: Reload Window once the status bar shows the CDA robot with R). A sub-agent has no tools its parent lacks, so do not hand the board to one. Meanwhile do not reach the board another way: no pyOCD or GDB in a shell.
 
 ## Where a task's procedure is
 

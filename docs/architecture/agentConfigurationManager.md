@@ -75,7 +75,14 @@ JSON files it moves an entry from the pre-2.1.0 key `cmsis-debugmcp` to
 another transport or another endpoint by the current shape, keeping its
 `autoApprove` list (`migrateServers()`). A Kimi Code entry that is current
 but has no `toolTimeoutMs` gets it and keeps everything else, so an entry
-written by hand stops failing at 60 s. In Codex's TOML it drops the legacy
+written by hand stops failing at 60 s. Next to our entry, any other entry
+that reaches this server, a loopback URL on our port at `/mcp` or `/sse`
+(or such a URL as an mcp-remote argument), is removed and its `autoApprove`
+list merged into ours where the shape has one (`dropDuplicates()`); Configure
+Agent does the same when it writes the entry. A hand-written "CMSIS Developer
+Assistant" next to ours made Kimi Code list every tool twice, and its model
+called the copy without `toolTimeoutMs`. An entry on another port, and a
+hand-written entry with no entry of ours beside it, stay. In Codex's TOML it drops the legacy
 table and points ours at the current endpoint when that table existed or ours
 still uses SSE (`migrateCodexAgent()`, with the text helpers
 `stripLegacyCodexSection()` and `upsertCodexDebugMCPConfig()`).
