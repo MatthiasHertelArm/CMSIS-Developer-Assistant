@@ -88,6 +88,25 @@ suite('Agent skill installer', () => {
         fs.rmSync(tmp, { recursive: true, force: true });
     });
 
+    test('a help-only catalog removes obsolete managed skills without their source directories', async () => {
+        const previous = installSet(allInstalled(catalog));
+        await installer().sync(homeRoots(), catalog, previous.visible, previous.hidden);
+        writeSkill(path.join(rootA, 'personal-workflow'), 'personal-workflow');
+        const current: SkillCatalog = { schemaVersion: 1, skills: catalog.skills.filter(skill => skill.name === 'cmsis-help') };
+        for (const skill of catalog.skills.filter(skill => skill.name !== 'cmsis-help')) {
+            fs.rmSync(path.join(extensionPath, skill.path), { recursive: true, force: true });
+        }
+        const report = await installer().sync(homeRoots(), current, ['cmsis-help'], []);
+        assert.deepStrictEqual(report.failed, []);
+        for (const root of [rootA, rootB]) {
+            assert.ok(fs.existsSync(path.join(root, 'cmsis-help', SKILL_MARKER_FILE)));
+            for (const name of ['cmsis-debug-live', 'r-pack', 'gen']) {
+                assert.ok(!fs.existsSync(path.join(root, name)), name);
+            }
+        }
+        assert.ok(fs.existsSync(path.join(rootA, 'personal-workflow', 'SKILL.md')));
+    });
+
     test('installs the explicit picks into every root with a marker', async () => {
         const report = await installer().sync(homeRoots(), catalog, ['cmsis-debug-live'], []);
         assert.deepStrictEqual(report.failed, []);

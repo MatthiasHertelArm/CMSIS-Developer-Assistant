@@ -189,11 +189,15 @@ The server reports the name `cmsis-developer-assistant` and the version
 `SERVER_VERSION` from `src/debuggingExecutor.ts`. The `instructions` of the
 initialize result come from `buildServerInstructions()` in
 `src/core/serverInstructions.ts`, and they start with the tool rules (#50):
-the rules block of `docs/agent-resources/tool-contract.md`, which keeps agents
-from running pyOCD, GDB, cbuild or a serial terminal in the shell and tells
-them what to do when a tool fails. Many clients keep the instructions in the
-system prompt for the whole session, and a client that shortens them keeps
-the beginning, so the rules lead. `DebugMCPServer` reads them once, when it
+the rules block of `docs/agent-resources/tool-contract.md`, which says what
+the rules cover (the targets of the CMSIS Debugger, not a host program or a
+board of another toolchain), keeps agents from running pyOCD, GDB, cbuild or
+a serial terminal in the shell against such a target and tells them what to
+do when a tool fails. The block holds only the scope and the bans, because
+the same block goes into user-level rule files that agents read in every
+project; what matters in a session alone is said after it. Many clients keep
+the instructions in the system prompt for the whole session, and a client
+that shortens them keeps the beginning, so the rules lead. `DebugMCPServer` reads them once, when it
 is built (`loadToolRules()` through `ShippedDocs.readNow()`); without the
 file, or without its rules block, every session gets the instructions
 without the rules, and a warning says why.
@@ -205,10 +209,13 @@ cap on `timeoutMs` (600 s for `cmsis_action` and `flash`) and that a wait the
 client gives up on is no failure (the work goes on, `cmsis_action status`
 returns its result), how to read a
 result (`isError` and the `[CODE]` prefix; `timeout` and `running` are not
-failures), and one sentence each for the documentation and build-artefact
-groups. While the documentation group is off, its sentence points to the
-setting instead; the build-artefact sentence appears only while that group
-is on. `src/test/debugSkillGuidance.test.ts` pins the phrases agents rely on.
+failures; a running target wants `pause_execution` first), that the control
+server and the registry files are internal and several windows are told
+apart with `list_debug_windows` and `select_debug_window`, and one sentence
+each for the documentation and build-artefact groups. While a group is off,
+its sentence names the setting that enables it instead.
+`src/test/debugSkillGuidance.test.ts` and `src/test/toolContract.test.ts`
+pin the phrases agents rely on.
 
 The first `get_session_status` of a session repeats the rules in one line
 (`TOOL_RULES_REMINDER`), between the status and the call statistics: by then

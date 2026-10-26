@@ -1,10 +1,10 @@
 {
-  "version": "2026.10.25",
-  "url": "https://github.com/MatthiasHertelArm/cmsis-knowledge-base/releases/download/core-2026.10.25/knowledge-core-2026.10.25.db",
-  "sha256": "f15b82ac9b19995d3dae54aa5d51ed5607284557374819ae00bb935170c9b514",
+  "version": "2026.10.26",
+  "url": "https://github.com/MatthiasHertelArm/cmsis-knowledge-base/releases/download/core-2026.10.26/knowledge-core-2026.10.26.db",
+  "sha256": "415f23bda59fab432099318b6d22427e8ae16e16c6181394279cb58ba4a01aa8",
   "size": 66187264,
   "units": 7154,
-  "kbCommit": "60aa7a181603c95dfb2fcf10427497b5814138f1",
-  "sources": "https://github.com/MatthiasHertelArm/cmsis-knowledge-base/releases/download/core-2026.10.25/SOURCES.md",
-  "sourcesSha256": "09af2c10e1a3bc9e5aa5965728d1ac022f11d3b173d2806bd9f7852743c4c483"
+  "kbCommit": "06d55cb44b6a49043a8b95ee5aed5a3fc2871479",
+  "sources": "https://github.com/MatthiasHertelArm/cmsis-knowledge-base/releases/download/core-2026.10.26/SOURCES.md",
+  "sourcesSha256": "8ca5ec2a1f2430d365dcade7c96a830a11da145586912e493cbf4441f24d139f"
 }

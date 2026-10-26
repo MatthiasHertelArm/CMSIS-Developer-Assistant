@@ -50,11 +50,11 @@ pack a csolution names with `path:` outside the pack root
   installs. It is the health check and the router: the session state, the
   debug windows and the recent problems, then the debug topic or the knowledge
   procedure for the task. Every other procedure is a unit of the index. The
-  skills of the upstream categories and the extension's own skills stay in
-  `skills/` as the sources of those units (`skill2ku.py` reads the catalog,
-  and its `installed` flag is what the installer obeys); the index also holds
-  the bring-up, pack, Ethos-U and stream procedures, which the knowledge base
-  converts from cmsis-skills itself; nothing of cmsis-skills is vendored in `skills/`.
+  CDA procedure sources, assets and routing definitions are authored in
+  `cmsis-knowledge-base/sources/cda-procedures`. Its converter reads their
+  source catalog, while this extension's catalog contains only `cmsis-help`.
+  The knowledge base also fetches and converts upstream cmsis-skills, including
+  the bring-up, pack, Ethos-U and stream procedures.
   The installer's sweep removes every other skill this extension installed.
 
 - **A task name leads to its procedure.** BM25 over title, summary, body

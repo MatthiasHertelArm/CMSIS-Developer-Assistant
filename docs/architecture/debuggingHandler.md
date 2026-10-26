@@ -803,7 +803,7 @@ from which PATH, where it looked, which folder holds it — and one line of
 fix: install the software or put its folder on the system or user PATH,
 then restart VS Code completely. Why there are two PATHs, the default
 folders per platform and what not to do are knowledge, not findings, and
-live in the troubleshooting procedure (`skills/debugger-troubleshooting/`,
+live in the troubleshooting procedure (`cmsis-knowledge-base/sources/cda-procedures/debugger-troubleshooting/`,
 unit `proc-debugger-troubleshooting`), which every such hint names with
 `knowledge_get`. Starting the server with `cmsis_action run` and attaching
 is deliberately not offered: it programs nothing and leaves `load_and_debug`

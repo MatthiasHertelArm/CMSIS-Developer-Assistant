@@ -6,8 +6,8 @@ replaces each (#50). This file is the only place they are written:
 
 - The MCP server starts its `instructions` with the rules block.
 - `npm run skills:sync` copies the blocks between their markers
-  into the bundled skills `cmsis-debug-live`, `cmsis-pack-docs`,
-  `add-board-layer` and `cmsis-help`, and into `debug_instructions.md`.
+  into the installed `cmsis-help` skill and `debug_instructions.md`.
+  The knowledge-base procedure sources carry no generated rule blocks.
   `src/test/toolContract.test.ts` fails when a copy differs.
 - *Configure Agent* offers to write the rules block into the
   agents' rule files (`CLAUDE.md`, `AGENTS.md`, …), each change previewed,
@@ -15,22 +15,25 @@ replaces each (#50). This file is the only place they are written:
   (`src/core/agentRules.ts`).
 
 Edit the text between the markers here, then run that command. The rules
-stay at ten lines and under 1 600 bytes: clients keep them in every turn.
+stay at ten lines and under 1 600 bytes: clients keep them in every turn, and
+the user-level rule files carry them into every project. So the block holds
+only what must survive there: the scope (the targets of the CMSIS Debugger,
+not a host program or another toolchain's board) and the bans. What a tool
+reply or the server instructions say at the moment it matters — the
+`TARGET_RUNNING` hint, `list_debug_windows` on `NO_SESSION`, the setting that
+enables a missing tool group, the control server — is not a rule.
 
 <!-- cmsis-developer-assistant:rules:begin -->
 ## CMSIS Developer Assistant tool rules
 
-Only the user can lift a rule, by asking for the specific command.
+These rules cover Arm Cortex-M targets of the CMSIS Debugger (`gdbtarget` launch configurations, CMSIS solutions). A host program or a board of another toolchain is not covered: use your usual tools there. For a covered target only the user lifts a rule, by asking for the specific command.
 
 - Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a CMSIS skill step names it.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a procedure from `knowledge_get` or a CMSIS skill names it.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
 - Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
-- If a tool you need is missing, name the setting that enables it (`cmsis-developer-assistant.packDocs.enabled` or `cmsis-developer-assistant.buildInfo.enabled`), not a shell command.
-- The control server and the registry files are internal: never call or read them. With several windows, use `list_debug_windows` and `select_debug_window`.
-- A running target rejects reads and steps: call `pause_execution` first.
-- When one call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command. A value GDB cannot read is an answer, not a failure. Before you finish, leave the target running; ask the user only for what no tool can do.
+- When a call fails twice the same way, follow the hints of `get_session_status` and `get_recent_problems`, never a shell command; a value GDB cannot read is an answer, not a failure. Leave the target running when you finish, and ask the user only for what no tool can do.
 <!-- cmsis-developer-assistant:rules:end -->
 
 <!-- cmsis-developer-assistant:shell-to-tool:begin -->

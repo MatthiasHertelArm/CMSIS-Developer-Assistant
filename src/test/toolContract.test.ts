@@ -65,22 +65,37 @@ suite('Tool contract', () => {
 
     test('the rules keep the lines agents are held to', () => {
         for (const phrase of [
-            'Only the user can lift a rule',
-            'never install pyOCD',
+            'These rules cover Arm Cortex-M targets of the CMSIS Debugger',
+            'A host program or a board of another toolchain is not covered: use your usual tools there.',
+            'only the user lifts a rule, by asking for the specific command',
+            'against it from a shell, and never install pyOCD',
             'with `cmsis_action`; program with `flash`',
+            'a procedure from `knowledge_get` or a CMSIS skill names it',
             '`serial_*` tools',
             'never read a PDF into your context',
-            '`cmsis-developer-assistant.packDocs.enabled`',
-            '`cmsis-developer-assistant.buildInfo.enabled`',
-            'use `list_debug_windows` and `select_debug_window`',
-            'A running target rejects reads and steps: call `pause_execution` first.',
-            'When one call fails twice the same way',
+            'Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools',
+            'When a call fails twice the same way',
             'follow the hints of `get_session_status` and `get_recent_problems`, never a shell command',
-            'A value GDB cannot read is an answer, not a failure',
-            'leave the target running; ask the user only for what no tool can do',
+            'a value GDB cannot read is an answer, not a failure',
+            'Leave the target running when you finish, and ask the user only for what no tool can do',
         ]) {
             assert.ok(contract.rules.includes(phrase), `the rules lost "${phrase}"`);
         }
+    });
+
+    test('what left the rules is said in the server instructions, where it applies', () => {
+        const everywhere = ['never call or read them', 'list_debug_windows', 'select_debug_window', 'call pause_execution first'];
+        for (const [options, phrases] of [
+            [{ packDocsEnabled: true, buildInfoEnabled: true }, everywhere],
+            [{ packDocsEnabled: false, buildInfoEnabled: false }, [...everywhere, 'cmsis-developer-assistant.packDocs.enabled', 'cmsis-developer-assistant.buildInfo.enabled']],
+        ] as const) {
+            const text = composeInstructions(options);
+            for (const phrase of phrases) {
+                assert.ok(text.includes(phrase), `the instructions with ${JSON.stringify(options)} lack "${phrase}"`);
+            }
+        }
+        const on = composeInstructions({ packDocsEnabled: true, buildInfoEnabled: true });
+        assert.ok(!on.includes('.enabled;'), 'with every group on, no setting is suggested');
     });
 
     test('every tool the contract names is registered; a name after cmsis_action is one of its actions', () => {
@@ -259,9 +274,9 @@ suite('Tool contract', () => {
     });
 
     test('no shipped text sends agents to the shell outside the table and the prohibitions', () => {
-        const roots = ['docs/agent-resources', 'skills/cmsis-debug-live', 'skills/cmsis-pack-docs', 'skills/add-board-layer', 'skills/cmsis-help'];
+        const roots = ['docs/agent-resources', 'skills/cmsis-help'];
         const files = roots.flatMap((root) => markdownFiles(path.join(repoRoot, root)));
-        assert.ok(files.length >= 10, `${files.length} files`);
+        assert.ok(files.length >= 7, `${files.length} files`);
         const offenders: string[] = [];
         for (const file of files) {
             const lines = fs.readFileSync(file, 'utf8').split('\n');

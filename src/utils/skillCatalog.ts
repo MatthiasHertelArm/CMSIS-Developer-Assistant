@@ -64,7 +64,7 @@ export interface SkillCatalogEntry {
     /** Routers are the per-category entry points; skills are the workers. */
     kind: 'skill' | 'router';
     source: SkillSource;
-    /** Directory relative to the extension root, e.g. `skills/cmsis-debug-live`. */
+    /** Directory relative to the extension root, e.g. `skills/cmsis-help`. */
     path: string;
     /** From `agents/openai.yaml` `interface.display_name`, when present. */
     displayName?: string;

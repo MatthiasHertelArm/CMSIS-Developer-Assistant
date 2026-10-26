@@ -1,61 +1,9 @@
 {
-  "$comment": "Hand-authored input for scripts/sync-skills.ts. `bundled` names the extension's own skills, authored in skills/; `installed` names the only skills the extension installs (cmsis-help), every other entry is the source of a procedure unit of the knowledge index. `categories` are the texts of the routing units route-<id> the knowledge base builds (tools/routes2ku.py): label, short description, description and the typical workflow. Run `npm run skills:sync` after an edit.",
+  "$comment": "Installer catalog input for scripts/sync-skills.ts. Knowledge procedure sources and routing definitions are owned by cmsis-knowledge-base/sources/cda-procedures.",
   "bundled": [
-    {
-      "name": "cmsis-debug-live",
-      "category": "debug"
-    },
-    {
-      "name": "add-board-layer",
-      "category": "project"
-    },
-    {
-      "name": "cmsis-pack-docs",
-      "category": "bring-up"
-    },
-    {
-      "name": "cmsis-bootstrap",
-      "category": "project"
-    },
-    {
-      "name": "cmsis-debugger-setup",
-      "category": "project",
-      "hidden": true
-    },
-    {
-      "name": "start-cmsis-project",
-      "category": "project",
-      "hidden": true
-    },
-    {
-      "name": "fvp-debug-setup",
-      "category": "debug",
-      "hidden": true
-    },
-    {
-      "name": "debugger-troubleshooting",
-      "category": "debug",
-      "hidden": true
-    },
     {
       "name": "cmsis-help",
       "category": "help"
-    }
-  ],
-  "categories": [
-    {
-      "id": "project",
-      "label": "CMSIS project setup",
-      "shortDescription": "Create, extend or retarget CMSIS csolution and Zephyr projects",
-      "description": "Set up and extend CMSIS csolution projects and Zephyr-based CMSIS solutions: verify the CMSIS-Toolbox, CMake, Ninja and compiler environment or a Zephyr west workspace; resolve a fuzzy board or device name to its exact CMSIS identity and BSP/DFP, or to its Zephyr board target; add a verified target to an existing *.csolution.yml; find compatible packaged board layers; or create an initial west-integrated CMSIS Zephyr Blinky solution. Use when the user wants to create, extend or retarget a csolution, check their build tools, or identify board, device and pack identifiers; it routes to the specialised project procedures of the knowledge index. Not for debugging a running target (cmsis-debug-live) or for PDSC authoring (cmsis-pack).",
-      "workflow": [
-        "No folder open or no solution yet: `/cmsis-bootstrap` first; it opens or creates the project folder and hands over to `$start-cmsis-project`, which writes a minimal project (CMSIS CORE, the DFP's startup, a bare `main`; Arm Compiler 6 unless the user prefers another compiler) or copies an example of the board's pack, then builds it with `cmsis_action build`.",
-        "`$check-cmsis-environment` (or `$check-zephyr-environment`) to confirm the toolchain before anything is created or built.",
-        "`$identify-cmsis-board-support` (or `$identify-zephyr-board`) to resolve the hardware to exactly one verified identity and its BSP/DFP.",
-        "`$add-cmsis-target` to extend the solution, then `$identify-cmsis-board-layer` for a packaged board layer — or `$start-zephyr-project` for a new west-integrated solution.",
-        "`$add-board-layer` when no packaged layer fits: interview for the few open decisions, then author Board.clayer.yml with its startup, stdio and memory files — or integrate the DFP's configuration generator — and build to green.",
-        "`$cmsis-debugger-setup` once the solution builds: set the debug adapter of the target set, let the CMSIS Solution extension write launch.json, and verify Load & Debug on the target."
-      ]
     }
   ],
   "installed": [

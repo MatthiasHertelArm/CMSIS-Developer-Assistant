@@ -62,7 +62,17 @@ const TIMEOUT_OVERRIDE =
 /** How to read an outcome (#11); it rides in the initialize result, so tools/list does not grow. */
 const READING_RESULTS =
     'A failed call is marked isError and its text starts with an [ERROR_CODE] (NO_SESSION, TARGET_RUNNING, TIMEOUT, …), the next step on '
-    + 'the line after; a result with structuredContent status "timeout" or "running" is not a failure — the wait ran out or the work goes on.';
+    + 'the line after; a result with structuredContent status "timeout" or "running" is not a failure — the wait ran out or the work goes on. '
+    + 'A running target rejects reads and steps: call pause_execution first.';
+
+/**
+ * What used to be two of the tool rules (#50): the rules now hold only the
+ * scope and the bans, since the user-level rule files carry them into every
+ * project, and these two matter in a session alone.
+ */
+const WINDOWS_AND_INTERNALS =
+    'The control server and the registry files of the extension are internal: never call or read them. With several VS Code '
+    + 'windows, list_debug_windows shows which one holds the target and select_debug_window pins it.';
 
 const DOCUMENTATION_ON =
     'The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer ' +
@@ -83,6 +93,11 @@ const BUILD_ARTEFACTS_ON =
     'The build-artefact tools (list_build_artifacts, get_memory_usage, lookup_symbol, get_section_layout, ' +
     'get_build_diagnostics) read the ELF, linker map and build log of the current target.';
 
+const BUILD_ARTEFACTS_OFF =
+    'Build-artefact tools (symbols, sections, memory usage and the error lines of the build log, from the ELF, linker map and ' +
+    'build log) are available behind the setting cmsis-developer-assistant.buildInfo.enabled; suggest enabling it rather than ' +
+    'running nm or size or grepping the map file yourself.';
+
 /**
  * Experimental. What a skill's description did by itself — load the
  * procedure when its task comes up — has to be said in words when the
@@ -102,14 +117,13 @@ const KNOWLEDGE_FIRST =
  */
 export const KNOWLEDGE_REMINDER = 'Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.';
 
-/** Experimental; a procedure read here stands where the tool rules say "a CMSIS skill step". */
+/** Experimental; the tool rules name a procedure from knowledge_get next to a CMSIS skill. */
 const KNOWLEDGE_ON =
     'The knowledge tools (knowledge_search, knowledge_get, knowledge_expand) hold how-to knowledge: procedures, rules, the ' +
     'causes and fixes of csolution, packchk and svdconv messages, and the documentation the installed packs carry as knowledge ' +
     '(a hit says which pack it came from). For an error message of those tools call knowledge_search ' +
     'with the exact text before guessing or searching the web; results are summaries, so read the unit with knowledge_get ' +
-    'before acting. A procedure from knowledge_get counts as a CMSIS skill for the tool rules. Units marked draft are not ' +
-    'reviewed: say so when you rely on one.';
+    'before acting. Units marked draft are not reviewed: say so when you rely on one.';
 
 /**
  * The line the first `get_session_status` of a session adds after the status,
@@ -121,15 +135,13 @@ export const TOOL_RULES_REMINDER =
 
 /**
  * The instructions without the tool rules. The tails follow the two options
- * alone, not whether the session has a documentation dispatch, and the
- * build-artefact tools go unmentioned while they are off.
+ * alone, not whether the session has a documentation dispatch; a group that
+ * is off is named with the setting that enables it.
  */
 export function composeInstructions(options: Readonly<InstructionOptions>): string {
-    const parts = [KNOWLEDGE_FIRST, PURPOSE, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS];
+    const parts = [KNOWLEDGE_FIRST, PURPOSE, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS, WINDOWS_AND_INTERNALS];
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
-    if (options.buildInfoEnabled === true) {
-        parts.push(BUILD_ARTEFACTS_ON);
-    }
+    parts.push(options.buildInfoEnabled === true ? BUILD_ARTEFACTS_ON : BUILD_ARTEFACTS_OFF);
     parts.push(KNOWLEDGE_ON);
     return parts.join(' ');
 }

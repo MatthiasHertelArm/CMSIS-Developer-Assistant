@@ -245,7 +245,7 @@ The skill is installed at every activation and again when **CMSIS Developer Assi
 
 ### Where the procedures are
 
-The CMSIS procedures that were skills in earlier releases are units of the knowledge index the extension ships (`resources/knowledge/core.db`), converted from the extension's own skills in `skills/` and from [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) at the commit pinned in `skills/cmsis-skills.lock.json`. Each has the id `proc-` plus the former skill name:
+The CMSIS procedures that were skills in earlier releases are units of the knowledge index the extension ships (`resources/knowledge/core.db`), built from the procedure sources in [cmsis-knowledge-base/sources/cda-procedures](https://github.com/MatthiasHertelArm/cmsis-knowledge-base/tree/master/sources/cda-procedures) and from [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills), which the knowledge-base build fetches directly. Each has the id `proc-` plus the former skill name:
 
 - **`proc-cmsis-bootstrap`** — from an empty VS Code window to a CMSIS solution that builds and debugs: it finds out what is missing, asks for board, folder, compiler and probe, and hands over to the project procedures and `cmsis_action open_solution`. **`proc-start-cmsis-project`** writes the first solution.
 - **The project procedures** from cmsis-skills — `proc-check-cmsis-environment`, `proc-identify-cmsis-board-support`, `proc-add-cmsis-target`, `proc-identify-cmsis-board-layer`, `proc-check-zephyr-environment`, `proc-identify-zephyr-board`, `proc-start-zephyr-project` — and **`proc-cmsis-debugger-setup`** (set the debug adapter of a csolution target, let the CMSIS Solution extension write `launch.json`, and verify Load & Debug on the target): the members of the former `/cmsis-project`. The unit `route-project` says which fits a task and in which order.
@@ -259,7 +259,9 @@ The agent reaches a procedure with `knowledge_search`, given the task in a few w
 
 ## Tool rules in your agents' rule files
 
-Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a shell instead of the MCP tools, which fights the running debug session for the probe. The server instructions and the `cmsis-help` skill therefore start with a short list of tool rules. Skill text can get lost when an agent compacts its context; a rule file is loaded in every session. So step 2 of **Configure Agent** offers to add the same rules to the files your agents read:
+Agents tend to reach for `pyocd`, `gdb`, `cbuild` or `pip install pyocd` in a shell instead of the MCP tools, which fights the running debug session for the probe. The server instructions and the `cmsis-help` skill therefore start with a short list of tool rules. Skill text can get lost when an agent compacts its context; a rule file is loaded in every session. So step 2 of **Configure Agent** offers to add the same rules to the files your agents read.
+
+The rules say what they cover: Arm Cortex-M targets of the CMSIS Debugger, that is `gdbtarget` launch configurations and CMSIS solutions. A user-level rule file is read in every project, so the rules also say that a host program or a board of another toolchain is not covered and the agent's usual tools apply there: `gdb` on a host binary, OpenOCD for a board the CMSIS Debugger does not serve. The block holds only that scope and the bans; what a tool reply says at the moment it matters (pause a running target, which window holds the session, the setting that enables a tool group) is in the server instructions and the replies instead.
 
 | Agent | This user (preselected) | This workspace |
 |-------|-------------------------|----------------|

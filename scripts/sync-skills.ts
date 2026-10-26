@@ -23,17 +23,9 @@
  *
  *   npm run skills:sync
  *
- * The extension installs `cmsis-help` alone; every other skill in `skills/`
- * is the source of a procedure unit of the knowledge index, which the
- * knowledge-base repository builds from this folder and from
- * Open-CMSIS-Pack/cmsis-skills, fetched there. Nothing is vendored or
- * fetched here, and no router skill is generated: the routing units come
- * from the `categories` texts of the config.
- *
- * A `$name` hand-over in one of the skills, or in a category's workflow,
- * must name one of the extension's skills or a procedure `proc-<name>` of the
- * pinned core index (`resources/knowledge/core.db`, `npm run knowledge:fetch`):
- * otherwise the agent is sent to a procedure the index does not have.
+ * Procedure sources and routing definitions live in cmsis-knowledge-base/sources/cda-procedures.
+ * This script owns only the installed help skill, its catalog and the local tool-contract copies.
+ * A `$name` hand-over must resolve to cmsis-help or a procedure of the pinned core index.
  *
  * Idempotent: running twice produces no diff.
  */
@@ -56,25 +48,11 @@ import {
 /** The one skill the extension installs: the health check and the entry point to the knowledge (see skills/cmsis-help). */
 const HELP_SKILL_NAME = 'cmsis-help';
 
-/** The text of a routing unit `route-<id>` that the knowledge base builds (`tools/routes2ku.py`). */
-interface CategoryConfig {
-    id: SkillCategory;
-    label: string;
-    shortDescription: string;
-    description: string;
-    workflow: string[];
-}
-
 interface SkillsConfig {
-    /**
-     * The extension's own skills, authored in skills/. `hidden: true` marks
-     * one that is reached by a `$name` hand-over of another, not named by the
-     * user; the catalog records it as source `extension`.
-     */
+    /** Skills installed from this extension; knowledge sources live in the knowledge-base repository. */
     bundled: { name: string; category: SkillCategory; hidden?: boolean }[];
-    /** The skills the extension installs. Every other catalog entry is a unit of the knowledge index. */
+    /** The skills the extension installs. */
     installed: string[];
-    categories: CategoryConfig[];
 }
 
 const MAX_DESCRIPTION_LENGTH = 1024;
@@ -120,20 +98,12 @@ function readOpenAiMetadata(skillDir: string): { displayName?: string; shortDesc
 }
 
 function validateConfig(config: SkillsConfig): void {
-    for (const category of config.categories) {
-        if (!SKILL_CATEGORY_ORDER.includes(category.id)) {
-            fail(`category "${category.id}" is not one of ${SKILL_CATEGORY_ORDER.join(', ')} — extend SkillCategory first`);
-        }
-        if (category.description.length > MAX_DESCRIPTION_LENGTH) {
-            fail(`category ${category.id}: description is ${category.description.length} chars; keep it under ${MAX_DESCRIPTION_LENGTH}`);
-        }
-    }
     const names = config.bundled.map(bundled => bundled.name);
     if (new Set(names).size !== names.length) {
         fail('scripts/skills.config.json lists a skill twice under "bundled"');
     }
-    if (!config.installed.includes(HELP_SKILL_NAME) || !names.includes(HELP_SKILL_NAME)) {
-        fail(`scripts/skills.config.json must install and list ${HELP_SKILL_NAME} under "bundled"`);
+    if (names.length !== 1 || names[0] !== HELP_SKILL_NAME || config.installed.length !== 1 || config.installed[0] !== HELP_SKILL_NAME) {
+        fail(`scripts/skills.config.json must list and install only ${HELP_SKILL_NAME}`);
     }
 }
 
@@ -205,13 +175,6 @@ function main(): void {
     const contract = readToolContract();
     const procedures = indexProcedures();
     const reachable = new Set([...config.bundled.map(b => b.name), ...procedures]);
-
-    for (const category of config.categories) {
-        const unknown = extractSkillReferences(category.workflow.join('\n')).filter(ref => SKILL_NAME.test(ref) && !reachable.has(ref));
-        if (unknown.length > 0) {
-            fail(`category ${category.id}: the workflow names procedure(s) the core index does not have: ${unknown.join(', ')}`);
-        }
-    }
 
     const skills = config.bundled.map(bundled => bundledEntry(bundled, config, reachable));
     skills.sort((a, b) => {

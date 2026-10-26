@@ -59,9 +59,8 @@ coverage/**
 docs/**
 !docs/agent-resources/**
 
-# Of skills/, only the catalog and the installed skill ship: activation copies
-# cmsis-help out of the extension. The other folders are the sources of
-# knowledge units, read by the knowledge-base repository (skills/README.md).
+# Only the installed help skill and its catalog ship. Procedure sources are
+# authored in cmsis-knowledge-base/sources/cda-procedures (skills/README.md).
 skills/**
 !skills/catalog.json
 !skills/cmsis-help/**

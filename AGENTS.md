@@ -61,7 +61,7 @@ simply forwards to itself.
 | `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts`, `src/core/agentRules.ts`, `src/utils/agentRuleFiles.ts` | Registers the server in AI agents' configuration files, installs the `cmsis-help` skill (and removes, marker-guarded, the skills earlier releases installed), and writes the tool rules into the agents' rule files the user confirms | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
 | `PackDocsHandler` / `BuildInfoHandler` | `src/packDocsHandler.ts`, `src/buildInfoHandler.ts`, `src/core/packDocs/`, `src/core/buildInfo/` | Documentation tools (pack PDFs, Arm documents, user and workspace documents, core SVDs) and build-artefact tools (ELF, map file, build log); both on by default and routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
 | `KnowledgeHandler` | `src/knowledgeHandler.ts`, `src/knowledgeTools.ts`, `src/core/knowledge/`, `src/knowledgePanel.ts`, `src/knowledgePanelPage.ts` | Experimental knowledge tools over the knowledge index — the core index the extension ships (`resources/knowledge/core.db`), the `.knowledge/knowledge.db` of the installed packs, a workspace folder's `.cmsis/knowledge.db`: search by summaries scoped to the active target, the whole unit, one hop in the graph; always on, routed with the documentation ops. The knowledge browser, a read-only panel over the same index | [docs/architecture/knowledge.md](docs/architecture/knowledge.md) |
-| `skills/` | `skills/` | The one installed skill, `cmsis-help` (authored, with the tool-contract blocks generated in); the extension's own skills `cmsis-debug-live`, `add-board-layer`, `cmsis-bootstrap`, `cmsis-pack-docs`, `start-cmsis-project`, `cmsis-debugger-setup`, `fvp-debug-setup` and `debugger-troubleshooting`, kept as the sources of knowledge units, not installed and not packaged; `catalog.json` with the `installed` flag the installer obeys, which the knowledge base also reads. The Open-CMSIS-Pack/cmsis-skills procedures are not vendored: the knowledge base fetches them itself | [skills/README.md](skills/README.md) |
+| `skills/` | `skills/cmsis-help/`, `skills/catalog.json` | The one installed skill and its generated installer catalog. Knowledge procedure sources, assets and routing definitions are authored in `cmsis-knowledge-base/sources/cda-procedures`; the extension consumes their pinned index | [skills/README.md](skills/README.md) |
 
 Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts`,
 `src/core/serialMonitorBridge.ts` and `src/core/serialLease.ts` (the
@@ -163,7 +163,7 @@ commands with the tools that replace them. The server starts its
 repeats them in one line, or whole for a client that never shows the model the
 instructions (Kimi Code). `npm run skills:sync` copies both
 blocks between `<!-- cmsis-developer-assistant:<block>:begin -->` and `…:end -->`
-markers into the bundled skills, `cmsis-help` and `debug_instructions.md`
+markers into `cmsis-help` and `debug_instructions.md`
 (`src/core/toolContract.ts`). Edit the contract, never a copy;
 `src/test/toolContract.test.ts` compares them and holds the rules to ten lines
 and 1 600 bytes. Tool descriptions never repeat the contract: `tools/list`
@@ -235,7 +235,7 @@ it is:
   `test/transport/dap-scenarios.snapshot.json`. Change them on purpose,
   update the snapshot in the same commit and say in the message what
   changed. `registerTool('…'` calls keep literal tool names:
-  `src/test/skill.test.ts` compares them with the skill's `allowed-tools`.
+  `src/test/skill.test.ts` checks the installed help skill's `allowed-tools`; the knowledge base checks its procedure sources against the debugger tool contract.
 
 ESLint reports every rule as a warning, so `npm run lint` does not fail on
 them; keep its output clean anyway.
