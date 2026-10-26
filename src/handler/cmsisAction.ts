@@ -173,8 +173,8 @@ export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_
 const ENVIRONMENT_COMMAND = 'environment-manager.reactivate';
 /** The Arm Tools Environment Manager extension, which registers that command. */
 const ENVIRONMENT_EXTENSION = 'Arm.environment-manager';
-/** CMSIS Solution's record of the tools environment, next to the solution. */
-const TOOLS_ENVIRONMENT_FILE = path.join('.cmsis', 'tools-environment.yml');
+/** CMSIS Solution's record of the tools environment, next to the solution; with a forward slash in replies on every platform. */
+const TOOLS_ENVIRONMENT_FILE = '.cmsis/tools-environment.yml';
 /** The vcpkg manifest the environment is resolved from. */
 const VCPKG_CONFIGURATION_FILE = 'vcpkg-configuration.json';
 

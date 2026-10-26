@@ -335,6 +335,17 @@ suite('CmsisJobTracker', () => {
             assert.strictEqual(tasks.fetchCount, 2, 'fetched again after tasks.json changed');
         });
 
+        test('a task scope written in another case is the same folder where file names ignore case (VS Code\'s c:\\ on Windows)', async function () {
+            if (process.platform !== 'win32' && process.platform !== 'darwin') {
+                this.skip();
+            }
+            const { tasks, tracker } = world();
+            // VS Code's Uri.fsPath writes a Windows drive letter in lower case; the folder may come with an upper-case one.
+            const otherCase = folder.replace(/^[a-z]/, (letter) => letter.toUpperCase()).replace(/cda-labels-/, 'CDA-LABELS-');
+            tasks.fetched = workspaceTasks(otherCase, ['CMSIS Load', 'CMSIS Run']);
+            assert.deepStrictEqual([...(await tracker.taskLabels(folder)) ?? []], ['CMSIS Load', 'CMSIS Run']);
+        });
+
         test('no answer when fetchTasks fails or takes longer than 3 s', async () => {
             const { tasks, clock, tracker } = world();
             tasks.fetched = undefined;

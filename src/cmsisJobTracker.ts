@@ -59,6 +59,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { attachBuildDiagnosis, vscodeDiagnosisHost } from './cmsisBuildDiagnosis';
+import { samePath } from './core/bootstrapState';
 import { problemJournal } from './core/problemJournal';
 import { attachJobJournal } from './windowProblems';
 import {
@@ -207,10 +208,15 @@ function tasksJsonStamp(folder: string): number {
     }
 }
 
-/** Is a fetched task scoped to this workspace folder, as CMSIS Solution requires of the tasks it runs? */
+/**
+ * Is a fetched task scoped to this workspace folder, as CMSIS Solution
+ * requires of the tasks it runs? Compared as `samePath` compares: on Windows
+ * VS Code's fsPath writes the drive letter in lower case (`c:\…`), a path from
+ * elsewhere may not.
+ */
 function scopedTo(scope: unknown, folder: string): boolean {
     const fsPath = (scope as { uri?: { fsPath?: unknown } } | undefined)?.uri?.fsPath;
-    return typeof fsPath === 'string' && path.resolve(fsPath) === path.resolve(folder);
+    return typeof fsPath === 'string' && samePath(fsPath, folder);
 }
 
 export class CmsisJobTracker {
