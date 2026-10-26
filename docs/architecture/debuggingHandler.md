@@ -278,7 +278,12 @@ it). Other adapters take breakpoint changes while their target runs.
   (`addressOfExpression()`), and the dump names both. Before, the executor
   put `0x` in front of the expression and the read failed inside the
   adapter (a Kimi Code session hit it). An expression GDB cannot place is
-  refused with `INVALID_ARGUMENT` and GDB's words.
+  refused with `INVALID_ARGUMENT` and GDB's words. GDB would carry out an
+  assignment, `++`, a function call or a string literal it copies into
+  target memory, so `sideEffectOf()` refuses those before GDB sees the
+  expression: `read_memory` only reads. A literal is `0x` and hex digits,
+  or hex digits that start with a decimal one; `face` is the symbol of that
+  name, and its refusal says to write `0xface` for the address.
 - The memory dump, the core-register table and the cycle-counter text come
   from `src/handler/targetText.ts`. A dump labels its rows from the first
   byte the read returned and, when part of the range could not be read,
@@ -552,7 +557,11 @@ follows the block structure by column: the keys of an entry count in any
 order and a list may stand in its key's column, as YAML allows, and a
 `type:` in a nested list (`images:`, a debugger's `reset:`) declares no
 target-type. A set's index counts every entry of `target-set:`, as the CMSIS
-Solution extension's index into that list does.
+Solution extension's index into that list does. Flow collections, anchors,
+aliases, merge keys and tags are valid YAML the scan does not follow; where
+one stands for a target-type, its `type:`, its `target-set:` or a set,
+`scanTargetTypes()` names the line and the switch is refused with it, since
+a missed type or a shifted set index would select another target.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else the one of the CMSIS Solution extension's active target

@@ -96,9 +96,9 @@ import {
     applyTargetSelection,
     formatTargetChoices,
     formatTargetName,
-    listTargetTypes,
     parseTargetRef,
     resolveTargetSelection,
+    scanTargetTypes,
     solutionDisplayName,
     TargetRef,
     targetMatches,
@@ -395,7 +395,17 @@ async function switchActiveTarget(
             hint: SWITCH_BY_HAND,
         };
     }
-    const declared = listTargetTypes(solutionText);
+    const { declared, unread } = scanTargetTypes(solutionText);
+    if (unread) {
+        // The target-types read could miss or misname the one wanted, and a set's index would point at another (K02).
+        return {
+            switched: false,
+            code: 'INTERNAL',
+            reason: `the active target is '${was}', and the target-types of ${path.basename(solutionPath)} are written in YAML this tool does not read `
+                + `(line ${unread.line}: \`${unread.text}\` — a flow collection, an anchor, an alias, a merge key or a tag), so it cannot switch the target.`,
+            hint: SWITCH_BY_HAND,
+        };
+    }
     const resolution = resolveTargetSelection(declared, wanted);
     if (!resolution.ok) {
         const choices = formatTargetChoices(declared) || '(none found)';

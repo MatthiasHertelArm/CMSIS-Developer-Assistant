@@ -18,7 +18,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { isTempPath, tempPathFor, writeFileAtomic, writeFileAtomicSync } from '../utils/atomicFile';
+// The module object itself: the writers read fs's functions from it at each call, so a stand-in put there is what they call.
+import fsModule = require('fs');
+import { isTempPath, renameRetrying, renameSyncRetrying, tempPathFor, writeFileAtomic, writeFileAtomicSync } from '../utils/atomicFile';
 
 /** Windows has no POSIX permission bits to look at. */
 const POSIX = process.platform !== 'win32';
@@ -120,6 +122,52 @@ suite('Atomic file writes', () => {
         assert.throws(() => writeFileAtomicSync(nowhere, 'x'), /ENOENT/);
         await assert.rejects(writeFileAtomic(nowhere, 'x'), /ENOENT/);
         assert.deepStrictEqual(leftovers(), []);
+    });
+
+    test('on Windows a rename onto a file held open for the moment is tried again; elsewhere, and when it lasts, it fails', async () => {
+        const busy = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: operation not permitted, rename`), { code });
+        const syncFs = fsModule as { renameSync: typeof fs.renameSync };
+        const asyncFs = fsModule.promises as { rename: typeof fs.promises.rename };
+        const renameSync = fsModule.renameSync;
+        const rename = fsModule.promises.rename;
+        let refusals = 0;
+        // A virus scanner holds the target for two attempts, as one does right after the file was written.
+        syncFs.renameSync = (from: fs.PathLike, to: fs.PathLike): void => {
+            if (refusals-- > 0) {
+                throw busy('EPERM');
+            }
+            renameSync(from, to);
+        };
+        asyncFs.rename = async (from: fs.PathLike, to: fs.PathLike): Promise<void> => {
+            if (refusals-- > 0) {
+                throw busy('EBUSY');
+            }
+            return rename(from, to);
+        };
+        try {
+            const file = inDir('registry.json');
+            fs.writeFileSync(file, 'old');
+            fs.writeFileSync(inDir('a.tmp'), 'sync');
+            refusals = 2;
+            renameSyncRetrying(inDir('a.tmp'), file, 'win32');
+            assert.strictEqual(fs.readFileSync(file, 'utf8'), 'sync');
+            fs.writeFileSync(inDir('b.tmp'), 'async');
+            refusals = 2;
+            await renameRetrying(inDir('b.tmp'), file, 'win32');
+            assert.strictEqual(fs.readFileSync(file, 'utf8'), 'async');
+
+            fs.writeFileSync(inDir('c.tmp'), 'never');
+            refusals = 1;
+            assert.throws(() => renameSyncRetrying(inDir('c.tmp'), file, 'darwin'), /EPERM/, 'elsewhere EPERM means what it says');
+            refusals = 100;
+            const started = Date.now();
+            assert.throws(() => renameSyncRetrying(inDir('c.tmp'), file, 'win32'), /EPERM/, 'a target held for good fails in the end');
+            assert.ok(Date.now() - started < 2_000, `${Date.now() - started} ms blocked`);
+            assert.strictEqual(fs.readFileSync(file, 'utf8'), 'async');
+        } finally {
+            syncFs.renameSync = renameSync;
+            asyncFs.rename = rename;
+        }
     });
 
     test('a regular file is still replaced by a rename in its own folder', async () => {

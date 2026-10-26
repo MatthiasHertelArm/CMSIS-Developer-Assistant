@@ -1257,7 +1257,13 @@ async function main() {
         check('V4 an explicit scope is read although expensive', eq(reads(), [4]) && r3.scopes.length === 1 && r3.skipped === undefined, r3);
         calls.length = 0;
         const r4 = await ex.getVariables(3, 'all');
-        check('V4 every expensive scope is named', eq(reads(), [1]) && eq(r4.skipped, ['Registers', 'Global']), r4);
+        check('V4 an expensive scope of program variables is read; only the register scope is left out (K03)', eq(reads(), [1, 4])
+            && eq(r4.skipped, ['Registers']), r4);
+        scopes = [{ name: 'Local', variablesReference: 1, expensive: false }, { name: 'Statics', variablesReference: 7, expensive: true },
+            { name: 'Core', variablesReference: 8, expensive: true, presentationHint: 'registers' }];
+        calls.length = 0;
+        const r4b = await ex.getVariables(3, 'all');
+        check('V4 a register scope by its presentationHint is left out, Statics read', eq(reads(), [1, 7]) && eq(r4b.skipped, ['Core']), r4b);
         scopes = [{ name: 'Registers', variablesReference: 2, expensive: true }];
         calls.length = 0;
         const r5 = await ex.getVariables(3);

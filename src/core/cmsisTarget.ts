@@ -113,20 +113,50 @@ interface OpenNode {
  * `target-set:` counts as a set, named by its `set:` ('' when empty or
  * missing), as in the list the CMSIS Solution extension's cmsis.json index
  * points into. Comments, quotes, CRLF and a byte-order mark are read; flow
- * collections (`[...]`, `{...}`), anchors and tags are not.
+ * collections (`[...]`, `{...}`), anchors, aliases, merge keys and tags are
+ * not: `scanTargetTypes` says where they stand in the target-types.
  */
 export function listTargetTypes(csolutionText: string): TargetTypeInfo[] {
+    return scanTargetTypes(csolutionText).declared;
+}
+
+/** What `scanTargetTypes` found: the target-types it read, and the first line of them it could not. */
+export interface TargetTypesScan {
+    declared: TargetTypeInfo[];
+    /** A line of `solution: target-types:` in YAML this reader does not follow; the target-types read may then be wrong (K02). */
+    unread?: { line: number; text: string };
+}
+
+/** A value that starts a flow collection, an anchor, an alias or a tag. */
+const UNREAD_VALUE = /^[[{&*!]/;
+
+/**
+ * `listTargetTypes`, and the first line of the target-types written in a
+ * form it does not read: a flow collection, an anchor, an alias, a merge key
+ * (`<<:`) or a tag where a target-type, its `type:`, its `target-set:` or a
+ * set's `set:` would be. Valid YAML, so a target-type it holds would be
+ * missed or misnamed without a word; the caller refuses instead.
+ */
+export function scanTargetTypes(csolutionText: string): TargetTypesScan {
     const declared: TargetTypeInfo[] = [];
     const open: OpenNode[] = [];
+    let unread: TargetTypesScan['unread'];
     /** Are the open nodes exactly these keys, `undefined` standing for a sequence entry? */
     const openPathIs = (...keys: (string | undefined)[]): boolean =>
         open.length === keys.length && keys.every((key, depth) => open[depth].key === key);
+    /** Is the innermost open node an entry of the target-types, or of a target-type's `target-set:`? */
+    const atTargetType = (): boolean => openPathIs('solution', 'target-types', undefined);
+    const atSet = (): boolean => openPathIs('solution', 'target-types', undefined, 'target-set', undefined);
 
-    for (const raw of csolutionText.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)) {
+    const lines = csolutionText.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/);
+    for (const [index, raw] of lines.entries()) {
         const line = yamlLine(raw);
         if (!line) {
             continue;
         }
+        const note = (): void => {
+            unread ??= { line: index + 1, text: raw.trim() };
+        };
         for (const column of line.entries) {
             // An entry ends the deeper nodes and the previous entry of its list; a key in
             // the same column stays open: its list is written without indentation.
@@ -141,21 +171,32 @@ export function listTargetTypes(csolutionText: string): TargetTypeInfo[] {
             open.push(entry);
         }
         if (line.key === undefined) {
+            // A target-type or a set that is no block mapping: `- { type: … }`, `- *base`, `- &a`.
+            const written = raw.slice(line.column).trim();
+            if ((atTargetType() || atSet()) && written !== '' && !written.startsWith('#')) {
+                note();
+            }
             continue;
         }
         // A key ends its earlier siblings and everything deeper.
         closeWhile(open, (node) => node.column >= line.column);
         const targetType = open[2]?.targetType;
         const setIndex = open[4]?.setIndex;
-        if (targetType && line.key === 'type' && openPathIs('solution', 'target-types', undefined)) {
+        const unreadValue = UNREAD_VALUE.test(line.rest);
+        if ((line.key === 'target-types' && openPathIs('solution') && unreadValue)
+            || ((atTargetType() || atSet()) && line.key === '<<')
+            || (atTargetType() && (line.key === 'type' || line.key === 'target-set') && unreadValue)
+            || (atSet() && line.key === 'set' && unreadValue)) {
+            note();
+        }
+        if (targetType && line.key === 'type' && atTargetType()) {
             targetType.name = line.value;
-        } else if (targetType && setIndex !== undefined && line.key === 'set'
-            && openPathIs('solution', 'target-types', undefined, 'target-set', undefined)) {
+        } else if (targetType && setIndex !== undefined && line.key === 'set' && atSet()) {
             targetType.sets[setIndex] = line.value;
         }
         open.push({ column: line.column, key: line.key });
     }
-    return declared.filter((type) => type.name !== '');
+    return { declared: declared.filter((type) => type.name !== ''), unread };
 }
 
 /** The choices to offer when a request does not resolve: `MPS3, HE@debug, HE@release`. */
@@ -239,6 +280,8 @@ interface YamlLine {
     column: number;
     /** The scalar after the key's colon, unquoted and without its comment; '' for none and for null. */
     value: string;
+    /** What follows the key's colon as written, trimmed. */
+    rest: string;
 }
 
 /** A YAML indicator, which a plain mapping key cannot start with: comment, quote, flow, anchor, alias, tag, block scalar, reserved. */
@@ -261,9 +304,9 @@ function yamlLine(raw: string): YamlLine | undefined {
     }
     const entry = mappingEntry(raw.slice(column).trimEnd());
     if (!entry) {
-        return entries.length > 0 ? { entries, column, value: '' } : undefined;
+        return entries.length > 0 ? { entries, column, value: '', rest: '' } : undefined;
     }
-    return { entries, key: entry.key, column, value: scalarValue(entry.rest) };
+    return { entries, key: entry.key, column, value: scalarValue(entry.rest), rest: entry.rest };
 }
 
 /** The key of a `key: value` text and what follows its colon; undefined when the text is no mapping entry. */

@@ -362,7 +362,16 @@ async function main() {
         /not attempted.*'Nope' is not declared.*Declared targets: HE, HP@debug, HP@release/s.test(undeclared)
             && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
         undeclared.split('\n')[0]);
-    const switched = await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
+    // Target-types in YAML the reader does not follow (a flow mapping): refused, nothing written (K02).
+    const blockYaml = fs.readFileSync(solutionFile, 'utf8');
+    fs.writeFileSync(solutionFile, blockYaml.replace('  build-types:', '    - { type: MPS3, device: X:MPS3 }\n  build-types:'));
+    const flow = await cmsisAction({ action: 'detach', target: 'MPS3' }, 70);
+    fs.writeFileSync(solutionFile, blockYaml);
+    check('cmsis_action refuses to switch when the target-types are in YAML it does not read, and names the line',
+        /not attempted.*line 14: `- \{ type: MPS3, device: X:MPS3 \}`.*cannot switch the target/s.test(flow)
+            && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        flow.split('\n')[0]);
+    const switched =await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
     const written = fs.existsSync(cmsisJsonPath) ? JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')) : {};
     check('cmsis_action switches a declared target via cmsis.json + re-activation and verifies it',
         /CMSIS 'detach' on HP@release, switched from HE issued/.test(switched)
@@ -475,7 +484,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 17 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 18 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

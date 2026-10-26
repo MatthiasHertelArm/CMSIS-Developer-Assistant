@@ -87,6 +87,18 @@ function cbuildYml(context: string, compiler: string, outputs: [string, string][
 
 interface World { root: string; workspace: string; host: BuildInfoHost; lines: string[] }
 
+/**
+ * Copy a fixture as a build would write it: modified now. Windows' CopyFile
+ * keeps the source's modification time, so a copied image was as old as the
+ * checkout there, and the tests that compare a log's time with the image's
+ * failed on Windows alone.
+ */
+function copyFresh(from: string, to: string): void {
+    fs.copyFileSync(from, to);
+    const now = new Date();
+    fs.utimesSync(to, now, now);
+}
+
 function buildWorld(): World {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildinfo-e2e-'));
     const workspace = path.join(root, 'ws');
@@ -100,16 +112,16 @@ function buildWorld(): World {
     fs.writeFileSync(path.join(out, 'Blinky+NUCLEO-F756ZG.cbuild-run.yml'), NUCLEO_RUN);
     fs.writeFileSync(path.join(out, 'Blinky+FVP.cbuild-run.yml'), FVP_RUN);
     fs.writeFileSync(path.join(nucleo, 'Blinky.Debug+NUCLEO-F756ZG.cbuild.yml'), cbuildYml('Blinky.Debug+NUCLEO-F756ZG', 'AC6', [['elf', 'Blinky.axf'], ['hex', 'Blinky.hex'], ['map', 'Blinky.axf.map'], ['comp-db', 'compile_commands.json']]));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(nucleo, 'Blinky.axf'));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf.map'), path.join(nucleo, 'Blinky.axf.map'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(nucleo, 'Blinky.axf'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf.map'), path.join(nucleo, 'Blinky.axf.map'));
     fs.writeFileSync(path.join(nucleo, 'Blinky.hex'), ':020000040800F2\n:00000001FF\n');
     fs.writeFileSync(path.join(fvp, 'Blinky.Debug+FVP.cbuild.yml'), cbuildYml('Blinky.Debug+FVP', 'GCC', [['elf', 'Blinky.elf'], ['map', 'Blinky.elf.map']]));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf'), path.join(fvp, 'Blinky.elf'));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf.map'), path.join(fvp, 'Blinky.elf.map'));
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'build-failed.log'), path.join(out, 'build.log'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf'), path.join(fvp, 'Blinky.elf'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-gcc.elf.map'), path.join(fvp, 'Blinky.elf.map'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'build-failed.log'), path.join(out, 'build.log'));
     // An older, unrelated log elsewhere in the workspace must rank below the one in out/.
     fs.mkdirSync(path.join(workspace, 'logs'), { recursive: true });
-    fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'build-ok.log'), path.join(workspace, 'logs', 'build-old.log'));
+    copyFresh(path.join(BUILDINFO_FIXTURES, 'build-ok.log'), path.join(workspace, 'logs', 'build-old.log'));
     const old = new Date(Date.now() - 3_600_000);
     fs.utimesSync(path.join(workspace, 'logs', 'build-old.log'), old, old);
 
@@ -216,7 +228,7 @@ suite('BuildInfoHandler (end to end)', () => {
         const romOnlyDir = path.join(world.root, 'romonly', 'out');
         fs.mkdirSync(path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug'), { recursive: true });
         fs.writeFileSync(path.join(romOnlyDir, 'Blinky+NUCLEO-F756ZG.cbuild-run.yml'), romOnlyRun);
-        fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf'));
+        copyFresh(path.join(BUILDINFO_FIXTURES, 'blink-ac6.axf'), path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf'));
         fs.writeFileSync(path.join(romOnlyDir, 'Blinky', 'NUCLEO-F756ZG', 'Debug', 'Blinky.axf.map'), 'Component: Arm Compiler for Embedded 6.24 Tool: armlink [5f371500]\n');
         const romOnlyWs = path.join(world.root, 'romonly');
         const romOnly = textOf(await new BuildInfoHandler({ ...world.host, workspaceFolders: () => [romOnlyWs], findFiles: async (g) => walkGlob(romOnlyWs, g) }, { timeoutMs: 5000, workspaceRoot: () => romOnlyWs }).handleGetMemoryUsage({}));

@@ -105,12 +105,16 @@ pack a csolution names with `path:` outside the pack root
   units, is left to a component given without a vendor (`CMSIS:CORE`).
 - **Symptom patterns are guarded.** The `symptom_regex` of every
   troubleshooting unit runs synchronously on the extension host; a pattern
-  with an unbounded quantifier inside an unbounded group backtracks for
-  seconds on a line it does not match, and no timeout interrupts it. Any
-  index may ship one, so `safeSymptomPattern` refuses such a pattern (and
-  one over 500 characters) when the index is opened, counted with the
-  patterns that do not compile, and a line is cut to 2 000 characters
-  before a pattern sees it. None of the core index's patterns is affected.
+  with an unbounded quantifier inside an unbounded group, or with an
+  unbounded group of alternatives that can match the same text
+  (`(a|aa)+`), backtracks for seconds on a line it does not match, and no
+  timeout interrupts it. Any index may ship one, so `safeSymptomPattern`
+  refuses such a pattern (and one over 500 characters) when the index is
+  opened, counted with the patterns that do not compile, and a line is cut
+  to 2 000 characters before a pattern sees it. Alternatives under an
+  unbounded quantifier pass only as plain words of which none starts
+  another (`(?:error|warning)+`), which match one way at most; overlap is
+  not analysed beyond that. None of the core index's patterns is affected.
 - **The failed build's lookup follows the active target.** The
   `Known message:` lines of a failed build (`knownMessageLookup.ts`,
   `KnowledgeHandler.knownMessageLines`) read the facts of the window's

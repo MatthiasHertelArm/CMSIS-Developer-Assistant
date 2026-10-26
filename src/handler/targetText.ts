@@ -176,9 +176,75 @@ export function renderMemoryDump(addressText: string, length: number, read: Memo
     return text;
 }
 
-/** A `read_memory` address written as a number: hex digits, with or without `0x`. Anything else is an expression. */
+/**
+ * A `read_memory` address written as a number: hex digits after `0x`, or hex
+ * digits that start with a decimal one. Anything else is an expression, so
+ * `face` is the symbol of that name, never 0xface.
+ */
 export function isAddressLiteral(text: string): boolean {
-    return /^(0x)?[0-9a-f]+$/i.test(text);
+    return /^(0x[0-9a-f]+|[0-9][0-9a-f]*)$/i.test(text);
+}
+
+/** A word that hex digits alone spell, such as `face`: GDB reads it as a name, an agent may have meant the address. */
+export function isHexWord(text: string): boolean {
+    return /^[a-f][0-9a-f]*$/i.test(text);
+}
+
+/** Operators that take a parenthesised operand without calling anything. */
+const OPERATOR_WORDS = new Set(['sizeof', 'alignof', '_Alignof', '__alignof__']);
+
+/** The parenthesised part of a cast such as `uint8_t *` or `unsigned long`: words, then stars. */
+const CAST_TYPE = /^\s*[A-Za-z_]\w*(\s+[A-Za-z_]\w*)*\s*(\*\s*)*$/;
+
+/**
+ * What in a `read_memory` address expression would change the target when
+ * GDB evaluates it: an assignment (`=`, `+=`, …), `++` or `--`, a function
+ * call, or a string literal, which GDB copies into target memory. Undefined
+ * for an expression that only reads. `(fp)(x)` passes as a cast: whether
+ * `fp` is a type or a function pointer, only GDB knows.
+ */
+export function sideEffectOf(expression: string): string | undefined {
+    if (expression.includes('"')) {
+        return 'a string literal';
+    }
+    if (/\+\+|--/.test(expression)) {
+        return 'an increment or decrement';
+    }
+    const assignment = /<<=|>>=|[-+*/%&|^]=|(?<![=!<>])=(?!=)/.exec(expression);
+    if (assignment !== null) {
+        return `an assignment (${assignment[0]})`;
+    }
+    const opens: number[] = [];
+    const openOf = new Map<number, number>();
+    for (let i = 0; i < expression.length; i++) {
+        if (expression[i] === ')') {
+            const open = opens.pop();
+            if (open !== undefined) {
+                openOf.set(i, open);
+            }
+            continue;
+        }
+        if (expression[i] !== '(') {
+            continue;
+        }
+        opens.push(i);
+        const before = expression.slice(0, i).trimEnd();
+        const word = /[A-Za-z_$][\w$]*$/.exec(before);
+        if (word !== null && !OPERATOR_WORDS.has(word[0])) {
+            return `a call of ${word[0]}()`;
+        }
+        if (before.endsWith(']')) {
+            return 'a function call';
+        }
+        if (before.endsWith(')')) {
+            const close = before.length - 1;
+            const open = openOf.get(close);
+            if (open === undefined || !CAST_TYPE.test(expression.slice(open + 1, close))) {
+                return 'a function call';
+            }
+        }
+    }
+    return undefined;
 }
 
 /**

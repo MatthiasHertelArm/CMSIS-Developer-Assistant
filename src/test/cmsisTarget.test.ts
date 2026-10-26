@@ -18,7 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-    applyTargetSelection, formatTargetChoices, listTargetTypes, parseTargetRef, resolveTargetSelection,
+    applyTargetSelection, formatTargetChoices, listTargetTypes, parseTargetRef, resolveTargetSelection, scanTargetTypes,
     solutionDisplayName, targetMatches,
 } from '../core/cmsisTarget';
 
@@ -199,6 +199,26 @@ solution:   # a comment after a key
         - set: ~
 `;
         assert.deepStrictEqual(listTargetTypes(quoted), [{ name: 'HE', sets: ['', 'debug # 2', 'it\'s', 'v#3', ''] }]);
+        assert.strictEqual(scanTargetTypes(quoted).unread, undefined, 'comments are read');
+    });
+
+    test('scanTargetTypes names the first target-types line in YAML it does not read: flow, anchor, alias, merge key, tag (K02)', () => {
+        const unread = (targetTypes: string): { line: number; text: string } | undefined =>
+            scanTargetTypes(`solution:\n  target-types:\n${targetTypes}\n  build-types:\n    - type: Debug\n`).unread;
+        assert.deepStrictEqual(unread('    - type: HE\n    - { type: MPS3, device: SSE-300-MPS3 }'), { line: 4, text: '- { type: MPS3, device: SSE-300-MPS3 }' });
+        assert.deepStrictEqual(unread('    - &base\n      type: HE\n    - *base'), { line: 3, text: '- &base' });
+        assert.deepStrictEqual(unread('    - <<: *base\n      type: HP'), { line: 3, text: '- <<: *base' });
+        assert.deepStrictEqual(unread('    - type: *name'), { line: 3, text: '- type: *name' });
+        assert.deepStrictEqual(unread('    - type: !!str HE'), { line: 3, text: '- type: !!str HE' });
+        assert.deepStrictEqual(unread('    - type: HE\n      target-set: [ { set: debug } ]'), { line: 4, text: 'target-set: [ { set: debug } ]' });
+        assert.deepStrictEqual(unread('    - type: HE\n      target-set:\n        - { set: debug }'), { line: 5, text: '- { set: debug }' });
+        assert.deepStrictEqual(scanTargetTypes('solution:\n  target-types: [ { type: MPS3 } ]\n').unread,
+            { line: 2, text: 'target-types: [ { type: MPS3 } ]' });
+        // What the reader does not need is no reason to refuse: flow and plain lists elsewhere in a target-type.
+        assert.strictEqual(unread('    - type: HE\n      define: [DEBUG]\n      undefine:\n        - NDEBUG\n      target-set:\n        - set:\n'
+            + '          images:\n            - project-context: app.Debug\n              type: elf'), undefined);
+        assert.strictEqual(scanTargetTypes(TWO_TARGETS).unread, undefined);
+        assert.deepStrictEqual(scanTargetTypes(TWO_TARGETS).declared, listTargetTypes(TWO_TARGETS));
     });
 
     test('resolveTargetSelection names what to store and explains what does not exist', () => {

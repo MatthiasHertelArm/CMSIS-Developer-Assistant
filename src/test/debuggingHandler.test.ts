@@ -35,6 +35,7 @@ import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from
 import { ProblemInput, ProblemJournal, problemJournal, problemJson } from '../core/problemJournal';
 import { renderProblemsBlock, runJournaled } from '../core/problemFeed';
 import type { HandlerHost, ToolEnvironment } from '../handler/host';
+import { isAddressLiteral, sideEffectOf } from '../handler/targetText';
 import type { GdbPortHolder } from '../core/gdbPortGuard';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
@@ -1928,6 +1929,63 @@ suite('DebuggingHandler', () => {
             assert.deepStrictEqual(readAt, ['0x20000100'], 'no read without an address');
             // Without a focused frame the expression cannot be placed: the same refusal as evaluate_expression's.
             await refusalOf(handlerFor(x, { focusedFrameId: () => undefined }).handleReadMemory({ address: '&bulkOutBuffer', length: 4 }), 'TARGET_RUNNING');
+        });
+
+        test('sideEffectOf finds what writes and lets reads, casts and comparisons through', () => {
+            for (const read of ['&buffer', 'buffer', '&s.field', '&s->rx[3]', 'ptr->data', '*pp', '(uint8_t *)ptr + 4',
+                '(uint8_t *)(base + 4)', '(unsigned long)(&buf)', '*(uint32_t *)0xE000ED28', '&table[sizeof(int)]',
+                'p != 0 ? p : q', 'a <= b', 'a == b', 'buf - -1', '{int} 0x20000000', '$sp', "'a'"]) {
+                assert.strictEqual(sideEffectOf(read), undefined, read);
+            }
+            for (const [write, effect] of [
+                ['x = 1', 'an assignment (=)'], ['x<<=1', 'an assignment (<<=)'], ['x |= 1', 'an assignment (|=)'],
+                ['*p++', 'an increment or decrement'], ['--n', 'an increment or decrement'],
+                ['f(1)', 'a call of f()'], ['s->cb ()', 'a call of cb()'], ['$_strlen(name)', 'a call of $_strlen()'],
+                ['fns[1](2)', 'a function call'], ['(*fp)()', 'a function call'], ['(s.cb)(1)', 'a function call'],
+                ['(&buf, x = 2)', 'an assignment (=)'], ['"abc"', 'a string literal'],
+            ]) {
+                assert.strictEqual(sideEffectOf(write), effect, write);
+            }
+            assert.ok(isAddressLiteral('0xface') && isAddressLiteral('20000000') && isAddressLiteral('2000BEEF'));
+            assert.ok(!isAddressLiteral('face') && !isAddressLiteral('&buf') && !isAddressLiteral('0x'));
+        });
+
+        test('an address expression that would write is refused before GDB sees it; a word of hex letters is a name (K05)', async () => {
+            const x = new ScriptedExecutor();
+            const readAt: string[] = [];
+            x.readMemory = async (address) => {
+                readAt.push(address);
+                return { bytes: Buffer.from([1, 2, 3, 4]), offset: 0 };
+            };
+            x.evaluateExpression = async (expression, frameId) => {
+                x.calls.push(['evaluateExpression', expression, frameId]);
+                if (expression === '(unsigned long)(face)') {
+                    return { result: '536871168' };
+                }
+                throw new Error('No symbol "dead" in current context.');
+            };
+            const atFrame = { focusedFrameId: () => 1 };
+            for (const [address, effect] of [
+                ['ptr = 0', 'an assignment (=)'],
+                ['mutate()', 'a call of mutate()'],
+                ['buf[i++]', 'an increment or decrement'],
+                ['count += 4', 'an assignment (+=)'],
+                ['(*handler)()', 'a function call'],
+                ['(char *)"text"', 'a string literal'],
+            ]) {
+                const refusal = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address, length: 4 }), 'INVALID_ARGUMENT');
+                assert.strictEqual(refusal.message, `Cannot read memory at "${address}": it has ${effect}, and evaluating it would change the target.`);
+            }
+            assert.deepStrictEqual(x.calls.filter((call) => call[0] === 'evaluateExpression'), [], 'nothing reached GDB');
+            assert.deepStrictEqual(readAt, []);
+            // `face` is the pointer of that name, not the address 0xface.
+            assert.strictEqual(await textAnswer(handlerFor(x, atFrame).handleReadMemory({ address: 'face', length: 4, format: 'hex' })),
+                'Memory at 0x20000100 = face (4 bytes):\n\nHex:\n  0x20000100: 01 02 03 04\n');
+            const unknown = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address: 'dead', length: 4 }), 'INVALID_ARGUMENT');
+            assert.ok(unknown.hint?.startsWith('For the address 0xdead, write the 0x. Pass a hex address'), unknown.hint);
+            // Hex digits that start with a decimal digit stay an address, as before.
+            await textAnswer(handlerFor(x, atFrame).handleReadMemory({ address: '2000beef', length: 4 }));
+            assert.deepStrictEqual(readAt, ['0x20000100', '2000beef']);
         });
 
         test('a partial read labels its rows from the first byte read and names the part that could not be read', async () => {

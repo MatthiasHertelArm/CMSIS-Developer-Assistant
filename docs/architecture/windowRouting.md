@@ -110,6 +110,9 @@ only its user may read the registry (#19):
   others may enter (0755 before 2.5.1). The files are written 0600
   (`writeFileAtomicSync(…, { mode })`), and the heartbeat replaces an older
   0644 file within 20 s. Windows has no modes; the ACL of `%TEMP%` applies.
+  There a rename onto the file fails for a moment while a virus scanner
+  holds it; the writer tries again for up to 310 ms, so a session's end is
+  not lost and the window does not stay "debugging".
 - **Refusal.** A directory that is a symbolic link, not a directory, or owned
   by another user is not written and not read. The window logs an error,
   shows one warning (`onRefused`), and `list()` returns only its own entry,

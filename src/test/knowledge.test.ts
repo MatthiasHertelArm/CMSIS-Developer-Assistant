@@ -788,10 +788,13 @@ suite('knowledge tools', () => {
         });
 
         test('a symptom pattern with an unbounded quantifier inside an unbounded group is refused, and counted as skipped', () => {
-            for (const unsafe of ['(a+)+$', '(\\w*\\s?)*x', '(?:x+){2,}', '((ab)*c)+', 'a'.repeat(501)]) {
+            for (const unsafe of ['(a+)+$', '(\\w*\\s?)*x', '(?:x+){2,}', '((ab)*c)+', 'a'.repeat(501),
+                // Alternatives that can match the same text (K01), and alternatives not checked for it.
+                '(a|aa)+$', '(?:Err|ERROR)*', '((a|ab)c)+', '(\\s|,)+x', '(?:x|)+', '(?=a|b)+']) {
                 assert.strictEqual(safeSymptomPattern(unsafe), false, unsafe);
             }
-            for (const safe of ["^board mounted device '?.+?'? not found$", '(?:foo|bar)+ baz', '(a{1,3})*', '[(+]+', '\\(a+\\)+', '(?:x+){2,5}', '(a+)b+']) {
+            for (const safe of ["^board mounted device '?.+?'? not found$", '(?:foo|bar)+ baz', '(a{1,3})*', '[(+]+', '\\(a+\\)+', '(?:x+){2,5}', '(a+)b+',
+                '(?:error|warning)+:', '((foo|bar)x)+', '(a|aa)$', '(a|aa){1,3}', '[a|b]+']) {
                 assert.strictEqual(safeSymptomPattern(safe), true, safe);
             }
             const own = path.join(dir, 'unsafe-pattern.db');

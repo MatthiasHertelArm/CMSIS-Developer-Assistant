@@ -36,6 +36,12 @@
  * a plain write would fail, so does this one, and the link stays: a link
  * into a missing folder (ENOENT) or into one this user may not enter
  * (EACCES, EPERM), a loop (ELOOP).
+ *
+ * On Windows a rename onto a file that a virus scanner or another reader
+ * holds open fails for a moment (EPERM, EACCES, EBUSY); the rename is tried
+ * again a few times before the write fails, as npm's graceful-fs does. A
+ * window registry entry that kept its last state, "debugging" after the
+ * session had ended, is what a lost write looks like.
  */
 
 import * as crypto from 'crypto';
@@ -92,6 +98,53 @@ async function modeForAsync(filePath: string, options: AtomicWriteOptions): Prom
 /** The exclusive create found the temp name taken: that file is not this call's to remove. */
 function takenBefore(error: unknown): boolean {
     return (error as NodeJS.ErrnoException | undefined)?.code === 'EEXIST';
+}
+
+/**
+ * What Windows answers a rename onto a file that another process holds open
+ * without sharing its deletion — a virus scanner that looks at the file just
+ * written, an indexer: gone a moment later. Elsewhere these codes mean what
+ * they say and are not retried.
+ */
+const RENAME_BUSY: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'EBUSY']);
+/** The waits before each retry of a busy rename, in ms: 310 ms in all, so a blocking write stays short. */
+const RENAME_RETRY_SYNC_MS = [10, 20, 40, 80, 160];
+/** The waits of the asynchronous writer, which blocks nothing: 1.27 s in all. */
+const RENAME_RETRY_MS = [10, 20, 40, 80, 160, 320, 640];
+
+/** Is this error of a rename one to try again after `attempt` retries? */
+function retryRename(error: unknown, attempt: number, waits: readonly number[], platform: NodeJS.Platform): boolean {
+    return platform === 'win32' && attempt < waits.length && RENAME_BUSY.has((error as NodeJS.ErrnoException | undefined)?.code ?? '');
+}
+
+/** `fs.renameSync`, retried for a while on Windows when the target is held open for the moment. */
+export function renameSyncRetrying(from: string, to: string, platform: NodeJS.Platform = process.platform): void {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            fs.renameSync(from, to);
+            return;
+        } catch (error) {
+            if (!retryRename(error, attempt, RENAME_RETRY_SYNC_MS, platform)) {
+                throw error;
+            }
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RENAME_RETRY_SYNC_MS[attempt]);
+        }
+    }
+}
+
+/** `renameSyncRetrying` without blocking the event loop. */
+export async function renameRetrying(from: string, to: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            await fs.promises.rename(from, to);
+            return;
+        } catch (error) {
+            if (!retryRename(error, attempt, RENAME_RETRY_MS, platform)) {
+                throw error;
+            }
+            await new Promise((later) => setTimeout(later, RENAME_RETRY_MS[attempt]));
+        }
+    }
 }
 
 /** Links of a dangling chain followed by hand at most: as many as Linux follows in a path (macOS: 32); a longer chain is a loop. */
@@ -200,7 +253,7 @@ export function writeFileAtomicSync(filePath: string, content: string, options: 
     const tmp = tempPathFor(target);
     try {
         fs.writeFileSync(tmp, content, tempFileOptions(modeFor(target, options)));
-        fs.renameSync(tmp, target);
+        renameSyncRetrying(tmp, target);
     } catch (error) {
         if (!takenBefore(error)) {
             try { fs.unlinkSync(tmp); } catch { /* never written, or already renamed */ }
@@ -215,7 +268,7 @@ export async function writeFileAtomic(filePath: string, content: string, options
     const tmp = tempPathFor(target);
     try {
         await fs.promises.writeFile(tmp, content, tempFileOptions(await modeForAsync(target, options)));
-        await fs.promises.rename(tmp, target);
+        await renameRetrying(tmp, target);
     } catch (error) {
         if (!takenBefore(error)) {
             await fs.promises.unlink(tmp).catch(() => undefined);

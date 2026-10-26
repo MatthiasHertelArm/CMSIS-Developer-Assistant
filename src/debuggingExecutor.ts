@@ -158,21 +158,27 @@ function sourceFilesOf(breakpoints: readonly vscode.Breakpoint[]): string[] {
  * The scopes a variables read covers, and the names of those it leaves out.
  * `local` and `global` keep each scope whose name contains the word, expensive
  * or not. `all` keeps every scope, except on the CMSIS Debugger: there it
- * leaves out the scopes the adapter marks expensive, which VS Code, too, reads
- * only once the user opens them — cdt-gdb-adapter's Registers scope, every
- * core and FPU register read over the probe — unless nothing else would be
- * left. Other adapters keep theirs: js-debug marks Global and Module
- * expensive, and Module holds an ES module's top-level variables.
+ * leaves out an expensive register scope, which VS Code, too, reads only once
+ * the user opens it — cdt-gdb-adapter's Registers scope, every core and FPU
+ * register read over the probe — unless nothing else would be left. An
+ * expensive scope of program variables (statics, globals) is read: `all`
+ * asks for them (K03). Other adapters keep theirs: js-debug marks Global and
+ * Module expensive, and Module holds an ES module's top-level variables.
  */
 function scopesToRead(offered: ScopeBody[], scope: 'local' | 'global' | 'all' | undefined, sessionType: string): { kept: ScopeBody[]; skipped: string[] } {
     if (scope === 'local' || scope === 'global') {
         return { kept: offered.filter((candidate) => candidate.name.toLowerCase().includes(scope)), skipped: [] };
     }
-    const expensive = offered.filter((candidate) => candidate.expensive === true);
-    if (sessionType !== CMSIS_DEBUGGER_TYPE || expensive.length === 0 || expensive.length === offered.length) {
+    const registers = offered.filter((candidate) => candidate.expensive === true && isRegisterScope(candidate));
+    if (sessionType !== CMSIS_DEBUGGER_TYPE || registers.length === 0 || registers.length === offered.length) {
         return { kept: offered, skipped: [] };
     }
-    return { kept: offered.filter((candidate) => candidate.expensive !== true), skipped: expensive.map((candidate) => candidate.name) };
+    return { kept: offered.filter((candidate) => !registers.includes(candidate)), skipped: registers.map((candidate) => candidate.name) };
+}
+
+/** A scope of registers: DAP's `presentationHint` says so, or its name does (cdt-gdb-adapter's "Registers"). */
+function isRegisterScope(scope: ScopeBody): boolean {
+    return scope.presentationHint === 'registers' || /\bregisters?\b/i.test(scope.name);
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));

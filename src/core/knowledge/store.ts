@@ -77,19 +77,29 @@ const SYMPTOM_PATTERN_MAX = 500;
  * pattern an index ships runs synchronously, and an unbounded quantifier
  * inside an unbounded group — `(a+)+`, `(\w*\s?)*`, `(?:x+){2,}` —
  * backtracks exponentially on a line it does not match, which no timeout
- * interrupts. The check walks the pattern once and refuses such a group,
- * and a pattern longer than SYMPTOM_PATTERN_MAX. Any index may ship a
- * pattern, an inactive pack's included, so the index build's Python check
- * is not enough.
+ * interrupts. So does an unbounded group of alternatives that can match the
+ * same text, `(a|aa)+` (K01). Alternatives that are plain words, none the
+ * start of another (`(?:error|warning)+`), match at most one way at each
+ * place and pass; any other alternation under an unbounded quantifier is
+ * refused, since whether its alternatives overlap is not checked. The check
+ * walks the pattern once and refuses such groups, and a pattern longer than
+ * SYMPTOM_PATTERN_MAX. Any index may ship a pattern, an inactive pack's
+ * included, so the index build's Python check is not enough.
  */
 export function safeSymptomPattern(source: string): boolean {
     if (source.length > SYMPTOM_PATTERN_MAX) {
         return false;
     }
-    /** Open groups, innermost last: does the group hold an unbounded quantifier? */
-    const groups: boolean[] = [];
+    /**
+     * An open group: where its `(` is, whether it has a `|` of its own, and
+     * whether it or a group inside it holds an unbounded quantifier or
+     * alternatives that may overlap.
+     */
+    interface Group { open: number; alternation: boolean; unbounded: boolean; ambiguous: boolean }
+    /** Open groups, innermost last. */
+    const groups: Group[] = [];
     /** The group that closed last, when the previous atom was a group. */
-    let closed: boolean | undefined;
+    let closed: Group | undefined;
     let inClass = false;
     const unboundedAt = (i: number): { unbounded: boolean; end: number } | undefined => {
         const c = source[i];
@@ -121,12 +131,28 @@ export function safeSymptomPattern(source: string): boolean {
             continue;
         }
         if (c === '(') {
-            groups.push(false);
+            groups.push({ open: i, alternation: false, unbounded: false, ambiguous: false });
             closed = undefined;
             continue;
         }
         if (c === ')') {
-            closed = groups.pop() ?? false;
+            const group = groups.pop();
+            closed = group ?? { open: i, alternation: false, unbounded: false, ambiguous: false };
+            if (group !== undefined && group.alternation && !distinctWords(source.slice(group.open + 1, i))) {
+                group.ambiguous = true;
+            }
+            const parent = groups[groups.length - 1];
+            if (parent !== undefined) {
+                parent.ambiguous ||= closed.ambiguous;
+            }
+            continue;
+        }
+        if (c === '|') {
+            const innermost = groups[groups.length - 1];
+            if (innermost !== undefined) {
+                innermost.alternation = true;
+            }
+            closed = undefined;
             continue;
         }
         const quantifier = unboundedAt(i);
@@ -135,17 +161,31 @@ export function safeSymptomPattern(source: string): boolean {
             continue;
         }
         if (quantifier.unbounded) {
-            if (closed === true) {
+            if (closed !== undefined && (closed.unbounded || closed.ambiguous)) {
                 return false;
             }
-            for (let depth = 0; depth < groups.length; depth++) {
-                groups[depth] = true;
+            for (const group of groups) {
+                group.unbounded = true;
             }
         }
         i = quantifier.end - 1;
         closed = undefined;
     }
     return true;
+}
+
+/**
+ * The body of a group, `?:` and all, as alternatives of plain words of which
+ * none starts another, ignoring case as the patterns run: then at most one of
+ * them matches at a place. Anything but letters, digits, spaces and a few
+ * punctuation marks in them, or an empty alternative, says no.
+ */
+function distinctWords(body: string): boolean {
+    const words = body.replace(/^\?:/, '').toLowerCase().split('|');
+    if (words.some((word) => !/^[\p{L}\p{N} _:;,'"=<>@#%&/!~-]+$/u.test(word))) {
+        return false;
+    }
+    return words.every((word, i) => words.every((other, j) => i === j || !other.startsWith(word)));
 }
 
 /** A row of `nodes`: a knowledge unit (`kind` knowledge) or an entity. */

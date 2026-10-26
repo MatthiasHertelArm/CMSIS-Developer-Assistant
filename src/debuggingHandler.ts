@@ -111,7 +111,8 @@ import {
 } from './handler/sessionText';
 import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import {
-    addressFromValue, isAddressLiteral, mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter, renderMemoryDump,
+    addressFromValue, isAddressLiteral, isHexWord, mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter,
+    renderMemoryDump, sideEffectOf,
 } from './handler/targetText';
 import { PROBLEM_SEVERITIES, PROBLEM_SOURCES, problemJournal, ProblemJournal, ProblemSeverity, ProblemSource } from './core/problemJournal';
 import { secondsText } from './core/windowHealth';
@@ -1831,9 +1832,18 @@ export class DebuggingHandler
      * `ptr->data` stands for, as GDB evaluates `(unsigned long)(expression)`
      * in the focused frame. Agents pass such expressions to read_memory
      * (Kimi Code did), and GDB reads its value where a number is expected.
+     * One that would change the target — an assignment, `++`, a call — is
+     * refused before GDB sees it: read_memory is a read (K05).
      */
     private async addressOfExpression(expression: string, overrideMs?: number): Promise<string> {
+        const effect = sideEffectOf(expression);
+        if (effect !== undefined) {
+            throw new ToolError('INVALID_ARGUMENT', `Cannot read memory at "${expression}": it has ${effect}, and evaluating it would change the target.`,
+                ADDRESS_HINT);
+        }
         const frameId = this.focusedFrame();
+        // `face` is a symbol to GDB; the agent may have meant 0xface.
+        const hint = isHexWord(expression) ? `For the address 0x${expression}, write the 0x. ${ADDRESS_HINT}` : ADDRESS_HINT;
         let value: unknown;
         try {
             const reply: EvaluateReply = await this.dbg.evaluateExpression(`(unsigned long)(${expression})`, frameId, overrideMs);
@@ -1842,11 +1852,11 @@ export class DebuggingHandler
             if (caught instanceof HardwareTimeoutError) {
                 throw caught;
             }
-            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB: ${failureText(caught)}`, ADDRESS_HINT);
+            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB: ${failureText(caught)}`, hint);
         }
         const address = addressFromValue(value);
         if (address === undefined) {
-            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB gave "${String(value)}".`, ADDRESS_HINT);
+            throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB gave "${String(value)}".`, hint);
         }
         return address;
     }
