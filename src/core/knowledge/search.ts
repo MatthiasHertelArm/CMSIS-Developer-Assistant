@@ -48,6 +48,7 @@
 
 import { queryWords } from './store';
 import type { KnowledgeNode, KnowledgeReader } from './store';
+import { SymptomMatchBudget } from './symptomPattern';
 
 /** Reciprocal rank fusion, as in the prototype, so scores stay comparable with it. */
 const RANK_FUSION_K = 60;
@@ -463,11 +464,17 @@ function isSummary(node: KnowledgeNode): boolean {
  * another unit was found for an earlier message (or the same one): that
  * unit is what the agent needs.
  */
-export function knownMessages(reader: KnowledgeReader, messages: readonly string[], context?: ReadonlySet<string>): KnownMessage[] {
+export function knownMessages(
+    reader: KnowledgeReader,
+    messages: readonly string[],
+    context?: ReadonlySet<string>,
+    budget: SymptomMatchBudget = new SymptomMatchBudget(),
+): KnownMessage[] {
     const index = reader.forContext(context);
     const found: { message: string; id: string; at: number; summary: boolean }[] = [];
     messages.forEach((message, at) => {
-        for (const id of index.exactSymptoms(messageLines(message))) {
+        budget.consume();
+        for (const id of index.exactSymptoms(messageLines(message), budget)) {
             const node = index.node(id);
             if (node !== undefined && !isIncomplete(node) && inScope(index.scopesOf(id), context) && !found.some((f) => f.id === id)) {
                 found.push({ message, id, at, summary: isSummary(node) });

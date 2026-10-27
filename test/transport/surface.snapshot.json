@@ -497,14 +497,14 @@
         },
         {
           "name": "read_memory",
-          "description": "Read a range of bytes from the target's memory. Use this for inspecting SRAM, Flash, peripheral registers, or the stack. Returns hex dump and/or ASCII representation. Hex by default; format ascii or both on request.",
+          "description": "Read target memory as hex (default), ascii or both. Use a 0x address or a CMSIS symbol path, resolved with target writes and function calls disabled.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
+                "description": "0x address; on CMSIS also buf, &buf, ptr->data or &buf[2]. No calls, assignments, casts or arithmetic"
               },
               "length": {
                 "type": "integer",
@@ -1454,8 +1454,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59304,
-          "sha256": "e85be8d715e6e09cbd74516494fbdb1aaad55d1737e67bf9993e23ca5ca23bb0"
+          "bytes": 59814,
+          "sha256": "4d57ef7c74152b8f241617d165658fc98099a64eb00f18f6d861b5d6b2d74f5d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -2315,14 +2315,14 @@
         },
         {
           "name": "read_memory",
-          "description": "Read a range of bytes from the target's memory. Use this for inspecting SRAM, Flash, peripheral registers, or the stack. Returns hex dump and/or ASCII representation. Hex by default; format ascii or both on request.",
+          "description": "Read target memory as hex (default), ascii or both. Use a 0x address or a CMSIS symbol path, resolved with target writes and function calls disabled.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
+                "description": "0x address; on CMSIS also buf, &buf, ptr->data or &buf[2]. No calls, assignments, casts or arithmetic"
               },
               "length": {
                 "type": "integer",
@@ -2975,8 +2975,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59304,
-          "sha256": "e85be8d715e6e09cbd74516494fbdb1aaad55d1737e67bf9993e23ca5ca23bb0"
+          "bytes": 59814,
+          "sha256": "4d57ef7c74152b8f241617d165658fc98099a64eb00f18f6d861b5d6b2d74f5d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -3493,14 +3493,14 @@
         },
         {
           "name": "read_memory",
-          "description": "Read a range of bytes from the target's memory. Use this for inspecting SRAM, Flash, peripheral registers, or the stack. Returns hex dump and/or ASCII representation. Hex by default; format ascii or both on request.",
+          "description": "Read target memory as hex (default), ascii or both. Use a 0x address or a CMSIS symbol path, resolved with target writes and function calls disabled.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
+                "description": "0x address; on CMSIS also buf, &buf, ptr->data or &buf[2]. No calls, assignments, casts or arithmetic"
               },
               "length": {
                 "type": "integer",
@@ -5032,8 +5032,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59304,
-          "sha256": "e85be8d715e6e09cbd74516494fbdb1aaad55d1737e67bf9993e23ca5ca23bb0"
+          "bytes": 59814,
+          "sha256": "4d57ef7c74152b8f241617d165658fc98099a64eb00f18f6d861b5d6b2d74f5d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -5939,14 +5939,14 @@
         },
         {
           "name": "read_memory",
-          "description": "Read a range of bytes from the target's memory. Use this for inspecting SRAM, Flash, peripheral registers, or the stack. Returns hex dump and/or ASCII representation. Hex by default; format ascii or both on request.",
+          "description": "Read target memory as hex (default), ascii or both. Use a 0x address or a CMSIS symbol path, resolved with target writes and function calls disabled.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
+                "description": "0x address; on CMSIS also buf, &buf, ptr->data or &buf[2]. No calls, assignments, casts or arithmetic"
               },
               "length": {
                 "type": "integer",
@@ -7057,8 +7057,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59304,
-          "sha256": "e85be8d715e6e09cbd74516494fbdb1aaad55d1737e67bf9993e23ca5ca23bb0"
+          "bytes": 59814,
+          "sha256": "4d57ef7c74152b8f241617d165658fc98099a64eb00f18f6d861b5d6b2d74f5d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -8050,14 +8050,14 @@
         },
         {
           "name": "read_memory",
-          "description": "Read a range of bytes from the target's memory. Use this for inspecting SRAM, Flash, peripheral registers, or the stack. Returns hex dump and/or ASCII representation. Hex by default; format ascii or both on request.",
+          "description": "Read target memory as hex (default), ascii or both. Use a 0x address or a CMSIS symbol path, resolved with target writes and function calls disabled.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
               "address": {
                 "type": "string",
-                "description": "Hex address ('0x20000000') or a C expression for one ('&buf', an array, a pointer)"
+                "description": "0x address; on CMSIS also buf, &buf, ptr->data or &buf[2]. No calls, assignments, casts or arithmetic"
               },
               "length": {
                 "type": "integer",
@@ -9168,8 +9168,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 59304,
-          "sha256": "e85be8d715e6e09cbd74516494fbdb1aaad55d1737e67bf9993e23ca5ca23bb0"
+          "bytes": 59814,
+          "sha256": "4d57ef7c74152b8f241617d165658fc98099a64eb00f18f6d861b5d6b2d74f5d"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,

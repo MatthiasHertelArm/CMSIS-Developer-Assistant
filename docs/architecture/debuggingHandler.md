@@ -161,9 +161,11 @@ start or a `cmsis_action` attach, shows everything. See
 
 `handleStartDebugging()` refuses while a session exists. With a
 `configurationName` it starts that `launch.json` entry by name through the
-executor; a CMSIS Debugger launch whose GDB server has a fixed local port is
-refused first while another window or another program holds that port
-(`refuseHeldGdbPort()`, see [GDB ports](windowRouting.md#gdb-ports)). Without one it lets the user choose through
+executor; a CMSIS Debugger launch whose GDB server has a fixed local port
+reserves it atomically before checking for another window or listener
+(`reserveGdbPortForStart()`, see [GDB ports](windowRouting.md#gdb-ports)). A
+confirmed failed start releases the reservation; a session that is still
+starting keeps it beyond the tool's wait. Without a name it lets the user choose through
 `promptForConfiguration()`, and the entry `Default Configuration` gets a
 configuration synthesized from the source file (see
 [debugConfigurationManager.md](debugConfigurationManager.md)). The picker
@@ -272,13 +274,16 @@ it). Other adapters take breakpoint changes while their target runs.
   GDB commands (`-exec …` or `>…`) are never redacted: real SVDs name
   registers `KEY` or `UNLOCK`. On the CMSIS Debugger the executor sends such
   a command in the adapter's `>` prefix and returns the text GDB printed.
-- `read_memory` takes a hex address or a C expression for one, as the
-  guide itself writes it (`&adc_buffer`): anything that is not hex digits
-  is evaluated as `(unsigned long)(expression)` in the focused frame
-  (`addressOfExpression()`), and the dump names both. Before, the executor
-  put `0x` in front of the expression and the read failed inside the
-  adapter (a Kimi Code session hit it). An expression GDB cannot place is
-  refused with `INVALID_ARGUMENT` and GDB's words.
+- `read_memory` takes an explicit `0x` address or, on the CMSIS Debugger,
+  a restricted symbol path (`src/core/memoryAddress.ts`): qualified names,
+  optional address-of, fields, registers and literal array indices. Bare
+  hex-looking names such as `face` remain symbols. Calls, assignment,
+  arithmetic, casts and command separators are rejected before address evaluation.
+  Resolution also disables GDB's target memory/register writes and inferior
+  calls in one scoped command, so a macro or C++ overload cannot evade the
+  syntax check. Unsupported guards fail closed; only a complete numeric
+  response is accepted, and timeouts remain timeouts. Other adapters require
+  a literal address. The dump names both the symbol path and its address.
 - The memory dump, the core-register table and the cycle-counter text come
   from `src/handler/targetText.ts`. A dump labels its rows from the first
   byte the read returned and, when part of the range could not be read,
@@ -377,15 +382,21 @@ window's CMSIS job tracker (next section):
   error lines of a failed build once they are in.
 - `stop_run` waits until the CMSIS tasks it stops have ended, terminates
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
-  alive after 10 s. Builds are not its tasks, but CMSIS Solution's Stop
-  Running can end one: the reply names a build that ended during the wait
+  alive after 10 s of verification. A caller's shorter deadline returns
+  `running`, with the stop still pending: it neither spends the owner's
+  grace early nor mistakes a short observation for failed termination.
+  The reply points to `status` and a longer stop call if needed. Builds are
+  not its tasks, but CMSIS Solution's Stop Running can end one: the reply
+  names a build that ended during the wait
   and one that runs on, which `stop_build` ends. `detach` returns at once.
 - `stop_build` does the same for the build-type tasks of the window (build,
   rebuild, clean, or the `cbuild setup` CMSIS Solution runs after loading a
   solution), over `cmsis-csolution.stopBuild`, which ends only one of them.
   It marks their jobs first (`CmsisJobTracker.requestStop`), so they read as
-  stopped whatever code the task closes with. With no build running it
-  issues nothing and says so, and names a build result that is still being
+  stopped once they end, whatever code the task closes with, without a
+  failed-build diagnostic rerun. A short deadline also leaves this stop
+  pending; `TASK_FAILED` requires the full verification period. With no
+  build running it issues nothing and says so, and names a build result that is still being
   checked: that check is no task, and `status` waits for it. It never
   switches the target.
 - `refresh` issues `cmsis-csolution.refresh`, the panel's Refresh, which in
@@ -489,13 +500,17 @@ without an active solution is refused, an unknown target or action is
 `INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does not
 have (`load` on an Arm Debugger adapter, for example). The probe guard
 knows this window only; a GDB port is shared by the machine. So
-`load_and_debug`, `run` and `load_and_run` then ask who holds the GDB ports
+`load_and_debug`, `run` and `load_and_run` first reserve, then ask who holds the GDB ports
 they would start a server on — each launch configuration's fixed port, the
-CMSIS Run task's ports (`refuseHeldLaunchPorts()`, `refuseHeldRunPorts()`)
+CMSIS Run task's ports (`reserveLaunchPorts()`, `reserveRunPorts()`)
 — and refuse with `PROBE_BUSY` naming the other window and what holds the
 port there, or another program, before the command goes out. GDB would
 otherwise connect to that server and halt its target, while the session
-here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)).
+here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)). Partial
+acquisitions roll back on refusal. Pending starts retain their reservations;
+confirmed command/task failures release them only when no session or
+launch-related task remains, and the coordinator releases adopted batches
+when their session/task ends.
 
 A `tasks.json` without any CMSIS task is a hand-off to the CMSIS Solution
 extension rather than a dead end: when the active target's cbuild-run.yml
@@ -547,12 +562,16 @@ a key the extension splits at every dot. The solution's `tasks.json` and
 `launch.json`, by contrast, are those of the folder that holds it. A switch
 is refused under a live debug session. `src/core/cmsisTarget.ts` reads the
 declared target-types and their sets from the csolution and edits the file.
-There is no YAML parser among the dependencies, so it scans the lines and
-follows the block structure by column: the keys of an entry count in any
-order and a list may stand in its key's column, as YAML allows, and a
-`type:` in a nested list (`images:`, a debugger's `reset:`) declares no
-target-type. A set's index counts every entry of `target-set:`, as the CMSIS
-Solution extension's index into that list does.
+It uses the full YAML parser `js-yaml`, so block and flow collections,
+quoted escapes, anchors, aliases and merge keys have the same meaning.
+Selection fields are checked without coercing YAML scalars or following
+object prototype properties, while unrelated CMSIS fields stay the owner's
+responsibility. Bounds on the document, parser work and extracted names
+prevent an input from tying up the window. Invalid or unsupported YAML and
+target shapes produce `INVALID_ARGUMENT` before any selection write or
+reactivation, never an invented empty target list. A set's index counts
+every entry of `target-set:`, as the CMSIS Solution extension's index into
+that list does; missing and null names retain their unnamed place.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else the one of the CMSIS Solution extension's active target

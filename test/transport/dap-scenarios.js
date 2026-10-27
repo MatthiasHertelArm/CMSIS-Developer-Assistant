@@ -871,6 +871,14 @@ class FakeTarget {
             print('Register cache flushed.\n');
         } else if (cmd === 'maintenance flush dcache') {
             // Nothing to show.
+        } else if ((hit = /^with may-write-registers off -- with may-write-memory off -- with may-call-functions off -- output\/x \(unsigned long\)\((.*)\)$/.exec(cmd))) {
+            // The same scoped CLI command goes through the adapter's stdout
+            // stream, not its evaluate result (which is only a carriage return).
+            const addresses = { buffer: '0x20000000', '&buffer[2]': '0x20000002', face: '0x20000010' };
+            if (hit[1] === 'writing_macro') { throw new Error('Writing to memory is not allowed.'); }
+            const address = addresses[hit[1]];
+            if (address === undefined) { throw new Error(`No symbol "${hit[1]}" in current context.`); }
+            print(address);
         } else if ((hit = /^set\s+\{unsigned int\}\s*(0x[0-9a-f]+)\s*=\s*(\d+)$/i.exec(cmd))) {
             const addr = Number(hit[1]);
             if (!this.readBytes(addr, 4)) { throw new Error(`Cannot access memory at address ${hex(addr)}`); }
@@ -1279,16 +1287,24 @@ const SCENARIOS = [
     },
     {
         name: 'read-memory',
-        description: 'Halted: DAP readMemory in hex / ascii / both, an address without 0x, an unmapped address where readMemory fails and every GDB fallback fails too, '
-            + 'and ranges across the start and the end of SRAM: the adapter returns the mapped part from where it begins, and the dump says which part could not be read.',
+        description: 'Halted: DAP readMemory in hex / ascii / both, an unmapped address where readMemory fails and every GDB fallback fails too, '
+            + 'and ranges across the start and the end of SRAM. Symbol paths use one guarded GDB command and stdout capture; bare numbers, calls and assignments '
+            + 'are refused before DAP evaluation, and a write hidden by a macro is refused by GDB.',
         session: { initial: { at: 'main31', reason: 'breakpoint' } },
         calls: [
             { tool: 'read_memory', args: { address: '0x20000000', length: 16 } },
-            { tool: 'read_memory', args: { address: '20000000', length: 20, format: 'ascii' } },
+            { tool: 'read_memory', args: { address: '0x20000000', length: 20, format: 'ascii' } },
             { tool: 'read_memory', args: { address: '0x20000000', length: 70, format: 'both' } },
             { tool: 'read_memory', args: { address: '0x60000000', length: 8 } },
             { tool: 'read_memory', args: { address: '0x1FFFFFF0', length: 64, format: 'both' } },
             { tool: 'read_memory', args: { address: '0x20017FF0', length: 64 } },
+            { tool: 'read_memory', args: { address: 'buffer', length: 4 } },
+            { tool: 'read_memory', args: { address: '&buffer[2]', length: 4 } },
+            { tool: 'read_memory', args: { address: 'face', length: 4 } },
+            { tool: 'read_memory', args: { address: 'writing_macro', length: 4 } },
+            { tool: 'read_memory', args: { address: '20000000', length: 4 } },
+            { tool: 'read_memory', args: { address: 'counter = 1', length: 4 } },
+            { tool: 'read_memory', args: { address: 'next_buffer()', length: 4 } },
         ],
     },
     {

@@ -405,7 +405,7 @@
     },
     {
       "name": "read-memory",
-      "description": "Halted: DAP readMemory in hex / ascii / both, an address without 0x, an unmapped address where readMemory fails and every GDB fallback fails too, and ranges across the start and the end of SRAM: the adapter returns the mapped part from where it begins, and the dump says which part could not be read.",
+      "description": "Halted: DAP readMemory in hex / ascii / both, an unmapped address where readMemory fails and every GDB fallback fails too, and ranges across the start and the end of SRAM. Symbol paths use one guarded GDB command and stdout capture; bare numbers, calls and assignments are refused before DAP evaluation, and a write hidden by a macro is refused by GDB.",
       "setup": [
         "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
         "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}"
@@ -426,7 +426,7 @@
         {
           "tool": "read_memory",
           "args": {
-            "address": "20000000",
+            "address": "0x20000000",
             "length": 20,
             "format": "ascii"
           },
@@ -489,6 +489,97 @@
           "traffic": [
             "dap: threads {}",
             "dap: readMemory {\"memoryReference\":\"0x20017FF0\",\"count\":64} -> 16 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "buffer",
+            "length": 4
+          },
+          "text": "Memory at 0x20000000 = buffer (4 bytes):\n\nHex:\n  0x20000000: 48 65 6c 6c\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">with may-write-registers off -- with may-write-memory off -- with may-call-functions off -- output/x (unsigned long)(buffer)\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"0x20000000\"",
+            "dap: readMemory {\"memoryReference\":\"0x20000000\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "&buffer[2]",
+            "length": 4
+          },
+          "text": "Memory at 0x20000002 = &buffer[2] (4 bytes):\n\nHex:\n  0x20000002: 6c 6c 6f 2c\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">with may-write-registers off -- with may-write-memory off -- with may-call-functions off -- output/x (unsigned long)(&buffer[2])\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"0x20000002\"",
+            "dap: readMemory {\"memoryReference\":\"0x20000002\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "face",
+            "length": 4
+          },
+          "text": "Memory at 0x20000010 = face (4 bytes):\n\nHex:\n  0x20000010: 2a 00 00 00\n",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">with may-write-registers off -- with may-write-memory off -- with may-call-functions off -- output/x (unsigned long)(face)\",\"context\":\"repl\",\"frameId\":1000} -> \"\\r\"",
+            "event: output [stdout] \"0x20000010\"",
+            "dap: readMemory {\"memoryReference\":\"0x20000010\",\"count\":4} -> 4 bytes"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "writing_macro",
+            "length": 4
+          },
+          "isError": true,
+          "text": "[INVALID_ARGUMENT] Cannot read memory at \"writing_macro\": it is no hex address, and GDB found no address for it. GDB: Evaluating the expression failed: Writing to memory is not allowed.\nPass an explicit 0x address such as 0x20000000, or on the CMSIS Debugger a symbol path such as &buffer, buffer, ptr->data or &buffer[2]. Only fields and literal indices are supported; calls, assignments, casts and arithmetic are not. lookup_symbol gives a symbol's address from the ELF.",
+          "traffic": [
+            "dap: threads {}",
+            "dap: evaluate {\"expression\":\">with may-write-registers off -- with may-write-memory off -- with may-call-functions off -- output/x (unsigned long)(writing_macro)\",\"context\":\"repl\",\"frameId\":1000} -> error: \"Writing to memory is not allowed.\""
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "20000000",
+            "length": 4
+          },
+          "isError": true,
+          "text": "[INVALID_ARGUMENT] Cannot read memory at \"20000000\": unsupported address syntax.\nPass an explicit 0x address such as 0x20000000, or on the CMSIS Debugger a symbol path such as &buffer, buffer, ptr->data or &buffer[2]. Only fields and literal indices are supported; calls, assignments, casts and arithmetic are not. lookup_symbol gives a symbol's address from the ELF.",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "counter = 1",
+            "length": 4
+          },
+          "isError": true,
+          "text": "[INVALID_ARGUMENT] Cannot read memory at \"counter = 1\": unsupported address syntax.\nPass an explicit 0x address such as 0x20000000, or on the CMSIS Debugger a symbol path such as &buffer, buffer, ptr->data or &buffer[2]. Only fields and literal indices are supported; calls, assignments, casts and arithmetic are not. lookup_symbol gives a symbol's address from the ELF.",
+          "traffic": [
+            "dap: threads {}"
+          ]
+        },
+        {
+          "tool": "read_memory",
+          "args": {
+            "address": "next_buffer()",
+            "length": 4
+          },
+          "isError": true,
+          "text": "[INVALID_ARGUMENT] Cannot read memory at \"next_buffer()\": unsupported address syntax.\nPass an explicit 0x address such as 0x20000000, or on the CMSIS Debugger a symbol path such as &buffer, buffer, ptr->data or &buffer[2]. Only fields and literal indices are supported; calls, assignments, casts and arithmetic are not. lookup_symbol gives a symbol's address from the ELF.",
+          "traffic": [
+            "dap: threads {}"
           ]
         }
       ]

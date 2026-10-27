@@ -257,9 +257,9 @@ export interface ProgramInspection {
     /**
      * `{ scopes }`: the frame's scopes, each with its `variables` or the
      * `error` of their read. `local` and `global` read the scopes whose name
-     * contains the word; `all` reads every scope, but on the CMSIS Debugger
-     * not those the adapter marks expensive (its Registers scope), whose
-     * names come back in `skipped`.
+     * contains the word; `all` reads every program-variable scope, expensive
+     * or not. On the CMSIS Debugger identified register scopes are omitted
+     * and their names come back in `skipped`.
      */
     getVariables(frameId: number, scope?: 'local' | 'global' | 'all', overrideMs?: number): Promise<any>;
     getVariablesForFrame(frameId: number, scope?: 'local' | 'global' | 'all', overrideMs?: number): Promise<any>;

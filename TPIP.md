@@ -6,6 +6,7 @@ Generated for release: 2.7.0
 | --- | --- | --- | --- |
 | @modelcontextprotocol/sdk | 1.31.0 | https://github.com/modelcontextprotocol/typescript-sdk | [MIT](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE) |
 | express | 5.3.0 | https://github.com/expressjs/express | [MIT](https://github.com/expressjs/express/blob/master/LICENSE) |
+| js-yaml | 5.4.2 | https://github.com/nodeca/js-yaml | [MIT](https://github.com/nodeca/js-yaml/blob/master/LICENSE) |
 | jsonc-parser | 3.3.1 | https://github.com/microsoft/node-jsonc-parser | [MIT](https://github.com/microsoft/node-jsonc-parser/blob/main/LICENSE.md) |
 | serialport | 13.0.0 | https://github.com/serialport/node-serialport | [MIT](https://github.com/serialport/node-serialport/blob/master/LICENSE) |
 | zod | 4.6.5 | https://github.com/colinhacks/zod | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE) |
@@ -19,7 +20,7 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 | --- | --- | --- | --- | --- |
 | CMSIS-Developer-Assistant | [Open-CMSIS-Pack/CMSIS-Developer-Assistant](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 44 |
 | cmsis-skills | [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 183 |
-| devtools | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | tool messages (the message tables of packchk, svdconv, csolution); causes and fixes in own words | 399 |
+| devtools | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | tool messages (the message tables of packchk, svdconv, csolution); causes and fixes in own words | 404 |
 | cmsis-toolbox | [Open-CMSIS-Pack/cmsis-toolbox](https://github.com/Open-CMSIS-Pack/cmsis-toolbox) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-toolbox/blob/HEAD/LICENSE) | documentation | 265 |
 | pack-spec | [Open-CMSIS-Pack/Open-CMSIS-Pack-Spec](https://github.com/Open-CMSIS-Pack/Open-CMSIS-Pack-Spec) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/Open-CMSIS-Pack-Spec/blob/HEAD/LICENSE) | documentation | 210 |
 | svd-spec | [Open-CMSIS-Pack/svd-spec](https://github.com/Open-CMSIS-Pack/svd-spec) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/svd-spec/blob/HEAD/LICENSE) | documentation | 27 |

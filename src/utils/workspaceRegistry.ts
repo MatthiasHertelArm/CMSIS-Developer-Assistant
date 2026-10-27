@@ -212,7 +212,8 @@ export function resolveRegistryDir(context: RegistryDirContext): string {
     return (mode & OTHERS_WRITE) !== 0 ? `${shared}-${context.uid}` : shared;
 }
 
-function defaultRegistryDir(): string {
+/** This user's shared registry directory, also the parent of cross-window launch reservations. */
+export function defaultRegistryDir(): string {
     return resolveRegistryDir({ platform: process.platform, tmpdir: os.tmpdir(), uid: process.getuid?.(), stat: fs.statSync });
 }
 
@@ -374,6 +375,11 @@ function defaultTargetOf(parsed: unknown): DefaultTarget | undefined {
 }
 
 export class WorkspaceRegistry {
+    /** Private shared directory for launch reservations; separate from the versioned window records. */
+    gdbReservationDirectory(): string {
+        return path.join(this.registryDir, 'gdb-port-reservations');
+    }
+
     private readonly ownFile: string;
     private readonly defaultFile: string;
     private readonly owner: RegistryOwner;

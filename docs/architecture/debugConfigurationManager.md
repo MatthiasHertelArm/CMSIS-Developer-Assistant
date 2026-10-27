@@ -16,8 +16,11 @@ be used.
 - This module serves the other cases: no configuration named, and general,
   non-embedded debugging, where a guess from the file type is better than
   nothing.
-- It reads `launch.json` only. The CMSIS build files (`*.cbuild-run.yml` and
-  friends) belong to `src/core/cmsisTarget.ts` and `src/core/buildInfo/`.
+- It reads `launch.json` only. Target choices in `*.csolution.yml` belong to
+  `src/core/cmsisTarget.ts`, which parses YAML with bounded resources and
+  rejects invalid target selections before they can change the workspace.
+  The generated CMSIS build files (`*.cbuild-run.yml` and friends) belong to
+  `src/core/buildInfo/` and `src/core/packDocs/`.
 
 ## Key ideas
 

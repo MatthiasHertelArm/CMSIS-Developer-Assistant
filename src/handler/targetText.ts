@@ -176,18 +176,18 @@ export function renderMemoryDump(addressText: string, length: number, read: Memo
     return text;
 }
 
-/** A `read_memory` address written as a number: hex digits, with or without `0x`. Anything else is an expression. */
+/** A `read_memory` address written explicitly as hex; bare names such as `face` are symbols, never numbers. */
 export function isAddressLiteral(text: string): boolean {
-    return /^(0x)?[0-9a-f]+$/i.test(text);
+    return /^0x[0-9a-f]+$/i.test(text);
 }
 
 /**
- * The address in GDB's value of `(unsigned long)(expression)`, as `0x` and
- * lower-case hex: the value is decimal, or hex after `0x`, and may have more
- * after it. Undefined for a value that does not start with a number.
+ * The complete numeric reply of the guarded GDB address command, as `0x`
+ * and lower-case hex. Error messages, console prefixes, symbol annotations
+ * and mixed multiline replies are not addresses, even when they contain one.
  */
 export function addressFromValue(value: unknown): string | undefined {
-    const number = /^\s*(0x[0-9a-f]+|\d+)(?![0-9a-z_])/i.exec(typeof value === 'string' ? value : '');
+    const number = /^\s*(0x[0-9a-f]+|\d+)\s*$/i.exec(typeof value === 'string' ? value : '');
     return number === null ? undefined : `0x${BigInt(number[1]).toString(16)}`;
 }
 

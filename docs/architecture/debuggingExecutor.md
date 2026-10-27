@@ -147,12 +147,14 @@ can fake only the part a case drives.
   of the first 32 threads, fetched four at a time), variables per scope,
   expression evaluation and the children of a structured value
   (`getVariableChildren()`) are plain DAP requests. A read of all scopes
-  leaves out, on the CMSIS Debugger, the scopes the adapter marks expensive,
-  which VS Code too reads only once the user opens them: cdt-gdb-adapter's
-  Registers scope reads every core and FPU register over the probe. Their
-  names go back to the handler; `local` and `global` read whatever scope
-  matches, and other adapters keep every scope, since js-debug marks an ES
-  module's top-level variables expensive (`scopesToRead()`).
+  leaves out, on the CMSIS Debugger, only scopes identified as registers by
+  their DAP presentation hint or the adapter's `Registers` name. Reading all
+  core and FPU registers costs probe round trips and belongs in the dedicated
+  register tools. The `expensive` flag describes cost, not kind: Statics,
+  Global and Module scopes remain visible regardless of that hint. Skipped
+  names go back to the handler even if no other scopes exist; `local` and
+  `global` read whatever scope matches, and other adapters keep every scope
+  (`scopesToRead()`).
 - **Target access.** `readMemory()` uses DAP `readMemory` and falls back to
   reading word by word through GDB (`readWordThroughGdb()` in
   `src/executor/gdbMemory.ts` tries a watch expression, then the raw GDB read

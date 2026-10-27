@@ -113,6 +113,8 @@ export interface ReadMemoryBody {
 export interface ScopeBody {
     name: string;
     variablesReference: number;
+    /** DAP semantic scope classification; `registers` is independent of the cost hint. */
+    presentationHint?: string;
     /** DAP: the scope is large or expensive to read; VS Code reads it only when it is expanded. */
     expensive?: boolean;
     variables?: unknown[];

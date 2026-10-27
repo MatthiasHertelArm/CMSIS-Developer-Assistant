@@ -133,10 +133,8 @@ const ABOUT = {
         'It reaches further than reading a single variable.',
     ),
     read_memory: say(
-        'Read a range of bytes from the target\'s memory.',
-        'Use this for inspecting SRAM, Flash, peripheral registers, or the stack.',
-        'Returns hex dump and/or ASCII representation.',
-        'Hex by default; format ascii or both on request.',
+        'Read target memory as hex (default), ascii or both.',
+        'Use a 0x address or a CMSIS symbol path, resolved with target writes and function calls disabled.',
     ),
     read_core_registers: say(
         'Read Cortex-M core registers: R0-R12, SP, LR, PC, xPSR, MSP, PSP, CONTROL, FAULTMASK, BASEPRI, PRIMASK.',
@@ -644,7 +642,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('read_memory', {
         description: ABOUT.read_memory,
         inputSchema: {
-            address: z.string().describe('Hex address (\'0x20000000\') or a C expression for one (\'&buf\', an array, a pointer)'),
+            address: z.string().describe('0x address; on CMSIS also buf, &buf, ptr->data or &buf[2]. No calls, assignments, casts or arithmetic'),
             length: z.number().int().min(1).max(4096).describe('Number of bytes to read (1-4096)'),
             format: z.enum(['hex', 'ascii', 'both']).default('hex').describe('\'hex\' (default), \'ascii\', or \'both\''),
             timeoutMs: CALL_TIMEOUT,

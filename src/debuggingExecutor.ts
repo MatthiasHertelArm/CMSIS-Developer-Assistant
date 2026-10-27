@@ -157,22 +157,22 @@ function sourceFilesOf(breakpoints: readonly vscode.Breakpoint[]): string[] {
 /**
  * The scopes a variables read covers, and the names of those it leaves out.
  * `local` and `global` keep each scope whose name contains the word, expensive
- * or not. `all` keeps every scope, except on the CMSIS Debugger: there it
- * leaves out the scopes the adapter marks expensive, which VS Code, too, reads
- * only once the user opens them — cdt-gdb-adapter's Registers scope, every
- * core and FPU register read over the probe — unless nothing else would be
- * left. Other adapters keep theirs: js-debug marks Global and Module
- * expensive, and Module holds an ES module's top-level variables.
+ * or not. `all` keeps every program-variable scope, including expensive
+ * Statics, Global and Module scopes. On the CMSIS Debugger only a scope
+ * identified as registers by the DAP hint or cdt-gdb-adapter's exact scope
+ * name is omitted: reading every core and FPU register costs probe round
+ * trips and belongs in read_core_registers, even if no other scope exists.
+ * Other adapters keep every scope as before.
  */
 function scopesToRead(offered: ScopeBody[], scope: 'local' | 'global' | 'all' | undefined, sessionType: string): { kept: ScopeBody[]; skipped: string[] } {
     if (scope === 'local' || scope === 'global') {
         return { kept: offered.filter((candidate) => candidate.name.toLowerCase().includes(scope)), skipped: [] };
     }
-    const expensive = offered.filter((candidate) => candidate.expensive === true);
-    if (sessionType !== CMSIS_DEBUGGER_TYPE || expensive.length === 0 || expensive.length === offered.length) {
+    if (sessionType !== CMSIS_DEBUGGER_TYPE) {
         return { kept: offered, skipped: [] };
     }
-    return { kept: offered.filter((candidate) => candidate.expensive !== true), skipped: expensive.map((candidate) => candidate.name) };
+    const registers = (candidate: ScopeBody): boolean => candidate.presentationHint === 'registers' || candidate.name.trim().toLowerCase() === 'registers';
+    return { kept: offered.filter((candidate) => !registers(candidate)), skipped: offered.filter(registers).map((candidate) => candidate.name) };
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));

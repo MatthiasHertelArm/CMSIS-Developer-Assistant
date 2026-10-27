@@ -41,7 +41,13 @@
  */
 
 import * as path from 'path';
+import { CORE_SCHEMA, load, mergeTag, realMapTag } from 'js-yaml';
 import { applyEdits, modify } from 'jsonc-parser';
+
+const MAX_CSOLUTION_BYTES = 1024 * 1024;
+const MAX_TARGET_NAMES = 10000;
+const MAX_TARGET_NAME_LENGTH = 1024;
+const TARGET_SCHEMA = CORE_SCHEMA.withTags(mergeTag, realMapTag);
 
 /** A target reference as the agent passes it: `MPS3` or `HP@debug`. */
 export interface TargetRef {
@@ -90,72 +96,58 @@ export function targetMatches(active: string | undefined, wanted: TargetRef): bo
     return wanted.set === undefined || wanted.set === current.set;
 }
 
-/** A node of the csolution's block structure that the following lines may still belong to. */
-interface OpenNode {
-    /** Column of the key, or of the entry's `-`. */
-    column: number;
-    /** The mapping key; undefined for a sequence entry. */
-    key?: string;
-    /** On an entry of `solution: target-types:`, the target-type it declares. */
-    targetType?: TargetTypeInfo;
-    /** On an entry of that target-type's `target-set:`, its index in the type's sets. */
-    setIndex?: number;
-}
-
 /**
  * The target-types a csolution declares and the names of their target-sets,
- * in file order. The YAML is read line by line (the repo carries no YAML
- * parser), following its block structure by column: the keys of a list entry
- * may come in any order, and a list may stand in its key's own column
- * (`target-types:` above `- type:`, as in NXP's examples). A target-type is an
- * entry of `solution: target-types:` with a `type:`; the `type:` keys of
- * deeper lists (`images:`, a debugger's `reset:`) are not. Every entry of its
- * `target-set:` counts as a set, named by its `set:` ('' when empty or
- * missing), as in the list the CMSIS Solution extension's cmsis.json index
- * points into. Comments, quotes, CRLF and a byte-order mark are read; flow
- * collections (`[...]`, `{...}`), anchors and tags are not.
+ * in file order. A real YAML parser handles block/flow collections, escapes,
+ * aliases and merge keys alike; maps remain Maps so a key cannot become an
+ * object prototype property. Only the target selection's shape is checked,
+ * not the whole CMSIS schema. Missing/null set names retain their unnamed
+ * place in the extension's target-set index.
+ *
+ * Invalid YAML, unsupported tags or target shapes, and resource-limit
+ * violations throw with a reason. They must never look like an empty list
+ * of declared targets. The input, parser depth/aliases/merge work, and the
+ * extracted names are bounded before an activation or selection write.
  */
 export function listTargetTypes(csolutionText: string): TargetTypeInfo[] {
-    const declared: TargetTypeInfo[] = [];
-    const open: OpenNode[] = [];
-    /** Are the open nodes exactly these keys, `undefined` standing for a sequence entry? */
-    const openPathIs = (...keys: (string | undefined)[]): boolean =>
-        open.length === keys.length && keys.every((key, depth) => open[depth].key === key);
-
-    for (const raw of csolutionText.replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)) {
-        const line = yamlLine(raw);
-        if (!line) {
-            continue;
-        }
-        for (const column of line.entries) {
-            // An entry ends the deeper nodes and the previous entry of its list; a key in
-            // the same column stays open: its list is written without indentation.
-            closeWhile(open, (node) => node.column > column || (node.column === column && node.key === undefined));
-            const entry: OpenNode = { column };
-            if (openPathIs('solution', 'target-types')) {
-                entry.targetType = { name: '', sets: [] };
-                declared.push(entry.targetType);
-            } else if (openPathIs('solution', 'target-types', undefined, 'target-set') && open[2].targetType) {
-                entry.setIndex = open[2].targetType.sets.push('') - 1;
-            }
-            open.push(entry);
-        }
-        if (line.key === undefined) {
-            continue;
-        }
-        // A key ends its earlier siblings and everything deeper.
-        closeWhile(open, (node) => node.column >= line.column);
-        const targetType = open[2]?.targetType;
-        const setIndex = open[4]?.setIndex;
-        if (targetType && line.key === 'type' && openPathIs('solution', 'target-types', undefined)) {
-            targetType.name = line.value;
-        } else if (targetType && setIndex !== undefined && line.key === 'set'
-            && openPathIs('solution', 'target-types', undefined, 'target-set', undefined)) {
-            targetType.sets[setIndex] = line.value;
-        }
-        open.push({ column: line.column, key: line.key });
+    if (Buffer.byteLength(csolutionText, 'utf8') > MAX_CSOLUTION_BYTES) {
+        throw new Error(`Cannot read csolution targets: YAML exceeds the ${MAX_CSOLUTION_BYTES}-byte limit.`);
     }
-    return declared.filter((type) => type.name !== '');
+    let document: unknown;
+    try {
+        document = load(csolutionText, {
+            schema: TARGET_SCHEMA,
+            maxDepth: 64,
+            maxAliases: 100,
+            maxTotalMergeKeys: 10000,
+        });
+    } catch (caught) {
+        const reason = caught instanceof Error ? caught.message : String(caught);
+        throw new Error(`Cannot read csolution targets: invalid or unsupported YAML (${reason}).`);
+    }
+    const root = targetMapping(document, 'document');
+    const solution = targetMapping(root.get('solution'), 'solution');
+    if (!solution.has('target-types')) {
+        return [];
+    }
+    const types = targetSequence(solution.get('target-types'), 'solution.target-types');
+    let names = types.length;
+    checkTargetNameCount(names);
+    return types.map((value, index) => {
+        const at = `solution.target-types[${index}]`;
+        const type = targetMapping(value, at);
+        const name = targetName(type.get('type'), `${at}.type`, false);
+        const sets = type.has('target-set') ? targetSequence(type.get('target-set'), `${at}.target-set`) : [];
+        names += sets.length;
+        checkTargetNameCount(names);
+        return {
+            name,
+            sets: sets.map((entry, setIndex) => {
+                const setAt = `${at}.target-set[${setIndex}]`;
+                return targetName(targetMapping(entry, setAt).get('set'), `${setAt}.set`, true);
+            }),
+        };
+    });
 }
 
 /** The choices to offer when a request does not resolve: `MPS3, HE@debug, HE@release`. */
@@ -222,90 +214,44 @@ export function applyTargetSelection(
     return text.endsWith('\n') ? text : `${text}\n`;
 }
 
-/** Close the innermost open nodes as long as `ends` says the current line ends them. */
-function closeWhile(open: OpenNode[], ends: (node: OpenNode) => boolean): void {
-    for (let node = open.at(-1); node && ends(node); node = open.at(-1)) {
-        open.pop();
+/** Require the YAML mapping at a selection path, without coercing scalar/collection types. */
+function targetMapping(value: unknown, at: string): Map<unknown, unknown> {
+    if (!(value instanceof Map)) {
+        throw new Error(`Cannot read csolution targets: ${at} must be a mapping.`);
     }
-}
-
-/** The structure of one line of block YAML. */
-interface YamlLine {
-    /** Columns of the `- ` sequence entries the line opens, outermost first (`- - x` opens two). */
-    entries: number[];
-    /** The mapping key that follows the entries, if the line holds one. */
-    key?: string;
-    /** Column of that key. */
-    column: number;
-    /** The scalar after the key's colon, unquoted and without its comment; '' for none and for null. */
-    value: string;
-}
-
-/** A YAML indicator, which a plain mapping key cannot start with: comment, quote, flow, anchor, alias, tag, block scalar, reserved. */
-const INDICATOR_FIRST = /^[#'"{}[\],&*!|>%@`]/;
-
-/**
- * The entries and the key of one line; undefined for a line that opens
- * neither (blank, a comment, a document marker, a scalar that continues the
- * line before, a flow collection).
- */
-function yamlLine(raw: string): YamlLine | undefined {
-    const entries: number[] = [];
-    let column = raw.length - raw.trimStart().length;
-    while (raw.charAt(column) === '-' && [' ', '\t', ''].includes(raw.charAt(column + 1))) {
-        entries.push(column);
-        column++;
-        while (raw.charAt(column) === ' ' || raw.charAt(column) === '\t') {
-            column++;
+    for (const key of value.keys()) {
+        if (typeof key !== 'string') {
+            throw new Error(`Cannot read csolution targets: ${at} contains a non-string mapping key; only string keys are supported.`);
         }
     }
-    const entry = mappingEntry(raw.slice(column).trimEnd());
-    if (!entry) {
-        return entries.length > 0 ? { entries, column, value: '' } : undefined;
-    }
-    return { entries, key: entry.key, column, value: scalarValue(entry.rest) };
+    return value;
 }
 
-/** The key of a `key: value` text and what follows its colon; undefined when the text is no mapping entry. */
-function mappingEntry(text: string): { key: string; rest: string } | undefined {
-    const quoted = readQuoted(text);
-    if (quoted) {
-        const colon = /^\s*:(?=\s|$)/.exec(text.slice(quoted.end));
-        return colon ? { key: quoted.value, rest: text.slice(quoted.end + colon[0].length).trim() } : undefined;
+/** Require a sequence so target-set indexes match the owner's sequence exactly. */
+function targetSequence(value: unknown, at: string): unknown[] {
+    if (!Array.isArray(value)) {
+        throw new Error(`Cannot read csolution targets: ${at} must be a sequence.`);
     }
-    // A plain key ends at the first `:` followed by a blank; text with ` #` before it is a scalar and a comment.
-    const colon = text.search(/:(?=\s|$)/);
-    const key = text.slice(0, Math.max(colon, 0)).trimEnd();
-    if (key === '' || INDICATOR_FIRST.test(key) || /\s#/.test(key)) {
-        return undefined;
-    }
-    return { key, rest: text.slice(colon + 1).trim() };
+    return value;
 }
 
-/** A scalar as written after a key's colon: unquoted, its comment removed; '' for none and for YAML's null. */
-function scalarValue(text: string): string {
-    const quoted = readQuoted(text);
-    if (quoted) {
-        return quoted.value;
+/** Read one name without turning a YAML number, boolean or object into an invented string. */
+function targetName(value: unknown, at: string, unnamed: boolean): string {
+    if (unnamed && (value === null || value === undefined)) {
+        return '';
     }
-    const plain = text.replace(/(?:^|\s)#.*$/, '').trim();
-    return /^(?:~|null|Null|NULL)$/.test(plain) ? '' : plain;
+    if (typeof value !== 'string' || (!unnamed && value.trim() === '')) {
+        throw new Error(`Cannot read csolution targets: ${at} must be ${unnamed ? 'a string or null' : 'a non-empty string'}; quote scalar names when needed.`);
+    }
+    if (value.length > MAX_TARGET_NAME_LENGTH) {
+        throw new Error(`Cannot read csolution targets: ${at} exceeds the ${MAX_TARGET_NAME_LENGTH}-character name limit.`);
+    }
+    return value;
 }
 
-/** The quoted scalar `text` starts with, and its length; undefined unless one starts and ends there. */
-function readQuoted(text: string): { value: string; end: number } | undefined {
-    const single = /^'((?:[^']|'')*)'/.exec(text);
-    if (single) {
-        return { value: single[1].replace(/''/g, '\''), end: single[0].length };
-    }
-    const double = /^"((?:[^"\\]|\\.)*)"/.exec(text);
-    if (!double) {
-        return undefined;
-    }
-    try {
-        // JSON's escapes are a subset of YAML's; any other escape keeps the escaped character.
-        return { value: String(JSON.parse(double[0])), end: double[0].length };
-    } catch {
-        return { value: double[1].replace(/\\(.)/g, '$1'), end: double[0].length };
+/** Bound extracted alias-backed choices as well as the source/parser work. */
+function checkTargetNameCount(count: number): void {
+    if (count > MAX_TARGET_NAMES) {
+        throw new Error(`Cannot read csolution targets: more than ${MAX_TARGET_NAMES} target-type and target-set names.`);
     }
 }

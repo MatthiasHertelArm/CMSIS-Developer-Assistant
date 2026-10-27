@@ -787,11 +787,11 @@ suite('knowledge tools', () => {
             assert.strictEqual(packScopeOf('workspace:my-project', {}), undefined);
         });
 
-        test('a symptom pattern with an unbounded quantifier inside an unbounded group is refused, and counted as skipped', () => {
-            for (const unsafe of ['(a+)+$', '(\\w*\\s?)*x', '(?:x+){2,}', '((ab)*c)+', 'a'.repeat(501)]) {
+        test('symptom patterns outside the bounded grammar are refused and counted; matching uses no backtracking', () => {
+            for (const unsafe of ['(a|aa)+$', '(a+)+$', '(\\w*\\s?)*x', '(?:x+){2,}', '((ab)*c)+', '(a)\\1', '(?=a)a', 'a'.repeat(501)]) {
                 assert.strictEqual(safeSymptomPattern(unsafe), false, unsafe);
             }
-            for (const safe of ["^board mounted device '?.+?'? not found$", '(?:foo|bar)+ baz', '(a{1,3})*', '[(+]+', '\\(a+\\)+', '(?:x+){2,5}', '(a+)b+']) {
+            for (const safe of ["^board mounted device '?.+?'? not found$", '(?:foo|bar) baz', 'a{1,3}', '[(+]+', '\\(a+\\)+', '(a+)b+', '^a+a+$']) {
                 assert.strictEqual(safeSymptomPattern(safe), true, safe);
             }
             const own = path.join(dir, 'unsafe-pattern.db');
@@ -803,12 +803,14 @@ suite('knowledge tools', () => {
             `);
             const node = db.prepare('INSERT INTO nodes VALUES(?,?,?,?,?,?,?,?)');
             node.run('ts-unsafe', 'knowledge', 'troubleshooting', 'error-catalog', 'unsafe', '', CAUSE, JSON.stringify({ symptom_regex: '(a+)+$' }));
+            node.run('ts-overlap', 'knowledge', 'troubleshooting', 'error-catalog', 'overlap', '', CAUSE, JSON.stringify({ symptom_regex: '(a|aa)+$' }));
             node.run('ts-safe', 'knowledge', 'troubleshooting', 'error-catalog', 'safe', '', CAUSE, JSON.stringify({ symptom_regex: '^a+$' }));
             db.close();
             const opened = new KnowledgeIndex(own);
             try {
-                assert.strictEqual(opened.skippedSymptoms, 1);
+                assert.strictEqual(opened.skippedSymptoms, 2);
                 assert.deepStrictEqual(opened.exactSymptoms(['aaaa']), ['ts-safe']);
+                assert.deepStrictEqual(opened.exactSymptoms([`${'a'.repeat(42)}!`]), [], 'the ambiguous pattern never executes');
                 // A long line is cut before the pattern runs.
                 assert.deepStrictEqual(opened.exactSymptoms([`${'b'.repeat(2_500)}aaaa`]), []);
             } finally {

@@ -67,7 +67,9 @@ import { currentCallContext } from './core/callContext';
 import { decodeFault } from './core/faultDecoder';
 import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
+import { readOnlyAddressCommand } from './core/memoryAddress';
 import { findGdbPortHolder, gdbPortRefusal, type PortClaimingWindow } from './core/gdbPortGuard';
+import type { GdbPortReservations, GdbPortReservation } from './core/gdbPortReservations';
 import { configurationGdbPort, folderLaunchConfiguration, isFvpSession } from './core/gdbServerPorts';
 import { coreVerdict, isLockedUp, LOCKUP_NOTE, silentCoreText, wedgeHint } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
@@ -199,8 +201,9 @@ export interface IDebuggingHandler {
 
 /** A read_memory address that is no number and no expression GDB can turn into one. */
 const notAnAddress = (expression: string): string => `Cannot read memory at "${expression}": it is no hex address, and GDB found no address for it.`;
-const ADDRESS_HINT = 'Pass a hex address such as 0x20000000, or an expression for one such as &buffer, an array name or a pointer; '
-    + 'for a struct, take its address with &. lookup_symbol gives a symbol\'s address from the ELF.';
+const ADDRESS_HINT = 'Pass an explicit 0x address such as 0x20000000, or on the CMSIS Debugger a symbol path such as &buffer, '
+    + 'buffer, ptr->data or &buffer[2]. Only fields and literal indices are supported; calls, assignments, casts and arithmetic are not. '
+    + 'lookup_symbol gives a symbol\'s address from the ELF.';
 
 /** The launch.json entry name that means "synthesise a configuration for the file". */
 const SYNTHESISED_CONFIGURATION = 'Default Configuration';
@@ -492,12 +495,20 @@ export class DebuggingHandler
         timeoutSeconds: number,
         journal: ProblemJournal = problemJournal(),
         portWindows?: () => readonly PortClaimingWindow[],
+        portReservations?: GdbPortReservations,
     ) {
         this.dbg = executor;
         this.launchConfigs = configurations;
         this.configuredSeconds = timeoutSeconds;
         this.journal = journal;
-        this.defaultHost = portWindows ? { ...VSCODE_HOST, gdbPortHolder: (port) => findGdbPortHolder(port, portWindows()) } : VSCODE_HOST;
+        this.defaultHost = {
+            ...VSCODE_HOST,
+            ...(portWindows ? { gdbPortHolder: (port: number) => findGdbPortHolder(port, portWindows()) } : {}),
+            ...(portReservations ? {
+                reserveGdbPort: (port: number, start: Parameters<HandlerHost['reserveGdbPort']>[1], group?: string) =>
+                    portReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group),
+            } : {}),
+        };
     }
 
     /** VS Code logpoint message → GDB `dprintf` format and arguments. */
@@ -819,10 +830,11 @@ export class DebuggingHandler
                 'Use stop_debugging first, or call restart_debugging to reuse the current session, '
                     + 'or proceed directly with inspection tools (get_variables_values, read_memory, …).');
         }
+        let reservation: GdbPortReservation | undefined;
         try {
             const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
-                await this.refuseHeldGdbPort(args.workingDirectory, chosen);
+                reservation = await this.reserveGdbPortForStart(args.workingDirectory, chosen);
                 const began = this.host().now();
                 // Before the start: a frame VS Code holds from an earlier session is not this one's.
                 const focus = this.dbg.watchStartFocus();
@@ -830,6 +842,7 @@ export class DebuggingHandler
                     throw new Error(`Failed to start debug session with configuration '${chosen}'.`);
                 }
                 await this.requireLiveStart();
+                reservation?.adopt();
                 const shown = await this.startedState(focus, began);
                 const subject = args.fileFullPath ? args.fileFullPath : chosen;
                 return `Debug session started successfully for: ${subject} using configuration '${chosen}'. ${shown}`;
@@ -849,6 +862,9 @@ export class DebuggingHandler
             const forTest = args.testName ? ` for test '${args.testName}'` : '';
             return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. ${shown}`;
         } catch (caught) {
+            if (!this.dbg.hasDebugSession()) {
+                reservation?.release();
+            }
             // What the adapter and the GDB server said rides along as problem records (#48).
             throw wrapError('Error starting debug session', caught);
         }
@@ -863,16 +879,24 @@ export class DebuggingHandler
      * holds `workingDirectory`, else of `workingDirectory` itself; an attach
      * connects to a server that is meant to listen, and is left alone.
      */
-    private async refuseHeldGdbPort(workingDirectory: string, name: string): Promise<void> {
+    private async reserveGdbPortForStart(workingDirectory: string, name: string): Promise<GdbPortReservation | undefined> {
         const configuration = await this.launchConfiguration(workingDirectory, name);
         const listens = (configuration as { request?: unknown } | undefined)?.request === 'launch' ? configurationGdbPort(configuration) : undefined;
         if (!listens) {
             return;
         }
-        const holder = await this.host().gdbPortHolder(listens.port);
-        if (holder) {
-            logger.info(`start_debugging: '${name}' not started, its GDB port ${listens.port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
-            throw gdbPortRefusal({ what: 'launch', subject: 'Debug session not started', configuration: name, server: listens.server }, listens.port, holder);
+        const start = { what: 'launch' as const, subject: 'Debug session not started', configuration: name, server: listens.server };
+        const reservation = this.host().reserveGdbPort(listens.port, start);
+        try {
+            const holder = await this.host().gdbPortHolder(listens.port);
+            if (holder) {
+                logger.info(`start_debugging: '${name}' not started, its GDB port ${listens.port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
+                throw gdbPortRefusal(start, listens.port, holder);
+            }
+            return reservation;
+        } catch (caught) {
+            reservation.release();
+            throw caught;
         }
     }
 
@@ -1708,7 +1732,7 @@ export class DebuggingHandler
             await this.requireStoppedTarget('list variable names');
             const { scopes, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
-                return NO_SCOPES_HERE;
+                return noteSkippedScopes(NO_SCOPES_HERE, skipped);
             }
             return noteSkippedScopes(renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT }), skipped);
         });
@@ -1719,7 +1743,7 @@ export class DebuggingHandler
             await this.requireStoppedTarget('read variables');
             const { scopes, widened, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
-                return NO_SCOPES_HERE;
+                return noteSkippedScopes(NO_SCOPES_HERE, skipped);
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
@@ -1748,7 +1772,7 @@ export class DebuggingHandler
             const reply: VariablesReply = await this.dbg.getVariablesForFrame(args.frameId, args.scope ?? 'all', args.timeoutMs);
             const scopes = reply?.scopes;
             if (!Array.isArray(scopes) || scopes.length === 0) {
-                return `No variable scopes available for frameId=${args.frameId}.`;
+                return noteSkippedScopes(`No variable scopes available for frameId=${args.frameId}.`, reply?.skipped ?? []);
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
@@ -1820,26 +1844,34 @@ export class DebuggingHandler
             await this.requireStoppedTarget('read memory');
             const format = args.format ?? 'hex';
             const given = args.address.trim();
-            const address = isAddressLiteral(given) ? given : await this.addressOfExpression(given, args.timeoutMs);
+            const address = isAddressLiteral(given) ? given : await this.addressOfExpression(args.address, args.timeoutMs);
             const read = await this.dbg.readMemory(address, args.length, args.timeoutMs);
             return renderMemoryDump(address, args.length, read, format, address === given ? undefined : given);
         });
     }
 
     /**
-     * The address an expression such as `&buffer`, `buffer` (an array) or
-     * `ptr->data` stands for, as GDB evaluates `(unsigned long)(expression)`
-     * in the focused frame. Agents pass such expressions to read_memory
-     * (Kimi Code did), and GDB reads its value where a number is expected.
+     * Resolve only the symbolic paths admitted by readOnlyAddressCommand.
+     * The CMSIS Debugger's scoped GDB command prohibits target writes and
+     * function calls, including implicit C++ overloads and macro expansion.
+     * Other adapters retain literal reads but never receive an expression
+     * whose evaluation permissions this handler cannot enforce.
      */
     private async addressOfExpression(expression: string, overrideMs?: number): Promise<string> {
+        const command = readOnlyAddressCommand(expression);
+        if (command === undefined) {
+            throw new ToolError('INVALID_ARGUMENT', `Cannot read memory at "${expression}": unsupported address syntax.`, ADDRESS_HINT);
+        }
+        if (this.dbg.getActiveSession()?.type !== CMSIS_DEBUGGER_TYPE) {
+            throw new ToolError('INVALID_ARGUMENT', 'Symbolic read_memory addresses require the CMSIS Debugger\'s guarded GDB evaluation.', ADDRESS_HINT);
+        }
         const frameId = this.focusedFrame();
         let value: unknown;
         try {
-            const reply: EvaluateReply = await this.dbg.evaluateExpression(`(unsigned long)(${expression})`, frameId, overrideMs);
+            const reply: EvaluateReply = await this.dbg.evaluateExpression(command, frameId, overrideMs);
             value = reply?.result;
         } catch (caught) {
-            if (caught instanceof HardwareTimeoutError) {
+            if (caught instanceof HardwareTimeoutError || (caught instanceof ToolError && caught.code === 'TIMEOUT')) {
                 throw caught;
             }
             throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB: ${failureText(caught)}`, ADDRESS_HINT);

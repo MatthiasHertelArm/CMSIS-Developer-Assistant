@@ -1251,17 +1251,33 @@ async function main() {
         calls.length = 0;
         const r2 = await ex.getVariablesForFrame(3, 'all');
         check('V4 get_frame_variables\' all leaves it out too', eq(reads(), [1]) && eq(r2.skipped, ['Registers']), r2);
-        scopes = [...scopes, { name: 'Global', variablesReference: 4, expensive: true }];
+        scopes = [...scopes, { name: 'Global', variablesReference: 4, expensive: true }, { name: 'Statics', variablesReference: 5, expensive: true }];
         calls.length = 0;
         const r3 = await ex.getVariables(3, 'global');
         check('V4 an explicit scope is read although expensive', eq(reads(), [4]) && r3.scopes.length === 1 && r3.skipped === undefined, r3);
         calls.length = 0;
         const r4 = await ex.getVariables(3, 'all');
-        check('V4 every expensive scope is named', eq(reads(), [1]) && eq(r4.skipped, ['Registers', 'Global']), r4);
+        check('V4 all preserves expensive Global and Statics scopes', eq(reads(), [1, 4, 5])
+            && eq(r4.scopes.map((s) => s.name), ['Local', 'Global', 'Statics']) && eq(r4.skipped, ['Registers']), r4);
+        calls.length = 0;
+        const framed = await ex.getVariablesForFrame(9, 'all');
+        check('V4 frame variables also preserve expensive Statics', eq(reads(), [1, 4, 5])
+            && framed.scopes.find((s) => s.name === 'Statics').variables[0].name === 'v5', framed);
         scopes = [{ name: 'Registers', variablesReference: 2, expensive: true }];
         calls.length = 0;
         const r5 = await ex.getVariables(3);
-        check('V4 nothing but expensive scopes: all are read', eq(reads(), [2]) && r5.scopes.length === 1 && r5.skipped === undefined, r5);
+        check('V4 only Registers offered: omit them and report the omission', eq(reads(), []) && eq(r5, { scopes: [], skipped: ['Registers'] }), r5);
+        scopes = [{ name: 'CPU state', variablesReference: 2, presentationHint: 'registers', expensive: false },
+            { name: ' registers ', variablesReference: 3, expensive: false }, { name: 'Module', variablesReference: 4, expensive: true },
+            { name: 'Statics', variablesReference: 5, expensive: true }];
+        calls.length = 0;
+        const semantic = await ex.getVariables(3);
+        check('V4 identify registers by semantic hint or exact name, not cost', eq(reads(), [4, 5])
+            && eq(semantic.skipped, ['CPU state', ' registers ']), semantic);
+        scopes = [{ name: 'Module', variablesReference: 4, expensive: true }, { name: 'Statics', variablesReference: 5, expensive: true }];
+        calls.length = 0;
+        const allExpensive = await ex.getVariables(3);
+        check('V4 only expensive program scopes: retain all', eq(reads(), [4, 5]) && allExpensive.skipped === undefined, allExpensive);
 
         // js-debug marks Global and Module expensive; other adapters keep every scope.
         scopes = [{ name: 'Local', variablesReference: 1, expensive: false }, { name: 'Module', variablesReference: 5, expensive: true },

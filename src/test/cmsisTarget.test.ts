@@ -201,6 +201,124 @@ solution:   # a comment after a key
         assert.deepStrictEqual(listTargetTypes(quoted), [{ name: 'HE', sets: ['', 'debug # 2', 'it\'s', 'v#3', ''] }]);
     });
 
+    test('listTargetTypes reads flow collections, including reordered keys and unnamed sets', () => {
+        const types = listTargetTypes(`solution: {target-types: [
+  {device: Cortex-M55, target-set: [{images: [], set: debug}, {set: null}], type: "MPS3"},
+  {type: Other, target-set: []}
+  ]}`);
+        assert.deepStrictEqual(types, [
+            { name: 'MPS3', sets: ['debug', ''] },
+            { name: 'Other', sets: [] },
+        ]);
+        assert.deepStrictEqual(resolveTargetSelection(types, { type: 'MPS3', set: '' }),
+            { ok: true, type: 'MPS3', set: '', setIndex: 1, name: 'MPS3' });
+    });
+
+    test('listTargetTypes resolves anchors, aliases and merge keys at every selection level', () => {
+        const aliased = `
+name: &name MPS3
+debug: &debug {set: debug}
+sets: &sets [*debug, {set: release}]
+base: &base {type: *name, target-set: *sets}
+targets: &targets
+  - *base
+  - {<<: *base, type: Other}
+definition: &definition {target-types: *targets}
+solution: *definition
+`;
+        assert.deepStrictEqual(listTargetTypes(aliased), [
+            { name: 'MPS3', sets: ['debug', 'release'] },
+            { name: 'Other', sets: ['debug', 'release'] },
+        ]);
+    });
+
+    test('listTargetTypes decodes YAML escapes rather than approximating them with JSON', () => {
+        assert.deepStrictEqual(listTargetTypes(String.raw`
+solution:
+  target-types:
+    - type: "MPS\x33"
+      target-set:
+        - set: "debug\_build"
+        - set: "\u0061\U00000062"
+`), [{ name: 'MPS3', sets: ['debug\u00a0build', 'ab'] }]);
+    });
+
+    test('listTargetTypes rejects malformed YAML, duplicate keys, unknown tags and documents', () => {
+        for (const yaml of [
+            'solution: {target-types: [',
+            'solution: {target-types: [], target-types: [{type: A}]}',
+            'solution: {target-types: [*missing]}',
+            'solution: {target-types: !custom [{type: A}]}',
+            'solution: {}\n---\nsolution: {}\n',
+            '',
+        ]) {
+            assert.throws(() => listTargetTypes(yaml), /Cannot read csolution targets: invalid or unsupported YAML/, yaml);
+        }
+    });
+
+    test('listTargetTypes reports invalid shapes instead of returning an empty or partial list', () => {
+        const bad: [string, string][] = [
+            ['{}', 'solution must be a mapping'],
+            ['solution: []', 'solution must be a mapping'],
+            ['solution: {target-types: {type: A}}', 'solution.target-types must be a sequence'],
+            ['solution: {target-types: [A]}', 'solution.target-types[0] must be a mapping'],
+            ['solution: {target-types: [{device: Cortex-M55}]}', 'solution.target-types[0].type must be a non-empty string'],
+            ['solution: {target-types: [{type: ""}]}', 'solution.target-types[0].type must be a non-empty string'],
+            ['solution: {target-types: [{type: 123}]}', 'solution.target-types[0].type must be a non-empty string'],
+            ['solution: {target-types: [{type: A}, {type: false}]}', 'solution.target-types[1].type must be a non-empty string'],
+            ['solution: {target-types: [{type: A, target-set: {set: debug}}]}', 'solution.target-types[0].target-set must be a sequence'],
+            ['solution: {target-types: [{type: A, target-set: [debug]}]}', 'solution.target-types[0].target-set[0] must be a mapping'],
+            ['solution: {target-types: [{type: A, target-set: [{set: 1}]}]}', 'solution.target-types[0].target-set[0].set must be a string or null'],
+        ];
+        for (const [yaml, reason] of bad) {
+            assert.throws(() => listTargetTypes(yaml), (error: unknown) => error instanceof Error && error.message.includes(reason), yaml);
+        }
+        assert.deepStrictEqual(listTargetTypes('solution: {target-types: []}'), [], 'a genuinely empty declaration stays empty');
+    });
+
+    test('listTargetTypes cannot take target fields from prototype or complex keys', () => {
+        assert.throws(() => listTargetTypes('solution: {target-types: [{__proto__: {type: Injected}}]}'), /type must be a non-empty string/);
+        assert.throws(() => listTargetTypes('solution: {target-types: [{? [type] : Injected}]}'), /non-string mapping key/);
+        assert.deepStrictEqual(listTargetTypes('solution: {target-types: [{type: __proto__}]}'), [{ name: '__proto__', sets: [] }]);
+    });
+
+    test('listTargetTypes rejects non-string keys at every visited selection mapping', () => {
+        const bad: [string, string][] = [
+            ['{? [solution]: {target-types: [{type: MPS3}]}}', 'document'],
+            ['solution: {? [target-types]: [{type: MPS3}]}', 'solution'],
+            ['solution: {target-types: [{? [type]: MPS3}]}', 'solution.target-types[0]'],
+            ['solution: {target-types: [{type: MPS3, target-set: [{? [set]: debug}]}]}', 'solution.target-types[0].target-set[0]'],
+            ['solution: {true: ignored, target-types: []}', 'solution'],
+        ];
+        for (const [yaml, at] of bad) {
+            assert.throws(() => listTargetTypes(yaml), {
+                message: `Cannot read csolution targets: ${at} contains a non-string mapping key; only string keys are supported.`,
+            });
+        }
+    });
+
+    test('listTargetTypes bounds bytes, depth, alias references and merge work', () => {
+        assert.throws(() => listTargetTypes(`#${'x'.repeat(1024 * 1024)}`), /byte limit/);
+        assert.throws(() => listTargetTypes(`#${'é'.repeat(512 * 1024)}`), /byte limit/, 'the limit is UTF-8 bytes, not characters');
+        assert.throws(() => listTargetTypes(`solution: {target-types: []}\nextra: ${'['.repeat(65)}0${']'.repeat(65)}`), /maxDepth/i);
+        assert.throws(() => listTargetTypes(`base: &base {type: A}\nsolution: {target-types: [${Array(101).fill('*base').join(',')}]}\n`), /alias/i);
+        const keys = Array.from({ length: 101 }, (_, index) => `key${index}: x`).join(',');
+        const merges = Array.from({ length: 100 }, (_, index) => `merge${index}: {<<: *base}`).join('\n');
+        assert.throws(() => listTargetTypes(`base: &base {${keys}}\n${merges}\nsolution: {target-types: []}\n`), /merge/i);
+    });
+
+    test('listTargetTypes bounds extracted names even when aliases share the same large sequence', () => {
+        const sets = Array.from({ length: 101 }, (_, index) => `{set: s${index}}`).join(',');
+        const targets = Array.from({ length: 100 }, (_, index) => `{type: T${index}, target-set: *sets}`).join(',');
+        assert.throws(() => listTargetTypes(`sets: &sets [${sets}]\nsolution: {target-types: [${targets}]}\n`), /more than 10000/);
+        assert.throws(() => listTargetTypes(`solution: {target-types: [{type: ${'x'.repeat(1025)}}]}`), /character name limit/);
+    });
+
+    test('listTargetTypes handles cyclic aliases without expanding or traversing unrelated data', () => {
+        assert.deepStrictEqual(listTargetTypes('extra: &cycle [*cycle]\nsolution: {target-types: [{type: MPS3}]}'), [{ name: 'MPS3', sets: [] }]);
+        assert.throws(() => listTargetTypes('solution: {target-types: &cycle [*cycle]}'), /target-types\[0\] must be a mapping/);
+    });
+
     test('resolveTargetSelection names what to store and explains what does not exist', () => {
         const types = listTargetTypes(TWO_TARGETS);
         assert.deepStrictEqual(resolveTargetSelection(types, { type: 'HP' }),

@@ -36,10 +36,11 @@ import { ProblemInput, ProblemJournal, problemJournal, problemJson } from '../co
 import { renderProblemsBlock, runJournaled } from '../core/problemFeed';
 import type { HandlerHost, ToolEnvironment } from '../handler/host';
 import type { GdbPortHolder } from '../core/gdbPortGuard';
+import { GdbPortReservations } from '../core/gdbPortReservations';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
-import { FakeExecution, FakeTasks, FixtureTask, workspaceTasks } from './cmsisTaskFixtures';
+import { FakeExecution, FakeTasks, FixtureTask, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 import { MockSerial, mockSerial } from './serialFixtures';
 
 /**
@@ -350,7 +351,7 @@ class HostedHandler extends DebuggingHandler {
 
     protected host(): HandlerHost {
         // No GDB port is taken unless a test says so: the bind test would see whatever listens on this machine.
-        return { ...super.host(), gdbPortHolder: async () => undefined, ...this.replaced };
+        return { ...super.host(), gdbPortHolder: async () => undefined, reserveGdbPort: () => ({ adopt: () => undefined, release: () => undefined }), ...this.replaced };
     }
 }
 
@@ -1821,6 +1822,18 @@ suite('DebuggingHandler', () => {
             assert.ok((await textAnswer(handlerFor(x, focusedOn(3)).handleListVariableNames({ scope: 'local' }))).includes('  count: int\n'));
         });
 
+        test('register-only scope replies still explain what was not read', async () => {
+            const x = new ScriptedExecutor();
+            x.getVariables = async () => ({ scopes: [], skipped: ['Registers'] });
+            x.getVariablesForFrame = x.getVariables;
+            const h = handlerFor(x, focusedOn(7));
+            for (const reply of [await textAnswer(h.handleListVariableNames({})), await textAnswer(h.handleGetVariables({})),
+                await textAnswer(h.handleGetFrameVariables({ frameId: 12 }))]) {
+                assert.ok(reply.includes('Registers: not read here'), reply);
+                assert.ok(reply.includes('read_core_registers'), reply);
+            }
+        });
+
         test('evaluate redacts by name, leaves -exec alone and shows the type', async () => {
             const x = new ScriptedExecutor();
             x.evaluateExpression = async (expression) => expression === 'apiKey'
@@ -1890,7 +1903,7 @@ suite('DebuggingHandler', () => {
             const x = new ScriptedExecutor();
             const bytes = Buffer.from('Hello, Cortex-M!\x00\x01ab', 'latin1');
             x.readMemory = async () => ({ bytes, offset: 0 });
-            const reply = await textAnswer(handlerFor(x).handleReadMemory({ address: '20000000', length: 20, format: 'both' }));
+            const reply = await textAnswer(handlerFor(x).handleReadMemory({ address: '0x20000000', length: 20, format: 'both' }));
             assert.strictEqual(reply, 'Memory at 0x20000000 (20 bytes):\n'
                 + '\nHex:\n  0x20000000: 48 65 6c 6c 6f 2c 20 43 6f 72 74 65 78 2d 4d 21\n  0x20000010: 00 01 61 62\n'
                 + '\nASCII:\n  Hello, Cortex-M!..ab\n');
@@ -1898,36 +1911,87 @@ suite('DebuggingHandler', () => {
 
         test('an address expression is read where GDB says it points; one GDB cannot place is refused with the way to pass one', async () => {
             const x = new ScriptedExecutor();
+            Object.assign(x.activeSession!, { type: 'gdbtarget' });
             const readAt: string[] = [];
             x.readMemory = async (address) => {
                 readAt.push(address);
                 return { bytes: Buffer.from([1, 2, 3, 4]), offset: 0 };
             };
-            x.evaluateExpression = async (expression, frameId) => {
-                x.calls.push(['evaluateExpression', expression, frameId]);
-                if (expression === '(unsigned long)(&bulkOutBuffer)') {
+            const prefix = '-exec with may-write-registers off -- with may-write-memory off -- with may-call-functions off -- output/x ';
+            x.evaluateExpression = async (expression, frameId, timeoutMs) => {
+                x.calls.push(['evaluateExpression', expression, frameId, timeoutMs]);
+                if (expression === `${prefix}(unsigned long)(&bulkOutBuffer)`) {
                     return { result: '536871168' };
                 }
-                if (expression === '(unsigned long)(usbState)') {
+                if (expression === `${prefix}(unsigned long)(usbState)`) {
                     return { result: '{state = 2, address = 5}' };
                 }
                 throw new Error('No symbol "zz" in current context.');
             };
             const atFrame = { focusedFrameId: () => 1 };
             // Kimi Code's call: read_memory {address: "&bulkOutBuffer"} failed with "Cannot convert 0x&bulkOutBuffer to a BigInt".
-            assert.strictEqual(await textAnswer(handlerFor(x, atFrame).handleReadMemory({ address: '&bulkOutBuffer', length: 4, format: 'hex' })),
+            assert.strictEqual(await textAnswer(handlerFor(x, atFrame).handleReadMemory({ address: '&bulkOutBuffer', length: 4, format: 'hex', timeoutMs: 2500 })),
                 'Memory at 0x20000100 = &bulkOutBuffer (4 bytes):\n\nHex:\n  0x20000100: 01 02 03 04\n');
             assert.deepStrictEqual(readAt, ['0x20000100']);
-            assert.deepStrictEqual(x.calls.find((call) => call[0] === 'evaluateExpression'), ['evaluateExpression', '(unsigned long)(&bulkOutBuffer)', 1],
-                'in the focused frame');
+            assert.deepStrictEqual(x.calls.find((call) => call[0] === 'evaluateExpression'),
+                ['evaluateExpression', `${prefix}(unsigned long)(&bulkOutBuffer)`, 1, 2500], 'in the focused frame, preserving the caller\'s timeout');
             const unknown = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address: 'zz', length: 4 }), 'INVALID_ARGUMENT');
             assert.strictEqual(unknown.message, 'Cannot read memory at "zz": it is no hex address, and GDB found no address for it. GDB: No symbol "zz" in current context.');
-            assert.ok(unknown.hint?.startsWith('Pass a hex address such as 0x20000000, or an expression for one such as &buffer'), unknown.hint);
+            assert.ok(unknown.hint?.startsWith('Pass an explicit 0x address such as 0x20000000'), unknown.hint);
             const struct = await refusalOf(handlerFor(x, atFrame).handleReadMemory({ address: 'usbState', length: 4 }), 'INVALID_ARGUMENT');
             assert.ok(struct.message.endsWith('GDB gave "{state = 2, address = 5}".'), struct.message);
             assert.deepStrictEqual(readAt, ['0x20000100'], 'no read without an address');
             // Without a focused frame the expression cannot be placed: the same refusal as evaluate_expression's.
             await refusalOf(handlerFor(x, { focusedFrameId: () => undefined }).handleReadMemory({ address: '&bulkOutBuffer', length: 4 }), 'TARGET_RUNNING');
+        });
+
+        test('read_memory rejects unsafe address syntax before evaluating or reading anything', async () => {
+            const x = new ScriptedExecutor();
+            Object.assign(x.activeSession!, { type: 'gdbtarget' });
+            for (const address of ['ptr = 0', 'mutate()', 'ptr++', 'buffer[mutate()]', '(unsigned long)ptr', 'ptr + 4', '20000000',
+                'ptr\ncall mutate()', 'ptr; set x = 0']) {
+                const failure = await refusalOf(handlerFor(x, { focusedFrameId: () => 1 }).handleReadMemory({ address, length: 4 }), 'INVALID_ARGUMENT');
+                assert.ok(failure.message.includes('unsupported address syntax'), failure.message);
+            }
+            assert.deepStrictEqual(x.argsOf('evaluateExpression'), []);
+            assert.deepStrictEqual(x.argsOf('readMemory'), []);
+        });
+
+        test('all-hex symbols are evaluated under permissions, and guarded failures never fall back', async () => {
+            const x = new ScriptedExecutor();
+            Object.assign(x.activeSession!, { type: 'gdbtarget' });
+            let answer = '0x20000100';
+            x.evaluateExpression = async (expression, frameId) => {
+                x.note('evaluateExpression', expression, frameId);
+                return { result: answer };
+            };
+            const h = handlerFor(x, { focusedFrameId: () => 7 });
+            await textAnswer(h.handleReadMemory({ address: 'face', length: 4 }));
+            assert.deepStrictEqual(x.argsOf('readMemory'), [['0x20000100', 4, undefined]]);
+            assert.deepStrictEqual(x.argsOf('evaluateExpression'), [[
+                '-exec with may-write-registers off -- with may-write-memory off -- with may-call-functions off -- output/x (unsigned long)(face)', 7,
+            ]]);
+            x.calls.length = 0;
+            for (answer of ['Cannot call functions in the program: may-call-functions is off.', 'Writing to memory is not allowed.',
+                'Undefined set command: "may-call-functions off".', '0x20000100\nError: failed', '0x20000100 <face>', '(gdb) 0x20000100']) {
+                await refusalOf(h.handleReadMemory({ address: 'face', length: 4 }), 'INVALID_ARGUMENT');
+            }
+            assert.deepStrictEqual(x.argsOf('readMemory'), [], 'no read from console errors or mixed output');
+            assert.strictEqual(x.argsOf('evaluateExpression').length, 6, 'one guarded attempt per request, never an unguarded fallback');
+            x.evaluateExpression = async () => { throw new HardwareTimeoutError('DAP evaluate', 25); };
+            await refusalOf(h.handleReadMemory({ address: 'face', length: 4 }), 'TIMEOUT');
+            x.evaluateExpression = async () => { throw new ToolError('TIMEOUT', 'Evaluating the expression failed: DAP evaluate timed out.'); };
+            await refusalOf(h.handleReadMemory({ address: 'face', length: 4 }), 'TIMEOUT');
+        });
+
+        test('other adapters keep explicit hex reads but cannot evaluate symbolic memory addresses', async () => {
+            const x = new ScriptedExecutor();
+            Object.assign(x.activeSession!, { type: 'python' });
+            const h = handlerFor(x, { focusedFrameId: () => 1 });
+            await textAnswer(h.handleReadMemory({ address: '0x20000000', length: 4 }));
+            await refusalOf(h.handleReadMemory({ address: 'face', length: 4 }), 'INVALID_ARGUMENT');
+            assert.deepStrictEqual(x.argsOf('evaluateExpression'), []);
+            assert.deepStrictEqual(x.argsOf('readMemory'), [['0x20000000', 4, undefined]]);
         });
 
         test('a partial read labels its rows from the first byte read and names the part that could not be read', async () => {
@@ -3319,6 +3383,90 @@ suite('DebuggingHandler', () => {
                 }
             });
 
+            test('target switching accepts flow YAML and aliased target definitions and preserves target-set indexes', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-yaml-target-'));
+                try {
+                    const solution = path.join(dir, 'demo.csolution.yml');
+                    const selectionFile = path.join(dir, '.vscode', 'cmsis.json');
+                    fs.mkdirSync(path.dirname(selectionFile));
+                    const variants = [
+                        'solution: {target-types: [{type: HE}, {target-set: [{set: debug}, {set: release}], type: HP}]}\n',
+                        'sets: &sets [{set: debug}, {set: release}]\ntarget: &hp {type: HP, target-set: *sets}\n'
+                            + 'solution: {target-types: [{type: HE}, *hp]}\n',
+                    ];
+                    for (const yaml of variants) {
+                        again();
+                        fs.writeFileSync(solution, yaml);
+                        fs.writeFileSync(selectionFile, '{"targetSet":{"demo":{"activeTargetType":"HE"}},"keep":42}\n');
+                        const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }] });
+                        let active = 'HE';
+                        const issued: string[] = [];
+                        registrations = standIns({
+                            'cmsis-csolution.getSolutionFile': () => solution,
+                            'cmsis-csolution.getActiveTargetSet': () => active,
+                            'cmsis-csolution.deactivateSolution': () => { issued.push('deactivate'); },
+                            'cmsis-csolution.activateSolution': () => {
+                                issued.push('activate');
+                                const settings = JSON.parse(fs.readFileSync(selectionFile, 'utf8')) as {
+                                    targetSet: { demo: { activeTargetType: string; HP: number } }; keep: number;
+                                };
+                                assert.deepStrictEqual(settings, { targetSet: { demo: { activeTargetType: 'HP', HP: 1 } }, keep: 42 });
+                                active = 'HP@release';
+                            },
+                            'cmsis-csolution.cmsisDetachDebugger': () => { issued.push('detach'); },
+                        });
+                        const text = await textAnswer(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }));
+                        assert.match(text, /^CMSIS 'detach' on HP@release, switched from HE issued/);
+                        assert.deepStrictEqual(issued, ['deactivate', 'activate', 'detach']);
+                        w.tracker.dispose();
+                    }
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
+
+            test('target switching rejects malformed or unsupported YAML before settings or activation change', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-invalid-target-'));
+                try {
+                    const solution = path.join(dir, 'demo.csolution.yml');
+                    const selectionFile = path.join(dir, '.vscode', 'cmsis.json');
+                    const original = '{\n // retain this selection\n "targetSet":{"demo":{"activeTargetType":"HE"}},"keep":42\n}\n';
+                    fs.mkdirSync(path.dirname(selectionFile));
+                    fs.writeFileSync(selectionFile, original);
+                    const modifiedAt = fs.statSync(selectionFile).mtimeMs;
+                    const issued: string[] = [];
+                    const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }] });
+                    registrations = standIns({
+                        'cmsis-csolution.getSolutionFile': () => solution,
+                        'cmsis-csolution.getActiveTargetSet': () => 'HE',
+                        'cmsis-csolution.deactivateSolution': () => { issued.push('deactivate'); },
+                        'cmsis-csolution.activateSolution': () => { issued.push('activate'); },
+                        'cmsis-csolution.cmsisDetachDebugger': () => { issued.push('detach'); },
+                    });
+                    for (const yaml of [
+                        'solution: {target-types: [',
+                        'solution: {target-types: {type: HP}}',
+                        'solution: {target-types: [{type: HP, target-set: invalid}]}',
+                        'solution: {target-types: [*missing]}',
+                        'solution: {? [target-types]: [{type: HP}]}',
+                        'solution: {target-types: [{type: HP, target-set: [{? [set]: release}]}]}',
+                        `#${'x'.repeat(1024 * 1024)}`,
+                    ]) {
+                        fs.writeFileSync(solution, yaml);
+                        const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }), 'INVALID_ARGUMENT');
+                        assert.ok(refused.message.includes('cannot supply a valid target selection'), refused.message);
+                        assert.ok(refused.message.includes('No selection was changed.'), refused.message);
+                        assert.strictEqual(refused.hint, 'Correct the csolution YAML and its target-types, then repeat this call.');
+                        assert.strictEqual(fs.readFileSync(selectionFile, 'utf8'), original, 'selection content unchanged');
+                        assert.strictEqual(fs.statSync(selectionFile).mtimeMs, modifiedAt, 'selection was never rewritten');
+                        assert.deepStrictEqual(issued, [], 'neither reactivation nor the requested action was issued');
+                    }
+                    w.tracker.dispose();
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
+
             test('a target switch of a solution in the second folder writes the first folder\'s cmsis.json, where CMSIS Solution reads it', async () => {
                 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-roots-'));
                 try {
@@ -3430,6 +3578,99 @@ suite('DebuggingHandler', () => {
                         + `and CMSIS Solution would start the ${action} only after it\\.\\nWait for it with cmsis_action \\{action:'status'\\}, or end it with `
                         + 'cmsis_action \\{action:\'stop_build\'\\}; then repeat the call\\.$'));
                 }
+            });
+
+            /** Stop deadlines with no wall-clock race: each end wait advances the tracker clock by exactly its budget. */
+            const stopWorld = () => {
+                const clock = new ManualClock(1_000);
+                const tasks = new FakeTasks();
+                const tracker = new CmsisJobTracker(tasks, clock);
+                const waits: number[] = [];
+                const waitForEnd = tracker.waitForEnd.bind(tracker);
+                tracker.waitForEnd = async (executions, ms) => {
+                    waits.push(ms);
+                    clock.advance(clock.now() + ms);
+                    return waitForEnd(executions, 0);
+                };
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const handler = handlerFor(x, {
+                    now: () => clock.now(),
+                    startTimer: (ms, fire) => clock.startTimer(ms, fire),
+                    sleep: (ms) => new Promise<void>((wake) => clock.startTimer(ms, wake)),
+                    cmsisJobs: () => tracker,
+                });
+                return { clock, tasks, tracker, waits, handler };
+            };
+
+            for (const action of ['stop_build', 'stop_run'] as const) {
+                const task = action === 'stop_build' ? BUILD_TASK : shellTask('CMSIS Run');
+                const command = action === 'stop_build' ? 'cmsis-csolution.stopBuild' : 'cmsis-csolution.cmsisStopRun';
+
+                test(`${action}: a short caller deadline leaves termination pending, without a premature second terminate`, async () => {
+                    const w = stopWorld();
+                    const execution = w.tasks.start(w.tasks.execution(task));
+                    let failedJobs = 0;
+                    w.tracker.onDidFinishJob((job) => {
+                        if (job.state === 'failed') {
+                            failedJobs++;
+                        }
+                    });
+                    solutionOn('HE', { [command]: () => {
+                        w.clock.startTimer(1_000, () => w.tasks.finish(execution, 130));
+                    } });
+                    const text = await replyAnswer(w.handler.handleCmsisCommand({ action, timeoutMs: 1_000 }), 'running');
+                    assert.ok(text.includes('stop requested'), text);
+                    assert.ok(text.includes('termination is pending'), text);
+                    assert.ok(!text.includes('although terminated'), text);
+                    assert.deepStrictEqual(w.waits, [750]);
+                    assert.strictEqual(execution.terminateCalls, 0, 'the owner still has its three-second grace');
+                    assert.strictEqual(w.clock.now(), 1_750, 'a short call still observes termination instead of a zero-second failure');
+                    w.clock.advance(2_000);
+                    const final = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
+                    assert.ok(final.includes('No CMSIS task is running in this window.'), final);
+                    if (action === 'stop_build') {
+                        assert.strictEqual(w.tracker.last('build')?.state, 'cancelled');
+                        assert.ok(final.includes('build stopped'), final);
+                    }
+                    assert.strictEqual(failedJobs, 0, 'a delayed requested stop must not trigger failed-build diagnostics');
+                    assert.ok(!w.tracker.recent().some((job) => w.tracker.isCompleting(job.id)));
+                    w.tracker.dispose();
+                });
+
+                test(`${action}: a truncated verification after the grace period remains pending, not a false failure`, async () => {
+                    const w = stopWorld();
+                    const execution = w.tasks.start(w.tasks.execution(task, true));
+                    solutionOn('HE', { [command]: () => undefined });
+                    await replyAnswer(w.handler.handleCmsisCommand({ action, timeoutMs: 6_000 }), 'running');
+                    assert.deepStrictEqual(w.waits, [3_000, 1_500]);
+                    assert.strictEqual(execution.terminateCalls, 1, 'the retry follows the full grace, not the short caller deadline');
+                    w.tracker.dispose();
+                });
+
+                test(`${action}: ten full seconds of unsuccessful verification remains a genuine failure`, async () => {
+                    const w = stopWorld();
+                    const execution = w.tasks.start(w.tasks.execution(task, true));
+                    solutionOn('HE', { [command]: () => undefined });
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action, timeoutMs: 15_000 }),
+                        action === 'stop_build' ? 'TASK_FAILED' : 'PROBE_BUSY');
+                    assert.ok(refused.message.includes('still running 10 s after the stop request'), refused.message);
+                    assert.deepStrictEqual(w.waits, [3_000, 7_000]);
+                    assert.strictEqual(execution.terminateCalls, 1);
+                    w.tracker.dispose();
+                });
+            }
+
+            test('stop_build: a failed stop command falls back directly even within a short caller deadline', async () => {
+                const w = stopWorld();
+                const execution = w.tasks.start(w.tasks.execution(BUILD_TASK, true));
+                solutionOn('HE', { 'cmsis-csolution.stopBuild': () => { throw new Error('owner stop unavailable'); } });
+                const text = await replyAnswer(w.handler.handleCmsisCommand({ action: 'stop_build', timeoutMs: 1_000 }), 'running');
+                assert.strictEqual(execution.terminateCalls, 1, 'a failed command never gets a redundant grace period');
+                assert.deepStrictEqual(w.waits, [0, 750]);
+                assert.ok(text.includes('owner stop unavailable'), text);
+                assert.ok(text.includes('terminated directly'), text);
+                w.tracker.dispose();
             });
 
             test('stop_build ends a running build and says so; with none running it issues nothing and says that', async () => {
@@ -4656,6 +4897,21 @@ suite('DebuggingHandler', () => {
             const ITEM13_RUN: GdbPortHolder = { kind: 'window', pid: 70401, name: 'item13', claim: { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' } };
 
             let dir: string;
+            const managers: GdbPortReservations[] = [];
+            const trackers: CmsisJobTracker[] = [];
+            const otherStart = { what: 'launch' as const, subject: 'Other window not started', configuration: 'Other launch' };
+            const reservationManager = (): GdbPortReservations => {
+                const manager = new GdbPortReservations(path.join(dir, 'reservations'));
+                managers.push(manager);
+                return manager;
+            };
+            const assertReserved = (other: GdbPortReservations, port: number): void => {
+                assert.throws(() => other.acquire(port, otherStart, 'other window').release(),
+                    (caught: unknown) => caught instanceof ToolError && caught.code === 'PROBE_BUSY', `port ${port} must remain reserved`);
+            };
+            const assertAvailable = (other: GdbPortReservations, port: number): void => {
+                other.acquire(port, otherStart, 'other window').release();
+            };
             const writeVscode = (file: string, content: unknown): void => {
                 fs.writeFileSync(path.join(dir, '.vscode', file), JSON.stringify(content));
             };
@@ -4667,20 +4923,34 @@ suite('DebuggingHandler', () => {
                 // pyOCD's gdbserver --cbuild-run listens where the cbuild-run file says.
                 fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), 'cbuild-run:\n  debugger:\n    name: ST-Link@pyOCD\n    gdbserver:\n      - port: 3334\n');
             });
-            teardown(() => fs.rmSync(dir, { recursive: true, force: true }));
+            teardown(() => {
+                for (const tracker of trackers.splice(0)) {
+                    tracker.dispose();
+                }
+                for (const manager of managers.splice(0)) {
+                    manager.dispose();
+                }
+                fs.rmSync(dir, { recursive: true, force: true });
+            });
 
             /** A window with that folder open; `holder` answers for each GDB port a call asks about, which `asked` records. */
-            const portWorld = (holder: (port: number) => GdbPortHolder | undefined) => {
+            const portWorld = (
+                holder: (port: number) => GdbPortHolder | undefined | Promise<GdbPortHolder | undefined>,
+                reservations?: GdbPortReservations,
+                command: (name: string) => unknown = () => undefined,
+            ) => {
                 const clock = fastClock(20);
                 const tasks = new FakeTasks();
                 tasks.fetched = workspaceTasks(dir, ['CMSIS Load', 'CMSIS Run', 'CMSIS Load+Run', 'CMSIS Erase']);
                 const tracker = new CmsisJobTracker(tasks, clock);
+                trackers.push(tracker);
                 const x = new ScriptedExecutor();
                 x.session = false;
                 const asked: number[] = [];
                 const issued: string[] = [];
                 const record = (name: string) => () => {
                     issued.push(name);
+                    return command(name);
                 };
                 registrations?.dispose();
                 registrations = standIns({
@@ -4699,9 +4969,221 @@ suite('DebuggingHandler', () => {
                         asked.push(port);
                         return holder(port);
                     },
+                    ...(reservations ? { reserveGdbPort: (port, start, group) => reservations.acquire(port, start, 'ws', group) } : {}),
                 }, 5, {});
-                return { handler, asked, issued, x };
+                return { handler, asked, issued, x, tasks, tracker };
             };
+
+            test('each CMSIS launch or Run reserves before asynchronous preflight and before issuing its command', async () => {
+                for (const action of ['load_and_debug', 'run', 'load_and_run'] as const) {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const port = action === 'load_and_debug' ? 3333 : 3334;
+                    const order: string[] = [];
+                    const w = portWorld(async (asked) => {
+                        assert.strictEqual(asked, port);
+                        assertReserved(other, port);
+                        order.push('preflight');
+                        await Promise.resolve();
+                        assertReserved(other, port);
+                        return undefined;
+                    }, owner, (issued) => {
+                        assert.strictEqual(issued, action);
+                        assertReserved(other, port);
+                        order.push('command');
+                        throw new Error('scripted command rejection');
+                    });
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action }), 'TASK_FAILED');
+                    assert.match(failed.message, /scripted command rejection/);
+                    assert.deepStrictEqual(order, ['preflight', 'command']);
+                    assertAvailable(other, port);
+                }
+            });
+
+            test('start_debugging reserves before asynchronous preflight and rolls back a refused or rejected start', async () => {
+                writeVscode('launch.json', { configurations: [PYOCD_LAUNCH] });
+                for (const rejection of [false, true]) {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const order: string[] = [];
+                    const w = portWorld(async () => {
+                        assertReserved(other, 3333);
+                        order.push('preflight');
+                        await Promise.resolve();
+                        assertReserved(other, 3333);
+                        return undefined;
+                    }, owner);
+                    w.x.startDebuggingByName = async () => {
+                        assertReserved(other, 3333);
+                        order.push('start');
+                        if (rejection) {
+                            throw new Error('scripted start rejection');
+                        }
+                        return false;
+                    };
+                    await refusalOf(w.handler.handleStartDebugging({ workingDirectory: dir, configurationName: PYOCD_LAUNCH.name }));
+                    assert.deepStrictEqual(order, ['preflight', 'start']);
+                    assertAvailable(other, 3333);
+                }
+            });
+
+            test('a refused or failed asynchronous preflight releases the named launch reservation without starting it', async () => {
+                writeVscode('launch.json', { configurations: [PYOCD_LAUNCH] });
+                for (const rejected of [false, true]) {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(async () => {
+                        assertReserved(other, 3333);
+                        await Promise.resolve();
+                        if (rejected) {
+                            throw new Error('scripted preflight failure');
+                        }
+                        return { kind: 'listener' };
+                    }, owner);
+                    await refusalOf(w.handler.handleStartDebugging({ workingDirectory: dir, configurationName: PYOCD_LAUNCH.name }),
+                        rejected ? undefined : 'PROBE_BUSY');
+                    assert.deepStrictEqual(w.x.argsOf('startDebuggingByName'), []);
+                    assertAvailable(other, 3333);
+                }
+            });
+
+            test('load_and_debug rolls back an earlier reservation if a later candidate port is refused', async () => {
+                writeVscode('launch.json', { configurations: [FVP_LAUNCH, { ...PYOCD_LAUNCH, target: { server: 'pyocd', port: '3334' } }] });
+                const owner = reservationManager();
+                const other = reservationManager();
+                const w = portWorld(async (port) => {
+                    assertReserved(other, 3333);
+                    if (port === 3334) {
+                        assertReserved(other, 3334);
+                        await Promise.resolve();
+                        return { kind: 'listener' };
+                    }
+                    return undefined;
+                }, owner);
+                await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug' }), 'PROBE_BUSY');
+                assert.deepStrictEqual(w.asked, [3333, 3334]);
+                assert.deepStrictEqual(w.issued, []);
+                assertAvailable(other, 3333);
+                assertAvailable(other, 3334);
+            });
+
+            test('a pending CMSIS start keeps its reservation after the reply; a late rejection releases it only without a live owner', async () => {
+                for (const live of ['none', 'task', 'session'] as const) {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    let rejectCommand: (error: Error) => void = () => assert.fail('command was not issued');
+                    const command = new Promise<never>((_resolve, reject) => { rejectCommand = reject; });
+                    const w = portWorld(() => undefined, owner, () => command);
+                    await replyAnswer(w.handler.handleCmsisCommand({ action: 'run', timeoutMs: 4_000 }), 'running');
+                    assert.deepStrictEqual(w.issued, ['run']);
+                    owner.observe([]);
+                    assertReserved(other, 3334);
+
+                    let execution: FakeExecution | undefined;
+                    if (live === 'task') {
+                        execution = w.tasks.start(w.tasks.execution({ name: 'CMSIS Run', source: 'Workspace', definition: { type: 'shell' } }));
+                    } else if (live === 'session') {
+                        w.x.session = true;
+                    }
+                    if (live !== 'none') {
+                        // The coordinator publishes and adopts the actual session/task's port.
+                        owner.observe([{ port: 3334, source: live === 'task' ? 'cmsis-run' : 'session', label: 'Late startup' }]);
+                    }
+                    rejectCommand(new Error('late command rejection'));
+                    await delay(0);
+                    if (live !== 'none') {
+                        assertReserved(other, 3334);
+                        if (execution) {
+                            w.tasks.finish(execution, 1);
+                        }
+                        w.x.session = false;
+                        owner.observe([]);
+                    }
+                    assertAvailable(other, 3334);
+                }
+            });
+
+            test('a pre-launch Load that fails after the running reply releases the reservation after its execution is removed', async () => {
+                writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
+                const owner = reservationManager();
+                const other = reservationManager();
+                let execution: FakeExecution | undefined;
+                const w = portWorld(() => undefined, owner, () => {
+                    execution = w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } }));
+                });
+                await replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 4_000 }), 'running');
+                assert.ok(execution);
+                assertReserved(other, 3333);
+                w.tasks.finish(execution, 1);
+                assertReserved(other, 3333);
+                await delay(0);
+                assert.deepStrictEqual(w.tracker.liveExecutions(), []);
+                assertAvailable(other, 3333);
+            });
+
+            test('a completed single-task Load+Run releases its port, but successful pre-launch Load retains it for the pending session', async () => {
+                writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
+                for (const action of ['load_and_run', 'load_and_debug'] as const) {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const port = action === 'load_and_debug' ? 3333 : 3334;
+                    let execution: FakeExecution | undefined;
+                    const w = portWorld(() => undefined, owner, () => {
+                        execution = w.tasks.start(w.tasks.execution({
+                            name: action === 'load_and_debug' ? 'CMSIS Load' : 'CMSIS Load+Run',
+                            source: 'Workspace', definition: { type: 'shell' },
+                        }));
+                    });
+                    await replyAnswer(w.handler.handleCmsisCommand({ action, timeoutMs: 4_000 }), 'running');
+                    assert.ok(execution);
+                    assertReserved(other, port);
+                    w.tasks.finish(execution, 0);
+                    await delay(0);
+                    assert.deepStrictEqual(w.tracker.liveExecutions(), []);
+                    if (action === 'load_and_debug') {
+                        owner.observe([]);
+                        assertReserved(other, port);
+                    } else {
+                        assertAvailable(other, port);
+                    }
+                }
+            });
+
+            test('a confirmed running Run releases after it ends even when no positive port sample ever adopted it', async () => {
+                for (const action of ['run', 'load_and_run'] as const) {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    let run: FakeExecution | undefined;
+                    let compound: FakeExecution | undefined;
+                    const w = portWorld(() => undefined, owner, () => {
+                        if (action === 'load_and_run') {
+                            compound = w.tasks.start(w.tasks.execution({
+                                name: 'CMSIS Load+Run', source: 'Workspace', definition: { type: 'shell' },
+                            }), false);
+                            const load = w.tasks.start(w.tasks.execution({
+                                name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' },
+                            }));
+                            w.tasks.finish(load, 0);
+                        }
+                        run = w.tasks.start(w.tasks.execution({ name: 'CMSIS Run', source: 'Workspace', definition: { type: 'shell' } }));
+                    });
+                    const answer = await textAnswer(w.handler.handleCmsisCommand({ action, timeoutMs: 10_000 }));
+                    assert.match(answer, /'CMSIS Run' started and stays active/);
+                    assert.strictEqual(w.tracker.last(action)?.state, 'running-ok');
+                    assert.ok(run);
+                    assertReserved(other, 3334);
+
+                    // The whole run can pass between coordinator observations; no positive sample is needed to release it.
+                    w.tasks.finish(run, 0);
+                    if (compound) {
+                        w.tasks.finish(compound, undefined, false);
+                    }
+                    assert.deepStrictEqual(w.tracker.liveExecutions(), []);
+                    assert.strictEqual(w.tracker.last(action)?.state, 'running-ok', 'settled jobs do not emit another completion at task end');
+                    owner.observe([]);
+                    assertAvailable(other, 3334);
+                }
+            });
 
             test('load_and_debug is refused before its command while another window\'s CMSIS Run uses the FVP\'s GDB port', async () => {
                 const w = portWorld((port) => (port === 3333 ? ITEM13_RUN : undefined));
