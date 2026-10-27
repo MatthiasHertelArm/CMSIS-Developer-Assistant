@@ -72,6 +72,7 @@
  */
 
 import * as vscode from 'vscode';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { DebugState } from '../debugState';
@@ -96,9 +97,9 @@ import {
     applyTargetSelection,
     formatTargetChoices,
     formatTargetName,
+    listTargetTypes,
     parseTargetRef,
     resolveTargetSelection,
-    scanTargetTypes,
     solutionDisplayName,
     TargetRef,
     targetMatches,
@@ -134,6 +135,7 @@ import {
     taskCommandWords,
 } from '../core/gdbServerPorts';
 import { gdbPortRefusal, type PortStart } from '../core/gdbPortGuard';
+import type { GdbPortReservation } from '../core/gdbPortReservations';
 import { cbuildRunDebugger, cbuildRunGdbPorts } from '../core/packDocs/cbuildRun';
 import { AGENT_START_WINDOW_MS, expectAgentStart, FRAME_FOCUS_WAIT_MS, type StartFocusWatch } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
@@ -396,15 +398,15 @@ async function switchActiveTarget(
             hint: SWITCH_BY_HAND,
         };
     }
-    const { declared, unread } = scanTargetTypes(solutionText);
-    if (unread) {
-        // The target-types read could miss or misname the one wanted, and a set's index would point at another (K02).
+    let declared: ReturnType<typeof listTargetTypes>;
+    try {
+        declared = listTargetTypes(solutionText);
+    } catch (caught) {
         return {
             switched: false,
-            code: 'INTERNAL',
-            reason: `the active target is '${was}', and the target-types of ${path.basename(solutionPath)} are written in YAML this tool does not read `
-                + `(line ${unread.line}: \`${unread.text}\` — a flow collection, an anchor, an alias, a merge key or a tag), so it cannot switch the target.`,
-            hint: SWITCH_BY_HAND,
+            code: 'INVALID_ARGUMENT',
+            reason: `${solutionPath} cannot supply a valid target selection (${failureText(caught)}). No selection was changed.`,
+            hint: 'Correct the csolution YAML and its target-types, then repeat this call.',
         };
     }
     const resolution = resolveTargetSelection(declared, wanted);
@@ -535,6 +537,40 @@ interface Issue {
     readonly target: string | undefined;
     /** The active solution's csolution file, when the extension names one: where its tools environment is. */
     readonly solutionPath?: string;
+    /** Held across a pending reply, until a confirmed failure or the session/task ends. */
+    readonly portReservations?: readonly GdbPortReservation[];
+}
+
+/** A confirmed terminal start/run with no live owner: release only the ports this call reserved. */
+function releaseFailedStart(issue: Issue): void {
+    const stillStarting = issue.tracker.liveExecutions().some((execution) => execution.kind === 'run' || execution.kind === 'load' || execution.kind === 'loadRun');
+    if (!issue.context.executor.hasDebugSession() && !stillStarting) {
+        for (const reservation of issue.portReservations ?? []) {
+            reservation.release();
+        }
+    }
+}
+
+/** A task can end after the tool's wait or before a port observation; release once its launch/run is terminal. */
+function followStartJob(issue: Issue, job: Job): { dispose(): void } {
+    const subscription = issue.tracker.onDidFinishJob((ended) => {
+        if (ended.id !== job.id) {
+            return;
+        }
+        subscription.dispose();
+        if (ended.state === 'running-ok') {
+            for (const reservation of issue.portReservations ?? []) {
+                reservation.adopt();
+            }
+        }
+        const runEnded = (ended.action === 'run' || ended.action === 'load_and_run') && ended.state === 'ok';
+        if (ended.state === 'failed' || ended.state === 'cancelled' || runEnded) {
+            // The tracker announces the result before removing the live
+            // execution. Inspect it after the task-end event has completed.
+            queueMicrotask(() => releaseFailedStart(issue));
+        }
+    });
+    return subscription;
 }
 
 /** The latest time the call may wait until and still answer before its fence. */
@@ -563,6 +599,7 @@ async function issueCommand(issue: Issue, action: string, returned?: (value: unk
         },
         (caught: unknown) => {
             failure = commandFailure(issue.command, action, caught, executor.getDiagnostics().serverVersion);
+            releaseFailedStart(issue);
         },
     );
     const kickoffMs = Math.max(0, Math.min(KICKOFF_MS, answerBy(issue) - host.now()));
@@ -587,6 +624,9 @@ async function issueCommand(issue: Issue, action: string, returned?: (value: unk
 async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<string> | undefined, preface?: string): Promise<ToolText> {
     const { tracker } = issue;
     const job = tracker.begin(action, issue.target);
+    if (issue.portReservations?.length) {
+        followStartJob(issue, job);
+    }
     try {
         await issueCommand(issue, action, isBuildAction(action) ? (value) => tracker.identify(job.id, value) : undefined);
     } catch (caught) {
@@ -654,10 +694,28 @@ function nameList(executions: readonly ExecutionLike[]): string {
     return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join('');
 }
 
+/** Keep a response margin without consuming the entire budget of a short stop call. */
+function stopWaitMs(issue: Issue, requestedAt: number): number {
+    const remaining = Math.max(0, issue.deadline - requestedAt);
+    return Math.min(STOP_TOTAL_MS, remaining - Math.min(DEADLINE_MARGIN_MS, remaining / 4));
+}
+
+/** A caller's short wait expiring is not evidence that termination failed. */
+function stopPending(issue: Issue, action: 'stop_run' | 'stop_build', alive: readonly ExecutionLike[], requestedAt: number, note = ''): ToolText {
+    return {
+        status: 'running',
+        text: `CMSIS '${action}'${issue.tag}: stop requested; ${nameList(alive)} ${alive.length === 1 ? 'is' : 'are'} still running `
+            + `${formatDuration(issue.context.host.now() - requestedAt)} after the stop request. This call's wait limit expired before `
+            + `stop verification completed; termination is pending. Call cmsis_action {action:'status'}; if still running, retry `
+            + `cmsis_action {action:'${action}', timeoutMs:15000}.${note}`,
+    };
+}
+
 /**
  * stop_run, verified (#46): note the CMSIS executions, issue the command,
  * give CMSIS Solution's terminate 3 s, terminate what is left ourselves, and
- * report only what has ended within 10 s.
+ * report only what has ended within 10 s. A shorter caller deadline returns
+ * a pending stop without prematurely terminating again or claiming failure.
  */
 async function stopRun(issue: Issue): Promise<ToolText> {
     const { tracker } = issue;
@@ -666,11 +724,12 @@ async function stopRun(issue: Issue): Promise<ToolText> {
     const builds = tracker.buildExecutions();
     await issueCommand(issue, 'stop_run');
     const requestedAt = host.now();
-    const totalMs = Math.max(0, Math.min(STOP_TOTAL_MS, answerBy(issue) - requestedAt));
-    const first = await tracker.waitForEnd(snapshot, Math.min(STOP_GRACE_MS, totalMs));
+    const totalMs = stopWaitMs(issue, requestedAt);
+    const graceMs = Math.min(STOP_GRACE_MS, totalMs);
+    const first = await tracker.waitForEnd(snapshot, graceMs);
     let alive = first.alive;
-    const insisted = [...alive];
-    if (alive.length > 0) {
+    const insisted = graceMs >= STOP_GRACE_MS ? [...alive] : [];
+    if (insisted.length > 0) {
         for (const execution of alive) {
             try {
                 execution.terminate();
@@ -691,6 +750,9 @@ async function stopRun(issue: Issue): Promise<ToolText> {
             + `'${issue.command}' was issued anyway; it also ends a debug session the CMSIS panel started.${buildNote}`;
     }
     if (alive.length > 0) {
+        if (totalMs < STOP_TOTAL_MS) {
+            return stopPending(issue, 'stop_run', alive, requestedAt, buildNote);
+        }
         throw new ToolError('PROBE_BUSY',
             `CMSIS 'stop_run'${tag}: ${nameList(alive)} ${alive.length === 1 ? 'is' : 'are'} still running `
                 + `${formatDuration(host.now() - requestedAt)} after the stop request, although terminated twice.`,
@@ -731,7 +793,8 @@ async function buildsAfterStopRun(tracker: CmsisJobTracker, builds: readonly Exe
  * or the cbuild setup CMSIS Solution runs after loading a solution —
  * through `cmsis-csolution.stopBuild`, which ends one of them; give it 3 s,
  * terminate what is left ourselves, and report only what has ended within
- * 10 s. Their jobs count as stopped. With none running nothing is issued,
+ * 10 s; a shorter caller deadline leaves the stop pending. Their jobs count
+ * as stopped once ended. With none running nothing is issued,
  * and the answer says so, also when a build's result is still being checked:
  * that check is no task, and `status` waits for it.
  */
@@ -756,11 +819,12 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
         direct = `; '${issue.command}' failed (${failureText(caught)}), so they were terminated directly`;
     }
     const requestedAt = host.now();
-    const totalMs = Math.max(0, Math.min(STOP_TOTAL_MS, answerBy(issue) - requestedAt));
-    const first = await tracker.waitForEnd(running, direct ? 0 : Math.min(STOP_GRACE_MS, totalMs));
+    const totalMs = stopWaitMs(issue, requestedAt);
+    const graceMs = direct ? 0 : Math.min(STOP_GRACE_MS, totalMs);
+    const first = await tracker.waitForEnd(running, graceMs);
     let alive = first.alive;
-    const insisted = direct ? [] : [...alive];
-    if (alive.length > 0) {
+    const insisted = !direct && graceMs >= STOP_GRACE_MS ? [...alive] : [];
+    if (alive.length > 0 && (direct || insisted.length > 0)) {
         for (const execution of alive) {
             try {
                 execution.terminate();
@@ -775,6 +839,10 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
         alive = second.alive;
     }
     if (alive.length > 0) {
+        if (totalMs < STOP_TOTAL_MS) {
+            return stopPending(issue, 'stop_build', alive, requestedAt,
+                `${direct ? ` Stop command fallback${direct}.` : ''} Its outputs are incomplete: cmsis_action build before load or flash.`);
+        }
         throw new ToolError('TASK_FAILED',
             `CMSIS 'stop_build'${tag}: ${nameList(alive)} ${alive.length === 1 ? 'is' : 'are'} still running `
                 + `${formatDuration(host.now() - requestedAt)} after the stop request, although terminated${direct ? '' : ' twice'}.`,
@@ -971,6 +1039,9 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
     }
     const survival = wait === 'gone' ? ENDED_BEFORE_UP : await checkSurvival(executor, host);
     if (survival.stable) {
+        for (const reservation of issue.portReservations ?? []) {
+            reservation.adopt();
+        }
         const state = await stateAfterStart(executor, facts.focus, answerBy(issue) - host.now());
         const shown = state === undefined ? NO_FRAME_SELECTED : `State: ${issue.context.renderFullState(state)}`;
         const fvp = isFvpSession(executor.getActiveSession()?.configuration) ? `\n${FVP_BREAK_FIRST}` : '';
@@ -1108,6 +1179,7 @@ async function loadAndDebug(issue: Issue, loadFirst: boolean, servers: readonly 
     // Before the command: a frame VS Code holds from an earlier session is not this one's.
     const launch: SessionFacts = { sinceSeq: journalStart(issue), servers, focus: issue.context.executor.watchStartFocus() };
     const job = tracker.begin('load_and_debug', issue.target);
+    const completion = issue.portReservations?.length ? followStartJob(issue, job) : undefined;
     expectSessionOf(issue);
     try {
         await issueCommand(issue, 'load_and_debug');
@@ -1125,6 +1197,7 @@ async function loadAndDebug(issue: Issue, loadFirst: boolean, servers: readonly 
         }
     }
     if (first !== 'load') {
+        completion?.dispose();
         tracker.discard(job.id);
         return sessionPhase(issue, 'load_and_debug', '', false, launch);
     }
@@ -1613,17 +1686,29 @@ export async function runCmsisAction(
             return activateEnvironment(issue, solution.solutionPath);
         case 'load_and_debug': {
             const launchOnes = launchConfigurations.filter((config) => config.request === 'launch');
-            await refuseHeldLaunchPorts(issue, launchOnes);
+            const portReservations = await reserveLaunchPorts(issue, launchOnes);
             const loadFirst = launchOnes.some((config) => config.preLaunchTask === 'CMSIS Load');
             const servers = launchOnes.map((config) => config.server).filter((server): server is string => server !== undefined);
-            return withPreface(await loadAndDebug(issue, loadFirst, servers), preface);
+            const reserved = { ...issue, portReservations };
+            try {
+                return withPreface(await loadAndDebug(reserved, loadFirst, servers), preface);
+            } catch (caught) {
+                releaseFailedStart(reserved);
+                throw caught;
+            }
         }
         case 'run':
-        case 'load_and_run':
-            if (solution.solutionPath) {
-                await refuseHeldRunPorts(issue, action, selectionFolder(solution.solutionPath, host));
+        case 'load_and_run': {
+            const portReservations = solution.solutionPath
+                ? await reserveRunPorts(issue, action, selectionFolder(solution.solutionPath, host)) : [];
+            const reserved = { ...issue, portReservations };
+            try {
+                return await runJob(reserved, action, labels, preface);
+            } catch (caught) {
+                releaseFailedStart(reserved);
+                throw caught;
             }
-            return runJob(issue, action, labels, preface);
+        }
         default:
             return runJob(issue, action as JobAction, labels, preface);
     }
@@ -1633,27 +1718,39 @@ export async function runCmsisAction(
  * Refuse a start whose GDB port another window or another program holds
  * (`HandlerHost.gdbPortHolder`, `src/core/gdbPortGuard.ts`): GDB would reach
  * that server instead of the new one, and halt that target. Each port is
- * asked once, in order.
+ * asked once, in order, after atomically reserving it. Partial acquisition
+ * is rolled back on any refusal; successful reservations outlive the call.
  */
-async function refuseHeldPorts(issue: Issue, ports: ReadonlyArray<{ port: number; start: PortStart }>): Promise<void> {
+async function reservePorts(issue: Issue, ports: ReadonlyArray<{ port: number; start: PortStart }>): Promise<GdbPortReservation[]> {
     const asked = new Set<number>();
-    for (const { port, start } of ports) {
-        if (asked.has(port)) {
-            continue;
+    const reservations: GdbPortReservation[] = [];
+    const group = randomUUID();
+    try {
+        for (const { port, start } of ports) {
+            if (asked.has(port)) {
+                continue;
+            }
+            asked.add(port);
+            reservations.push(issue.context.host.reserveGdbPort(port, start, group));
+            const holder = await issue.context.host.gdbPortHolder(port);
+            if (holder) {
+                logger.info(`${start.subject}: GDB port ${port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
+                throw gdbPortRefusal(start, port, holder);
+            }
         }
-        asked.add(port);
-        const holder = await issue.context.host.gdbPortHolder(port);
-        if (holder) {
-            logger.info(`${start.subject}: GDB port ${port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
-            throw gdbPortRefusal(start, port, holder);
+        return reservations;
+    } catch (caught) {
+        for (const reservation of reservations) {
+            reservation.release();
         }
+        throw caught;
     }
 }
 
 /** load_and_debug: the GDB ports the launch configurations fix for their servers. */
-async function refuseHeldLaunchPorts(issue: Issue, launches: readonly CmsisLaunchConfiguration[]): Promise<void> {
+async function reserveLaunchPorts(issue: Issue, launches: readonly CmsisLaunchConfiguration[]): Promise<GdbPortReservation[]> {
     const subject = `CMSIS 'load_and_debug'${issue.tag} not started`;
-    await refuseHeldPorts(issue, launches.flatMap((config) => (config.gdbPort === undefined ? [] : [{
+    return reservePorts(issue, launches.flatMap((config) => (config.gdbPort === undefined ? [] : [{
         port: config.gdbPort,
         start: { what: 'launch' as const, subject, configuration: config.name, server: config.gdbServer },
     }])));
@@ -1665,7 +1762,7 @@ async function refuseHeldLaunchPorts(issue: Issue, launches: readonly CmsisLaunc
  * line names that file and no port. A Run that hosts no GDB server (the FVP
  * adapter's model) has none.
  */
-async function refuseHeldRunPorts(issue: Issue, action: string, folder: string): Promise<void> {
+async function reserveRunPorts(issue: Issue, action: string, folder: string): Promise<GdbPortReservation[]> {
     const words = await folderCmsisRunCommand(folder);
     const file = runTaskCbuildRun(words);
     let fromFile: number[] = [];
@@ -1678,7 +1775,7 @@ async function refuseHeldRunPorts(issue: Issue, action: string, folder: string):
         }
     }
     const start: PortStart = { what: 'run', subject: `CMSIS '${action}'${issue.tag} not started`, server: gdbServerKind(words) };
-    await refuseHeldPorts(issue, runTaskGdbPorts(words, fromFile).map((port) => ({ port, start })));
+    return reservePorts(issue, runTaskGdbPorts(words, fromFile).map((port) => ({ port, start })));
 }
 
 /** How often `refresh` looks at the index csolution rewrites. */

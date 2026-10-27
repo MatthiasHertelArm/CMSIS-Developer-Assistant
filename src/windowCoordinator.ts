@@ -27,6 +27,7 @@ import { windowJobTracker } from './cmsisJobTracker';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { BusyCall, EventLoopLag, WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
 import type { PortClaimingWindow } from './core/gdbPortGuard';
+import { GdbPortReservations } from './core/gdbPortReservations';
 import { gdbPortClaimsOf, taskCommandWords, windowGdbPorts, type GdbPortClaim } from './core/gdbServerPorts';
 import { cbuildRunGdbPorts } from './core/packDocs/cbuildRun';
 import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs, mayWaitForUser } from './core/opTable';
@@ -216,6 +217,7 @@ async function defaultGdbPorts(ending?: vscode.DebugSession): Promise<GdbPortCla
  */
 export class WindowCoordinator {
     private readonly registry: WorkspaceRegistry;
+    private readonly portReservations: GdbPortReservations;
     private readonly controlToken = randomUUID();
     private readonly localHandler: DebuggingHandler;
     private readonly journal: ProblemJournal;
@@ -265,7 +267,10 @@ export class WindowCoordinator {
         this.timings = { ...CHANNEL_TIMINGS, ...options.timings };
         const executor = new DebuggingExecutor(options.hardwareTimeouts);
         const configManager = new ConfigurationManager();
-        this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds, this.journal, () => this.otherWindowPorts());
+        this.portReservations = new GdbPortReservations(this.registry.gdbReservationDirectory(), this.registry.ownPid(), undefined,
+            path.dirname(this.registry.gdbReservationDirectory()));
+        this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds, this.journal,
+            () => this.otherWindowPorts(), this.portReservations);
     }
 
     /** True when this window owns the well-known port. */
@@ -665,10 +670,17 @@ export class WindowCoordinator {
             return;
         }
         const source = this.options.gdbPorts ?? defaultGdbPorts;
+        const observation = this.portReservations.observationVersion();
         this.gdbPortsQuery = Promise.resolve()
             .then(() => source(ending))
             .then(
-                (claims) => this.noteGdbPorts(claims),
+                (claims) => {
+                    // A start/end event during the query supersedes its
+                    // snapshot; the queued refresh below reads the new state.
+                    if (!this.gdbPortsAgain) {
+                        this.noteGdbPorts(claims, observation);
+                    }
+                },
                 (caught: unknown) => logger.debug(`window listing: GDB ports: ${caught instanceof Error ? caught.message : String(caught)}`),
             )
             .finally(() => {
@@ -681,8 +693,10 @@ export class WindowCoordinator {
     }
 
     /** Keep the GDB ports of the last look; a change is published at once. */
-    private noteGdbPorts(claims: GdbPortClaim[]): void {
-        if (this.disposed || JSON.stringify(claims) === JSON.stringify(this.gdbPorts)) { return; }
+    private noteGdbPorts(claims: GdbPortClaim[], observation: number): void {
+        if (this.disposed) { return; }
+        this.portReservations.observe(claims, observation);
+        if (JSON.stringify(claims) === JSON.stringify(this.gdbPorts)) { return; }
         this.gdbPorts = claims;
         this.publish();
     }
@@ -765,6 +779,7 @@ export class WindowCoordinator {
             await this.controlServer.stop().catch(err => logger.error('Error stopping control server', err));
             this.controlServer = undefined;
         }
+        this.portReservations.dispose();
         const teardown = this.options.serialTeardown ?? defaultSerialTeardown;
         let timer: NodeJS.Timeout | undefined;
         const bound = new Promise<void>(resolve => { timer = setTimeout(resolve, SERIAL_TEARDOWN_MS); });

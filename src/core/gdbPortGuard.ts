@@ -39,6 +39,11 @@
  *      notices only a listener on the same address, hence all three. Any
  *      other failure (no IPv6, a privileged port) proves nothing.
  *
+ * Callers first acquire a cross-process GdbPortReservations claim. The
+ * preflight alone is not atomic: two windows could both see a free port
+ * before either server starts. The claim spans that gap without binding
+ * the port that the real GDB server needs.
+ *
  * `gdbPortRefusal` words the `PROBE_BUSY` refusal: what was not started, the
  * port, who holds it, and the way out — stop it there, or another port.
  *
@@ -60,6 +65,7 @@ export interface PortClaimingWindow {
 /** Who holds a GDB port: another window, by its claim, or a process that is no window of this extension. */
 export type GdbPortHolder =
     | { kind: 'window'; pid: number; name: string; claim: GdbPortClaim }
+    | { kind: 'reservation'; pid: number; name: string; label: string }
     | { kind: 'listener' };
 
 /** What one bind test says: another process listens, nothing does, or the bind failed for another reason. */
@@ -180,6 +186,12 @@ export function gdbPortRefusal(start: PortStart, port: number, holder: GdbPortHo
     const follows = start.what === 'run'
         ? 'Two GDB servers on one port: the new one fails to start, or a GDB meant for one of them reaches the other.'
         : 'GDB would connect to that server instead of the new one, and debug — and halt — that target.';
+    if (holder.kind === 'reservation') {
+        return new Refusal('PROBE_BUSY',
+            `${start.subject}: ${starts}, which ${windowText(holder)} has reserved for '${holder.label}'. ${follows}`,
+            `Wait for that start to finish, or stop its session/task there once the user agrees. A pending picker keeps its reservation; `
+                + `cancel it and reload that window before retrying, or ${anotherPort(start)}.`);
+    }
     if (holder.kind === 'window') {
         const stop = holder.claim.source === 'cmsis-run'
             ? `Stop that task there once the user agrees (cmsis_action stop_run with window: '${holder.pid}')`

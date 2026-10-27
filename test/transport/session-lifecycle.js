@@ -362,15 +362,22 @@ async function main() {
         /not attempted.*'Nope' is not declared.*Declared targets: HE, HP@debug, HP@release/s.test(undeclared)
             && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
         undeclared.split('\n')[0]);
-    // Target-types in YAML the reader does not follow (a flow mapping): refused, nothing written (K02).
+    // A target-type written as a flow mapping is read (K02): the refusal of an undeclared target lists it, nothing written.
     const blockYaml = fs.readFileSync(solutionFile, 'utf8');
     fs.writeFileSync(solutionFile, blockYaml.replace('  build-types:', '    - { type: MPS3, device: X:MPS3 }\n  build-types:'));
-    const flow = await cmsisAction({ action: 'detach', target: 'MPS3' }, 70);
+    const flow = await cmsisAction({ action: 'detach', target: 'Nope' }, 70);
+    // Invalid YAML is refused before anything is written.
+    fs.writeFileSync(solutionFile, blockYaml.replace('  build-types:', '    - { type: MPS3\n  build-types:'));
+    const invalid = await cmsisAction({ action: 'detach', target: 'MPS3' }, 71);
     fs.writeFileSync(solutionFile, blockYaml);
-    check('cmsis_action refuses to switch when the target-types are in YAML it does not read, and names the line',
-        /not attempted.*line 14: `- \{ type: MPS3, device: X:MPS3 \}`.*cannot switch the target/s.test(flow)
+    check('cmsis_action reads a target-type written as a flow mapping',
+        /not attempted.*'Nope' is not declared.*Declared targets: HE, HP@debug, HP@release, MPS3/s.test(flow)
             && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
         flow.split('\n')[0]);
+    check('cmsis_action refuses to switch when the csolution YAML is invalid, and writes nothing',
+        /not attempted.*cannot supply a valid target selection.*No selection was changed/s.test(invalid)
+            && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        invalid.split('\n')[0]);
     const switched =await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
     const written = fs.existsSync(cmsisJsonPath) ? JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')) : {};
     check('cmsis_action switches a declared target via cmsis.json + re-activation and verifies it',
@@ -484,7 +491,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 18 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 19 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

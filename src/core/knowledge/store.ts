@@ -29,6 +29,8 @@
 import * as fs from 'fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { ToolError } from '../toolResult';
+import { compileSymptomPattern, SymptomCompilationBudget, SymptomMatchBudget } from './symptomPattern';
+import type { SymptomPattern } from './symptomPattern';
 
 /** The major version of the index layout this reader understands; an index without `schema_version` counts as 1. */
 export const KNOWLEDGE_SCHEMA_VERSION = 1;
@@ -67,125 +69,13 @@ function joinedPairs(words: readonly string[]): { first: number; joined: string 
 /** A how-to unit: a procedure, or a routing unit (`route-*`), which says which procedure fits a task. */
 const HOW_TO_WHERE = "(n.type = 'procedure' OR n.id LIKE 'route-%')";
 
-/** The most characters of a line a symptom pattern is tested against; an error line is far shorter, and a pattern's cost grows with its input. */
-const SYMPTOM_LINE_MAX = 2_000;
-/** The longest symptom pattern accepted; the message catalogue's are a line each. */
-const SYMPTOM_PATTERN_MAX = 500;
-
 /**
- * May the extension host run this symptom pattern against every query? A
- * pattern an index ships runs synchronously, and an unbounded quantifier
- * inside an unbounded group — `(a+)+`, `(\w*\s?)*`, `(?:x+){2,}` —
- * backtracks exponentially on a line it does not match, which no timeout
- * interrupts. So does an unbounded group of alternatives that can match the
- * same text, `(a|aa)+` (K01). Alternatives that are plain words, none the
- * start of another (`(?:error|warning)+`), match at most one way at each
- * place and pass; any other alternation under an unbounded quantifier is
- * refused, since whether its alternatives overlap is not checked. The check
- * walks the pattern once and refuses such groups, and a pattern longer than
- * SYMPTOM_PATTERN_MAX. Any index may ship a pattern, an inactive pack's
- * included, so the index build's Python check is not enough.
+ * Is this pattern supported by the bounded symptom matcher? This is a
+ * grammar check, not permission to execute the source with native RegExp:
+ * even supported, adjacent quantifiers may make a backtracking engine slow.
  */
 export function safeSymptomPattern(source: string): boolean {
-    if (source.length > SYMPTOM_PATTERN_MAX) {
-        return false;
-    }
-    /**
-     * An open group: where its `(` is, whether it has a `|` of its own, and
-     * whether it or a group inside it holds an unbounded quantifier or
-     * alternatives that may overlap.
-     */
-    interface Group { open: number; alternation: boolean; unbounded: boolean; ambiguous: boolean }
-    /** Open groups, innermost last. */
-    const groups: Group[] = [];
-    /** The group that closed last, when the previous atom was a group. */
-    let closed: Group | undefined;
-    let inClass = false;
-    const unboundedAt = (i: number): { unbounded: boolean; end: number } | undefined => {
-        const c = source[i];
-        if (c === '*' || c === '+') {
-            return { unbounded: true, end: i + 1 };
-        }
-        if (c === '{') {
-            const match = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(i));
-            if (match !== null) {
-                return { unbounded: match[2] !== undefined && match[3] === '', end: i + match[0].length };
-            }
-        }
-        return undefined;
-    };
-    for (let i = 0; i < source.length; i++) {
-        const c = source[i];
-        if (c === '\\') {
-            i++;
-            closed = undefined;
-            continue;
-        }
-        if (inClass) {
-            inClass = c !== ']';
-            continue;
-        }
-        if (c === '[') {
-            inClass = true;
-            closed = undefined;
-            continue;
-        }
-        if (c === '(') {
-            groups.push({ open: i, alternation: false, unbounded: false, ambiguous: false });
-            closed = undefined;
-            continue;
-        }
-        if (c === ')') {
-            const group = groups.pop();
-            closed = group ?? { open: i, alternation: false, unbounded: false, ambiguous: false };
-            if (group !== undefined && group.alternation && !distinctWords(source.slice(group.open + 1, i))) {
-                group.ambiguous = true;
-            }
-            const parent = groups[groups.length - 1];
-            if (parent !== undefined) {
-                parent.ambiguous ||= closed.ambiguous;
-            }
-            continue;
-        }
-        if (c === '|') {
-            const innermost = groups[groups.length - 1];
-            if (innermost !== undefined) {
-                innermost.alternation = true;
-            }
-            closed = undefined;
-            continue;
-        }
-        const quantifier = unboundedAt(i);
-        if (quantifier === undefined) {
-            closed = undefined;
-            continue;
-        }
-        if (quantifier.unbounded) {
-            if (closed !== undefined && (closed.unbounded || closed.ambiguous)) {
-                return false;
-            }
-            for (const group of groups) {
-                group.unbounded = true;
-            }
-        }
-        i = quantifier.end - 1;
-        closed = undefined;
-    }
-    return true;
-}
-
-/**
- * The body of a group, `?:` and all, as alternatives of plain words of which
- * none starts another, ignoring case as the patterns run: then at most one of
- * them matches at a place. Anything but letters, digits, spaces and a few
- * punctuation marks in them, or an empty alternative, says no.
- */
-function distinctWords(body: string): boolean {
-    const words = body.replace(/^\?:/, '').toLowerCase().split('|');
-    if (words.some((word) => !/^[\p{L}\p{N} _:;,'"=<>@#%&/!~-]+$/u.test(word))) {
-        return false;
-    }
-    return words.every((word, i) => words.every((other, j) => i === j || !other.startsWith(word)));
+    return compileSymptomPattern(source) !== undefined;
 }
 
 /** A row of `nodes`: a knowledge unit (`kind` knowledge) or an entity. */
@@ -287,8 +177,8 @@ export interface KnowledgeReader {
     howToCoverage(words: readonly string[]): Map<string, number>;
     /** Knowledge unit ids that start with `prefix`, in id order, at most `limit`. */
     unitIdsWithPrefix(prefix: string, limit: number): string[];
-    exactSymptoms(lines: readonly string[]): string[];
-    exactSymptomLines(lines: readonly string[]): Map<string, number>;
+    exactSymptoms(lines: readonly string[], budget?: SymptomMatchBudget): string[];
+    exactSymptomLines(lines: readonly string[], budget?: SymptomMatchBudget): Map<string, number>;
     appliesTo(id: string): string[];
     /** The packs a unit is scoped to; none means it is not scoped. A unit of a pack's index is scoped to that pack at least. */
     scopesOf(id: string): string[];
@@ -312,17 +202,17 @@ export interface IndexSource {
     units: number;
 }
 
-/** One open index. Every method is synchronous; a query takes well under a millisecond. */
+/** One open index. Methods are synchronous; symptom compilation and matching have explicit shared work bounds. */
 export class KnowledgeIndex implements KnowledgeReader {
     private readonly db: DatabaseSync;
     /** The `info` table: `embed_model`, and `schema_version` and the build facts once the tooling writes them. */
     readonly info: Readonly<Record<string, string>>;
-    /** Symptom patterns of the troubleshooting units that compiled as JavaScript expressions and passed `safeSymptomPattern`. */
-    private readonly symptoms: { id: string; pattern: RegExp }[] = [];
-    /** How many symptom patterns did not compile or were refused; the index build checks Python's syntax only. */
+    /** Symptom patterns accepted by the bounded, non-backtracking matcher. */
+    private readonly symptoms: { id: string; pattern: SymptomPattern }[] = [];
+    /** How many patterns are malformed, unsupported or oversized; the index build checks Python's syntax only. */
     readonly skippedSymptoms: number;
 
-    constructor(readonly file: string) {
+    constructor(readonly file: string, compilation: SymptomCompilationBudget = new SymptomCompilationBudget()) {
         if (!fs.existsSync(file)) {
             throw new ToolError('INVALID_ARGUMENT', `The knowledge index ${file} does not exist`,
                 'Set cmsis-developer-assistant.knowledge.indexPath to a knowledge.db.');
@@ -358,17 +248,20 @@ export class KnowledgeIndex implements KnowledgeReader {
                 'Use an index built for this version of the extension.');
         }
         let skipped = 0;
-        const patterns = this.db.prepare(
-            "SELECT id, json_extract(meta, '$.symptom_regex') AS pattern FROM nodes WHERE type = 'troubleshooting' AND pattern IS NOT NULL").all();
-        for (const row of patterns) {
-            try {
-                if (!safeSymptomPattern(text(row.pattern))) {
-                    throw new Error('unsafe pattern');
+        try {
+            const patterns = this.db.prepare(
+                "SELECT id, json_extract(meta, '$.symptom_regex') AS pattern FROM nodes WHERE type = 'troubleshooting' AND pattern IS NOT NULL").iterate();
+            for (const row of patterns) {
+                const pattern = compilation.compile(text(row.pattern));
+                if (pattern === undefined) {
+                    skipped++;
+                } else {
+                    this.symptoms.push({ id: text(row.id), pattern });
                 }
-                this.symptoms.push({ id: text(row.id), pattern: new RegExp(text(row.pattern), 'i') });
-            } catch {
-                skipped++;
             }
+        } catch (caught) {
+            this.db.close();
+            throw caught;
         }
         this.skippedSymptoms = skipped;
     }
@@ -458,15 +351,19 @@ export class KnowledgeIndex implements KnowledgeReader {
     }
 
     /** Troubleshooting units whose symptom pattern matches one of the lines, in the order of the first line each matches. */
-    exactSymptoms(lines: readonly string[]): string[] {
-        return [...this.exactSymptomLines(lines).keys()];
+    exactSymptoms(lines: readonly string[], budget: SymptomMatchBudget = new SymptomMatchBudget()): string[] {
+        return [...this.exactSymptomLines(lines, budget).keys()];
     }
 
     /** Each troubleshooting unit whose symptom pattern matches one of the lines, with the index of the first such line; ordered by it. */
-    exactSymptomLines(lines: readonly string[]): Map<string, number> {
+    exactSymptomLines(lines: readonly string[], budget: SymptomMatchBudget = new SymptomMatchBudget()): Map<string, number> {
         const found: { id: string; line: number }[] = [];
         for (const { id, pattern } of this.symptoms) {
-            const line = lines.findIndex((candidate) => candidate.length > 0 && pattern.test(candidate.slice(0, SYMPTOM_LINE_MAX)));
+            budget.consume();
+            const line = lines.findIndex((candidate) => {
+                budget.consume();
+                return candidate.length > 0 && pattern.test(candidate, budget);
+            });
             if (line >= 0) {
                 found.push({ id, line });
             }
@@ -715,12 +612,15 @@ class MemberView implements KnowledgeReader {
         return [...new Set(this.each((index) => index.unitIdsWithPrefix(prefix, limit)))].sort().slice(0, limit);
     }
 
-    exactSymptoms(lines: readonly string[]): string[] {
-        return [...this.exactSymptomLines(lines).keys()];
+    exactSymptoms(lines: readonly string[], budget: SymptomMatchBudget = new SymptomMatchBudget()): string[] {
+        return [...this.exactSymptomLines(lines, budget).keys()];
     }
 
-    exactSymptomLines(lines: readonly string[]): Map<string, number> {
-        const found = this.each((index) => [...index.exactSymptomLines(lines)]);
+    exactSymptomLines(lines: readonly string[], budget: SymptomMatchBudget = new SymptomMatchBudget()): Map<string, number> {
+        const found = this.each((index) => {
+            budget.consume();
+            return [...index.exactSymptomLines(lines, budget)];
+        });
         return new Map(found.sort((a, b) => a[1] - b[1]));
     }
 
@@ -822,9 +722,10 @@ export class KnowledgeSet extends MemberView {
                 'Ask the user to set cmsis-developer-assistant.knowledge.indexPath to a knowledge.db.');
         }
         const opened: Member[] = [];
+        const compilation = new SymptomCompilationBudget();
         try {
             for (const { label, file } of files) {
-                const index = new KnowledgeIndex(file);
+                const index = new KnowledgeIndex(file, compilation);
                 const scope = opened.length === 0 ? undefined : packScopeOf(label, index.info);
                 opened.push({ label, index, ...(scope === undefined ? {} : { scope }) });
             }

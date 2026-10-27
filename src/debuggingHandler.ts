@@ -68,6 +68,7 @@ import { decodeFault } from './core/faultDecoder';
 import { bankedStackRegisters, classifyAddress, parseStackedFrame, renderDiagnosis, selectExceptionFrame, StackedFrame } from './core/faultTriage';
 import { CMSIS_DEBUGGER_TYPE, passthroughCommand } from './core/gdbDialect';
 import { findGdbPortHolder, gdbPortRefusal, type PortClaimingWindow } from './core/gdbPortGuard';
+import type { GdbPortReservations, GdbPortReservation } from './core/gdbPortReservations';
 import { configurationGdbPort, folderLaunchConfiguration, isFvpSession } from './core/gdbServerPorts';
 import { coreVerdict, isLockedUp, LOCKUP_NOTE, silentCoreText, wedgeHint } from './core/probeWedge';
 import { renderResetOutcome } from './core/resetAssist';
@@ -493,12 +494,20 @@ export class DebuggingHandler
         timeoutSeconds: number,
         journal: ProblemJournal = problemJournal(),
         portWindows?: () => readonly PortClaimingWindow[],
+        portReservations?: GdbPortReservations,
     ) {
         this.dbg = executor;
         this.launchConfigs = configurations;
         this.configuredSeconds = timeoutSeconds;
         this.journal = journal;
-        this.defaultHost = portWindows ? { ...VSCODE_HOST, gdbPortHolder: (port) => findGdbPortHolder(port, portWindows()) } : VSCODE_HOST;
+        this.defaultHost = {
+            ...VSCODE_HOST,
+            ...(portWindows ? { gdbPortHolder: (port: number) => findGdbPortHolder(port, portWindows()) } : {}),
+            ...(portReservations ? {
+                reserveGdbPort: (port: number, start: Parameters<HandlerHost['reserveGdbPort']>[1], group?: string) =>
+                    portReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group),
+            } : {}),
+        };
     }
 
     /** VS Code logpoint message → GDB `dprintf` format and arguments. */
@@ -820,10 +829,11 @@ export class DebuggingHandler
                 'Use stop_debugging first, or call restart_debugging to reuse the current session, '
                     + 'or proceed directly with inspection tools (get_variables_values, read_memory, …).');
         }
+        let reservation: GdbPortReservation | undefined;
         try {
             const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
-                await this.refuseHeldGdbPort(args.workingDirectory, chosen);
+                reservation = await this.reserveGdbPortForStart(args.workingDirectory, chosen);
                 const began = this.host().now();
                 // Before the start: a frame VS Code holds from an earlier session is not this one's.
                 const focus = this.dbg.watchStartFocus();
@@ -831,6 +841,7 @@ export class DebuggingHandler
                     throw new Error(`Failed to start debug session with configuration '${chosen}'.`);
                 }
                 await this.requireLiveStart();
+                reservation?.adopt();
                 const shown = await this.startedState(focus, began);
                 const subject = args.fileFullPath ? args.fileFullPath : chosen;
                 return `Debug session started successfully for: ${subject} using configuration '${chosen}'. ${shown}`;
@@ -850,6 +861,9 @@ export class DebuggingHandler
             const forTest = args.testName ? ` for test '${args.testName}'` : '';
             return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. ${shown}`;
         } catch (caught) {
+            if (!this.dbg.hasDebugSession()) {
+                reservation?.release();
+            }
             // What the adapter and the GDB server said rides along as problem records (#48).
             throw wrapError('Error starting debug session', caught);
         }
@@ -864,16 +878,24 @@ export class DebuggingHandler
      * holds `workingDirectory`, else of `workingDirectory` itself; an attach
      * connects to a server that is meant to listen, and is left alone.
      */
-    private async refuseHeldGdbPort(workingDirectory: string, name: string): Promise<void> {
+    private async reserveGdbPortForStart(workingDirectory: string, name: string): Promise<GdbPortReservation | undefined> {
         const configuration = await this.launchConfiguration(workingDirectory, name);
         const listens = (configuration as { request?: unknown } | undefined)?.request === 'launch' ? configurationGdbPort(configuration) : undefined;
         if (!listens) {
             return;
         }
-        const holder = await this.host().gdbPortHolder(listens.port);
-        if (holder) {
-            logger.info(`start_debugging: '${name}' not started, its GDB port ${listens.port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
-            throw gdbPortRefusal({ what: 'launch', subject: 'Debug session not started', configuration: name, server: listens.server }, listens.port, holder);
+        const start = { what: 'launch' as const, subject: 'Debug session not started', configuration: name, server: listens.server };
+        const reservation = this.host().reserveGdbPort(listens.port, start);
+        try {
+            const holder = await this.host().gdbPortHolder(listens.port);
+            if (holder) {
+                logger.info(`start_debugging: '${name}' not started, its GDB port ${listens.port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
+                throw gdbPortRefusal(start, listens.port, holder);
+            }
+            return reservation;
+        } catch (caught) {
+            reservation.release();
+            throw caught;
         }
     }
 
@@ -1709,7 +1731,7 @@ export class DebuggingHandler
             await this.requireStoppedTarget('list variable names');
             const { scopes, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
-                return NO_SCOPES_HERE;
+                return noteSkippedScopes(NO_SCOPES_HERE, skipped);
             }
             return noteSkippedScopes(renderVariableNames(scopes, { maxVariables: DEFAULT_NAME_LISTING_LIMIT }), skipped);
         });
@@ -1720,7 +1742,7 @@ export class DebuggingHandler
             await this.requireStoppedTarget('read variables');
             const { scopes, widened, skipped } = await this.focusedScopes(args.scope ?? 'all', args.timeoutMs);
             if (scopes.length === 0) {
-                return NO_SCOPES_HERE;
+                return noteSkippedScopes(NO_SCOPES_HERE, skipped);
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
@@ -1749,7 +1771,7 @@ export class DebuggingHandler
             const reply: VariablesReply = await this.dbg.getVariablesForFrame(args.frameId, args.scope ?? 'all', args.timeoutMs);
             const scopes = reply?.scopes;
             if (!Array.isArray(scopes) || scopes.length === 0) {
-                return `No variable scopes available for frameId=${args.frameId}.`;
+                return noteSkippedScopes(`No variable scopes available for frameId=${args.frameId}.`, reply?.skipped ?? []);
             }
             const names = requestedNames(args.variableNames);
             const picked = narrowScopes(scopes, names);
@@ -1849,7 +1871,7 @@ export class DebuggingHandler
             const reply: EvaluateReply = await this.dbg.evaluateExpression(`(unsigned long)(${expression})`, frameId, overrideMs);
             value = reply?.result;
         } catch (caught) {
-            if (caught instanceof HardwareTimeoutError) {
+            if (caught instanceof HardwareTimeoutError || (caught instanceof ToolError && caught.code === 'TIMEOUT')) {
                 throw caught;
             }
             throw new ToolError('INVALID_ARGUMENT', `${notAnAddress(expression)} GDB: ${failureText(caught)}`, hint);

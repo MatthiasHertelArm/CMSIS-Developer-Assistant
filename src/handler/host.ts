@@ -36,7 +36,8 @@ import * as fs from 'fs';
 import { CmsisJobTracker, windowJobTracker } from '../cmsisJobTracker';
 import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
 import { fileExists } from '../core/flashController';
-import { findGdbPortHolder, type GdbPortHolder } from '../core/gdbPortGuard';
+import { findGdbPortHolder, type GdbPortHolder, type PortStart } from '../core/gdbPortGuard';
+import { GdbPortReservations, type GdbPortReservation } from '../core/gdbPortReservations';
 import { SerialController, serialController } from '../core/serialController';
 import { activeCbuildRunFile } from '../utils/solutionQueries';
 import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
@@ -126,7 +127,11 @@ export interface HandlerHost {
      * other window; the window's `DebuggingHandler` is given the registry.
      */
     gdbPortHolder(port: number): Promise<GdbPortHolder | undefined>;
+    /** Atomically reserve a port across windows before probing it or starting its server. */
+    reserveGdbPort(port: number, start: PortStart, group?: string): GdbPortReservation;
 }
+
+let defaultPortReservations: GdbPortReservations | undefined;
 
 /** The key under `terminal.integrated.env` per platform. */
 const TERMINAL_ENV_KEY: Partial<Record<NodeJS.Platform, string>> = { win32: 'windows', darwin: 'osx', linux: 'linux' };
@@ -208,4 +213,8 @@ export const VSCODE_HOST: HandlerHost = {
     },
     webCatalogFetch: (url, init) => fetch(url, init),
     gdbPortHolder: (port) => findGdbPortHolder(port, []),
+    reserveGdbPort: (port, start, group) => {
+        defaultPortReservations ??= new GdbPortReservations();
+        return defaultPortReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group);
+    },
 };

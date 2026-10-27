@@ -50,7 +50,7 @@ release after it are debug lines.
 | `src/windowStatus.ts`, `src/core/windowStatus.ts` | the status-bar item and Select Target Window: the wiring, and the pure rendering |
 | `assets/icons/cda-robot.svg`, `assets/icons/cda-icons.woff` | the robot artwork and its one-glyph font, contributed by `package.json` as the product icon `cda-robot` |
 | `src/utils/loopback.ts` | the `Host` and `Origin` checks, shared by the control server and the MCP endpoint |
-| `src/core/gdbServerPorts.ts`, `src/core/gdbPortGuard.ts` | the GDB ports a window publishes (`windowGdbPorts()`, `gdbPortClaimsOf()`), and who holds one before a launch (`findGdbPortHolder()`, the bind test, `gdbPortRefusal()`) |
+| `src/core/gdbServerPorts.ts`, `src/core/gdbPortGuard.ts`, `src/core/gdbPortReservations.ts` | the GDB ports a window publishes, the atomic cross-process startup reservations, and the existing-owner/bind preflight |
 
 ## The registry
 
@@ -253,7 +253,8 @@ FVP shim's `docker rm -f` of the container on its port ended a session of
 another window. Neither window could tell, since a debug session in one
 extension host is invisible to the others.
 
-So every window publishes the ports it uses, and a launch looks first:
+So every window publishes the ports it uses, and a launch reserves before
+it looks:
 
 - **Publishing.** `WindowCoordinator` lists, as `GdbPortClaim`s in its
   entry's `gdbPorts`, the port of each live CMSIS Debugger session
@@ -267,7 +268,23 @@ So every window publishes the ports it uses, and a launch looks first:
   field is optional: older windows write none and ignore it, and readers
   take it through `gdbPortClaimsOf()`, which drops what it does not know.
   `describeWindow()` names the ports in the window listing.
-- **Checking.** Before `cmsis_action load_and_debug` (for each launch
+- **Reserving.** A free-port check alone races another window's start.
+  `GdbPortReservations` therefore atomically publishes a complete owner
+  record in the user-private registry before any asynchronous check or
+  launch. A contender gets `PROBE_BUSY` even before the winner's server
+  listens. The reservation does not bind the port. It has no timeout:
+  programming or a picker may outlast the tool call. The coordinator
+  adopts it when a session/task claims its port, or a handler confirms the
+  session/run is live, and releases it when that owner ends; alternative
+  launch ports acquired together end as one batch.
+  A confirmed completed Run releases its batch even when it ended before a
+  port sample saw it. A sample captured before acquisition, or superseded
+  by a newer state-change notification, cannot adopt a pending reservation.
+  Confirmed startup failures and window shutdown release only their own
+  unique records; another window can reclaim a dead process's record.
+  Unknown or malformed owners fail closed. The registry root and the
+  reservation directory have the same ownership and symlink checks.
+- **Checking.** After reserving, `cmsis_action load_and_debug` (for each launch
   configuration that fixes a port), `run` and `load_and_run` (for the ports
   of the CMSIS Run task in `tasks.json`), and `start_debugging` of a launch
   configuration with a fixed port, the handler asks
@@ -284,7 +301,11 @@ So every window publishes the ports it uses, and a launch looks first:
   would make the wildcard bind fail. On macOS a bind notices only a
   listener on the same address, which is why all three are tried: pyOCD
   listens on 127.0.0.1, Docker on the wildcard.
-- **Not checked.** `attach` connects to a server that is meant to listen.
+- **Limits.** `attach` connects to a server that is meant to listen.
+  Reservations cover fixed local ports that the configuration or task
+  resolves before launch, and cooperating windows of this version. They
+  cannot reserve an unresolved/dynamic port or stop an unrelated program
+  or an older extension from starting after the bind check.
   A listener that is no window's — a GDB server started by hand, or a model
   an earlier session left behind — is refused as "another program": the
   check cannot tell which of them it is, only that GDB would reach it.

@@ -161,9 +161,11 @@ start or a `cmsis_action` attach, shows everything. See
 
 `handleStartDebugging()` refuses while a session exists. With a
 `configurationName` it starts that `launch.json` entry by name through the
-executor; a CMSIS Debugger launch whose GDB server has a fixed local port is
-refused first while another window or another program holds that port
-(`refuseHeldGdbPort()`, see [GDB ports](windowRouting.md#gdb-ports)). Without one it lets the user choose through
+executor; a CMSIS Debugger launch whose GDB server has a fixed local port
+reserves it atomically before checking for another window or listener
+(`reserveGdbPortForStart()`, see [GDB ports](windowRouting.md#gdb-ports)). A
+confirmed failed start releases the reservation; a session that is still
+starting keeps it beyond the tool's wait. Without a name it lets the user choose through
 `promptForConfiguration()`, and the entry `Default Configuration` gets a
 configuration synthesized from the source file (see
 [debugConfigurationManager.md](debugConfigurationManager.md)). The picker
@@ -389,15 +391,21 @@ window's CMSIS job tracker (next section):
   carries `stuck: true`.
 - `stop_run` waits until the CMSIS tasks it stops have ended, terminates
   leftovers itself after 3 s, and answers `PROBE_BUSY` for a task still
-  alive after 10 s. Builds are not its tasks, but CMSIS Solution's Stop
-  Running can end one: the reply names a build that ended during the wait
+  alive after 10 s of verification. A caller's shorter deadline returns
+  `running`, with the stop still pending: it neither spends the owner's
+  grace early nor mistakes a short observation for failed termination.
+  The reply points to `status` and a longer stop call if needed. Builds are
+  not its tasks, but CMSIS Solution's Stop Running can end one: the reply
+  names a build that ended during the wait
   and one that runs on, which `stop_build` ends. `detach` returns at once.
 - `stop_build` does the same for the build-type tasks of the window (build,
   rebuild, clean, or the `cbuild setup` CMSIS Solution runs after loading a
   solution), over `cmsis-csolution.stopBuild`, which ends only one of them.
   It marks their jobs first (`CmsisJobTracker.requestStop`), so they read as
-  stopped whatever code the task closes with. With no build running it
-  issues nothing and says so, and names a build result that is still being
+  stopped once they end, whatever code the task closes with, without a
+  failed-build diagnostic rerun. A short deadline also leaves this stop
+  pending; `TASK_FAILED` requires the full verification period. With no
+  build running it issues nothing and says so, and names a build result that is still being
   checked: that check is no task, and `status` waits for it. It never
   switches the target.
 - `refresh` issues `cmsis-csolution.refresh`, the panel's Refresh, which in
@@ -501,13 +509,17 @@ without an active solution is refused, an unknown target or action is
 `INVALID_ARGUMENT`, and so is a task the solution's `tasks.json` does not
 have (`load` on an Arm Debugger adapter, for example). The probe guard
 knows this window only; a GDB port is shared by the machine. So
-`load_and_debug`, `run` and `load_and_run` then ask who holds the GDB ports
+`load_and_debug`, `run` and `load_and_run` first reserve, then ask who holds the GDB ports
 they would start a server on — each launch configuration's fixed port, the
-CMSIS Run task's ports (`refuseHeldLaunchPorts()`, `refuseHeldRunPorts()`)
+CMSIS Run task's ports (`reserveLaunchPorts()`, `reserveRunPorts()`)
 — and refuse with `PROBE_BUSY` naming the other window and what holds the
 port there, or another program, before the command goes out. GDB would
 otherwise connect to that server and halt its target, while the session
-here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)).
+here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)). Partial
+acquisitions roll back on refusal. Pending starts retain their reservations;
+confirmed command/task failures release them only when no session or
+launch-related task remains, and the coordinator releases adopted batches
+when their session/task ends.
 
 A `tasks.json` without any CMSIS task is a hand-off to the CMSIS Solution
 extension rather than a dead end: when the active target's cbuild-run.yml
@@ -559,16 +571,16 @@ a key the extension splits at every dot. The solution's `tasks.json` and
 `launch.json`, by contrast, are those of the folder that holds it. A switch
 is refused under a live debug session. `src/core/cmsisTarget.ts` reads the
 declared target-types and their sets from the csolution and edits the file.
-There is no YAML parser among the dependencies, so it scans the lines and
-follows the block structure by column: the keys of an entry count in any
-order and a list may stand in its key's column, as YAML allows, and a
-`type:` in a nested list (`images:`, a debugger's `reset:`) declares no
-target-type. A set's index counts every entry of `target-set:`, as the CMSIS
-Solution extension's index into that list does. Flow collections, anchors,
-aliases, merge keys and tags are valid YAML the scan does not follow; where
-one stands for a target-type, its `type:`, its `target-set:` or a set,
-`scanTargetTypes()` names the line and the switch is refused with it, since
-a missed type or a shifted set index would select another target.
+It uses the full YAML parser `js-yaml`, so block and flow collections,
+quoted escapes, anchors, aliases and merge keys have the same meaning.
+Selection fields are checked without coercing YAML scalars or following
+object prototype properties, while unrelated CMSIS fields stay the owner's
+responsibility. Bounds on the document, parser work and extracted names
+prevent an input from tying up the window. Invalid or unsupported YAML and
+target shapes produce `INVALID_ARGUMENT` before any selection write or
+reactivation, never an invented empty target list. A set's index counts
+every entry of `target-set:`, as the CMSIS Solution extension's index into
+that list does; missing and null names retain their unnamed place.
 
 `src/handler/flashTool.ts` runs `flash`. It picks the `*.cbuild-run.yml` —
 the argument, else the one of the CMSIS Solution extension's active target

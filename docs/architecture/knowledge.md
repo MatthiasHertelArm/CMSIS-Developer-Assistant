@@ -103,18 +103,28 @@ pack a csolution names with `path:` outside the pack root
   joins the context, without bundle and variant; the lookup by the name
   alone, which would bring `Device:Startup` of some 40 vendors and so their
   units, is left to a component given without a vendor (`CMSIS:CORE`).
-- **Symptom patterns are guarded.** The `symptom_regex` of every
-  troubleshooting unit runs synchronously on the extension host; a pattern
-  with an unbounded quantifier inside an unbounded group, or with an
-  unbounded group of alternatives that can match the same text
-  (`(a|aa)+`), backtracks for seconds on a line it does not match, and no
-  timeout interrupts it. Any index may ship one, so `safeSymptomPattern`
-  refuses such a pattern (and one over 500 characters) when the index is
-  opened, counted with the patterns that do not compile, and a line is cut
-  to 2 000 characters before a pattern sees it. Alternatives under an
-  unbounded quantifier pass only as plain words of which none starts
-  another (`(?:error|warning)+`), which match one way at most; overlap is
-  not analysed beyond that. None of the core index's patterns is affected.
+- **Symptom matching cannot backtrack.** Any index may supply a
+  `symptom_regex`; heuristic checks on a native regexp miss ambiguous
+  alternatives and adjacent repetitions. `symptomPattern.ts` instead
+  compiles a restricted grammar into a bounded automaton. A state is visited
+  at most once per input position, including when the match may start
+  anywhere, so alternatives and repetitions never multiply the work
+  exponentially. Native regexp matching sees only individual character
+  atoms, never a complete index-supplied pattern. Character classes,
+  anchors, alternation, unquantified groups and quantifiers on character
+  atoms cover the core catalogue. Quantified groups, references,
+  lookarounds and unsupported escapes are refused and counted as unusable,
+  with malformed or oversized patterns. Source length, nesting, expanded
+  state count and input length are bounded before work or allocation;
+  matching still uses at most the first 2 000 characters of each line.
+  An aggregate step budget is shared across patterns, lines, messages and
+  active indexes: many individually bounded matches must not monopolise the
+  extension host either. Exhaustion fails explicitly as an incomplete
+  search, never a nonmatch or a partial list presented as complete. Index
+  opening streams symptom rows and caps the aggregate number of attempted
+  patterns and retained states across the open set; exceeding either cap
+  closes the files and refuses the set instead of silently omitting units.
+  The core catalogue remains compatible, checked against the pinned index.
 - **The failed build's lookup follows the active target.** The
   `Known message:` lines of a failed build (`knownMessageLookup.ts`,
   `KnowledgeHandler.knownMessageLines`) read the facts of the window's
@@ -158,6 +168,7 @@ nothing; it works with the gate off, since it serves a person, not an agent.
 | Path | What |
 | ---- | ---- |
 | `src/core/knowledge/store.ts` | `KnowledgeReader`, `KnowledgeIndex` (one file: the SQL over `nodes`, `edges`, `nodes_fts`), `KnowledgeSet` (several, merged) |
+| `src/core/knowledge/symptomPattern.ts` | The restricted symptom grammar and bounded, non-backtracking matcher |
 | `src/core/knowledge/packIndexes.ts` | Where pack and workspace indexes are found (`PACK_INDEX`, `WORKSPACE_INDEX`), the folders of the active target's packs included (`packFolderIndexes`) |
 | `src/core/knowledge/search.ts` | `searchKnowledge`, `contextEntities`, `inScope`, `appliesIn`, `isIncomplete`, `knownMessages` |
 | `src/core/knowledge/projectFacts.ts` | The facts of the active target |

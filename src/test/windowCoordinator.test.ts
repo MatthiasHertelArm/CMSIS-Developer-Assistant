@@ -28,7 +28,9 @@ import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistr
 import { logger } from '../utils/logger';
 import { createSessionTracker } from '../utils/sessionStateTracker';
 import type { PortClaimingWindow } from '../core/gdbPortGuard';
+import { GdbPortReservations } from '../core/gdbPortReservations';
 import type { GdbPortClaim } from '../core/gdbServerPorts';
+import { ToolError } from '../core/toolResult';
 
 /** Poll `registry` until this window's entry lists `expected` as its GDB ports (none: undefined). */
 async function publishedPorts(registry: WorkspaceRegistry, expected: GdbPortClaim[] | undefined): Promise<void> {
@@ -233,6 +235,80 @@ suite('WindowCoordinator and the router window (#14)', () => {
             }
         }
     });
+
+    /** Delay an old same-port snapshot across a new reservation or a newer state-change notification. */
+    async function staleGdbObservation(reservedBeforeQuery: boolean): Promise<void> {
+        const registry = registryView();
+        const claim: GdbPortClaim = { port: 3333, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' };
+        const start = { what: 'launch' as const, subject: 'Test launch not started', configuration: 'New launch' };
+        let finishOld!: (claims: GdbPortClaim[]) => void;
+        const old = new Promise<GdbPortClaim[]>((resolve) => { finishOld = resolve; });
+        let latest: GdbPortClaim[] = [];
+        let queries = 0;
+        const coordinator = new WindowCoordinator({
+            port: 0, timeoutInSeconds: 1, hardwareTimeouts: {}, registry, serialTeardown: noTeardown,
+            solutionFile: () => undefined,
+            gdbPorts: () => ++queries === 1 ? old : Promise.resolve(latest),
+        });
+        // Exercise the real query/observation wiring without starting an MCP
+        // listener; both windows still use the same isolated registry directory.
+        const state = coordinator as unknown as {
+            portReservations: GdbPortReservations;
+            refreshGdbPorts(): void;
+            gdbPortsQuery: Promise<void> | undefined;
+        };
+        const other = new GdbPortReservations(registry.gdbReservationDirectory(), process.pid, undefined, dir);
+        const drain = async (): Promise<void> => {
+            while (state.gdbPortsQuery) {
+                await state.gdbPortsQuery;
+            }
+        };
+        const busy = (): void => {
+            assert.throws(() => other.acquire(3333, start, 'other window'),
+                (caught: unknown) => caught instanceof ToolError && caught.code === 'PROBE_BUSY',
+                'a stale observation must not let another window acquire the pending start\'s port');
+        };
+        try {
+            if (reservedBeforeQuery) {
+                state.portReservations.acquire(3333, start, 'new launch');
+            }
+            state.refreshGdbPorts();
+            await Promise.resolve();
+            assert.strictEqual(queries, 1, 'the old source query has started');
+            if (reservedBeforeQuery) {
+                state.refreshGdbPorts(); // A start/end event supersedes the unresolved snapshot.
+            } else {
+                state.portReservations.acquire(3333, start, 'new launch');
+            }
+            finishOld([claim]);
+            await drain();
+            if (!reservedBeforeQuery) {
+                state.refreshGdbPorts();
+                await drain();
+            }
+            assert.strictEqual(queries, 2, 'the fresh empty snapshot has also been observed');
+            busy();
+
+            latest = [claim];
+            state.refreshGdbPorts();
+            await drain();
+            busy();
+            latest = [];
+            state.refreshGdbPorts();
+            await drain();
+            other.acquire(3333, start, 'other window').release();
+        } finally {
+            finishOld([]);
+            other.dispose();
+            await coordinator.dispose();
+        }
+    }
+
+    test('a stale GDB-port snapshot captured before acquisition cannot adopt a new pending reservation',
+        () => staleGdbObservation(false));
+
+    test('a superseded GDB-port snapshot cannot adopt a pending reservation before a fresh empty observation',
+        () => staleGdbObservation(true));
 
     test('a stale router entry and a silent port raise one warning per episode', async () => {
         const port = await holdSilently();
