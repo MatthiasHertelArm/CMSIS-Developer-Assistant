@@ -72,7 +72,7 @@ The extension helps configure supported coding agents and installs the
 knowledge index the extension ships, and software packs can add their own
 units in a `.knowledge/` folder. GitHub Copilot in VS Code discovers the MCP
 server automatically.
-The integration has been tested with Codex, Claude Code, and GitHub Copilot.
+The integration has been tested with Codex, Claude Code, GitHub Copilot, and Kimi Code.
 Other agents that support MCP may also work; the Agent Skills format adds the
 `/cmsis-help` entry point.
 
