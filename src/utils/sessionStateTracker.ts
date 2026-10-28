@@ -91,6 +91,20 @@ const liveSessions: vscode.DebugSession[] = [];
 /** Sessions the tracker has seen end, so a wait that starts afterwards knows at once. */
 const endedSessions = new WeakSet<vscode.DebugSession>();
 
+/** Who is told when a session's adapter starts (`onSessionBegins`). */
+const beginListeners = new Set<(session: vscode.DebugSession) => void>();
+
+/**
+ * Be told when a debug session's adapter starts, before its launch or
+ * attach is sent. VS Code's `onDidStartDebugSession` comes only once the
+ * launch succeeded, and never for a session whose launch fails; this comes
+ * for both.
+ */
+export function onSessionBegins(listener: (session: vscode.DebugSession) => void): vscode.Disposable {
+    beginListeners.add(listener);
+    return { dispose: () => { beginListeners.delete(listener); } };
+}
+
 // ── Starts an agent asked for ───────────────────────────────────────────────
 
 /**
@@ -1056,6 +1070,13 @@ export function createSessionTracker(session: vscode.DebugSession, journal: Prob
     endRequests.delete(session);
     addLiveSession(session);
     noteSessionOrigin(session);
+    for (const listener of [...beginListeners]) {
+        try {
+            listener(session);
+        } catch (caught) {
+            logger.warn(`A listener for the start of '${session.name}' failed`, caught);
+        }
+    }
     return {
         onWillReceiveMessage(message: any): void {
             if (message?.type !== 'request') {

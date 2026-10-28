@@ -126,3 +126,7 @@ Related: #41. [extension-calls.md](extension-calls.md) is an inventory, not a pr
 ## Added 2026-10-21: Pack Docs document storage
 
 No issue yet. [pack-docs-storage.md](pack-docs-storage.md) describes where Pack Docs keeps originals and derived data today and what an external document manager would have to preserve: the storage classes, the functions it could wrap, document identity, publication and invalidation, and eight acceptance checks before a provider API is exposed. [pack-docs-storage-overview.md](pack-docs-storage-overview.md) is its one-page map. No API is proposed yet; the note is the requirements side.
+
+## Added 2026-10-28: GDB port conflicts
+
+No issue yet. [gdb-port-conflicts.md](gdb-port-conflicts.md) narrows the K04 guard to ports that are certain. Those are `target.port`, a port set on the command line, and the cbuild-run file a `gdbserver` passes; 2.7.0 already does this. The proposal leaves custom or user debug setups whose port is unknown to detection: the debug adapter makes their bind failure visible, and the problem journal would give it a code and a next step. Two decisions.

@@ -121,6 +121,7 @@ import type { ProblemJournal } from '../core/problemJournal';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import {
+    activeLaunchConfigurations,
     AttachEndpoint,
     CmsisLaunchConfiguration,
     folderCmsisLaunchConfigurations,
@@ -1106,16 +1107,17 @@ function endpointList(endpoints: readonly AttachEndpoint[]): string {
     return endpoints.map((endpoint) => `${endpoint.host}:${endpoint.port} ('${endpoint.name}')`).join(', ');
 }
 
-/** The debugger the active target's cbuild-run.yml names; undefined when there is none or it cannot be read. */
-async function activeDebuggerName(host: HandlerHost): Promise<string | undefined> {
+/** The debugger the active target's cbuild-run.yml names and the GDB ports it lists; neither when there is no such file or it cannot be read. */
+async function activeDebugger(host: HandlerHost): Promise<{ name?: string; ports: number[] }> {
     const runFile = await host.activeCbuildRunFile();
     if (!runFile) {
-        return undefined;
+        return { ports: [] };
     }
     try {
-        return cbuildRunDebugger(await fs.promises.readFile(runFile, 'utf8'));
+        const content = await fs.promises.readFile(runFile, 'utf8');
+        return { name: cbuildRunDebugger(content), ports: cbuildRunGdbPorts(content) };
     } catch {
-        return undefined;
+        return { ports: [] };
     }
 }
 
@@ -1138,7 +1140,7 @@ async function refuseAttachToBareModel(issue: Issue, endpoints: readonly AttachE
         return;
     }
     const bareModel = (kinds.length > 0 && kinds.every((kind) => kind === 'bareModel'))
-        || isFvpDebugger(await activeDebuggerName(issue.context.host));
+        || isFvpDebugger((await activeDebugger(issue.context.host)).name);
     if (!bareModel) {
         return;
     }
@@ -1685,7 +1687,9 @@ export async function runCmsisAction(
             }
             return activateEnvironment(issue, solution.solutionPath);
         case 'load_and_debug': {
-            const launchOnes = launchConfigurations.filter((config) => config.request === 'launch');
+            // CMSIS Solution starts the configuration of the active target's debugger, not an FVP's or another board's kept beside it.
+            const active = await activeDebugger(host);
+            const launchOnes = activeLaunchConfigurations(launchConfigurations.filter((config) => config.request === 'launch'), active.name, active.ports);
             const portReservations = await reserveLaunchPorts(issue, launchOnes);
             const loadFirst = launchOnes.some((config) => config.preLaunchTask === 'CMSIS Load');
             const servers = launchOnes.map((config) => config.server).filter((server): server is string => server !== undefined);

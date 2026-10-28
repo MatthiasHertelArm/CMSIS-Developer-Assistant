@@ -5055,7 +5055,11 @@ suite('DebuggingHandler', () => {
             });
 
             test('load_and_debug rolls back an earlier reservation if a later candidate port is refused', async () => {
-                writeVscode('launch.json', { configurations: [FVP_LAUNCH, { ...PYOCD_LAUNCH, target: { server: 'pyocd', port: '3334' } }] });
+                // A multi-core J-Link target: one launch configuration and one GDB server per core.
+                fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'),
+                    'cbuild-run:\n  debugger:\n    name: J-Link Server\n    gdbserver:\n      - port: 3333\n      - port: 3334\n');
+                const jlink = (name: string, port: string) => ({ name, type: 'gdbtarget', request: 'launch', target: { server: 'JLinkGDBServerCL', port }, cmsis: {} });
+                writeVscode('launch.json', { configurations: [jlink('cm7 JLink (launch)', '3333'), jlink('cm4 JLink (launch)', '3334')] });
                 const owner = reservationManager();
                 const other = reservationManager();
                 const w = portWorld(async (port) => {
@@ -5072,6 +5076,52 @@ suite('DebuggingHandler', () => {
                 assert.deepStrictEqual(w.issued, []);
                 assertAvailable(other, 3333);
                 assertAvailable(other, 3334);
+            });
+
+            /**
+             * Tester feedback on preview 4, an STM32H7 with a custom debug setup: Load & Debug also reserved, and asked about, port
+             * 3334 of an FVP configuration that launch.json kept beside the board's, and failed with PROBE_BUSY while an
+             * FVP used it; CMSIS Solution starts only the board's. The setup's own adapter template runs pyOCD through
+             * Python and a wrapper, with its port 45343 in quotes, and its CMSIS Run reads the port from the cbuild-run file.
+             */
+            suite('an STM32H7 with a custom debug setup beside an FVP configuration', () => {
+                const PYTHON = '/usr/local/bin/python3.11';
+                const WRAPPER = ['/Users/u/debug-setup/scripts/pyocd_wrapper.py', 'gdbserver', '--probe', 'cmsisdap:',
+                    '--cbuild-run', '${command:cmsis-csolution.getCbuildRunFile}', '--quiet'];
+                const CUSTOM_LAUNCH = { name: 'Custom@pyOCD (launch)', type: 'gdbtarget', request: 'launch', preLaunchTask: 'CMSIS Load',
+                    target: { server: PYTHON, serverParameters: WRAPPER, port: '"45343"' }, cmsis: { updateConfiguration: 'auto' } };
+                const FVP_BESIDE = { ...FVP_LAUNCH, target: { ...FVP_LAUNCH.target, serverParameters: ['-D', '--plugin', 'GDBServer.so', '-C', 'GDBServer.port=3334'] } };
+                const FVP_WINDOW: GdbPortHolder = { kind: 'window', pid: 70402, name: 'fvp', claim: { port: 3334, source: 'session', label: 'Arm-FVP@GDB (launch)', server: 'Arm FVP' } };
+                setup(() => {
+                    writeVscode('launch.json', { configurations: [FVP_BESIDE, CUSTOM_LAUNCH] });
+                    writeVscode('tasks.json', { version: '2.0.0', tasks: [{ label: 'CMSIS Run', type: 'process', command: PYTHON, args: [...WRAPPER.slice(0, 2), '--persist', ...WRAPPER.slice(2)] }] });
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), 'cbuild-run:\n  debugger:\n    name: Custom@pyOCD\n    gdbserver:\n      - port: 45343\n');
+                });
+
+                test('load_and_debug reserves and asks about the board\'s port only, not the FVP configuration\'s', async () => {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld((port) => (port === 3334 ? FVP_WINDOW : undefined), owner);
+                    await w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 2_000 }).catch(() => undefined);
+                    assert.deepStrictEqual(w.asked, [45343]);
+                    assert.deepStrictEqual(w.issued, ['load_and_debug']);
+                    assertReserved(other, 45343);
+                    assertAvailable(other, 3334);
+                });
+
+                test('the CMSIS Run behind Python reserves the port of the cbuild-run file, and a holder of it is named', async () => {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner);
+                    await w.handler.handleCmsisCommand({ action: 'run', timeoutMs: 2_000 }).catch(() => undefined);
+                    assert.deepStrictEqual(w.asked, [45343]);
+                    assertReserved(other, 45343);
+
+                    const held = portWorld(() => ({ kind: 'listener' }));
+                    const refused = await refusalOf(held.handler.handleCmsisCommand({ action: 'run' }), 'PROBE_BUSY');
+                    assert.match(refused.message, /its pyOCD GDB server \(CMSIS Run\) would use port 45343/);
+                    assert.deepStrictEqual(held.issued, []);
+                });
             });
 
             test('a pending CMSIS start keeps its reservation after the reply; a late rejection releases it only without a live owner', async () => {
@@ -5252,7 +5302,9 @@ suite('DebuggingHandler', () => {
                 const x = new ScriptedExecutor();
                 x.session = false;
                 const windows = [{ pid: 4047, name: 'eval1', claims: [{ port: 3333, source: 'session' as const, label: 'Arm-FVP@GDB (launch)', server: 'Arm FVP' as const }] }];
-                const handler = new DebuggingHandler(x as unknown as IDebuggingExecutor, {} as IDebugConfigurationManager, 5, problemJournal(), () => windows);
+                // Its own reservations: the shared directory may hold a real window's start on 3333.
+                const handler = new DebuggingHandler(x as unknown as IDebuggingExecutor, {} as IDebugConfigurationManager, 5, problemJournal(), () => windows,
+                    reservationManager());
                 const refused = await refusalOf(handler.handleStartDebugging({ workingDirectory: dir, configurationName: 'STLink@pyOCD (launch)' }), 'PROBE_BUSY');
                 assert.strictEqual(refused.message, 'Debug session not started: the pyOCD GDB server of \'STLink@pyOCD (launch)\' would use port 3333, which '
                     + 'window \'eval1\' (pid 4047) uses for its debug session \'Arm-FVP@GDB (launch)\' (Arm FVP GDB server). GDB would connect to that server '

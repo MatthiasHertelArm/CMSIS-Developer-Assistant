@@ -68,7 +68,7 @@ export const FAILED_AT_ONCE_MS = 2_000;
 
 /** J-Link Commander and the J-Link GDB servers, with or without `Exe` and `.exe`. */
 const JLINK_PROGRAM = /^JLink(?:Exe|GDBServer(?:CL)?(?:Exe)?)?(?:\.exe)?$/i;
-/** pyOCD, its Windows executable, or a script that wraps it (`pyocd_with_ulinkpro.py`). */
+/** pyOCD, its Windows executable, or a wrapper script named after it (`pyocd_wrapper.py`). */
 const PYOCD_PROGRAM = /^pyocd(?:$|[._-])/i;
 /** The executable of an Arm FVP model, as `./gdbServerPorts.ts` reads it. */
 const FVP_MODEL = /^(?:FVP|VHT)_/;

@@ -58,7 +58,7 @@ suite('Program lookup', () => {
         assert.deepStrictEqual(taskProgram(['C:\\Program Files\\SEGGER\\JLink\\JLink.exe', '-device', 'X']),
             { kind: 'jlink', program: 'C:\\Program Files\\SEGGER\\JLink\\JLink.exe' });
         assert.deepStrictEqual(taskProgram(['pyocd', 'load', '--probe', 'cmsisdap:', '--cbuild-run', 'x.cbuild-run.yml']), { kind: 'pyocd' });
-        assert.deepStrictEqual(taskProgram(['python3', 'scripts/pyocd_with_ulinkpro.py', 'load']), { kind: 'pyocd' });
+        assert.deepStrictEqual(taskProgram(['python3', 'scripts/pyocd_wrapper.py', 'load']), { kind: 'pyocd' });
         assert.deepStrictEqual(taskProgram(['FVP_Corstone_SSE-300', '-f', 'fvp.txt']), { kind: 'fvp' });
         assert.deepStrictEqual(taskProgram(['echo', 'CMSIS Load: images are loaded by the FVP model when CMSIS Run starts.']), { kind: 'other' });
         assert.deepStrictEqual(taskProgram(undefined), { kind: 'unknown' });

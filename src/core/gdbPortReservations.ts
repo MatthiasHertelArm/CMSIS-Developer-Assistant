@@ -22,9 +22,11 @@
  *
  * There is no time-based expiry: a slow flash or picker can outlive a tool
  * deadline. Once a session/task claims the port, its end releases the
- * reservation. A confirmed start failure releases it too. Shutdown releases
- * this window's claims, and a later contender can reclaim a dead process's
- * claim. Unknown/malformed owners fail closed rather than risk a target.
+ * reservation; a session claims it when its adapter starts (`adoptPort`),
+ * whatever the tool call saw. A confirmed start failure releases it too.
+ * Shutdown releases this window's claims, and a later contender can reclaim
+ * a dead process's claim. Unknown/malformed owners fail closed rather than
+ * risk a target.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -208,6 +210,21 @@ export class GdbPortReservations {
     /** Capture before an asynchronous query so its old state cannot adopt a newer pending start. */
     observationVersion(): number {
         return this.generation;
+    }
+
+    /**
+     * A debug session of this window begins on `port`: its batch is owned
+     * from now on, so the end of the session releases it however long the
+     * tool call waited and whether or not a port sample saw it live. VS Code
+     * announces a session only once its launch succeeded; a failed one ends
+     * unannounced.
+     */
+    adoptPort(port: number): void {
+        for (const reservation of this.held) {
+            if (reservation.port === port) {
+                reservation.adopt();
+            }
+        }
     }
 
     /** Keep pending starts; once adopted, release only when the session/task no longer claims the port. */

@@ -168,6 +168,27 @@ suite('GDB port reservations', () => {
         b.acquire(4444, START, 'second').release();
     });
 
+    /**
+     * Tester feedback on preview 4: a load_and_debug with a short timeoutMs answered `running`, its
+     * session ended before any port sample saw it live, and the reservation stayed until the window closed.
+     */
+    test('a session that begins on a reserved port adopts its batch; its end releases it without any positive port sample', () => {
+        const a = manager();
+        const b = manager();
+        a.acquire(3333, START, 'first', 'one-launch');
+        a.acquire(4444, START, 'first', 'one-launch');
+        a.acquire(5555, START, 'first', 'another-launch');
+        const beforeBegin = a.observationVersion();
+        a.adoptPort(3333);
+        a.adoptPort(6666);
+        a.observe([], beforeBegin);
+        busy(() => b.acquire(3333, START, 'second'));
+        a.observe([]);
+        b.acquire(3333, START, 'second').release();
+        b.acquire(4444, START, 'second').release();
+        busy(() => b.acquire(5555, START, 'second'));
+    });
+
     test('invalid ports and malformed ownership fail closed; staging records are not left behind', () => {
         const a = manager();
         for (const port of [0, -1, 65536, 1.5, NaN]) {

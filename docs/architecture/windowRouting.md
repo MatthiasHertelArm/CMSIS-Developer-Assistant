@@ -259,7 +259,8 @@ it looks:
 - **Publishing.** `WindowCoordinator` lists, as `GdbPortClaim`s in its
   entry's `gdbPorts`, the port of each live CMSIS Debugger session
   (`target.port`, or for a launch the port its GDB server's parameters set,
-  such as the FVP's `GDBServer.port`) and of each live CMSIS Run task (the
+  such as the FVP's `GDBServer.port`, else for pyOCD the ports of the
+  cbuild-run file it reads, `sessionGdbPorts()`) and of each live CMSIS Run task (the
   port its command line sets, else for pyOCD's `gdbserver` the ports of the
   cbuild-run file it reads, else the server's default) — with the
   configuration or task name and the server (`windowGdbPorts()` in
@@ -276,7 +277,11 @@ it looks:
   programming or a picker may outlast the tool call. The coordinator
   adopts it when a session/task claims its port, or a handler confirms the
   session/run is live, and releases it when that owner ends; alternative
-  launch ports acquired together end as one batch.
+  launch ports acquired together end as one batch. A debug session takes
+  the reservation of its port when its adapter starts
+  (`onSessionBegins()` of the session tracker, `adoptPort()`): VS Code
+  announces a session only once its launch succeeded, so a failed launch
+  after an early reply would otherwise leave the port reserved.
   A confirmed completed Run releases its batch even when it ended before a
   port sample saw it. A sample captured before acquisition, or superseded
   by a newer state-change notification, cannot adopt a pending reservation.
@@ -285,7 +290,9 @@ it looks:
   Unknown or malformed owners fail closed. The registry root and the
   reservation directory have the same ownership and symlink checks.
 - **Checking.** After reserving, `cmsis_action load_and_debug` (for each launch
-  configuration that fixes a port), `run` and `load_and_run` (for the ports
+  configuration of the active target that fixes a port: those of its
+  cbuild-run debugger, FVP or not, on that file's GDB ports,
+  `activeLaunchConfigurations()`), `run` and `load_and_run` (for the ports
   of the CMSIS Run task in `tasks.json`), and `start_debugging` of a launch
   configuration with a fixed port, the handler asks
   `HandlerHost.gdbPortHolder()`: the other windows' claims first, which the

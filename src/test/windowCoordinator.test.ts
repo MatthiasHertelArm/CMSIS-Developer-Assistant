@@ -515,6 +515,48 @@ suite('WindowCoordinator and the debug session it publishes', () => {
         await publishedPorts(registry, undefined);
     });
 
+    /**
+     * Tester feedback on preview 4: a load_and_debug with a short timeoutMs answered `running`; its session's
+     * launch failed, so VS Code never announced the session, and the reservation of its GDB port outlived it.
+     * The launch of that tester's custom debug setup names its port only in the cbuild-run file it passes to
+     * pyOCD, through a wrapper; here one whose name does not say pyOCD.
+     */
+    test('a session that begins on a reserved GDB port takes the reservation along; its end releases it, announced or not', async () => {
+        const state = coordinator as unknown as { portReservations: GdbPortReservations };
+        const other = new GdbPortReservations(registry.gdbReservationDirectory(), process.pid, undefined, dir);
+        const cbuildRun = path.join(dir, 'h7+H7.cbuild-run.yml');
+        fs.writeFileSync(cbuildRun, 'cbuild-run:\n  debugger:\n    name: Custom@pyOCD\n    gdbserver:\n      - port: 45343\n');
+        const launches = [
+            { name: 'STLink@pyOCD (launch)', port: 3333, target: { server: 'pyocd', port: '3333' } },
+            { name: 'Custom@pyOCD (launch)', port: 45343, target: { server: 'python3.11', port: '',
+                serverParameters: ['start_server.py', 'gdbserver', '--probe', 'cmsisdap:', '--cbuild-run', cbuildRun] } },
+        ];
+        for (const { name, port, target } of launches) {
+            const start = { what: 'launch' as const, subject: 'Test launch not started', configuration: name };
+            const free = (): boolean => {
+                try {
+                    other.acquire(port, start, 'other window').release();
+                    return true;
+                } catch {
+                    return false;
+                }
+            };
+            state.portReservations.acquire(port, start, 'this window');
+            const session = {
+                id: `coordinator-failed-${port}`, name, type: 'gdbtarget',
+                configuration: { name, type: 'gdbtarget', request: 'launch', target },
+            } as unknown as vscode.DebugSession;
+            trackers.set(session, createSessionTracker(session));
+            assert.strictEqual(free(), false, `${name}: the session that begins holds the port`);
+            await new Promise((later) => setTimeout(later, 50));
+            end(session);
+            for (let tries = 0; tries < 50 && !free(); tries++) {
+                await new Promise((later) => setTimeout(later, 20));
+            }
+            assert.strictEqual(free(), true, `${name}: the end of the session released the reservation`);
+        }
+    });
+
     test('a change of the focused session is published, and so is a focus that leaves an ended session', () => {
         const core0 = live('Core0');
         const core1 = live('Core1');

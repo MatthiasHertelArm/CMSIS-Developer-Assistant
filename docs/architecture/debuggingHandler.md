@@ -510,7 +510,9 @@ without an active solution is refused, an unknown target or action is
 have (`load` on an Arm Debugger adapter, for example). The probe guard
 knows this window only; a GDB port is shared by the machine. So
 `load_and_debug`, `run` and `load_and_run` first reserve, then ask who holds the GDB ports
-they would start a server on — each launch configuration's fixed port, the
+they would start a server on — the fixed port of each launch configuration
+CMSIS Solution can start for the active target (`activeLaunchConfigurations()`:
+not an FVP's or another board's that launch.json keeps beside it), the
 CMSIS Run task's ports (`reserveLaunchPorts()`, `reserveRunPorts()`)
 — and refuse with `PROBE_BUSY` naming the other window and what holds the
 port there, or another program, before the command goes out. GDB would

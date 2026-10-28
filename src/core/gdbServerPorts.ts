@@ -33,7 +33,8 @@
  * runs nothing the window started serves an attach.
  *
  * Load & Debug and Attach need a launch configuration CMSIS Solution wrote;
- * `cmsisLaunchConfigurations` lists them, with the pre-launch task of each.
+ * `cmsisLaunchConfigurations` lists them, with the pre-launch task of each,
+ * and `activeLaunchConfigurations` keeps those of the active target.
  * `isFvpSession` tells from a session's configuration whether its GDB server
  * is an Arm FVP's, which ignores GDB's interrupt while the model runs.
  *
@@ -86,9 +87,14 @@ const FVP_CONFIGURATION_NAME = /^Arm-FVP@/i;
 /** A word of a command line: double-quoted, single-quoted or bare. */
 const COMMAND_LINE_WORD = /"([^"]*)"|'([^']*)'|(\S+)/g;
 
-/** A TCP port given as a number or as digits; anything else is none. */
+/**
+ * A TCP port given as a number or as digits, the digits also in quotes: an
+ * adapter template may render `"port": "\"<%= ports.get(pname) %>\""`, as a
+ * custom debug setup's own template can (`"\"45343\""`). Anything else is none.
+ */
 function portOf(value: unknown): number | undefined {
-    const port = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value) : NaN;
+    const digits = typeof value === 'string' ? /^\s*(["']?)(\d+)\1\s*$/.exec(value)?.[2] : undefined;
+    const port = typeof value === 'number' ? value : digits !== undefined ? Number(digits) : NaN;
     return Number.isInteger(port) && port > 0 && port < 65_536 ? port : undefined;
 }
 
@@ -141,6 +147,10 @@ export interface CmsisLaunchConfiguration {
     gdbPort?: number;
     /** That GDB server, when its command line names one. */
     gdbServer?: GdbServerKind;
+    /** True for a configuration of an Arm FVP (`isFvpSession`), which CMSIS Solution writes for the debugger `Arm-FVP`. */
+    fvp: boolean;
+    /** For a pyOCD launch without a fixed port, the cbuild-run file its server reads the port from (`launchCbuildRun`). */
+    cbuildRun?: string;
 }
 
 /** The `configurations` array of a launch.json text, comments and trailing commas allowed; none when it has no such array. */
@@ -164,6 +174,7 @@ export function cmsisLaunchConfigurations(launchJson: string): CmsisLaunchConfig
             continue;
         }
         const listens = config.request === 'launch' ? configurationGdbPort(config) : undefined;
+        const cbuildRun = listens ? undefined : launchCbuildRun(config);
         found.push({
             name: typeof config.name === 'string' ? config.name : config.request,
             request: config.request,
@@ -171,9 +182,37 @@ export function cmsisLaunchConfigurations(launchJson: string): CmsisLaunchConfig
             ...(typeof config.target?.server === 'string' && config.target.server.trim() !== '' ? { server: config.target.server.trim() } : {}),
             ...(listens ? { gdbPort: listens.port } : {}),
             ...(listens?.server ? { gdbServer: listens.server } : {}),
+            fvp: isFvpSession(config),
+            ...(cbuildRun !== undefined ? { cbuildRun } : {}),
         });
     }
     return found;
+}
+
+/**
+ * The launch configurations Load & Debug can start for the active target.
+ * CMSIS Solution starts one configuration, the one it writes for the
+ * debugger of the active target's cbuild-run.yml, with the GDB ports of that
+ * file's `gdbserver:` list. A launch.json also keeps configurations it does
+ * not rewrite (`updateConfiguration: manual`, an Arm FVP set up by hand
+ * beside a board's): those of the other kind (FVP or not, by
+ * `debuggerName`) and those on a port `ports` does not list are left out.
+ * A filter that would leave nothing is skipped, and so is one without its
+ * fact (no debugger, no ports). A pyOCD launch that reads its port from the
+ * active target's file (`cbuildRun` through CMSIS Solution's command) gets
+ * that port when the file lists exactly one.
+ */
+export function activeLaunchConfigurations(
+    launches: readonly CmsisLaunchConfiguration[],
+    debuggerName: string | undefined,
+    ports: readonly number[],
+): CmsisLaunchConfiguration[] {
+    const resolved = launches.map((config) => (config.gdbPort === undefined && config.cbuildRun?.includes('${') && ports.length === 1
+        ? { ...config, gdbPort: ports[0], gdbServer: 'pyOCD' as const } : config));
+    const ofKind = debuggerName === undefined ? [] : resolved.filter((config) => config.fvp === isFvpDebugger(debuggerName));
+    const candidates = ofKind.length > 0 ? ofKind : resolved;
+    const onPorts = candidates.filter((config) => config.gdbPort !== undefined && ports.includes(config.gdbPort));
+    return onPorts.length > 0 ? onPorts : candidates;
 }
 
 /** The configuration of a launch.json text with this `name`; undefined when there is none. */
@@ -331,7 +370,15 @@ function programName(word: string): string {
     return word.split(/[\\/]/).pop() ?? word;
 }
 
-/** Which GDB server a command line runs: an FVP (the model, or a shim that loads its GDBServer plugin), pyOCD or J-Link. */
+/**
+ * Which GDB server a command line runs: an FVP (the model, or a shim that
+ * loads its GDBServer plugin), pyOCD or J-Link. A custom debug setup may
+ * start pyOCD's `gdbserver` through Python or a wrapper script; it counts
+ * as pyOCD when that subcommand passes `--cbuild-run`, an option only
+ * pyOCD's has. The name of a wrapper proves nothing and is not read: a
+ * setup this does not know has no inferred port, and its server's own
+ * bind failure tells.
+ */
 export function gdbServerKind(words: readonly string[] | undefined): GdbServerKind | undefined {
     if (!words || words.length === 0) {
         return undefined;
@@ -340,7 +387,8 @@ export function gdbServerKind(words: readonly string[] | undefined): GdbServerKi
     if (FVP_MODEL.test(program) || words.some((word) => FVP_GDB_SERVER_PLUGIN.test(word) || FVP_PORT_PARAMETER.test(word))) {
         return 'Arm FVP';
     }
-    if (PYOCD_PROGRAM.test(program)) {
+    const subcommand = words.indexOf('gdbserver');
+    if (PYOCD_PROGRAM.test(program) || (subcommand > 0 && words.includes('--cbuild-run'))) {
         return 'pyOCD';
     }
     return JLINK_GDB_SERVER.test(program) ? 'J-Link' : undefined;
@@ -415,6 +463,22 @@ export function runTaskCbuildRun(words: readonly string[] | undefined): string |
 }
 
 /**
+ * The cbuild-run file a pyOCD launch's GDB server reads its port from: the
+ * argument of `--cbuild-run` when neither `target.port` nor the command line
+ * fixes the port. In launch.json it is `${command:cmsis-csolution.getCbuildRunFile}`,
+ * the active target's file; a live session carries the absolute path it was
+ * resolved to. Undefined for any other configuration.
+ */
+export function launchCbuildRun(configuration: unknown): string | undefined {
+    const config = configuration as { type?: unknown; request?: unknown; target?: { host?: unknown; port?: unknown; server?: unknown; serverParameters?: unknown } } | undefined;
+    if (config?.type !== 'gdbtarget' || config.request !== 'launch' || portOf(config.target?.port) !== undefined) {
+        return undefined;
+    }
+    const host = typeof config.target?.host === 'string' ? config.target.host.trim().toLowerCase() : '';
+    return LOOPBACK_HOSTS.has(host) ? runTaskCbuildRun(serverWords(config.target)) : undefined;
+}
+
+/**
  * The GDB ports a CMSIS Run task serves: the port its command line sets;
  * else for pyOCD's `gdbserver` the ports of the cbuild-run file it reads
  * (`cbuildRunPorts`, one per core) or pyOCD's 3333, and for the J-Link GDB
@@ -464,10 +528,29 @@ export async function folderCmsisRunCommand(folder: string): Promise<string[] | 
 }
 
 /**
+ * The local GDB ports a debug session uses: its fixed port
+ * (`configurationGdbPort`), else, for a pyOCD launch that reads them from a
+ * cbuild-run file (`launchCbuildRun`), the ports that file lists, one per
+ * core. None when neither tells.
+ */
+export async function sessionGdbPorts(
+    configuration: unknown,
+    cbuildRunPorts: (file: string) => Promise<readonly number[]>,
+): Promise<Array<{ port: number; server?: GdbServerKind }>> {
+    const listens = configurationGdbPort(configuration);
+    if (listens) {
+        return [listens];
+    }
+    const file = launchCbuildRun(configuration);
+    return file === undefined ? [] : (await cbuildRunPorts(file)).map((port) => ({ port, server: 'pyOCD' as const }));
+}
+
+/**
  * The GDB ports a window uses, as its registry entry publishes them: its
  * CMSIS Run tasks first (each one hosts its server), then its debug
  * sessions; one claim per port. `cbuildRunPorts` reads the ports of the
- * cbuild-run file a pyOCD Run names (`runTaskCbuildRun`).
+ * cbuild-run file a pyOCD Run or launch names (`runTaskCbuildRun`,
+ * `launchCbuildRun`).
  */
 export async function windowGdbPorts(
     sessions: readonly SessionPortFacts[],
@@ -489,8 +572,7 @@ export async function windowGdbPorts(
         }
     }
     for (const session of sessions) {
-        const listens = configurationGdbPort(session.configuration);
-        if (listens) {
+        for (const listens of await sessionGdbPorts(session.configuration, cbuildRunPorts)) {
             add({ port: listens.port, source: 'session', label: session.name, ...(listens.server ? { server: listens.server } : {}) });
         }
     }

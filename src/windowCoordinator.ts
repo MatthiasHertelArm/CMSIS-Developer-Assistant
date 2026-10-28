@@ -28,7 +28,7 @@ import type { PackDocsHandlers } from './packDocsDispatch';
 import { BusyCall, EventLoopLag, WindowRole, WorkspaceRegistry } from './utils/workspaceRegistry';
 import type { PortClaimingWindow } from './core/gdbPortGuard';
 import { GdbPortReservations } from './core/gdbPortReservations';
-import { gdbPortClaimsOf, taskCommandWords, windowGdbPorts, type GdbPortClaim } from './core/gdbServerPorts';
+import { gdbPortClaimsOf, sessionGdbPorts, taskCommandWords, windowGdbPorts, type GdbPortClaim } from './core/gdbServerPorts';
 import { cbuildRunGdbPorts } from './core/packDocs/cbuildRun';
 import { CHANNEL_TIMINGS, ChannelTimings, OpName, forwardTimeoutMs, mayWaitForUser } from './core/opTable';
 import { problemJournal, type ProblemJournal } from './core/problemJournal';
@@ -40,7 +40,7 @@ import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { solutionFileOf } from './core/solutionAnswers';
 import { logger } from './utils/logger';
 import { notifyWarning } from './utils/notify';
-import { liveSessionsExcept, registrySession } from './utils/sessionStateTracker';
+import { liveSessionsExcept, onSessionBegins, registrySession } from './utils/sessionStateTracker';
 import { activeCbuildRunFile } from './utils/solutionQueries';
 import { withTimeout } from './utils/timeout';
 import { WindowStatus } from './windowStatus';
@@ -160,10 +160,11 @@ async function defaultSerialTeardown(): Promise<void> {
 }
 
 /**
- * The GDB ports of a pyOCD CMSIS Run that reads them from a cbuild-run file:
- * the active target's when the task names it through CMSIS Solution's
- * command, else the file it names by an absolute path. None when there is no
- * such file or it lists no port.
+ * The GDB ports of a pyOCD CMSIS Run or launch that reads them from a
+ * cbuild-run file: the active target's when the task or launch.json names it
+ * through CMSIS Solution's command, else the file it names by an absolute
+ * path, as a live session's resolved configuration does. None when there is
+ * no such file or it lists no port.
  */
 async function cbuildRunPortsOf(file: string): Promise<readonly number[]> {
     const runFile = file.includes('${') ? await activeCbuildRunFile() : path.isAbsolute(file) ? file : undefined;
@@ -320,6 +321,9 @@ export class WindowCoordinator {
             debug.onDidChangeActiveDebugSession(() => this.publish()),
             vscode.workspace.onDidChangeWorkspaceFolders(() => this.publish()),
         );
+        // A start's GDB port reservation belongs to its session once the adapter starts, whatever the tool call
+        // waited for: a session whose launch fails is never announced and may end before any port sample.
+        context.subscriptions.push(onSessionBegins((session) => this.adoptSessionPorts(session)));
         // A CMSIS Run task that starts or ends changes the GDB ports this window uses.
         const tasks = vscode.tasks as Partial<typeof vscode.tasks> | undefined;
         for (const event of [tasks?.onDidStartTaskProcess, tasks?.onDidEndTaskProcess, tasks?.onDidEndTask]) {
@@ -690,6 +694,21 @@ export class WindowCoordinator {
                     this.refreshGdbPorts();
                 }
             });
+    }
+
+    /** A session that begins here owns the reservations of its GDB ports: the session's end releases them. */
+    private adoptSessionPorts(session: vscode.DebugSession): void {
+        void sessionGdbPorts(session.configuration, cbuildRunPortsOf).then(
+            (ports) => {
+                if (this.disposed || ports.length === 0) { return; }
+                for (const { port } of ports) {
+                    this.portReservations.adoptPort(port);
+                }
+                // A look after the adoption: a session that already ended releases its ports now, not at the heartbeat.
+                this.refreshGdbPorts();
+            },
+            (caught: unknown) => logger.debug(`GDB ports of '${session.name}': ${caught instanceof Error ? caught.message : String(caught)}`),
+        );
     }
 
     /** Keep the GDB ports of the last look; a change is published at once. */
