@@ -187,6 +187,8 @@ served topic to at most 7 000 bytes, and a few phrases.
 - `zod`: the input schema of every tool
 - `express`: the HTTP app behind `/mcp`
 - `jsonc-parser`: reads `launch.json`, comments and trailing commas included
+- `js-yaml`: reads the csolution's target-types and the YAML the CMSIS tools
+  write (`cbuild-idx.yml`, `tools-environment.yml`), scalars kept as strings
 - `serialport`: the serial tools; left out of the esbuild bundle because of
   its native binary, and shipped in `node_modules` (see
   `docs/packaging-esbuild.md`)
