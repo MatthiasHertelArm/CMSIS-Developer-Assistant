@@ -11,9 +11,11 @@ the reasons and the open decisions.
 The knowledge index is mandatory. The extension ships the core index
 (`resources/knowledge/core.db`) and the knowledge tools are always on.
 `knowledge.indexPath` replaces the core index, for testing a rebuilt one.
-The file is git-ignored and pinned instead: the knowledge-base repository
-builds it reproducibly from a commit (`scripts/build_core.sh`) and publishes
-it as a GitHub release `core-<version>` with its sha256 and a metadata file
+The file is git-ignored and pinned instead: the knowledge-base repository,
+which is private, builds it reproducibly from a commit (`scripts/build_core.sh`)
+and publishes it as a GitHub release `core-<version>` with its sha256, a
+metadata file and `SOURCES.md` in the public repository
+[cmsis-knowledge-index](https://github.com/MatthiasHertelArm/cmsis-knowledge-index)
 (`scripts/release_core.sh`); `resources/knowledge/core.lock.json` names the
 version, the asset URL, the hash, the size, the unit count and the commit.
 `npm run knowledge:fetch` downloads the pinned file when the local one is

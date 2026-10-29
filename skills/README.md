@@ -2,7 +2,7 @@
 
 This directory contains cmsis-help, the one Agent Skill the extension packages and installs, and its generated catalog.json. On activation and during Configure Agent, the installer copies the skill to the user's personal skills directories. Its marker-guarded sweep still removes skills installed by older releases.
 
-The eight knowledge procedures formerly kept here are authored in [cmsis-knowledge-base/sources/cda-procedures](https://github.com/MatthiasHertelArm/cmsis-knowledge-base/tree/master/sources/cda-procedures), including their assets, references, metadata and routing definitions. They reach agents through the pinned knowledge index, not installed skill directories. The knowledge base also fetches Open-CMSIS-Pack/cmsis-skills directly.
+The eight knowledge procedures formerly kept here are authored in the knowledge base's `sources/cda-procedures`, including their assets, references, metadata and routing definitions. They reach agents through the pinned knowledge index, not installed skill directories. The knowledge base also fetches Open-CMSIS-Pack/cmsis-skills directly.
 
 ## Updating the help skill
 
