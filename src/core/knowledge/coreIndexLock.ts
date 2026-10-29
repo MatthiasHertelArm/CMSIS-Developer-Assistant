@@ -359,7 +359,9 @@ export async function downloadVerified(url: string, destination: string, expecte
             response.on('data', (chunk: Buffer) => { hash.update(chunk); size += chunk.length; });
             response.on('error', reject);
             out.on('error', reject);
-            out.on('finish', resolve);
+            // 'close', not 'finish': on Windows a file whose handle is still open
+            // cannot be renamed, and a deleted one stays listed until it closes.
+            out.on('close', resolve);
             response.pipe(out);
         });
         const sha256 = hash.digest('hex');
