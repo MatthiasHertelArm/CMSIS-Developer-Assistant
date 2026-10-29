@@ -1,14 +1,16 @@
 # #19 Registry file exposes the control token; agents drive the control server with curl
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Private registry permissions and the control-channel restrictions are implemented; see [window routing](../architecture/windowRouting.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#19](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/19) |
 | Area · priority · source | Multi-window/transport · Low · Studio test |
-| Proposed release | 2.3.11 (WP-E; the agent-facing doc line ships with WP-D, see [50-tool-contract.md](50-tool-contract.md)) |
+| Original release plan | 2.3.11 (WP-E; the agent-facing doc line ships with WP-D, see [50-tool-contract.md](50-tool-contract.md)) |
 | Size | S |
 | Depends on | none |
 | Related | #12, #16, #50 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

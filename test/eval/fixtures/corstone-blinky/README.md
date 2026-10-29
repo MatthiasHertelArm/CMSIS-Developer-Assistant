@@ -48,9 +48,9 @@ The FVP's GDB server ignores GDB's interrupt while the model runs, so `pause_exe
 cannot halt it: a fault scenario stops in the fault only with a breakpoint on
 `HardFault_Handler` (`Blinky/RTE/Device/SSE-300-MPS3/startup_SSE300MPS3.c`; `lookup_symbol`
 finds it) set after `load_and_debug` and before `continue_execution` — the reply of
-`load_and_debug` says so on an FVP. The launch config sets no `break` in `initCommands` on
-purpose: VS Code adopts the breakpoints GDB announces and keeps them in the workspace, where
-they confuse the next session and `list_breakpoints`.
+`load_and_debug` says so on an FVP. The launch config uses `tbreak main` to stop once at entry, and sets no persistent
+`break` in `initCommands`: VS Code adopts persistent breakpoints GDB announces and
+keeps them in the workspace, where they confuse the next session and `list_breakpoints`.
 
 The `.vscode` files are kept against a global `**/.vscode` ignore by the repository's
 `.gitignore`; the files CMSIS Solution writes there per machine stay out. See

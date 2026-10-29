@@ -1,14 +1,16 @@
 # #53 Rewrite the remaining MS-derived core to fully own the codebase (drop MIT lineage)
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** The independent source rewrite is complete; [provenance records](../provenance/README.md) retain the evidence. The separate license review is not resolved by that source-code result. The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#53](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/53) (not on the project board yet) |
 | Area · priority · source | Provenance (no board area fits; proposed "Agent setup" or a new "Codebase" area) · Medium (proposed) · Maintainer |
-| Proposed release | Spread over three releases: phases 0–1 alongside 2.3.11, phase 2 in the 2.3.12 cycle, phases 3–5 after 2.3.12; completion proposed as 2.4.0 |
+| Original release plan | Spread over three releases: phases 0–1 alongside 2.3.11, phase 2 in the 2.3.12 cycle, phases 3–5 after 2.3.12; completion proposed as 2.4.0 |
 | Size | XXL (phase 0 M, phase 1 L, phase 2 L, phase 3 XL, phase 4 S, phase 5 XS) |
 | Depends on | Arm OSPO/legal sign-off on the method (Decision 2) and on the outbound licence (Decision 3) |
 | Related | #11, #13, #14, #16, #19, #47, #49, #50 (all change the files in scope); codebase review items 3.3, 3.4, 3.5 and 5.1 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 
@@ -52,9 +54,9 @@ Corrections to the issue text:
 
 - **Other files with DebugMCP content** (same method, blank lines excluded):
   - Architecture docs: [debuggingExecutor.md](../architecture/debuggingExecutor.md) 100 %, [debuggingHandler.md](../architecture/debuggingHandler.md) 95 %, [debugState.md](../architecture/debugState.md) 90 %, [debugMCPServer.md](../architecture/debugMCPServer.md) 50 %, [debugConfigurationManager.md](../architecture/debugConfigurationManager.md) 29 %.
-  - Language troubleshooting guides, 86–94 %: `csharp.md`, `cpp.md`, `java.md`, `go.md`, `javascript.md`, `python.md` in [docs/agent-resources/troubleshooting/](../agent-resources/troubleshooting/), plus the `cpp.md` copy in [skills/cmsis-debug-live/references/troubleshooting/](../../skills/cmsis-debug-live/references/troubleshooting/).
+  - Language troubleshooting guides, 86–94 %: `csharp.md`, `cpp.md`, `java.md`, `go.md`, `javascript.md`, `python.md` in [docs/agent-resources/troubleshooting/](../agent-resources/troubleshooting/), plus the `cpp.md` copy in [skills/cmsis-debug-live/references/troubleshooting/](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/tree/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/references/troubleshooting).
   - Build and repo files: [eslint.config.mjs](../../eslint.config.mjs) 100 %, [.gitignore](../../.gitignore) 93 % (its inherited `[Bb]uild[Ll]og.*` pattern swallowed `buildLog.ts` in the 2.3.9 incident), [tsconfig.json](../../tsconfig.json) 67 %, [esbuild.js](../../esbuild.js) 52 %, [AGENTS.md](../../AGENTS.md) 60 %.
-  - Low overlap, rewrite with the rest: [README.md](../../README.md) 11 %, [skills/cmsis-debug-live/SKILL.md](../../skills/cmsis-debug-live/SKILL.md) 10 %.
+  - Low overlap, rewrite with the rest: [README.md](../../README.md) 11 %, [skills/cmsis-debug-live/SKILL.md](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md) 10 %.
 - **Licence and attribution:**
   - [LICENSE-MIT](../../LICENSE-MIT) is Microsoft's MIT text ("Copyright (c) Microsoft Corporation").
   - [NOTICE:15-22](../../NOTICE#L15-L22) carries the DebugMCP attribution.

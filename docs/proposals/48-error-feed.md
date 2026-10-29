@@ -1,14 +1,16 @@
 # #48 Proposal: one standardized error feed for agents (debug adapter, GDB server, build, Problems, UI notifications)
 
+> **2.7.0 status (2026-10-27).** The problem journal and phases 1–2 are implemented; phases 3–4 remain separate integration proposals. Review only that remaining scope, not the old plan to add the journal again. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#48](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/48) |
 | Area · priority · source | Debug & run control · Medium (proposed) · Maintainer |
-| Proposed release | 2.3.12, phases 1–2 (WP-H, together with the interim #15 half). Phases 3–4: Future |
+| Original release plan | 2.3.12, phases 1–2 (WP-H, together with the interim #15 half). Phases 3–4: Future |
 | Size | XL overall; phases 1–2 L |
 | Depends on | #11 (`ToolError`, `ToolReply`, envelope v2, the mapping in `MeasuredMcpServer`), #47 / #46 / #12 (`CmsisJobTracker`), WP-G (tool-list bytes) |
 | Related | #13, #14, #15, #21, #41, #49, #50 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

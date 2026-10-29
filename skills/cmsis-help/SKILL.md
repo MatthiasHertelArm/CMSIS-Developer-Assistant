@@ -81,4 +81,4 @@ No `get_session_status` in your tool list means this agent session is not connec
 | An error text from a build, csolution, packchk or svdconv | `knowledge_search` with the exact text |
 | A datasheet, reference manual or register meaning | `list_target_docs`, then `search_target_docs`; never read the PDF yourself |
 
-Agents that do not load skills (GitHub Copilot Chat) get the same topics from `get_debug_instructions`.
+Agents that do not load skills get the same topics from `get_debug_instructions`.

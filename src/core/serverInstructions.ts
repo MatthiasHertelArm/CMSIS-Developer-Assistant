@@ -51,13 +51,14 @@ const CORE_SKILLS_ONLY =
     'knowledge_search finds it, knowledge_get reads it.';
 
 const WITHOUT_SKILLS =
-    'Harnesses that do not load skills (GitHub Copilot Chat) should call get_debug_instructions instead.';
+    'Harnesses that do not load skills should call get_debug_instructions instead.';
 
 /** A client may give up on a call before its wait ends (tester feedback, 2.7.0): that loses the reply, not the work. */
 const TIMEOUT_OVERRIDE =
-    'Tools that accept timeoutMs use it as a one-call override of the default, capped at 60 s (cmsis_action and flash: 600 s); '
-    + 'set it when you can estimate the work. A wait your client gives up on is no failure: the work goes on, and '
-    + 'cmsis_action {action:\'status\'} returns its result.';
+    'Use timeoutMs where the tool schema exposes it: most debugging tools accept up to 60 s; cmsis_action, flash, documentation and '
+    + 'build-artefact tools accept up to 600 s. Breakpoint tools and stop_debugging use internal waits; restart_debugging uses the '
+    + 'configured session-readiness wait rather than its timeoutMs argument. A wait your client gives up on is no failure: the work '
+    + 'goes on, and cmsis_action {action:\'status\'} returns its result.';
 
 /** How to read an outcome (#11); it rides in the initialize result, so tools/list does not grow. */
 const READING_RESULTS =

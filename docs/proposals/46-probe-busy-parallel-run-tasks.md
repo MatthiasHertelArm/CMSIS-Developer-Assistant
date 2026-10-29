@@ -1,14 +1,16 @@
 # #46 Multithreading issue
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Probe guards and task tracking are implemented; see [handler architecture](../architecture/debuggingHandler.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#46](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/46) |
 | Area · priority · source | Build & flash (proposed) · High (proposed) · Internal test (christophe0606) |
-| Proposed release | 2.3.11 (WP-B, together with #47 and #12; also the `flash` half of #45) |
+| Original release plan | 2.3.11 (WP-B, together with #47 and #12; also the `flash` half of #45) |
 | Size | M |
 | Depends on | #11 (`ToolError` with `PROBE_BUSY`), #47 (`CmsisJobTracker`, `probeOwners()`) |
 | Related | #45 (pyOCD called directly), #47, #12, #48 (maps the pyOCD wait line), #14, #3 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 The task classifier and the job tracker are defined in [47-task-completion-detection.md](47-task-completion-detection.md#proposed-fix). This document adds the probe guard, the verified `stop_run`, the task state in `get_session_status`, and the pyOCD resolution for `flash`.
 

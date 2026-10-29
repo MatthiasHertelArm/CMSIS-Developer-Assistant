@@ -48,7 +48,7 @@ the picker, and the wait also races the token itself, so it ends even if
 the picker stays open. A picker closed by the token rejects with
 `PickerCancelled`, which carries the names of the entries it offered: the
 handler turns them into the hint of its `INVALID_ARGUMENT`. That case is
-logged as a warning; other failures remain errors.
+logged at info level; other failures remain errors.
 
 ### Named entries and synthesized configurations
 

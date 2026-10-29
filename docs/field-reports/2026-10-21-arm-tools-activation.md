@@ -4,6 +4,12 @@ Date: 2026-10-21
 Projects: CMSIS Developer Assistant and UlinkCloud
 Target: `NUCLEO-H723ZG` / `STM32H723ZGTx`, AC6, ST-Link with pyOCD
 
+## Outcome in 2.7.0 (2026-10-27)
+
+`cmsis_action activate_environment` now calls the Arm Tools Environment Manager's Reactivate Environment with the active manifest's URI. It waits for CMSIS Solution to rewrite `.cmsis/tools-environment.yml` and reports the tools recorded there, or returns `running` while activation is still pending. Download and licence prompts still belong to the user. See the [current action guide](../agent-resources/debug_instructions.md) and [implementation](../../src/handler/cmsisAction.ts).
+
+The incident and suggested improvement below are preserved as recorded on 2026-10-21; the absence of an activation operation is no longer a current limitation. Any remaining environment-status query belongs in the [2026-10-28 review](../reviews/2026-10-28-knowledge-and-docs.md).
+
 ## Observed sequence
 
 1. The UlinkCloud solution had a `vcpkg-configuration.json` requesting CMSIS-Toolbox, CMake, Ninja and Arm Compiler 6. Arm Compiler 6.24.0 was present in the vcpkg artifact cache.

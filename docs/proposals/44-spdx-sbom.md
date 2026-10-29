@@ -1,14 +1,16 @@
 # #44 Proposal: Can we make the assistant to generate SPDX formatted SBOM files?
 
+> **2.7.0 status (2026-10-27).** The SBOM workflow remains a proposal. Its local skill-vendoring and picker steps are obsolete: procedure sources belong to the knowledge base, which also imports cmsis-skills directly. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#44](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/44) |
 | Area · priority · source | Build info · Medium (proposed) · External (KeilChris; comment by ReinhardKeil) |
-| Proposed release | Future (WP-O) |
+| Original release plan | Future (WP-O) |
 | Size | M overall; the part in this repo is XS |
 | Depends on | none |
 | Related | #51 (reads the same `*.cbuild.yml`, `processor:` block), #17 and #41 (toolchain facts from `.cmsis/tools-environment.yml`), #21 (asks owned by other teams) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 
@@ -29,7 +31,7 @@ The inputs also have gaps that an SBOM cannot paper over:
 ## Current state (2.3.10)
 
 - **No SBOM code.** There is no SBOM, SPDX or license code in `src/`. `parseCbuildYml` ([artifacts.ts:181-224](../../src/core/buildInfo/artifacts.ts#L181-L224)) reads only `compiler`, `context`, `device`, `processor.core`, `output-dirs`, `output` and `linker.script`.
-- **Fixture** [Blinky.Debug+MPS3.cbuild.yml](../../test/eval/fixtures/corstone-blinky/build/MPS3/GCC/Debug/Blinky/outdir/Blinky.Debug+MPS3.cbuild.yml) has what an SBOM needs:
+- **Fixture** `Blinky.Debug+MPS3.cbuild.yml`, which a build of `test/eval/fixtures/corstone-blinky` writes to `build/MPS3/GCC/Debug/Blinky/outdir/`, has what an SBOM needs:
   - `board`, `board-pack`, `device`, `device-pack` (lines 7-14);
   - `processor` (27-31);
   - `packs` with `pack` and `path` (32-36);
@@ -39,7 +41,7 @@ The inputs also have gaps that an SBOM cannot paper over:
   - `groups`, the user sources (258-274);
   - `constructed-files` (275-277);
   - `licenses` (278-298): `license`, `license-agreement`, `packs`, `components`.
-- **Index file.** [Blinky.cbuild-idx.yml](../../test/eval/fixtures/corstone-blinky/Blinky.cbuild-idx.yml) lists the contexts of the active target (`cbuilds[]`), `packs-unused` and csolution's messages. The format is documented in [YML-CBuild-Format](https://open-cmsis-pack.github.io/cmsis-toolbox/YML-CBuild-Format/), which says nothing about SBOM, hashes or runtime libraries.
+- **Index file.** `Blinky.cbuild-idx.yml`, written by the same build next to the csolution, lists the contexts of the active target (`cbuilds[]`), `packs-unused` and csolution's messages. The format is documented in [YML-CBuild-Format](https://open-cmsis-pack.github.io/cmsis-toolbox/YML-CBuild-Format/), which says nothing about SBOM, hashes or runtime libraries.
 - **Skills.**
   - The catalog category `devops` exists ([skillCatalog.ts:28-41](../../src/utils/skillCatalog.ts#L28-L41)); no vendored skill uses it at the pinned commit `d778b91`.
   - Upstream `Open-CMSIS-Pack/cmsis-skills` `main` has since added `devops/create-csolution-github-action` (commit `94ad394`) and a new category `ethos-u`.

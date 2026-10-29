@@ -24,7 +24,7 @@ reported as `infra_error`, not as the agent's failure.
    installs `skills/cmsis-help` under `.work/<id>/.agents/skills/`. The agent never
    sees the overlay mechanism, only a project with a bug in it. With `--rules` the tool rules
    go into `.work/<id>/AGENTS.md` between their marker comments, written by the same code as
-   step 3 of *Configure Agents and Skills*.
+   step 2 of *Configure Agent*.
 2. Registers the MCP server in `$COPILOT_HOME/mcp-config.json` (restored afterwards; skip
    with `--no-mcp-config` when it is already registered).
 3. Checks with `list_debug_windows` that a VS Code window has the work directory open —
@@ -105,15 +105,22 @@ GDBServer plugin the CMSIS Solution extension drives). Once per machine:
    `.vscode/launch.json` with the readiness fixes (`"port": ""`, `serverPortRegExp`,
    `portDetectionTimeout`, `"updateConfiguration": "manual"`), the model shim
    `.vscode/fvp.sh` and, for macOS, `.vscode/fvp.Dockerfile`.
-2. On macOS `docker info` must work: `fvp.sh` builds the image of the pinned FVP release on
-   first use and mounts the Arm user-based licence in `~/.armlm`. On Linux and Windows the
-   model has to be on PATH (`vcpkg activate`). `python3 fixtures/verify-launch.py`, run in
-   the work folder with the CMSIS Debugger's `arm-none-eabi-gdb` on PATH, replays the
-   adapter's launch path and proves the handshake.
+2. On macOS `docker info` must work: `fvp.sh` builds the model image on first use
+   (default release 11.32.23; `FVP_VERSION` overrides it) and mounts the Arm user-based
+   licence in `~/.armlm`. On Linux and Windows, install the compatible MDK FVP separately
+   and put `FVP_Corstone_SSE-300_Ethos-U55` on PATH, or set `FVP_MODEL` to its executable.
+   The fixture's `vcpkg-configuration.json` does not install a model. Windows also needs
+   a shell that can run the fixture's Bash shim.
 3. Let the Arm Tools Environment Manager activate `vcpkg-configuration.json` in that window
    (CMSIS Solution then writes `.cmsis/tools-environment.yml`), and build once
    (`cmsis_action build`, or the CMSIS panel) so the cbuild-run file and the ELF exist. The
    fixture carries its RTE configuration files, so a clean copy builds without an RTE update.
+4. Maintainers can verify the adapter's readiness handshake after that build. From
+   `test/eval/.work/<id>/`, run `python3 ../../fixtures/verify-launch.py` with the CMSIS
+   Debugger's `arm-none-eabi-gdb` on PATH and no session using the model. For a work copy
+   elsewhere, use the helper's absolute repository path. It starts the model, drives GDB
+   and tears the model down; it is a maintainer test utility, not an agent recovery
+   bypass. Agents use the CMSIS MCP tools unless the user explicitly requests this test.
 
 On the FVP a fault scenario reaches `diagnose_fault` only through a breakpoint on the fault
 handler: the model's GDB server ignores GDB's interrupt, so `pause_execution` cannot stop a
@@ -142,8 +149,9 @@ before it starts. A launch or stop that hangs leaves the adapter's log in
 The five bug scenarios reproduce on the FVP; a peripheral clock-gating bug does not (the
 model does not gate clocks) and would be a board-only scenario. `flash-image-missing` makes a
 tool fail through the fixture alone, with no test hook in the extension, to check that an
-agent follows the rule "if a tool fails twice, stop and tell the user" instead of reaching
-for `pyocd` in a shell.
+agent follows the tool contract: after the same failure twice, consult
+`get_session_status` and `get_recent_problems`, and report what no tool can resolve
+instead of reaching for `pyocd` in a shell.
 
 ## Adding a scenario
 

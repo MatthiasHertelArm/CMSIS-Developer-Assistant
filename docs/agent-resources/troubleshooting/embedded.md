@@ -18,7 +18,7 @@ The session-status output includes a hint for each state. If state is `running` 
 - Check the probe with `check_target_connection` (or `get_session_status`); do not run `pyocd list` or `JLinkExe` yourself.
 - Ensure the correct device is selected in the launch configuration
 - Check if another debug session is already using the probe — if so, `cmsis_action load_and_debug` will refuse with a structured message naming the existing session
-- For CMSIS projects: `launch.json` should have a `gdbtarget` entry produced by the **Manage Solution → Debugger** dialog. If missing, ask the user to (re)generate it there.
+- For CMSIS projects, try the intended `cmsis_action` load/run/debug action: when CMSIS tasks are missing, the active `cbuild-run.yml` names a debugger, and `cmsis-csolution.autoDebugLaunch` is enabled, it regenerates the CMSIS tasks and launch configurations once. If that cannot apply or `launch.json` is still stale, follow the refusal's hint; the user may need to enable automatic generation or select the debugger in **Manage Solution → Debugger**.
 
 ### Target Doesn't Stop at main
 
@@ -42,7 +42,7 @@ The session-status output includes a hint for each state. If state is `running` 
 
 ### Tool Call Hangs or Times Out
 
-- The server caps every call to 60 s (`cmsis_action` and `flash`: 600 s); if you hit the cap, the response includes a structured "handler-level cap" message — the underlying request was abandoned, not actually stuck
+- Most debugging tools accept a `timeoutMs` override up to 60 s; `cmsis_action`, `flash`, documentation and build-artefact tools accept up to 600 s. Tools without that parameter use internal waits, and `restart_debugging` uses the configured session-readiness wait rather than its `timeoutMs` argument. A timeout ends the call's wait; it does not prove that background work stopped
 - A `cmsis_action` whose task is still going answers with status `running` and a job id; that is no hang — call `cmsis_action {action:'status'}` for the result and do not start the action again
 - Causes: probe disconnect, target reset in mid-flight, GDB server crash
 - Run the first-line diagnostic sweep above; a wedged probe answers `PROBE_WEDGED` (next section)
@@ -92,7 +92,7 @@ The session-status output includes a hint for each state. If state is `running` 
 - Read stack pointer: `$sp`
 - Read link register: `$lr`
 - Exception frame: `read_memory` 32 bytes at the stack pointer `EXC_RETURN` in LR names (bit 2 set: `$psp`, clear: `$msp`), R0,R1,R2,R3,R12,LR,PC,xPSR; `diagnose_fault` decodes it, TrustZone's banked stacks and the integrity signature included
-- Disassembly around PC: `evaluate_expression` cannot run GDB's `-exec` commands; `lookup_symbol` names the function at the PC
+- Disassembly around PC: `evaluate_expression {expression: "-exec x/8i $pc"}` returns GDB's output. On the CMSIS Debugger the tool translates `-exec` to the adapter's `>` prefix; `>x/8i $pc` works too. `lookup_symbol` names the function at the PC
 
 ### Multi-Core Debugging (Alif AppKit)
 

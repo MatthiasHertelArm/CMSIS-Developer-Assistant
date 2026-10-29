@@ -1,10 +1,12 @@
 # Use more of the CMSIS Solution extension: its API v2 and four of its commands
 
+> **Completed design record (2.7.0).** The five phases shipped as the implementation notes below describe. The original release plan and Current state section are retained for context; [cross-extension calls](extension-calls.md) is the current inventory. Remaining documentation and knowledge follow-ups belong in the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md).
+
 | | |
 |---|---|
 | Issue | none yet |
 | Area · priority · source | Integration with CMSIS Solution · Medium · review of CMSIS Solution 1.72.0 against this extension, 2026-10-18 |
-| Proposed release | phase 0 in the next release (done on `fix/cmsis-solution-commands`); phases 1–2 in the release after; phase 3 with #41; phase 4 when convenient |
+| Original release plan | phase 0 in the next release (done on `fix/cmsis-solution-commands`); phases 1–2 in the release after; phase 3 with #41; phase 4 when convenient |
 | Size | phase 0 XS (done), phase 1 S, phase 2 M, phase 3 M, phase 4 S |
 | Depends on | nothing for phases 0–2; #41 for the tool shape of phase 3 (Decision 2) |
 | Related | #41 (cross-extension commands as `cmsis_query`), [bootstrap-empty-vscode.md](bootstrap-empty-vscode.md) phase 2 (`create_solution`), [knowledge-base.md](knowledge-base.md) (pack knowledge), #21 (requests to the CMSIS Solution team) |

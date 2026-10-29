@@ -203,8 +203,9 @@ file, or without its rules block, every session gets the instructions
 without the rules, and a warning says why.
 
 After the rules, `composeInstructions()` adds fixed sentences: what the tools
-are for, to invoke the `cmsis-debug-live` Agent Skill first and what it
-brings, `get_debug_instructions` for harnesses that load no skills, the 60 s
+are for, to invoke the `cmsis-help` Agent Skill first and what it brings,
+that the other CMSIS procedures come from `knowledge_search` and
+`knowledge_get`, `get_debug_instructions` for harnesses that load no skills, the 60 s
 cap on `timeoutMs` (600 s for `cmsis_action` and `flash`) and that a wait the
 client gives up on is no failure (the work goes on, `cmsis_action status`
 returns its result), how to read a
@@ -256,8 +257,9 @@ itself (see [Results](#results)). `src/packDocsTools.ts` and
 | The eleven `serial_*` tools | `serialEnabled` is not `false` | the `serial` dispatch, by op name |
 | Documentation (`registerPackDocsTools()`) | `packDocsEnabled`, and the session has a `packDocs` dispatch | `src/packDocsTools.ts`, then the dispatch |
 | Build artefacts (`registerBuildInfoTools()`) | `buildInfoEnabled`, and the session has a `packDocs` dispatch | `src/buildInfoTools.ts`, then the dispatch |
+| Knowledge (`registerKnowledgeTools()`) | the session has a `packDocs` dispatch; always enabled in the extension | `src/knowledgeTools.ts`, then the dispatch |
 | `list_debug_windows`, `select_debug_window` | the debugging handler is a window router | the router |
-| The `window` argument on the tools in `WINDOW_ARGUMENT_TOOLS` (`cmsis_action`, `flash`, `reset`, `serial_open`, `serial_capture`) | the debugging handler is a window router | the router, which reads it and never forwards it |
+| The `window` argument on the tools in `WINDOW_ARGUMENT_TOOLS` (`cmsis_action`, `flash`, `reset`, `serial_open`, `serial_capture`, `knowledge_search`) | the debugging handler is a window router | the router, which reads it and never forwards it |
 
 A router is recognised by its two extra methods (`windowRoutingOf()`), so this
 module does not import the routing code. A router's calls are journaled in
@@ -269,7 +271,7 @@ problems of a failure attached, and with the session's notice of new errors
 (#48, see [debuggingHandler.md](debuggingHandler.md#the-problem-journal)).
 Tool names stay literal because
 `src/test/skill.test.ts` collects them from the `registerTool('…'` calls and
-compares them with the `allowed-tools` list of the `cmsis-debug-live` skill.
+compares them with the `allowed-tools` list of the `cmsis-help` skill.
 The `window` argument is added in one place for all its tools:
 `buildSessionServer()` calls `MeasuredMcpServer.addArgument()` before the
 tools are registered, and the server appends the argument to the input shape
@@ -390,7 +392,7 @@ whole guide is served and a warning is logged.
 A topic is sized to be read in one piece: GitHub Copilot's agent writes a
 result over about 8 KB to a file and pages through it, which is why the
 `build` topic became `target`, `cmsis-action` and `flash` in 2.7.0, and why
-every topic is held under 7 000 bytes as served. A topic that grows past it
+every topic is held to at most 7 000 bytes as served. A topic that grows past it
 first loses what the tool descriptions and replies already say; it is split
 only where it has two halves an agent asks for apart. A retired
 name stays in the tool's enum (`RETIRED_TOPICS`) and serves the topic that

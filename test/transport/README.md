@@ -34,9 +34,10 @@ Each exits non-zero if any check failed.
   with 404.
 - The tool contract (#50): the `instructions` start with the tool rules, the
   first `get_session_status` of a session repeats them in one line and the
-  second does not, and `tools/list` keeps its pinned size to the byte — the
-  contract never goes into a tool description. A deliberate change to a
-  description or schema updates `TOOLS_LIST_BYTES` in the same commit.
+  second does not, and `tools/list` stays within the single-window and
+  all-groups byte budgets — the contract never goes into a tool description.
+  Review deliberate schema/description changes against those budgets and
+  update the surface snapshot in the same change.
 - No tool of the single-window list takes the router's `window` argument
   (#16).
 - The problem journal (#48) on the server without a router:
@@ -106,7 +107,7 @@ single-window server against a scripted `gdbtarget` session and compares with
 `dap-scenarios.snapshot.json`; `--update` rewrites the snapshot and
 `--only=<name>` prints one scenario. About 40 s, no window, network or probe.
 
-Each of the 40 scenarios gets a fresh server and fake session (pyOCD or J-Link
+Each scenario gets a fresh server and fake session (pyOCD or J-Link
 launch/attach configuration, cbuild-run file, SVD under a fake pack root) and
 records, per tool call, the reply and its traffic: DAP requests with the
 scripted answer, VS Code commands, breakpoint and start/stop API calls, the

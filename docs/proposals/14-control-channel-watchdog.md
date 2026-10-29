@@ -1,14 +1,16 @@
 # #14 Control channel can hang with no watchdog: worker dispatch unbounded, no health op, no channel-lost notice
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Control-channel fences and window health checks are implemented; see [window routing](../architecture/windowRouting.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#14](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/14) |
 | Area · priority · source | Multi-window/transport · Medium · Studio test |
-| Proposed release | 2.3.12 (WP-I) |
+| Original release plan | 2.3.12 (WP-I) |
 | Size | M |
 | Depends on | #11 (`ToolError`, `WORKER_TIMEOUT` / `WINDOW_UNREACHABLE`, control envelope v2) |
 | Related | #3, #16, #19, #48, #49 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

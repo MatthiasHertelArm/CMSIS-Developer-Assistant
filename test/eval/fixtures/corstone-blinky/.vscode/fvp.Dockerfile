@@ -1,9 +1,9 @@
 # MDK FVP models for macOS hosts, which Arm does not build for.
 #
-# The image is the Linux build of the very same release the rest of the project
-# pins in vcpkg-configuration.json (arm:models/arm/avh-fvp), so the model, the
-# Ethos-U85 plugin and plugins/GDBServer.so are bit-identical to what a Linux or
-# Windows developer gets from vcpkg. .vscode/fvp.sh builds it on first use.
+# .vscode/fvp.sh builds this image on first use, defaulting to release
+# 11.32.23 (FVP_VERSION overrides it). The fixture does not declare a model
+# artifact in vcpkg-configuration.json; native hosts install the model
+# separately. Use the same release when comparing evaluation runs.
 FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive

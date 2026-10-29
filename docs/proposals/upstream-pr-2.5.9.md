@@ -1,3 +1,7 @@
+# Prepared PR text for 2.5.9
+
+> **Historical draft.** This is the prepared release/PR text for 2.5.9, retained as evidence of its intended scope. Its checklists, UI labels and issue references are not current 2.7.0 instructions or proof of remote issue closure. See the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md) for current follow-up choices.
+
 ## Fixes
 
 Fixes #11

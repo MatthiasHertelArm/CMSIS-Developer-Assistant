@@ -1,7 +1,7 @@
 # Cross-extension calls
 
-Internal call inventory, checked against the 2.7.0 source on `main` at
-commit `bc23732` (2026-10-21). The diagrams show
+Internal call inventory, checked against the 2.7.0 implementation at
+commit `8ec3ba3` (2026-10-27). The diagrams show
 outbound boundaries, not a proposed API or every internal function call.
 The tables give exact command IDs, arguments and fallback behavior. For the
 separate storage-management proposal, see
@@ -24,7 +24,7 @@ flowchart LR
     end
     subgraph Solution["Arm.cmsis-csolution"]
         Getters["Command getters - no arguments<br/>cmsis-csolution.getSolutionFile<br/>cmsis-csolution.getActiveTargetSet<br/>cmsis-csolution.getCbuildRunFile<br/>cmsis-csolution.getDfpPath<br/>cmsis-csolution.getBspPath<br/>cmsis-csolution.getPackRootPath"]
-        ActionCommands["Action commands - no arguments<br/>cmsis-csolution.build<br/>cmsis-csolution.rebuild<br/>cmsis-csolution.clean<br/>cmsis-csolution.stopBuild<br/>cmsis-csolution.cmsisLoad<br/>cmsis-csolution.cmsisErase<br/>cmsis-csolution.cmsisRun<br/>cmsis-csolution.cmsisLoadAndRun<br/>cmsis-csolution.cmsisLoadAndDebug<br/>cmsis-csolution.cmsisAttachDebugger<br/>cmsis-csolution.cmsisDetachDebugger<br/>cmsis-csolution.cmsisStopRun"]
+        ActionCommands["Action commands - no arguments<br/>cmsis-csolution.build<br/>cmsis-csolution.rebuild<br/>cmsis-csolution.clean<br/>cmsis-csolution.refresh<br/>cmsis-csolution.stopBuild<br/>cmsis-csolution.cmsisLoad<br/>cmsis-csolution.cmsisErase<br/>cmsis-csolution.cmsisRun<br/>cmsis-csolution.cmsisLoadAndRun<br/>cmsis-csolution.cmsisLoadAndDebug<br/>cmsis-csolution.cmsisAttachDebugger<br/>cmsis-csolution.cmsisDetachDebugger<br/>cmsis-csolution.cmsisStopRun"]
         Setup["Selection / task commands<br/>cmsis-csolution.deactivateSolution()<br/>cmsis-csolution.activateSolution(solutionPath)<br/>cmsis-csolution.updateDebugTasks()"]
         Api["Versioned exports API<br/>activate() if inactive; exports.getApi(2)<br/>getBoards(filter?) / getDevices()<br/>getDraftProjects(boardId?, deviceId?)<br/>createNewSolution(options)"]
         PackInstall["activate() if inactive; detect command<br/>cmsis-csolution.installPack(vendor, name, version)"]
@@ -45,9 +45,11 @@ a public target-set setter.
 
 ### Action commands
 
-Every row is `vscode.commands.executeCommand(commandId)` with **no
-arguments**, even when the MCP action has target, timeout or waiting options.
-The owning window/active solution supplies the context.
+Every CMSIS Solution action in this table uses
+`vscode.commands.executeCommand(commandId)` with **no arguments**, even when
+the MCP action has target, timeout or waiting options. The owning
+window/active solution supplies the context. `activate_environment` calls a
+different extension with a manifest URI; see the Environment Manager section.
 
 Source: [`cmsisAction.ts`](../../src/handler/cmsisAction.ts),
 `ACTION_COMMANDS` and `issueCommand()`.
@@ -57,6 +59,7 @@ Source: [`cmsisAction.ts`](../../src/handler/cmsisAction.ts),
 | `build` | `cmsis-csolution.build` |
 | `rebuild` | `cmsis-csolution.rebuild` |
 | `clean` | `cmsis-csolution.clean` |
+| `refresh` | `cmsis-csolution.refresh` |
 | `stop_build` | `cmsis-csolution.stopBuild` |
 | `load` | `cmsis-csolution.cmsisLoad` |
 | `erase` | `cmsis-csolution.cmsisErase` |
@@ -69,9 +72,9 @@ Source: [`cmsisAction.ts`](../../src/handler/cmsisAction.ts),
 
 ### Context and setup commands
 
-There are ten additional command IDs, for **22 distinct CMSIS Solution
-commands in total**. Parentheses below show the arguments passed to
-`executeCommand`, not a direct method on an exports object.
+The context and setup commands below supplement the action commands.
+Parentheses show the arguments passed to `executeCommand`, not a direct
+method on an exports object.
 
 | Exact call | Caller / purpose |
 | --- | --- |
@@ -139,8 +142,9 @@ Solution 1.46.0; the consumed shape was checked against 1.72.0.
 
 `cmsis_query` currently exposes `boards`, `devices`, `examples`. The
 `context`/`toolchain` query shapes in proposal #41 are not implemented calls.
-Creation delegates any subsequent environment-management or folder-opening
-work to CMSIS Solution; this extension calls no Environment Manager API.
+Creation delegates its subsequent environment-management and folder-opening
+work to CMSIS Solution. The separate `activate_environment` action calls
+Environment Manager directly, as described below.
 
 ### Task observation is a VS Code boundary
 
@@ -160,6 +164,26 @@ keys, not extension-export methods. Task events establish completion; the
 command's returned promise alone does not establish a successful build or
 flash.
 
+## Arm Tools Environment Manager
+
+`cmsis_action activate_environment` calls
+`vscode.commands.executeCommand('environment-manager.reactivate', manifestUri)`,
+where `manifestUri` is `vscode.Uri.file()` of the `vcpkg-configuration.json`
+found from the solution folder up to the workspace root. It checks the
+registered commands first; a missing command names `Arm.environment-manager`
+and asks the user to install or activate it. A missing manifest is refused.
+There is no exports API call.
+
+The command re-resolves the environment and can download tools or wait for
+user licence/activation prompts. Completion is observed through
+`.cmsis/tools-environment.yml`: its modification time must change and stay
+unchanged for a second poll. The result then lists the recorded tools. If
+that takes longer than the call's wait, the result is `running` and explains
+how to retry activation after checking any prompts. This is separate from
+the CMSIS task tracker.
+
+Source: [`activateEnvironment()`](../../src/handler/cmsisAction.ts).
+
 ## Debugger and Serial Monitor
 
 ```mermaid
@@ -169,7 +193,7 @@ flowchart LR
     Flash["flash / findPyocd"]
     DebugApi["VS Code debug API<br/>startDebugging / stopDebugging<br/>addBreakpoints / removeBreakpoints<br/>session.getDebugProtocolBreakpoint(breakpoint)<br/>session.customRequest(command, args)"]
     Debugger["Arm.vscode-cmsis-debugger<br/>gdbtarget debug adapter"]
-    Monitor["ms-vscode.vscode-serial-monitor exports<br/>activate() if inactive<br/>Port-method candidates:<br/>getAvailableSerialPorts / listPorts / getPorts / getSerialPorts<br/>Data-subscription candidates:<br/>onDidReceiveData / onDataReceived / onData<br/>onSerialData / onDidReadData / subscribeData"]
+    Monitor["ms-vscode.vscode-serial-monitor<br/>activate() if inactive; exports.getApi(0, context)<br/>Probe the returned API for data events:<br/>onDidReceiveData / onDataReceived / onData<br/>onSerialData / onDidReadData / subscribeData"]
     MonitorUi["Serial Monitor UI commands - no arguments<br/>workbench.view.extension.vscode-serial-monitor-tools<br/>then vscode-serial-monitor.monitor0.focus if first throws"]
     Bundle["Arm.vscode-cmsis-debugger installation<br/>extensionPath / packageJSON.version<br/>tools/pyocd/pyocd executable<br/>(pyocd.exe on Windows)"]
     Executor --> DebugApi
@@ -180,8 +204,8 @@ flowchart LR
 ```
 
 Solid lines show explicit calls or VS Code-mediated traffic. The dotted
-line is an optional, duck-typed export probe: its names describe methods
-this code tries, not guarantees that the installed extension provides them.
+line probes optional data events on the versioned API: its names describe
+methods this code tries, not guarantees that the installed extension provides them.
 For other debug types, VS Code routes the same generic debug APIs to their
 own adapters, not to CMSIS Debugger.
 
@@ -265,18 +289,19 @@ extension and check that it is neither asked nor activated.
 ### Serial Monitor exports and UI commands
 
 [`SerialMonitorBridge`](../../src/core/serialMonitorBridge.ts) lazily gets
-`ms-vscode.vscode-serial-monitor`, activates it if necessary and caches its
-exports. Its exact candidates, in order, are:
+`ms-vscode.vscode-serial-monitor`, activates it if necessary, calls
+`exports.getApi(0, context)` with this extension's context, and caches the
+returned API. Missing exports, a refused API version or a missing context
+produce an unavailable result. The bridge probes that API, not the raw
+exports, for these data-subscription capabilities:
 
 | Purpose | Candidates and arguments |
 | --- | --- |
-| Port enumeration | `getAvailableSerialPorts()`, `listPorts()`, `getPorts()`, `getSerialPorts()`; the first callable method that does not throw wins. |
 | Data subscription | `onDidReceiveData(callback)`, `onDataReceived(callback)`, `onData(callback)`, `onSerialData(callback)`, `onDidReadData(callback)`, `subscribeData(callback)`; select the first function-shaped candidate. |
 | Unsubscribe | Call `.dispose()` on a returned subscription disposable. |
 
-The subscription candidates are not guaranteed by the monitor's documented
-API. Missing capabilities are reported as unavailable; no port-change event
-is actually subscribed. This bridge neither opens nor writes nor closes a
+API version 0 has none of these data events, so subscription is reported as
+unavailable. There is no port-enumeration probe or port-change subscription. This bridge neither opens nor writes nor closes a
 monitor-owned serial port. Direct serial I/O uses this extension's
 `serialport` dependency, not a Serial Monitor exports method.
 
@@ -304,8 +329,9 @@ source is `serial_open_monitor`.
   tools. Its API is never called: Pack Docs is implemented in this
   repository, not delegated to that standalone extension.
 - `Arm.keil-studio-pack` and `cmsis-csolution.manageSolution` occur in
-  guidance, not as executed calls. Environment Manager is not directly
-  queried. `solutionFiles.ts` is a local file search, not an extension API.
+  guidance, not as executed calls. Environment Manager is called by
+  `activate_environment` as described above. `solutionFiles.ts` is a local
+  file search, not an extension API.
 - Commands beginning `cmsis-developer-assistant.` are our own handlers.
   Window forwarding is between instances of this extension, not another
   extension's public interface.

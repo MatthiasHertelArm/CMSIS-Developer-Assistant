@@ -1,14 +1,16 @@
 # #49 Release serial ports when they are no longer needed (idle, owner gone, session end) and add a one-shot serial_capture
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Port leases, idle/session release and serial_capture are implemented; see [serial architecture](../architecture/serial.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#49](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/49) |
 | Area · priority · source | Serial · Medium (proposed) · Maintainer |
-| Proposed release | 2.3.11: honest state (WP-F, item 6). 2.3.12: release rules, `serial_capture` and the human handle (WP-K) |
+| Original release plan | 2.3.11: honest state (WP-F, item 6). 2.3.12: release rules, `serial_capture` and the human handle (WP-K) |
 | Size | L (WP-F XS) |
 | Depends on | WP-F: none. WP-K: #11 (`ToolError`, `PORT_HELD`), #48 (journal, `notify`, the call context that carries the MCP session id), WP-G (tool-list bytes) |
 | Related | #14 (internal ops next to `health`), #16 (`window` argument, status bar), #42 (teardown on deactivate) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

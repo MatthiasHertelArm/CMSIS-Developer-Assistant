@@ -175,9 +175,10 @@ Nothing in VS Code said who held a port the Serial Monitor could not open.
   probe's virtual COM port may re-enumerate, which closes it. There is no
   release before programming: nothing ties a COM port to the probe, and a
   second board's UART would go too.
-- **The skill and the guide.** `cmsis-debug-live` and the `inspection` topic
-  of the guide say to prefer `serial_capture`, to read the output around a
-  reset with `serial_open`, `reset`, `serial_read {waitMs}` and
+- **The procedure and the guide.** The knowledge procedure
+  `proc-cmsis-debug-live` and the `inspection` topic of the guide say to
+  prefer `serial_capture`, to read the output around a reset with
+  `serial_open`, `reset`, `serial_read {waitMs}` and
   `serial_close`, and to close a port as soon as it is read.
 
 `src/core/serialText.ts` holds these texts: `serialSessionLine()`,

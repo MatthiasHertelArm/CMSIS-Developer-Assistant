@@ -1,14 +1,16 @@
 # #17 get_toolchain_info tool: resolved cbuild / cpackget / compiler paths and CMSIS_PACK_ROOT
 
+> **2.7.0 status (2026-10-27).** The read-only toolchain query remains proposed. Environment parsing is already used by build diagnosis, and activate_environment now re-resolves the manifest and reports its tools; reuse those paths rather than starting from the old proposed parser layout. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#17](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/17) |
 | Area · priority · source | Toolchain discovery · Low (P3) · studio test |
-| Proposed release | Future (WP-M, with #41). The parser can land earlier with WP-H (#15) |
+| Original release plan | Future (WP-M, with #41). The parser can land earlier with WP-H (#15) |
 | Size | S |
 | Depends on | #41 (the `cmsis_query` tool), #11 (`ToolReply.data`) |
 | Related | #15 (the build re-run needs the same environment), #45 and #46 (bundled pyOCD), #50 (the agent searched the file system instead of asking) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

@@ -136,7 +136,8 @@ checks a built package.
 | `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 2 of the setup offers to add the tool rules to the agents' rule files, each change shown as a diff and written only when confirmed, and activation offers to update the blocks it wrote when the rules change; `never`: no rule file is touched. Scope `application` |
 | `cmsis-developer-assistant.packDocs.enabled` | `true` | Offer the five documentation tools; off drops them from the tool list. PDF text comes from the bundled pdf.js, or from `pdftotext` when `packDocs.extractor` says so; `packDocs.*` also set the size limit, unlisted pack PDFs and the workspace and user document folders |
 | `cmsis-developer-assistant.buildInfo.enabled` | `true` | Offer the five build-artefact tools; off drops them from the tool list; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
-| `cmsis-developer-assistant.knowledge.indexPath` | (empty) | The knowledge index the knowledge tools read, always on. Empty uses the core index the extension ships (`resources/knowledge/core.db`); a path replaces it, for testing a rebuilt index. Packs and the workspace add their own indexes. |
+| `cmsis-developer-assistant.knowledge.indexPath` | (empty) | The knowledge index the knowledge tools read, always on. Empty uses the core index the extension ships (`resources/knowledge/core.db`); a path replaces it, for testing a rebuilt index. Packs and the workspace add their own indexes. Read on every call. |
+| `cmsis-developer-assistant.knowledge.includeIncomplete` | `false` | Include placeholder knowledge units in searches. Off leaves them out; failed-build hints never name them. Read on every call. |
 
 `agentRules.install` takes effect at once, `redactSecrets` is read on every call, `build.diagnosticRerun` for
 every failed build and `serial.idleCloseSeconds` at each `serial_open`. The
@@ -168,16 +169,17 @@ instructions (Kimi Code). `npm run skills:sync` copies both
 blocks between `<!-- cmsis-developer-assistant:<block>:begin -->` and `…:end -->`
 markers into `cmsis-help` and `debug_instructions.md`
 (`src/core/toolContract.ts`). Edit the contract, never a copy;
-`src/test/toolContract.test.ts` compares them and holds the rules to ten lines
-and 1 600 bytes. Tool descriptions never repeat the contract: `tools/list`
-rides along on every turn, and `test/transport/session-lifecycle.js` pins its
-size.
+`src/test/toolContract.test.ts` compares them and holds the rules to at most
+ten non-empty lines after the heading and under 1 600 bytes in total. Tool
+descriptions never repeat the contract: `tools/list` rides along on every
+turn, and `test/transport/session-lifecycle.js` pins its size.
 
 `debug_instructions.md` is split into topics by
 `<!-- topic: name | blurb -->` … `<!-- /topic -->` comments, which
 `src/core/instructionTopics.ts` parses. Keep the markers and the topic names;
 `src/test/instructionTopics.test.ts` and `src/test/debugSkillGuidance.test.ts`
-also pin the size of the overview and a few phrases.
+also pin the overview to at most 3 700 bytes without the tool rules, each
+served topic to at most 7 000 bytes, and a few phrases.
 
 ## Dependencies
 
@@ -256,12 +258,11 @@ New source files carry the Arm Apache-2.0 header, as in `src/core/toolRun.ts`:
  */
 ```
 
-A few files still derive from microsoft/DebugMCP and keep its copyright line
-until they are rewritten (issue #53). They are listed in
-`src/test/provenance.test.ts`, and that test fails if any other file gains
-the line. Never copy that line into a new file. When a file is rewritten,
-remove the line and its list entry in the same change, and run
-`npm run provenance:check -- --gate`.
+The source rewrite is complete (issue #53). Only `LICENSE-MIT` and `NOTICE`
+retain the original project's copyright line pending the licence review
+(issue #54); `src/test/provenance.test.ts` lists them and fails if another
+file gains that line. Never copy it into a new file. Keep the provenance
+check in place: `npm run provenance:check -- --gate`.
 
 ## Keeping the documentation current
 

@@ -1,25 +1,27 @@
 # #20 Skill/docs gaps: long builds, J-Link/Alif reset fallback, check the build result line, window tools
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** The guidance fixes shipped. Current guidance is the [agent guide](../agent-resources/debug_instructions.md), cmsis-help and the pinned knowledge procedures. The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#20](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/20) |
 | Area · priority · source | Skills & agent rules · Low · Studio test |
-| Proposed release | 2.3.11 (WP-D) |
+| Original release plan | 2.3.11 (WP-D) |
 | Size | XS |
 | Depends on | none (the running-target rule rides on the #50 contract, same WP) |
 | Related | #50, #13, #11 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 
-The issue listed five guidance gaps. Four are closed since 2.3.6, as the 2026-08-31 comment says, and 2.3.10 confirms it. `cmsis-debug-live` covers long builds, the ✅/❌ result line and `timeoutMs` ([SKILL.md:106-111](../../skills/cmsis-debug-live/SKILL.md#L106-L111)) and the window tools ([:268-277](../../skills/cmsis-debug-live/SKILL.md#L268-L277)), and so does the `build` topic of `get_debug_instructions`. Still open: the fallback the agent had to invent when `reset` reports that a J-Link / Alif E8 target did not reset (stop the session, `cmsis_action load_and_debug` again), with the note that on secure-boot parts nSRST alone does not re-vector the core. It is missing from the skill, from `embedded.md` and from the `reset` failure text. Also open: "running → `pause_execution` first" as a rule, and the list of tools that are rejected while the target runs.
+The issue listed five guidance gaps. Four are closed since 2.3.6, as the 2026-08-31 comment says, and 2.3.10 confirms it. `cmsis-debug-live` covers long builds, the ✅/❌ result line and `timeoutMs` ([SKILL.md:106-111](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md#L106-L111)) and the window tools ([:268-277](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md#L268-L277)), and so does the `build` topic of `get_debug_instructions`. Still open: the fallback the agent had to invent when `reset` reports that a J-Link / Alif E8 target did not reset (stop the session, `cmsis_action load_and_debug` again), with the note that on secure-boot parts nSRST alone does not re-vector the core. It is missing from the skill, from `embedded.md` and from the `reset` failure text. Also open: "running → `pause_execution` first" as a rule, and the list of tools that are rejected while the target runs.
 
 ## Current state (2.3.10)
 
 - The fallback exists in exactly one place: the `inspection` topic of the guide ([debug_instructions.md:180](../../docs/agent-resources/debug_instructions.md#L180), last sentence: "When `reset` reports no reset on a J-Link / secure-boot part, the fallback is `stop_debugging` and `cmsis_action load_and_debug` again.").
 - Missing from:
-  - [skills/cmsis-debug-live/SKILL.md](../../skills/cmsis-debug-live/SKILL.md): no mention of `reset` failing.
-  - Both copies of `troubleshooting/embedded.md` ([skill](../../skills/cmsis-debug-live/references/troubleshooting/embedded.md), [MCP resource](../../docs/agent-resources/troubleshooting/embedded.md), byte-identical today).
+  - [skills/cmsis-debug-live/SKILL.md](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md): no mention of `reset` failing.
+  - Both copies of `troubleshooting/embedded.md` ([skill](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/references/troubleshooting/embedded.md), [MCP resource](../../docs/agent-resources/troubleshooting/embedded.md), byte-identical today).
   - The `reset` tool description ([debugMCPServer.ts:474-477](../../src/debugMCPServer.ts#L474-L477)).
   - The failure text, [resetAssist.ts:108-113](../../src/core/resetAssist.ts#L108-L113):
 
@@ -31,7 +33,7 @@ The issue listed five guidance gaps. Four are closed since 2.3.6, as the 2026-08
     ```
 
 - Pinned by [resetAssist.test.ts:72-80](../../src/test/resetAssist.test.ts#L72-L80) (partial-regex matches on "does NOT appear to have reset", the halted sentence and the commands line; the nSRST sentence is not pinned).
-- Running target: the skill has it as a table row only ([SKILL.md:132](../../skills/cmsis-debug-live/SKILL.md#L132), "Reads will be rejected. `pause_execution`, or …"). The gate's own error does not name `pause_execution`: [debuggingHandler.ts:384](../../src/debuggingHandler.ts#L384) says "Add a breakpoint or wait for the previous continue/step to stop …". Its `no-session` hint ([:378](../../src/debuggingHandler.ts#L378)) says "Call start_debugging first", which contradicts the skill's "`cmsis_action load_and_debug` for CMSIS projects".
+- Running target: the skill has it as a table row only ([SKILL.md:132](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md#L132), "Reads will be rejected. `pause_execution`, or …"). The gate's own error does not name `pause_execution`: [debuggingHandler.ts:384](../../src/debuggingHandler.ts#L384) says "Add a breakpoint or wait for the previous continue/step to stop …". Its `no-session` hint ([:378](../../src/debuggingHandler.ts#L378)) says "Call start_debugging first", which contradicts the skill's "`cmsis_action load_and_debug` for CMSIS projects".
 - Tools gated by `ensureStoppedSession` ([debuggingHandler.ts:370-397](../../src/debuggingHandler.ts#L370-L397)): `step_over`, `step_into`, `step_out`, `continue_execution`, `read_memory`, `read_core_registers`, `read_peripheral_register`, `read_cycle_counter`, `get_fault_info`, `diagnose_fault`, `evaluate_expression`, `get_call_stack`, `get_frame_variables`, `get_threads`, `list_variable_names`, `get_variables_values`. Breakpoint tools are not gated (that is #13); `reset` halts a running target itself.
 
 ## Proposed fix
@@ -46,7 +48,7 @@ The issue listed five guidance gaps. Four are closed since 2.3.6, as the 2026-08
    ```
 
    The text is the same for every GDB server kind. The halted sentence stays byte-identical, so the existing pins hold. The failure text grows by 120 B (163 → 283 B for the replaced sentence); `tools/list` does not change. The "'hardware' requires nSRST wired" explanation stays in the `method` parameter description.
-2. **Skill**: in [SKILL.md](../../skills/cmsis-debug-live/SKILL.md), directly after the session-state table (after line 136), add:
+2. **Skill**: in [SKILL.md](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md), directly after the session-state table (after line 136), add:
 
    ```markdown
    `running` rejects `step_*`, `continue_execution`, `read_memory`, `read_core_registers`,

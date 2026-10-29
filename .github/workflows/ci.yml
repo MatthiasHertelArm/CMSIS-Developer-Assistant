@@ -7,7 +7,6 @@ on:
   pull_request:
     branches: [main]
     paths-ignore:
-      - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
   release:
     types: [published]
@@ -147,6 +146,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: npm ci
+
+      # Tests read procedure contracts from the git-ignored core knowledge index.
+      # Restore the pinned index on every test runner, then verify or fetch it.
+      - name: Read the pinned index hash
+        id: knowledge-lock
+        run: node -e "const fs = require('node:fs'); const lock = require('./resources/knowledge/core.lock.json'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'sha256=' + lock.sha256 + '\n');"
+
+      - name: Restore the core knowledge index
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: resources/knowledge/core.db
+          key: knowledge-core-${{ steps.knowledge-lock.outputs.sha256 }}
+
+      - name: Fetch the core knowledge index
+        run: npm run knowledge:fetch
 
       - name: Lint
         if: matrix.vsce_target == 'linux-x64'

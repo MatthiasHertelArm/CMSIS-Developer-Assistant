@@ -41,8 +41,8 @@ cannot be left out of the routing (see [windowRouting.md](windowRouting.md)).
 | `cmsis_query` | as above | answered with status `running`: the extension is still filling its catalog from Arm's web service, and the same call again finds it (`FenceOptions.capStatus`) |
 | Session start, stop and restart, steps and continue, breakpoints and logpoints, `get_device_info`, `check_target_connection` | rejected as `<what failed>: <cause>` by `wrapError()`, which keeps the cause's code and hint; a `Refusal` passes as it is | bounded by the executor's request deadlines and by the stop and session waits below; the configuration picker of `start_debugging` fails with `INVALID_ARGUMENT` after its limit, and `stop_debugging` answers with status `timeout` after 10 s (#14). What stays unbounded here, the window's fence answers (see [windowRouting.md](windowRouting.md#fences-and-health-checks)) |
 
-The cause reads as its message: a plain `Error` loses the `Error: ` its
-string form would put in front, while a named class such as
+The cause reads as its message: a plain `Error` loses the `Error:` prefix and
+following space its string form would add, while a named class such as
 `HardwareTimeoutError` keeps its name, which says what happened. A
 `Refusal` (`src/core/toolResult.ts`) is a refusal that already names the
 operation, the reason and the next step — the state gate, "nothing to
@@ -560,8 +560,8 @@ in the workspace, or a file the extension has not loaded are
 `CMSIS_NO_SOLUTION`, each with its own next step. `flash` answers
 `NO_WORKSPACE` likewise, and `get_session_status` adds the same finding as
 lines while no session runs in a window without a folder. The steps from
-there are the `bootstrap` topic of the agent guide and the skill
-`cmsis-bootstrap`.
+there are the `bootstrap` topic of the agent guide and the knowledge
+procedure `proc-cmsis-bootstrap`, read with `knowledge_get`.
 
 When `target` names a target-type or target-set that is not active, the
 selection is written into `.vscode/cmsis.json`, the solution is
@@ -1012,7 +1012,7 @@ by #56.
   the two YAML readers on generated files (`src/test/fixtures/buildinfo/`),
   the re-run's command line and the result block, and the diagnosis over
   fake task events with a fake cbuild and a hand-moved clock
-- `test/transport/dap-scenarios.js`: 37 scripted `gdbtarget` sessions
+- `test/transport/dap-scenarios.js`: scripted `gdbtarget` sessions
   through the real server; every reply and the adapter traffic are compared
   with `dap-scenarios.snapshot.json`
 - `src/test/gdbText.test.ts`: GDB reply classification, MI results, logpoint

@@ -1,14 +1,16 @@
 # #21 Tracking: studio-test findings that belong to sibling CMSIS tools (CMSIS Solution, CMSIS Debugger, rtos-views, SDS, Toolbox, example)
 
+> **2.7.0 status (2026-10-27).** These are historical findings and draft messages, not evidence that requests were sent or remain open. External issue and owner status must be checked before any follow-up. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#21](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/21) |
 | Area · priority · source | Sibling tools · Low (proposed) · Studio test |
-| Proposed release | none, do now (WP-Q) |
+| Original release plan | none, do now (WP-Q) |
 | Size | S |
 | Depends on | none |
 | Related | #15, #48, #41, #13, #11 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

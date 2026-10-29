@@ -167,6 +167,8 @@ privacy terms.
   [GitHub Issues](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues).
 - Use **CMSIS Developer Assistant: Copy Recent Problems** to collect relevant
   errors and warnings when reporting a problem.
+- See the [user guide](docs/user-guide.md) for the full tool reference, settings,
+  agent registration, and troubleshooting.
 - See [CHANGELOG.md](CHANGELOG.md) for release notes.
 - Report security vulnerabilities as described in
   [SECURITY.md](SECURITY.md).

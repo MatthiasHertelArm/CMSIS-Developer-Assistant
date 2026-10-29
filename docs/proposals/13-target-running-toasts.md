@@ -1,14 +1,16 @@
 # #13 "Cannot execute this command while the target is running" toast: UI-command fallbacks and ungated breakpoint ops
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** The run-state guards and gdbtarget control changes are implemented; see [executor architecture](../architecture/debuggingExecutor.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#13](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/13) |
 | Area · priority · source | Run control and breakpoints · High (P1) · studio test |
-| Proposed release | 2.3.11 (WP-C) |
+| Original release plan | 2.3.11 (WP-C) |
 | Size | M |
 | Depends on | #11 (`ToolError`, `TARGET_RUNNING`) |
 | Related | #21 (toast truncation is VS Code / CMSIS Debugger behaviour), #3 (same GDB CLI path), #48 (journal records the rejection) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

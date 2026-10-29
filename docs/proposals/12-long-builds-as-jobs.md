@@ -1,14 +1,16 @@
 # #12 60 s hard cap turns long cmsis_action builds (pack resolution, first build) into false failures
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Job tracking, the status action and longer waits are implemented; see [handler architecture](../architecture/debuggingHandler.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#12](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/12) |
 | Area · priority · source | Build & flash · High · Studio test |
-| Proposed release | 2.3.11 (WP-B, together with #47 and #46) |
+| Original release plan | 2.3.11 (WP-B, together with #47 and #46) |
 | Size | M |
 | Depends on | #11 (`ToolReply` with status `running`), #47 (`CmsisJobTracker`) |
 | Related | #46, #47, #14 (router and worker budgets), #15, #50 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 The job model, the task classifier and the per-action outcomes are defined in [47-task-completion-detection.md](47-task-completion-detection.md#proposed-fix). This document adds the long-wait cap, the `status` action and the "attach instead of relaunch" rule.
 
@@ -37,7 +39,7 @@ The issue's statement that the router is not the limit still holds: the forward 
 - **Precedent.** The documentation and build-artefact tools already accept `timeoutMs` up to 600 000 ([toolRun.ts:35-39](../../src/core/toolRun.ts#L35-L39), [packDocsTools.ts:34](../../src/packDocsTools.ts#L34), [buildInfoTools.ts:29](../../src/buildInfoTools.ts#L29)).
 - **Docs repeat the 60 s cap and the "run build again" advice:**
   - [debug_instructions.md:110](../../docs/agent-resources/debug_instructions.md#L110);
-  - [SKILL.md:106-111](../../skills/cmsis-debug-live/SKILL.md#L106-L111);
+  - [SKILL.md:106-111](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md#L106-L111);
   - [cmsis-embedded-guide.md:80](../../docs/agent-resources/cmsis-embedded-guide.md#L80);
   - [troubleshooting/embedded.md:44](../../docs/agent-resources/troubleshooting/embedded.md#L44).
 

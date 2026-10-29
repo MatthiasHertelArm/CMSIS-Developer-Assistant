@@ -1,14 +1,16 @@
 # #45 pyocd called directly
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Bundled pyOCD discovery and tool-rule installation shipped; current policy is the [tool contract](../agent-resources/tool-contract.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#45](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/45) |
 | Area · priority · source | Skills & agent rules · High (proposed) · Internal test (christophe0606) |
-| Proposed release | 2.3.12 closes it (WP-L); 2.3.11 ships the instructions (WP-D) and the flash fix (WP-B) |
+| Original release plan | 2.3.12 closes it (WP-L); 2.3.11 ships the instructions (WP-D) and the flash fix (WP-B) |
 | Size | S (the work is counted in #50 and in the #46/#47 work package) |
 | Depends on | #50 (the contract and the rule-file step), #46/#47 work package (flash resolves the bundled pyOCD) |
 | Related | #50 (parent), #46, #47, #19, cmsis-skills PR #18 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 
@@ -16,14 +18,14 @@ Agents call `pyocd` or `gdb` directly and even install pyOCD from PyPI. The repo
 
 ## Current state (2.3.10)
 
-- No rule: the MCP `instructions` ([debugMCPServer.ts:288-297](../../src/debugMCPServer.ts#L288-L297)) and [skills/cmsis-debug-live/SKILL.md](../../skills/cmsis-debug-live/SKILL.md) say nothing about running pyOCD or GDB in a shell.
+- No rule: the MCP `instructions` ([debugMCPServer.ts:288-297](../../src/debugMCPServer.ts#L288-L297)) and [skills/cmsis-debug-live/SKILL.md](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/SKILL.md) say nothing about running pyOCD or GDB in a shell.
 - Text that pushes the agent to the shell:
   - [debuggingHandler.ts:1926-1930](../../src/debuggingHandler.ts#L1926-L1930), the `flash` failure: "pyocd not found on PATH. Install it (pip install pyocd / pipx install pyocd), or use cmsis_action load …".
   - [debugMCPServer.ts:949-953](../../src/debugMCPServer.ts#L949-L953), the `flash` description: "needs pyocd on PATH".
   - [debug_instructions.md:112](../../docs/agent-resources/debug_instructions.md#L112): "needs `pyocd` on the PATH".
-  - Both copies of `troubleshooting/embedded.md`, lines 17-18 ([skill](../../skills/cmsis-debug-live/references/troubleshooting/embedded.md#L17-L18), [MCP resource](../../docs/agent-resources/troubleshooting/embedded.md#L17-L18)): "installed and on PATH", "`pyocd list` or `JLinkExe`".
+  - Both copies of `troubleshooting/embedded.md`, lines 17-18 ([skill](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-debug-live/references/troubleshooting/embedded.md#L17-L18), [MCP resource](../../docs/agent-resources/troubleshooting/embedded.md#L17-L18)): "installed and on PATH", "`pyocd list` or `JLinkExe`".
 - `flash` resolves pyOCD by spawning `pyocd --version` from PATH only ([flashController.ts:77-104](../../src/core/flashController.ts#L77-L104)), although the CMSIS Debugger ships it: `~/.vscode/extensions/arm.vscode-cmsis-debugger-1.8.0-darwin-arm64/tools/pyocd/pyocd` exists on the maintainer's Mac.
-- The vendored [check-pyocd-availability/SKILL.md:38](../../skills/cmsis-skills/check-pyocd-availability/SKILL.md#L38) already says "Do not install pyOCD" and prefers the bundled `tools/pyocd/`, but it is an opt-in pack skill.
+- The vendored [check-pyocd-availability/SKILL.md:38](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/b37a5263b8cfd59b2a43e1d4131e68ae67e0b4c2/skills/cmsis-skills/check-pyocd-availability/SKILL.md#L38) already says "Do not install pyOCD" and prefers the bundled `tools/pyocd/`, but it is an opt-in pack skill.
 - Nothing writes `AGENTS.md` or any other rule file; [docs/improvement-notes.md:145-148](../../docs/improvement-notes.md#L145-L148) left such a line as "the project's call".
 
 ## Proposed fix

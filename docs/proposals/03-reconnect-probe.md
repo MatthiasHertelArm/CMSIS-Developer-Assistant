@@ -1,14 +1,16 @@
 # #3 reconnect_probe / auto retry-with-reconnect after probe wedge
 
+> **2.7.0 status (2026-10-27).** Phase 1 diagnosis is implemented in [probeWedge.ts](../../src/core/probeWedge.ts); automatic probe reconnect remains a separate proposal. Preserve the fault-state requirements when reviewing the remaining work. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#3](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/3) |
 | Area · priority · source | Probe recovery and post-mortem · Low ("lower") · hardware-session field notes, item 9 (soumeh01) |
-| Proposed release | Phase 1: 2.3.12 (with WP-H; the plan says Future). Phase 2: Future (WP-N) |
+| Original release plan | Phase 1: 2.3.12 (with WP-H; the plan says Future). Phase 2: Future (WP-N) |
 | Size | M (phase 1 S, phase 2 M) |
 | Depends on | #11 (`ToolError`, `PROBE_WEDGED`); phase 2 after #14 and #48 |
 | Related | #13 (the `-exec` prefix finding affects the read ladder), #20 (reset fallback text), #21 (request to the CMSIS Solution / Debugger owners), #50 (hint must not send the agent to the shell for long) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

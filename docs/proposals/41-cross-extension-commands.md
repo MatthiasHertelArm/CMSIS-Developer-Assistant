@@ -1,14 +1,16 @@
 # #41 Proposal: expose selected cross-extension VS Code commands to AI agents through MCP
 
+> **2.7.0 status (2026-10-27).** cmsis_query exists for boards, devices and examples; the context/toolchain query shapes below remain proposed. The new-tool checklist below predates the knowledge-source move and is not current wiring guidance. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#41](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/41) |
 | Area · priority · source | Cross-extension API for agents · Medium · external proposal (brondani, CMSIS Solution team) |
-| Proposed release | Future (WP-M) |
+| Original release plan | Future (WP-M) |
 | Size | L (our part M; the owner-side contract is separate) |
 | Depends on | #11 (`ToolReply.data`, `structuredContent`, envelope v2) |
 | Related | #17 (folds in as `what: 'toolchain'`), #48 phases 3–4 (sibling `getRecentProblems` contract), #21 (requests to owners), #50 (fewer reasons to leave the MCP path) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

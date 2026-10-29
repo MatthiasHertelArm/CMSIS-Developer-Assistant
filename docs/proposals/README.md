@@ -1,4 +1,29 @@
-# Fix proposals for the project board
+# Proposal records and 2.7.0 follow-ups
+
+This index separates the current disposition from the original release plans retained below. The implementation was checked against the 2.7.0 checkout on 2026-10-27; GitHub issue and external PR states were not checked, so a shipped feature here does not imply that its issue is closed.
+
+The [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md) is planned for **2026-10-28, 09:00–09:45 Europe/Berlin**. Use it to decide the remaining ownership, maintenance and retirement questions. No evidence files have been moved or deleted.
+
+## Current disposition
+
+| Scope | 2.7.0 disposition |
+|---|---|
+| [#11 typed results](11-typed-tool-results.md), [#12 long jobs](12-long-builds-as-jobs.md), [#13 running-target guards](13-target-running-toasts.md), [#14 watchdog](14-control-channel-watchdog.md), [#15 build errors](15-build-error-lines.md), [#16 window picker](16-window-selection-ui.md), [#19 registry permissions](19-registry-token-exposure.md), [#20 guidance](20-skill-docs-gaps.md), [#45 tool bypass](45-pyocd-called-directly.md), [#46 probe guards](46-probe-busy-parallel-run-tasks.md), [#47 task completion](47-task-completion-detection.md), [#49 serial release](49-serial-port-release.md) | Implemented. Keep the proposals as historical design records; current behavior belongs in the architecture and agent guides. |
+| [#53 independent rewrite](53-ms-derived-core-rewrite.md) | Source rewrite complete; retain [provenance evidence](../provenance/README.md). The separate license review is not settled by this result. |
+| [#3 reconnect](03-reconnect-probe.md), [#48 error feed](48-error-feed.md), [#50 tool contract](50-tool-contract.md) | Partly implemented: probe-wedge diagnosis, the problem journal and rule installation shipped. Automatic reconnect, further provider integrations and the process-detection/hook-pack proposals need separate decisions. |
+| [#17 toolchain query](17-toolchain-info.md), [#41 cross-extension queries](41-cross-extension-commands.md) | Catalog queries exist; the proposed context/toolchain queries remain open design work. Reuse current environment parsing and activation paths. |
+| [#44 SBOM](44-spdx-sbom.md), [#51 optimization](51-performance-optimization-workflow.md), [#52 profiling](52-statistical-profiler.md) | Workflow proposals remain. Local skill vendoring/category steps are obsolete; the knowledge base owns procedure sources and imports cmsis-skills. The cycle-counter annotation fix in #51 has shipped. |
+| [#21 sibling-tool findings](21-sibling-tool-findings.md) | Historical findings and draft external requests. Verify what was sent and the owners' current responses before following up. |
+| [Bootstrap](bootstrap-empty-vscode.md), [CMSIS Solution integration](cmsis-solution-integration.md) | open_solution, catalog-based create_solution, install_pack, rebuild/clean/stop_build and environment activation are available. All five integration phases shipped; the wider bootstrap query/open_folder/evaluation proposals remain separate. |
+| [Knowledge base](knowledge-base.md) | Always-on tools and a pinned shipped index supersede the experimental flags. Only cmsis-help is installed here; source ownership and current behavior are described in [knowledge architecture](../architecture/knowledge.md). |
+| [Prepared cmsis-skills PR](cmsis-skills-start-cmsis-project-pr.md), [prepared 2.5.9 PR](upstream-pr-2.5.9.md) | Retain as dated drafts, not current submission instructions or proof of remote status. |
+| [Cross-extension calls](extension-calls.md), [storage overview](pack-docs-storage-overview.md), [storage requirements](pack-docs-storage.md) | Keep as current reference/integration material. The storage-provider interface remains a proposal, not an exposed API. |
+
+## Reading the historical record
+
+The original release plan, measurements and dated status notes follow unchanged in substance. Old Current state sections and unchecked decisions describe their recorded baseline, not today's code. Removed skill/source references that were broken now point to the verified 2.3.10 commit they discussed. For current instructions use the [agent guide](../agent-resources/debug_instructions.md), [user guide](../user-guide.md) and [architecture](../architecture/debugMCPServer.md).
+
+## Original planning record
 
 This folder has one proposal for each open issue: the 21 on the [CMSIS Developer Assistant board](https://github.com/orgs/Open-CMSIS-Pack/projects/26), plus #53, which is not on the board. They were written on 2026-09-23 against release 2.3.10 (`upstream/main` `b37a526`). Each proposal covers four things:
 

@@ -1,14 +1,16 @@
 # #16 Human-facing window selection: status-bar target, Select Target Window quick-pick, optional pid on path-less tools
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** The status bar and target-window picker are implemented; see [window routing](../architecture/windowRouting.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#16](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/16) |
 | Area · priority · source | Multi-window/transport · Medium · Studio test |
-| Proposed release | 2.3.12 (WP-J) |
+| Original release plan | 2.3.12 (WP-J) |
 | Size | M |
 | Depends on | #11 (`AMBIGUOUS_WINDOW` with the candidate list in `data`), #19 (the `mode` option of `atomicFile`), WP-G (tool-list bytes) |
 | Related | #14 (`role` in the registry), #49 (`serial_capture` takes the same `window` argument) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

@@ -1,14 +1,16 @@
 # Bootstrap: from an empty VS Code window to a debugged board
 
+> **2.7.0 status (2026-10-27).** open_solution, catalog-based create_solution, install_pack and activate_environment are available. The original bundled-skill plan and creation argument shape below are historical: procedures now come from the pinned knowledge index. The environment/context query, standalone open_folder action and empty-directory evaluation remain proposals for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md).
+
 | | |
 |---|---|
 | Issue | none yet (see Decision 6) |
 | Area · priority · source | Agent setup · Medium · maintainer |
-| Proposed release | phases 0–1 in the next 2.5.x, phase 2 with #41 |
+| Original release plan | phases 0–1 in the next 2.5.x, phase 2 with #41 |
 | Size | phase 0 XS, phase 1 M, phase 2 M, phase 3 S |
 | Depends on | nothing for phases 0–1; #41 (cross-extension commands) for phase 2 |
 | Related | #17 (toolchain info), #20 (docs gaps), #45/#50 (tool contract: which shell commands a skill may name), #21 (asks to the CMSIS Solution team) |
-| Status | Phases 0 and 1 implemented in 2.5.9 (2026-09-30), see below; phase 2 stays with #41; phase 3 open |
+| Original status | Phases 0 and 1 implemented in 2.5.9 (2026-09-30), see below; phase 2 stays with #41; phase 3 open |
 
 ## What 2.5.9 did with this proposal
 

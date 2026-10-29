@@ -10,8 +10,8 @@
 # It does what the bare model command cannot:
 #
 #   * resolves plugins/GDBServer.so itself. The generated launch config takes
-#     the path from $AVH_FVP_PLUGINS, which only exists in a shell that has run
-#     `vcpkg activate` -- VS Code, started from Finder or Spotlight, has not.
+#     the path from $AVH_FVP_PLUGINS, which may be unset in VS Code
+#     when the model was installed separately or the editor inherited no tools environment.
 #   * runs the model in Docker on macOS, where Arm publishes no FVP build, with
 #     the GDB port forwarded to the host so arm-none-eabi-gdb can reach it.
 #   * on macOS, refuses a GDB port that another folder's model or any other
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 MODEL="${FVP_MODEL:-FVP_Corstone_SSE-300_Ethos-U55}"
-FVP_VERSION="${FVP_VERSION:-11.32.23}"          # keep in sync with vcpkg-configuration.json
+FVP_VERSION="${FVP_VERSION:-11.32.23}"          # Docker model release; native hosts install the model separately
 IMAGE="${FVP_IMAGE:-cmsis-fvp:${FVP_VERSION}}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -89,8 +89,8 @@ command -v stdbuf >/dev/null 2>&1 && RUNNER=(stdbuf -oL -eL)
 
 if ! is_macos; then
     command -v "${MODEL}" >/dev/null 2>&1 || {
-        echo "${MODEL} not found on PATH. Run 'vcpkg activate' in this folder," >&2
-        echo "or set FVP_MODEL to the full path of the model executable." >&2
+        echo "${MODEL} not found on PATH. Install the MDK FVP model separately," >&2
+        echo "then add it to PATH or set FVP_MODEL to its full executable path." >&2
         exit 1
     }
     exec "${RUNNER[@]}" "${MODEL}" "${ARGS[@]}"

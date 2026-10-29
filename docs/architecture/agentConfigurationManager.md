@@ -3,27 +3,28 @@
 ## Purpose
 
 Onboards AI coding agents onto the CMSIS Developer Assistant: registers the
-MCP server in each agent's own configuration file, installs the CMSIS Agent
-Skills into the personal skills directories those agents read, and writes
+MCP server in each agent's own configuration file, installs the `cmsis-help`
+Agent Skill into the personal skills directories those agents read, and writes
 the tool rules into the agents' rule files the user confirms. Registration
-and the rule files are opt-in through one two-step setup flow; the skills
-are one fixed set, installed at activation and again when the agents are
-configured — there is nothing to select.
+and the rule files are opt-in through one two-step setup flow; the help skill
+is installed at activation and again when the agents are configured. Other
+CMSIS procedures come from the knowledge index.
 
 ## Motivation
 
 For an agent to use the extension it needs things it cannot discover on its
-own: the MCP endpoint (in its config file), the workflow knowledge (Agent
-Skills), and the rule to use the tools rather than `pyocd`, `gdb` or `cbuild`
-in a shell (#45, #50). The server instructions and the skills carry that rule,
-but an agent may lose both when it compacts its context, while its rule file
+own: the MCP endpoint (in its config file), the entry point to workflow
+knowledge (`cmsis-help` and the knowledge tools), and the rule to use the
+tools rather than `pyocd`, `gdb` or `cbuild` in a shell (#45, #50). The server
+instructions and the help skill carry that rule, but an agent may lose both
+when it compacts its context, while its rule file
 is loaded in every session. Rather than sending users to edit JSON/TOML,
 copy directories and write rule files by hand, the manager does all three —
 but only for the agents and files the user picked, because these files live
-next to things the extension does not own. The skills are the exception:
-they go into directories made for skills, every one carries a marker file,
-and a normal user needs the whole set, so there is no picker (2.5.15; earlier
-releases had one, with three settings and a monthly prompt).
+next to things the extension does not own. The help skill is the exception:
+it goes into directories made for skills and carries a marker file. There
+is no skill picker; earlier releases offered a selection of installed
+procedures, which now live in the knowledge index.
 
 ## Responsibility
 
@@ -172,7 +173,7 @@ Code writes into the project's `CLAUDE.md` only when there is one (a new
 `CLAUDE.md` would stop it reading `AGENTS.md`), Roo Code into `.roorules`
 while that is the file it reads, Codex into a non-empty `AGENTS.override.md`.
 
-*Which agents.* Step 3 covers the agents picked in step 1, the agents whose
+*Which agents.* Step 2 covers the agents picked in step 1, the agents whose
 configuration registers the server already, and Copilot Chat; files recorded
 earlier are listed too, so that they can be unchecked.
 
@@ -230,7 +231,7 @@ read.
 - Catalog model and the install set: `src/utils/skillCatalog.ts` (`installSet()`: the entries marked `installed`, today `cmsis-help`)
 - Copying, hiding, marker-guarded removal: `src/utils/skillInstaller.ts`
 - Rule files: `src/core/agentRules.ts` (the agent-to-file map with its vendor sources, the block text, `withRules()` / `withoutRules()`, the records), `src/utils/agentRuleFiles.ts` (`runRuleStep()`, `planRuleChanges()`, `applyRuleChange()`, `refreshRecordedRules()`, the node file system)
-- Generator: `scripts/sync-skills.ts` (`--offline` without a fetch), hand-authored input `scripts/skills.config.json` and `docs/agent-resources/tool-contract.md`; marker blocks: `src/utils/markerBlock.ts`
+- Generator: `scripts/sync-skills.ts` (never fetches; legacy `--offline` is a no-op), hand-authored input `scripts/skills.config.json` and `docs/agent-resources/tool-contract.md`; marker blocks: `src/utils/markerBlock.ts`
 - Tests: `src/test/skillCatalog.test.ts` (catalog ↔ disk ↔ lock ↔ help skill, the install set), `src/test/skillInstaller.test.ts` (temp-dir behaviour, the sweep of 2.5.x project roots), `src/test/agentRules.test.ts` (the rule-file map and the step against an in-memory file system), `src/test/atomicFile.test.ts` (the atomic writers: kept permission bits, symbolic links written through), `test/transport/config-scenarios.js` (the files written for each agent per platform, migration, popup state, the setup with its skill install, the rule-file step with its previews, `syncSkills()`, against `config-scenarios.snapshot.json`)
 
 ## User Flow

@@ -40,9 +40,8 @@ pack a csolution names with `path:` outside the pack root
 (`KnowledgeHost.packFolders`, filled by `namedPackFolders` in
 `src/core/packDocs/targetDocs.ts`). A file found twice is opened once.
 
-
 - **Knowledge first.** A skill is loaded because its description matches
-  the task; a knowledge unit is not. So with the gate on, the instructions
+  the task; a knowledge unit is not. So after the tool rules, the instructions
   open with one sentence that says it: before a CMSIS task, look the
   procedure up with `knowledge_search` and follow it (`KNOWLEDGE_FIRST`), and
   the first `get_session_status` repeats it in a line (`KNOWLEDGE_REMINDER`).
@@ -143,7 +142,7 @@ The command **Open Knowledge Browser** shows the index to the people who
 write and review it: a list of all units with filters and the tools' search,
 one node in full, its relations as a graph that can be walked, and the
 figures of the index. It reads the same open index as the tools and changes
-nothing; it works with the gate off, since it serves a person, not an agent.
+nothing. The browser and the tools both use the mandatory knowledge index.
 
 - **Data and page are apart.** `core/knowledge/browse.ts` turns the index
   into plain data (`unitRows`, `overviewOf`, `detailOf`, `graphAround`) and
@@ -176,5 +175,5 @@ nothing; it works with the gate off, since it serves a person, not an agent.
 | `src/knowledgeTools.ts` | Tool names and schemas |
 | `src/core/knowledge/browse.ts` | The browser's data: list, overview, one node, the neighbourhood, Markdown as HTML |
 | `src/knowledgePanel.ts`, `src/knowledgePanelPage.ts` | The knowledge browser: messages and guards; the page's style and script |
-| `src/packDocsHost.ts` | The gate, the settings and the host |
+| `src/packDocsHost.ts` | The settings read per call (`knowledge.indexPath`, `knowledge.includeIncomplete`) and the host |
 | `src/test/knowledge.test.ts` | An index written in the test, the retrieval cases of the prototype, the handler and the dispatch; a pack built by `cmsis-knowledge` in `src/test/fixtures/knowledge/packs` |

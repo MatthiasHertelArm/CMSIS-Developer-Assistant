@@ -1,14 +1,16 @@
 # #15 cmsis_action build returns only the exit code — surface compiler/ninja error lines
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Build diagnosis and the diagnostic rerun are implemented; see [handler architecture](../architecture/debuggingHandler.md). The provider-side build-log follow-up remains a separate integration choice. The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#15](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/15) |
 | Area · priority · source | Build & flash · Medium · Studio test |
-| Proposed release | 2.3.12 (WP-H, item 7) |
+| Original release plan | 2.3.12 (WP-H, item 7) |
 | Size | M |
 | Depends on | #47 (`CmsisJobTracker`: the failed build's execution, its task definition and its start time). #11 is used for the error shape but not required. |
 | Related | #48 (the journal takes these lines as source `build`), #21 (ask CMSIS Solution for a build log), #12, #47 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 
@@ -42,7 +44,7 @@ The `cmsis_action` result therefore has no source for the error lines today; thi
 
   `CMSIS_PACK_ROOT` is not in it; `effectiveToolchainPackRoot()` ([toolchainPackRoot.ts:84-86](../../src/utils/toolchainPackRoot.ts#L84-L86)) supplies it.
 - **cbuild supports what we need.** cbuild 2.14 has `--log <file>` and `--skip-convert`.
-- **csolution already records its own errors.** Its errors land in `<solution>.cbuild-idx.yml` under `cbuilds[].messages.errors`. The fixture [Blinky.cbuild-idx.yml](../../test/eval/fixtures/corstone-blinky/Blinky.cbuild-idx.yml) shows "component 'Compiler:CORE' not found in included packs". Missing components, packs and schema errors (the #21 B1 class) are therefore readable without any re-run.
+- **csolution already records its own errors.** Its errors land in `<solution>.cbuild-idx.yml` under `cbuilds[].messages.errors`. The fixture's `test/eval/fixtures/corstone-blinky/Blinky.cbuild-idx.yml` (written by a build, not in the repository) showed "component 'Compiler:CORE' not found in included packs". Missing components, packs and schema errors (the #21 B1 class) are therefore readable without any re-run.
 
 ## Proposed fix
 

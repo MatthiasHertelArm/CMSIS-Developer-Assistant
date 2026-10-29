@@ -1,14 +1,16 @@
 # Knowledge base: `knowledge_search`, `knowledge_get`, `knowledge_expand` next to the skills
 
+> **Historical proposal; 2.7.0 outcome (2026-10-27).** The three tools are always on and the pinned core index ships in the extension; the feature flags and local-experiment state below are superseded. Procedure sources, assets and routing now belong to cmsis-knowledge-base/sources/cda-procedures; this repository installs only cmsis-help. See [knowledge architecture](../architecture/knowledge.md) for the implementation and the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md) for remaining content and maintenance choices.
+
 | | |
 |---|---|
 | Issue | none yet (see Decision 8) |
 | Area · priority · source | Agent knowledge · Medium · handover of the knowledge-base prototype, 2026-10-04 |
-| Proposed release | phases 1–2 in the next pre-release after 2.5.9, flag off by default; phase 3 once reviewed units exist; phase 4 is decided by the benchmarks |
+| Original release plan | phases 1–2 in the next pre-release after 2.5.9, flag off by default; phase 3 once reviewed units exist; phase 4 is decided by the benchmarks |
 | Size | phase 0 S (knowledge-base side), phase 1 M, phase 2 S, phase 3 L, phase 4 M |
 | Depends on | nothing in this repository for phases 1–2; phase 3 on the legal review and the license of the tooling (handover, open decisions 4 and 6) |
 | Related | #48 (problem journal), #15 (build error lines), #50 (tool contract: which shell commands a step may name), #17 (reads the same project files), Pack Docs ([docs/architecture/packDocs.md](../architecture/packDocs.md)) |
-| Status | Proposed, awaiting review (2026-10-04). Phases 1 and 2 exist as a local experiment, see below |
+| Original status | Proposed, awaiting review (2026-10-04). Phases 1 and 2 exist as a local experiment, see below |
 
 ## What the local experiment did (2026-10-04)
 

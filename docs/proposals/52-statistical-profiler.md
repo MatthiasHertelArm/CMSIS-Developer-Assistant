@@ -1,14 +1,16 @@
 # #52 Proposal: statistical PC-based profiler and agent-driven hotspot identification
 
+> **2.7.0 status (2026-10-27).** Sampling and dump_memory tools remain proposed. Workflow content now belongs in knowledge procedures; preserve the original capture/validation questions when deciding the remaining hardware and file-export hooks. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#52](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/52) |
 | Area · priority · source | Skills & agent rules (proposed, as #51) · Low (proposed) · External (FabKlein) |
-| Proposed release | Future (WP-P) |
+| Original release plan | Future (WP-P) |
 | Size | XXL overall; this repo's part M (S without the PC-sampling op) |
 | Depends on | none; a PC-sampling op depends on a spike and on WP-G budget |
 | Related | #51 (same proposer, shared hooks), #50, #41, #17 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 

@@ -296,7 +296,7 @@ Code update needs a look at this.
   `INVALID_ARGUMENT` after the DHCSR read, timeouts, lockup, the hints; the
   DHCSR read of `check_target_connection` and the verdict the status keeps
 - `test/transport/dap-scenarios.js`: the executor behind the handler and the
-  server in 40 scripted scenarios, mostly `gdbtarget` sessions, a wedged
+  server in scripted scenarios, mostly `gdbtarget` sessions, a wedged
   probe and an adapter that is still connecting among them
 - `src/test/sessionStateTracker.test.ts`, `src/test/gdbDialect.test.ts`: the
   output capture, the `setBreakpoints` wait, the logpoint registry, the

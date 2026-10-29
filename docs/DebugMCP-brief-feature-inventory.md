@@ -1,5 +1,7 @@
 # CMSIS Developer Assistant — Feature Inventory & Agent-Usage Priority
 
+> **Historical product brief; retired as a current inventory (2026-10-27).** The tool counts, inheritance claims and transport description below belong to an earlier implementation and simulated usage study. They do not describe 2.7.0. Use the [README](../README.md), [user guide](user-guide.md) and [architecture pages](architecture/debugMCPServer.md) for the current product; the original study is preserved here.
+
 ## Product brief: Arm Keil MDK integration
 
 The MCP debug surface selected for direct integration into the Keil MDK toolchain — what it inherits from Microsoft's DebugMCP, what the CMSIS fork adds for Cortex-M, and which tools an AI agent actually reaches for, derived from a simulated driver-bring-up debug run.

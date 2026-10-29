@@ -1,5 +1,7 @@
 # Pull request for Open-CMSIS-Pack/cmsis-skills: skill `start-cmsis-project`
 
+> **Historical prepared PR record (2026-09-30).** This preserves the draft and its stated status, not a current instruction to submit it. The After it merges vendoring steps are obsolete in 2.7.0: the knowledge base owns procedure sources and imports cmsis-skills; skills:sync here only maintains cmsis-help and contract copies. Verify external PR status before acting; any remaining ownership question belongs in the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md).
+
 State on 2026-09-30: the branch is pushed to the fork, the pull request is **not opened**.
 
 - Branch: `MatthiasHertelArm/cmsis-skills`, `add-start-cmsis-project`, one commit on upstream `main` (`f4f17aa`).

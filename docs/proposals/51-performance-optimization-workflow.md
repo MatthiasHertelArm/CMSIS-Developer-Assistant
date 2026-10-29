@@ -1,14 +1,16 @@
 # #51 Proposal: target-aware Cortex-M performance optimization workflow (llvm-mca, SWOGs, learning-path, ACLE intrinsics)
 
+> **2.7.0 status (2026-10-27).** The performance workflow remains proposed; the read_cycle_counter annotation fix (H5) has shipped. Local category/vendoring work (H3) is obsolete after the knowledge-source move; remaining workflow ownership and hardware hooks need review. Remaining choices are listed for the [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-docs.md). The original proposal below is historical.
+
 | | |
 |---|---|
 | Issue | [#51](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/51) |
 | Area · priority · source | Skills & agent rules · Low (proposed) · External (FabKlein) |
-| Proposed release | Future (WP-P); a small enabling fix can go into any release |
+| Original release plan | Future (WP-P); a small enabling fix can go into any release |
 | Size | XXL overall; this repo's part M |
 | Depends on | none; #17 helps locate the toolchain |
 | Related | #52 (same proposer, shares hooks), #17, #50, #44 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 ## Problem
 
@@ -19,7 +21,7 @@ FabKlein proposes a processor-aware optimisation workflow for Cortex-M. An agent
 - **Cycle measurement**: `read_cycle_counter` ([debugMCPServer.ts:627-636](../../src/debugMCPServer.ts#L627-L636)), handler gated on a halted target ([debuggingHandler.ts:1389-1412](../../src/debuggingHandler.ts#L1389-L1412)), executor [debuggingExecutor.ts:1349-1373](../../src/debuggingExecutor.ts#L1349-L1373), register map [dwt.ts:22-38](../../src/core/dwt.ts#L22-L38) (DEMCR, DWT_CTRL, DWT_CYCCNT only). **Small bug:** it is annotated `readOnlyHint: true` ([:631](../../src/debugMCPServer.ts#L631)) although it writes DEMCR.TRCENA and DWT_CTRL.CYCCNTENA on first use.
 - **Arm documents**: [ARM_DOCS (armDocs.ts:124-163)](../../src/core/packDocs/armDocs.ts#L124-L163) with kinds `arch | adi | coresight | etm | trm | npu | gug` ([:89](../../src/core/packDocs/armDocs.ts#L89), order at [:165](../../src/core/packDocs/armDocs.ts#L165)). [armDocsFor (:219-230)](../../src/core/packDocs/armDocs.ts#L219-L230) excludes `gug` and is called from [targetDocs.ts:293](../../src/core/packDocs/targetDocs.ts#L293). [packDocsHandler.ts:371](../../src/packDocsHandler.ts#L371) and [:378](../../src/packDocsHandler.ts#L378) hard-code `['arch', 'gug', 'trm']` for core peripherals. [armDocs.test.ts:53-82](../../src/test/armDocs.test.ts#L53-L82) pins the Cortex-M33 list exactly. No SWOG entry.
 - **Processor features**:
-  - [parseCbuildYml (artifacts.ts:181-224)](../../src/core/buildInfo/artifacts.ts#L181-L224) reads only `processor.core` ([:200-203](../../src/core/buildInfo/artifacts.ts#L200-L203)), and nothing consumes it. The corstone-blinky fixture's `cbuild.yml` carries `dsp: on`, `fpu: dp`, `mve: fp`, `core: Cortex-M55` ([Blinky.Debug+MPS3.cbuild.yml:27-31](../../test/eval/fixtures/corstone-blinky/build/MPS3/GCC/Debug/Blinky/outdir/Blinky.Debug+MPS3.cbuild.yml#L27-L31)).
+  - [parseCbuildYml (artifacts.ts:181-224)](../../src/core/buildInfo/artifacts.ts#L181-L224) reads only `processor.core` ([:200-203](../../src/core/buildInfo/artifacts.ts#L200-L203)), and nothing consumes it. The corstone-blinky fixture's `cbuild.yml` carries `dsp: on`, `fpu: dp`, `mve: fp`, `core: Cortex-M55` (lines 27-31 of `build/MPS3/GCC/Debug/Blinky/outdir/Blinky.Debug+MPS3.cbuild.yml`, which a build of the fixture writes).
   - The pdsc path returns only `Dcore` and `DcoreVersion` ([ProcessorInfo, pdscBooks.ts:98-106](../../src/core/packDocs/pdscBooks.ts#L98-L106)), although [collectProcessors (:226-244)](../../src/core/packDocs/pdscBooks.ts#L226-L244) already merges all `<processor>` attributes (`Dfpu`, `Ddsp`, `Dmve`, `Dtz`).
   - The ELF attribute reader returns only `Tag_CPU_name` ([parseCpuName, elf.ts:184-232](../../src/core/buildInfo/elf.ts#L184-L232)).
 - **Skills**: Open-CMSIS-Pack/cmsis-skills has the categories `bring-up`, `debug`, `devops`, `ethos-u`, `pack` and `project`, with no optimisation or profiling skill. Our vendoring **fails** on a category it does not know ([sync-skills.ts:163-166](../../scripts/sync-skills.ts#L163-L166), union at [skillCatalog.ts:28](../../src/utils/skillCatalog.ts#L28)). Upstream `main` added `ethos-u` on 2026-08-26, after our pin `d778b91`, so `npm run skills:sync -- --update` already fails today. Upstream skill names may not collide with router names ([sync-skills.ts:295-307](../../scripts/sync-skills.ts#L295-L307)). Bundled skills are always installed and cost every user context; vendored ones are opt-in through `installedSkills`.

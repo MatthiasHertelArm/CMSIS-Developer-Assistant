@@ -134,11 +134,11 @@ A csolution can declare several `target-types` (a board and an FVP, the HE and H
 
 ### If `launch.json` is missing or out of date
 
-Ask the user to:
+Try the intended `cmsis_action` load/run/debug action first. When `tasks.json` has no CMSIS tasks, the active `cbuild-run.yml` names a debugger, and `cmsis-csolution.autoDebugLaunch` is enabled, the tool asks CMSIS Solution to regenerate its tasks and launch configurations once, then proceeds if the tasks appear. This does not repair every stale or manually maintained `launch.json`.
+
+If the repair cannot apply or the launch configuration is still stale, follow the tool's hint. The user may need to enable `cmsis-csolution.autoDebugLaunch`, or choose the debugger:
 
 > Open the **CMSIS Solution** panel → **Manage Solution** → **Debugger** tab → select the debug probe / GDB server → **Apply**. This regenerates `.vscode/launch.json` to match the current `cbuild-run.yml`.
-
-You cannot do this for the user — it is a UI-driven step in the CMSIS Solution extension.
 
 ### The pack documentation is a tool call away
 
@@ -192,7 +192,7 @@ After `cmsis_action load_and_debug` (or `start_debugging`), call `get_device_inf
 
 **Exit 0 is checked.** CMSIS Solution reports exit 0 for a failed build too, so a `build` or `rebuild` whose task exited 0 is checked before it answers ✅: an image not rewritten since the build started leads to the same re-run, and a build that fails there comes back ❌ with its error lines. ⚠️ means the check could not decide; do not load that image before the user confirms the build. A `clean` is checked against the images it was to remove: one still there is ⚠️.
 
-**Long builds.** Calls wait 60 s by default; `timeoutMs` allows up to 600000 for `cmsis_action` and `flash` if the client permits (other tools: 60000). A build that outlasts the wait returns `running` with its job id, not failure. Use `cmsis_action {action:'status'}` to wait. Repeated `build`, `rebuild`, `clean`, `load`, `erase`, `run` or `load_and_run` calls attach to the existing job; starting another build-type action while one runs is refused. End a hung build with `cmsis_action {action:'stop_build'}`. For `load_and_debug` / `attach`, the timeout bounds session readiness.
+**Long builds.** Calls wait 60 s by default; `timeoutMs` allows up to 600000 for `cmsis_action` and `flash` if the client permits (documentation and build-artefact tools: 600000; other tools: 60000). A build that outlasts the wait returns `running` with its job id, not failure. Use `cmsis_action {action:'status'}` to wait. Repeated `build`, `rebuild`, `clean`, `load`, `erase`, `run` or `load_and_run` calls attach to the existing job; a `build`, `rebuild` or `clean` while another of the three runs is refused. End a hung build with `cmsis_action {action:'stop_build'}`. For `load_and_debug` / `attach`, the timeout bounds session readiness.
 
 Short stops can return `running`. Check `status`; if still running, retry with `timeoutMs:15000`.
 

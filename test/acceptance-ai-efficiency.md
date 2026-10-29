@@ -1,5 +1,13 @@
 # Acceptance test — AI-efficiency work (2.3.5 → WP7)
 
+> **Historical checklist (2.3.5 → WP7).** Preserved as the original work-package
+> test design; its counts, skills, setup flow and expected replies are not
+> current acceptance criteria for 2.7.0. The result cells were not filled in.
+> Use [the transport harness](transport/README.md) and
+> [the evaluation scenarios](eval/README.md) for current checks. The
+> [28 October review](../docs/reviews/2026-10-28-knowledge-and-docs.md) will
+> agree the remaining release acceptance scope.
+
 Exercises what `npm test` cannot: the new tools against a live target, what an agent sees,
 and the evaluation runner. One pass takes ~45 min on an FVP, less on a board. Record the
 numbers you get in the *Result* column of §6 — they are the before/after for #18 and #23.

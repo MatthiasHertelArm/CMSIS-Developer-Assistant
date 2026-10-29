@@ -1,14 +1,16 @@
 # #47 Completion detection
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** CMSIS task classification and job tracking are implemented; see [handler architecture](../architecture/debuggingHandler.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#47](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/47) |
 | Area · priority · source | Build & flash · High (proposed) · Internal test (christophe0606) |
-| Proposed release | 2.3.11 (WP-B, together with #46 and #12) |
+| Original release plan | 2.3.11 (WP-B, together with #46 and #12) |
 | Size | M (WP-B as a whole: L) |
 | Depends on | #11 (`ToolError`, `ToolReply`) |
 | Related | #12, #46 (same work package; both build on the design in this document), #15, #48, #45 |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 This document holds the shared design of WP-B: the task classifier, the `CmsisJobTracker` and the job outcomes. [#12](12-long-builds-as-jobs.md) adds the long-wait cap and the `status` action on top of it; [#46](46-probe-busy-parallel-run-tasks.md) adds the probe guard, the verified `stop_run` and the pyOCD resolution for `flash`.
 

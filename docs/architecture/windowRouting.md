@@ -129,11 +129,13 @@ only its user may read the registry (#19):
 `RoutingDebuggingHandler.resolveTarget()` walks a fixed ladder; the first rung
 that applies decides:
 
-1. **Window argument.** `cmsis_action`, `flash`, `reset`, `serial_open` and
-   `serial_capture` take `window` in a routed session (#16): all digits is a process id,
-   anything else a path inside the window's workspace (`targetHintOf()`). Like
-   a path, it re-aims the session: the calls after it go to the same window,
-   unless the session is pinned.
+1. **Window argument.** The tools in `WINDOW_ARGUMENT_TOOLS` take `window`
+   in a routed session (#16): all digits is a process id, anything else a
+   path inside the window's workspace (`targetHintOf()`). For `cmsis_action`,
+   `flash`, `reset`, `serial_open` and `serial_capture`, it re-aims the
+   session: the calls after it go to the same window, unless the session is
+   pinned. `knowledge_search` uses it only to choose that search's project
+   context and leaves the session's target unchanged (see below).
 2. **Path.** A call that carries `fileFullPath` or `workingDirectory` goes to
    the window whose workspace folder contains it most deeply. A pin does not
    override the path of `start_debugging`: a file is launched in the window
@@ -506,11 +508,13 @@ to once the session ended (`RoutingDebuggingHandler.sessionEnded()`, which
 remembers those pids per session), and the window releases the serial port
 and the Serial Monitor subscription the session held there (see
 [serial.md](serial.md)). A window of an earlier version answers "not a known
-operation", which the router ignores. The op runs through `runJournaled()`: registered in the
-window's problem journal while it runs, and when it fails or its wait runs
-out, up to five records it produced ride along in `data.problems`. The
-trace line of each op logs the size of the result's text. Agents never see
-the token: `describeWindow()` leaves port and token out of every listing.
+operation", which the router ignores.
+
+All other ops run through `runJournaled()`: registered in the window's
+problem journal while they run, and when they fail or their wait runs out,
+up to five records they produced ride along in `data.problems`. Their trace
+lines log the size of the result's text. Agents never see the token:
+`describeWindow()` leaves port and token out of every listing.
 
 ## Window selection for people
 

@@ -18,9 +18,6 @@ esbuild.js
 **/*.map
 **/*.ts
 **/.vscode-test.*
-# 15 MB demo video: referenced from the GitHub repo, never by the packaged
-# extension or the marketplace readme. No reason to ship it to every user.
-
 # The extension is bundled into dist/extension.js by esbuild, so the production
 # dependency tree does not need to ship — except for serialport, which is
 # deliberately left external (see esbuild.js: node-gyp-build resolves its

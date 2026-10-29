@@ -11,7 +11,7 @@ cmsis_action {"action": "load_and_debug", "timeoutMs": 45000}
 cmsis_action {"action": "load_and_debug", "target": "HP@debug"}
 ```
 
-**Pre-check first**: call `get_session_status`. If a session is already active, `cmsis_action load_and_debug` will refuse — use `restart_debugging` or `cmsis_action attach` instead.
+**Pre-check first**: call `get_session_status`. If a session is already active, both `cmsis_action load_and_debug` and `cmsis_action attach` refuse. Inspect or continue that session, use `restart_debugging` when a restart is intended, or `stop_debugging` before starting another. `attach` connects to a GDB server when there is no active debug session.
 
 **For non-CMSIS / direct gdbtarget configs:** `start_debugging` with `configurationName` matching the launch.json entry (e.g. "CMSIS Debugger: pyOCD", "CMSIS Debugger: J-LINK").
 
@@ -78,9 +78,9 @@ If the firmware is in a free run and you need to know where it is:
 
 ### Timeout strategy
 
-Every hardware-touching tool accepts `timeoutMs` (capped to 60 s; `cmsis_action` and `flash` wait up to 600 s, and a job still running at the end of the wait answers with status `running` — call `cmsis_action {action:'status'}`, never start it again). Estimate before you call: a `read_core_registers` is ~5–15 s, a single `read_memory` (≤4 KB) is ~1–5 s, `continue_execution` until a known breakpoint is the wild card. If you don't supply `timeoutMs` the server picks a sensible default.
+Use `timeoutMs` where the tool schema exposes it: most debugging tools accept up to 60 s; `cmsis_action`, `flash`, documentation and build-artefact tools accept up to 600 s. Breakpoint tools and `stop_debugging` use internal waits; `restart_debugging` uses the configured session-readiness wait rather than its `timeoutMs` argument. A CMSIS job still running at the end of a call's wait answers with status `running`: call `cmsis_action {action:'status'}`, never start it again to learn its status. Estimate the wait from the work: a memory or register read depends on probe speed, and `continue_execution` depends on when a breakpoint is reached. Omit `timeoutMs` to use the tool's default.
 
-When a `step_*` does not stop in time, the server **auto-heals**: it pauses the target, reads the PC, and tells you where the firmware actually was. Read the 🩹 Recovery section of the response — you may not have set the breakpoint you thought you did. A `continue_execution` whose wait runs out is not paused: it answers `running`, the target keeps running, and `wait_for_stop` or `pause_execution` comes next.
+When a `step_*` does not stop in time, the server tries a recovery pause and reports the location if the target stops. Read the 🩹 Recovery section of the response. On an Arm FVP this recovery pause is skipped because the running model ignores it; a breakpoint must stop the model. A `continue_execution` whose wait runs out leaves the target running and answers `running`; follow the reply's next step (`wait_for_stop`, or `pause_execution` on a target that supports it).
 
 ### Available Tools (Cortex-M focus)
 

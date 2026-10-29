@@ -1,14 +1,16 @@
 # #11 Fenced tools return errors and timeouts as plain success text (no isError / status)
 
+> **Historical proposal; outcome checked against 2.7.0 (2026-10-27).** Typed errors, structured results and the control envelope are implemented; see [server architecture](../architecture/debugMCPServer.md). The original analysis and decisions below are retained as evidence, not current implementation instructions.
+
 | | |
 |---|---|
 | Issue | [#11](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/issues/11) |
 | Area · priority · source | MCP tool results and routing · High (P1) · studio test |
-| Proposed release | 2.3.11 (WP-A) |
+| Original release plan | 2.3.11 (WP-A) |
 | Size | L |
 | Depends on | none |
 | Related | #48 (reuses the error codes), #12 and #47 (`status: 'running'`), #13 (`TARGET_RUNNING`), #14 (`WORKER_TIMEOUT`), #16 (`AMBIGUOUS_WINDOW` data), #41 (`ToolReply.data`), #3 (`PROBE_WEDGED`), #49 (`PORT_HELD`) |
-| Status | Proposed, awaiting review (2026-09-23) |
+| Original status | Proposed, awaiting review (2026-09-23) |
 
 This proposal also defines the shared vocabulary the other proposals use: `ErrorCode`, `ToolError`, `ToolReply`, `ToolText`, the MCP result mapping and control envelope v2.
 
