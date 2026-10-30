@@ -1,13 +1,13 @@
-# GDB port conflicts: guard the ports that are certain, detect the rest
+# GDB port conflicts: guard the ports that are certain, let the knowledge base guide the rest
 
 | | |
 |---|---|
 | Issue | No issue yet. Follows K04 and the tester feedback on 2.7.0-preview4 |
-| Area · priority · source | Window routing, problem journal · Medium (proposed) · Maintainer |
-| Size | S |
-| Depends on | One bind-failure line captured per GDB server (rule of `problemCodes.ts`) |
+| Area · priority · source | Window routing, knowledge base · Medium (proposed) · Maintainer |
+| Size | XS (extension: none beyond part 1) |
+| Depends on | One bind-failure line captured per GDB server, for the unit's symptom patterns |
 | Related | #41 (cross-extension commands), #48 (problem journal) |
-| Status | Proposed 2026-10-28. Part 1 is done in 2.7.0 |
+| Status | Proposed 2026-10-28, revised 2026-10-30: a bad setup that another extension owns is fixed with the knowledge base's guidance, not with code here. Part 1 is done in 2.7.0 |
 
 ## Problem
 
@@ -44,32 +44,19 @@ So the silent case is the fixed port, which is exactly the case in which the por
    - Load & Debug reserves only the launch of the active target's debugger.
    - No server is recognised by the name of a wrapper.
    - A port that is not certain gets no reservation.
-2. **Detect a bind failure in the journal.** Add one `classifyProblem` row per GDB server's bind-failure line, with this hint: "The GDB server could not open its port: a session or CMSIS Run of another window, or another program, holds it. `list_debug_windows` names a window that publishes the port. Stop that session or Run, or change the port of the setup, then retry."
-   - As `problemCodes.ts` requires, each row ships only with a line captured from a real session.
-   - For pyOCD, expect Python's `Address already in use` (errno 48 on macOS, 98 on Linux, 10048 on Windows).
-   - Lines to capture: the J-Link GDB server, OpenOCD in a custom setup, and the FVP's GDBServer plugin.
-3. **Say when a start was not checked.** When the port of a Load & Debug launch or a Run is not certain, the `cmsis_action` reply adds one line: "GDB port not checked: the setup does not say which port its server uses."
-   - This line never appears for the FVP adapter's Run, which hosts no GDB server, or for a server on another host.
-   - Agent-visible text, so the DAP-scenario snapshot changes with it.
-
-## Decisions for you
-
-1. Code of the bind-failure row.
-   - [ ] `PROBE_BUSY` (recommended): agents already handle it for a held probe or port.
-   - [ ] A new journal-only code `GDB_PORT_IN_USE`.
-2. Where the "not checked" line goes.
-   - [ ] In the `cmsis_action` reply (recommended).
-   - [ ] Only in the problem journal.
+2. **A knowledge unit guides the fix of a bind failure.** The debug adapter and the GDB server already make the failure visible, and the server's output already reaches the problem journal. What is missing is the fix, and that belongs to the knowledge base, not to code here: a troubleshooting unit in cmsis-knowledge-base (`units/troubleshooting`) whose symptom patterns match the bind-failure lines of the GDB servers, so that `knowledge_search` with the message finds it.
+   - Cause: a session or CMSIS Run of another window, or another program, holds the port; or a custom or user debug setup uses a port another setup uses too.
+   - Fix: `list_debug_windows` names a window that publishes the port; stop that session or Run, or give the setup a port of its own in its debug adapter template or launch configuration, then start again.
+   - For pyOCD, expect Python's `Address already in use` (errno 48 on macOS, 98 on Linux, 10048 on Windows). Lines to capture: the J-Link GDB server, OpenOCD in a custom setup, and the FVP's GDBServer plugin.
+3. **No "port not checked" line.** A setup whose port the extension cannot tell is the user's or another extension's to get right; the adapter fails visibly, and the unit of part 2 covers it. The extension's replies stay as they are.
 
 ## How to test
 
-- Unit tests:
-  - `src/test/problemCodes.test.ts` gets one fixture per captured line, with where it was captured.
-  - `src/test/gdbServerPorts.test.ts` already holds the certain-port cases, including a wrapper whose name proves nothing.
-- DAP scenario: a scripted `gdbtarget` session whose server output carries the bind failure, checking the journal record and its hint.
+- Extension: `src/test/gdbServerPorts.test.ts` already holds the certain-port cases, including a wrapper whose name proves nothing.
+- Knowledge base: each captured line, searched with `knowledge_search`, returns the troubleshooting unit first.
 - Live:
   - Two windows with the same fixed port: the second start is refused before it starts.
-  - A custom setup without a fixed port, started while the port is taken: the bind failure shows up in `get_recent_problems` with the hint.
+  - A custom setup without a fixed port, started while the port is taken: the launch fails with the server's error, and the agent finds the unit with that message.
 
 ## Out of scope
 

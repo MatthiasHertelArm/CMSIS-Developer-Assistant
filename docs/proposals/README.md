@@ -158,4 +158,4 @@ No issue yet. [pack-docs-storage.md](pack-docs-storage.md) describes where Pack 
 
 ## Added 2026-10-28: GDB port conflicts
 
-No issue yet. [gdb-port-conflicts.md](gdb-port-conflicts.md) narrows the K04 guard to ports that are certain. Those are `target.port`, a port set on the command line, and the cbuild-run file a `gdbserver` passes; 2.7.0 already does this. The proposal leaves custom or user debug setups whose port is unknown to detection: the debug adapter makes their bind failure visible, and the problem journal would give it a code and a next step. Two decisions.
+No issue yet. [gdb-port-conflicts.md](gdb-port-conflicts.md) narrows the K04 guard to ports that are certain. Those are `target.port`, a port set on the command line, and the cbuild-run file a `gdbserver` passes; 2.7.0 already does this. Revised 30 October: a custom or user debug setup whose port is unknown is the user's or another extension's to get right. The debug adapter makes its bind failure visible, and a troubleshooting unit of the knowledge base guides the fix; the extension adds no code for it.

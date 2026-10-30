@@ -149,6 +149,7 @@ The knowledge engine, with a core index in the extension and knowledge that pack
 - `knowledge_expand` shows a neighbour that lives in another index by its id only.
 - The status of the Arm Tools environment (vcpkg activation, the tools it provides) is not readable through a tool (#84).
 - `pyocd list`, the connected probes, is not offered as a tool (#81).
+- A Load & Debug whose Load succeeds but whose launch never starts a debug adapter keeps its GDB port reserved until the window closes or reloads; a later start on that port is refused with `PROBE_BUSY` until then.
 
 ## [2.5.20] - 2026-10-12
 
