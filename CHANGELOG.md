@@ -4,12 +4,15 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.9.0] - Unreleased
+## [2.9.0] - 2026-11-11
 
 The first preview of the 2.10 line, published on the fork as a pre-release VSIX (odd minor version). The extension is that of 2.8.0; what is new is the core knowledge index it ships. No tool, argument, setting or behaviour changed since 2.8.0.
 
 ### Changed
-- **The core knowledge index is `core-YYYY.MM.DD`** (was `core-2026.10.29`): N units, built from knowledge-base commit `XXXXXXX`. <!-- fill in after `npm run knowledge:update -- <version>` -->
+- **The core knowledge index is `core-2026.11.11`** (was `core-2026.10.29`): 7 231 units, built from knowledge-base commit `cc11ac2` with cmsis-skills at `388a5f0` and devtools at `90c418b`. The golden set through the extension's search stays at hit@5 0.91 (MRR 0.746, was 0.749).
+- **Debug and trace descriptions have a route of their own, and a cbuild-run file can take them.** The cmsis-skills procedures that write debug descriptions, debug sequences, trace sequences and debug variables (`proc-generate-debug-description`, `proc-generate-debug-sequences`, `proc-generate-trace-sequences`, `proc-manage-debug-variables`) write into a PDSC file or into one target of a `*.cbuild-run.yml`. `proc-prepare-cbuild-run-change`, `proc-apply-confirmed-cbuild-run-proposal` and `proc-validate-cbuild-run-yaml` are new: they do for the YAML what the three PDSC procedures do for the XML, and a proposal goes into a sibling file, never into the original. The new unit `route-debug-description` orders these seven procedures; `route-pack` keeps the three PDSC procedures, and a route now lists the routes its procedures refer to ("Related routes"). `proc-manage-pdsc-debugvars` is `proc-manage-debug-variables`: the old id is gone from the index.
+- **`proc-configure-cmsis-gitignore` is new, and `proc-identify-cmsis-board-support` names `cmsis_query`.** The first writes or merges the `.gitignore` beside a csolution (build outputs excluded; sources, `RTE` and the pack locks kept), and `proc-start-zephyr-project` hands over to it. The second takes boards and devices from `cmsis_query`, the catalog tool of the extension, when it is available, and from the Keil catalogs otherwise.
+- **The sources are those of 11 November.** 23 more issue digests (621); the documentation at the current commits of its sources, with more units of cpackget (16, was 4), Ceedling (406, was 396), Zephyr (690, was 682) and TF-M (417, was 414) and the debugging guide of TensorFlow Lite Micro; the csolution, packchk and svdconv messages of the current devtools; and the troubleshooting reference of `proc-cmsis-debug-live` with the text 2.8.0 serves (the launch configuration written for you, the time limits per tool group, `-exec` in `evaluate_expression`). `resources/knowledge/SOURCES.md` and `TPIP.md` list the sources of this index.
 
 ## [2.8.0] - 2026-11-03
 
