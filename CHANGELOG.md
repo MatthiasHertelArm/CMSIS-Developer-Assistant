@@ -4,6 +4,13 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] - Unreleased
+
+The first preview of the 2.10 line, published on the fork as a pre-release VSIX (odd minor version). The extension is that of 2.8.0; what is new is the core knowledge index it ships. No tool, argument, setting or behaviour changed since 2.8.0.
+
+### Changed
+- **The core knowledge index is `core-YYYY.MM.DD`** (was `core-2026.10.29`): N units, built from knowledge-base commit `XXXXXXX`. <!-- fill in after `npm run knowledge:update -- <version>` -->
+
 ## [2.8.0] - 2026-11-03
 
 The release of the 2.7 line. 2.7.0 brought the knowledge engine, the CMSIS Solution catalog and project actions and Kimi Code, and was packaged as a pre-release VSIX (odd minor version); 2.8.0 is the same extension as a release VSIX, with a README written for it. No tool, argument, setting or behaviour changed since 2.7.0.
