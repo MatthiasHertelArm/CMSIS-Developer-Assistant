@@ -109,8 +109,8 @@ const KNOWLEDGE_FIRST =
     'Knowledge first: before you start a CMSIS task — a new project, a target or a board layer, the debugger or an FVP setup, ' +
     'pack debug or trace content, a debug or flash session that fails — call knowledge_search with the task\'s name in two or ' +
     'three words (new project, board layer, HardFault), read the procedure it finds with knowledge_get and follow it; do not ' +
-    'work such a task from memory. The units route-project, ' +
-    'route-bring-up, route-pack and route-debug, where the index has them, say which procedure fits and in which order.';
+    'work such a task from memory. The units route-project, route-bring-up, route-pack, route-debug-description and ' +
+    'route-debug, where the index has them, say which procedure fits and in which order.';
 
 /**
  * The line the first `get_session_status` adds to the tool rules reminder

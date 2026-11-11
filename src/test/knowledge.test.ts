@@ -999,7 +999,7 @@ suite('knowledge tools', () => {
             // What a skill's description did by itself has to be said: look the procedure up before the work, and first of all.
             assert.ok(text.startsWith('Knowledge first: before you start a CMSIS task'), text.slice(0, 80));
             assert.match(text, /call knowledge_search with the task's name in two or three words \(new project, board layer, HardFault\), read the procedure it finds with knowledge_get and follow it; do not work such a task from memory/);
-            assert.match(text, /route-project, route-bring-up, route-pack and route-debug/);
+            assert.match(text, /route-project, route-bring-up, route-pack, route-debug-description and route-debug, where the index has them/);
         });
 
         test('the components of a cbuild.yml are read from its component lines', () => {
