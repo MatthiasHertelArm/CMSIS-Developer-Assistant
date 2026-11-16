@@ -3432,6 +3432,53 @@ suite('DebuggingHandler', () => {
                 }
             });
 
+            test('API version 3: the switch goes through setActiveTarget with getTargets\' spelling; cmsis.json and re-activation stay untouched', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-v3-target-'));
+                try {
+                    const solution = path.join(dir, 'demo.csolution.yml');
+                    fs.writeFileSync(solution, 'solution: {target-types: [{type: HE}, {target-set: [{set: debug}, {set: release}], type: HP}]}\n');
+                    let active = 'HE';
+                    const issued: string[] = [];
+                    const v3 = {
+                        getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined,
+                        getTargets: async () => ['HE', 'HP@debug', 'HP@release'],
+                        setActiveTarget: async (name: string) => { issued.push(`set ${name}`); active = name; },
+                    };
+                    const handle = { isActive: true, version: '1.72.1', exports: { getApi: (version: number) => { if (version !== 3) { throw new Error('no'); } return v3; } }, activate: async () => undefined };
+                    const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }], solutionExtension: () => handle });
+                    registrations = standIns({
+                        'cmsis-csolution.getSolutionFile': () => solution,
+                        'cmsis-csolution.getActiveTargetSet': () => active,
+                        'cmsis-csolution.deactivateSolution': () => { issued.push('deactivate'); },
+                        'cmsis-csolution.activateSolution': () => { issued.push('activate'); },
+                        'cmsis-csolution.cmsisDetachDebugger': () => { issued.push('detach'); },
+                    });
+                    const text = await textAnswer(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }));
+                    assert.match(text, /^CMSIS 'detach' on HP@release, switched from HE issued/);
+                    assert.deepStrictEqual(issued, ['set HP@release', 'detach']);
+                    assert.ok(!fs.existsSync(path.join(dir, '.vscode', 'cmsis.json')), 'cmsis.json is CMSIS Solution\'s to write');
+
+                    // convert: on 1.72.0 (no convertSolution) refused before any switch; with it, csolution's messages.
+                    again();
+                    issued.length = 0;
+                    active = 'HE';
+                    registrations = standIns({
+                        'cmsis-csolution.getSolutionFile': () => solution,
+                        'cmsis-csolution.getActiveTargetSet': () => active,
+                    });
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'convert', target: 'HP@debug' }), 'TOOL_DISABLED');
+                    assert.match(refused.message, /CMSIS 'convert' not attempted: the CMSIS Solution extension offers no convertSolution/);
+                    assert.deepStrictEqual(issued, [], 'no switch before the refusal');
+                    Object.assign(v3, { convertSolution: async () => ({ success: true, severity: 'success', detection: false, logMessages: { success: true } }) });
+                    const convertReply = await w.handler.handleCmsisCommand({ action: 'convert' });
+                    const converted = typeof convertReply === 'string' ? convertReply : (convertReply as { text: string }).text;
+                    assert.match(converted, /^✅ CMSIS 'convert' on HE: csolution convert succeeded after .* \(0 error\(s\), 0 warning\(s\), without the RTE update\)\. Next: cmsis_action build\.$/);
+                    w.tracker.dispose();
+                } finally {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            });
+
             test('target switching rejects malformed or unsupported YAML before settings or activation change', async () => {
                 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-invalid-target-'));
                 try {

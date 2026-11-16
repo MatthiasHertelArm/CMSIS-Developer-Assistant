@@ -31,6 +31,7 @@
 
 import * as vscode from 'vscode';
 import { defaultPackRoot } from '../core/packDocs/cbuildRun';
+import { solutionGetter } from './solutionQueries';
 import { withTimeout } from './timeout';
 import { logger } from './logger';
 
@@ -46,7 +47,7 @@ let outcomeLogged = false;
 async function ask(): Promise<string | undefined> {
     try {
         const answer = await withTimeout(`cmsis ${COMMAND}`, ASK_TIMEOUT_MS,
-            Promise.resolve(vscode.commands.executeCommand(COMMAND)));
+            Promise.resolve(solutionGetter(COMMAND)));
         return typeof answer === 'string' && answer.trim() ? answer.trim() : undefined;
     } catch {
         return undefined;

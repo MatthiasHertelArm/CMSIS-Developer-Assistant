@@ -372,6 +372,17 @@ suite('build diagnosis (#15)', () => {
             + 'cmsis_action build re-runs cbuild with --log itself when it can.');
     });
 
+    test('without the file, the environment from CMSIS Solution\'s API version 3 stands in: cbuild is re-run from its directory', async () => {
+        const w = make({ environment: false });
+        const bin = path.join(w.dir, 'toolbox', 'bin').replace(/\\/g, '/');
+        w.host.apiToolsEnvironment = async () => ['cmsis-tools-environment:', '  environment:', '    path:', `      - ${bin}`, '  tools:',
+            '    - name: CMSIS-Toolbox', `      directory: ${bin}`, ''].join('\n');
+        failBuild(w);
+        await until(() => w.children.length === 1, 'cbuild was spawned from the API\'s environment');
+        assert.strictEqual(path.dirname(w.children[0].command), path.join(w.dir, 'toolbox', 'bin'));
+        w.children[0].finish(1, '');
+    });
+
     test('no cbuild where the environment file says, the setting off, a clean: no re-run, each said', async () => {
         const noCbuild = make({ cbuild: false });
         const first = failBuild(noCbuild);

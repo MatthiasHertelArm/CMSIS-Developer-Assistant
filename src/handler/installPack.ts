@@ -20,10 +20,13 @@
  * project that needs it exists. Like `open_solution` it needs no active
  * solution.
  *
- * The command is `cmsis-csolution.installPack(vendor, name, version)`,
- * hidden from the palette: it runs `cpackget add -a` in the extension's tool
- * queue and answers the pack's folder, or nothing, with the reason only in
- * its output channel. So the call checks first what it can name: the pack
+ * With API version 3 the install is `installPacks({packs, approved})`, which
+ * answers per pack `installed` with the folder or `failed` with the reason.
+ * Without it, the command `cmsis-csolution.installPack(vendor, name,
+ * version)`, hidden from the palette: it runs `cpackget add -a` in the
+ * extension's tool queue and answers the pack's folder, or nothing, with the
+ * reason only in its output channel. Either way `approved` is this
+ * extension's to give: the licence question below comes first. So the call checks first what it can name: the pack
  * id, the extension, its command (after activating the extension, which a
  * window without a csolution has not done), and the licence. A pack whose
  * PDSC in the pack root's `.Web/` declares one is installed only after the
@@ -62,6 +65,7 @@ import {
     parsePackRequest,
 } from '../core/packInstall';
 import { problemJournal, type ProblemInput } from '../core/problemJournal';
+import { peekSolutionApi, v3Method } from '../core/solutionApi';
 import { JsonObject, ToolError, ToolText } from '../core/toolResult';
 import { logger } from '../utils/logger';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
@@ -74,8 +78,14 @@ import { formatDuration } from './jobText';
 export interface PackInstallHost {
     /** Activate the CMSIS Solution extension unless it is active, then list VS Code's commands (`getCommands(true)`). */
     solutionCommands(): Promise<readonly string[]>;
-    /** `cmsis-csolution.installPack(vendor, name, version)`: the pack's folder, or undefined. */
+    /**
+     * Install the pack: `installPacks` of API version 3, else the command
+     * `cmsis-csolution.installPack(vendor, name, version)`. Answers the pack's
+     * folder, or undefined; rejects with the reason when there is one.
+     */
     installPack(vendor: string, name: string, version: string): Thenable<unknown>;
+    /** What `installPack` calls, for the texts; the command when absent. */
+    installer?(): string;
     /** The pack root: the CMSIS Solution extension's, else `$CMSIS_PACK_ROOT` or the platform default. */
     packRoot(): Promise<string>;
     /** The licence question as a modal with Install and Cancel; true for Install. */
@@ -96,7 +106,15 @@ export const VSCODE_PACK_INSTALL_HOST: PackInstallHost = {
         }
         return vscode.commands.getCommands(true);
     },
-    installPack: (vendor, name, version) => vscode.commands.executeCommand<unknown>(INSTALL_PACK_COMMAND, vendor, name, version),
+    installPack: async (vendor, name, version) => {
+        const installPacks = v3Method(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)), 'installPacks');
+        if (installPacks === undefined) {
+            return vscode.commands.executeCommand<unknown>(INSTALL_PACK_COMMAND, vendor, name, version);
+        }
+        return folderOfInstall(await installPacks({ packs: [`${vendor}::${name}@${version}`], approved: true }));
+    },
+    installer: () => (v3Method(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)), 'installPacks') !== undefined
+        ? INSTALL_PACKS_API : INSTALL_PACK_COMMAND),
     packRoot: () => effectiveToolchainPackRoot(),
     confirmLicence: async (message, detail) =>
         (await vscode.window.showWarningMessage(message, { modal: true, detail }, INSTALL_BUTTON)) === INSTALL_BUTTON,
@@ -106,6 +124,27 @@ export const VSCODE_PACK_INSTALL_HOST: PackInstallHost = {
 };
 
 const WHAT = 'CMSIS \'install_pack\'';
+/** How the texts name the install through API version 3. */
+const INSTALL_PACKS_API = 'CMSIS Solution API installPacks';
+
+/**
+ * The folder of the one pack an `installPacks` answer reports: its `path`
+ * when `installed` (undefined without one: the folder is then checked where
+ * the pack root puts it); a rejection with the reported `error` when
+ * `failed` or `cancelled`.
+ */
+export function folderOfInstall(results: unknown): string | undefined {
+    const first: unknown = Array.isArray(results) ? results[0] : undefined;
+    if (typeof first !== 'object' || first === null) {
+        throw new Error('installPacks answered no result');
+    }
+    const result = first as { status?: unknown; path?: unknown; error?: unknown };
+    if (result.status === 'installed') {
+        return typeof result.path === 'string' && result.path.trim().length > 0 ? result.path.trim() : undefined;
+    }
+    const reason = typeof result.error === 'string' && result.error.trim().length > 0 ? result.error.trim() : 'no reason given';
+    throw new Error(`${typeof result.status === 'string' ? result.status : 'failed'}: ${reason}`);
+}
 /** Kept back from the call's deadline so its own answer beats the fence. */
 const DEADLINE_MARGIN_MS = 1_500;
 /** How long the CMSIS Solution extension may take to activate. */
@@ -168,15 +207,19 @@ function installedResult(pack: PackRequest, folder: string, head: string, licenc
 async function install(installer: PackInstallHost, pack: PackRequest, expected: string, licence: LicenceCheck): Promise<ToolText> {
     const id = formatPackRequest(pack);
     const leftover = (): string | undefined => (isDirectory(expected) ? expected : undefined);
-    logger.info(`install_pack: ${INSTALL_PACK_COMMAND} ${id}`);
+    const via = installer.installer?.() ?? INSTALL_PACK_COMMAND;
+    logger.info(`install_pack: ${via} ${id}`);
     let answer: unknown;
     try {
         answer = await installer.installPack(pack.vendor, pack.name, pack.version);
     } catch (caught) {
-        throw reported(installer, installFailure(pack, `${INSTALL_PACK_COMMAND} failed: ${failureText(caught)}`, leftover()));
+        throw reported(installer, installFailure(pack, `${via} failed: ${failureText(caught)}`, leftover()));
+    }
+    if ((typeof answer !== 'string' || answer.trim().length === 0) && via !== INSTALL_PACK_COMMAND && holdsPack(expected, pack)) {
+        answer = expected;
     }
     if (typeof answer !== 'string' || answer.trim().length === 0) {
-        throw reported(installer, installFailure(pack, `${INSTALL_PACK_COMMAND} returned no folder`, leftover()));
+        throw reported(installer, installFailure(pack, `${via} returned no folder`, leftover()));
     }
     const folder = answer.trim();
     if (!isDirectory(folder)) {

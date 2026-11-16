@@ -36,6 +36,8 @@ import {
     ArmDocKind, Dossier, DossierMiss,
 } from './core/packDocs';
 import type { ToolText } from './core/toolResult';
+import { documentFailureText, needsUser, proposedParentOf, ProposedDocParent, ProposedDocumentInfo } from './core/packDocs/documentApi';
+import { inventoryErrorOf, REQUEST_PREFIX, requestErrorText, setInventoryError } from './core/packDocs/inventoryWriter';
 import { runTool } from './core/toolRun';
 
 /** The SVD a target is served with. */
@@ -170,6 +172,12 @@ export class PackDocsHandler {
     private readonly downloads = new Map<string, DownloadJob>();
     /** The last failed download of each document, until one succeeds. */
     private readonly downloadFailures = new Map<string, DownloadFailure>();
+    /** Downloads CMSIS Solution runs for `fetch_doc` (proposed API, stage 3), by document id. */
+    private readonly solutionDownloads = new Map<string, Promise<ProposedDocumentInfo>>();
+    /** The `error` texts this extension wrote into the inventory (stage 2), by inventory file, parent and name. */
+    private readonly inventoryWrites = new Map<string, string>();
+    /** The device and board of the last resolved target, as inventory keys. */
+    private lastTarget: { device?: string; board?: string } = {};
     private callCounter = 0;
 
     constructor(private readonly host: PackDocsHost, private readonly options: PackDocsHandlerOptions) {
@@ -352,6 +360,10 @@ export class PackDocsHandler {
             if (doc.source !== 'web') { return `${doc.id} is a local document (${doc.path ?? '?'}); it is searchable without fetching.`; }
             this.knownDocs.set(doc.id, doc);
             this.store.annotate(doc);
+            if (!doc.cached || args.refresh) {
+                const through = await this.fetchThroughSolution(doc, deadline);
+                if (through !== undefined) { return through; }
+            }
 
             const t0 = Date.now();
             let outcome: FetchOutcome | undefined;
@@ -726,6 +738,9 @@ export class PackDocsHandler {
         }
         for (const d of t.docs) {
             if (d.source === 'web' || isReadable(d)) { this.store.annotate(d); }
+            // This window's last failed download of it, for the state the listing shows (2.9.2, goal 3).
+            const failed = this.downloadFailures.get(d.id);
+            if (failed && !d.cached) { d.fetchFailure = failed.outcome.error; }
             this.knownDocs.set(d.id, d);
         }
         return t;
@@ -756,10 +771,13 @@ export class PackDocsHandler {
                 this.downloads.delete(doc.id);
                 if (settled.ok) {
                     this.downloadFailures.delete(doc.id);
+                    this.clearInventoryRequest(doc);
                 } else {
                     const attempts = (this.downloadFailures.get(doc.id)?.attempts ?? 0) + 1;
                     this.downloadFailures.set(doc.id, { outcome: settled, attempts, reported: false });
                     this.host.log.info(`fetch_doc: download of ${doc.id} failed (attempt ${attempts}): ${settled.error}`);
+                    // At the job's end, not the reply's: a failure after the call stopped waiting is recorded too.
+                    this.recordInventoryRequest(doc, settled.error);
                 }
                 return settled;
             });
@@ -847,8 +865,135 @@ export class PackDocsHandler {
         return `Document id '${id}' is ambiguous — it matches ${candidates.map(d => d.id).join(', ')}. Pass one of these ids.`;
     }
 
-    private resolve(args: TargetArgs, log: PackDocsHost['log']): Promise<TargetResolution | { error: string }> {
-        return resolveTarget({ ...this.host, log }, args);
+    private async resolve(args: TargetArgs, log: PackDocsHost['log']): Promise<TargetResolution | { error: string }> {
+        const resolved = await resolveTarget({ ...this.host, log }, args);
+        if (!('error' in resolved)) {
+            const key = (q: { vendor?: string; name: string; revision?: string } | undefined): string | undefined =>
+                q ? `${q.vendor ? `${q.vendor}::` : ''}${q.name}${q.revision ? `:${q.revision}` : ''}` : undefined;
+            this.lastTarget = { device: key(resolved.device), board: key(resolved.board) };
+        }
+        return resolved;
+    }
+
+    /** The device and board of the last resolved target, as the inventory names them (`Vendor::Name[:Revision]`). */
+    public targetKeys(): { device?: string; board?: string } {
+        return { ...this.lastTarget };
+    }
+
+    /** The key of an inventory request this extension wrote. */
+    private inventoryKey(doc: DocRef): string | undefined {
+        const known = doc.inventory;
+        // Device and board documents only: the Arm commons are CMSIS Solution's catalogue, not the target's list.
+        return this.host.inventoryFile && known?.parent && known.parent.tag !== 'common' && known.name
+            ? `${this.host.inventoryFile}|${known.parent.tag}|${known.parent.key}|${known.name}` : undefined;
+    }
+
+    /**
+     * Stage 2: the reason a document the CMSIS view lists could not be
+     * fetched, written into its inventory `error`, when the setting allows
+     * it and the proposed API does not take the request itself.
+     */
+    private recordInventoryRequest(doc: DocRef, failure: string): void {
+        const key = this.inventoryKey(doc);
+        if (key === undefined || this.host.settings().inventoryRequests !== true || this.host.documentApi?.().requestDocument !== undefined) { return; }
+        const text = requestErrorText(failure, doc.url);
+        const edit = setInventoryError(this.host.inventoryFile!, doc.inventory!.parent!, doc.inventory!.name!, text);
+        if (edit.written) {
+            this.inventoryWrites.set(key, text);
+            this.host.log.info(`fetch_doc: recorded the request for ${doc.id} in ${this.host.inventoryFile}`);
+        } else {
+            this.host.log.debug(`fetch_doc: request for ${doc.id} not recorded in the inventory (${edit.reason})`);
+        }
+    }
+
+    /** Stage 2: clear what `recordInventoryRequest` wrote, once this extension's own download succeeded. */
+    private clearInventoryRequest(doc: DocRef): void {
+        const key = this.inventoryKey(doc);
+        if (key === undefined || this.host.settings().inventoryRequests !== true) { return; }
+        // What this window wrote, else (after a reload) any error that carries this extension's mark.
+        const current = inventoryErrorOf(this.host.inventoryFile!, doc.inventory!.parent!, doc.inventory!.name!);
+        const written = this.inventoryWrites.get(key) ?? (current?.startsWith(REQUEST_PREFIX) ? current : undefined);
+        if (written === undefined) { return; }
+        const edit = setInventoryError(this.host.inventoryFile!, doc.inventory!.parent!, doc.inventory!.name!, undefined, written);
+        this.inventoryWrites.delete(key);
+        this.host.log.debug(`fetch_doc: inventory request for ${doc.id} ${edit.written ? 'cleared' : `left (${edit.reason})`}`);
+    }
+
+    /** The parent the proposed API adds a new document to: the last target's device, else its board. */
+    private targetParent(): ProposedDocParent | undefined {
+        return this.lastTarget.device ? { device: this.lastTarget.device } : this.lastTarget.board ? { board: this.lastTarget.board } : undefined;
+    }
+
+    /**
+     * Stage 3 (proposed API, inert until CMSIS Solution ships it): have CMSIS
+     * Solution download the document into its inventory (after adding a URL
+     * it does not list), then read its copy. Undefined: go on as before —
+     * no such API, or the copy is there now. A text: the reply (still
+     * downloading, or a failure with the request recorded there).
+     */
+    private async fetchThroughSolution(doc: DocRef, deadline: number): Promise<ToolText | undefined> {
+        const api = this.host.documentApi?.() ?? {};
+        if (api.downloadDocument === undefined || !doc.url) { return undefined; }
+        let parent = proposedParentOf(doc.inventory?.parent);
+        let name = doc.inventory?.name;
+        if ((parent === undefined || name === undefined) && api.addDocument !== undefined) {
+            const target = this.targetParent();
+            if (target === undefined) { return undefined; }
+            try {
+                const added = await api.addDocument(target, doc.url, { title: doc.title });
+                parent = target;
+                name = added?.name ?? doc.url;
+                const tag = 'device' in target ? 'device' : 'board' in target ? 'board' : 'common';
+                const key = 'device' in target ? target.device : 'board' in target ? target.board : 'arm-docs';
+                doc.inventory = { ...doc.inventory, name, parent: { tag, key } };
+            } catch (caught) {
+                this.host.log.info(`fetch_doc: CMSIS Solution did not add ${doc.url} (${documentFailureText(caught)}); downloading here`);
+                return undefined;
+            }
+        }
+        if (parent === undefined || name === undefined) { return undefined; }
+        const wanted = { parent, name };
+        let flight = this.solutionDownloads.get(doc.id);
+        if (flight === undefined) {
+            const started = Promise.resolve(api.downloadDocument(wanted.parent, wanted.name, {
+                timeoutMs: DOWNLOAD_BUDGET_MS, maxBytes: this.host.settings().maxPdfMb * 1024 * 1024,
+            }));
+            flight = started;
+            this.solutionDownloads.set(doc.id, started);
+            started.then(() => this.solutionDownloads.delete(doc.id), () => this.solutionDownloads.delete(doc.id));
+        }
+        const leftMs = deadline - Date.now() - DOWNLOAD_REPLY_MARGIN_MS;
+        let timer: NodeJS.Timeout | undefined;
+        const late = new Promise<'late'>(resolve => { timer = setTimeout(() => resolve('late'), Math.max(0, leftMs)); });
+        try {
+            const settled = await Promise.race([flight.then((info) => ({ info }), (caught: unknown) => ({ caught })), late]);
+            if (settled === 'late') {
+                return { text: `CMSIS Solution is downloading ${doc.id} into its documents (~/.cmsis/docs); call fetch_doc { doc: '${doc.id}' } again to index it.`, status: 'running' };
+            }
+            if ('info' in settled && typeof settled.info?.path === 'string') {
+                doc.inventory = { ...doc.inventory, copy: settled.info.path };
+                this.store.annotate(doc);
+                return undefined;
+            }
+            const failure = 'caught' in settled ? documentFailureText(settled.caught) : 'CMSIS Solution answered without a local copy';
+            if (api.requestDocument !== undefined) {
+                try {
+                    await api.requestDocument(wanted.parent, wanted.name, { by: 'agent', reason: requestErrorText(failure, doc.url) });
+                } catch (caught) {
+                    this.host.log.debug(`fetch_doc: requestDocument failed (${documentFailureText(caught)})`);
+                }
+            }
+            return [
+                `Could not fetch ${doc.id} through CMSIS Solution: ${failure}.`,
+                doc.url ? `URL: ${doc.url}` : '',
+                needsUser(failure)
+                    ? 'The site needs the user: ask them to open the URL, log in, download the file and use Import Document on it in the CMSIS view, '
+                        + 'where the document now carries the request. The next fetch_doc reads that copy.'
+                    : 'The CMSIS view shows the request on the document; Download Document there retries, and so does fetch_doc.',
+            ].filter(Boolean).join('\n');
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     private describe(target: TargetResolution): string {

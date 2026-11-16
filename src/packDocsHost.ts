@@ -33,9 +33,12 @@ import { effectivePackRoot } from './core/packDocs/host';
 import { ActiveContextHint, formatPackId } from './core/packDocs/cbuildRun';
 import { namedPackFolders } from './core/packDocs/targetDocs';
 import { solutionNameOf, targetTypeOf } from './core/solutionAnswers';
+import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
+import { peekSolutionApi } from './core/solutionApi';
+import { documentApiOf } from './core/packDocs/documentApi';
 import { withTimeout } from './utils/timeout';
 import { toolchainPackRoot } from './utils/toolchainPackRoot';
-import { activeCbuildRunFile, activePackFolders } from './utils/solutionQueries';
+import { activeCbuildRunFile, activeHardwareNames, activePackFolders, solutionGetter } from './utils/solutionQueries';
 import { PackDocsHandler } from './packDocsHandler';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { projectFacts } from './core/knowledge/projectFacts';
@@ -89,6 +92,8 @@ export function readPackDocsSettings(): PackDocsSettings {
         includeUnlisted: c.get<boolean>('includeUnlisted', defaultSettings.includeUnlisted),
         workspaceDocDirs: c.get<string[]>('workspaceDocDirs', defaultSettings.workspaceDocDirs),
         userDocsDir: c.get<string>('userDocsDir', defaultSettings.userDocsDir),
+        inventoryRequests: c.get<boolean>('inventoryRequests', false),
+        proposedDocumentApi: c.get<boolean>('proposedDocumentApi', false),
     };
 }
 
@@ -126,8 +131,8 @@ async function findFiles(glob: string, max: number): Promise<string[]> {
 async function activeContext(): Promise<ActiveContextHint | undefined> {
     try {
         const [file, set] = await Promise.all([
-            withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getSolutionFile'))),
-            withTimeout('cmsis getActiveTargetSet', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getActiveTargetSet'))),
+            withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(solutionGetter('cmsis-csolution.getSolutionFile'))),
+            withTimeout('cmsis getActiveTargetSet', 3_000, Promise.resolve(solutionGetter('cmsis-csolution.getActiveTargetSet'))),
         ]);
         const solution = solutionNameOf(file);
         const targetType = targetTypeOf(set);
@@ -157,6 +162,9 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         // storage; a user coming from the standalone CMSIS Pack Docs
         // extension re-extracts once.
         storageDir: path.join(context.globalStorageUri.fsPath, 'packdocs'),
+        inventoryFile: path.join(os.homedir(), '.cmsis', 'docs.yml'),
+        documentApi: () => (readPackDocsSettings().proposedDocumentApi === true
+            ? documentApiOf(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID))) : {}),
         assetsDir: path.join(context.extensionPath, 'assets'),
         settings: () => readPackDocsSettings(),
         log: logger,
@@ -168,6 +176,7 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         activeContext,
         activeCbuildRunFile: () => activeCbuildRunFile(),
         activePackFolders: () => activePackFolders(),
+        solutionHardware: () => activeHardwareNames(),
     };
 }
 

@@ -1,0 +1,1 @@
+{ "name": "api-v3-probe", "publisher": "local", "version": "0.0.1", "engines": { "vscode": "^1.100.0" } }

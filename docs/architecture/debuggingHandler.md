@@ -463,8 +463,11 @@ window's CMSIS job tracker (next section):
   (`src/handler/installPack.ts`, the pure parts in `src/core/packInstall.ts`).
   It exists so that a pack's knowledge units can be read before the project
   that needs the pack is written, without a `cpackget add` in the shell. It
-  calls the CMSIS Solution extension's hidden `installPack` command, which
-  answers only a folder or nothing, so the call checks what it can first:
+  calls `installPacks` of CMSIS Solution's API version 3 when it is there,
+  which answers per pack `installed` with the folder or `failed` with the
+  reason, and `approved: true` only after this extension's licence gate;
+  else the hidden `installPack` command, which answers only a folder or
+  nothing. So the call checks what it can first:
   `Vendor::Name@version` with the version required, the extension installed,
   and the command present once the extension is activated (a window without
   a csolution has not activated it). The licence gate reads the `<license>`
@@ -563,10 +566,15 @@ lines while no session runs in a window without a folder. The steps from
 there are the `bootstrap` topic of the agent guide and the knowledge
 procedure `proc-cmsis-bootstrap`, read with `knowledge_get`.
 
-When `target` names a target-type or target-set that is not active, the
-selection is written into `.vscode/cmsis.json`, the solution is
-re-activated, and the switch is verified through the extension before
-anything runs. The file is the one CMSIS Solution reads: that of the
+When `target` names a target-type or target-set that is not active, and
+CMSIS Solution's API version 3 declares that target (`getTargets()`, whose
+spelling is passed since `setActiveTarget()` is case-sensitive), the
+extension switches itself; otherwise the selection is written into
+`.vscode/cmsis.json` and the solution re-activated, the 1.72.0 way. Either
+way the switch is verified through the extension before anything runs:
+`setActiveTarget()` does not wait for the conversion. `convert` runs
+`convertSolution()` of version 3 (no RTE update, no build) and is refused
+under a build in flight, whose cbuild converts too. The file is the one CMSIS Solution reads: that of the
 workspace's first folder, also for a solution in another folder of a
 multi-root workspace, keyed by the solution's path relative to that folder,
 a key the extension splits at every dot. The solution's `tasks.json` and
@@ -610,24 +618,43 @@ cannot be chosen `INVALID_ARGUMENT`, no runnable pyOCD `TOOL_DISABLED`, a
 failing run `TASK_FAILED`, and a run killed at its budget is answered with
 status `timeout`.
 
-### The catalog: `cmsis_query`
+### The catalog and the solution: `cmsis_query`
 
-CMSIS Solution publishes a versioned API (`exports.getApi(2)`, the types of
-`@arm-software/vscode-cmsis-csolution`). Its catalog merges Arm's web
-catalog with the installed packs, so it knows a board's examples before any
-of its packs is installed, which `csolution list examples` does not.
-`handleCmsisQuery` serves the first slice of #41's `cmsis_query`: `what` is
-`boards`, `devices` or `examples`, and `context` and `toolchain` are meant to
-join it as further kinds (`QUERY_KINDS` in `src/core/catalogQuery.ts`).
+CMSIS Solution publishes a versioned API (`exports.getApi(n)`, the types of
+`@arm-software/vscode-cmsis-csolution`). Version 2 is the catalog: it merges
+Arm's web catalog with the installed packs, so it knows a board's examples
+before any of its packs is installed, which `csolution list examples` does
+not. Version 3, on CMSIS Solution's `main` after 1.72.0 and marked "in
+development" there, keeps version 2 and adds what this extension used to
+reach through hidden commands or rebuild from files: the getters of the
+loaded solution, the target switch, a conversion without a build, the tools
+environment, the registered toolchains, the debug-adapter catalog, the pack
+lists and their installation. `handleCmsisQuery` serves both: `what` is
+`boards`, `devices` or `examples` (`src/core/catalogQuery.ts`), or `packs`,
+`toolchains`, `debuggers` or `environment` (`src/core/solutionQuery.ts`);
+`QUERY_KINDS` is the union.
 
-Two pure modules carry it. `src/core/solutionApi.ts` holds the part of the
+Three pure modules carry it. `src/core/solutionApi.ts` holds the part of the
 API this extension calls, as types of its own, and `acquireSolutionApi()`,
 the seam: the extension missing is the bootstrap refusal
 `CMSIS_NO_SOLUTION`, an inactive one is activated (`TIMEOUT` after 20 s,
-`TASK_FAILED` when it fails), and no `getApi`, no version 2 or a version 2
-without a method is `TOOL_DISABLED`; one API object is kept per extension,
-since `getApi` makes a new one per call. It also finds a board, device or
-draft by id, case-insensitively, with near ids when none matches.
+`TASK_FAILED` when it fails), version 3 is asked first and version 2 when 3
+throws or lacks a method of 2, and no `getApi`, neither version or a
+version 2 without a method is `TOOL_DISABLED`; one API object is kept per
+extension, since `getApi` makes a new one per call. The four methods of
+version 2 are required; every method of version 3 is optional and found by
+name (`v3Method()`, `requireV3Method()` for the refusal with the update
+hint), never by the version number, so a partial or changed version 3 loses
+only what it lacks. `peekSolutionApi()` gives the getters the same object
+without activating the extension and without throwing. The getters that
+used to run hidden commands (`getSolutionFile`, `getActiveTargetSet`,
+`getCbuildRunFile`, `getDfpPath`, `getBspPath`, `getPackRootPath`) take the
+version 3 method of the same meaning first (`solutionGetter()`,
+`askSolution()` in `src/utils/solutionQueries.ts`) and the command
+otherwise; version 3 delegates to the same commands today, so the answers
+do not change, only the dependency on hidden command ids. The API also It also finds a board, device or
+finds a board, device or draft by id, case-insensitively, with near ids
+when none matches.
 `src/core/catalogQuery.ts` applies the filters itself, as case-insensitive
 regular expressions (the API's name filter is case-sensitive and its vendor
 filter exact); a name is tried against the entry's name and its id, and
@@ -980,7 +1007,7 @@ by #56.
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check and the Update Debug Tasks hand-off, jobs, session waits, verified `stop_run` and `stop_build`, `status`, `open_solution`, the dispatch of `install_pack` and `create_solution`, why no solution is active |
 | `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
-| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts`, `src/core/webCatalog.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data; the origin pack of web examples alike, from Arm's web catalog |
+| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts`, `src/core/solutionQuery.ts`, `src/core/webCatalog.ts` | CMSIS Solution's API versions 3 and 2 as far as they are used, `acquireSolutionApi()`, `peekSolutionApi()`, `v3Method()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s catalog kinds, filters, caps, texts and data; the kinds of version 3 (`packs`, `toolchains`, `debuggers`, `environment`); the origin pack of web examples alike, from Arm's web catalog, asked only for those CMSIS Solution names no pack for |
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
 | `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
@@ -1023,6 +1050,7 @@ by #56.
   line; `src/test/windowProblems.test.ts`: failed jobs, build lines, the
   Problems panel and the copied text; the adapter tracker's records in
   `src/test/sessionStateTracker.test.ts`
+- `src/test/solutionApiV3.test.ts`: the version 3 seam, the getters through it, the kinds of version 3, the result of `installPacks`
 - `src/test/solutionCatalog.test.ts`: `cmsis_query` and `create_solution`
   against a stub of CMSIS Solution's API: filters, caps, sources, web
   examples alike with their origin pack and the lookup behind it against a

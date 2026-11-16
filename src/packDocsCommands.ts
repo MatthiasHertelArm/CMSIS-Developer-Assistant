@@ -17,9 +17,15 @@
 /**
  * The palette commands of the documentation tools: list and index the current
  * target's documents into the output channel, import PDFs the packs do not
- * ship into the user documents folder (attributed to a pack, device, board or
- * core), open that folder, and open the Pack Docs panel. Available whether or
- * not the MCP tools are enabled — the handlers exist in every window.
+ * ship, open the user documents folder, move that folder's documents into
+ * CMSIS Solution's inventory, and open the Pack Docs panel. Available whether
+ * or not the MCP tools are enabled — the handlers exist in every window.
+ *
+ * Import goes through CMSIS Solution's *Add Document* when it has one
+ * (after 1.72.0): its file picker, attributed to the active target's board
+ * or device, into `~/.cmsis/docs`; the documents it added are found by
+ * comparing the target's listing before and after, and indexed. With
+ * 1.72.0 the wizard of the user documents folder stays.
  */
 
 import * as vscode from 'vscode';
@@ -31,7 +37,13 @@ import { PackDocsHandlers } from './packDocsDispatch';
 import { readPackDocsSettings } from './packDocsHost';
 import { KnowledgePanel } from './knowledgePanel';
 import { PackDocsPanel } from './packDocsPanel';
+import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
+import { documentApiOf, ProposedDocParent } from './core/packDocs/documentApi';
+import { peekSolutionApi } from './core/solutionApi';
 import { logger } from './utils/logger';
+
+/** CMSIS Solution's command that adds a document to the active target's board or device (after 1.72.0). */
+const SOLUTION_ADD_DOCUMENT = 'cmsis-csolution.addDocument';
 
 const CONFIG = 'cmsis-developer-assistant';
 
@@ -67,7 +79,19 @@ export function registerPackDocsCommands(context: vscode.ExtensionContext, handl
             await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(dir));
         }),
 
-        vscode.commands.registerCommand(`${CONFIG}.importUserDoc`, () => importUserDocuments(handlers)),
+        vscode.commands.registerCommand(`${CONFIG}.importUserDoc`, async () => {
+            if ((await vscode.commands.getCommands(true)).includes(SOLUTION_ADD_DOCUMENT)) {
+                const route = await vscode.window.showQuickPick([
+                    { label: '$(add) Add to the CMSIS view', description: 'CMSIS Solution\'s Add Document: the active target\'s board or device', solution: true },
+                    { label: '$(folder) Import into the user documents folder', description: 'attribute to a pack, device family, board, core or all targets', solution: false },
+                ], { title: 'Import Document for Current Target', placeHolder: 'Where should the document go?' });
+                if (route === undefined) { return; }
+                return route.solution ? addThroughSolution(handlers) : importUserDocuments(handlers);
+            }
+            return importUserDocuments(handlers);
+        }),
+
+        vscode.commands.registerCommand(`${CONFIG}.migrateUserDocs`, () => migrateUserDocuments(handlers)),
 
         vscode.commands.registerCommand(`${CONFIG}.openPackDocsPanel`, () => {
             PackDocsPanel.show(context, handlers.docs, handlers.build, logger);
@@ -81,6 +105,82 @@ export function registerPackDocsCommands(context: vscode.ExtensionContext, handl
             KnowledgePanel.show(context, handlers.knowledge, logger);
         }),
     );
+}
+
+/**
+ * Add a document through CMSIS Solution's *Add Document* (its picker, its
+ * folder, its inventory), then index what it added for the current target.
+ * The command answers nothing, so the target's listing before and after
+ * tells which documents are new.
+ */
+async function addThroughSolution(handlers: PackDocsHandlers): Promise<void> {
+    const { docs } = handlers;
+    const before = new Set((await docs.inspectTarget({})).docs.map((doc) => doc.id));
+    await vscode.commands.executeCommand(SOLUTION_ADD_DOCUMENT);
+    const after = await docs.inspectTarget({});
+    const added = after.docs.filter((doc) => !before.has(doc.id) && doc.path !== undefined && !doc.unsupported && !doc.missing);
+    if (added.length === 0) {
+        logger.info('import: CMSIS Solution added no document for the current target (cancelled, or attributed elsewhere)');
+        return;
+    }
+    const lines: string[] = [];
+    for (const doc of added) {
+        try {
+            const loaded = await docs.indexDocument(doc);
+            lines.push(`${doc.id}: ${loaded.meta.pageCount} pages — ${doc.path}`);
+        } catch (e) {
+            lines.push(`${doc.id}: added by CMSIS Solution, indexing failed — ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+    logBlock('import through CMSIS Solution (command)', lines.join('\n'), 50);
+    void vscode.window.showInformationMessage(`Added through the CMSIS view and indexed: ${lines.join('; ')}`);
+}
+
+/**
+ * Move the current target's documents of the legacy user documents folder
+ * into CMSIS Solution's inventory, through the proposed `addDocument` of its
+ * API (2.9.2 stage 3; inert until CMSIS Solution ships it). Documents under
+ * `devices/` go to the target's device, under `boards/` to its board; those
+ * attributed to a pack, vendor, core or every target wait for those
+ * attributions in CMSIS Solution (gap G2). Nothing is copied or deleted
+ * here: CMSIS Solution copies the file, the legacy folder stays as it is.
+ */
+async function migrateUserDocuments(handlers: PackDocsHandlers): Promise<void> {
+    const { docs } = handlers;
+    const api = readPackDocsSettings().proposedDocumentApi === true
+        ? documentApiOf(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID))) : {};
+    if (api.addDocument === undefined) {
+        void vscode.window.showInformationMessage('CMSIS Developer Assistant: moving the user documents needs a CMSIS Solution whose API can add documents '
+            + '(proposed, not released yet; setting packDocs.proposedDocumentApi). The folder stays a source of the documentation tools meanwhile.');
+        return;
+    }
+    const target = await docs.inspectTarget({});
+    const keys = docs.targetKeys();
+    const root = resolveUserDocsDir(readPackDocsSettings().userDocsDir);
+    const legacy = target.docs.filter((doc) => doc.source === 'user' && doc.inventory === undefined && doc.path !== undefined);
+    if (legacy.length === 0) {
+        void vscode.window.showInformationMessage('CMSIS Developer Assistant: the user documents folder holds nothing for the current target.');
+        return;
+    }
+    const done: string[] = [];
+    const left: string[] = [];
+    for (const doc of legacy) {
+        const top = path.relative(root, doc.path!).split(path.sep)[0];
+        const parent: ProposedDocParent | undefined = top === 'devices' && keys.device ? { device: keys.device }
+            : top === 'boards' && keys.board ? { board: keys.board } : undefined;
+        if (parent === undefined) {
+            left.push(`${doc.id} (attributed to a pack, vendor, core or every target: CMSIS Solution has no such attribution yet)`);
+            continue;
+        }
+        try {
+            await api.addDocument(parent, doc.path!, { title: doc.title, ...(doc.category ? { category: doc.category } : {}) });
+            done.push(doc.id);
+        } catch (e) {
+            left.push(`${doc.id} (${e instanceof Error ? e.message : String(e)})`);
+        }
+    }
+    logBlock('move user documents into the CMSIS view (command)', [...done.map((id) => `added: ${id}`), ...left.map((why) => `left: ${why}`)].join('\n'), 100);
+    void vscode.window.showInformationMessage(`CMSIS Developer Assistant: ${done.length} document(s) added to the CMSIS view, ${left.length} left in ${root}.`);
 }
 
 /**

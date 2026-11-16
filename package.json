@@ -110,6 +110,11 @@
         "category": "CMSIS Developer Assistant"
       },
       {
+        "command": "cmsis-developer-assistant.migrateUserDocs",
+        "title": "Move User Documents into the CMSIS View",
+        "category": "CMSIS Developer Assistant"
+      },
+      {
         "command": "cmsis-developer-assistant.openUserDocsFolder",
         "title": "Open User Documents Folder",
         "category": "CMSIS Developer Assistant"
@@ -238,6 +243,22 @@
           "type": "number",
           "default": 150,
           "description": "PDFs larger than this (in MB) are listed but not indexed.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.inventoryRequests": {
+          "type": "boolean",
+          "default": false,
+          "description": "When fetch_doc cannot get a document the CMSIS view lists, write the reason into that document's error in CMSIS Solution's ~/.cmsis/docs.yml, so the view shows what the agent waits for. Only that one field of that one entry is changed, and cleared again when a later fetch succeeds.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.proposedDocumentApi": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prototype: use the document methods proposed for CMSIS Solution's API (download, request, add) when its API has methods of those names. No CMSIS Solution release has them yet.",
           "tags": [
             "experimental"
           ]

@@ -41,7 +41,7 @@ import { solutionFileOf } from './core/solutionAnswers';
 import { logger } from './utils/logger';
 import { notifyWarning } from './utils/notify';
 import { liveSessionsExcept, onSessionBegins, registrySession } from './utils/sessionStateTracker';
-import { activeCbuildRunFile } from './utils/solutionQueries';
+import { activeCbuildRunFile, solutionGetter } from './utils/solutionQueries';
 import { withTimeout } from './utils/timeout';
 import { WindowStatus } from './windowStatus';
 
@@ -151,7 +151,7 @@ function querySolutionFile(): Thenable<unknown> | undefined {
     if (!vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)?.isActive) {
         return undefined;
     }
-    return vscode.commands.executeCommand<unknown>('cmsis-csolution.getSolutionFile');
+    return solutionGetter('cmsis-csolution.getSolutionFile');
 }
 
 async function defaultSerialTeardown(): Promise<void> {

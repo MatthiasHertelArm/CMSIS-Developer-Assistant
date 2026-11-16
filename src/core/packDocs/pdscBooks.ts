@@ -81,6 +81,24 @@ export interface DocRef {
     format?: 'pdf' | 'html';
     /** How `p.<n>` is to be read; `section` for HTML documents. */
     unit?: 'page' | 'section';
+    /**
+     * What CMSIS Solution's document inventory (`~/.cmsis/docs.yml`) says
+     * about this document, when it lists it: `copy`, the local copy it
+     * downloaded or imported (read in place of a download of this
+     * extension); `error`, why its download failed; `user`, a document the
+     * user added in the CMSIS view.
+     */
+    /** Why this window's last `fetch_doc` of it failed, until one succeeds. */
+    fetchFailure?: string;
+    inventory?: {
+        copy?: string;
+        error?: string;
+        user?: boolean;
+        /** The document's `name` in the inventory, as written: its identity there. */
+        name?: string;
+        /** The entry that lists it: a device or board key, or the `arm-docs` commons. */
+        parent?: { tag: 'device' | 'board' | 'common'; key: string };
+    };
 }
 
 export interface PdscInfo {
@@ -237,7 +255,7 @@ export function isReadable(d: DocRef): boolean {
     return true;
 }
 
-function normalizeCategory(value: string | undefined): BookCategory | undefined {
+export function normalizeCategory(value: string | undefined): BookCategory | undefined {
     const v = value?.trim().toLowerCase();
     if (v === 'overview' || v === 'manual' || v === 'schematic' || v === 'setup' || v === 'other') { return v; }
     return undefined;

@@ -253,13 +253,13 @@ const ABOUT = {
         'A task still running at the wait returns status running: call status, never start it again.',
         'run: CMSIS Run alone, no build or flash — a probe\'s GDB server, then attach; an FVP hosts none.',
         'load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks.',
-        'refresh: Update RTE ("use --update-rte"); activate_environment: re-resolve vcpkg-configuration.json.',
-        'open_solution (path) opens and activates a csolution; needs no open project.',
+        'refresh: convert with RTE update; convert: without it, no build (API v3); activate_environment: re-resolve vcpkg-configuration.json.',
+        'open_solution (path) opens and activates a csolution.',
     ),
     cmsis_query: say(
-        'Boards, devices, or the examples and templates of a board or device, from CMSIS Solution\'s catalog (web and installed packs);',
-        'no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons ' +
-        'and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.',
+        'Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, ' +
+        'toolchains, debug adapters, tools environment. No project needed.',
+        'Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).',
     ),
     flash: say(
         'Program the target with pyocd load --cbuild-run (every image in the cbuild-run file) and return bytes programmed, or ' +
@@ -802,7 +802,7 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     mcp.registerTool('cmsis_action', {
         description: ABOUT.cmsis_action,
         inputSchema: {
-            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
+            action: z.enum(['build', 'rebuild', 'clean', 'refresh', 'convert', 'activate_environment', 'load', 'erase', 'run', 'load_and_run', 'load_and_debug', 'attach', 'detach', 'stop_run',
                 'stop_build', 'status', 'open_solution', 'install_pack', 'create_solution'])
                 .describe('Which CMSIS Solution action to invoke'),
             path: z.string().optional().describe('Absolute. open_solution: a *.csolution.yml or its folder; create_solution: the new project\'s folder.'),
@@ -827,6 +827,8 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
             board: z.string().optional().describe('boards: pattern; examples: board id'),
             device: z.string().optional().describe('boards, devices: pattern; examples: device id'),
             limit: z.number().int().min(1).max(100).optional().describe('Default 20'),
+            scope: z.enum(['all', 'installed', 'used', 'missing']).optional(),
+            context: z.string().optional(),
         },
         annotations: LOOK_ONLY,
     }, (args) => debug.handleCmsisQuery(args).then(reply));

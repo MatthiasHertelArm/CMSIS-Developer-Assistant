@@ -165,6 +165,20 @@ export function shortHash(text: string): string {
     return crypto.createHash('sha1').update(text).digest('hex').slice(0, 12);
 }
 
+/** CMSIS Solution's local copy of a document, from its inventory, when it is a PDF on disk. */
+export function inventoryPdf(doc: DocRef): { path: string; size: number } | undefined {
+    const copy = doc.inventory?.copy;
+    if (copy === undefined || path.extname(copy).toLowerCase() !== '.pdf') {
+        return undefined;
+    }
+    try {
+        const st = fs.statSync(copy);
+        return st.isFile() ? { path: copy, size: st.size } : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 export class PageStore {
     private readonly inFlight = new Map<string, Promise<LoadedDoc>>();
     private readonly pageCache = new Map<string, PageRecord[]>();
@@ -462,12 +476,23 @@ export class PageStore {
         }
     }
 
-    /** Fill `cached`, `indexed`, `pages` (and `revision`/`unit` when stored) on a DocRef without extracting. */
+    /**
+     * Fill `cached`, `indexed`, `pages` (and `revision`/`unit` when stored) on
+     * a DocRef without extracting. A web document this extension has not
+     * downloaded is read from CMSIS Solution's copy, when its inventory has
+     * one that is a PDF.
+     */
     annotate(doc: DocRef): DocRef {
         if (doc.source === 'web') {
             const record = this.readFetchRecord(doc);
             const p = this.paths(doc);
-            if (record && record.kind === 'pdf' && fs.existsSync(p.download)) {
+            const copy = inventoryPdf(doc);
+            if ((!record || record.kind !== 'pdf' || !fs.existsSync(p.download)) && copy) {
+                doc.path = copy.path;
+                doc.cached = true;
+                doc.format = 'pdf';
+                doc.sizeBytes = copy.size;
+            } else if (record && record.kind === 'pdf' && fs.existsSync(p.download)) {
                 doc.path = p.download;
                 doc.cached = true;
                 doc.format = 'pdf';

@@ -49,6 +49,7 @@ import {
 import { cbuildRunDebugger, cbuildRunProbeId, parseCbuildRun } from '../core/packDocs/cbuildRun';
 import { noWorkspaceRefusal } from '../core/bootstrapState';
 import { ToolError, ToolText } from '../core/toolResult';
+import { apiToolsEnvironment } from '../utils/solutionQueries';
 import { LONG_LIMIT_CAP_MS } from './fence';
 import type { HandlerHost } from './host';
 import { probeRefusal } from './jobText';
@@ -180,7 +181,8 @@ async function findPyocd(cbuildRunFile: string, host: HandlerHost): Promise<{ fo
     const candidates = resolvePyocd({
         debuggerExtensionPath: debuggerExtension?.path,
         debuggerVersion: debuggerExtension?.version,
-        toolsEnvironmentYml: toolsEnvironment(cbuildRunFile, host),
+        // A solution never converted has no file: the API's environment of the window stands in (2.9.1 phase 4.3).
+        toolsEnvironmentYml: toolsEnvironment(cbuildRunFile, host) ?? await apiToolsEnvironment(),
         platform: environment.platform,
         pathEnv: environment.pathEnv,
     });

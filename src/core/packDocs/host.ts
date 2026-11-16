@@ -23,6 +23,7 @@
 
 import type { ActivePackFolders } from '../solutionAnswers';
 import { ActiveContextHint } from './cbuildRun';
+import type { DocumentApi } from './documentApi';
 
 export interface PackDocsLog {
     debug(message: string): void;
@@ -55,6 +56,19 @@ export interface PackDocsSettings {
      * to packs/devices/boards/cores by sub-folder. Empty: `~/.cmsis-pack-docs/user`.
      */
     userDocsDir: string;
+    /**
+     * Write the reason of a failed `fetch_doc` into the `error` of the
+     * document in CMSIS Solution's inventory (`~/.cmsis/docs.yml`), so the
+     * CMSIS view shows it (2.9.2 stage 2). Off unless set.
+     */
+    inventoryRequests?: boolean;
+    /**
+     * Use the document methods proposed for CMSIS Solution's API (2.9.2
+     * stage 3) when its API object has methods of those names. Off unless
+     * set: no release has them, and a method of the same name with another
+     * signature must not be called with the proposal's arguments.
+     */
+    proposedDocumentApi?: boolean;
 }
 
 export interface PackDocsHost {
@@ -67,6 +81,22 @@ export interface PackDocsHost {
     packRoot: string;
     /** Where page text, metadata and indexes are cached (globalStorage/packdocs). */
     storageDir: string;
+    /**
+     * CMSIS Solution's document inventory (`~/.cmsis/docs.yml`), read as a
+     * source of the target's documents; absent: not read (tests).
+     */
+    inventoryFile?: string;
+    /**
+     * The document methods CMSIS Solution's API offers (proposed, 2.9.2
+     * stage 3; none ships yet); absent or empty: this extension downloads.
+     */
+    documentApi?(): DocumentApi;
+    /**
+     * The active target's device and board as CMSIS Solution's API version 3
+     * names them (`getDeviceName`, `getBoardName`); empty without it. Never
+     * rejects.
+     */
+    solutionHardware?(): Promise<{ device?: string; board?: string }>;
     /** The extension's `assets` directory (shipped core-peripheral SVDs under `svd/core`); absent in some tests. */
     assetsDir?: string;
     /** Every `*.cbuild-run.yml` in the workspace (solution root or out/). */

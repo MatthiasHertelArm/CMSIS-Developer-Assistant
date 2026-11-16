@@ -53,10 +53,74 @@ the folders of the target's cbuild.yml files. The resolution carries the
 folders as `packDirs`, and `locatePack` takes them before the pack root,
 where another installed version stands in for a missing one and the note
 says so. The VS Code host asks through `src/utils/solutionQueries.ts`: only
-while the extension is active (asking would activate it), each command
-feature-detected, 3 s per answer; `src/core/solutionAnswers.ts` interprets
-the answers (`""` and `"<not found>"` are none) for every caller of the
-extension's getters.
+while the extension is active (asking would activate it), through the
+getter of CMSIS Solution's API version 3 when it offers one, else the hidden
+command, feature-detected, 3 s per answer; `src/core/solutionAnswers.ts`
+interprets the answers (`""` and `"<not found>"` are none) for every caller
+of the extension's getters.
+
+## CMSIS Solution's document inventory
+
+CMSIS Solution after 1.72.0 keeps a document manager of its own: the CMSIS
+view lists the books of the device and board, the Arm catalogue and the
+user's additions, and records them in `~/.cmsis/docs.yml`, with downloads
+and imports under `~/.cmsis/docs/`. Without a bridge the two managers do
+not see each other: what the user adds in the view the agent cannot search,
+and a manual the user downloaded there `fetch_doc` downloads again.
+
+`src/core/packDocs/inventory.ts` reads that file as one more source (stage
+1 of the 2.9.2 proposal): per call, never written, never watched, parsed
+with `js-yaml` and every field checked, since users edit it. An entry is
+selected by the resolved device and board; each document becomes a
+`DocRef` whose id is derived from `name` the way the pdsc walk and
+`fetch_doc` derive it, so no id changes. `mergeInventory` folds them into
+`collectTargetDocs`: the same file, URL or Arm id gains `DocRef.inventory`
+(CMSIS Solution's local copy, the reason of a failed download, the user
+mark); a document only the inventory lists is added, except a pack file,
+because the inventory keeps the books of every pack version it ever
+converted. The Arm commons only lend their copies: which Arm documents
+belong to a target stays `armDocsFor`'s rule, since CMSIS Solution's
+selection lacks the ADI, CoreSight and NPU documents.
+
+`PageStore.annotate` reads a web document from CMSIS Solution's copy when
+this extension has not downloaded it, so `fetch_doc` indexes it without a
+download; sidecars stay in the page store, keyed by id, never beside the
+copy, which the view's *Remove Document* deletes with its folder. The
+listing and `fetch_doc`'s failure name the view's actions (*Download
+Document*, *Import Document*). The host sets `PackDocsHost.inventoryFile`;
+the tests leave it unset unless they test the inventory.
+
+Stage 2, `inventoryWriter.ts`, behind the setting `packDocs.inventoryRequests`
+(off): when a download job of `fetch_doc` ends in failure for a document the
+inventory lists, the reason and the user's action go into that entry's
+`error`, the field the CMSIS view shows as its error badge; when a later
+download of this extension succeeds, it clears what it wrote, and only
+that. Ownership is the text's prefix `Requested by the agent:`, so a new
+window clears what an earlier one wrote and never CMSIS Solution's own
+errors; the listing shows such an error as a pending request. The Arm
+commons are never written. Only `error` is written: whether CMSIS Solution keeps a key it does
+not know on its next save is not confirmed. The file is CMSIS Solution's
+and the user's, so the edit is minimal and checked: the entry is found by
+the parsed values of its parent key and `name`, the edited text must parse
+to the old data with that one field changed, the file is compared again
+right before a temporary file is renamed over it. The view redraws on its
+next own write (no watcher yet, gap G1a).
+
+Stage 3, `documentApi.ts`, is written against the document methods this
+extension asks CMSIS Solution for (gap G1b) and is inert until they exist
+and the setting `packDocs.proposedDocumentApi` is on: CMSIS Solution has
+internal methods of the same names with other arguments, so a name alone is
+no proof (`PackDocsHost.documentApi`).
+With `downloadDocument`, `fetch_doc` has CMSIS Solution download the
+document and indexes its copy; a URL the inventory does not list is added
+to the target's device first (`addDocument`); a failure goes to
+`requestDocument`, which then replaces the stage 2 write. The command *Move
+User Documents into the CMSIS View* adds the legacy folder's device and
+board documents through `addDocument`. Only scripted APIs have exercised
+this. The legacy folder, the wizard and this extension's download trees all
+stay as they are; *Import Document for Current Target* offers CMSIS Solution's *Add Document*
+when that command exists, beside the user folder's wizard, and finds what
+*Add Document* added by comparing the target's listing before and after.
 
 ## Extraction and ranking
 

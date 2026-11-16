@@ -67,13 +67,16 @@ import {
     SolutionApiV2,
     textField,
 } from './solutionApi';
+import { SOLUTION_KINDS } from './solutionQuery';
 import { clipValue } from './textBudget';
 import { JsonObject, ToolError, ToolReply } from './toolResult';
 import type { CatalogBoardId } from './webCatalog';
 import { secondsText } from './windowHealth';
 
-/** What `cmsis_query` answers today; #41 adds `context` and `toolchain`. */
-export const QUERY_KINDS = ['boards', 'devices', 'examples'] as const;
+/** The kinds this module answers from the catalog of API version 2. */
+export const CATALOG_KINDS = ['boards', 'devices', 'examples'] as const;
+/** What `cmsis_query` answers: the catalog, and the kinds of API version 3 (`solutionQuery.ts`, #17, #41). */
+export const QUERY_KINDS = [...CATALOG_KINDS, ...SOLUTION_KINDS] as const;
 export type QueryKind = typeof QUERY_KINDS[number];
 
 /** The arguments of `cmsis_query`. */
@@ -89,6 +92,10 @@ export interface CatalogQuery {
     device?: string;
     /** Entries listed at most; default 20, at most 100. */
     limit?: number;
+    /** packs: all (default), installed, used, missing. */
+    scope?: 'all' | 'installed' | 'used' | 'missing';
+    /** packs used and missing: a context of the loaded solution. */
+    context?: string;
 }
 
 export const DEFAULT_LIMIT = 20;
@@ -466,7 +473,8 @@ async function listExamples(api: SolutionApiV2, query: CatalogQuery, clock: Cloc
     const name = matcherOf(query.name);
     const matching = drafts.filter((draft) => nameMatches(name, draft));
     const shown = matching.slice(0, limitOf(query.limit));
-    const twins = await twinOrigins(webTwins(shown), board, web, clock, deadline);
+    // CMSIS Solution after 1.72.0 names the pack of a web example itself (#641): only twins without one need the web catalog.
+    const twins = await twinOrigins(webTwins(shown).filter((draft) => packText(draft.pack) === undefined), board, web, clock, deadline);
     const entries = shown.map((draft): Entry => {
         const source = sourceOf(draft);
         const pack = packText(draft.pack) ?? twins.origins.get(keyOf(draft));
@@ -558,7 +566,7 @@ export async function queryCatalog(api: SolutionApiV2, query: CatalogQuery, cloc
                 listing = await listExamples(api, query, clock, deadline, web, installed);
                 break;
             default:
-                throw new ToolError('INVALID_ARGUMENT', `cmsis_query not attempted: what must be one of ${QUERY_KINDS.join(', ')}.`);
+                throw new ToolError('INVALID_ARGUMENT', `cmsis_query not attempted: what must be one of ${CATALOG_KINDS.join(', ')}.`);
         }
     } catch (caught) {
         if (caught instanceof CatalogLoading) {

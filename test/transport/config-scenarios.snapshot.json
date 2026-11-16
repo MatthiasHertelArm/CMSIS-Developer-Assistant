@@ -11911,6 +11911,11 @@
             "category": "CMSIS Developer Assistant"
           },
           {
+            "command": "cmsis-developer-assistant.migrateUserDocs",
+            "title": "Move User Documents into the CMSIS View",
+            "category": "CMSIS Developer Assistant"
+          },
+          {
             "command": "cmsis-developer-assistant.openUserDocsFolder",
             "title": "Open User Documents Folder",
             "category": "CMSIS Developer Assistant"
@@ -12010,6 +12015,16 @@
             "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
             "type": "number",
             "default": 150
+          },
+          {
+            "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+            "type": "boolean",
+            "default": false
+          },
+          {
+            "key": "cmsis-developer-assistant.packDocs.proposedDocumentApi",
+            "type": "boolean",
+            "default": false
           },
           {
             "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
@@ -12144,6 +12159,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -12171,6 +12190,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.migrateUserDocs"
         },
         {
           "ev": "registerCommand",
@@ -12923,12 +12946,20 @@
               "fallback": true
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
               "fallback": 150
             },
             {
               "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
               "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.proposedDocumentApi",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.userDocsDir",
@@ -12964,6 +12995,7 @@
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.migrateUserDocs",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
@@ -12988,6 +13020,7 @@
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.migrateUserDocs",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
@@ -13166,6 +13199,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -13193,6 +13230,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.migrateUserDocs"
         },
         {
           "ev": "registerCommand",
@@ -13455,12 +13496,20 @@
               "fallback": true
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
               "fallback": 150
             },
             {
               "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
               "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.proposedDocumentApi",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.userDocsDir",
@@ -13496,6 +13545,7 @@
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.migrateUserDocs",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
@@ -13520,6 +13570,7 @@
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.migrateUserDocs",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",
@@ -13675,6 +13726,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -13702,6 +13757,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.migrateUserDocs"
         },
         {
           "ev": "registerCommand",
@@ -13896,12 +13955,20 @@
               "fallback": true
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
               "fallback": 150
             },
             {
               "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
               "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.proposedDocumentApi",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.userDocsDir",
@@ -13937,6 +14004,7 @@
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.migrateUserDocs",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
@@ -13961,6 +14029,7 @@
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.migrateUserDocs",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:workspace.onDidChangeConfiguration",
@@ -14070,6 +14139,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -14097,6 +14170,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.migrateUserDocs"
         },
         {
           "ev": "registerCommand",
@@ -14179,12 +14256,20 @@
               "fallback": true
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
               "fallback": 150
             },
             {
               "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
               "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.proposedDocumentApi",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.userDocsDir",
@@ -14220,6 +14305,7 @@
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.migrateUserDocs",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
@@ -14244,6 +14330,7 @@
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.migrateUserDocs",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:workspace.onDidChangeConfiguration",
@@ -14349,6 +14436,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -14376,6 +14467,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.migrateUserDocs"
         },
         {
           "ev": "registerCommand",
@@ -14635,12 +14730,20 @@
               "fallback": true
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
               "fallback": 150
             },
             {
               "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
               "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.proposedDocumentApi",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.userDocsDir",
@@ -14676,6 +14779,7 @@
             "cmsis-developer-assistant.indexTargetDocs",
             "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.migrateUserDocs",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
             "cmsis-developer-assistant.configure",
@@ -14700,6 +14804,7 @@
             "command:cmsis-developer-assistant.indexTargetDocs",
             "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.migrateUserDocs",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
             "event:debug.onDidStartDebugSession",

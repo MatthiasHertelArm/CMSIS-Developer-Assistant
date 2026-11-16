@@ -541,12 +541,12 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             assert.ok(refused.hint?.startsWith('Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack)'), refused.hint);
         });
 
-        test('an inactive extension is activated once, and getApi is asked once per extension', async () => {
+        test('an inactive extension is activated once, and getApi is asked once per extension (version 3, then 2)', async () => {
             const api = catalogApi();
             const handle = installed(api, { active: false });
             assert.strictEqual(await acquireSolutionApi(handle, WHAT, CLOCK), api);
             assert.strictEqual(await acquireSolutionApi(handle, WHAT, CLOCK), api);
-            assert.deepStrictEqual([handle.activations, handle.asked], [1, 1]);
+            assert.deepStrictEqual([handle.activations, handle.asked], [1, 2]);
         });
 
         test('an activation that fails is TASK_FAILED, one that does not end TIMEOUT', async () => {
@@ -812,7 +812,7 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             const second = await handler.handleCmsisQuery({ what: 'boards', name: 'frdm' });
             assert.ok(isToolReply(second) && second.status === 'ok', JSON.stringify(second));
             assert.strictEqual(second.text.split('\n')[1], '- NXP::FRDM-MCXN947 — device NXP::MCXN947VDF');
-            assert.deepStrictEqual([handle.asked, handle.activations], [1, 0]);
+            assert.deepStrictEqual([handle.asked, handle.activations], [2, 0], 'getApi asked for version 3, then 2, once');
         });
 
         test('the fence of cmsis_query, when it wins, answers running too, with the catalog as the cause', async () => {
