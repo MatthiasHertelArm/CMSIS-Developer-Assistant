@@ -257,7 +257,10 @@ export function renderFetchFailure(
 ): string {
     const tries = attempts > 1 ? ` (${attempts} attempts failed)` : '';
     const lines: string[] = [`Could not fetch ${doc.id}${tries}: ${outcome.error}.`];
-    if (attempts > 1 && dropFolder) {
+    if (attempts > 1 && doc.service !== undefined) {
+        lines.push(`Do not call fetch_doc for it again: ask the user to download the PDF and use Import a File on it in ${doc.service.view}; `
+            + 'the next fetch_doc or search reads that copy.');
+    } else if (attempts > 1 && dropFolder) {
         lines.push(`Do not call fetch_doc for it again: ask the user to download the PDF into ${dropFolder} in the workspace; `
             + 'list_target_docs then lists it as a workspace document.');
     }
@@ -274,7 +277,7 @@ export function renderFetchFailure(
         lines.push('The CMSIS view lists this document for the target: ask the user to use Download Document on it there, or, when the site '
             + 'needs a login, to open the URL, download the PDF and use Import Document on it; the next fetch_doc reads that copy.');
     }
-    if (dropFolder && attempts <= 1) {
+    if (dropFolder && attempts <= 1 && doc.service === undefined) {
         lines.push(`Alternative: download the PDF yourself into ${dropFolder} in the workspace; list_target_docs then lists it as a workspace document.`);
     }
     return lines.join('\n');

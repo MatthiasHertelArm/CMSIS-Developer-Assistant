@@ -506,6 +506,9 @@ export function collectTargetDocs(host: PackDocsHost, res: TargetResolution): Ta
     }
 
     const ws = collectWorkspaceDocs(host);
+    // A file the project lists in its .cmsis/docs.yml is that document, not a second one from the drop-in folder.
+    const listedPaths = new Set(docs.filter((d) => d.path).map((d) => path.resolve(d.path!)));
+    ws.docs = ws.docs.filter((d) => !d.path || !listedPaths.has(path.resolve(d.path)));
     docs.push(...ws.docs);
     notes.push(...ws.notes);
 

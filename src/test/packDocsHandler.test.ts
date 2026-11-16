@@ -418,16 +418,17 @@ suite('PackDocsHandler (end to end, through the document service)', () => {
         assert.match(textOf(await h.handleFetchDoc({ url })), /^Already fetched /);
     });
 
-    test('fetch_doc: a failed download is counted; from the second failure on the reply sends the user to the docs folder', async () => {
+    test('fetch_doc: a failed download is counted; from the second failure on the reply sends the user to Import a File', async () => {
         const url = 'https://broken.example/manual.pdf';
         const { fn } = fakeFetch({ [url]: () => new Response('nope', { status: 500 }) });
         const h = new PackDocsHandler({ ...world.host, storageDir: path.join(world.root, 'store-broken'), fetchFn: fn, ...serviceWith(world, fn) },
             { timeoutMs: 5_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
         const first = textOf(await h.handleFetchDoc({ url }));
         assert.match(first, /^Could not fetch web\/broken-example\/[0-9a-f]{12}: .*HTTP 500\.\n/);
-        assert.match(first, /\nAlternative: download the PDF yourself into \.agent-artifacts\/docs/);
+        assert.match(first, /\nThe request is recorded in the Target Documents view: ask the user to use Download there/);
+        assert.doesNotMatch(first, /Alternative:/, 'one way out: the view\'s');
         const second = textOf(await h.handleFetchDoc({ url }));
-        assert.match(second, /^Could not fetch web\/broken-example\/[0-9a-f]{12} \(2 attempts failed\): .*HTTP 500\.\nDo not call fetch_doc for it again: ask the user to download the PDF into \.agent-artifacts\/docs in the workspace/);
+        assert.match(second, /^Could not fetch web\/broken-example\/[0-9a-f]{12} \(2 attempts failed\): .*HTTP 500\.\nDo not call fetch_doc for it again: ask the user to download the PDF and use Import a File on it in the Target Documents view/);
         assert.doesNotMatch(second, /Alternative:/);
     });
 
