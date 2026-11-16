@@ -167,7 +167,8 @@ export function shortHash(text: string): string {
 
 /** CMSIS Solution's local copy of a document, from its inventory, when it is a PDF on disk. */
 export function inventoryPdf(doc: DocRef): { path: string; size: number } | undefined {
-    const copy = doc.inventory?.copy;
+    // The document service's copy first (2.9.2), then CMSIS Solution's inventory's.
+    const copy = doc.service?.copy ?? doc.inventory?.copy;
     if (copy === undefined || path.extname(copy).toLowerCase() !== '.pdf') {
         return undefined;
     }
@@ -474,6 +475,13 @@ export class PageStore {
         } catch {
             return undefined;
         }
+    }
+
+    /** Delete a web document's download and its fetch record; its extracted text and index stay. */
+    removeDownload(doc: DocRef): void {
+        const p = this.paths(doc);
+        fs.rmSync(p.download, { force: true });
+        fs.rmSync(p.fetchRecord, { force: true });
     }
 
     /**

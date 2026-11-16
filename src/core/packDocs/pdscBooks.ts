@@ -28,6 +28,7 @@ import * as path from 'path';
 import { ARM_DOCS, ArmDocEntry, ArmDocKind, armDocId, armDocUrl, armKindOrder, knownNpuOf, normalizeNpu, parseArmDocUrl } from './armDocs';
 import { PackId, formatPackId } from './cbuildRun';
 import { PackDocsLog, silentLog } from './host';
+import type { DocParent } from '../../docService/contract';
 import { XmlElement, childrenOf, decodeEntities, parseXml } from './xmlLite';
 
 /**
@@ -35,7 +36,7 @@ import { XmlElement, childrenOf, decodeEntities, parseXml } from './xmlLite';
  * the pack no `<book>` names, `arm` for the built-in Arm document catalogue,
  * `workspace` for PDFs the user dropped into a workspace docs folder.
  */
-export type BookScope = 'device' | 'subFamily' | 'family' | 'board' | 'unlisted' | 'arm' | 'user' | 'workspace';
+export type BookScope = 'device' | 'subFamily' | 'family' | 'board' | 'unlisted' | 'arm' | 'user' | 'project' | 'workspace';
 export type BookCategory = 'overview' | 'manual' | 'schematic' | 'setup' | 'other';
 /**
  * `pack`: a file inside a pack; `web`: a URL, cached once fetched; `user`: a
@@ -90,6 +91,20 @@ export interface DocRef {
      */
     /** Why this window's last `fetch_doc` of it failed, until one succeeds. */
     fetchFailure?: string;
+    /**
+     * What the document service (2.9.2) knows of it: its parent and name
+     * there, the scope, the copy, an open request, the last failure, and the
+     * view where the user resolves it.
+     */
+    service?: {
+        parent: DocParent;
+        name: string;
+        scope: 'user' | 'project';
+        copy?: string;
+        requested?: { by: string; reason: string };
+        error?: { kind: string; detail?: string; url?: string };
+        view: string;
+    };
     inventory?: {
         copy?: string;
         error?: string;
@@ -415,7 +430,7 @@ function bookToDoc(book: XmlElement, scope: BookScope, pdsc: PdscInfo): DocRef {
     return doc;
 }
 
-const SCOPE_ORDER: Record<BookScope, number> = { device: 0, subFamily: 1, family: 2, board: 3, unlisted: 4, arm: 5, user: 6, workspace: 7 };
+const SCOPE_ORDER: Record<BookScope, number> = { device: 0, subFamily: 1, family: 2, board: 3, unlisted: 4, arm: 5, project: 6, user: 7, workspace: 8 };
 const CATEGORY_ORDER: Record<string, number> = { manual: 0, overview: 1, undefined: 2, other: 3, setup: 4, schematic: 5 };
 
 export function sortDocs(docs: DocRef[]): DocRef[] {

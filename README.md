@@ -189,8 +189,7 @@ name is prefixed with **CMSIS Developer Assistant:**.
 | **Release Serial Port** | Return an agent-held serial port to the Serial Monitor or another application. |
 | **List Target Documentation** | List the current target's manuals, datasheets, Arm documents, and imported PDFs. |
 | **Index Target Documentation** | Index all target PDFs now so searches are immediately available. |
-| **Import Document for Current Target** | Add PDFs that are not supplied by a software pack: to the CMSIS view's documents (CMSIS Solution after 1.72.0), or to the user documents folder. |
-| **Open User Documents Folder** | Open the folder containing imported target documentation. |
+| **Import Document for Current Target** | Add a document that is not supplied by a software pack (a file or a URL) to the target's documents, for you or the project; or in the CMSIS view's documents (CMSIS Solution after 1.72.0). |
 | **Open Pack Docs Panel** | Inspect target documents, SVD peripherals, index state, and documentation tools. |
 | **Open Knowledge Browser** | Search the knowledge base and explore relationships between topics. |
 | **Copy Recent Problems** | Copy recent errors and warnings, with their source and suggested next step. |

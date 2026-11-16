@@ -613,6 +613,10 @@ const api = {
             };
         },
         createWebviewPanel: () => { throw new Error('createWebviewPanel is not stubbed'); },
+        createTreeView: (id) => {
+            emit({ ev: 'createTreeView', id });
+            return { visible: false, badge: undefined, message: undefined, onDidChangeVisibility: event(`treeView.onDidChangeVisibility:${id}`), dispose() {} };
+        },
     },
     workspace: {
         get workspaceFolders() { return S.folders.length > 0 ? S.folders : undefined; },

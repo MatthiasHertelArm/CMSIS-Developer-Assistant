@@ -49,6 +49,7 @@ import { serialMonitorBridge } from './core/serialMonitorBridge';
 import { clearSvdCache } from './core/svdParser';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { registerPackDocsCommands } from './packDocsCommands';
+import { registerTargetDocsView } from './targetDocsView';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { createPackDocsHandlers, readPackDocsGates } from './packDocsHost';
 import { registerSerialHandle } from './serialStatus';
@@ -294,6 +295,7 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
     // Every window gets the documentation handlers and commands, router or worker.
     const packDocs = createPackDocsHandlers(extensionContext, active.timeoutInSeconds);
     registerPackDocsCommands(extensionContext, packDocs);
+    registerTargetDocsView(extensionContext, packDocs);
     warnIfStandalonePackDocsInstalled();
 
     if (hostsTests) {

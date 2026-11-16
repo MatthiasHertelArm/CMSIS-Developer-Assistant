@@ -35,7 +35,10 @@ import { namedPackFolders } from './core/packDocs/targetDocs';
 import { solutionNameOf, targetTypeOf } from './core/solutionAnswers';
 import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import { peekSolutionApi } from './core/solutionApi';
-import { documentApiOf } from './core/packDocs/documentApi';
+import { solutionDocumentService } from './core/packDocs/documentApi';
+import { documentEngine } from './core/packDocs/documentEngine';
+import type { DocumentService } from './docService/contract';
+import { EmulatedDocumentService } from './docService/emulator';
 import { withTimeout } from './utils/timeout';
 import { toolchainPackRoot } from './utils/toolchainPackRoot';
 import { activeCbuildRunFile, activeHardwareNames, activePackFolders, solutionGetter } from './utils/solutionQueries';
@@ -93,7 +96,7 @@ export function readPackDocsSettings(): PackDocsSettings {
         workspaceDocDirs: c.get<string[]>('workspaceDocDirs', defaultSettings.workspaceDocDirs),
         userDocsDir: c.get<string>('userDocsDir', defaultSettings.userDocsDir),
         inventoryRequests: c.get<boolean>('inventoryRequests', false),
-        proposedDocumentApi: c.get<boolean>('proposedDocumentApi', false),
+        documentService: c.get<string>('documentService', 'auto') === 'emulated' ? 'emulated' : 'auto',
     };
 }
 
@@ -163,8 +166,7 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         // extension re-extracts once.
         storageDir: path.join(context.globalStorageUri.fsPath, 'packdocs'),
         inventoryFile: path.join(os.homedir(), '.cmsis', 'docs.yml'),
-        documentApi: () => (readPackDocsSettings().proposedDocumentApi === true
-            ? documentApiOf(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID))) : {}),
+        documentService: () => documentServiceOf(context),
         assetsDir: path.join(context.extensionPath, 'assets'),
         settings: () => readPackDocsSettings(),
         log: logger,
@@ -178,6 +180,46 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         activePackFolders: () => activePackFolders(),
         solutionHardware: () => activeHardwareNames(),
     };
+}
+
+/** Where the user sees and resolves the documents of each service. */
+export const SOLUTION_DOCUMENTS_VIEW = 'the CMSIS view';
+export const EMULATED_DOCUMENTS_VIEW = 'the Target Documents view';
+
+let emulated: EmulatedDocumentService | undefined;
+
+/** This window's emulated document service, created on first use; its store is in the extension's global storage. */
+export function emulatedDocumentService(context: vscode.ExtensionContext): EmulatedDocumentService {
+    if (emulated === undefined) {
+        const service = new EmulatedDocumentService({
+            root: path.join(context.globalStorageUri.fsPath, 'docservice'),
+            watch: true,
+            engine: documentEngine({
+                fetchFn: (url, init) => fetch(url, init),
+                userAgent: `cmsis-developer-assistant/${SERVER_VERSION}`,
+                log: logger,
+                timeoutMs: 600_000,
+                maxBytes: readPackDocsSettings().maxPdfMb * 1024 * 1024,
+            }),
+        });
+        emulated = service;
+        context.subscriptions.push({ dispose: () => service.dispose() });
+    }
+    return emulated;
+}
+
+/**
+ * The document service the setting chooses: CMSIS Solution's when it offers
+ * one (`auto`), else the emulator.
+ */
+export function documentServiceOf(context: vscode.ExtensionContext): { service: DocumentService; view: string } {
+    if ((readPackDocsSettings().documentService ?? 'auto') === 'auto') {
+        const fromSolution = solutionDocumentService(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)));
+        if (fromSolution) {
+            return { service: fromSolution, view: SOLUTION_DOCUMENTS_VIEW };
+        }
+    }
+    return { service: emulatedDocumentService(context), view: EMULATED_DOCUMENTS_VIEW };
 }
 
 /** The knowledge handler's window: the two settings read per call, the project from the other two hosts. */

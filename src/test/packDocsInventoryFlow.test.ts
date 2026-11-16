@@ -24,12 +24,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { load } from 'js-yaml';
-import { DocumentApi, ProposedDocParent } from '../core/packDocs/documentApi';
 import { defaultSettings, PackDocsHost } from '../core/packDocs/host';
 import { requestErrorText, setInventoryError, withInventoryError } from '../core/packDocs/inventoryWriter';
 import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
-import { buildWorld, FakeExtractor, World } from './packDocsHandler.test';
+import { buildWorld, FakeExtractor, serviceWith, World } from './packDocsHandler.test';
 
 const RM = 'https://www.st.com/resource/en/reference_manual/rm0385-stm32f75xxx-and-stm32f74xxx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf';
 const SHEET = 'https://www.st.com/resource/en/datasheet/stm32f756bg.pdf';
@@ -77,6 +76,8 @@ suite('CMSIS Solution document inventory through the documentation tools (2.9.2)
             ...world.host,
             inventoryFile,
             settings: () => ({ ...defaultSettings, userDocsDir: path.join(world.root, 'user'), inventoryRequests: requests }),
+            // A swapped fetch function reaches the document service's downloads too.
+            ...(extra.fetchFn ? serviceWith(world, extra.fetchFn) : {}),
             ...extra,
         };
     }
@@ -126,7 +127,7 @@ suite('CMSIS Solution document inventory through the documentation tools (2.9.2)
         const off = new PackDocsHandler(host({ fetchFn }), { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
         await off.handleListTargetDocs({});
         const sheetId = (await off.inspectTarget({})).docs.find((doc) => doc.url === SHEET)!.id;
-        assert.match(textOf(await off.handleFetchDoc({ doc: sheetId })), /The CMSIS view lists this document for the target/);
+        assert.match(textOf(await off.handleFetchDoc({ doc: sheetId })), /The request is recorded in the Target Documents view/);
         assert.strictEqual(fs.readFileSync(inventoryFile, 'utf-8'), original, 'off by default: nothing written');
 
         const on = new PackDocsHandler(host({ fetchFn }, true), { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
@@ -186,8 +187,8 @@ suite('CMSIS Solution document inventory through the documentation tools (2.9.2)
         await handler.handleFetchDoc({ doc: docs.find((doc) => doc.url === SHEET)!.id });
         await handler.handleFetchDoc({ doc: docs.find((doc) => doc.url === RM)!.id });
         const after = textOf(await handler.handleListTargetDocs({}));
-        assert.match(after, /STM32F756 Data Sheet · web — needs the user: login or manual download at www\.st\.com; they download it in a browser and use Import Document on it in the CMSIS view/);
-        assert.match(after, /STM32F74xx\/5xx Reference Manual · web — fetch_doc failed \(.*\); it can be tried again/);
+        assert.match(after, /STM32F756 Data Sheet · web — requested, needs the user: login or manual download at www\.st\.com; they open it from the Target Documents view/);
+        assert.match(after, /STM32F74xx\/5xx Reference Manual · web — requested in the Target Documents view \(http: .*\); Download there or fetch_doc \{ doc: '.*' \} tries again/);
     });
 
     test('the edit itself: a quoted title is found by value; a missing entry or a multi-line error is refused; onlyIf guards the clearing', () => {
@@ -204,42 +205,5 @@ suite('CMSIS Solution document inventory through the documentation tools (2.9.2)
         assert.ok(setInventoryError(inventoryFile, parent, RM, undefined, 'mine').written);
         assert.strictEqual(fs.readFileSync(inventoryFile, 'utf-8'), original);
         assert.deepStrictEqual(fs.readdirSync(path.dirname(inventoryFile)).filter((name) => name.endsWith('.tmp')), [], 'no temporary file left');
-    });
-
-    test('stage 3 (proposed API, scripted): CMSIS Solution downloads; a failure becomes its request and names the user\'s action; a new URL is added first', async () => {
-        const calls: string[] = [];
-        let fail: string | undefined;
-        const api: DocumentApi = {
-            addDocument: async (parent: ProposedDocParent, source: string) => { calls.push(`add ${JSON.stringify(parent)} ${source}`); return { name: source }; },
-            downloadDocument: async (parent: ProposedDocParent, name: string) => {
-                calls.push(`download ${JSON.stringify(parent)} ${name}`);
-                if (fail !== undefined) { throw Object.assign(new Error('failed'), { error: { kind: fail, detail: 'www.st.com' } }); }
-                return { name, path: userCopy };
-            },
-            requestDocument: async (_parent: ProposedDocParent, name: string, request: { reason: string }) => { calls.push(`request ${name}: ${request.reason}`); },
-        };
-        const handler = new PackDocsHandler(host({ documentApi: () => api }, true), { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['1 RM\nRCC']) });
-        await handler.handleListTargetDocs({});
-        const rmId = (await handler.inspectTarget({})).docs.find((doc) => doc.url === RM)!.id;
-        const outbound = world.fetchCalls.length;
-        assert.match(textOf(await handler.handleFetchDoc({ doc: rmId })), /^Downloaded by CMSIS Solution/);
-        assert.deepStrictEqual(calls, [`download {"device":"${DEVICE}"} ${RM}`]);
-        assert.strictEqual(world.fetchCalls.length, outbound, 'this extension downloaded nothing');
-
-        fail = 'login-required';
-        calls.length = 0;
-        const refused = textOf(await handler.handleFetchDoc({ doc: (await handler.inspectTarget({})).docs.find((doc) => doc.url === SHEET)!.id }));
-        assert.match(refused, /^Could not fetch .* through CMSIS Solution: login-required: www\.st\.com\./);
-        assert.match(refused, /ask them to open the URL, log in, download the file and use Import Document on it in the CMSIS view/);
-        assert.match(calls[1], /^request https:\/\/www\.st\.com\/resource\/en\/datasheet\/stm32f756bg\.pdf: Requested by the agent: login or manual download needed/);
-        assert.strictEqual(fs.readFileSync(inventoryFile, 'utf-8'), original, 'with requestDocument the file is never written here');
-
-        fail = undefined;
-        calls.length = 0;
-        await handler.handleFetchDoc({ url: 'https://www.ti.com/lit/ds/symlink/tmp117.pdf' });
-        assert.deepStrictEqual(calls, [
-            `add {"device":"${DEVICE}"} https://www.ti.com/lit/ds/symlink/tmp117.pdf`,
-            `download {"device":"${DEVICE}"} https://www.ti.com/lit/ds/symlink/tmp117.pdf`,
-        ]);
     });
 });

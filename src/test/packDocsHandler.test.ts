@@ -32,6 +32,8 @@ import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
 import { SAMPLE_CBUILD_RUN } from './cbuildRun.test';
 import { ARM_ROUTES, fakeFetch, json, pdf } from './webFetch.test';
+import { EmulatedDocumentService } from '../docService/emulator';
+import { documentEngine } from '../core/packDocs/documentEngine';
 
 export class FakeExtractor implements PdfExtractor {
     readonly name = 'fake';
@@ -49,9 +51,11 @@ export interface World {
     host: PackDocsHost;
     lines: string[];
     fetchCalls: { url: string; init?: RequestInit }[];
+    /** The world runs the documentation tools through the document service. */
+    serviceOn?: boolean;
 }
 
-export function buildWorld(): World {
+export function buildWorld(options: { service?: boolean } = { service: true }): World {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-e2e-'));
     const packRoot = path.join(root, 'packs');
     const dfp = path.join(packRoot, 'Keil', 'STM32F7xx_DFP', '3.0.0');
@@ -108,10 +112,26 @@ export function buildWorld(): World {
         workspaceFolders: () => [workspace],
         findCbuildRunFiles: async () => [path.join(workspace, 'out', 'Blinky', 'STM32F756ZGTx', 'Debug', 'Blinky+STM32F756ZGTx.cbuild-run.yml')],
     };
-    return { root, packRoot, workspace, host, lines, fetchCalls: fake.calls };
+    const world: World = { root, packRoot, workspace, host, lines, fetchCalls: fake.calls };
+    world.serviceOn = options.service === true;
+    if (options.service) {
+        // The same world with the document service (2.9.2): every download goes through the emulator.
+        Object.assign(host, serviceWith(world, fake.fn));
+    }
+    return world;
 }
 
-suite('PackDocsHandler (end to end)', () => {
+/** A document service over the world's root whose engine fetches with `fetchFn`; empty without one in the world. */
+export function serviceWith(world: World, fetchFn: (url: string, init?: RequestInit) => Promise<Response>): Partial<PackDocsHost> {
+    if (world.host.documentService === undefined && !world.serviceOn) {
+        return {};
+    }
+    const service = new EmulatedDocumentService({ root: path.join(world.root, `docservice-${Math.random().toString(16).slice(2, 8)}`),
+        engine: documentEngine({ fetchFn, userAgent: 'cmsis-pack-docs/test', log: world.host.log, timeoutMs: 30_000, maxBytes: 150 * 1024 * 1024 }) });
+    return { documentService: () => ({ service, view: 'the Target Documents view' }) };
+}
+
+suite('PackDocsHandler (end to end, through the document service)', () => {
     let world: World;
     let handler: PackDocsHandler;
     let havePdftotext = false;
@@ -307,7 +327,7 @@ suite('PackDocsHandler (end to end)', () => {
 
         // The pdsc-linked Cortex-M7 GUG, by its id.
         const fetched = textOf(await h.handleFetchDoc({ doc: 'arm/dui0646-latest' }));
-        assert.match(fetched, /^Fetched arm\/dui0646-latest — Cortex-M7 Devices Generic User Guide, version a \(r1p2\), DUI0646C_cortex_m7_dgug\.pdf, 1 kB → indexed 2 p in [\d.]+ s\.\nFrom https:\/\/developer\.arm\.com\/documentation\/dui0646\/latest \(arm\.com\); cached in the extension storage/);
+        assert.match(fetched, /^Fetched arm\/dui0646-latest — Cortex-M7 Devices Generic User Guide, version a \(r1p2\), DUI0646C_cortex_m7_dgug\.pdf, 1 kB → indexed 2 p in [\d.]+ s\.\nFrom https:\/\/developer\.arm\.com\/documentation\/dui0646\/latest \(arm\.com\); kept by the document service/);
         assert.match(fetched, /Cite as arm\/dui0646-latest r1p2 p\.<n>\./);
         assert.match(textOf(await h.handleFetchDoc({ doc: 'dui0646' })), /^Already fetched arm\/dui0646-latest — Cortex-M7 Devices Generic User Guide, version a \(r1p2\), 1 kB; indexed 2 p/);
 
@@ -381,7 +401,7 @@ suite('PackDocsHandler (end to end)', () => {
                 return new Response(body, { status: 200, headers: head });
             },
         });
-        const h = new PackDocsHandler({ ...world.host, storageDir: path.join(world.root, 'store-slow'), fetchFn: fn },
+        const h = new PackDocsHandler({ ...world.host, storageDir: path.join(world.root, 'store-slow'), fetchFn: fn, ...serviceWith(world, fn) },
             { timeoutMs: 1_800, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['1 Intro\nslow manual']) });
 
         const first = await h.handleFetchDoc({ url });
@@ -401,7 +421,7 @@ suite('PackDocsHandler (end to end)', () => {
     test('fetch_doc: a failed download is counted; from the second failure on the reply sends the user to the docs folder', async () => {
         const url = 'https://broken.example/manual.pdf';
         const { fn } = fakeFetch({ [url]: () => new Response('nope', { status: 500 }) });
-        const h = new PackDocsHandler({ ...world.host, storageDir: path.join(world.root, 'store-broken'), fetchFn: fn },
+        const h = new PackDocsHandler({ ...world.host, storageDir: path.join(world.root, 'store-broken'), fetchFn: fn, ...serviceWith(world, fn) },
             { timeoutMs: 5_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
         const first = textOf(await h.handleFetchDoc({ url }));
         assert.match(first, /^Could not fetch web\/broken-example\/[0-9a-f]{12}: .*HTTP 500\.\n/);
@@ -428,7 +448,7 @@ suite('PackDocsHandler (end to end)', () => {
             },
         });
         const store = path.join(world.root, 'store-stalled');
-        const h = new PackDocsHandler({ ...world.host, storageDir: store, fetchFn: fn },
+        const h = new PackDocsHandler({ ...world.host, storageDir: store, fetchFn: fn, ...serviceWith(world, fn) },
             { timeoutMs: 1_700, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
         const first = await h.handleFetchDoc({ url });
         assert.strictEqual(typeof first === 'object' && first.status, 'running', textOf(first));

@@ -23,7 +23,7 @@
 
 import type { ActivePackFolders } from '../solutionAnswers';
 import { ActiveContextHint } from './cbuildRun';
-import type { DocumentApi } from './documentApi';
+import type { DocumentService } from '../../docService/contract';
 
 export interface PackDocsLog {
     debug(message: string): void;
@@ -51,9 +51,8 @@ export interface PackDocsSettings {
      */
     workspaceDocDirs: string[];
     /**
-     * The user documents folder — manuals obtained outside the packs (under
-     * NDA, from a vendor portal), kept outside any workspace and attributed
-     * to packs/devices/boards/cores by sub-folder. Empty: `~/.cmsis-pack-docs/user`.
+     * The retired user documents folder, read once to copy its documents
+     * into the document service. Empty: `~/.cmsis-pack-docs/user`.
      */
     userDocsDir: string;
     /**
@@ -63,12 +62,11 @@ export interface PackDocsSettings {
      */
     inventoryRequests?: boolean;
     /**
-     * Use the document methods proposed for CMSIS Solution's API (2.9.2
-     * stage 3) when its API object has methods of those names. Off unless
-     * set: no release has them, and a method of the same name with another
-     * signature must not be called with the proposal's arguments.
+     * The document service (2.9.2): `auto` takes CMSIS Solution's when its
+     * API offers one, else the emulator inside this extension; `emulated`
+     * always the emulator.
      */
-    proposedDocumentApi?: boolean;
+    documentService?: 'auto' | 'emulated';
 }
 
 export interface PackDocsHost {
@@ -87,10 +85,11 @@ export interface PackDocsHost {
      */
     inventoryFile?: string;
     /**
-     * The document methods CMSIS Solution's API offers (proposed, 2.9.2
-     * stage 3; none ships yet); absent or empty: this extension downloads.
+     * The document service (`src/docService/contract.ts`): CMSIS Solution's,
+     * or the emulator. `view` names where the user sees and resolves the
+     * documents. Absent only in tests that fetch nothing.
      */
-    documentApi?(): DocumentApi;
+    documentService?(): { service: DocumentService; view: string } | undefined;
     /**
      * The active target's device and board as CMSIS Solution's API version 3
      * names them (`getDeviceName`, `getBoardName`); empty without it. Never

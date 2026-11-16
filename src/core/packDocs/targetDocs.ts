@@ -45,7 +45,8 @@ import {
 import { parseCbuildRunOutputs } from '../buildInfo/artifacts';
 import { ActivePackFolders, packFolderCandidates } from '../solutionAnswers';
 import { mergeInventory, readInventory } from './inventory';
-import { collectUserDocs, resolveUserDocsDir } from './userDocs';
+import { mergeServiceDocs } from './serviceDocs';
+import type { DocumentInfo } from '../../docService/contract';
 import { collectWorkspaceDocs } from './workspaceDocs';
 
 export interface TargetArgs {
@@ -86,6 +87,12 @@ export interface TargetResolution {
      * target given by argument. The inventory is selected by these first.
      */
     solutionNames?: { device?: QualifiedName; board?: QualifiedName };
+    /**
+     * The document service's documents for this target's parents (2.9.2),
+     * fetched by the caller before `collectTargetDocs`, which merges them;
+     * `view` names where the user resolves them.
+     */
+    serviceDocs?: { infos: DocumentInfo[]; view: string };
     notes: string[];
 }
 
@@ -400,9 +407,6 @@ export interface TargetDocs {
     notes: string[];
     /** Workspace docs folders that exist (for the listing header). */
     workspaceDirs: string[];
-    /** The user documents folder and the sub-folders that matched the target. */
-    userDir: string;
-    userMatched: string[];
     /** The device's processors (from the device pack's pdsc). */
     processors: ProcessorInfo[];
     /** The device's NPUs (`Ethos-U85`), from the pdsc features or the known Corstone configuration. */
@@ -495,11 +499,11 @@ export function collectTargetDocs(host: PackDocsHost, res: TargetResolution): Ta
         }
     }
 
-    const user = collectUserDocs(resolveUserDocsDir(host.settings().userDocsDir), {
-        devicePack: res.devicePack, boardPack: res.boardPack, device: res.device?.name, board: res.board?.name, cores: processors.map(p => p.core),
-    }, log);
-    docs.push(...user.docs);
-    notes.push(...user.notes);
+    // The document service: the user's and the project's documents, their copies and requests (2.9.2).
+    let serviceAdded = 0;
+    if (res.serviceDocs) {
+        serviceAdded = mergeServiceDocs(docs, res.serviceDocs.infos, res.serviceDocs.view);
+    }
 
     const ws = collectWorkspaceDocs(host);
     docs.push(...ws.docs);
@@ -507,9 +511,30 @@ export function collectTargetDocs(host: PackDocsHost, res: TargetResolution): Ta
 
     const sorted = dedupeIds(sortDocs(docs));
     log.info(`target docs: ${sorted.length} (${sorted.filter(d => d.source === 'pack').length} in packs, ` +
-        `${sorted.filter(d => d.source === 'web' && d.scope !== 'arm').length} web, ${arm.length} Arm catalogue, ${user.docs.length} user, ${ws.docs.length} in the workspace` +
-        `${inventoryAdded ? `, ${inventoryAdded} from CMSIS Solution's inventory` : ''})`);
-    return { docs: sorted, notes, workspaceDirs: ws.dirs, userDir: user.root, userMatched: user.matched, processors, npus };
+        `${sorted.filter(d => d.source === 'web' && d.scope !== 'arm').length} web, ${arm.length} Arm catalogue, ${ws.docs.length} in the workspace` +
+        `${inventoryAdded ? `, ${inventoryAdded} from CMSIS Solution's inventory` : ''}${serviceAdded ? `, ${serviceAdded} from the document service` : ''})`);
+    return { docs: sorted, notes, workspaceDirs: ws.dirs, processors, npus };
+}
+
+/** The cores of the resolved target's device, from its device pack's PDSC; empty when it cannot be read. */
+export function targetCores(host: PackDocsHost, res: TargetResolution): string[] {
+    if (!res.devicePack) { return []; }
+    const located = locatePack(res.packRoot, res.devicePack, [], res.packDirs?.devicePack);
+    if (!located) { return []; }
+    const pdscPath = findPdscFile(located.dir, located.id);
+    if (!pdscPath) { return []; }
+    return [...new Set(collectProcessors(loadPdsc(pdscPath, located.id, host.log), res.device?.name).map((p) => p.core))];
+}
+
+/** The csolution of the resolved target, from its cbuild-run file; undefined without one. */
+export function targetSolution(res: TargetResolution): string | undefined {
+    if (!res.cbuildRunFile) { return undefined; }
+    try {
+        const solution = parseCbuildRun(fs.readFileSync(res.cbuildRunFile, 'utf-8'), res.cbuildRunFile).solution;
+        return solution ? path.resolve(path.dirname(res.cbuildRunFile), solution) : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 /** The device pack's SVD for the resolved target, if the pdsc names one. */

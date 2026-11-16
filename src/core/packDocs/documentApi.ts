@@ -15,84 +15,56 @@
  */
 
 /**
- * The document methods this extension asks CMSIS Solution to add to its API
- * version 3 (2.9.2, stage 3; gap G1b of the proposal). **Proposed, not
- * shipped**: no CMSIS Solution build has them (checked against the nightly
- * 1.72.1-86 and `main` of 2026-11-16), so everything here is inert until
- * one does, and only scripted APIs have exercised it. The types follow the
- * sketch of `docs/proposals/2.9.2-documentation-inventory.md`, kept apart
- * from the shipped methods of `SolutionApiV3Methods`, and each method is
- * detected by name on its own.
+ * The consumer side of the document service (`src/docService/contract.ts`):
+ * which implementation answers, and the translations between the service's
+ * types and this extension's `DocRef`. CMSIS Solution's implementation is
+ * taken when its API offers `getDocumentService()` with a service of this
+ * contract's major version; otherwise the emulator of `src/docService/`
+ * answers. A method name alone is no proof: CMSIS Solution has internal
+ * methods called `addDocument` and `downloadDocument` with other arguments.
  *
- * With them, the logistics move to CMSIS Solution: `fetch_doc` has the
- * document downloaded there (`downloadDocument`), records the agent's
- * request when it cannot be downloaded (`requestDocument`), and adds a URL
- * the inventory does not know (`addDocument`); the migration command adds
- * the legacy user folder's documents. This extension keeps extraction,
- * index, search and citations.
- *
- * Pure: no `vscode`; the API object comes from the host.
+ * Pure: no `vscode`.
  */
 
-/** A parent of the inventory: a device (`Vendor::Name`) or a board (`Vendor::Name[:Revision]`), or the Arm commons. */
-export type ProposedDocParent = { device: string } | { board: string } | { common: 'arm-docs' };
+import { DocParent, DocumentFailure, DocumentService, DOCUMENT_SERVICE_VERSION } from '../../docService/contract';
 
-/** What the proposed API says about one document. */
-export interface ProposedDocumentInfo {
-    name: string;
-    title?: string;
-    category?: string;
-    location?: 'pack' | 'web' | 'link' | 'local' | 'user' | string;
-    path?: string;
-    requested?: { by: 'agent' | 'user' | string; at?: string; reason?: string };
-    error?: { kind?: string; detail?: string; url?: string };
-}
+const SERVICE_METHODS: readonly (keyof DocumentService)[] = ['getDocuments', 'addDocument', 'downloadDocument', 'importDocument', 'removeDocument',
+    'requestDocument', 'clearRequest', 'getRequests', 'onDidChangeDocuments'];
 
-/** The proposed document methods; each one optional. */
-export interface ProposedDocumentMethods {
-    getDocuments(parent: ProposedDocParent): PromiseLike<ProposedDocumentInfo[]>;
-    addDocument(parent: ProposedDocParent, source: string, meta?: { title?: string; category?: string }): PromiseLike<ProposedDocumentInfo>;
-    downloadDocument(parent: ProposedDocParent, name: string, options?: {
-        timeoutMs?: number; maxBytes?: number; onProgress?: (bytes: number, total?: number) => void;
-    }): PromiseLike<ProposedDocumentInfo>;
-    importDocument(parent: ProposedDocParent, name: string, localPath: string): PromiseLike<ProposedDocumentInfo>;
-    removeDocument(parent: ProposedDocParent, name: string): PromiseLike<boolean>;
-    requestDocument(parent: ProposedDocParent, name: string, request: { by: 'agent'; reason: string }): PromiseLike<void>;
-}
-
-/** The methods an API object offers, bound; empty for today's CMSIS Solution. */
-export type DocumentApi = Partial<ProposedDocumentMethods>;
-
-const METHODS: readonly (keyof ProposedDocumentMethods)[] = ['getDocuments', 'addDocument', 'downloadDocument', 'importDocument', 'removeDocument', 'requestDocument'];
-
-/** The proposed document methods `api` offers, each found by name and bound to it. */
-export function documentApiOf(api: unknown): DocumentApi {
-    const found: Record<string, unknown> = {};
-    if (typeof api !== 'object' || api === null) {
-        return {};
-    }
-    for (const method of METHODS) {
-        const value = (api as Record<string, unknown>)[method];
-        if (typeof value === 'function') {
-            found[method] = value.bind(api);
-        }
-    }
-    return found as DocumentApi;
-}
-
-/** The parent of an inventory document as the proposed API names it. */
-export function proposedParentOf(parent: { tag: 'device' | 'board' | 'common'; key: string } | undefined): ProposedDocParent | undefined {
-    if (parent === undefined) {
+/** CMSIS Solution's document service, when its API object offers one of this contract's major version. */
+export function solutionDocumentService(api: unknown): DocumentService | undefined {
+    const getter = (api as { getDocumentService?: unknown } | null | undefined)?.getDocumentService;
+    if (typeof getter !== 'function') {
         return undefined;
     }
-    if (parent.tag === 'common') {
-        return { common: 'arm-docs' };
+    let service: unknown;
+    try {
+        service = getter.call(api);
+    } catch {
+        return undefined;
+    }
+    const candidate = service as Record<string, unknown> | undefined;
+    const major = (version: unknown): string | undefined => (typeof version === 'string' ? version.split('.')[0] : undefined);
+    if (!candidate || major(candidate.version) !== major(DOCUMENT_SERVICE_VERSION)
+        || SERVICE_METHODS.some((method) => typeof candidate[method] !== 'function')) {
+        return undefined;
+    }
+    return service as DocumentService;
+}
+
+/** The parent of a CMSIS Solution inventory entry as the service names it; undefined for the Arm commons. */
+export function serviceParentOf(parent: { tag: 'device' | 'board' | 'common'; key: string } | undefined): DocParent | undefined {
+    if (parent === undefined || parent.tag === 'common') {
+        return undefined;
     }
     return parent.tag === 'device' ? { device: parent.key } : { board: parent.key };
 }
 
-/** A failure of the proposed API as text: its `error.kind` and detail when it rejects with one. */
+/** A failure of the service as text: its kind and detail. */
 export function documentFailureText(caught: unknown): string {
+    if (caught instanceof DocumentFailure) {
+        return caught.error.detail ? `${caught.error.kind}: ${caught.error.detail}` : caught.error.kind;
+    }
     const error = (caught as { error?: { kind?: unknown; detail?: unknown } } | undefined)?.error;
     if (error !== undefined && typeof error.kind === 'string') {
         return typeof error.detail === 'string' ? `${error.kind}: ${error.detail}` : error.kind;
