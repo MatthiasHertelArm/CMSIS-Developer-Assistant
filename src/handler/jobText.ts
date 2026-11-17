@@ -41,6 +41,10 @@
  * captured its terminal (`src/runOutputCapture.ts`), and say where it is
  * when it did not. Neither the FVP model nor an `ended` Run is sent to probe
  * troubleshooting.
+ *
+ * CMSIS Solution's own setup task (`cbuild setup …`) is work in flight
+ * although no job's (#138): a build held back behind it says what it waits
+ * for, and `status` never says nothing is in flight while one runs.
  */
 
 import {
@@ -59,6 +63,7 @@ import {
     NOTHING_STARTED_MS,
     ProbeOwner,
     runtimeOf,
+    SETUP_TASK_KINDS,
     wasStopped,
 } from '../core/cmsisTasks';
 import { DIAGNOSTIC_RERUN_CAP_TEXT } from '../core/buildFailure';
@@ -286,6 +291,7 @@ export function jobData(job: Job, now: number): JsonObject {
         origin: job.origin,
         startedAt: new Date(job.armedAt).toISOString(),
         elapsedMs: Math.max(0, now - job.armedAt),
+        ...(job.heldBy && job.issuedAt === undefined ? { waitsFor: job.heldBy.name } : {}),
     };
 }
 
@@ -334,9 +340,13 @@ export function stillRunning(job: Job, context: ResultContext): ToolReply {
     }
     const task = currentTask(job);
     const again = isBuildAction(job.action) ? `do not start another ${job.action}` : 'do not start it again';
-    const head = task
-        ? `CMSIS '${job.action}'${context.tag} is still running after ${elapsed} (task '${task.name}', job ${job.id}).`
-        : `CMSIS '${job.action}'${context.tag} was issued ${elapsed} ago and its task has not started yet (job ${job.id}).`;
+    const held = job.heldBy && job.issuedAt === undefined && !task ? job.heldBy : undefined;
+    const head = held
+        ? `CMSIS '${job.action}'${context.tag} waits for CMSIS Solution's task '${held.name}' to end (waiting ${formatDuration(context.now - held.since)}); `
+            + `the ${job.action} starts then (job ${job.id}).`
+        : task
+            ? `CMSIS '${job.action}'${context.tag} is still running after ${elapsed} (task '${task.name}', job ${job.id}).`
+            : `CMSIS '${job.action}'${context.tag} was issued ${elapsed} ago and its task has not started yet (job ${job.id}).`;
     // A build task can outlive its build: VS Code still lists it while no cbuild runs any more.
     const outlived = task && isBuildAction(job.action) && context.now - job.armedAt >= LONG_BUILD_MS
         ? ' If VS Code shows the build finished while this stays running, cmsis_action stop_build ends the task.'
@@ -697,6 +707,9 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
             throw new ToolError('TASK_FAILED', `${preface}❌ CMSIS '${job.action}' FAILED${tag} (job ${job.id}).${meanwhile(job)}`,
                 `Re-run cmsis_action ${job.action} to get a definite result.`);
         case 'cancelled': {
+            if (neverIssued(job, decided)) {
+                throw heldNotStarted(job, context);
+            }
             if (decided && wasStopped(decided)) {
                 throw new ToolError('TASK_FAILED',
                     `${preface}CMSIS '${job.action}'${tag} — task '${decided.name}' was stopped after ${ranFor(decided, now)} (job ${job.id}), `
@@ -712,6 +725,9 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
                 `Re-run cmsis_action ${job.action} to get a definite result.`);
         }
         case 'not-started': {
+            if (neverIssued(job, decided)) {
+                throw heldNotStarted(job, context);
+            }
             const label = ACTION_PHASES[job.action].label;
             if (label !== undefined && context.labels !== undefined && !context.labels.has(label)) {
                 throw missingTaskRefusal(job.action, tag, label, context.labels);
@@ -723,6 +739,20 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
                 notStartedHint(job.action));
         }
     }
+}
+
+/** A job held back behind a setup task (#138) that settled before its command went out. */
+function neverIssued(job: Job, decided: JobExecution | undefined): boolean {
+    return job.heldBy !== undefined && job.issuedAt === undefined && decided === undefined;
+}
+
+/** Why a job held back behind a setup task never started: its notes say it. */
+function heldNotStarted(job: Job, context: ResultContext): ToolError {
+    const why = job.notes.length > 0 ? ` ${job.notes.join(' ')}` : '';
+    return new ToolError('TASK_FAILED',
+        `${context.preface ?? ''}CMSIS '${job.action}'${context.tag} was not started (job ${job.id}): it waited for CMSIS Solution's task `
+            + `'${job.heldBy?.name ?? '?'}' to end.${why}`,
+        `cmsis_action ${job.action} starts it again; cmsis_action {action:'status'} first shows whether a CMSIS Solution setup still runs.`);
 }
 
 /** `✅ 2 min ago`, `❌ exit 2 5 s ago` … for the listings. */
@@ -749,10 +779,13 @@ function verdictMark(job: Job): string {
         }
         case 'cancelled': {
             const decided = job.executions.find((execution) => execution.key === job.decidedBy);
+            if (neverIssued(job, decided)) {
+                return 'stopped before it started';
+            }
             return decided && wasStopped(decided) ? 'stopped' : '❌ cancelled';
         }
         case 'not-started':
-            return '❌ nothing started';
+            return job.heldBy && job.issuedAt === undefined ? '❌ not started' : '❌ nothing started';
         default:
             return 'running';
     }
@@ -760,7 +793,8 @@ function verdictMark(job: Job): string {
 
 function liveEntry(execution: LiveExecution, now: number, holds: (kind: string) => boolean): string {
     const age = execution.seeded ? '' : ` for ${formatDuration(now - execution.startedAt)}`;
-    return `'${execution.name}'${age}${holds(execution.kind) ? ' (holds the probe)' : ''}`;
+    const setup = SETUP_TASK_KINDS.has(execution.kind) ? ' (CMSIS Solution\'s setup: a build waits for it)' : '';
+    return `'${execution.name}'${age}${holds(execution.kind) ? ' (holds the probe)' : ''}${setup}`;
 }
 
 const PROBE_HOLDERS: ReadonlySet<string> = new Set(['run', 'loadRun', 'load', 'erase', 'targetInfo']);
@@ -802,8 +836,12 @@ export function idleStatus(
     output?: (execution: JobExecution) => TerminalOutput | undefined,
 ): string {
     const lines: string[] = [];
+    // CMSIS Solution's setup is work in flight, though no job's (#138): never "nothing in flight" beside it.
+    const setup = live.some((execution) => SETUP_TASK_KINDS.has(execution.kind));
     if (recent.length === 0) {
-        lines.push('No CMSIS job in this window: nothing is in flight and none has finished since the window started.');
+        lines.push(setup
+            ? 'No cmsis_action job in this window yet, but CMSIS Solution\'s own setup is in flight (below).'
+            : 'No CMSIS job in this window: nothing is in flight and none has finished since the window started.');
     } else {
         const results = recent.map((job) => {
             const where = job.target ? ` on ${job.target}` : '';
@@ -811,7 +849,9 @@ export function idleStatus(
             const named = task ? `, '${task.name}'` : '';
             return `${job.action}${where} ${verdictMark(job)} ${formatDuration(now - (job.settledAt ?? now))} ago (job ${job.id}${named})`;
         });
-        lines.push(`No CMSIS job in flight in this window. Last results: ${results.join('; ')}.`);
+        lines.push(setup
+            ? `No cmsis_action job is open in this window, but CMSIS Solution's own setup is in flight (below). Last results: ${results.join('; ')}.`
+            : `No CMSIS job in flight in this window. Last results: ${results.join('; ')}.`);
         for (const job of recent) {
             const diagnosis = job.diagnosis;
             const named = `${job.action} job ${job.id}`;
