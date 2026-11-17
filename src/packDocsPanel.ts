@@ -51,13 +51,15 @@ interface ToolSpec {
 
 /** The command the Documents tab's Import button runs, through a `command` message. */
 const IMPORT_USER_DOC_COMMAND = 'cmsis-developer-assistant.importUserDoc';
+/** VS Code's focus command of the Target Documents view, where the document service's documents are managed. */
+const TARGET_DOCUMENTS_FOCUS_COMMAND = 'cmsisDeveloperAssistant.targetDocuments.focus';
 /**
  * The only command ids the panel's own script posts. A `command` message
  * naming any other id is ignored and logged: the webview is CSP-protected,
  * but it renders text from PDFs and pdsc files, and must not be able to run
  * arbitrary VS Code commands.
  */
-const PANEL_COMMANDS: ReadonlySet<string> = new Set([IMPORT_USER_DOC_COMMAND]);
+const PANEL_COMMANDS: ReadonlySet<string> = new Set([IMPORT_USER_DOC_COMMAND, TARGET_DOCUMENTS_FOCUS_COMMAND]);
 
 /** The command id a `command` message may run, or undefined when the panel offers no such command. */
 export function panelCommand(requested: unknown): string | undefined {
@@ -154,6 +156,7 @@ export class PackDocsPanel {
                         device: r.device,
                         devicePack: r.devicePack,
                         workspaceDirs: r.workspaceDirs,
+                        documentsView: this.docs.documentStore()?.view,
                         docs: r.docs.map(d => ({
                             id: d.id, title: d.title, scope: d.scope, source: d.source, kind: d.kind, category: d.category, url: d.url, path: d.path,
                             cached: d.cached, indexed: d.indexed, pages: d.pages, revision: d.revision, format: d.format, missing: d.missing, unsupported: d.unsupported,
@@ -184,6 +187,9 @@ export class PackDocsPanel {
                     this.post({
                         type: 'store.list',
                         storageDir: this.docs.getStore().dir,
+                        documents: this.docs.documentStore(),
+                        // Downloads the retired path left in the index folder (arm/, web/); none after the move.
+                        oldDownloads: this.docs.getStore().storeUsage().downloads.documents,
                         entries: entries.map(e => ({ ...e, fetch: undefined, hasFetch: !!e.fetch })),
                         fetchedOnly: fetched.map(f => ({ id: f.id, title: f.title, url: f.url, format: f.format, revision: f.revision })),
                     });
@@ -200,8 +206,8 @@ export class PackDocsPanel {
                     }
                     const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`;
                     const question = what === 'downloads'
-                        ? `Delete the ${u.documents} downloaded document(s) — ${u.files} files, ${mb(u.bytes)} under ${store.dir} (arm/, web/)?\n\n` +
-                            'Their PDFs, fetch records and extracted text are removed. The documents are offered as "not fetched" again; fetch_doc downloads them anew.'
+                        ? `Delete the ${u.documents} old download(s) — ${u.files} files, ${mb(u.bytes)} under ${store.dir} (arm/, web/)?\n\n` +
+                            'The retired download path left them there; the document service keeps the documents now. Their PDFs, fetch records and extracted text are removed.'
                         : `Clear the extracted text and search indexes of ${u.documents} document(s) — ${u.files} files, ${mb(u.bytes)} under ${store.dir}?\n\n` +
                             'Downloaded PDFs and fetch records are kept. Every document is extracted and indexed again on its next use.';
                     const confirm = what === 'downloads' ? 'Delete Downloads' : 'Clear Extracted Text';
@@ -512,11 +518,11 @@ export class PackDocsPanel {
     // documents
     const docs = r.docs || [];
     setCount('nDocuments', docs.length);
-    const counts = { pack: 0, web: 0, arm: 0, user: 0, workspace: 0 };
-    for (const d of docs) { if (d.scope === 'arm') counts.arm++; else if (d.source === 'user') counts.user++; else if (d.source === 'workspace') counts.workspace++; else if (d.source === 'web') counts.web++; else counts.pack++; }
-    h = '<div><b>' + docs.length + ' documents</b>: ' + counts.pack + ' pack, ' + counts.web + ' web, ' + counts.arm + ' Arm catalogue, ' + counts.user + ' user, ' + counts.workspace + ' workspace' + (r.workspaceDirs && r.workspaceDirs.length ? ' in ' + esc(r.workspaceDirs.join(', ')) : '') + '</div>';
-    h += '<div class="muted">Documents you add, and downloads, are kept by the document service: see Target Documents in the Explorer. · <a id="importDoc">Add document…</a> (a file or URL the packs do not ship, for this device, board, core, pack, vendor or every target; for you or the project; indexed at once)</div>';
-    h += '<div class="toolbar"><input id="docFilter" placeholder="filter id / title" value="' + esc(docFilter) + '"> <select id="docSource"><option value="">all</option><option value="pack">pack</option><option value="web">web (vendor)</option><option value="arm">Arm catalogue</option><option value="user">user</option><option value="workspace">workspace</option><option value="readable">searchable now</option><option value="unfetched">not fetched</option></select> <a id="runList">run list_target_docs</a></div>';
+    const counts = { pack: 0, web: 0, arm: 0, user: 0, project: 0, workspace: 0 };
+    for (const d of docs) { if (d.scope === 'arm') counts.arm++; else if (d.scope === 'user') counts.user++; else if (d.scope === 'project') counts.project++; else if (d.scope === 'workspace') counts.workspace++; else if (d.source === 'web') counts.web++; else counts.pack++; }
+    h = '<div><b>' + docs.length + ' documents</b>: ' + counts.pack + ' pack, ' + counts.web + ' web, ' + counts.arm + ' Arm catalogue, ' + counts.user + ' added by the user, ' + counts.project + ' project (.cmsis/docs.yml)' + (counts.workspace ? ', ' + counts.workspace + ' in ' + esc((r.workspaceDirs || []).join(', ') || 'workspace folders') : '') + '</div>';
+    h += '<div class="muted">Documents the user or the project adds, and downloads, are kept by the document service' + (r.documentsView ? ': see ' + esc(r.documentsView) : '') + '. · <a id="importDoc">Add document…</a> (a file or URL the packs do not ship, for this device, board, core, pack, vendor or every target; for you or the project; indexed at once)</div>';
+    h += '<div class="toolbar"><input id="docFilter" placeholder="filter id / title" value="' + esc(docFilter) + '"> <select id="docSource"><option value="">all</option><option value="pack">pack</option><option value="web">web (vendor)</option><option value="arm">Arm catalogue</option><option value="user">added by the user</option><option value="project">project</option><option value="workspace">workspace folder</option><option value="readable">searchable now</option><option value="unfetched">not fetched</option></select> <a id="runList">run list_target_docs</a></div>';
     h += '<div id="docTable"></div><div id="targetDetail"></div>';
     $('documentsBody').innerHTML = h;
     for (const a of document.querySelectorAll('#documentsBody a[data-open]')) { a.onclick = () => vscode.postMessage({ type: 'store.open', path: a.dataset.open }); }
@@ -534,8 +540,9 @@ export class PackDocsPanel {
       if (docSource === 'pack') return d.source === 'pack';
       if (docSource === 'web') return d.source === 'web' && d.scope !== 'arm';
       if (docSource === 'arm') return d.scope === 'arm';
-      if (docSource === 'user') return d.source === 'user';
-      if (docSource === 'workspace') return d.source === 'workspace';
+      if (docSource === 'user') return d.scope === 'user';
+      if (docSource === 'project') return d.scope === 'project';
+      if (docSource === 'workspace') return d.scope === 'workspace';
       if (docSource === 'readable') return d.readable;
       if (docSource === 'unfetched') return d.source === 'web' && !d.cached;
       return true;
@@ -644,9 +651,17 @@ export class PackDocsPanel {
     const shown = only ? entries.filter(e => targetIds.has(e.id)) : entries;
     const parts = String(msg.storageDir).split('/');
     const shortDir = parts.length > 3 ? '…/' + parts.slice(-2).join('/') : msg.storageDir;
+    const docs = msg.documents;
+    const docsDir = docs && docs.dir ? String(docs.dir).split('/') : [];
+    const docsLine = !docs ? '<div class="muted">Documents: the document service is off (setting packDocs.documentService).</div>'
+      : '<div class="muted">Documents (PDFs you add and fetch_doc downloads) are kept by the document service' +
+        (docs.dir ? ' in <a data-open="' + esc(docs.dir) + '" class="mono" title="' + esc(docs.dir) + '">' + esc(docsDir.length > 3 ? '…/' + docsDir.slice(-2).join('/') : docs.dir) + '</a> (<a data-open="' + esc(docs.inventory) + '" class="mono">docs.yml</a>)' : ' of CMSIS Solution') +
+        ' · <a id="manageDocs">manage them in ' + esc(docs.view) + '</a></div>';
     let h = '<div style="padding:6px 8px">' +
-      '<div><b>' + entries.length + ' extracted</b>' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetched but not extracted' : '') + ' <span class="muted">in</span> <a data-open="' + esc(msg.storageDir) + '" class="mono" title="' + esc(msg.storageDir) + '">' + esc(shortDir) + '</a></div>' +
-      '<div class="toolbar" style="margin:4px 0 0"><a id="refresh">refresh</a> · <a id="clearExtracted" title="Remove the extracted text and search indexes of every document; downloads stay. Asks first.">clear extracted text…</a> · <a id="clearDownloads" title="Remove the documents fetch_doc downloaded (arm/, web/): PDFs, fetch records and their extraction. Asks first.">delete downloaded PDFs…</a></div>' +
+      '<div><b>' + entries.length + ' extracted</b>' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetched but not extracted' : '') + ' <span class="muted">— the search index, in</span> <a data-open="' + esc(msg.storageDir) + '" class="mono" title="' + esc(msg.storageDir) + '">' + esc(shortDir) + '</a></div>' +
+      docsLine +
+      '<div class="toolbar" style="margin:4px 0 0"><a id="refresh">refresh</a> · <a id="clearExtracted" title="Remove the extracted text and search indexes of every document; the documents stay. Asks first.">clear extracted text…</a>' +
+      (msg.oldDownloads ? ' · <a id="clearDownloads" title="Remove the PDFs the retired download path left in the index folder (arm/, web/), with their fetch records and extraction. Asks first.">delete old downloads (' + msg.oldDownloads + ')…</a>' : '') + '</div>' +
       '<label><input type="checkbox" id="onlyTarget"' + (only ? ' checked' : '') + '> only this target\\'s documents (' + targetIds.size + ')</label></div>';
     h += '<table><tr><th>id</th><th>src</th><th>pages</th><th>size</th><th>extracted</th></tr>';
     for (const e of shown) {
@@ -662,7 +677,8 @@ export class PackDocsPanel {
     $('refresh').onclick = () => vscode.postMessage({ type: 'store.list' });
     for (const a of $('list').querySelectorAll('a[data-open]')) { a.onclick = () => vscode.postMessage({ type: 'store.open', path: a.dataset.open }); }
     $('clearExtracted').onclick = () => { $('status').textContent = 'confirm in the dialog…'; vscode.postMessage({ type: 'store.clear', what: 'extracted' }); };
-    $('clearDownloads').onclick = () => { $('status').textContent = 'confirm in the dialog…'; vscode.postMessage({ type: 'store.clear', what: 'downloads' }); };
+    if ($('clearDownloads')) { $('clearDownloads').onclick = () => { $('status').textContent = 'confirm in the dialog…'; vscode.postMessage({ type: 'store.clear', what: 'downloads' }); }; }
+    if ($('manageDocs')) { $('manageDocs').onclick = () => vscode.postMessage({ type: 'command', command: '${TARGET_DOCUMENTS_FOCUS_COMMAND}' }); }
     $('onlyTarget').onchange = () => { save({ onlyTarget: $('onlyTarget').checked }); renderList(storeMsg); };
     for (const row of document.querySelectorAll('tr.row')) { row.onclick = () => { selected = row.dataset.id; $('detail').innerHTML = '<div class="muted">loading ' + esc(selected) + '…</div>'; vscode.postMessage({ type: 'store.detail', id: selected }); renderList(storeMsg); }; }
   }

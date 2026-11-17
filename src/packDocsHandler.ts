@@ -977,6 +977,20 @@ export class PackDocsHandler {
         }
     }
 
+    /**
+     * Where this window's documents are kept, for the Pack Docs panel: the
+     * view that manages them and, for the emulated service, its inventory
+     * file and folder. Undefined when the service is off.
+     */
+    public documentStore(): { view: string; inventory?: string; dir?: string } | undefined {
+        const chosen = this.host.documentService?.();
+        if (!chosen) { return undefined; }
+        const inventory = (chosen.service as { inventoryFile?: unknown }).inventoryFile;
+        return typeof inventory === 'string'
+            ? { view: chosen.view, inventory, dir: path.dirname(inventory) }
+            : { view: chosen.view };
+    }
+
     /** Move the retired document path's documents into the service, once per machine. Never throws. */
     private migrateOnce(service: DocumentService, log: PackDocsHost['log']): Promise<unknown> {
         this.migration ??= migrateLegacyDocuments(service, this.store, this.host.storageDir, resolveUserDocsDir(this.host.settings().userDocsDir), log)
