@@ -606,9 +606,15 @@ function answerBy(issue: Issue): number {
  * Issue the command, with `args` when it takes any, and give it the kick-off
  * (4 s, or what is left of the call) to fail; a failure within it rejects the
  * call, a later one is dropped (KB11). `returned` sees what the command
- * resolves with.
+ * resolves with, `rejected` how it failed, early or late.
  */
-async function issueCommand(issue: Issue, action: string, returned?: (value: unknown) => void, args: readonly unknown[] = []): Promise<void> {
+async function issueCommand(
+    issue: Issue,
+    action: string,
+    returned?: (value: unknown) => void,
+    args: readonly unknown[] = [],
+    rejected?: (failure: ToolError) => void,
+): Promise<void> {
     const { executor, host } = issue.context;
     let failure: ToolError | undefined;
     let pending: Thenable<unknown>;
@@ -623,6 +629,7 @@ async function issueCommand(issue: Issue, action: string, returned?: (value: unk
         },
         (caught: unknown) => {
             failure = commandFailure(issue.command, action, caught, executor.getDiagnostics().serverVersion);
+            rejected?.(failure);
             releaseFailedStart(issue);
         },
     );
@@ -2050,6 +2057,12 @@ function refreshResult(tag: string, index: string, messages: IdxMessages, tookMs
 
 /** The tools a `activate_environment` result lists at most. */
 const ENVIRONMENT_TOOLS_LISTED = 12;
+/**
+ * After the Environment Manager's activation ended, CMSIS Solution gets this
+ * long to rewrite `.cmsis/tools-environment.yml` before the call says it
+ * did not (#139).
+ */
+const ENVIRONMENT_REWRITE_GRACE_MS = 5_000;
 
 /**
  * Where the tools environment of a solution is recorded and resolved from:
@@ -2107,8 +2120,13 @@ function staleEnvironmentNote(solutionPath: string, host: HandlerHost): string |
  * `vcpkg-configuration.json` again and installs what is missing; CMSIS
  * Solution then rewrites `.cmsis/tools-environment.yml`. The call waits
  * until that file has changed and stays unchanged for one more look, then
- * lists the tools it names; a resolution that outlasts the wait (downloads,
- * a licence dialog) answers `running`.
+ * lists the tools it names. The command's promise is the end of the
+ * activation (#139; Environment Manager 1.26.0 resolves it with `false` when
+ * the activation failed): once it has resolved, the record gets
+ * `ENVIRONMENT_REWRITE_GRACE_MS` to change, and a record that stays as it
+ * was is answered at once — CMSIS Solution writes it only when its content
+ * changes, so the environment was current already. A resolution that
+ * outlasts the wait (downloads, a licence dialog) answers `running`.
  */
 async function activateEnvironment(issue: Issue, solutionPath: string): Promise<ToolText> {
     const { host } = issue.context;
@@ -2128,14 +2146,38 @@ async function activateEnvironment(issue: Issue, solutionPath: string): Promise<
     }
     const before = mtimeOf(environment);
     const issuedAt = host.now();
-    await issueCommand(issue, 'activate_environment', undefined, [vscode.Uri.file(configuration)]);
+    // What the command's promise settled with, once it has: the end of the activation.
+    const ended: { done: boolean; value?: unknown; failure?: ToolError } = { done: false };
+    await issueCommand(issue, 'activate_environment', (value) => {
+        Object.assign(ended, { done: true, value });
+    }, [vscode.Uri.file(configuration)], (failure) => {
+        Object.assign(ended, { done: true, failure });
+    });
+    const manifest = path.basename(configuration);
     let seen: number | undefined;
+    let endedAt: number | undefined;
     for (;;) {
         const now = mtimeOf(environment);
         if (now !== undefined && now !== before && now === seen) {
             break;
         }
         seen = now;
+        if (ended.failure) {
+            throw ended.failure;
+        }
+        if (ended.done && ended.value === false && now === before) {
+            throw new ToolError('TASK_FAILED',
+                `❌ CMSIS 'activate_environment'${issue.tag}: the Arm Tools Environment Manager reports that the activation of ${manifest} failed `
+                    + `after ${formatDuration(host.now() - issuedAt)}; ${TOOLS_ENVIRONMENT_FILE} was not rewritten.`,
+                'Ask the user for the reason the Arm Tools output channel or the Arm Tools status bar item gives (a tool that could not be '
+                    + 'downloaded, a registry that could not be reached, a licence); fix it, then call cmsis_action activate_environment again.');
+        }
+        if (ended.done && endedAt === undefined) {
+            endedAt = host.now();
+        }
+        if (endedAt !== undefined && now === before && host.now() - endedAt >= ENVIRONMENT_REWRITE_GRACE_MS) {
+            return unchangedActivation(issue.tag, manifest, environment, endedAt - issuedAt);
+        }
         if (host.now() >= answerBy(issue)) {
             return {
                 text: `CMSIS 'activate_environment'${issue.tag} issued via '${issue.command}'; CMSIS Solution has not rewritten `
@@ -2153,19 +2195,52 @@ async function activateEnvironment(issue: Issue, solutionPath: string): Promise<
     } catch (caught) {
         throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${issue.tag}: ${environment} was rewritten, but it could not be read (${failureText(caught)}).`);
     }
-    return activationResult(issue.tag, path.basename(configuration), tools, host.now() - issuedAt);
+    return activationResult(issue.tag, manifest, tools, host.now() - issuedAt);
 }
 
-/** The answer of `activate_environment`: the tools the rewritten record names. */
-function activationResult(tag: string, manifest: string, tools: ToolsEnvironment, tookMs: number): string {
+/** The tools of a record as indented lines, at most `ENVIRONMENT_TOOLS_LISTED` of them. */
+function toolLines(tools: ToolsEnvironment): string[] {
     const named = tools.tools.map((tool) => (tool.version && !tool.name.includes(tool.version) ? `${tool.name} ${tool.version}` : tool.name));
     const listed = named.slice(0, ENVIRONMENT_TOOLS_LISTED).map((line) => `  ${line}`);
     if (named.length > ENVIRONMENT_TOOLS_LISTED) {
         listed.push(`  … ${named.length - ENVIRONMENT_TOOLS_LISTED} more`);
     }
+    return listed;
+}
+
+/** The answer of `activate_environment`: the tools the rewritten record names. */
+function activationResult(tag: string, manifest: string, tools: ToolsEnvironment, tookMs: number): string {
+    const listed = toolLines(tools);
     const inventory = listed.length > 0 ? ` Tools of the CMSIS tasks now:\n${listed.join('\n')}\n` : ' ';
     return `✅ CMSIS 'activate_environment'${tag}: ${manifest} was resolved and ${TOOLS_ENVIRONMENT_FILE} rewritten after ${formatDuration(tookMs)}.`
         + `${inventory}Next: cmsis_action build.`;
+}
+
+/**
+ * The answer of `activate_environment` when the activation ended and the
+ * record stayed as it was (#139): CMSIS Solution writes it only when its
+ * content changes, so the environment was current already. A record that
+ * does not exist at all is said, with where it was looked for.
+ */
+function unchangedActivation(tag: string, manifest: string, environment: string, tookMs: number): string {
+    const head = `CMSIS 'activate_environment'${tag}: the Arm Tools Environment Manager resolved ${manifest} after ${formatDuration(tookMs)}`;
+    let text: string;
+    try {
+        text = fs.readFileSync(environment, 'utf8');
+    } catch {
+        return `⚠️ ${head}, but CMSIS Solution has not written ${TOOLS_ENVIRONMENT_FILE} (looked for ${environment}) `
+            + `${formatDuration(ENVIRONMENT_REWRITE_GRACE_MS)} after it ended. The CMSIS tasks run with the tools of the CMSIS Solution `
+            + 'extension then: ask the user whether the solution is the one CMSIS Solution has open in this window.';
+    }
+    let listed: string[] = [];
+    try {
+        listed = toolLines(readToolsEnvironment(text));
+    } catch {
+        // The record is there; the answer does without its list.
+    }
+    const inventory = listed.length > 0 ? ` Tools of the CMSIS tasks:\n${listed.join('\n')}\n` : ' ';
+    return `✅ ${head}; ${TOOLS_ENVIRONMENT_FILE} did not change, so the environment was presumably current already `
+        + `(CMSIS Solution rewrites the record only when it changes).${inventory}Next: cmsis_action build.`;
 }
 
 /** A result with the sentence the tasks repair wrote in front, when there is one. */

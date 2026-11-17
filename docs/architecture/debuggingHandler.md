@@ -511,8 +511,15 @@ window's CMSIS job tracker (next section):
   command is not registered (the extension is missing) or the solution has
   no manifest, and otherwise waits as `refresh` does, for the record to
   change and stay unchanged one more look, then lists the tools it names
-  (`readToolsEnvironment()`); a resolution that outlasts the wait answers
-  `running`. The task actions compare the two files first
+  (`readToolsEnvironment()`). The command's promise is the end of the
+  activation (#139): the Environment Manager resolves it once vcpkg is done,
+  with `false` when the activation failed, which is answered as
+  `TASK_FAILED`. CMSIS Solution writes the record only when its content
+  changes, so an environment that was current leaves it as it was; after the
+  promise resolved, the record gets a short grace
+  (`ENVIRONMENT_REWRITE_GRACE_MS`) and the call then says that it did not
+  change (`unchangedActivation()`). An activation still going at the
+  deadline (downloads, a licence prompt) answers `running`. The task actions compare the two files first
   (`staleEnvironmentNote()`): a manifest newer than the record, or a record
   that is missing, puts one sentence before the result, so that a build
   that ran with the tools of an earlier activation says so.
@@ -837,7 +844,11 @@ the panel are seen too. It keeps the live CMSIS executions and the jobs:
 
 A call has one deadline (#12): the solution checks and a target switch come
 out of it, and a job still going when it passes is answered with status
-`running` and the job in `data`. The texts live in `src/handler/jobText.ts`.
+`running` and the job in `data`. A waiting call (`waitFor`) is woken when its job
+settles, and also looks at the job record again on a backoff of its own
+(#139), so a wake-up that does not come, or a follow-up that completed
+without one, cannot hold the call until its deadline while `status`
+already has the result. The texts live in `src/handler/jobText.ts`.
 
 ### Why a build failed
 

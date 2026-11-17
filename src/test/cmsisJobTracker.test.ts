@@ -341,6 +341,53 @@ suite('CmsisJobTracker', () => {
             assert.deepStrictEqual(diagnosed, [`${failing.id}:failed:failed`, `${passing.id}:ok:rebuilt`]);
         });
 
+        test('a waiter whose wake-up never comes finds the settled job on its own look, long before its deadline (#139)', async () => {
+            const { tasks, clock, tracker, log } = world();
+            /** Drop every waiter's wake-up, as a missed settle event would. */
+            const loseWakeUps = (): void => (tracker as unknown as { waiters: Map<string, unknown> }).waiters.clear();
+            const job = tracker.begin('build', 'MPS3');
+            tracker.issued(job.id);
+            const build = tasks.start(tasks.execution(BUILD));
+            const waiting = tracker.waitFor(job.id, clock.now() + 600_000);
+            // An expired waiter keeps nothing back: the job goes on, and its result stays for status.
+            const short = tracker.waitFor(job.id, clock.now() + 30_000);
+            clock.advance(clock.now() + 30_000);
+            assert.strictEqual((await short)?.state, 'started', 'the short wait ran out with the build still going');
+            loseWakeUps();
+            // A build of more than 120 s.
+            clock.advance(clock.now() + 95_000);
+            tasks.finish(build, 0);
+            assert.strictEqual(tracker.job(job.id)?.state, 'ok');
+            const settledAt = clock.now();
+            clock.advance(settledAt + 5_000);
+            const outcome = await waiting;
+            assert.deepStrictEqual([outcome?.id, outcome?.state], [job.id, 'ok']);
+            assert.ok(log.some((line) => line.includes(`job ${job.id} was found settled by its waiter's look`)), log.join('\n'));
+            assert.strictEqual(clock.pendingTimers(), 0, 'the deadline and the look were cancelled');
+            const status = await tracker.waitFor(job.id, clock.now() + 60_000);
+            assert.deepStrictEqual([status?.id, status?.state], [outcome?.id, outcome?.state], 'status gives the same outcome and job id');
+        });
+
+        test('a follow-up that ends without waking the waiter is found by the look as well (#139)', async () => {
+            const { tasks, clock, tracker } = world();
+            let finish: (diagnosis: JobDiagnosis) => void = () => undefined;
+            tracker.onDidFinishJob((job) => tracker.completeWith(job.id, new Promise<JobDiagnosis>((resolve) => {
+                finish = resolve;
+            })));
+            const job = tracker.begin('build', 'MPS3');
+            const waiting = tracker.waitFor(job.id, clock.now() + 600_000);
+            tasks.finish(tasks.start(tasks.execution(BUILD)), 0);
+            assert.ok(tracker.isCompleting(job.id));
+            (tracker as unknown as { waiters: Map<string, unknown> }).waiters.clear();
+            finish({ state: 'done', check: 'rebuilt', source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '' });
+            await Promise.resolve();
+            await Promise.resolve();
+            assert.ok(!tracker.isCompleting(job.id));
+            clock.advance(clock.now() + 10_000);
+            const outcome = await waiting;
+            assert.deepStrictEqual([outcome?.state, outcome?.diagnosis?.check], ['ok', 'rebuilt']);
+        });
+
         test('discard forgets an open job and wakes its waiters', async () => {
             const { clock, tracker } = world();
             const job = tracker.begin('load_and_debug', undefined);

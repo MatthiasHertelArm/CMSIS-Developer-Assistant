@@ -171,6 +171,9 @@ export const JOB_RETENTION_MS = 10 * 60_000;
 export const LABEL_FETCH_MS = 3_000;
 /** How often `waitForEnd` looks again when no end event arrives (executions the tracker does not classify). */
 const END_POLL_MS = 250;
+/** `waitFor` looks at the job record again after this long, then twice as long each time up to the maximum (#139). */
+const WAIT_LOOK_FIRST_MS = 250;
+const WAIT_LOOK_MAX_MS = 5_000;
 
 /** The job id prefix of each action: `b-3` is the third job of the window, a build. */
 const ID_PREFIX: Readonly<Record<JobAction, string>> = {
@@ -363,7 +366,10 @@ export class CmsisJobTracker {
     /**
      * Resolves with the job once it settled and the work that completes its
      * result (`completeWith`) is done, or with the job as it is when
-     * `deadline` (the tracker's clock) passes first. Never rejects.
+     * `deadline` (the tracker's clock) passes first. Never rejects. Besides
+     * the wake-up of the settle, it looks at the job record again on a
+     * backoff (#139), so that a wake-up that never comes cannot hold the
+     * call until its deadline while `status` already has the result.
      */
     waitFor(id: string, deadline: number): Promise<Job | undefined> {
         const job = this.jobs.get(id);
@@ -374,14 +380,28 @@ export class CmsisJobTracker {
         return new Promise((resolve) => {
             const waiting = this.waiters.get(id) ?? new Set<(job: Job) => void>();
             this.waiters.set(id, waiting);
-            let cancel: () => void = () => undefined;
+            let cancelDeadline: () => void = () => undefined;
+            let cancelLook: () => void = () => undefined;
             const wake = (current: Job): void => {
                 waiting.delete(wake);
-                cancel();
+                cancelDeadline();
+                cancelLook();
                 resolve(current);
             };
+            const look = (delay: number): void => {
+                cancelLook = this.clock.startTimer(delay, () => {
+                    const current = this.jobs.get(id);
+                    if (!current || this.isFinal(current)) {
+                        this.log(`CMSIS job tracker: job ${id} was found ${current ? 'settled' : 'gone'} by its waiter's look, without a wake-up`);
+                        wake(current ?? job);
+                        return;
+                    }
+                    look(Math.min(delay * 2, WAIT_LOOK_MAX_MS));
+                });
+            };
             waiting.add(wake);
-            cancel = this.clock.startTimer(remaining, () => wake(this.jobs.get(id) ?? job));
+            cancelDeadline = this.clock.startTimer(remaining, () => wake(this.jobs.get(id) ?? job));
+            look(WAIT_LOOK_FIRST_MS);
         });
     }
 
