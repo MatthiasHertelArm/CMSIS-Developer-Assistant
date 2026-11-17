@@ -26,9 +26,10 @@
  * Solution extension lists the csolution files of a window is here too, so
  * that `open_solution` can run the same one. So is the line on the solution
  * the window has active, which `get_session_status` carries in every state:
- * the answer to which project "the current solution" is (#124).
+ * the answer to which project "the current solution" is (#124). And the project
+ * root `open_solution` opens for a csolution (#145).
  *
- * Pure: no `vscode`, no file access.
+ * Pure: no `vscode`, no file access (the root walk is handed its file test).
  */
 
 import * as path from 'path';
@@ -230,4 +231,34 @@ export function liesInside(target: string, folder: string, platform: NodeJS.Plat
     const paths = pathsOf(platform);
     const relative = paths.relative(outer, inner);
     return relative.length > 0 && !relative.startsWith('..') && !paths.isAbsolute(relative);
+}
+
+/** The entries that mark the top of a project above a csolution: a git repository (a folder, or a file in a worktree or submodule) and the tools manifest. */
+export const PROJECT_ROOT_MARKERS: readonly string[] = ['.git', 'vcpkg-configuration.json'];
+
+/**
+ * The folder `open_solution` opens for a csolution no open folder holds
+ * (#145): the nearest folder from the csolution's own up that has an entry
+ * of `PROJECT_ROOT_MARKERS`, so that a `vcpkg-configuration.json` at the
+ * repository root lies inside the opened folder. The walk never takes the
+ * user's home folder, the file system root or a folder that holds home; without
+ * a marker below those, the csolution's own folder. `exists` answers
+ * whether a path exists, file or folder.
+ */
+export function projectRootOf(
+    solutionFile: string,
+    home: string,
+    exists: (file: string) => boolean,
+    platform: NodeJS.Platform = process.platform,
+): string {
+    const paths = pathsOf(platform);
+    const own = paths.dirname(solutionFile);
+    for (let dir = own; ; dir = paths.dirname(dir)) {
+        if (paths.dirname(dir) === dir || liesInside(home, dir, platform)) {
+            return own;
+        }
+        if (PROJECT_ROOT_MARKERS.some((marker) => exists(paths.join(dir, marker)))) {
+            return dir;
+        }
+    }
 }

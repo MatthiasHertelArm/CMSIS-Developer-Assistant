@@ -2922,6 +2922,79 @@ suite('DebuggingHandler', () => {
                 }
             });
 
+            test('a csolution below a repository root opens the root, named as the active solution in its .vscode/cmsis.json; a folder opens as given (#145)', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const repo = path.join(scratch, 'SEGGER-RTT');
+                const board = path.join(repo, 'Infineon', 'T2G-B-H');
+                fs.mkdirSync(path.join(repo, '.vscode'), { recursive: true });
+                fs.mkdirSync(board, { recursive: true });
+                // A worktree's .git is a file; the manifest sits at the root, out of the csolution's folder.
+                fs.writeFileSync(path.join(repo, '.git'), 'gitdir: elsewhere\n');
+                fs.writeFileSync(path.join(repo, 'vcpkg-configuration.json'), '{}\n');
+                const solution = path.join(board, 'SEGGER-RTT_Multicore.csolution.yml');
+                fs.writeFileSync(solution, 'solution:\n');
+                const selection = path.join(repo, '.vscode', 'cmsis.json');
+                fs.writeFileSync(selection, '{\n    "activeTarget": "CM7"\n}\n');
+                const elsewhere = path.join(scratch, 'Elsewhere');
+                fs.mkdirSync(elsewhere);
+                const calls: Array<[string, boolean]> = [];
+                const handler = handlerFor(x, { workspaceFolders: () => [asFolder(elsewhere)], openFolder: async (folder, fresh) => void calls.push([folder, fresh]) });
+
+                const reply = await open(handler, solution);
+                assert.deepStrictEqual(calls, [[repo, true]]);
+                assert.deepStrictEqual((reply as { data: unknown }).data, { opened: repo, newWindow: true, solution });
+                assert.strictEqual(textOf(reply).split(' The window joins')[0],
+                    `Opening ${repo} in a new VS Code window. Solution: ${path.join('Infineon', 'T2G-B-H', 'SEGGER-RTT_Multicore.csolution.yml')}. `
+                        + `${repo} is the project root that holds it; .vscode/cmsis.json there names it as the active solution. `
+                        + `If get_session_status then shows another active solution, cmsis_action {action:'open_solution', path:'${solution}'} `
+                        + 'in that window activates it.');
+                assert.deepStrictEqual(JSON.parse(fs.readFileSync(selection, 'utf8')),
+                    { activeTarget: 'CM7', activeSolution: '../Infineon/T2G-B-H/SEGGER-RTT_Multicore.csolution.yml' });
+
+                // The folder of the csolution, given as a folder, opens as given and is not named anywhere.
+                fs.rmSync(selection);
+                calls.length = 0;
+                assert.deepStrictEqual((await open(handler, board) as { data: unknown }).data, { opened: board, newWindow: true, solution });
+                assert.deepStrictEqual(calls, [[board, true]]);
+                assert.ok(!fs.existsSync(selection));
+
+                // A window without a folder reloads into the root, the selection written before the reply.
+                let release: () => void = () => undefined;
+                const gate = new Promise<void>((done) => {
+                    release = done;
+                });
+                const reloads: Array<[string, boolean]> = [];
+                const empty = handlerFor(x, {
+                    workspaceFolders: () => [],
+                    sleep: () => gate,
+                    openFolder: async (folder, fresh) => void reloads.push([folder, fresh]),
+                });
+                const here = await open(empty, solution);
+                assert.deepStrictEqual((here as { data: unknown }).data, { opened: repo, newWindow: false, reloads: true, solution });
+                assert.match(textOf(here), /is the project root that holds it; \.vscode\/cmsis\.json there names it as the active solution\./);
+                assert.deepStrictEqual(JSON.parse(fs.readFileSync(selection, 'utf8')), { activeSolution: '../Infineon/T2G-B-H/SEGGER-RTT_Multicore.csolution.yml' });
+                release();
+                await new Promise<void>((tick) => setImmediate(tick));
+                assert.deepStrictEqual(reloads, [[repo, false]]);
+            });
+
+            test('a csolution without a project root above it opens its own folder, and no cmsis.json is written', async () => {
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const project = path.join(scratch, 'Blinky');
+                fs.mkdirSync(path.join(project, 'app'), { recursive: true });
+                const solution = path.join(project, 'app', 'Blinky.csolution.yml');
+                fs.writeFileSync(solution, 'solution:\n');
+                const elsewhere = path.join(scratch, 'Elsewhere');
+                fs.mkdirSync(elsewhere);
+                const handler = handlerFor(x, { workspaceFolders: () => [asFolder(elsewhere)], openFolder: async () => undefined });
+                const reply = await open(handler, solution);
+                assert.deepStrictEqual((reply as { data: unknown }).data, { opened: path.dirname(solution), newWindow: true, solution });
+                assert.doesNotMatch(textOf(reply), /project root/);
+                assert.ok(!fs.existsSync(path.join(project, '.vscode')) && !fs.existsSync(path.join(project, 'app', '.vscode')));
+            });
+
             test('a folder this window has open is activated here: asked once, verified, and not under a debug session', async () => {
                 const solution = path.join(scratch, 'demo.csolution.yml');
                 fs.writeFileSync(solution, 'solution:\n');
