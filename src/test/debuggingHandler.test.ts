@@ -4631,7 +4631,7 @@ suite('DebuggingHandler', () => {
                     + 'the Refresh (Update RTE) of the CMSIS view — then cmsis_action build again.');
             });
 
-            test('activate_environment: Reactivate Environment, then the tools of the rewritten record; no rewrite answers running; refusals', async () => {
+            test('activate_environment: Reactivate Environment, then the tools of the rewritten record; an ended activation without a rewrite answers at once (#139), one still going answers running; refusals', async () => {
                 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-activate-'));
                 try {
                     const solutionFile = path.join(dir, 'demo.csolution.yml');
@@ -4663,16 +4663,62 @@ suite('DebuggingHandler', () => {
                     // The command reads the manifest's Uri, as the Explorer's context menu hands it; without one it throws.
                     assert.strictEqual((handed[0] as vscode.Uri | undefined)?.fsPath, vscode.Uri.file(path.join(dir, 'vcpkg-configuration.json')).fsPath);
 
+                    // An activation that has not ended (tools downloading, a prompt waiting) by the deadline: running.
                     again();
                     solutionOn('HE', {
                         'cmsis-csolution.getSolutionFile': () => solutionFile,
                         'environment-manager.reactivate': () => {
                             activations++;
+                            return new Promise<boolean>(() => undefined);
                         },
                     });
                     assert.match(await replyAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 3_000 }), 'running'),
                         /^CMSIS 'activate_environment' on HE issued via 'environment-manager\.reactivate'; CMSIS Solution has not rewritten \.cmsis\/tools-environment\.yml after [\d.]+ s\. /);
                     assert.strictEqual(activations, 2);
+
+                    // An activation that ended without a rewrite (#139): the environment was current; answered after the grace, not at the deadline.
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solutionFile,
+                        'environment-manager.reactivate': () => {
+                            activations++;
+                            return new Promise<boolean>((done) => setTimeout(() => done(true), 50));
+                        },
+                    });
+                    const startedAt = Date.now();
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 600_000 })),
+                        /^✅ CMSIS 'activate_environment' on HE: the Arm Tools Environment Manager resolved vcpkg-configuration\.json after [\d.]+ s; \.cmsis\/tools-environment\.yml did not change, so the environment was presumably current already \(CMSIS Solution rewrites the record only when it changes\)\. Tools of the CMSIS tasks:\n  CMSIS-Toolbox 2\.15\.1\n  tools\.kitware\.cmake\/3\.31\.5\/bin\nNext: cmsis_action build\.$/);
+                    assert.ok(Date.now() - startedAt < 10_000, `answered ${Date.now() - startedAt} ms after the call, not at its deadline`);
+                    assert.strictEqual(activations, 3);
+
+                    // The Environment Manager resolves false when the activation failed.
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solutionFile,
+                        'environment-manager.reactivate': () => Promise.resolve(false),
+                    });
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 600_000 }), 'TASK_FAILED');
+                    assert.match(failed.message, /^❌ CMSIS 'activate_environment' on HE: the Arm Tools Environment Manager reports that the activation of vcpkg-configuration\.json failed after [\d.]+ s; \.cmsis\/tools-environment\.yml was not rewritten\.$/);
+                    assert.ok(failed.hint?.startsWith('Ask the user for the reason the Arm Tools output channel'), failed.hint);
+
+                    // A command that fails after the kick-off ends the activation as well: its failure is the answer.
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solutionFile,
+                        'environment-manager.reactivate': () => new Promise((_, fail) => setTimeout(() => fail(new Error('vcpkg exited 1')), 1_000)),
+                    });
+                    const late = await refusalOf(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 600_000 }), 'TASK_FAILED');
+                    assert.ok(late.message.includes('vcpkg exited 1'), late.message);
+
+                    // The record is missing after the activation ended: said, with where it was looked for.
+                    fs.rmSync(record);
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.getSolutionFile': () => solutionFile,
+                        'environment-manager.reactivate': () => Promise.resolve(true),
+                    });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 600_000 })),
+                        /^⚠️ CMSIS 'activate_environment' on HE: the Arm Tools Environment Manager resolved vcpkg-configuration\.json after [\d.]+ s, but CMSIS Solution has not written \.cmsis\/tools-environment\.yml \(looked for .*tools-environment\.yml\) 5 s after it ended\. /);
 
                     // Without the Environment Manager the command is not registered: refused before anything runs.
                     again();
