@@ -19,14 +19,17 @@ The [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-doc
 | [Prepared cmsis-skills PR](cmsis-skills-start-cmsis-project-pr.md), [prepared 2.5.9 PR](upstream-pr-2.5.9.md) | Retain as dated drafts, not current submission instructions or proof of remote status. |
 | [Cross-extension calls](extension-calls.md), [storage overview](pack-docs-storage-overview.md), [storage requirements](pack-docs-storage.md) | Keep as current reference/integration material. The storage-provider interface remains a proposal, not an exposed API. |
 
-## 2.9.x: CMSIS Solution API V3, then its document inventory
+## 2.9.3: CMSIS Solution API V3, its document inventory and its managed build
 
-Both are previews of the 2.10.0 cycle (odd minor version, pre-release VSIX); 2.9.0 is the preview already published, with the extension of 2.8.0 and a new knowledge index. They were proposed as 2.8.1 and 2.8.2 and renumbered on 2026-11-14, after the decision of 2026-11-09 that no 2.8.x release follows 2.8.0. Written 2026-11-04 against 2.8.0 and vscode-cmsis-solution `main` `a9c1e69` (nightly `1.72.1-82-20261104`; neither feature is in the released 1.72.0). Order swapped the same day: the API release is unblocked and builds the seam the documentation release calls through; the documentation release is planned by stages of what CMSIS Solution offers and waits for a document API.
+Decided 2026-11-17: the three proposals below ship together as one preview, release 2.9.3, with all their features; there is no separate 2.9.1 or 2.9.2 release. The file names keep the numbers they were proposed under. The release waits for the last of its CMSIS Solution dependencies: `getApi(3)` in a release, PR #713, and the document methods (G1a, G1b, G10 of the inventory proposal), of which only V3 exists today.
 
-| Release | Proposal | Size | Depends on | Decisions |
+All three are previews of the 2.10.0 cycle (odd minor version, pre-release VSIX); 2.9.0 is the preview already published, with the extension of 2.8.0 and a new knowledge index. The first two were proposed as 2.8.1 and 2.8.2 and renumbered on 2026-11-14, after the decision of 2026-11-09 that no 2.8.x release follows 2.8.0. Written 2026-11-04 against 2.8.0 and vscode-cmsis-solution `main` `a9c1e69` (nightly `1.72.1-82-20261104`; neither feature is in the released 1.72.0). Order swapped the same day: the API release is unblocked and builds the seam the documentation release calls through; the documentation release is planned by stages of what CMSIS Solution offers and waits for a document API. 2.9.3 was added on 2026-11-17 from vscode-cmsis-solution PR #713, read at head `d2c0b0c`; it needs only 2.9.1's seam and fixes #140. On 2026-11-17 2.9.2 was merged into release 2.9.3: one release with the documentation inventory and the managed build.
+
+| Proposal (file number) | Title | Size | Depends on | Decisions |
 |---|---|---|---|---|
-| 2.9.1 | [CMSIS Solution API V3 behind `cmsis_query` and `cmsis_action`](2.9.1-csolution-api-v3.md) | S + M + S + L + M + S | a CMSIS Solution release with `getApi(3)` | 6 |
-| 2.9.2 | [The target's documents through the CMSIS Solution document inventory](2.9.2-documentation-inventory.md) | stage 1 M + S, stage 2 S, stage 3 L | 2.9.1; the document manager (stage 1), a redraw on external changes (stage 2), V3 document methods (stage 3) | 6 |
+| 2.9.1 | [CMSIS Solution API V3 behind `cmsis_query` and `cmsis_action`](2.9.1-csolution-api-v3.md) | S + M + S + L + M + S | a CMSIS Solution release with `getApi(3)` | 6, decided 2026-11-17 (1 differs from the recommendation: V3 required, refused on 1.72.0); ships in release 2.9.3 |
+| 2.9.2 | [The target's documents through the CMSIS Solution document inventory](2.9.2-documentation-inventory.md) | stage 1 M + S, stage 2 S, stage 3 L | 2.9.1; the document manager (stage 1), a redraw on external changes (stage 2), V3 document methods (stage 3) | 6, decided 2026-11-17 (1, 3, 5 differ from the recommendations); ships in release 2.9.3 |
+| 2.9.3 | [Builds through the managed build operation of API V3](2.9.3-managed-build.md) | S + L + M + M + S | 2.9.1 phase 1; a CMSIS Solution build with vscode-cmsis-solution PR #713 (draft on 2026-11-17; implementation waits for the nightly of 2026-11-18) | 6, all decided as recommended 2026-11-17 |
 
 ## Reading the historical record
 
