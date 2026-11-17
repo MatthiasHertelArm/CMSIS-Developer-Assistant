@@ -1,0 +1,162 @@
+{
+  "started": "2026-11-16T16:05:02.102Z",
+  "vscode": "1.146.0",
+  "events": [
+    {
+      "t": 0,
+      "what": "state at start",
+      "csolutionActive": true,
+      "envActive": false,
+      "csolution": "1.72.1-86-20261109",
+      "env": "1.26.0"
+    },
+    {
+      "t": 0.3,
+      "what": "activate CMSIS Solution",
+      "ms": 0.024540960788726807,
+      "ok": true
+    },
+    {
+      "t": 0.4,
+      "what": "environment manager before first call",
+      "state": "inactive"
+    },
+    {
+      "t": 193.5,
+      "what": "getToolsEnvironment cold (first call)",
+      "ms": 192.92154198884964,
+      "ok": true,
+      "length": 2298
+    },
+    {
+      "t": 193.9,
+      "what": "getToolchains first call",
+      "ms": 0.24449998140335083,
+      "ok": true,
+      "count": 0
+    },
+    {
+      "t": 1199.6,
+      "what": "solution loaded",
+      "ms": 1005.5250840187073,
+      "solution": "Blinky.csolution.yml"
+    },
+    {
+      "t": 181655.1,
+      "what": "toolchains registered",
+      "ms": 180455.25604104996,
+      "count": 0,
+      "names": [],
+      "envActive": true
+    },
+    {
+      "t": 184028.4,
+      "what": "done"
+    }
+  ],
+  "warm": {
+    "API getToolsEnvironment": {
+      "n": 40,
+      "min": 0.674,
+      "median": 0.826,
+      "p95": 1.072,
+      "max": 2.767,
+      "fails": 0
+    },
+    "API getToolchains": {
+      "n": 40,
+      "min": 0.072,
+      "median": 0.075,
+      "p95": 0.126,
+      "max": 0.14,
+      "fails": 0
+    },
+    "file read tools-environment.yml": {
+      "n": 40,
+      "min": 0.09,
+      "median": 0.119,
+      "p95": 0.166,
+      "max": 0.698,
+      "fails": 0
+    },
+    "file read sync tools-environment.yml": {
+      "n": 40,
+      "min": 0.022,
+      "median": 0.027,
+      "p95": 0.042,
+      "max": 0.047,
+      "fails": 0
+    },
+    "API getCbuildRunFile": {
+      "n": 40,
+      "min": 0.051,
+      "median": 0.058,
+      "p95": 0.103,
+      "max": 0.255,
+      "fails": 0
+    },
+    "command cmsis-csolution.getCbuildRunFile": {
+      "n": 40,
+      "min": 0.051,
+      "median": 0.055,
+      "p95": 0.111,
+      "max": 0.171,
+      "fails": 0
+    },
+    "API getActiveTarget": {
+      "n": 40,
+      "min": 0.1,
+      "median": 0.105,
+      "p95": 0.264,
+      "max": 0.533,
+      "fails": 0
+    },
+    "command cmsis-csolution.getActiveTargetSet": {
+      "n": 40,
+      "min": 0.095,
+      "median": 0.109,
+      "p95": 0.189,
+      "max": 0.704,
+      "fails": 0
+    },
+    "API getTargets": {
+      "n": 40,
+      "min": 0,
+      "median": 0,
+      "p95": 0.004,
+      "max": 0.055,
+      "fails": 0
+    },
+    "API getDebuggers": {
+      "n": 40,
+      "min": 5.771,
+      "median": 6.57,
+      "p95": 13.799,
+      "max": 17.925,
+      "fails": 0
+    }
+  },
+  "sameAsFile": false,
+  "api": {
+    "length": 2298,
+    "tools": [
+      "pyOCD",
+      "CMSIS-Toolbox",
+      "Arm GNU GDB"
+    ],
+    "pathEntries": 3
+  },
+  "file": {
+    "length": 3322,
+    "tools": [
+      "pyOCD",
+      "CMSIS-Toolbox",
+      "compilers.arm.armclang",
+      "tools.kitware.cmake",
+      "tools.ninja.build.ninja",
+      "Arm GNU GDB",
+      "sdsio-server"
+    ],
+    "pathEntries": 7
+  }
+}

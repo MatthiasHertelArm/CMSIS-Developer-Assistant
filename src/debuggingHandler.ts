@@ -94,6 +94,7 @@ import {
     actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction, stateAfterStart,
 } from './handler/cmsisAction';
 import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
+import { answersSolutionKind, querySolution, type SolutionQuery } from './core/solutionQuery';
 import { acquireSolutionApi, settleWithin, type ApiPackId } from './core/solutionApi';
 import type { SolutionFileAnswer } from './core/solutionAnswers';
 import { packInstalledIn } from './core/packInstall';
@@ -2173,9 +2174,11 @@ export class DebuggingHandler
     }
 
     /**
-     * `cmsis_query` (#41, the catalog slice): boards, devices and the examples
-     * of a board or device from CMSIS Solution's API version 2. Needs no
-     * solution and no session; activates the CMSIS Solution extension when it
+     * `cmsis_query` (#41): boards, devices and the examples of a board or
+     * device from CMSIS Solution's catalog (API version 2), and with API
+     * version 3 packs, toolchains, debug adapters and the tools environment
+     * (#17, `solutionQuery.ts`). Needs no solution and no session (the pack
+     * scopes `used` and `missing` need a loaded one); activates the CMSIS Solution extension when it
      * is installed but inactive. The extension's first list request fills its
      * catalog from Arm's web service, which can outlast the call: the query's
      * own deadline, and the fence behind it, answer `running` then, like a
@@ -2186,6 +2189,10 @@ export class DebuggingHandler
             const host = this.host();
             const deadline = host.now() + QUERY_FENCE_MS - QUERY_MARGIN_MS;
             const api = await acquireSolutionApi(host.solutionExtension(), `cmsis_query {what:'${args.what}'}`, host);
+            if (answersSolutionKind(args.what)) {
+                const redact: RedactCallback | undefined = redactionEnabled() ? (name, value) => redactVariableValue(name, value) : undefined;
+                return querySolution(api, args as SolutionQuery, host, deadline, redact);
+            }
             return queryCatalog(api, args, host, deadline, (board, ms) => webExampleOrigins(host.webCatalogFetch, board, ms, host),
                 (pack) => this.packInstalled(pack));
         }, { advice: QUERY_FENCE_ADVICE, capStatus: 'running' });

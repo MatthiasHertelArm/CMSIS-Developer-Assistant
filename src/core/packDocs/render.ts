@@ -30,15 +30,59 @@ function unitLabel(d: DocRef): string {
     return d.unit === 'section' ? '§' : 'p';
 }
 
-export function docState(d: DocRef): string {
-    if (d.source === 'web' && !d.cached) {
-        return d.format === 'html' ? 'web — HTML on arm.com, not fetchable in this version' : `web — not fetched (fetch_doc { doc: '${d.id}' })`;
+/** ` at <host>` of a URL, or nothing. */
+function hostOf(url: string | undefined): string {
+    try {
+        return url ? ` at ${new URL(url).hostname}` : '';
+    } catch {
+        return '';
     }
-    if (d.source === 'web' && !d.indexed) { return `fetched${d.revision ? ` ${d.revision}` : ''}, not indexed yet`; }
-    if (d.missing) { return 'missing on disk'; }
-    if (d.unsupported) { return 'not a PDF'; }
-    if (d.indexed) { return `indexed${d.revision ? ` ${d.revision}` : ''}, ${d.pages ?? '?'} ${unitLabel(d)}`; }
-    return `${formatBytes(d.sizeBytes)}, not indexed yet`;
+}
+
+/** Whether `d` is read from the copy CMSIS Solution downloaded or imported. */
+function fromSolutionCopy(d: DocRef): boolean {
+    return d.inventory?.copy !== undefined && d.path === d.inventory.copy;
+}
+
+export function docState(d: DocRef): string {
+    const view = d.service && d.source !== 'web' ? (d.service.scope === 'project' ? ' (project document)' : ' (added by the user)')
+        : d.inventory?.user ? ' (added in the CMSIS view)' : fromSolutionCopy(d) && d.source === 'web' ? ' (CMSIS Solution\'s copy)' : '';
+    if (d.source === 'web' && !d.cached) {
+        if (d.format === 'html') { return 'web — HTML on arm.com, not fetchable in this version'; }
+        // The document service's state first (2.9.2): its request and failure, in the words of its view.
+        if (d.service?.requested !== undefined) {
+            const kind = d.service.error?.kind;
+            if (kind === 'login-required' || kind === 'not-pdf') {
+                return `web — requested, needs the user: login or manual download${hostOf(d.url)}; they open it from ${d.service.view}, `
+                    + 'download it in a browser and use Import a File there';
+            }
+            return `web — requested in ${d.service.view}${d.service.error ? ` (${d.service.error.kind}${d.service.error.detail ? `: ${d.service.error.detail.slice(0, 80)}` : ''})` : ''}; `
+                + `Download there or fetch_doc { doc: '${d.id}' } tries again`;
+        }
+        if (d.inventory?.copy !== undefined) {
+            return 'web — CMSIS Solution\'s copy is gone (Remove Document in the CMSIS view); Download Document there, or fetch_doc, gets it again';
+        }
+        if (d.fetchFailure !== undefined && /\b(401|403)\b|not a pdf|text\/html|login|forbidden|unauthori[sz]ed/i.test(d.fetchFailure)) {
+            return `web — needs the user: login or manual download${hostOf(d.url)}; they download it in a browser and use Import Document on it `
+                + `in the CMSIS view${d.inventory?.parent ? '' : ', or drop it into the workspace docs/ folder'}`;
+        }
+        if (d.inventory?.error?.startsWith('Requested by the agent:')) {
+            return `web — requested in the CMSIS view (${d.inventory.error.slice('Requested by the agent:'.length).trim()})`;
+        }
+        if (d.inventory?.error) {
+            return `web — download failed in the CMSIS view (${d.inventory.error}); fetch_doc { doc: '${d.id}' } tries again, `
+                + 'or the user downloads it and uses Import Document on it in the CMSIS view';
+        }
+        if (d.fetchFailure !== undefined) {
+            return `web — fetch_doc failed (${d.fetchFailure.replace(/\s+/g, ' ').slice(0, 100)}); it can be tried again`;
+        }
+        return `web — not fetched (fetch_doc { doc: '${d.id}' })`;
+    }
+    if (d.source === 'web' && !d.indexed) { return `fetched${d.revision ? ` ${d.revision}` : ''}${view}, not indexed yet`; }
+    if (d.missing) { return d.inventory?.user ? 'file not found: removed or moved since it was added in the CMSIS view' : 'missing on disk'; }
+    if (d.unsupported) { return `not a PDF${view}`; }
+    if (d.indexed) { return `indexed${d.revision ? ` ${d.revision}` : ''}, ${d.pages ?? '?'} ${unitLabel(d)}${view}`; }
+    return `${formatBytes(d.sizeBytes)}${view}, not indexed yet`;
 }
 
 function docRow(d: DocRef): string {
@@ -49,9 +93,6 @@ function docRow(d: DocRef): string {
 export interface DocListInfo {
     /** Workspace docs folders that exist, for the group header. */
     workspaceDirs?: string[];
-    /** The user documents folder and the sub-folders that matched. */
-    userDir?: string;
-    userMatched?: string[];
     /** `Cortex-M33 r0p0 (Armv8-M)` — for the Arm documents group header. */
     processors?: string;
 }
@@ -77,7 +118,8 @@ export function renderDocList(resolution: string, docs: DocRef[], notes: string[
         lines.push(INTERNET_HINT);
         return lines.join('\n');
     }
-    const packDocs = docs.filter(d => d.scope !== 'workspace' && d.scope !== 'arm' && d.scope !== 'user');
+    const packDocs = docs.filter(d => d.scope !== 'workspace' && d.scope !== 'arm' && d.scope !== 'user' && d.scope !== 'project');
+    const projectDocs = docs.filter(d => d.scope === 'project');
     const armDocs = docs.filter(d => d.scope === 'arm');
     const userDocs = docs.filter(d => d.scope === 'user');
     const wsDocs = docs.filter(d => d.scope === 'workspace');
@@ -91,8 +133,14 @@ export function renderDocList(resolution: string, docs: DocRef[], notes: string[
         for (const d of arm.shown) { lines.push(armRow(d)); }
         if (arm.hidden) { lines.push(`  … ${arm.hidden} more`); }
     }
+    if (projectDocs.length) {
+        lines.push('Project documents (.cmsis/docs.yml of the csolution, shared with the project):');
+        const p = truncateList(projectDocs, 30);
+        for (const d of p.shown) { lines.push(docRow(d)); }
+        if (p.hidden) { lines.push(`  … ${p.hidden} more`); }
+    }
     if (userDocs.length) {
-        lines.push(`User documents (${info.userDir ?? 'user documents folder'}${info.userMatched?.length ? `: ${info.userMatched.join(', ')}` : ''}):`);
+        lines.push('Documents added by the user (the document service):');
         const u = truncateList(userDocs, 30);
         for (const d of u.shown) { lines.push(docRow(d)); }
         if (u.hidden) { lines.push(`  … ${u.hidden} more`); }
@@ -183,7 +231,10 @@ export function renderFetch(doc: DocRef, outcome: FetchOutcome | undefined, load
     if (outcome?.ok) {
         const what = [doc.title, edition, outcome.record.filename, size].filter(Boolean).join(', ');
         lines.push(`Fetched ${doc.id} — ${what} → indexed ${loaded.meta.pageCount} ${unitLabel(doc)} in ${(ms / 1000).toFixed(1)} s.`);
-        lines.push(`From ${doc.url} (${outcome.resolver}); cached in the extension storage, not in the workspace.`);
+        lines.push(`From ${doc.url} (${outcome.resolver}); ${doc.service ? `kept by the document service (${doc.service.view}), not in the workspace` : 'cached in the extension storage, not in the workspace'}.`);
+    } else if (fromSolutionCopy(doc)) {
+        lines.push(`Downloaded by CMSIS Solution (${doc.path}): ${doc.id} — ${[doc.title, edition, size].filter(Boolean).join(', ')}; `
+            + `indexed ${loaded.meta.pageCount} ${unitLabel(doc)}, nothing downloaded again.`);
     } else {
         lines.push(`Already fetched ${doc.id} — ${[doc.title, edition, size].filter(Boolean).join(', ')}; indexed ${loaded.meta.pageCount} ${unitLabel(doc)}. Pass refresh: true to download again.`);
     }
@@ -206,7 +257,10 @@ export function renderFetchFailure(
 ): string {
     const tries = attempts > 1 ? ` (${attempts} attempts failed)` : '';
     const lines: string[] = [`Could not fetch ${doc.id}${tries}: ${outcome.error}.`];
-    if (attempts > 1 && dropFolder) {
+    if (attempts > 1 && doc.service !== undefined) {
+        lines.push(`Do not call fetch_doc for it again: ask the user to download the PDF and use Import a File on it in ${doc.service.view}; `
+            + 'the next fetch_doc or search reads that copy.');
+    } else if (attempts > 1 && dropFolder) {
         lines.push(`Do not call fetch_doc for it again: ask the user to download the PDF into ${dropFolder} in the workspace; `
             + 'list_target_docs then lists it as a workspace document.');
     }
@@ -216,7 +270,14 @@ export function renderFetchFailure(
         if (known) { lines.push(`Document: ${known}.`); }
     }
     if (doc.url) { lines.push(`URL: ${doc.url}`); }
-    if (dropFolder && attempts <= 1) {
+    if (doc.service !== undefined) {
+        lines.push(`The request is recorded in ${doc.service.view}: ask the user to use Download there, or, when the site needs a login, `
+            + 'to open the page, download the PDF and use Import a File on the document; the next fetch_doc reads that copy.');
+    } else if (doc.inventory?.parent !== undefined && doc.inventory.parent.tag !== 'common') {
+        lines.push('The CMSIS view lists this document for the target: ask the user to use Download Document on it there, or, when the site '
+            + 'needs a login, to open the URL, download the PDF and use Import Document on it; the next fetch_doc reads that copy.');
+    }
+    if (dropFolder && attempts <= 1 && doc.service === undefined) {
         lines.push(`Alternative: download the PDF yourself into ${dropFolder} in the workspace; list_target_docs then lists it as a workspace document.`);
     }
     return lines.join('\n');

@@ -27,6 +27,19 @@ import { looksLikeBuildLog, parseBuildLog, readBuildLog, shortPath } from '../co
 import { BUILDINFO_FIXTURES } from './buildInfoElf.test';
 
 suite('buildInfo/buildLog', () => {
+    test('ninja\'s own error line is an error with the missing file (FRDM-MCXA156 run, 2026-11-17)', () => {
+        const summary = parseBuildLog([
+            'CMake 4.2.1 or newer is recommended for CMSIS-Toolbox. You are using CMake 3.31.5.',
+            "ninja: error: '/ws/sds_recordings/p3t1755_avg.5.sds', needed by '/ws/HelloExecutorch/model/src/model_pte.h', missing and no known rule to make it",
+        ].join('\n'), 'build.log');
+        assert.strictEqual(summary.errors, 1);
+        assert.strictEqual(summary.ok, false);
+        const [d] = summary.diagnostics;
+        assert.strictEqual(d.tool, 'ninja');
+        assert.strictEqual(d.file, '/ws/sds_recordings/p3t1755_avg.5.sds');
+        assert.match(d.message, /^missing and no known rule to make it \(needed by .*model_pte\.h\)$/);
+    });
+
     test('a failed cbuild run: contexts, status, folded diagnostics of every tool', () => {
         const s = readBuildLog(path.join(BUILDINFO_FIXTURES, 'build-failed.log'));
         assert.deepStrictEqual(s.contexts, ['Blinky.Debug+NUCLEO-F756ZG', 'Blinky.Debug+FVP']);

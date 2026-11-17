@@ -33,9 +33,15 @@ import { effectivePackRoot } from './core/packDocs/host';
 import { ActiveContextHint, formatPackId } from './core/packDocs/cbuildRun';
 import { namedPackFolders } from './core/packDocs/targetDocs';
 import { solutionNameOf, targetTypeOf } from './core/solutionAnswers';
+import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
+import { peekSolutionApi } from './core/solutionApi';
+import { solutionDocumentService } from './core/packDocs/documentApi';
+import { documentEngine } from './core/packDocs/documentEngine';
+import type { DocumentService } from './docService/contract';
+import { EmulatedDocumentService } from './docService/emulator';
 import { withTimeout } from './utils/timeout';
 import { toolchainPackRoot } from './utils/toolchainPackRoot';
-import { activeCbuildRunFile, activePackFolders } from './utils/solutionQueries';
+import { activeCbuildRunFile, activeHardwareNames, activePackFolders, solutionGetter } from './utils/solutionQueries';
 import { PackDocsHandler } from './packDocsHandler';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { projectFacts } from './core/knowledge/projectFacts';
@@ -89,6 +95,8 @@ export function readPackDocsSettings(): PackDocsSettings {
         includeUnlisted: c.get<boolean>('includeUnlisted', defaultSettings.includeUnlisted),
         workspaceDocDirs: c.get<string[]>('workspaceDocDirs', defaultSettings.workspaceDocDirs),
         userDocsDir: c.get<string>('userDocsDir', defaultSettings.userDocsDir),
+        inventoryRequests: c.get<boolean>('inventoryRequests', false),
+        documentService: c.get<string>('documentService', 'auto') === 'emulated' ? 'emulated' : 'auto',
     };
 }
 
@@ -126,8 +134,8 @@ async function findFiles(glob: string, max: number): Promise<string[]> {
 async function activeContext(): Promise<ActiveContextHint | undefined> {
     try {
         const [file, set] = await Promise.all([
-            withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getSolutionFile'))),
-            withTimeout('cmsis getActiveTargetSet', 3_000, Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.getActiveTargetSet'))),
+            withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(solutionGetter('cmsis-csolution.getSolutionFile'))),
+            withTimeout('cmsis getActiveTargetSet', 3_000, Promise.resolve(solutionGetter('cmsis-csolution.getActiveTargetSet'))),
         ]);
         const solution = solutionNameOf(file);
         const targetType = targetTypeOf(set);
@@ -157,6 +165,8 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         // storage; a user coming from the standalone CMSIS Pack Docs
         // extension re-extracts once.
         storageDir: path.join(context.globalStorageUri.fsPath, 'packdocs'),
+        inventoryFile: path.join(os.homedir(), '.cmsis', 'docs.yml'),
+        documentService: () => documentServiceOf(context),
         assetsDir: path.join(context.extensionPath, 'assets'),
         settings: () => readPackDocsSettings(),
         log: logger,
@@ -168,7 +178,48 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
         activeContext,
         activeCbuildRunFile: () => activeCbuildRunFile(),
         activePackFolders: () => activePackFolders(),
+        solutionHardware: () => activeHardwareNames(),
     };
+}
+
+/** Where the user sees and resolves the documents of each service. */
+export const SOLUTION_DOCUMENTS_VIEW = 'the CMSIS view';
+export const EMULATED_DOCUMENTS_VIEW = 'the Target Documents view';
+
+let emulated: EmulatedDocumentService | undefined;
+
+/** This window's emulated document service, created on first use; its store is in the extension's global storage. */
+export function emulatedDocumentService(context: vscode.ExtensionContext): EmulatedDocumentService {
+    if (emulated === undefined) {
+        const service = new EmulatedDocumentService({
+            root: path.join(context.globalStorageUri.fsPath, 'docservice'),
+            watch: true,
+            engine: documentEngine({
+                fetchFn: (url, init) => fetch(url, init),
+                userAgent: `cmsis-developer-assistant/${SERVER_VERSION}`,
+                log: logger,
+                timeoutMs: 600_000,
+                maxBytes: readPackDocsSettings().maxPdfMb * 1024 * 1024,
+            }),
+        });
+        emulated = service;
+        context.subscriptions.push({ dispose: () => service.dispose() });
+    }
+    return emulated;
+}
+
+/**
+ * The document service the setting chooses: CMSIS Solution's when it offers
+ * one (`auto`), else the emulator.
+ */
+export function documentServiceOf(context: vscode.ExtensionContext): { service: DocumentService; view: string } {
+    if ((readPackDocsSettings().documentService ?? 'auto') === 'auto') {
+        const fromSolution = solutionDocumentService(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)));
+        if (fromSolution) {
+            return { service: fromSolution, view: SOLUTION_DOCUMENTS_VIEW };
+        }
+    }
+    return { service: emulatedDocumentService(context), view: EMULATED_DOCUMENTS_VIEW };
 }
 
 /** The knowledge handler's window: the two settings read per call, the project from the other two hosts. */

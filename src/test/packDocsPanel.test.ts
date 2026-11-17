@@ -27,6 +27,10 @@ suite('Pack Docs panel commands', () => {
         assert.strictEqual(panelCommand('cmsis-developer-assistant.importUserDoc'), 'cmsis-developer-assistant.importUserDoc');
     });
 
+    test('the Store tab\'s link to the Target Documents view is run', () => {
+        assert.strictEqual(panelCommand('cmsisDeveloperAssistant.targetDocuments.focus'), 'cmsisDeveloperAssistant.targetDocuments.focus');
+    });
+
     test('any other id, or a value that is not a string, is refused', () => {
         const refused: unknown[] = [
             'workbench.action.terminal.new', 'cmsis-developer-assistant.configure', 'CMSIS-DEVELOPER-ASSISTANT.IMPORTUSERDOC',

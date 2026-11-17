@@ -132,6 +132,7 @@ import { currentCallContext } from '../core/callContext';
 import { failedResponseMessage } from '../core/problemFeed';
 import type { ProblemJournal } from '../core/problemJournal';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
+import { peekSolutionApi, requireV3Method, v3Method, type ApiConvertResult, type SolutionApi } from '../core/solutionApi';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import {
     activeLaunchConfigurations,
@@ -153,6 +154,7 @@ import type { GdbPortReservation } from '../core/gdbPortReservations';
 import { cbuildRunDebugger, cbuildRunGdbPorts } from '../core/packDocs/cbuildRun';
 import { AGENT_START_WINDOW_MS, expectAgentStart, FRAME_FOCUS_WAIT_MS, type StartFocusWatch } from '../utils/sessionStateTracker';
 import { findSolutionFiles } from '../utils/solutionFiles';
+import { resetApiToolsEnvironment, solutionGetter } from '../utils/solutionQueries';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
 import { survivesWindowReload } from '../core/clientHosting';
 import { logger } from '../utils/logger';
@@ -177,7 +179,7 @@ import { runOutputsOf } from '../runOutputCapture';
 import { FVP_BREAK_FIRST, NO_FRAME_SELECTED } from './sessionText';
 import { failedTaskProgram, gdbServerMissingHint } from './taskProgram';
 
-export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'activate_environment' | 'load' | 'erase' | 'run' | 'load_and_run'
+export type CmsisAction = 'build' | 'rebuild' | 'clean' | 'refresh' | 'convert' | 'activate_environment' | 'load' | 'erase' | 'run' | 'load_and_run'
     | 'load_and_debug' | 'attach' | 'detach' | 'stop_run' | 'stop_build' | 'status' | 'open_solution' | 'install_pack' | 'create_solution';
 
 /**
@@ -219,7 +221,7 @@ const ACTION_COMMANDS: ReadonlyMap<string, string> = new Map([
 const TASK_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'load', 'erase', 'run', 'load_and_run']);
 const SESSION_ACTIONS: ReadonlySet<string> = new Set(['load_and_debug', 'attach']);
 /** Actions whose default wait is the long one: they wait for a task. */
-const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'refresh', 'activate_environment', 'load', 'erase', 'run',
+const LONG_WAIT_ACTIONS: ReadonlySet<string> = new Set(['build', 'rebuild', 'clean', 'refresh', 'convert', 'activate_environment', 'load', 'erase', 'run',
     'load_and_run', 'load_and_debug', 'status', 'install_pack', 'create_solution']);
 
 /** Waits without a positive `timeoutMs`: 60 s for the task actions and status (#12), 30 s for the rest. */
@@ -333,7 +335,7 @@ interface SolutionAnswer {
 async function activeSolution(): Promise<SolutionAnswer> {
     try {
         const answer: unknown = await withTimeout('cmsis getSolutionFile', QUERY_MS,
-            () => Promise.resolve(vscode.commands.executeCommand<unknown>('cmsis-csolution.getSolutionFile')));
+            () => Promise.resolve(solutionGetter('cmsis-csolution.getSolutionFile')));
         const { active, file } = solutionAnswerOf(answer);
         if (!active) {
             return { active: false, description: 'none' };
@@ -348,7 +350,7 @@ async function activeSolution(): Promise<SolutionAnswer> {
 export async function activeTargetName(): Promise<string | undefined> {
     try {
         const answer: unknown = await withTimeout('cmsis getActiveTargetSet', QUERY_MS,
-            () => Promise.resolve(vscode.commands.executeCommand<unknown>('cmsis-csolution.getActiveTargetSet')));
+            () => Promise.resolve(solutionGetter('cmsis-csolution.getActiveTargetSet')));
         return activeTargetSetOf(answer);
     } catch {
         return undefined;
@@ -383,9 +385,30 @@ function targetSettingsFolder(solutionPath: string, host: HandlerHost): string {
 }
 
 /**
- * Make `wanted` the extension's active target: write the selection into
- * cmsis.json, re-activate the solution, and poll until the extension
- * reports it. Each failure says where it stopped and how to do it by hand.
+ * The spelling of `name` among the targets API version 3 declares
+ * (`getTargets`, case-sensitive in `setActiveTarget`): the exact one, else
+ * the one that differs only in case. Undefined when the API has no
+ * `getTargets`, does not answer in time, or lists no such target: then the
+ * switch goes through cmsis.json.
+ */
+async function apiTargetSpelling(getTargets: () => PromiseLike<string[]>, name: string): Promise<string | undefined> {
+    try {
+        const targets = await withTimeout('cmsis getTargets', QUERY_MS, () => Promise.resolve(getTargets()));
+        if (!Array.isArray(targets)) {
+            return undefined;
+        }
+        return targets.find((target) => target === name) ?? targets.find((target) => target.toLowerCase() === name.toLowerCase());
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Make `wanted` the extension's active target and poll until the extension
+ * reports it. With API version 3 (`getTargets`, `setActiveTarget`), and a
+ * target it declares, the extension switches itself; otherwise the
+ * selection is written into cmsis.json and the solution re-activated, the
+ * 1.72.0 way. Each failure says where it stopped and how to do it by hand.
  */
 async function switchActiveTarget(
     solutionPath: string | undefined,
@@ -431,6 +454,28 @@ async function switchActiveTarget(
         return { switched: false, code: 'INVALID_ARGUMENT', reason: `${resolution.reason}. Active target: '${was}'. Declared targets: ${choices}.` };
     }
 
+    const api = peekSolutionApi(host.solutionExtension());
+    const getTargets = v3Method(api, 'getTargets');
+    const setActiveTarget = v3Method(api, 'setActiveTarget');
+    const spelling = getTargets && setActiveTarget ? await apiTargetSpelling(getTargets, resolution.name) : undefined;
+    if (setActiveTarget !== undefined && spelling !== undefined) {
+        try {
+            await withTimeout('cmsis setActiveTarget', ACTIVATION_MS, () => Promise.resolve(setActiveTarget(spelling)));
+        } catch (caught) {
+            if (caught instanceof HardwareTimeoutError) {
+                // The selection is saved before the refresh it waits for: the poll tells whether it took.
+                return verifySwitch(wanted, `asked CMSIS Solution to select '${spelling}' (its refresh still running after ${ACTIVATION_MS / 1000} s)`, host);
+            }
+            return {
+                switched: false,
+                code: 'INTERNAL',
+                reason: `the CMSIS Solution extension refused to select '${spelling}' (setActiveTarget: ${failureText(caught)}). Active target: '${was}'.`,
+                hint: SWITCH_BY_HAND,
+            };
+        }
+        return verifySwitch(wanted, `selected '${spelling}' through the CMSIS Solution API`, host);
+    }
+
     const folder = targetSettingsFolder(solutionPath, host);
     const selectionFile = path.join(folder, '.vscode', 'cmsis.json');
     try {
@@ -462,6 +507,15 @@ async function switchActiveTarget(
         };
     }
 
+    return verifySwitch(wanted, `wrote '${resolution.name}' to ${selectionFile} and re-activated the solution`, host);
+}
+
+/**
+ * Poll until the extension reports `wanted` as its active target, for at
+ * most {@link SWITCH_VERIFY_MS}; `done` says what the switch did, for the
+ * failure text.
+ */
+async function verifySwitch(wanted: TargetRef, done: string, host: HandlerHost): Promise<SwitchResult> {
     const giveUpAt = host.now() + SWITCH_VERIFY_MS;
     let reported: string | undefined;
     for (;;) {
@@ -477,7 +531,7 @@ async function switchActiveTarget(
     return {
         switched: false,
         code: 'INTERNAL',
-        reason: `wrote '${resolution.name}' to ${selectionFile} and re-activated the solution, but the CMSIS Solution extension `
+        reason: `${done}, but the CMSIS Solution extension `
             + `still reports '${reported ?? '(none)'}' as the active target after 15 s.`,
         hint: SWITCH_BY_HAND,
     };
@@ -1642,9 +1696,11 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
                 'Call stop_debugging first, then repeat this call.');
         }
         wanted = listed;
+        const activate = v3Method(peekSolutionApi(host.solutionExtension()), 'activateSolution');
         try {
-            await withTimeout('cmsis activateSolution', ACTIVATION_MS,
-                () => Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.activateSolution', wanted)));
+            await withTimeout('cmsis activateSolution', ACTIVATION_MS, () => Promise.resolve(activate !== undefined
+                ? activate(wanted)
+                : vscode.commands.executeCommand('cmsis-csolution.activateSolution', wanted)));
         } catch (caught) {
             if (caught instanceof HardwareTimeoutError) {
                 throw new ToolError('TASK_FAILED',
@@ -1812,6 +1868,10 @@ export async function runCmsisAction(
         throw await whyNoSolution(`CMSIS '${action}'`, solution.description, host, executor.getDiagnostics().serverVersion);
     }
 
+    if (action === 'convert') {
+        // Refused before a target switch: 1.72.0 has no convertSolution.
+        requireV3Method(peekSolutionApi(host.solutionExtension()) ?? ({} as SolutionApi), 'convertSolution', `CMSIS 'convert'`);
+    }
     let active = await activeTargetName();
     if (action === 'stop_build') {
         // It stops whatever builds, whichever target: never a target switch first.
@@ -1864,6 +1924,9 @@ export async function runCmsisAction(
         active = outcome.active;
     }
     const tag = active ? ` on ${active}${switchedFrom !== undefined ? `, switched from ${switchedFrom}` : ''}` : '';
+    if (action === 'convert') {
+        return convertSolution(host, tag, deadline);
+    }
 
     const command = ACTION_COMMANDS.get(action);
     if (command === undefined) {
@@ -2138,6 +2201,75 @@ function refreshResult(tag: string, index: string, messages: IdxMessages, tookMs
         + `and ${index} records ${counts}.${warned}Next: cmsis_action build.`;
 }
 
+/** The csolution messages a `convert` result lists at most. */
+const CONVERT_LINES = 12;
+
+/**
+ * `convert`: csolution convert of the active target set through API version
+ * 3 (`convertSolution`, without the RTE update and without a build). A
+ * build in flight is not converted under. Errors are a `TASK_FAILED` with
+ * csolution's lines; `detection` (a compiler or layer still to choose) says
+ * where to choose it.
+ */
+async function convertSolution(host: HandlerHost, tag: string, deadline: number): Promise<ToolText> {
+    const what = `CMSIS 'convert'${tag}`;
+    const convert = requireV3Method(peekSolutionApi(host.solutionExtension()) ?? ({} as SolutionApi), 'convertSolution', what);
+    const tracker = host.cmsisJobs();
+    const building = BUILD_ACTIONS.map((kind) => tracker.inFlight(kind)).find((job): job is Job => job !== undefined);
+    if (building) {
+        throw new ToolError('TASK_FAILED', `${what} not started: the ${building.action} (job ${building.id}) is still running, and its cbuild converts too.`,
+            'Wait for it with cmsis_action {action:\'status\'}; then repeat the call.');
+    }
+    const startedAt = host.now();
+    const waitMs = Math.max(1, deadline - DEADLINE_MARGIN_MS - startedAt);
+    let result: ApiConvertResult;
+    try {
+        result = await withTimeout('cmsis convertSolution', waitMs, () => Promise.resolve(convert({ updateRte: false })));
+    } catch (caught) {
+        if (caught instanceof HardwareTimeoutError) {
+            return {
+                text: `${what}: csolution convert is still running after ${formatDuration(waitMs)}; it has no cancel. `
+                    + 'Repeat cmsis_action convert later, or build: the build converts first.',
+                status: 'running',
+                data: { action: 'convert' },
+            };
+        }
+        throw new ToolError('TASK_FAILED', `❌ ${what}: CMSIS Solution's convertSolution rejected (${failureText(caught)}).`,
+            'get_recent_problems shows what the extension reported.');
+    }
+    return convertResult(what, result, host.now() - startedAt);
+}
+
+/** The answer of `convert`: ✅ with csolution's warnings, or ❌ with its errors first. Exported for the tests. */
+export function convertResult(what: string, result: ApiConvertResult, tookMs: number): ToolText {
+    const texts = (list: unknown): string[] => (Array.isArray(list) ? list.filter((line): line is string => typeof line === 'string' && line.trim().length > 0) : []);
+    const errors = texts(result?.logMessages?.errors);
+    const warnings = texts(result?.logMessages?.warnings);
+    const all = [...errors.map((line) => `error: ${line.trim()}`), ...warnings.map((line) => `warning: ${line.trim()}`)];
+    if (all.length === 0) {
+        all.push(...texts(result?.toolsOutputMessages).map((line) => line.trim()));
+    }
+    const lines = all.slice(0, CONVERT_LINES).map((line) => `  ${line}`);
+    if (all.length > CONVERT_LINES) {
+        lines.push(`  … ${all.length - CONVERT_LINES} more`);
+    }
+    const counts = `${errors.length} error(s), ${warnings.length} warning(s)`;
+    const detection = result?.detection === true
+        ? ' A compiler or a layer has to be chosen first: ask the user to choose it in Manage Solution Settings of the CMSIS view.' : '';
+    if (result?.success !== true) {
+        throw new ToolError('TASK_FAILED',
+            `❌ ${what}: csolution convert failed (severity ${String(result?.severity ?? 'unknown')}, ${counts}) after ${formatDuration(tookMs)}`
+                + `${lines.length > 0 ? `:\n${lines.join('\n')}` : '.'}${detection}`,
+            'Fix the first error (a missing pack: cmsis_query {what:\'packs\', scope:\'missing\', context}), then convert again.');
+    }
+    const warned = lines.length > 0 ? ` csolution's messages:\n${lines.join('\n')}\n` : ' ';
+    return {
+        text: `✅ ${what}: csolution convert succeeded after ${formatDuration(tookMs)} (${counts}, without the RTE update).${detection}${warned}Next: cmsis_action build.`,
+        status: 'ok',
+        data: { action: 'convert', success: true, severity: String(result.severity), detection: result.detection === true, errors: errors.length, warnings: warnings.length },
+    };
+}
+
 /** The tools a `activate_environment` result lists at most. */
 const ENVIRONMENT_TOOLS_LISTED = 12;
 /**
@@ -2205,7 +2337,9 @@ function staleEnvironmentNote(solutionPath: string, host: HandlerHost): string |
  * until that file has changed and stays unchanged for one more look, then
  * lists the tools it names. The command's promise is the end of the
  * activation (#139; Environment Manager 1.26.0 resolves it with `false` when
- * the activation failed): once it has resolved, the record gets
+ * the activation failed), unless the Environment Manager offers its
+ * activation events (`watchActivation()`), which then say when it ended or
+ * failed: once it has ended, the record gets
  * `ENVIRONMENT_REWRITE_GRACE_MS` to change, and a record that stays as it
  * was is answered at once — CMSIS Solution writes it only when its content
  * changes, so the environment was current already. A resolution that
@@ -2229,56 +2363,97 @@ async function activateEnvironment(issue: Issue, solutionPath: string): Promise<
     }
     const before = mtimeOf(environment);
     const issuedAt = host.now();
-    // What the command's promise settled with, once it has: the end of the activation.
+    // What the command's promise settled with, once it has: the end of the activation (#139). Where the promise
+    // settles at once instead (measured: 68 ms), the Environment Manager's own events say when the activation is over,
+    // so they decide whenever it offers them.
     const ended: { done: boolean; value?: unknown; failure?: ToolError } = { done: false };
-    await issueCommand(issue, 'activate_environment', (value) => {
-        Object.assign(ended, { done: true, value });
-    }, [vscode.Uri.file(configuration)], (failure) => {
-        Object.assign(ended, { done: true, failure });
-    });
-    const manifest = path.basename(configuration);
-    let seen: number | undefined;
-    let endedAt: number | undefined;
-    for (;;) {
-        const now = mtimeOf(environment);
-        if (now !== undefined && now !== before && now === seen) {
-            break;
-        }
-        seen = now;
-        if (ended.failure) {
-            throw ended.failure;
-        }
-        if (ended.done && ended.value === false && now === before) {
-            throw new ToolError('TASK_FAILED',
-                `❌ CMSIS 'activate_environment'${issue.tag}: the Arm Tools Environment Manager reports that the activation of ${manifest} failed `
-                    + `after ${formatDuration(host.now() - issuedAt)}; ${TOOLS_ENVIRONMENT_FILE} was not rewritten.`,
-                'Ask the user for the reason the Arm Tools output channel or the Arm Tools status bar item gives (a tool that could not be '
-                    + 'downloaded, a registry that could not be reached, a licence); fix it, then call cmsis_action activate_environment again.');
-        }
-        if (ended.done && endedAt === undefined) {
-            endedAt = host.now();
-        }
-        if (endedAt !== undefined && now === before && host.now() - endedAt >= ENVIRONMENT_REWRITE_GRACE_MS) {
-            return unchangedActivation(issue.tag, manifest, environment, endedAt - issuedAt);
-        }
-        if (host.now() >= answerBy(issue)) {
-            return {
-                text: `CMSIS 'activate_environment'${issue.tag} issued via '${issue.command}'; CMSIS Solution has not rewritten `
-                    + `${TOOLS_ENVIRONMENT_FILE} after ${formatDuration(host.now() - issuedAt)}. The Environment Manager may still download tools, `
-                    + 'or wait for the user in the window (a licence or an activation prompt): ask the user to look, then call '
-                    + 'cmsis_action activate_environment again — a second activation of the same manifest is harmless.',
-                status: 'running',
-            };
-        }
-        await host.sleep(REFRESH_POLL_MS);
-    }
-    let tools: ToolsEnvironment;
+    const activation = watchActivation(() => host.now());
     try {
-        tools = readToolsEnvironment(fs.readFileSync(environment, 'utf8'));
-    } catch (caught) {
-        throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${issue.tag}: ${environment} was rewritten, but it could not be read (${failureText(caught)}).`);
+        await issueCommand(issue, 'activate_environment', (value) => {
+            Object.assign(ended, { done: true, value });
+        }, [vscode.Uri.file(configuration)], (failure) => {
+            Object.assign(ended, { done: true, failure });
+        });
+        const manifest = path.basename(configuration);
+        let seen: number | undefined;
+        let endedAt: number | undefined;
+        for (;;) {
+            const now = mtimeOf(environment);
+            if (now !== undefined && now !== before && now === seen) {
+                break;
+            }
+            seen = now;
+            if (ended.failure) {
+                throw ended.failure;
+            }
+            if (((ended.done && ended.value === false) || activation.failed) && now === before) {
+                throw new ToolError('TASK_FAILED',
+                    `❌ CMSIS 'activate_environment'${issue.tag}: the Arm Tools Environment Manager reports that the activation of ${manifest} failed `
+                        + `after ${formatDuration(host.now() - issuedAt)}; ${TOOLS_ENVIRONMENT_FILE} was not rewritten.`,
+                    'Ask the user for the reason the Arm Tools output channel or the Arm Tools status bar item gives (a tool that could not be '
+                        + 'downloaded, a registry that could not be reached, a licence); fix it, then call cmsis_action activate_environment again.');
+            }
+            if (endedAt === undefined && activation.at !== undefined) {
+                endedAt = activation.at;
+            }
+            if (!activation.events && ended.done && endedAt === undefined) {
+                endedAt = host.now();
+            }
+            if (endedAt !== undefined && now === before && host.now() - endedAt >= ENVIRONMENT_REWRITE_GRACE_MS) {
+                // The API's environment from before the activation may lack the tools it just activated (measured: test/measure/solution-api).
+                resetApiToolsEnvironment();
+                return unchangedActivation(issue.tag, manifest, environment, endedAt - issuedAt);
+            }
+            if (host.now() >= answerBy(issue)) {
+                return {
+                    text: `CMSIS 'activate_environment'${issue.tag} issued via '${issue.command}'; CMSIS Solution has not rewritten `
+                        + `${TOOLS_ENVIRONMENT_FILE} after ${formatDuration(host.now() - issuedAt)}. The Environment Manager may still download tools, `
+                        + 'or wait for the user in the window (a licence or an activation prompt): ask the user to look, then call '
+                        + 'cmsis_action activate_environment again — a second activation of the same manifest is harmless.',
+                    status: 'running',
+                };
+            }
+            await host.sleep(REFRESH_POLL_MS);
+        }
+        let tools: ToolsEnvironment;
+        try {
+            tools = readToolsEnvironment(fs.readFileSync(environment, 'utf8'));
+        } catch (caught) {
+            throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${issue.tag}: ${environment} was rewritten, but it could not be read (${failureText(caught)}).`);
+        }
+        // The API's environment from before the activation may lack the tools it just activated (measured: test/measure/solution-api).
+        resetApiToolsEnvironment();
+        return activationResult(issue.tag, manifest, tools, host.now() - issuedAt);
+    } finally {
+        activation.dispose();
     }
-    return activationResult(issue.tag, manifest, tools, host.now() - issuedAt);
+}
+
+/** What the Environment Manager reported since `watchActivation` began: when an activation ended, or that one failed. */
+interface ActivationWatch {
+    /** Whether the Environment Manager offers its activation events at all. */
+    events: boolean;
+    at?: number;
+    failed?: boolean;
+    dispose(): void;
+}
+
+/** The Environment Manager's activation events (its API version 1), or a watch that never fires when it offers none. */
+function watchActivation(now: () => number): ActivationWatch {
+    const watch: ActivationWatch = { events: false, dispose: () => undefined };
+    try {
+        const exports = vscode.extensions.getExtension(ENVIRONMENT_EXTENSION)?.exports as { getApi?: (version: number) => unknown } | undefined;
+        const manager = exports?.getApi?.(1) as { onDidActivate?: vscode.Event<unknown>; onDidFailActivation?: vscode.Event<unknown> } | undefined;
+        const subscriptions = [
+            manager?.onDidActivate?.(() => { watch.at = now(); }),
+            manager?.onDidFailActivation?.(() => { watch.failed = true; }),
+        ].filter((s): s is vscode.Disposable => s !== undefined);
+        watch.events = subscriptions.length > 0;
+        watch.dispose = () => subscriptions.forEach((s) => s.dispose());
+    } catch (caught) {
+        logger.debug(`activate_environment: no activation events from ${ENVIRONMENT_EXTENSION} (${failureText(caught)})`);
+    }
+    return watch;
 }
 
 /** The tools of a record as indented lines, at most `ENVIRONMENT_TOOLS_LISTED` of them. */

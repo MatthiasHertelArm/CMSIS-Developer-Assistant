@@ -55,6 +55,7 @@ import {
     VSCODE_PATH_PLACE,
 } from '../core/programLookup';
 import type { ProblemJournal } from '../core/problemJournal';
+import { cachedApiToolsEnvironment } from '../utils/solutionQueries';
 import type { HandlerHost } from './host';
 
 /**
@@ -96,6 +97,15 @@ function toolsEnvironmentPath(host: HandlerHost, solutionPath: string | undefine
         }
         try {
             return readToolsEnvironment(text).path;
+        } catch {
+            return undefined;
+        }
+    }
+    // No file (a solution never converted): the environment CMSIS Solution's API last answered for the window.
+    const answered = cachedApiToolsEnvironment();
+    if (answered !== undefined) {
+        try {
+            return readToolsEnvironment(answered).path;
         } catch {
             return undefined;
         }

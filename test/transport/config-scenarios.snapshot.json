@@ -11911,9 +11911,34 @@
             "category": "CMSIS Developer Assistant"
           },
           {
-            "command": "cmsis-developer-assistant.openUserDocsFolder",
-            "title": "Open User Documents Folder",
+            "command": "cmsis-developer-assistant.targetDocs.refresh",
+            "title": "Refresh",
             "category": "CMSIS Developer Assistant"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.add",
+            "title": "Add Document…",
+            "category": "CMSIS Developer Assistant"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.download",
+            "title": "Download"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.import",
+            "title": "Import a File for This Document…"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.openSource",
+            "title": "Open the Vendor Page"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.dismiss",
+            "title": "Dismiss the Agent's Request"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.remove",
+            "title": "Remove"
           },
           {
             "command": "cmsis-developer-assistant.openPackDocsPanel",
@@ -11932,6 +11957,26 @@
           }
         ],
         "commandPalette": [
+          {
+            "command": "cmsis-developer-assistant.targetDocs.download",
+            "when": "false"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.import",
+            "when": "false"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.openSource",
+            "when": "false"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.remove",
+            "when": "false"
+          },
+          {
+            "command": "cmsis-developer-assistant.targetDocs.dismiss",
+            "when": "false"
+          },
           {
             "command": "cmsis-developer-assistant.resetPopupState",
             "when": "false"
@@ -12010,6 +12055,16 @@
             "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
             "type": "number",
             "default": 150
+          },
+          {
+            "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+            "type": "boolean",
+            "default": false
+          },
+          {
+            "key": "cmsis-developer-assistant.packDocs.documentService",
+            "type": "string",
+            "default": "auto"
           },
           {
             "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
@@ -12144,6 +12199,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -12166,10 +12225,6 @@
         },
         {
           "ev": "registerCommand",
-          "id": "cmsis-developer-assistant.openUserDocsFolder"
-        },
-        {
-          "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
         },
         {
@@ -12179,6 +12234,42 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
+          "ev": "createTreeView",
+          "id": "cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "subscribe",
+          "event": "treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.refresh"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.download"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.import"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.openSource"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.remove"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.dismiss"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.add"
         },
         {
           "ev": "getExtension",
@@ -12214,6 +12305,14 @@
         {
           "ev": "getExtension",
           "id": "ms-vscode.vscode-serial-monitor"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
+          ]
         },
         {
           "ev": "call",
@@ -12911,6 +13010,10 @@
               "fallback": 30000
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.documentService",
+              "fallback": "auto"
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.enabled",
               "fallback": true
             },
@@ -12921,6 +13024,10 @@
             {
               "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
               "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
@@ -12962,10 +13069,16 @@
             "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
-            "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
+            "cmsis-developer-assistant.targetDocs.refresh",
+            "cmsis-developer-assistant.targetDocs.download",
+            "cmsis-developer-assistant.targetDocs.import",
+            "cmsis-developer-assistant.targetDocs.openSource",
+            "cmsis-developer-assistant.targetDocs.remove",
+            "cmsis-developer-assistant.targetDocs.dismiss",
+            "cmsis-developer-assistant.targetDocs.add",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -12986,10 +13099,19 @@
             "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
-            "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
+            "<Object>",
+            "<Object>",
+            "event:treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments",
+            "command:cmsis-developer-assistant.targetDocs.refresh",
+            "command:cmsis-developer-assistant.targetDocs.download",
+            "command:cmsis-developer-assistant.targetDocs.import",
+            "command:cmsis-developer-assistant.targetDocs.openSource",
+            "command:cmsis-developer-assistant.targetDocs.remove",
+            "command:cmsis-developer-assistant.targetDocs.dismiss",
+            "command:cmsis-developer-assistant.targetDocs.add",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",
@@ -13166,6 +13288,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -13188,10 +13314,6 @@
         },
         {
           "ev": "registerCommand",
-          "id": "cmsis-developer-assistant.openUserDocsFolder"
-        },
-        {
-          "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
         },
         {
@@ -13201,6 +13323,42 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
+          "ev": "createTreeView",
+          "id": "cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "subscribe",
+          "event": "treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.refresh"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.download"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.import"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.openSource"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.remove"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.dismiss"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.add"
         },
         {
           "ev": "getExtension",
@@ -13238,6 +13396,14 @@
           "fn": "coordinator.start",
           "args": [
             "<context>"
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
           ]
         },
         {
@@ -13443,6 +13609,10 @@
               "fallback": 30000
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.documentService",
+              "fallback": "auto"
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.enabled",
               "fallback": true
             },
@@ -13453,6 +13623,10 @@
             {
               "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
               "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
@@ -13494,10 +13668,16 @@
             "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
-            "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
+            "cmsis-developer-assistant.targetDocs.refresh",
+            "cmsis-developer-assistant.targetDocs.download",
+            "cmsis-developer-assistant.targetDocs.import",
+            "cmsis-developer-assistant.targetDocs.openSource",
+            "cmsis-developer-assistant.targetDocs.remove",
+            "cmsis-developer-assistant.targetDocs.dismiss",
+            "cmsis-developer-assistant.targetDocs.add",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -13518,10 +13698,19 @@
             "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
-            "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
+            "<Object>",
+            "<Object>",
+            "event:treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments",
+            "command:cmsis-developer-assistant.targetDocs.refresh",
+            "command:cmsis-developer-assistant.targetDocs.download",
+            "command:cmsis-developer-assistant.targetDocs.import",
+            "command:cmsis-developer-assistant.targetDocs.openSource",
+            "command:cmsis-developer-assistant.targetDocs.remove",
+            "command:cmsis-developer-assistant.targetDocs.dismiss",
+            "command:cmsis-developer-assistant.targetDocs.add",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",
@@ -13675,6 +13864,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -13697,10 +13890,6 @@
         },
         {
           "ev": "registerCommand",
-          "id": "cmsis-developer-assistant.openUserDocsFolder"
-        },
-        {
-          "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
         },
         {
@@ -13710,6 +13899,42 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
+          "ev": "createTreeView",
+          "id": "cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "subscribe",
+          "event": "treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.refresh"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.download"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.import"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.openSource"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.remove"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.dismiss"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.add"
         },
         {
           "ev": "getExtension",
@@ -13743,6 +13968,14 @@
           "fn": "coordinator.start",
           "args": [
             "<context>"
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
           ]
         },
         {
@@ -13884,6 +14117,10 @@
               "fallback": 30000
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.documentService",
+              "fallback": "auto"
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.enabled",
               "fallback": true
             },
@@ -13894,6 +14131,10 @@
             {
               "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
               "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
@@ -13935,10 +14176,16 @@
             "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
-            "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
+            "cmsis-developer-assistant.targetDocs.refresh",
+            "cmsis-developer-assistant.targetDocs.download",
+            "cmsis-developer-assistant.targetDocs.import",
+            "cmsis-developer-assistant.targetDocs.openSource",
+            "cmsis-developer-assistant.targetDocs.remove",
+            "cmsis-developer-assistant.targetDocs.dismiss",
+            "cmsis-developer-assistant.targetDocs.add",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -13959,10 +14206,19 @@
             "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
-            "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
+            "<Object>",
+            "<Object>",
+            "event:treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments",
+            "command:cmsis-developer-assistant.targetDocs.refresh",
+            "command:cmsis-developer-assistant.targetDocs.download",
+            "command:cmsis-developer-assistant.targetDocs.import",
+            "command:cmsis-developer-assistant.targetDocs.openSource",
+            "command:cmsis-developer-assistant.targetDocs.remove",
+            "command:cmsis-developer-assistant.targetDocs.dismiss",
+            "command:cmsis-developer-assistant.targetDocs.add",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.resetPopupState",
@@ -14070,6 +14326,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -14092,10 +14352,6 @@
         },
         {
           "ev": "registerCommand",
-          "id": "cmsis-developer-assistant.openUserDocsFolder"
-        },
-        {
-          "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
         },
         {
@@ -14105,6 +14361,42 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
+          "ev": "createTreeView",
+          "id": "cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "subscribe",
+          "event": "treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.refresh"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.download"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.import"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.openSource"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.remove"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.dismiss"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.add"
         },
         {
           "ev": "getExtension",
@@ -14129,6 +14421,14 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.releaseSerialPort"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
+          ]
         },
         {
           "ev": "step",
@@ -14167,6 +14467,10 @@
               "fallback": 30000
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.documentService",
+              "fallback": "auto"
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.enabled",
               "fallback": true
             },
@@ -14177,6 +14481,10 @@
             {
               "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
               "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
@@ -14218,10 +14526,16 @@
             "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
-            "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
+            "cmsis-developer-assistant.targetDocs.refresh",
+            "cmsis-developer-assistant.targetDocs.download",
+            "cmsis-developer-assistant.targetDocs.import",
+            "cmsis-developer-assistant.targetDocs.openSource",
+            "cmsis-developer-assistant.targetDocs.remove",
+            "cmsis-developer-assistant.targetDocs.dismiss",
+            "cmsis-developer-assistant.targetDocs.add",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -14242,10 +14556,19 @@
             "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
-            "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
+            "<Object>",
+            "<Object>",
+            "event:treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments",
+            "command:cmsis-developer-assistant.targetDocs.refresh",
+            "command:cmsis-developer-assistant.targetDocs.download",
+            "command:cmsis-developer-assistant.targetDocs.import",
+            "command:cmsis-developer-assistant.targetDocs.openSource",
+            "command:cmsis-developer-assistant.targetDocs.remove",
+            "command:cmsis-developer-assistant.targetDocs.dismiss",
+            "command:cmsis-developer-assistant.targetDocs.add",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.resetPopupState",
@@ -14349,6 +14672,10 @@
           "returned": "<object>"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "executeCommand",
           "id": "cmsis-csolution.getPackRootPath",
           "args": []
@@ -14371,10 +14698,6 @@
         },
         {
           "ev": "registerCommand",
-          "id": "cmsis-developer-assistant.openUserDocsFolder"
-        },
-        {
-          "ev": "registerCommand",
           "id": "cmsis-developer-assistant.importUserDoc"
         },
         {
@@ -14384,6 +14707,42 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
+          "ev": "createTreeView",
+          "id": "cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "subscribe",
+          "event": "treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.refresh"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.download"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.import"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.openSource"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.remove"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.dismiss"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.add"
         },
         {
           "ev": "getExtension",
@@ -14417,6 +14776,14 @@
           "fn": "coordinator.start",
           "args": [
             "<context>"
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
           ]
         },
         {
@@ -14623,6 +14990,10 @@
               "fallback": 30000
             },
             {
+              "key": "cmsis-developer-assistant.packDocs.documentService",
+              "fallback": "auto"
+            },
+            {
               "key": "cmsis-developer-assistant.packDocs.enabled",
               "fallback": true
             },
@@ -14633,6 +15004,10 @@
             {
               "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
               "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
@@ -14674,10 +15049,16 @@
             "cmsis-developer-assistant.copyRecentProblems",
             "cmsis-developer-assistant.listTargetDocs",
             "cmsis-developer-assistant.indexTargetDocs",
-            "cmsis-developer-assistant.openUserDocsFolder",
             "cmsis-developer-assistant.importUserDoc",
             "cmsis-developer-assistant.openPackDocsPanel",
             "cmsis-developer-assistant.openKnowledgePanel",
+            "cmsis-developer-assistant.targetDocs.refresh",
+            "cmsis-developer-assistant.targetDocs.download",
+            "cmsis-developer-assistant.targetDocs.import",
+            "cmsis-developer-assistant.targetDocs.openSource",
+            "cmsis-developer-assistant.targetDocs.remove",
+            "cmsis-developer-assistant.targetDocs.dismiss",
+            "cmsis-developer-assistant.targetDocs.add",
             "cmsis-developer-assistant.configure",
             "cmsis-developer-assistant.resetPopupState",
             "cmsis-developer-assistant.selectTargetWindow",
@@ -14698,10 +15079,19 @@
             "<Object>",
             "command:cmsis-developer-assistant.listTargetDocs",
             "command:cmsis-developer-assistant.indexTargetDocs",
-            "command:cmsis-developer-assistant.openUserDocsFolder",
             "command:cmsis-developer-assistant.importUserDoc",
             "command:cmsis-developer-assistant.openPackDocsPanel",
             "command:cmsis-developer-assistant.openKnowledgePanel",
+            "<Object>",
+            "<Object>",
+            "event:treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments",
+            "command:cmsis-developer-assistant.targetDocs.refresh",
+            "command:cmsis-developer-assistant.targetDocs.download",
+            "command:cmsis-developer-assistant.targetDocs.import",
+            "command:cmsis-developer-assistant.targetDocs.openSource",
+            "command:cmsis-developer-assistant.targetDocs.remove",
+            "command:cmsis-developer-assistant.targetDocs.dismiss",
+            "command:cmsis-developer-assistant.targetDocs.add",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",

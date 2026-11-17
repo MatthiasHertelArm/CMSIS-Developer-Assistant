@@ -1198,7 +1198,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: convert with RTE update; convert: without it, no build (API v3); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1210,6 +1210,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "convert",
                   "activate_environment",
                   "load",
                   "erase",
@@ -1270,7 +1271,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -1280,7 +1281,11 @@
                 "enum": [
                   "boards",
                   "devices",
-                  "examples"
+                  "examples",
+                  "packs",
+                  "toolchains",
+                  "debuggers",
+                  "environment"
                 ]
               },
               "vendor": {
@@ -1302,6 +1307,18 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "installed",
+                  "used",
+                  "missing"
+                ]
+              },
+              "context": {
+                "type": "string"
               }
             },
             "required": [
@@ -1454,8 +1471,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60739,
-          "sha256": "2b4f0960957446db87073f6df90fae050d7e16fcf210bf129a8b6b4ff0eeb4f5"
+          "bytes": 60947,
+          "sha256": "f80eeb4deff1c6e8843efb1aae8080eacfcd3d5e17d19de9a3a9c08da3d5c8de"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -2719,7 +2736,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: convert with RTE update; convert: without it, no build (API v3); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2731,6 +2748,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "convert",
                   "activate_environment",
                   "load",
                   "erase",
@@ -2791,7 +2809,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2801,7 +2819,11 @@
                 "enum": [
                   "boards",
                   "devices",
-                  "examples"
+                  "examples",
+                  "packs",
+                  "toolchains",
+                  "debuggers",
+                  "environment"
                 ]
               },
               "vendor": {
@@ -2823,6 +2845,18 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "installed",
+                  "used",
+                  "missing"
+                ]
+              },
+              "context": {
+                "type": "string"
               }
             },
             "required": [
@@ -2975,8 +3009,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60739,
-          "sha256": "2b4f0960957446db87073f6df90fae050d7e16fcf210bf129a8b6b4ff0eeb4f5"
+          "bytes": 60947,
+          "sha256": "f80eeb4deff1c6e8843efb1aae8080eacfcd3d5e17d19de9a3a9c08da3d5c8de"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -4776,7 +4810,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: convert with RTE update; convert: without it, no build (API v3); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4788,6 +4822,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "convert",
                   "activate_environment",
                   "load",
                   "erase",
@@ -4848,7 +4883,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4858,7 +4893,11 @@
                 "enum": [
                   "boards",
                   "devices",
-                  "examples"
+                  "examples",
+                  "packs",
+                  "toolchains",
+                  "debuggers",
+                  "environment"
                 ]
               },
               "vendor": {
@@ -4880,6 +4919,18 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "installed",
+                  "used",
+                  "missing"
+                ]
+              },
+              "context": {
+                "type": "string"
               }
             },
             "required": [
@@ -5032,8 +5083,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60739,
-          "sha256": "2b4f0960957446db87073f6df90fae050d7e16fcf210bf129a8b6b4ff0eeb4f5"
+          "bytes": 60947,
+          "sha256": "f80eeb4deff1c6e8843efb1aae8080eacfcd3d5e17d19de9a3a9c08da3d5c8de"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -6755,7 +6806,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: convert with RTE update; convert: without it, no build (API v3); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6767,6 +6818,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "convert",
                   "activate_environment",
                   "load",
                   "erase",
@@ -6831,7 +6883,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6841,7 +6893,11 @@
                 "enum": [
                   "boards",
                   "devices",
-                  "examples"
+                  "examples",
+                  "packs",
+                  "toolchains",
+                  "debuggers",
+                  "environment"
                 ]
               },
               "vendor": {
@@ -6863,6 +6919,18 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "installed",
+                  "used",
+                  "missing"
+                ]
+              },
+              "context": {
+                "type": "string"
               }
             },
             "required": [
@@ -7057,8 +7125,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60739,
-          "sha256": "2b4f0960957446db87073f6df90fae050d7e16fcf210bf129a8b6b4ff0eeb4f5"
+          "bytes": 60947,
+          "sha256": "f80eeb4deff1c6e8843efb1aae8080eacfcd3d5e17d19de9a3a9c08da3d5c8de"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,
@@ -8866,7 +8934,7 @@
         },
         {
           "name": "cmsis_action",
-          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: Update RTE (\"use --update-rte\"); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution; needs no open project.",
+          "description": "Drives CMSIS Solution on the active csolution target like its panel buttons; each result names its target. build / rebuild / clean / load / erase / load_and_run wait for their task: ✅ or ❌ plus the exit code. A task still running at the wait returns status running: call status, never start it again. run: CMSIS Run alone, no build or flash — a probe's GDB server, then attach; an FVP hosts none. load_and_debug (flash + debug) and attach return the session state; stop_run / stop_build wait for the tasks. refresh: convert with RTE update; convert: without it, no build (API v3); activate_environment: re-resolve vcpkg-configuration.json. open_solution (path) opens and activates a csolution.",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8878,6 +8946,7 @@
                   "rebuild",
                   "clean",
                   "refresh",
+                  "convert",
                   "activate_environment",
                   "load",
                   "erase",
@@ -8942,7 +9011,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, or the examples and templates of a board or device, from CMSIS Solution's catalog (web and installed packs); no project needed. Patterns are case-insensitive regexes, tried against the name and the id, and as text with spaces, colons and dashes ignored (micro:bit finds microbit-v2). A first call may answer status running while the web catalog loads: repeat it.",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -8952,7 +9021,11 @@
                 "enum": [
                   "boards",
                   "devices",
-                  "examples"
+                  "examples",
+                  "packs",
+                  "toolchains",
+                  "debuggers",
+                  "environment"
                 ]
               },
               "vendor": {
@@ -8974,6 +9047,18 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "installed",
+                  "used",
+                  "missing"
+                ]
+              },
+              "context": {
+                "type": "string"
               }
             },
             "required": [
@@ -9168,8 +9253,8 @@
       "templates": [],
       "resourceText": {
         "cmsis-developer-assistant://docs/debug_instructions": {
-          "bytes": 60739,
-          "sha256": "2b4f0960957446db87073f6df90fae050d7e16fcf210bf129a8b6b4ff0eeb4f5"
+          "bytes": 60947,
+          "sha256": "f80eeb4deff1c6e8843efb1aae8080eacfcd3d5e17d19de9a3a9c08da3d5c8de"
         },
         "cmsis-developer-assistant://docs/troubleshooting/python": {
           "bytes": 9555,

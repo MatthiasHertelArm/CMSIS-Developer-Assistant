@@ -44,7 +44,9 @@ import {
 } from './pdscBooks';
 import { parseCbuildRunOutputs } from '../buildInfo/artifacts';
 import { ActivePackFolders, packFolderCandidates } from '../solutionAnswers';
-import { collectUserDocs, resolveUserDocsDir } from './userDocs';
+import { mergeInventory, readInventory } from './inventory';
+import { mergeServiceDocs } from './serviceDocs';
+import type { DocumentInfo } from '../../docService/contract';
 import { collectWorkspaceDocs } from './workspaceDocs';
 
 export interface TargetArgs {
@@ -78,6 +80,19 @@ export interface TargetResolution {
      * asked, names none, or names a folder that holds another pack.
      */
     packDirs?: { devicePack?: string; boardPack?: string };
+    /**
+     * The device and board as CMSIS Solution's API version 3 names them
+     * (`getDeviceName`, `getBoardName`) for the active target, which its
+     * document inventory is keyed by; absent without the API, or for a
+     * target given by argument. The inventory is selected by these first.
+     */
+    solutionNames?: { device?: QualifiedName; board?: QualifiedName };
+    /**
+     * The document service's documents for this target's parents (2.9.2),
+     * fetched by the caller before `collectTargetDocs`, which merges them;
+     * `view` names where the user resolves them.
+     */
+    serviceDocs?: { infos: DocumentInfo[]; view: string };
     notes: string[];
 }
 
@@ -155,12 +170,34 @@ function namedPackDir(folders: string[], bases: string[], id: PackId): string | 
 }
 
 /**
+ * Record on `res` the device and board names CMSIS Solution's API gives for
+ * its active target, when `res` is that target (its cbuild-run is the active
+ * one). Never throws.
+ */
+async function withSolutionNames(host: PackDocsHost, res: TargetResolution, activeRun: () => Promise<string | undefined>): Promise<void> {
+    if (!host.solutionHardware || !res.cbuildRunFile) { return; }
+    try {
+        const active = await activeRun();
+        if (!active || path.resolve(active) !== path.resolve(res.cbuildRunFile)) { return; }
+        const names = await host.solutionHardware();
+        const device = parseQualifiedName(names.device);
+        const board = parseQualifiedName(names.board);
+        if (device || board) {
+            res.solutionNames = { ...(device ? { device } : {}), ...(board ? { board } : {}) };
+        }
+    } catch (e) {
+        host.log.debug(`no device and board names from CMSIS Solution's API: ${e}`);
+    }
+}
+
+/**
  * Record on `res` the folders the extension names for its packs, each only
  * when its PDSC is the pack. A relative answer is resolved against the
  * folders of the cbuild.yml files, found from the active cbuild-run (asked
  * for only then) and the resolution's own.
  */
 async function withPackDirs(host: PackDocsHost, res: TargetResolution, activeRun: () => Promise<string | undefined>): Promise<TargetResolution> {
+    await withSolutionNames(host, res, activeRun);
     const answer = await answeredPackFolders(host);
     const folders = foldersOf(answer, 'dfp');
     if (!folders.length) { return res; }
@@ -370,9 +407,6 @@ export interface TargetDocs {
     notes: string[];
     /** Workspace docs folders that exist (for the listing header). */
     workspaceDirs: string[];
-    /** The user documents folder and the sub-folders that matched the target. */
-    userDir: string;
-    userMatched: string[];
     /** The device's processors (from the device pack's pdsc). */
     processors: ProcessorInfo[];
     /** The device's NPUs (`Ethos-U85`), from the pdsc features or the known Corstone configuration. */
@@ -448,20 +482,62 @@ export function collectTargetDocs(host: PackDocsHost, res: TargetResolution): Ta
     const arm = armDocsFor(processors.map(p => p.core), npus).map(armDocRef).filter(d => !ids.has(d.id));
     docs.push(...arm);
 
-    const user = collectUserDocs(resolveUserDocsDir(host.settings().userDocsDir), {
-        devicePack: res.devicePack, boardPack: res.boardPack, device: res.device?.name, board: res.board?.name, cores: processors.map(p => p.core),
-    }, log);
-    docs.push(...user.docs);
-    notes.push(...user.notes);
+    // CMSIS Solution's document inventory: its copies, failures and the user's additions in the CMSIS view.
+    let inventoryAdded = 0;
+    if (host.inventoryFile) {
+        const read = readInventory(host.inventoryFile, res.packRoot);
+        if ('error' in read) {
+            notes.push(`CMSIS Solution's document inventory left out: ${read.error}`);
+        } else if ('inventory' in read) {
+            // The names CMSIS Solution keys its inventory by, else those of the cbuild-run (stage 0, a target by argument).
+            const names = { device: res.solutionNames?.device ?? res.device, board: res.solutionNames?.board ?? res.board };
+            const merged = mergeInventory(docs, read.inventory, names, res.packRoot);
+            inventoryAdded = merged.added;
+            if (merged.added || merged.enriched) {
+                log.debug(`document inventory ${host.inventoryFile}: ${merged.added} added, ${merged.enriched} with CMSIS Solution's copy or state`);
+            }
+        }
+    }
+
+    // The document service: the user's and the project's documents, their copies and requests (2.9.2).
+    let serviceAdded = 0;
+    if (res.serviceDocs) {
+        serviceAdded = mergeServiceDocs(docs, res.serviceDocs.infos, res.serviceDocs.view);
+    }
 
     const ws = collectWorkspaceDocs(host);
+    // A file the project lists in its .cmsis/docs.yml is that document, not a second one from the drop-in folder.
+    const listedPaths = new Set(docs.filter((d) => d.path).map((d) => path.resolve(d.path!)));
+    ws.docs = ws.docs.filter((d) => !d.path || !listedPaths.has(path.resolve(d.path)));
     docs.push(...ws.docs);
     notes.push(...ws.notes);
 
     const sorted = dedupeIds(sortDocs(docs));
     log.info(`target docs: ${sorted.length} (${sorted.filter(d => d.source === 'pack').length} in packs, ` +
-        `${sorted.filter(d => d.source === 'web' && d.scope !== 'arm').length} web, ${arm.length} Arm catalogue, ${user.docs.length} user, ${ws.docs.length} in the workspace)`);
-    return { docs: sorted, notes, workspaceDirs: ws.dirs, userDir: user.root, userMatched: user.matched, processors, npus };
+        `${sorted.filter(d => d.source === 'web' && d.scope !== 'arm').length} web, ${arm.length} Arm catalogue, ${ws.docs.length} in the workspace` +
+        `${inventoryAdded ? `, ${inventoryAdded} from CMSIS Solution's inventory` : ''}${serviceAdded ? `, ${serviceAdded} from the document service` : ''})`);
+    return { docs: sorted, notes, workspaceDirs: ws.dirs, processors, npus };
+}
+
+/** The cores of the resolved target's device, from its device pack's PDSC; empty when it cannot be read. */
+export function targetCores(host: PackDocsHost, res: TargetResolution): string[] {
+    if (!res.devicePack) { return []; }
+    const located = locatePack(res.packRoot, res.devicePack, [], res.packDirs?.devicePack);
+    if (!located) { return []; }
+    const pdscPath = findPdscFile(located.dir, located.id);
+    if (!pdscPath) { return []; }
+    return [...new Set(collectProcessors(loadPdsc(pdscPath, located.id, host.log), res.device?.name).map((p) => p.core))];
+}
+
+/** The csolution of the resolved target, from its cbuild-run file; undefined without one. */
+export function targetSolution(res: TargetResolution): string | undefined {
+    if (!res.cbuildRunFile) { return undefined; }
+    try {
+        const solution = parseCbuildRun(fs.readFileSync(res.cbuildRunFile, 'utf-8'), res.cbuildRunFile).solution;
+        return solution ? path.resolve(path.dirname(res.cbuildRunFile), solution) : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 /** The device pack's SVD for the resolved target, if the pdsc names one. */

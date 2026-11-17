@@ -148,6 +148,7 @@ import { knownMessageLines } from './core/knowledge/knownMessageLookup';
 import { activeTargetSetOf, solutionFileOf } from './core/solutionAnswers';
 import { formatDuration } from './handler/jobText';
 import { logger } from './utils/logger';
+import { apiToolsEnvironment, solutionGetter } from './utils/solutionQueries';
 import { withTimeout } from './utils/timeout';
 import { effectiveToolchainPackRoot } from './utils/toolchainPackRoot';
 
@@ -191,6 +192,8 @@ export interface DiagnosisHost {
     outputDirectorySetting(): string | undefined;
     /** `CMSIS_PACK_ROOT` as the CMSIS Solution extension resolves it. */
     packRoot(): Promise<string | undefined>;
+    /** The window's tools environment from CMSIS Solution's API version 3, for a solution without the file; absent or undefined: none. */
+    apiToolsEnvironment?(): Promise<string | undefined>;
     /** Where cbuild runs, as for the extension's own build: the first workspace folder. */
     workingDirectory(): string | undefined;
     /** The environment the re-run starts from. */
@@ -896,7 +899,12 @@ export class BuildDiagnosisRunner {
         try {
             environmentText = fs.readFileSync(environmentFile, 'utf8');
         } catch {
-            return skipped({ kind: 'no-environment', file: '.cmsis/tools-environment.yml' });
+            // Without the file, the window's environment from CMSIS Solution's API version 3, when it answers.
+            const answered = await this.host.apiToolsEnvironment?.();
+            if (answered === undefined) {
+                return skipped({ kind: 'no-environment', file: '.cmsis/tools-environment.yml' });
+            }
+            environmentText = answered;
         }
         const tools = readToolsEnvironment(environmentText);
         const cbuild = cbuildExecutable(tools, this.host.platform);
@@ -1145,7 +1153,7 @@ export function attachBuildDiagnosis(tracker: CmsisJobTracker, host: DiagnosisHo
 /** A CMSIS Solution query's answer, read by `interpret`; undefined when it fails or is slow. Never throws. */
 async function askFor(command: string, interpret: (answer: unknown) => string | undefined): Promise<string | undefined> {
     try {
-        return interpret(await withTimeout(command, QUERY_MS, () => Promise.resolve(vscode.commands.executeCommand<unknown>(command))));
+        return interpret(await withTimeout(command, QUERY_MS, () => Promise.resolve(solutionGetter(command))));
     } catch {
         return undefined;
     }
@@ -1188,6 +1196,7 @@ export function vscodeDiagnosisHost(clock: TrackerClock): DiagnosisHost {
             return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
         },
         packRoot: () => effectiveToolchainPackRoot(),
+        apiToolsEnvironment: () => apiToolsEnvironment(),
         workingDirectory: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
         baseEnvironment: () => process.env,
         platform: process.platform,

@@ -23,6 +23,7 @@
 
 import type { ActivePackFolders } from '../solutionAnswers';
 import { ActiveContextHint } from './cbuildRun';
+import type { DocumentService } from '../../docService/contract';
 
 export interface PackDocsLog {
     debug(message: string): void;
@@ -50,11 +51,22 @@ export interface PackDocsSettings {
      */
     workspaceDocDirs: string[];
     /**
-     * The user documents folder — manuals obtained outside the packs (under
-     * NDA, from a vendor portal), kept outside any workspace and attributed
-     * to packs/devices/boards/cores by sub-folder. Empty: `~/.cmsis-pack-docs/user`.
+     * The retired user documents folder, read once to copy its documents
+     * into the document service. Empty: `~/.cmsis-pack-docs/user`.
      */
     userDocsDir: string;
+    /**
+     * Write the reason of a failed `fetch_doc` into the `error` of the
+     * document in CMSIS Solution's inventory (`~/.cmsis/docs.yml`), so the
+     * CMSIS view shows it (2.9.2 stage 2). Off unless set.
+     */
+    inventoryRequests?: boolean;
+    /**
+     * The document service (2.9.2): `auto` takes CMSIS Solution's when its
+     * API offers one, else the emulator inside this extension; `emulated`
+     * always the emulator.
+     */
+    documentService?: 'auto' | 'emulated';
 }
 
 export interface PackDocsHost {
@@ -67,6 +79,23 @@ export interface PackDocsHost {
     packRoot: string;
     /** Where page text, metadata and indexes are cached (globalStorage/packdocs). */
     storageDir: string;
+    /**
+     * CMSIS Solution's document inventory (`~/.cmsis/docs.yml`), read as a
+     * source of the target's documents; absent: not read (tests).
+     */
+    inventoryFile?: string;
+    /**
+     * The document service (`src/docService/contract.ts`): CMSIS Solution's,
+     * or the emulator. `view` names where the user sees and resolves the
+     * documents. Absent only in tests that fetch nothing.
+     */
+    documentService?(): { service: DocumentService; view: string } | undefined;
+    /**
+     * The active target's device and board as CMSIS Solution's API version 3
+     * names them (`getDeviceName`, `getBoardName`); empty without it. Never
+     * rejects.
+     */
+    solutionHardware?(): Promise<{ device?: string; board?: string }>;
     /** The extension's `assets` directory (shipped core-peripheral SVDs under `svd/core`); absent in some tests. */
     assetsDir?: string;
     /** Every `*.cbuild-run.yml` in the workspace (solution root or out/). */

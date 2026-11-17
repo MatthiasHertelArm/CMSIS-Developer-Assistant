@@ -14,11 +14,18 @@
  * limitations under the License.
  */
 
+// The retired user documents folder (~/.cmsis-pack-docs/user): read once and moved into the document
+// service with the attribution of its sub-folders, together with the downloads of the retired
+// fetch_doc store; the folder is never changed, the old downloads are deleted after the move, the
+// move runs once, and the moved documents keep their edition and index.
+
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { collectUserDocs, globToRegex, importUserDoc, readManifest, resolveUserDocsDir, userDocId, userScopeDir } from '../core/packDocs/userDocs';
+import { migrationDone } from '../core/packDocs/legacyMigration';
+import { PageStore } from '../core/packDocs/pageStore';
+import { legacyParent, listLegacyUserDocs, resolveUserDocsDir } from '../core/packDocs/userDocs';
 import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
 import { FakeExtractor, buildWorld } from './packDocsHandler.test';
@@ -30,128 +37,88 @@ function touch(file: string): void {
     fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), file);
 }
 
-const TARGET = {
-    devicePack: { vendor: 'Keil', name: 'STM32U5xx_DFP', version: '2.1.0' },
-    boardPack: { vendor: 'Keil', name: 'B-U585I-IOT02A_BSP', version: '1.0.0' },
-    device: 'STM32U585AIIx',
-    board: 'B-U585I-IOT02A',
-    cores: ['Cortex-M33'],
-};
+/** A tree of the retired layout. */
+function legacyTree(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-user-'));
+    touch(path.join(root, 'everyone.pdf'));
+    touch(path.join(root, 'Keil', 'STM32F7xx_DFP', 'nda-manual.pdf'));
+    touch(path.join(root, 'Keil', 'vendor-wide.pdf'));
+    touch(path.join(root, 'boards', 'NUCLEO-F756ZG', 'schematic.pdf'));
+    touch(path.join(root, 'cores', 'Cortex-M7', 'trm-notes.pdf'));
+    if (process.platform !== 'win32') {
+        touch(path.join(root, 'devices', 'STM32F7*', 'errata-prelim.pdf'));
+    }
+    touch(path.join(root, '.hidden', 'ignored.pdf'));
+    fs.writeFileSync(path.join(root, 'Keil', 'STM32F7xx_DFP', 'docs.json'), JSON.stringify({
+        'nda-manual.pdf': { title: 'NDA manual', category: 'manual', revision: 'Rev 1' },
+    }));
+    return root;
+}
 
-suite('userDocs', () => {
-    test('folders attribute documents to packs, vendors, devices, boards, cores or everything; docs.json supplies title, category, edition', () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-user-'));
-        touch(path.join(root, 'everyone.pdf'));
-        touch(path.join(root, 'Keil', 'STM32U5xx_DFP', 'RM0456-nda.pdf'));
-        touch(path.join(root, 'Keil', 'STM32U5xx_DFP', 'sub', 'AN-deep.pdf'));
-        touch(path.join(root, 'Keil', 'vendor-wide.pdf'));
-        touch(path.join(root, 'Keil', 'STM32F7xx_DFP', 'other-pack.pdf'));
-        touch(path.join(root, 'Infineon', 'XMC4000_DFP', 'other-vendor.pdf'));
-        // Glob characters are not allowed in Windows file names: the device folders are POSIX-only.
-        const globFolders = process.platform !== 'win32';
-        if (globFolders) {
-            touch(path.join(root, 'devices', 'STM32U5*', 'errata-prelim.pdf'));
-            touch(path.join(root, 'devices', 'STM32H7*', 'wrong-family.pdf'));
-        }
-        touch(path.join(root, 'boards', 'B-U585I-IOT02A', 'schematic.pdf'));
-        touch(path.join(root, 'cores', 'cortex-m33', 'trm-notes.pdf'));
-        touch(path.join(root, 'cores', 'Cortex-M7', 'not-mine.pdf'));
-        touch(path.join(root, '.hidden', 'ignored.pdf'));
-        fs.writeFileSync(path.join(root, 'Keil', 'STM32U5xx_DFP', 'docs.json'), JSON.stringify({
-            'RM0456-nda.pdf': { title: 'STM32U5 reference manual', category: 'manual', revision: 'Rev 2 (NDA)' },
-        }));
+/** Every file below `root` with its size and modification time, to show nothing changed. */
+function snapshot(root: string): string[] {
+    return (fs.readdirSync(root, { recursive: true }) as string[]).map((f) => {
+        const st = fs.statSync(path.join(root, f));
+        return `${f} ${st.isFile() ? st.size : 'dir'} ${st.mtimeMs}`;
+    }).sort();
+}
 
-        const r = collectUserDocs(root, TARGET);
-        // Ids carry the scope folder, so a file name repeated in two scopes never collides.
-        assert.deepStrictEqual(r.docs.map(d => d.id).sort(), [
-            'user/boards/b-u585i-iot02a/schematic', 'user/cores/cortex-m33/trm-notes', ...(globFolders ? ['user/devices/stm32u5/errata-prelim'] : []),
-            'user/everyone', 'user/keil/stm32u5xx-dfp/rm0456-nda', 'user/keil/stm32u5xx-dfp/sub/an-deep', 'user/keil/vendor-wide',
+suite('the retired user documents folder and download store', () => {
+    test('the folder\'s layout: every PDF with its sub-folders and docs.json metadata; hidden folders skipped; the attributions', () => {
+        const root = legacyTree();
+        const listed = listLegacyUserDocs(root).map((doc) => [doc.parts.join('/'), path.basename(doc.path), doc.title, doc.revision ?? ''].join(' | '));
+        assert.deepStrictEqual(listed.filter((line) => !line.startsWith('devices')).sort(), [
+            ' | everyone.pdf | everyone | ',
+            'Keil | vendor-wide.pdf | vendor-wide | ',
+            'Keil/STM32F7xx_DFP | nda-manual.pdf | NDA manual | Rev 1',
+            'boards/NUCLEO-F756ZG | schematic.pdf | schematic | ',
+            'cores/Cortex-M7 | trm-notes.pdf | trm-notes | ',
         ]);
-        // Directory enumeration order differs between file systems (NTFS sorts case-insensitively), so compare as sets.
-        assert.deepStrictEqual([...r.matched].sort(), ['.', 'Keil', 'Keil/STM32U5xx_DFP', 'boards/B-U585I-IOT02A', 'cores/cortex-m33', ...(globFolders ? ['devices/STM32U5*'] : [])].sort());
-        const rm = r.docs.find(d => d.id === 'user/keil/stm32u5xx-dfp/rm0456-nda')!;
-        assert.strictEqual(rm.title, 'STM32U5 reference manual');
-        assert.strictEqual(rm.category, 'manual');
-        assert.strictEqual(rm.revision, 'Rev 2 (NDA)');
-        assert.strictEqual(rm.scope, 'user');
-        assert.strictEqual(rm.source, 'user');
-        assert.strictEqual(rm.path, path.join(root, 'Keil', 'STM32U5xx_DFP', 'RM0456-nda.pdf'));
-        assert.strictEqual(r.docs.find(d => d.id === 'user/everyone')!.title, 'everyone');
-        assert.deepStrictEqual(r.notes, []);
-
-        const other = collectUserDocs(root, { devicePack: { vendor: 'NXP', name: 'MCXN947_DFP' }, device: 'MCXN947', cores: ['Cortex-M33'] });
-        assert.deepStrictEqual(other.docs.map(d => d.id).sort(), ['user/cores/cortex-m33/trm-notes', 'user/everyone']);
-        assert.deepStrictEqual(collectUserDocs(path.join(root, 'missing'), TARGET).docs, []);
+        assert.deepStrictEqual(listLegacyUserDocs(path.join(root, 'missing')), []);
+        assert.deepStrictEqual(legacyParent(['Keil', 'STM32F7xx_DFP']), { pack: 'Keil::STM32F7xx_DFP' });
+        assert.deepStrictEqual(legacyParent(['devices', 'STM32F7*']), undefined);
+        assert.strictEqual(resolveUserDocsDir(''), path.join(os.homedir(), '.cmsis-pack-docs', 'user'));
+        assert.strictEqual(resolveUserDocsDir('~/docs', '/home/me'), path.resolve('/home/me/docs'));
     });
 
-    test('the same file name in two scopes yields two distinct, stable ids', () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-user-dup-'));
-        touch(path.join(root, 'Keil', 'STM32U5xx_DFP', 'RM0456.pdf'));
-        touch(path.join(root, 'boards', 'B-U585I-IOT02A', 'RM0456.pdf'));
-        touch(path.join(root, 'RM0456.pdf'));
-        const ids = () => collectUserDocs(root, TARGET).docs.map(d => d.id).sort();
-        assert.deepStrictEqual(ids(), ['user/boards/b-u585i-iot02a/rm0456', 'user/keil/stm32u5xx-dfp/rm0456', 'user/rm0456']);
-        assert.deepStrictEqual(ids(), ids(), 'identical across calls');
-        assert.strictEqual(userDocId(root, path.join(root, 'x.pdf')), 'user/x');
-        assert.strictEqual(userDocId(root, path.join(root, 'devices', 'STM32U5*', 'Errata (prelim).pdf')), 'user/devices/stm32u5/errata-prelim');
-    });
-
-    test('globs, scope folders and the default directory', () => {
-        assert.ok(globToRegex('STM32U5*').test('STM32U585AIIx'));
-        assert.ok(!globToRegex('STM32U5*').test('STM32H743'));
-        assert.ok(globToRegex('stm32u585aiix').test('STM32U585AIIx'), 'case-insensitive');
-        assert.ok(globToRegex('B-U585I-IOT02?').test('B-U585I-IOT02A'));
-        assert.ok(!globToRegex('STM32U5').test('STM32U585'), 'plain names match exactly');
-        const root = '/r';
-        assert.strictEqual(userScopeDir(root, { kind: 'all' }), root);
-        assert.strictEqual(userScopeDir(root, { kind: 'pack', vendor: 'Keil', name: 'STM32U5xx_DFP' }), path.join(root, 'Keil', 'STM32U5xx_DFP'));
-        assert.strictEqual(userScopeDir(root, { kind: 'device', pattern: 'STM32U5*' }), path.join(root, 'devices', 'STM32U5*'));
-        assert.strictEqual(userScopeDir(root, { kind: 'board', pattern: 'a/b' }), path.join(root, 'boards', 'a_b'), 'path separators are neutralised');
-        assert.strictEqual(userScopeDir(root, { kind: 'core', core: 'Cortex-M33' }), path.join(root, 'cores', 'Cortex-M33'));
-        assert.strictEqual(resolveUserDocsDir('', '/home/x'), path.join('/home/x', '.cmsis-pack-docs', 'user'));
-        assert.strictEqual(resolveUserDocsDir('~/docs', '/home/x'), path.resolve('/home/x', 'docs'));
-        assert.strictEqual(resolveUserDocsDir('/abs/dir', '/home/x'), path.resolve('/abs/dir'), 'a drive letter is added on Windows');
-    });
-
-    test('importUserDoc copies into the scope folder, records the manifest, and the document is then listed for the target', () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-user-'));
-        const src = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-src-'));
-        const file = path.join(src, 'RM0456 (NDA).pdf');
-        touch(file);
-        const r = importUserDoc(root, { kind: 'pack', vendor: 'Keil', name: 'STM32U5xx_DFP' }, file, { title: 'STM32U5 RM', category: 'manual', revision: ' Rev 2 ' });
-        assert.strictEqual(r.dest, path.join(root, 'Keil', 'STM32U5xx_DFP', 'RM0456 (NDA).pdf'));
-        assert.strictEqual(r.id, 'user/keil/stm32u5xx-dfp/rm0456-nda');
-        assert.strictEqual(r.replaced, false);
-        assert.ok(fs.existsSync(r.dest));
-        assert.deepStrictEqual(readManifest(r.dir), { 'RM0456 (NDA).pdf': { title: 'STM32U5 RM', category: 'manual', revision: 'Rev 2' } });
-        const again = importUserDoc(root, { kind: 'pack', vendor: 'Keil', name: 'STM32U5xx_DFP' }, file, { revision: 'Rev 3' });
-        assert.strictEqual(again.replaced, true);
-        assert.deepStrictEqual(readManifest(r.dir)['RM0456 (NDA).pdf'], { title: 'STM32U5 RM', category: 'manual', revision: 'Rev 3' }, 'metadata merges');
-        const listed = collectUserDocs(root, TARGET);
-        assert.deepStrictEqual(listed.docs.map(d => `${d.id}:${d.title}:${d.revision}`), ['user/keil/stm32u5xx-dfp/rm0456-nda:STM32U5 RM:Rev 3']);
-        importUserDoc(root, { kind: 'all' }, file);
-        assert.ok(fs.existsSync(path.join(root, 'RM0456 (NDA).pdf')));
-        assert.ok(!fs.existsSync(path.join(root, 'docs.json')), 'no manifest without metadata');
-    });
-
-    test('user documents join the target set: listed in their own group, searched by default, cited with their edition', async () => {
+    test('the move: folder documents attributed, old downloads imported with their edition and deleted, the folder unchanged, once', async () => {
         const world = buildWorld();
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-user-'));
-        touch(path.join(root, 'Keil', 'STM32F7xx_DFP', 'nda-manual.pdf'));
-        fs.writeFileSync(path.join(root, 'Keil', 'STM32F7xx_DFP', 'docs.json'), JSON.stringify({ 'nda-manual.pdf': { title: 'NDA manual', category: 'manual', revision: 'Rev 1' } }));
+        const root = legacyTree();
+        const before = snapshot(root);
+        // A download of the retired store: the Armv8-M ARM with its fetch record.
+        const store = new PageStore(world.host.storageDir);
+        const old = { id: 'arm/ddi0553-latest', title: 'Armv8-M Architecture Reference Manual', scope: 'arm', source: 'web', url: 'https://developer.arm.com/documentation/ddi0553/latest',
+            arm: { docId: 'ddi0553', version: 'latest' }, cached: false, indexed: false } as const;
+        const p = store.paths({ ...old });
+        fs.mkdirSync(p.dir, { recursive: true });
+        fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), p.download);
+        fs.writeFileSync(p.fetchRecord, JSON.stringify({ version: 1, docId: old.id, sourceUrl: old.url, resolver: 'arm.com', kind: 'pdf', title: old.title,
+            resolvedVersion: 'bz', versionLabel: 'B.z', downloadUrl: 'x', bytes: 1, sha256: 'x', fetchedAt: 'now', userAgent: 'test' }));
+
         const host = { ...world.host, settings: () => ({ ...world.host.settings(), userDocsDir: root }) };
-        const h = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['1 Secret\nUSART_CR1 UE bit', '2 More']) });
-        const list = textOf(await h.handleListTargetDocs({}));
-        const escapedRoot = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the temp dir has backslashes on Windows
-        assert.match(list, new RegExp(`User documents \\(${escapedRoot}: Keil\\/STM32F7xx_DFP\\):\\n  user\\/keil\\/stm32f7xx-dfp\\/nda-manual · user \\[manual\\] · NDA manual · 1 kB, not indexed yet\\n`));
-        const search = textOf(await h.handleSearchTargetDocs({ query: 'USART_CR1', doc: 'nda-manual' }));
-        assert.match(search, /#1 user\/keil\/stm32f7xx-dfp\/nda-manual \[Rev 1\] p\.1 §1 Secret/);
-        const listed = textOf(await h.handleListTargetDocs({}));
-        assert.match(listed, /user\/keil\/stm32f7xx-dfp\/nda-manual · user \[manual\] · NDA manual · indexed Rev 1, 2 p/);
-        assert.match(listed, /searchable \(2 in packs, 1 user, 2 in the workspace; /);
-        const inspect = await h.inspectTarget({});
-        assert.strictEqual(inspect.userDir, root);
-        assert.deepStrictEqual(inspect.userMatched, ['Keil/STM32F7xx_DFP']);
-        assert.deepStrictEqual(inspect.cores, ['Cortex-M7']);
+        const handler = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace,
+            extractor: new FakeExtractor(['1 Secret\nUSART_CR1 UE bit', '2 More']) });
+        const listed = textOf(await handler.handleListTargetDocs({}));
+        const report = migrationDone(world.host.storageDir);
+        assert.ok(report, 'the marker is written');
+        assert.strictEqual(report.downloads, 1);
+        assert.strictEqual(report.userDocuments, 5);
+        assert.strictEqual(report.left.length, process.platform !== 'win32' ? 1 : 0, 'the pattern folder is reported');
+        assert.ok(!fs.existsSync(p.download) && !fs.existsSync(p.fetchRecord), 'the old download is gone');
+        assert.deepStrictEqual(snapshot(root), before, 'the folder is unchanged');
+        assert.match(listed, /arm\/ddi0553-latest · arch · Armv8-M Architecture Reference Manual · fetched B\.z, not indexed yet/);
+        assert.match(listed, /Documents added by the user \(the document service\):/);
+        assert.match(listed, /user\/stm32f7xx-dfp\/nda-manual · user \[manual\] · NDA manual · 1 kB \(added by the user\), not indexed yet/);
+        assert.match(listed, /user\/nucleo-f756zg\/schematic · user · schematic/);
+        assert.match(listed, /user\/cortex-m7\/trm-notes · user · trm-notes/);
+        assert.ok(!listed.includes('errata-prelim'), 'a pattern folder is not moved, and the folder is no longer read');
+        const search = textOf(await handler.handleSearchTargetDocs({ query: 'USART_CR1', doc: 'nda-manual' }));
+        assert.match(search, /#1 user\/stm32f7xx-dfp\/nda-manual \[Rev 1\] p\.1 §1 Secret/);
+
+        // Once: a new handler (a new window) does not move again, and a document added to the folder later stays out.
+        touch(path.join(root, 'later.pdf'));
+        const again = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
+        assert.ok(!textOf(await again.handleListTargetDocs({})).includes('later'));
+        assert.strictEqual(migrationDone(world.host.storageDir)?.userDocuments, 5);
     });
 });

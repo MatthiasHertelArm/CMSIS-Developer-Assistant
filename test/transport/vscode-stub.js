@@ -91,11 +91,16 @@ const stub = {
                   error(...a) { console.error('[ext]', ...a); },
               }),
               createStatusBarItem,
+              // The Target Documents view: a tree that records nothing; its provider is not asked.
+              createTreeView: () => ({ visible: false, badge: undefined, message: undefined, onDidChangeVisibility: () => ({ dispose() {} }), dispose() {} }),
               // Tests install `pickAnswer(items, options)`; without one the pick is dismissed.
               showQuickPick: async (items, options) => (stub.pickAnswer ? stub.pickAnswer(await items, options) : undefined) },
     StatusBarAlignment: { Left: 1, Right: 2 },
     // A theme colour keeps only its id, which tests read back.
     ThemeColor: class { constructor(id) { this.id = id; } },
+    ThemeIcon: class { constructor(id, color) { this.id = id; this.color = color; } },
+    TreeItem: class { constructor(label, state) { this.label = label; this.collapsibleState = state; } },
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
     CancellationTokenSource,
     statusBarItems,
     pickAnswer: undefined,

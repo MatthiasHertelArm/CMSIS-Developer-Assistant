@@ -36,6 +36,14 @@ import {
     ArmDocKind, Dossier, DossierMiss,
 } from './core/packDocs';
 import type { ToolText } from './core/toolResult';
+import { documentFailureText, serviceParentOf } from './core/packDocs/documentApi';
+import { targetParents } from './core/packDocs/serviceDocs';
+import { targetCores, targetSolution } from './core/packDocs/targetDocs';
+import { migrateLegacyDocuments } from './core/packDocs/legacyMigration';
+import { resolveUserDocsDir } from './core/packDocs/userDocs';
+import { DocParent, DocumentFailure, DocumentInfo, DocumentService } from './docService/contract';
+import type { FetchRecord } from './core/packDocs/pageStore';
+import { inventoryErrorOf, REQUEST_PREFIX, requestErrorText, setInventoryError } from './core/packDocs/inventoryWriter';
 import { runTool } from './core/toolRun';
 
 /** The SVD a target is served with. */
@@ -57,8 +65,6 @@ export interface TargetInspection {
     npus: string[];
     docs: DocRef[];
     workspaceDirs: string[];
-    userDir?: string;
-    userMatched?: string[];
     svd?: PeripheralSetInfo;
     /** The Arm core peripherals, from the shipped core SVD or the CMSIS-Core header. */
     core?: PeripheralSetInfo;
@@ -170,6 +176,12 @@ export class PackDocsHandler {
     private readonly downloads = new Map<string, DownloadJob>();
     /** The last failed download of each document, until one succeeds. */
     private readonly downloadFailures = new Map<string, DownloadFailure>();
+    /** The `error` texts this extension wrote into the inventory (stage 2), by inventory file, parent and name. */
+    private readonly inventoryWrites = new Map<string, string>();
+    /** The device and board of the last resolved target, as inventory keys. */
+    private lastTarget: { device?: string; board?: string; solution?: string } = {};
+    /** The once-per-machine move of the retired document path into the service; shared by concurrent calls. */
+    private migration: Promise<unknown> | undefined;
     private callCounter = 0;
 
     constructor(private readonly host: PackDocsHost, private readonly options: PackDocsHandlerOptions) {
@@ -200,8 +212,8 @@ export class PackDocsHandler {
         return this.run('list_target_docs', args, async (log) => {
             const target = await this.resolve(args, log);
             if ('error' in target) { return target.error; }
-            const { docs, notes, workspaceDirs, userDir, userMatched, processors, npus } = this.collect(this.hostWith(args), target);
-            return renderDocList(this.describe(target), docs, notes, { workspaceDirs, userDir, userMatched, processors: describeProcessors(processors, npus) || undefined });
+            const { docs, notes, workspaceDirs, processors, npus } = this.collect(this.hostWith(args), target);
+            return renderDocList(this.describe(target), docs, notes, { workspaceDirs, processors: describeProcessors(processors, npus) || undefined });
         });
     }
 
@@ -560,8 +572,6 @@ export class PackDocsHandler {
             npus: t.npus,
             docs: t.docs,
             workspaceDirs: t.workspaceDirs,
-            userDir: t.userDir,
-            userMatched: t.userMatched,
             svd,
             core,
             coreDiag: dev?.kind === 'core' ? `the SVD above is the core SVD (${dev.rel}); ${coreDiag}` : coreDiag,
@@ -726,6 +736,9 @@ export class PackDocsHandler {
         }
         for (const d of t.docs) {
             if (d.source === 'web' || isReadable(d)) { this.store.annotate(d); }
+            // This window's last failed download of it, for the state the listing shows (2.9.2, goal 3).
+            const failed = this.downloadFailures.get(d.id);
+            if (failed && !d.cached) { d.fetchFailure = failed.outcome.error; }
             this.knownDocs.set(d.id, d);
         }
         return t;
@@ -750,16 +763,19 @@ export class PackDocsHandler {
                 job.total = total;
             },
         };
-        const outcome = fetchDocument(doc, this.store, ctx)
+        const outcome = this.fetchVia(doc, ctx)
             .catch((e: unknown): FetchOutcome => ({ ok: false, error: e instanceof Error ? e.message : String(e) }))
             .then((settled) => {
                 this.downloads.delete(doc.id);
                 if (settled.ok) {
                     this.downloadFailures.delete(doc.id);
+                    this.clearInventoryRequest(doc);
                 } else {
                     const attempts = (this.downloadFailures.get(doc.id)?.attempts ?? 0) + 1;
                     this.downloadFailures.set(doc.id, { outcome: settled, attempts, reported: false });
                     this.host.log.info(`fetch_doc: download of ${doc.id} failed (attempt ${attempts}): ${settled.error}`);
+                    // At the job's end, not the reply's: a failure after the call stopped waiting is recorded too.
+                    this.recordInventoryRequest(doc, settled.error);
                 }
                 return settled;
             });
@@ -847,8 +863,239 @@ export class PackDocsHandler {
         return `Document id '${id}' is ambiguous — it matches ${candidates.map(d => d.id).join(', ')}. Pass one of these ids.`;
     }
 
-    private resolve(args: TargetArgs, log: PackDocsHost['log']): Promise<TargetResolution | { error: string }> {
-        return resolveTarget({ ...this.host, log }, args);
+    private async resolve(args: TargetArgs, log: PackDocsHost['log']): Promise<TargetResolution | { error: string }> {
+        const resolved = await resolveTarget({ ...this.host, log }, args);
+        if (!('error' in resolved)) {
+            const key = (q: { vendor?: string; name: string; revision?: string } | undefined): string | undefined =>
+                q ? `${q.vendor ? `${q.vendor}::` : ''}${q.name}${q.revision ? `:${q.revision}` : ''}` : undefined;
+            const names = { device: resolved.solutionNames?.device ?? resolved.device, board: resolved.solutionNames?.board ?? resolved.board };
+            const solution = targetSolution(resolved);
+            this.lastTarget = { device: key(names.device), board: key(names.board), ...(solution ? { solution } : {}) };
+            await this.attachServiceDocs(resolved, names, solution, log);
+        }
+        return resolved;
+    }
+
+    /**
+     * The document service of this window with the current target's parents
+     * and csolution, for the Target Documents view and the commands; undefined
+     * when the service is off or no target resolves.
+     */
+    public async serviceContext(): Promise<{ service: DocumentService; view: string; parents: DocParent[]; solution?: string } | undefined> {
+        const chosen = this.host.documentService?.();
+        if (!chosen) { return undefined; }
+        const target = await this.resolve({}, this.host.log);
+        if ('error' in target) { return undefined; }
+        const names = { device: target.solutionNames?.device ?? target.device, board: target.solutionNames?.board ?? target.board };
+        const parents = targetParents({ ...names, devicePack: target.devicePack, boardPack: target.boardPack, cores: targetCores(this.host, target) });
+        const solution = this.lastTarget.solution;
+        return { ...chosen, parents, ...(solution ? { solution } : {}) };
+    }
+
+    /**
+     * The parent and name under which the service keeps `doc`, adding it as a
+     * reference first when the service does not list it yet (a pack's web
+     * book). Undefined for a document the service cannot hold.
+     */
+    public async serviceEntry(doc: DocRef): Promise<{ parent: DocParent; name: string; solution?: string } | undefined> {
+        const chosen = this.host.documentService?.();
+        if (!chosen) { return undefined; }
+        if (doc.service) {
+            return { parent: doc.service.parent, name: doc.service.name, ...(doc.service.scope === 'project' && this.lastTarget.solution ? { solution: this.lastTarget.solution } : {}) };
+        }
+        const parent = serviceParentOf(doc.inventory?.parent) ?? (doc.arm ? { all: true } as DocParent : this.targetParent());
+        if (!parent || !doc.url) { return undefined; }
+        await chosen.service.addDocument(parent, doc.url, { title: doc.title, ...(doc.category ? { category: doc.category } : {}) });
+        return { parent, name: doc.url };
+    }
+
+    /** The device and board of the last resolved target, as the inventory names them (`Vendor::Name[:Revision]`). */
+    public targetKeys(): { device?: string; board?: string } {
+        return { ...this.lastTarget };
+    }
+
+    /** The key of an inventory request this extension wrote. */
+    private inventoryKey(doc: DocRef): string | undefined {
+        const known = doc.inventory;
+        // Device and board documents only: the Arm commons are CMSIS Solution's catalogue, not the target's list.
+        return this.host.inventoryFile && known?.parent && known.parent.tag !== 'common' && known.name
+            ? `${this.host.inventoryFile}|${known.parent.tag}|${known.parent.key}|${known.name}` : undefined;
+    }
+
+    /**
+     * Stage 2: the reason a document the CMSIS view lists could not be
+     * fetched, written into its inventory `error`, when the setting allows
+     * it and the proposed API does not take the request itself.
+     */
+    private recordInventoryRequest(doc: DocRef, failure: string): void {
+        const key = this.inventoryKey(doc);
+        if (key === undefined || this.host.settings().inventoryRequests !== true) { return; }
+        const text = requestErrorText(failure, doc.url);
+        const edit = setInventoryError(this.host.inventoryFile!, doc.inventory!.parent!, doc.inventory!.name!, text);
+        if (edit.written) {
+            this.inventoryWrites.set(key, text);
+            this.host.log.info(`fetch_doc: recorded the request for ${doc.id} in ${this.host.inventoryFile}`);
+        } else {
+            this.host.log.debug(`fetch_doc: request for ${doc.id} not recorded in the inventory (${edit.reason})`);
+        }
+    }
+
+    /** Stage 2: clear what `recordInventoryRequest` wrote, once this extension's own download succeeded. */
+    private clearInventoryRequest(doc: DocRef): void {
+        const key = this.inventoryKey(doc);
+        if (key === undefined || this.host.settings().inventoryRequests !== true) { return; }
+        // What this window wrote, else (after a reload) any error that carries this extension's mark.
+        const current = inventoryErrorOf(this.host.inventoryFile!, doc.inventory!.parent!, doc.inventory!.name!);
+        const written = this.inventoryWrites.get(key) ?? (current?.startsWith(REQUEST_PREFIX) ? current : undefined);
+        if (written === undefined) { return; }
+        const edit = setInventoryError(this.host.inventoryFile!, doc.inventory!.parent!, doc.inventory!.name!, undefined, written);
+        this.inventoryWrites.delete(key);
+        this.host.log.debug(`fetch_doc: inventory request for ${doc.id} ${edit.written ? 'cleared' : `left (${edit.reason})`}`);
+    }
+
+    /** The parent a new document of the target goes to: its device, else its board. */
+    private targetParent(): DocParent | undefined {
+        return this.lastTarget.device ? { device: this.lastTarget.device } : this.lastTarget.board ? { board: this.lastTarget.board } : undefined;
+    }
+
+    /**
+     * The document service's documents for the target's parents, attached to
+     * the resolution for `collectTargetDocs` to merge (2.9.2). A service that
+     * fails costs only its documents.
+     */
+    private async attachServiceDocs(res: TargetResolution, names: { device?: TargetResolution['device']; board?: TargetResolution['board'] },
+        solution: string | undefined, log: PackDocsHost['log']): Promise<void> {
+        const chosen = this.host.documentService?.();
+        if (!chosen) { return; }
+        await this.migrateOnce(chosen.service, log);
+        const parents = targetParents({ ...names, devicePack: res.devicePack, boardPack: res.boardPack, cores: targetCores(this.host, res) });
+        try {
+            const lists = await Promise.all(parents.map((parent) => chosen.service.getDocuments(parent, solution)));
+            res.serviceDocs = { infos: lists.flat(), view: chosen.view };
+            this.registerServiceRoots(res.serviceDocs.infos);
+        } catch (caught) {
+            log.warn(`the document service did not answer: ${documentFailureText(caught)}`);
+        }
+    }
+
+    /**
+     * Where this window's documents are kept, for the Pack Docs panel: the
+     * view that manages them and, for the emulated service, its inventory
+     * file and folder. Undefined when the service is off.
+     */
+    public documentStore(): { view: string; inventory?: string; dir?: string } | undefined {
+        const chosen = this.host.documentService?.();
+        if (!chosen) { return undefined; }
+        const inventory = (chosen.service as { inventoryFile?: unknown }).inventoryFile;
+        if (typeof inventory !== 'string') {
+            return { view: chosen.view };
+        }
+        // The emulator keeps its copies, and their extracted text, under its own folder.
+        this.store.addRoot(path.dirname(inventory));
+        return { view: chosen.view, inventory, dir: path.dirname(inventory) };
+    }
+
+    /** The folders of the service's copies, where their extracted text sits (`PageStore` extracts them in place). */
+    private registerServiceRoots(infos: readonly DocumentInfo[]): void {
+        for (const info of infos) {
+            if (info.path && info.scope !== 'project') { this.store.addRoot(path.dirname(info.path)); }
+        }
+    }
+
+    /** Move the retired document path's documents into the service, once per machine. Never throws. */
+    private migrateOnce(service: DocumentService, log: PackDocsHost['log']): Promise<unknown> {
+        this.migration ??= migrateLegacyDocuments(service, this.store, this.host.storageDir, resolveUserDocsDir(this.host.settings().userDocsDir), log)
+            .catch((caught: unknown) => log.warn(`moving the documents to the document service failed: ${documentFailureText(caught)}`));
+        return this.migration;
+    }
+
+    /**
+     * One download of `fetch_doc`: through the document service when there
+     * is one (it keeps the copy and records a failure as the agent's
+     * request), else into this extension's store as before. Either way the
+     * outcome has the same shape, so the job, its progress, the failure count
+     * and the texts stay as they are.
+     */
+    private async fetchVia(doc: DocRef, ctx: ResolveContext): Promise<FetchOutcome> {
+        const chosen = this.host.documentService?.();
+        if (!chosen) {
+            return { ok: false, error: 'no document service in this window' };
+        }
+        if (!doc.url) {
+            return { ok: false, error: `${doc.id} has no URL` };
+        }
+        const { service, view } = chosen;
+        if (!doc.service && !doc.inventory && !doc.arm && !this.targetParent()) {
+            // fetch_doc { url } before any listing: the target decides where the document belongs.
+            await this.resolve({}, this.host.log);
+        }
+        // Without a target, a document belongs to every target, as fetched documents did before.
+        const parent: DocParent = doc.service?.parent ?? serviceParentOf(doc.inventory?.parent) ?? (doc.arm ? { all: true } : this.targetParent()) ?? { all: true };
+        const name = doc.service?.name ?? doc.url;
+        const solution = doc.service?.scope === 'project' ? this.lastTarget.solution : undefined;
+        try {
+            if (!doc.service) {
+                await service.addDocument(parent, doc.url, { title: doc.title, ...(doc.category ? { category: doc.category } : {}) });
+            }
+            const info = await service.downloadDocument(parent, name, {
+                timeoutMs: ctx.timeoutMs, maxBytes: ctx.maxBytes,
+                ...(ctx.signal ? { signal: ctx.signal } : {}), ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+            }, solution);
+            if (!info.path) {
+                return { ok: false, error: 'the document service answered without a copy' };
+            }
+            doc.service = { parent, name, scope: info.scope, copy: info.path, view };
+            doc.path = info.path;
+            doc.cached = true;
+            doc.indexed = false;
+            doc.format = 'pdf';
+            if (info.bytes !== undefined) { doc.sizeBytes = info.bytes; }
+            if (info.versionLabel) { doc.revision = info.versionLabel; }
+            const sourceTitle = info.sourceTitle ?? info.title;
+            if (sourceTitle && (doc.title === doc.url || doc.title === doc.id || doc.arm)) { doc.title = sourceTitle; }
+            if (doc.arm && info.version) { doc.arm = { ...doc.arm, resolvedVersion: info.version, ...(info.versionLabel ? { versionLabel: info.versionLabel } : {}) }; }
+            const record: FetchRecord = {
+                version: 1, docId: doc.id, sourceUrl: doc.url, resolver: info.resolver ?? 'document service', kind: 'pdf', title: doc.title,
+                ...(info.version ? { resolvedVersion: info.version } : {}), ...(info.versionLabel ? { versionLabel: info.versionLabel } : {}),
+                ...(info.filename ? { filename: info.filename } : {}),
+                downloadUrl: '', bytes: info.bytes ?? 0, sha256: info.sha256 ?? '', fetchedAt: info.downloadedAt ?? new Date().toISOString(),
+                userAgent: this.host.userAgent,
+            };
+            return {
+                ok: true, record, resolver: info.resolver ?? 'document service',
+                resolved: {
+                    kind: 'pdf', ...(info.version ? { version: info.version } : {}), ...(info.versionLabel ? { versionLabel: info.versionLabel } : {}),
+                    ...(sourceTitle ? { title: sourceTitle } : {}), ...(info.filename ? { filename: info.filename } : {}),
+                    ...(info.alternatives?.length ? { alternatives: info.alternatives } : {}),
+                },
+            };
+        } catch (caught) {
+            const kind = caught instanceof DocumentFailure ? caught.error.kind : 'unknown';
+            // The source's own words, as before; the kind leads only where it tells the user what to do.
+            const failure = caught instanceof DocumentFailure && caught.error.detail && kind !== 'login-required' && kind !== 'not-pdf'
+                ? caught.error.detail : documentFailureText(caught);
+            if (kind === 'html') {
+                // Arm's HTML-only documents stay this extension's (the service handles PDFs): the store records the format and the edition.
+                return fetchDocument(doc, this.store, ctx);
+            }
+            // Only what the user can resolve becomes a request: not an HTML-only document, a cancel, a limit or a blocked host.
+            if (!['login-required', 'not-pdf', 'http', 'network', 'unknown'].includes(kind)) {
+                return { ok: false, error: failure };
+            }
+            try {
+                await service.requestDocument(parent, name, {
+                    by: 'agent', reason: requestErrorText(failure, doc.url), title: doc.title,
+                    ...(caught instanceof DocumentFailure ? { error: caught.error } : {}),
+                }, solution);
+            } catch (requestFailed) {
+                this.host.log.debug(`fetch_doc: the request for ${doc.id} was not recorded (${documentFailureText(requestFailed)})`);
+            }
+            doc.service = {
+                parent, name, scope: doc.service?.scope ?? 'user', view, requested: { by: 'agent', reason: requestErrorText(failure, doc.url) },
+                ...(caught instanceof DocumentFailure ? { error: { ...caught.error } } : {}),
+            };
+            return { ok: false, error: failure };
+        }
     }
 
     private describe(target: TargetResolution): string {

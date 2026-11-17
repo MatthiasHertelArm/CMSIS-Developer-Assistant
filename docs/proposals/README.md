@@ -19,6 +19,15 @@ The [knowledge and documentation review](../reviews/2026-10-28-knowledge-and-doc
 | [Prepared cmsis-skills PR](cmsis-skills-start-cmsis-project-pr.md), [prepared 2.5.9 PR](upstream-pr-2.5.9.md) | Retain as dated drafts, not current submission instructions or proof of remote status. |
 | [Cross-extension calls](extension-calls.md), [storage overview](pack-docs-storage-overview.md), [storage requirements](pack-docs-storage.md) | Keep as current reference/integration material. The storage-provider interface remains a proposal, not an exposed API. |
 
+## 2.9.x: CMSIS Solution API V3, then its document inventory
+
+Both are previews of the 2.10.0 cycle (odd minor version, pre-release VSIX); 2.9.0 is the preview already published, with the extension of 2.8.0 and a new knowledge index. They were proposed as 2.8.1 and 2.8.2 and renumbered on 2026-11-14, after the decision of 2026-11-09 that no 2.8.x release follows 2.8.0. Written 2026-11-04 against 2.8.0 and vscode-cmsis-solution `main` `a9c1e69` (nightly `1.72.1-82-20261104`; neither feature is in the released 1.72.0). Order swapped the same day: the API release is unblocked and builds the seam the documentation release calls through; the documentation release is planned by stages of what CMSIS Solution offers and waits for a document API.
+
+| Release | Proposal | Size | Depends on | Decisions |
+|---|---|---|---|---|
+| 2.9.1 | [CMSIS Solution API V3 behind `cmsis_query` and `cmsis_action`](2.9.1-csolution-api-v3.md) | S + M + S + L + M + S | a CMSIS Solution release with `getApi(3)` | 6 |
+| 2.9.2 | [The target's documents through the CMSIS Solution document inventory](2.9.2-documentation-inventory.md) | stage 1 M + S, stage 2 S, stage 3 L | 2.9.1; the document manager (stage 1), a redraw on external changes (stage 2), V3 document methods (stage 3) | 6 |
+
 ## Reading the historical record
 
 The original release plan, measurements and dated status notes follow unchanged in substance. Old Current state sections and unchecked decisions describe their recorded baseline, not today's code. Removed skill/source references that were broken now point to the verified 2.3.10 commit they discussed. For current instructions use the [agent guide](../agent-resources/debug_instructions.md), [user guide](../user-guide.md) and [architecture](../architecture/debugMCPServer.md).

@@ -16,22 +16,27 @@
 
 /**
  * The palette commands of the documentation tools: list and index the current
- * target's documents into the output channel, import PDFs the packs do not
- * ship into the user documents folder (attributed to a pack, device, board or
- * core), open that folder, and open the Pack Docs panel. Available whether or
- * not the MCP tools are enabled — the handlers exist in every window.
+ * target's documents into the output channel, add a document the packs do not
+ * ship (through the document service, or CMSIS Solution's *Add Document*
+ * where it exists), and open the Pack Docs and knowledge panels. Available
+ * whether or not the MCP tools are enabled — the handlers exist in every
+ * window.
+ *
+ * CMSIS Solution's *Add Document* answers nothing; the documents it added are
+ * found by comparing the target's listing before and after, and indexed.
  */
 
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import { BookCategory, DocRef, UserScope, importUserDoc, resolveUserDocsDir } from './core/packDocs';
+
 import { errorText, textOf, toToolError } from './core/toolResult';
 import { PackDocsHandlers } from './packDocsDispatch';
-import { readPackDocsSettings } from './packDocsHost';
 import { KnowledgePanel } from './knowledgePanel';
 import { PackDocsPanel } from './packDocsPanel';
+import { addDocument } from './targetDocsView';
 import { logger } from './utils/logger';
+
+/** CMSIS Solution's command that adds a document to the active target's board or device (after 1.72.0). */
+const SOLUTION_ADD_DOCUMENT = 'cmsis-csolution.addDocument';
 
 const CONFIG = 'cmsis-developer-assistant';
 
@@ -61,13 +66,18 @@ export function registerPackDocsCommands(context: vscode.ExtensionContext, handl
             vscode.window.showInformationMessage(summary.split('\n').slice(-1)[0]);
         }),
 
-        vscode.commands.registerCommand(`${CONFIG}.openUserDocsFolder`, async () => {
-            const dir = resolveUserDocsDir(readPackDocsSettings().userDocsDir);
-            fs.mkdirSync(dir, { recursive: true });
-            await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(dir));
+        vscode.commands.registerCommand(`${CONFIG}.importUserDoc`, async () => {
+            // The document service takes every attribution and the project scope; CMSIS Solution's Add Document is offered beside it.
+            if ((await vscode.commands.getCommands(true)).includes(SOLUTION_ADD_DOCUMENT)) {
+                const picked = await vscode.window.showQuickPick([
+                    { label: '$(add) Add to the target\'s documents', description: 'device, board, core, pack, vendor or all targets; for you or the project', route: 'service' },
+                    { label: '$(list-tree) Add in the CMSIS view', description: 'CMSIS Solution\'s Add Document: the active target\'s board or device', route: 'solution' },
+                ], { title: 'Import Document for Current Target' });
+                if (picked === undefined) { return; }
+                return picked.route === 'solution' ? addThroughSolution(handlers) : addDocument(handlers);
+            }
+            return addDocument(handlers);
         }),
-
-        vscode.commands.registerCommand(`${CONFIG}.importUserDoc`, () => importUserDocuments(handlers)),
 
         vscode.commands.registerCommand(`${CONFIG}.openPackDocsPanel`, () => {
             PackDocsPanel.show(context, handlers.docs, handlers.build, logger);
@@ -84,95 +94,30 @@ export function registerPackDocsCommands(context: vscode.ExtensionContext, handl
 }
 
 /**
- * Import PDFs the packs do not ship (NDA manuals, portal downloads) into the
- * user documents folder, attributed to the current target's pack, device,
- * board or core, and index them right away.
+ * Add a document through CMSIS Solution's *Add Document* (its picker, its
+ * folder, its inventory), then index what it added for the current target.
+ * The command answers nothing, so the target's listing before and after
+ * tells which documents are new.
  */
-async function importUserDocuments(handlers: PackDocsHandlers): Promise<void> {
+async function addThroughSolution(handlers: PackDocsHandlers): Promise<void> {
     const { docs } = handlers;
-    const root = resolveUserDocsDir(readPackDocsSettings().userDocsDir);
-    const files = await vscode.window.showOpenDialog({
-        canSelectMany: true, canSelectFolders: false, filters: { 'PDF documents': ['pdf'] }, openLabel: 'Import',
-        title: 'Import documents into the user documents folder',
-    });
-    if (!files?.length) { return; }
-
-    const t = await docs.inspectTarget({});
-    const scopes: (vscode.QuickPickItem & { scope: UserScope })[] = [];
-    if (t.devicePack) {
-        const [vendor, rest] = t.devicePack.split('::');
-        scopes.push({ label: `$(package) Pack ${vendor}::${rest.split('@')[0]}`, description: 'every target using this device pack, any version', scope: { kind: 'pack', vendor, name: rest.split('@')[0] } });
+    const before = new Set((await docs.inspectTarget({})).docs.map((doc) => doc.id));
+    await vscode.commands.executeCommand(SOLUTION_ADD_DOCUMENT);
+    const after = await docs.inspectTarget({});
+    const added = after.docs.filter((doc) => !before.has(doc.id) && doc.path !== undefined && !doc.unsupported && !doc.missing);
+    if (added.length === 0) {
+        logger.info('import: CMSIS Solution added no document for the current target (cancelled, or attributed elsewhere)');
+        return;
     }
-    if (t.device) {
-        scopes.push({ label: `$(chip) Device ${t.device}`, description: 'this device only', scope: { kind: 'device', pattern: t.device } });
-        const family = t.device.replace(/[A-Z0-9]{2,}$/i, '').replace(/[^A-Za-z0-9]+$/, '');
-        if (family.length >= 5 && family !== t.device) {
-            scopes.push({ label: `$(chip) Devices ${family}*`, description: 'the device family (glob)', scope: { kind: 'device', pattern: `${family}*` } });
+    const lines: string[] = [];
+    for (const doc of added) {
+        try {
+            const loaded = await docs.indexDocument(doc);
+            lines.push(`${doc.id}: ${loaded.meta.pageCount} pages — ${doc.path}`);
+        } catch (e) {
+            lines.push(`${doc.id}: added by CMSIS Solution, indexing failed — ${e instanceof Error ? e.message : String(e)}`);
         }
     }
-    if (t.boardPack) {
-        const [vendor, rest] = t.boardPack.split('::');
-        scopes.push({ label: `$(circuit-board) Board pack ${vendor}::${rest.split('@')[0]}`, description: 'every target using this board pack', scope: { kind: 'pack', vendor, name: rest.split('@')[0] } });
-    }
-    if (t.board) { scopes.push({ label: `$(circuit-board) Board ${t.board}`, description: 'this board only', scope: { kind: 'board', pattern: t.board } }); }
-    for (const core of new Set(t.cores)) { scopes.push({ label: `$(cpu) Core ${core}`, description: 'every target with this core', scope: { kind: 'core', core } }); }
-    scopes.push({ label: '$(globe) All targets', description: 'listed for every target', scope: { kind: 'all' } });
-    scopes.push({ label: '$(edit) Device pattern…', description: 'a glob such as STM32U5*', scope: { kind: 'device', pattern: '' } });
-    const picked = await vscode.window.showQuickPick(scopes, {
-        title: t.error ? 'No target resolved in this workspace — attribute the document by hand' : `Attribute to … (target: ${t.device ?? '?'}, ${t.devicePack ?? '?'})`,
-        placeHolder: 'Which targets should see this document?',
-    });
-    if (!picked) { return; }
-    let scope = picked.scope;
-    if (scope.kind === 'device' && !scope.pattern) {
-        const pattern = await vscode.window.showInputBox({ title: 'Device pattern', prompt: 'Device name or glob, e.g. STM32U585AIIx or STM32U5*', value: t.device ?? '' });
-        if (!pattern?.trim()) { return; }
-        scope = { kind: 'device', pattern: pattern.trim() };
-    }
-    const categories: (vscode.QuickPickItem & { category?: BookCategory })[] = [
-        { label: 'manual', description: 'reference manual, user manual, TRM — ranked first in search', category: 'manual' },
-        { label: 'overview', description: 'datasheet, product brief', category: 'overview' },
-        { label: 'schematic', category: 'schematic' },
-        { label: 'setup', description: 'getting started, board setup', category: 'setup' },
-        { label: 'other', category: 'other' },
-    ];
-
-    const imported: { doc: DocRef; dest: string; replaced: boolean }[] = [];
-    for (const uri of files) {
-        const name = path.basename(uri.fsPath);
-        const title = await vscode.window.showInputBox({ title: `Title for ${name}`, value: name.replace(/\.pdf$/i, ''), prompt: 'Shown in listings and citations' });
-        if (title === undefined) { return; }
-        const category = await vscode.window.showQuickPick(categories, { title: `Category for ${name}`, placeHolder: 'manual' });
-        if (!category) { return; }
-        const revision = await vscode.window.showInputBox({ title: `Edition of ${name} (optional)`, prompt: 'e.g. Rev 2, printed with every citation', value: '' });
-        if (revision === undefined) { return; }
-        const r = importUserDoc(root, scope, uri.fsPath, { title, category: category.category, revision });
-        const doc: DocRef = {
-            id: r.id, title: title.trim() || name, ...(category.category ? { category: category.category } : {}), ...(revision.trim() ? { revision: revision.trim() } : {}),
-            scope: 'user', source: 'user', path: r.dest, sizeBytes: fs.statSync(r.dest).size, cached: false, indexed: false,
-        };
-        imported.push({ doc, dest: r.dest, replaced: r.replaced });
-        logger.info(`imported ${uri.fsPath} → ${r.dest} (${JSON.stringify(scope)})`);
-    }
-
-    const summary = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'CMSIS Developer Assistant: indexing imported documents', cancellable: false },
-        async (progress) => {
-            const lines: string[] = [];
-            for (const { doc, dest, replaced } of imported) {
-                progress.report({ message: doc.id });
-                try {
-                    const loaded = await docs.indexDocument(doc);
-                    lines.push(`${doc.id}: ${loaded.meta.pageCount} pages${replaced ? ' (replaced)' : ''} — ${dest}`);
-                } catch (e) {
-                    lines.push(`${doc.id}: copied to ${dest}, indexing failed — ${e instanceof Error ? e.message : e}`);
-                }
-            }
-            return lines;
-        },
-    );
-    logBlock('import (command)', summary.join('\n'), 50);
-    const open = 'Open folder';
-    const choice = await vscode.window.showInformationMessage(`Imported ${imported.length} document${imported.length === 1 ? '' : 's'}: ${summary.join('; ')}`, open);
-    if (choice === open) { await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(imported[0].dest)); }
+    logBlock('import through CMSIS Solution (command)', lines.join('\n'), 50);
+    void vscode.window.showInformationMessage(`Added through the CMSIS view and indexed: ${lines.join('; ')}`);
 }

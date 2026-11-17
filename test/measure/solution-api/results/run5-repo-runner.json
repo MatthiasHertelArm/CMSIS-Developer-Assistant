@@ -1,0 +1,178 @@
+{
+  "started": "2026-11-16T16:12:55.306Z",
+  "vscode": "1.146.0",
+  "events": [
+    {
+      "t": 0.1,
+      "what": "state at start",
+      "csolutionActive": true,
+      "envActive": false,
+      "csolution": "1.72.1-86-20261109",
+      "env": "1.26.0"
+    },
+    {
+      "t": 0.4,
+      "what": "activate CMSIS Solution",
+      "ms": 0.034709036350250244,
+      "ok": true
+    },
+    {
+      "t": 0.7,
+      "what": "environment manager before first call",
+      "state": "inactive"
+    },
+    {
+      "t": 258.3,
+      "what": "getToolsEnvironment cold (first call)",
+      "ms": 257.42991703748703,
+      "ok": true,
+      "length": 1692
+    },
+    {
+      "t": 259.2,
+      "what": "getToolchains first call",
+      "ms": 0.541916012763977,
+      "ok": true,
+      "count": 0
+    },
+    {
+      "t": 1013.2,
+      "what": "solution loaded",
+      "ms": 753.7904160022736,
+      "solution": "Blinky.csolution.yml"
+    },
+    {
+      "t": 1217.5,
+      "what": "getToolsEnvironment issued 200 ms into a reactivation",
+      "ms": 2.267084002494812,
+      "ok": true,
+      "length": 3288
+    },
+    {
+      "t": 1217.7,
+      "what": "reactivate command settled",
+      "ms": 46.452333986759186
+    },
+    {
+      "t": 1217.9,
+      "what": "toolchains registered",
+      "ms": 0.17491698265075684,
+      "count": 1,
+      "names": [
+        "AC6 6.24.0"
+      ],
+      "envActive": true
+    },
+    {
+      "t": 3774.3,
+      "what": "done"
+    }
+  ],
+  "warm": {
+    "API getToolsEnvironment": {
+      "n": 40,
+      "min": 1.695,
+      "median": 1.99,
+      "p95": 2.401,
+      "max": 6.646,
+      "fails": 0
+    },
+    "API getToolchains": {
+      "n": 40,
+      "min": 0.126,
+      "median": 0.128,
+      "p95": 0.156,
+      "max": 0.197,
+      "fails": 0
+    },
+    "file read tools-environment.yml": {
+      "n": 40,
+      "min": 0.165,
+      "median": 0.493,
+      "p95": 7.438,
+      "max": 11.548,
+      "fails": 0
+    },
+    "file read sync tools-environment.yml": {
+      "n": 40,
+      "min": 0.03,
+      "median": 0.037,
+      "p95": 0.145,
+      "max": 0.154,
+      "fails": 0
+    },
+    "API getCbuildRunFile": {
+      "n": 40,
+      "min": 0.078,
+      "median": 0.083,
+      "p95": 0.194,
+      "max": 0.234,
+      "fails": 0
+    },
+    "command cmsis-csolution.getCbuildRunFile": {
+      "n": 40,
+      "min": 0.079,
+      "median": 0.082,
+      "p95": 0.147,
+      "max": 0.161,
+      "fails": 0
+    },
+    "API getActiveTarget": {
+      "n": 40,
+      "min": 0.134,
+      "median": 0.14,
+      "p95": 0.222,
+      "max": 0.335,
+      "fails": 0
+    },
+    "command cmsis-csolution.getActiveTargetSet": {
+      "n": 40,
+      "min": 0.129,
+      "median": 0.141,
+      "p95": 0.196,
+      "max": 0.317,
+      "fails": 0
+    },
+    "API getTargets": {
+      "n": 40,
+      "min": 0.003,
+      "median": 0.003,
+      "p95": 0.018,
+      "max": 0.096,
+      "fails": 0
+    },
+    "API getDebuggers": {
+      "n": 40,
+      "min": 8.691,
+      "median": 9.49,
+      "p95": 12.742,
+      "max": 13.429,
+      "fails": 0
+    }
+  },
+  "sameAsFile": true,
+  "api": {
+    "length": 3326,
+    "tools": [
+      "pyOCD",
+      "CMSIS-Toolbox",
+      "compilers.arm.armclang",
+      "tools.kitware.cmake",
+      "tools.ninja.build.ninja",
+      "Arm GNU GDB"
+    ],
+    "pathEntries": 6
+  },
+  "file": {
+    "length": 3326,
+    "tools": [
+      "pyOCD",
+      "CMSIS-Toolbox",
+      "compilers.arm.armclang",
+      "tools.kitware.cmake",
+      "tools.ninja.build.ninja",
+      "Arm GNU GDB"
+    ],
+    "pathEntries": 6
+  }
+}

@@ -110,9 +110,39 @@
         "category": "CMSIS Developer Assistant"
       },
       {
-        "command": "cmsis-developer-assistant.openUserDocsFolder",
-        "title": "Open User Documents Folder",
-        "category": "CMSIS Developer Assistant"
+        "command": "cmsis-developer-assistant.targetDocs.refresh",
+        "title": "Refresh",
+        "category": "CMSIS Developer Assistant",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "cmsis-developer-assistant.targetDocs.add",
+        "title": "Add Document…",
+        "category": "CMSIS Developer Assistant",
+        "icon": "$(add)"
+      },
+      {
+        "command": "cmsis-developer-assistant.targetDocs.download",
+        "title": "Download",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "cmsis-developer-assistant.targetDocs.import",
+        "title": "Import a File for This Document…"
+      },
+      {
+        "command": "cmsis-developer-assistant.targetDocs.openSource",
+        "title": "Open the Vendor Page",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "cmsis-developer-assistant.targetDocs.dismiss",
+        "title": "Dismiss the Agent's Request"
+      },
+      {
+        "command": "cmsis-developer-assistant.targetDocs.remove",
+        "title": "Remove",
+        "icon": "$(trash)"
       },
       {
         "command": "cmsis-developer-assistant.openPackDocsPanel",
@@ -130,8 +160,78 @@
         "category": "CMSIS Developer Assistant"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "cmsisDeveloperAssistant.targetDocuments",
+          "name": "Target Documents",
+          "when": "cmsisDeveloperAssistant.hasSolution",
+          "icon": "$(book)",
+          "contextualTitle": "CMSIS Developer Assistant"
+        }
+      ]
+    },
     "menus": {
+      "view/title": [
+        {
+          "command": "cmsis-developer-assistant.targetDocs.add",
+          "when": "view == cmsisDeveloperAssistant.targetDocuments",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.refresh",
+          "when": "view == cmsisDeveloperAssistant.targetDocuments",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "cmsis-developer-assistant.targetDocs.download",
+          "when": "view == cmsisDeveloperAssistant.targetDocuments && viewItem =~ /\\bweb\\b/",
+          "group": "inline@1"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.openSource",
+          "when": "view == cmsisDeveloperAssistant.targetDocuments && viewItem =~ /\\bimportable\\b/",
+          "group": "1_source@1"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.import",
+          "when": "view == cmsisDeveloperAssistant.targetDocuments && viewItem =~ /\\bimportable\\b/",
+          "group": "1_source@2"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.dismiss",
+          "when": "view == cmsisDeveloperAssistant.targetDocuments && viewItem =~ /\\bdismissable\\b/",
+          "group": "1_source@3"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.remove",
+          "when": "view == cmsisDeveloperAssistant.targetDocuments && viewItem =~ /\\bremovable\\b/",
+          "group": "9_remove@1"
+        }
+      ],
       "commandPalette": [
+        {
+          "command": "cmsis-developer-assistant.targetDocs.download",
+          "when": "false"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.import",
+          "when": "false"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.openSource",
+          "when": "false"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.remove",
+          "when": "false"
+        },
+        {
+          "command": "cmsis-developer-assistant.targetDocs.dismiss",
+          "when": "false"
+        },
         {
           "command": "cmsis-developer-assistant.resetPopupState",
           "when": "false"
@@ -242,6 +342,30 @@
             "experimental"
           ]
         },
+        "cmsis-developer-assistant.packDocs.inventoryRequests": {
+          "type": "boolean",
+          "default": false,
+          "description": "When fetch_doc cannot get a document the CMSIS view lists, write the reason into that document's error in CMSIS Solution's ~/.cmsis/docs.yml, so the view shows what the agent waits for. Only that one field of that one entry is changed, and cleared again when a later fetch succeeds.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.packDocs.documentService": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "emulated"
+          ],
+          "enumDescriptions": [
+            "CMSIS Solution's document service when it offers one, else the one built into this extension (a prototype of what CMSIS Solution should provide).",
+            "Always the document service built into this extension."
+          ],
+          "default": "auto",
+          "description": "Who keeps the target's documents, their downloads, the documents you add (for you or the project, in .cmsis/docs.yml) and the agent's requests. The search index always stays in this extension.",
+          "tags": [
+            "experimental"
+          ]
+        },
         "cmsis-developer-assistant.packDocs.includeUnlisted": {
           "type": "boolean",
           "default": true,
@@ -267,7 +391,7 @@
         "cmsis-developer-assistant.packDocs.userDocsDir": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Folder for documents the packs do not ship (NDA manuals, portal downloads), outside any workspace and shared by every project; sub-folders attribute them to packs (`<Vendor>/<Pack>`), devices (`devices/<glob>`), boards (`boards/<name>`) or cores (`cores/<core>`). Empty: `~/.cmsis-pack-docs/user`. Fill it with **Import Document for Current Target**.",
+          "markdownDescription": "The retired user documents folder (empty: `~/.cmsis-pack-docs/user`). Its documents are copied once into the document service with their attribution (pattern folders such as `devices/STM32U5*` are reported, not copied); the folder is never changed and no longer read afterwards.",
           "tags": [
             "experimental"
           ]
