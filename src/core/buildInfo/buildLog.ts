@@ -130,18 +130,24 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
     const compilerRe = /^(?:Using compiler:\s*(.+)|Using (\S+ V[\d.]+) compiler,.*)$/;
     const statusRe = /^(Build summary: .*|.*build (?:finished successfully|failed)!?|ninja: build stopped: .*|ninja: no work to do\.|.*Build completed successfully.*|.*Build failed.*|Finished: \d+ information, \d+ warning, \d+ error and \d+ fatal error messages\.)\s*$/i;
 
-    let pendingCMake: { d: Omit<Diagnostic, 'logLine' | 'count'>; logLine: number } | undefined;
+    // A CMake message continues on indented lines, also after a blank line: `Cannot find source file:`, a blank
+    // line, then the path (#144). It ends at the first line that is not indented. The list of extensions CMake
+    // tried after the path is not kept.
+    let pendingCMake: { d: Omit<Diagnostic, 'logLine' | 'count'>; logLine: number; closed?: boolean } | undefined;
 
     lines.forEach((raw, i) => {
         const line = raw.trimEnd();
         const n = i + 1;
         if (!line.trim()) {
-            if (pendingCMake) { push(pendingCMake.d, pendingCMake.logLine); pendingCMake = undefined; }
             return;
         }
         if (pendingCMake) {
             // Message text follows on the indented lines after `CMake Error at ...:`.
-            if (line.startsWith('  ')) { pendingCMake.d.message = `${pendingCMake.d.message} ${line.trim()}`.trim(); return; }
+            if (line.startsWith('  ')) {
+                if (/^\s*Tried extensions\b/.test(line)) { pendingCMake.closed = true; }
+                if (!pendingCMake.closed) { pendingCMake.d.message = `${pendingCMake.d.message} ${line.trim()}`.trim(); }
+                return;
+            }
             push(pendingCMake.d, pendingCMake.logLine); pendingCMake = undefined;
         }
         let m: RegExpMatchArray | null;
