@@ -486,17 +486,102 @@ suite('build diagnosis (#15)', () => {
         assert.match(idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now()), /build on MPS3 stopped [\d.]+ s ago \(job b-1, /);
     });
 
-    test('a build or setup that starts meanwhile kills the re-run, and its result says so', async () => {
+    test('a build that starts meanwhile kills the re-run, and its result says so', async () => {
         const w = make();
         const { job } = failBuild(w);
         await until(() => w.children.length === 1, 'cbuild was spawned');
-        w.tasks.start(w.tasks.execution({ name: 'cbuild setup Blinky.csolution.yml', source: 'cmsis-csolution.build',
-            definition: { type: 'cmsis-csolution.build', setup: true } }));
+        w.tasks.start(w.tasks.execution({ name: 'cbuild other.csolution.yml', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build' } }));
         assert.deepStrictEqual(w.killed, [w.children[0]], 'the new build killed the child at once');
         const done = await diagnosed(w, job.id);
         assert.strictEqual(done.diagnosis?.text, 'No error lines: the diagnostic re-run of cbuild was stopped because another build started; '
             + 'that build\'s result replaces this one.\n'
             + 'cmsis_action build re-runs cbuild with --log itself when it can.');
+    });
+
+    suite('CMSIS Solution\'s setup task is no newer build (#138)', () => {
+        /** The setup of the issue: CMSIS Solution's database refresh after a target switch. */
+        const setupTask = (): FixtureTask => ({
+            name: 'cbuild setup Blinky.csolution.yml --target database --active MPS3 --packs --skip-convert', source: 'cmsis-csolution.build',
+            definition: { type: 'cmsis-csolution.build', setup: true },
+        });
+
+        test('a build that exited 0 while a setup starts: the check waits for the setup, then re-runs and confirms the build', async () => {
+            const w = make();
+            builtLayout(w, 'none');
+            const { job } = passBuild(w);
+            // The setup starts right after the build ended, before the check's re-run could spawn.
+            const setup = w.tasks.start(w.tasks.execution(setupTask()));
+            await rounds();
+            assert.strictEqual(w.children.length, 0, 'no re-run beside the setup');
+            assert.strictEqual(w.tracker.job(job.id)?.diagnosis?.state, 'pending');
+            w.tasks.finish(setup, 0);
+            await until(() => w.children.length === 1, 'the re-run was spawned once the setup ended');
+            w.children[0].finish(0, 'Build summary: 1 succeeded, 0 failed\n');
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.diagnosis?.check, 'up-to-date', done.diagnosis?.text);
+            assert.ok(!(done.diagnosis?.text ?? '').includes('another build started'), done.diagnosis?.text);
+        });
+
+        test('a failed build while a setup runs: the re-run starts only once the setup ended, and has the lines', async () => {
+            const w = make();
+            const setup = w.tasks.start(w.tasks.execution(setupTask()));
+            const { job } = failBuild(w);
+            await rounds();
+            assert.strictEqual(w.children.length, 0, 'no re-run beside the setup');
+            w.tasks.finish(setup, 0);
+            await until(() => w.children.length === 1, 'the re-run was spawned once the setup ended');
+            w.children[0].finish(1, GCC_LOG);
+            assert.strictEqual((await diagnosed(w, job.id)).diagnosis?.errorCount, 2);
+        });
+
+        test('a setup that starts during the re-run stops it; once the setup ended the re-run runs again from an empty log', async () => {
+            const w = make();
+            const { job } = failBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was spawned');
+            const logFile = logOf(w.children[0]);
+            fs.writeFileSync(logFile, PROGRESS);
+            w.settings.onKill = () => fs.appendFileSync(logFile, KILL_FALLOUT);
+            const setup = w.tasks.start(w.tasks.execution(setupTask()));
+            assert.deepStrictEqual(w.killed, [w.children[0]], 'the re-run made way for the setup');
+            await rounds();
+            assert.strictEqual(w.children.length, 1, 'not again while the setup runs');
+            w.tasks.finish(setup, 0);
+            await until(() => w.children.length === 2, 'the re-run ran again once the setup ended');
+            assert.ok(!fs.existsSync(logFile), 'the second re-run starts from an empty log');
+            w.children[1].finish(1, GCC_LOG);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.diagnosis?.errorCount, 2);
+            assert.ok(!(done.diagnosis?.text ?? '').includes('op_add'), 'nothing of the stopped re-run');
+        });
+
+        test('while it waits for a setup, a build that starts supersedes the re-run and stop_build stops it: neither spawns', async () => {
+            const w = make();
+            const setup = w.tasks.start(w.tasks.execution(setupTask()));
+            const first = failBuild(w).job;
+            await rounds();
+            w.tasks.finish(w.tasks.start(w.tasks.execution(buildTask(w))), BUILD_STOPPED_EXIT_CODE);
+            assert.match((await diagnosed(w, first.id)).diagnosis?.text ?? '', /^No error lines: the diagnostic re-run of cbuild was stopped because another build started;/);
+
+            const second = failBuild(w).job;
+            await rounds();
+            w.tracker.stopFollowUps();
+            assert.match((await diagnosed(w, second.id)).diagnosis?.text ?? '', /^No error lines: cmsis_action stop_build stopped the diagnostic re-run of cbuild before it started\./);
+            assert.strictEqual(w.children.length, 0);
+            w.tasks.finish(setup, 0);
+        });
+
+        test('a setup that runs on for 10 min: the re-run gives up and says which task kept it from running', async () => {
+            const w = make();
+            w.tasks.start(w.tasks.execution(setupTask()));
+            const { job } = failBuild(w);
+            await rounds();
+            w.clock.advance(w.clock.now() + 10 * 60_000);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(w.children.length, 0);
+            assert.strictEqual(done.diagnosis?.text, 'No error lines: CMSIS Solution\'s task \'cbuild setup Blinky.csolution.yml --target database --active MPS3 '
+                + '--packs --skip-convert\' was still running after 10 min, so cbuild was not re-run beside it.\n'
+                + 'cmsis_action build re-runs cbuild with --log itself when it can.');
+        });
     });
 
     test('a superseded re-run leaves the log as it is: no cut and no mark, also after its kill grace', async () => {

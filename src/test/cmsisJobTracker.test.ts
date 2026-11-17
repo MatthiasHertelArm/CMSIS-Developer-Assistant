@@ -21,7 +21,8 @@ import * as path from 'path';
 import { CmsisJobTracker, JOB_RETENTION_MS, LABEL_FETCH_MS } from '../cmsisJobTracker';
 import { executionIn, Job, JobDiagnosis } from '../core/cmsisTasks';
 import { TerminalOutput } from '../core/runOutput';
-import { flashFailedHint, formatDuration, idleStatus, LONG_FLASH_MS, sessionTaskLine, stillRunning, stuckFlashTask } from '../handler/jobText';
+import { ToolError } from '../core/toolResult';
+import { flashFailedHint, formatDuration, idleStatus, jobResult, LONG_FLASH_MS, sessionTaskLine, stillRunning, stuckFlashTask } from '../handler/jobText';
 import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 
 /**
@@ -114,6 +115,37 @@ suite('CmsisJobTracker', () => {
             const current = tracker.job(job.id) as Job;
             assert.strictEqual(current.state, 'armed');
             assert.deepStrictEqual(current.executions.map((execution) => [execution.kind, execution.role]), [['setup', undefined]]);
+        });
+
+        test('a setup is work in flight, no job\'s: a job held back behind it says so, and one that never went out says why (#138)', () => {
+            const { tasks, clock, tracker } = world();
+            const setup = tasks.start(tasks.execution(SETUP));
+            assert.deepStrictEqual(tracker.setupExecutions().map((execution) => execution.name), [SETUP.name]);
+            assert.strictEqual(tracker.openJobs().length, 0, 'the setup is no job');
+            const job = tracker.begin('build', 'MPS3');
+            tracker.holdBack(job.id, SETUP.name);
+            clock.advance(clock.now() + 5_000);
+            assert.deepStrictEqual(tracker.heldJobs().map((held) => held.id), [job.id]);
+            const waiting = stillRunning(tracker.job(job.id) as Job, { tag: ' on MPS3', now: clock.now() });
+            assert.strictEqual(waiting.text, 'CMSIS \'build\' on MPS3 waits for CMSIS Solution\'s task \'cbuild setup Blinky.csolution.yml\' to end (waiting 5 s); '
+                + 'the build starts then (job b-1). This is not a failure. Call cmsis_action {action:\'status\'} to wait for the result — do not start another build.');
+            assert.strictEqual((waiting.data?.job as Record<string, unknown>).waitsFor, SETUP.name);
+
+            tracker.settle(job.id, 'not-started', '\'cbuild setup Blinky.csolution.yml\' was still running after 10 min, so the build did not go out.');
+            assert.throws(() => jobResult(tracker.job(job.id) as Job, { tag: ' on MPS3', now: clock.now() }), (caught: ToolError) => {
+                assert.strictEqual(caught.message, 'CMSIS \'build\' on MPS3 was not started (job b-1): it waited for CMSIS Solution\'s task '
+                    + '\'cbuild setup Blinky.csolution.yml\' to end. \'cbuild setup Blinky.csolution.yml\' was still running after 10 min, so the build did not go out.');
+                return true;
+            });
+            assert.match(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
+                /^No cmsis_action job is open in this window, but CMSIS Solution's own setup is in flight \(below\)\. Last results: build on MPS3 ❌ not started [\d.]+ s ago \(job b-1\)\.\nCMSIS tasks running: 'cbuild setup Blinky\.csolution\.yml' for 5 s \(CMSIS Solution's setup: a build waits for it\)\.$/);
+
+            const released = tracker.begin('build', 'MPS3');
+            tracker.holdBack(released.id, SETUP.name);
+            tracker.release(released.id);
+            assert.strictEqual(tracker.job(released.id)?.heldBy, undefined);
+            tasks.finish(setup, 0);
+            assert.deepStrictEqual(tracker.setupExecutions(), []);
         });
 
         test('the build the command returns is bound even when its start was not seen', () => {

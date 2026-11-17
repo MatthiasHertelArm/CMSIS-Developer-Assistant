@@ -83,6 +83,7 @@ import {
     reduceJob,
     RunKind,
     settleJob,
+    SETUP_TASK_KINDS,
     TaskFacts,
     withDiagnosis,
     WORKSPACE_SOURCE,
@@ -313,6 +314,32 @@ export class CmsisJobTracker {
         }
     }
 
+    /**
+     * The job's command is held back until CMSIS Solution's setup task `name`
+     * ends (#138): `status` and the job's result say so. A settled job is
+     * left as it is.
+     */
+    holdBack(id: string, name: string): void {
+        const job = this.jobs.get(id);
+        if (job && !isSettled(job.state)) {
+            this.store(job, { ...job, heldBy: { name, since: job.heldBy?.since ?? this.clock.now() } });
+        }
+    }
+
+    /** The job's command goes out now: it is no longer held back. */
+    release(id: string): void {
+        const job = this.jobs.get(id);
+        // A settled job keeps it: its result says it never went out.
+        if (job?.heldBy && !isSettled(job.state)) {
+            this.store(job, { ...job, heldBy: undefined });
+        }
+    }
+
+    /** Open jobs whose command is still held back behind a setup task, oldest first. */
+    heldJobs(): Job[] {
+        return this.openJobs().filter((job) => job.heldBy !== undefined);
+    }
+
     /** Forget an open job that turned out to have no task of its own: a load_and_debug without a pre-launch Load. */
     discard(id: string): void {
         const job = this.jobs.get(id);
@@ -503,6 +530,14 @@ export class CmsisJobTracker {
     /** The CMSIS executions alive in this window, oldest first. */
     liveExecutions(): LiveExecution[] {
         return [...this.live.values()].sort((a, b) => a.startedAt - b.startedAt);
+    }
+
+    /**
+     * CMSIS Solution's own setup tasks alive in this window, oldest first
+     * (#138): no job's, but work in flight that a build waits for.
+     */
+    setupExecutions(): LiveExecution[] {
+        return this.liveExecutions().filter((execution) => SETUP_TASK_KINDS.has(execution.kind));
     }
 
     /** What holds, or is about to hold, the probe: CMSIS Run, Load+Run, Load, Erase, TargetInfo, and `flash`. */

@@ -431,6 +431,7 @@ export type RerunSkip =
     | { kind: 'clean' }
     | { kind: 'unresolved'; field: string }
     | { kind: 'build-running'; name: string }
+    | { kind: 'setup-running'; name: string; waited: string }
     | { kind: 'superseded' }
     | { kind: 'stopped' }
     | { kind: 'spawn-failed'; error: string };
@@ -454,6 +455,8 @@ export function rerunSkipText(skip: RerunSkip): string {
             return `the task definition's '${skip.field}' uses a variable the re-run cannot resolve, so cbuild was not re-run`;
         case 'build-running':
             return `'${skip.name}' is running, so cbuild was not re-run beside it`;
+        case 'setup-running':
+            return `CMSIS Solution's task '${skip.name}' was still running after ${skip.waited}, so cbuild was not re-run beside it`;
         case 'superseded':
             return 'the diagnostic re-run of cbuild was stopped because another build started; that build\'s result replaces this one';
         case 'stopped':

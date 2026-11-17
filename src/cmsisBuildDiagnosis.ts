@@ -58,9 +58,14 @@
  * (window scope, read for every failure); no shell; a limit of 30 min
  * (`DIAGNOSTIC_RERUN_CAP_MS`), meant for a tool that hangs, not for a long
  * build, which goes on as the job's follow-up; it starts only while no other
- * `cmsis-csolution.build` execution (build or setup) is alive, and one that
- * starts meanwhile kills it and everything it started; `cmsis_action
- * stop_build` stops it as well (`stopAll`), since it is no task. A missing
+ * build, rebuild or clean is alive, and one that starts meanwhile kills it
+ * and everything it started; `cmsis_action stop_build` stops it as well
+ * (`stopAll`), since it is no task. CMSIS Solution's own setup task
+ * (`cbuild setup …`, after loading a solution or a target switch) is no
+ * newer build (#138): the re-run waits until no setup is alive (at most
+ * `SETUP_WAIT_MS`), and a setup that starts while it runs stops it, after
+ * which it waits for that setup and runs again, so that the build still gets
+ * a verified result. A missing
  * environment file or cbuild, or the setting off, is said in the result,
  * which then names `get_build_diagnostics`.
  *
@@ -127,7 +132,18 @@ import {
 import { parseCbuildRunOutputs, parseCbuildYml } from './core/buildInfo/artifacts';
 import { BuildLogSummary, parseBuildLog, readBuildLog } from './core/buildInfo/buildLog';
 import { renderBuildFailure } from './core/buildInfo/render';
-import { BUILD_TASK_KINDS, BuildCheck, BuildMessage, isBuildAction, Job, JobDiagnosis, JobExecution, MAX_BUILD_MESSAGES } from './core/cmsisTasks';
+import {
+    BUILD_TASK_KINDS,
+    BuildCheck,
+    BuildMessage,
+    isBuildAction,
+    Job,
+    JobDiagnosis,
+    JobExecution,
+    MAX_BUILD_MESSAGES,
+    SETUP_TASK_KINDS,
+    SETUP_WAIT_MS,
+} from './core/cmsisTasks';
 import { knownMessageLines } from './core/knowledge/knownMessageLookup';
 import { activeTargetSetOf, solutionFileOf } from './core/solutionAnswers';
 import { formatDuration } from './handler/jobText';
@@ -199,13 +215,19 @@ const OUTPUT_TAIL_BYTES = 256 * 1024;
 const LOG_READ_BYTES = 16 * 1024 * 1024;
 /** How long a CMSIS Solution query may take. */
 const QUERY_MS = 5_000;
+/** A re-run stopped by a setup task that starts while it runs is started again at most this often (#138). */
+const MAX_SETUP_RESTARTS = 3;
 /** At most this many cleans keep the images they found at their start, waiting for their end. */
 const MAX_CLEAN_SNAPSHOTS = 8;
 /** Definition fields that must not hold a variable the re-run cannot resolve (`solution` and `active` are resolved). */
 const LITERAL_FIELDS = ['generator', 'intermediateDirectory', 'outputDirectory', 'cmakeTarget', 'toolchain'];
 
-/** Why a re-run was stopped before cbuild ended by itself: its limit, `cmsis_action stop_build`, a newer build or re-run, the end of the extension. */
-type StopReason = 'cap' | 'request' | 'superseded' | 'disposed';
+/**
+ * Why a re-run was stopped before cbuild ended by itself: its limit,
+ * `cmsis_action stop_build`, a newer build or re-run, CMSIS Solution's setup
+ * task (after which it runs again, #138), the end of the extension.
+ */
+type StopReason = 'cap' | 'request' | 'superseded' | 'setup' | 'disposed';
 
 /** A stop: why it came, and how many bytes the log had then. */
 interface RerunStop {
@@ -225,8 +247,11 @@ type RunResult =
         stop?: RerunStop;
     };
 
-/** A stop after which the re-run still owns the log; a superseded re-run never touches it again (#135). */
-type OwnStop = Exclude<StopReason, 'superseded'>;
+/**
+ * A stop after which the re-run still owns the log; a superseded re-run never
+ * touches it again (#135), and one stopped for a setup starts it afresh (#138).
+ */
+type OwnStop = Exclude<StopReason, 'superseded' | 'setup'>;
 
 /** Why a stop came, as the line it leaves in the log says it. */
 const STOP_CAUSES: Readonly<Record<OwnStop, string>> = {
@@ -538,6 +563,8 @@ export class BuildDiagnosisRunner {
     private buildStarts = 0;
     /** `cmsis_action stop_build` requests so far: one that comes while a re-run waits for the log stops it. */
     private stopRequests = 0;
+    /** Re-runs waiting for a setup task to end, woken by what may end their wait: a build start, a newer re-run, stop_build, disposal. */
+    private readonly nudges = new Set<() => void>();
     private disposed = false;
     private readonly disposal: Promise<void>;
     private signalDisposal: () => void = () => undefined;
@@ -580,8 +607,10 @@ export class BuildDiagnosisRunner {
      * counted, for the re-runs that wait for the log.
      */
     onStarted(execution: LiveExecution): void {
-        if (BUILD_TASK_KINDS.has(execution.kind)) {
+        // CMSIS Solution's setup is no newer build: a re-run waits for it instead (#138).
+        if (BUILD_TASK_KINDS.has(execution.kind) && !SETUP_TASK_KINDS.has(execution.kind)) {
             this.buildStarts++;
+            this.nudge();
         }
         if (execution.kind === 'build' || execution.kind === 'rebuild') {
             this.noteImageStamps(execution.key);
@@ -725,6 +754,7 @@ export class BuildDiagnosisRunner {
      */
     stopAll(): void {
         this.stopRequests++;
+        this.nudge();
         for (const rerun of [...this.running]) {
             rerun.stop('request');
         }
@@ -733,6 +763,7 @@ export class BuildDiagnosisRunner {
     dispose(): void {
         this.disposed = true;
         this.signalDisposal();
+        this.nudge();
         for (const rerun of [...this.running]) {
             rerun.stop('disposed');
         }
@@ -889,36 +920,51 @@ export class BuildDiagnosisRunner {
         for (const older of [...this.running]) {
             older.stop('superseded');
         }
+        this.nudge();
         return this.inLogTurn(async () => {
             const env = diagnosticEnvironment(this.host.baseEnvironment(), tools, await this.host.packRoot(), this.host.platform);
-            // Decided with no wait left before the spawn, once the older re-runs have let go of the log.
-            if (this.disposed) {
-                return skipped({ kind: 'spawn-failed', error: 'the extension shut down' });
-            }
-            if (turn !== this.turns || this.buildStarts !== marks.buildStarts) {
-                return skipped({ kind: 'superseded' });
-            }
-            if (this.stopRequests !== marks.stopRequests) {
-                return skipped({ kind: 'stopped' });
-            }
-            const other = this.otherBuild(decided.key);
-            if (other) {
-                return skipped({ kind: 'build-running', name: other.name });
-            }
             const logFile = path.join(solutionDir, ...DIAGNOSTIC_LOG_PATH.split('/'));
-            fs.mkdirSync(path.dirname(logFile), { recursive: true });
-            fs.rmSync(logFile, { force: true });
-            const args = cbuildDiagnosticArgs(definition, {
-                solution: where.solution, active, output: where.output, logFile, skipConvert: where.index !== undefined,
-            });
-            logger.info(`Build diagnosis: ${cbuild} ${args.join(' ')}`);
-            const result = await this.run(cbuild, args, env, where.cwd ?? solutionDir, decided.key, logFile);
+            const waitUntil = this.host.clock.now() + SETUP_WAIT_MS;
+            let result: RunResult | undefined;
+            for (let attempt = 0; ; attempt++) {
+                // CMSIS Solution's setup task first (#138): a re-run beside it would build from files it rewrites.
+                const setup = await this.setupsEnded(turn, marks, waitUntil);
+                // Decided with no wait left before the spawn, once the older re-runs have let go of the log.
+                if (this.disposed) {
+                    return skipped({ kind: 'spawn-failed', error: 'the extension shut down' });
+                }
+                if (turn !== this.turns || this.buildStarts !== marks.buildStarts) {
+                    return skipped({ kind: 'superseded' });
+                }
+                if (this.stopRequests !== marks.stopRequests) {
+                    return skipped({ kind: 'stopped' });
+                }
+                if (setup !== undefined || attempt > MAX_SETUP_RESTARTS) {
+                    const name = setup ?? this.tracker.setupExecutions()[0]?.name ?? 'cbuild setup';
+                    return skipped({ kind: 'setup-running', name, waited: formatDuration(this.host.clock.now() - (waitUntil - SETUP_WAIT_MS)) });
+                }
+                const other = this.otherBuild(decided.key);
+                if (other) {
+                    return skipped({ kind: 'build-running', name: other.name });
+                }
+                fs.mkdirSync(path.dirname(logFile), { recursive: true });
+                fs.rmSync(logFile, { force: true });
+                const args = cbuildDiagnosticArgs(definition, {
+                    solution: where.solution, active, output: where.output, logFile, skipConvert: where.index !== undefined,
+                });
+                logger.info(`Build diagnosis: ${cbuild} ${args.join(' ')}`);
+                result = await this.run(cbuild, args, env, where.cwd ?? solutionDir, decided.key, logFile);
+                if (result.kind !== 'ended' || result.stop?.reason !== 'setup') {
+                    break;
+                }
+                logger.info('Build diagnosis: a CMSIS Solution setup task started during the re-run; it runs again once the setup ended');
+            }
             if (result.kind === 'spawn-failed') {
                 return skipped({ kind: 'spawn-failed', error: result.error });
             }
             const stop = result.stop;
             // Superseded, it lets go at once: the log is the newer re-run's, never read, cut or marked by this one (#135).
-            if (stop?.reason === 'superseded') {
+            if (stop?.reason === 'superseded' || stop?.reason === 'setup') {
                 return skipped({ kind: 'superseded' });
             }
             // After any other stop, the log as it was then: what follows in it is the stop's.
@@ -958,9 +1004,50 @@ export class BuildDiagnosisRunner {
         }
     }
 
-    /** A build-type execution (build, rebuild, clean or setup) other than the failed one that is alive. */
+    /** A build, rebuild or clean other than the failed one that is alive; a setup is waited for instead (#138). */
     private otherBuild(ownKey: number): LiveExecution | undefined {
-        return this.tracker.liveExecutions().find((execution) => BUILD_TASK_KINDS.has(execution.kind) && execution.key !== ownKey);
+        return this.tracker.liveExecutions().find((execution) => BUILD_TASK_KINDS.has(execution.kind)
+            && !SETUP_TASK_KINDS.has(execution.kind) && execution.key !== ownKey);
+    }
+
+    /**
+     * Wait until no CMSIS Solution setup task is alive (#138), or until
+     * something ends the wait: a build start, a newer re-run, stop_build or
+     * the end of the extension (the caller tells which). Undefined when no
+     * setup is alive any more or the wait was ended so; the name of the setup
+     * still running when `until` came.
+     */
+    private async setupsEnded(turn: number, marks: RerunMarks, until: number): Promise<string | undefined> {
+        for (;;) {
+            const setups = this.tracker.setupExecutions();
+            const interrupted = this.disposed || turn !== this.turns || this.buildStarts !== marks.buildStarts
+                || this.stopRequests !== marks.stopRequests;
+            if (setups.length === 0 || interrupted) {
+                return undefined;
+            }
+            const left = until - this.host.clock.now();
+            if (left <= 0) {
+                return setups[setups.length - 1].name;
+            }
+            logger.info(`Build diagnosis: the re-run waits for '${setups[setups.length - 1].name}' to end`);
+            let wake: () => void = () => undefined;
+            const nudged = new Promise<void>((resolve) => {
+                wake = resolve;
+            });
+            this.nudges.add(wake);
+            try {
+                await Promise.race([this.tracker.waitForEnd(setups.map((setup) => setup.execution), left), nudged]);
+            } finally {
+                this.nudges.delete(wake);
+            }
+        }
+    }
+
+    /** Wake the re-runs that wait for a setup task, so that they look again whether to go on. */
+    private nudge(): void {
+        for (const wake of [...this.nudges]) {
+            wake();
+        }
     }
 
     /**
@@ -1029,7 +1116,8 @@ export class BuildDiagnosisRunner {
             cancelCap = this.host.clock.startTimer(DIAGNOSTIC_RERUN_CAP_MS, () => rerun.stop('cap'));
             watch = this.tracker.onDidStartExecution((execution) => {
                 if (BUILD_TASK_KINDS.has(execution.kind) && execution.key !== ownKey) {
-                    rerun.stop('superseded');
+                    // A setup of CMSIS Solution is no newer build (#138): the re-run makes way for it and runs again after it.
+                    rerun.stop(SETUP_TASK_KINDS.has(execution.kind) ? 'setup' : 'superseded');
                 }
             });
         });

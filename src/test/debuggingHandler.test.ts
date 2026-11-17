@@ -3467,6 +3467,104 @@ suite('DebuggingHandler', () => {
                     + 'No CMSIS task is running in this window.');
             });
 
+            suite('CMSIS Solution\'s setup task is work in flight (#138)', () => {
+                /** The setup CMSIS Solution runs after loading a solution or a target switch, as the issue's log shows it. */
+                const SETUP_TASK: FixtureTask = {
+                    name: 'cbuild setup demo.csolution.yml --target database --active HE --packs --skip-convert', source: 'cmsis-csolution.build',
+                    definition: { type: 'cmsis-csolution.build', setup: true, solution: 'demo.csolution.yml', active: 'HE' },
+                };
+
+                test('open_solution, then build at once: the build goes out only once the setup ended, and its result is the build\'s', async () => {
+                    const w = jobWorld();
+                    // What open_solution leaves behind: the setup of the activated solution, still running.
+                    const setup = w.tasks.start(w.tasks.execution(SETUP_TASK));
+                    let issuedWhileSetup: boolean | undefined;
+                    solutionOn('HE', {
+                        'cmsis-csolution.build': () => {
+                            issuedWhileSetup = w.tasks.taskExecutions().includes(setup);
+                            return runs(w.tasks, BUILD_TASK, 0, true)();
+                        },
+                    });
+                    setTimeout(() => w.tasks.finish(setup, 0), 40);
+                    const answer = await textAnswer(w.handler.handleCmsisCommand({ action: 'build' }));
+                    assert.strictEqual(issuedWhileSetup, false, 'the build command went out after the setup ended');
+                    assert.match(answer, /^✅ CMSIS 'build' succeeded on HE \(task 'cbuild demo\.csolution\.yml --active HE' exited 0 after [\d.]+ s, job b-1\)\./);
+                    assert.ok(!answer.includes('cbuild setup'), 'the setup ended before the job bound anything');
+                });
+
+                test('a setup that outlasts the call: running with the task it waits for; status and a repeat find the job; it starts after the setup', async () => {
+                    const w = jobWorld();
+                    const setup = w.tasks.start(w.tasks.execution(SETUP_TASK));
+                    let builds = 0;
+                    let build: FakeExecution | undefined;
+                    solutionOn('HE', {
+                        'cmsis-csolution.build': () => {
+                            builds++;
+                            build = w.tasks.start(w.tasks.execution(BUILD_TASK));
+                            return build;
+                        },
+                    });
+                    const first = await w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 });
+                    assert.ok(typeof first === 'object' && first.status === 'running', JSON.stringify(first));
+                    assert.match(first.text, /^CMSIS 'build' on HE waits for CMSIS Solution's task 'cbuild setup demo\.csolution\.yml --target database --active HE --packs --skip-convert' to end \(waiting [\d.]+ s\); the build starts then \(job b-1\)\. This is not a failure\. Call cmsis_action \{action:'status'\} to wait for the result — do not start another build\.$/);
+                    const job = first.data?.job as Record<string, unknown>;
+                    assert.deepStrictEqual([job.id, job.state, job.task, job.waitsFor], ['b-1', 'armed', null, SETUP_TASK.name]);
+                    assert.strictEqual(builds, 0, 'nothing was issued while the setup runs');
+
+                    const busy = await w.handler.handleCmsisCommand({ action: 'status', timeoutMs: 4_000 });
+                    assert.ok(typeof busy === 'object' && busy.status === 'running', JSON.stringify(busy));
+                    assert.match(busy.text, /^CMSIS 'build' on HE waits for CMSIS Solution's task 'cbuild setup .*' to end .*\(job b-1\)\./);
+                    const repeat = await w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 });
+                    assert.ok(typeof repeat === 'object' && repeat.status === 'running' && repeat.text.startsWith('Attached to the build started'), JSON.stringify(repeat));
+                    assert.strictEqual(builds, 0);
+
+                    w.tasks.finish(setup, 0);
+                    setTimeout(() => w.tasks.finish(build as FakeExecution, 0), 40);
+                    const done = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
+                    assert.match(done, /^✅ CMSIS 'build' succeeded on HE \(task 'cbuild demo\.csolution\.yml --active HE' exited 0 after [\d.]+ s, job b-1\)\./);
+                    assert.strictEqual(builds, 1, 'the held build went out once, after the setup');
+                    assert.strictEqual(w.tracker.job('b-1')?.heldBy, undefined, 'no longer held');
+                });
+
+                test('status without a job waits for a running setup and never says nothing is in flight beside it', async () => {
+                    const w = jobWorld();
+                    const setup = w.tasks.start(w.tasks.execution(SETUP_TASK));
+                    const busy = await w.handler.handleCmsisCommand({ action: 'status', timeoutMs: 4_000 });
+                    assert.ok(typeof busy === 'object' && busy.status === 'running', JSON.stringify(busy));
+                    assert.match(busy.text, /^No cmsis_action job in this window yet, but CMSIS Solution's own setup is in flight \(below\)\.\nCMSIS tasks running: 'cbuild setup demo\.csolution\.yml --target database --active HE --packs --skip-convert' for [\d.]+ s \(CMSIS Solution's setup: a build waits for it\)\.\nThis is not a failure: call cmsis_action \{action:'status'\} again to wait for the setup — a build, rebuild or clean started now waits for it too\.$/);
+                    assert.ok(!busy.text.includes('nothing is in flight') && !busy.text.includes('No CMSIS job in flight'), busy.text);
+                    assert.strictEqual((busy.data?.task as Record<string, unknown>).name, SETUP_TASK.name);
+
+                    setTimeout(() => w.tasks.finish(setup, 0), 30);
+                    assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
+                        'No CMSIS job in this window: nothing is in flight and none has finished since the window started.\n'
+                        + 'No CMSIS task is running in this window.');
+                });
+
+                test('stop_build while a build is held back stops the setup and the build: it never goes out', async () => {
+                    const w = jobWorld();
+                    w.tasks.start(w.tasks.execution(SETUP_TASK));
+                    let builds = 0;
+                    solutionOn('HE', {
+                        'cmsis-csolution.build': () => {
+                            builds++;
+                        },
+                        'cmsis-csolution.stopBuild': () => {
+                            const running = w.tasks.taskExecutions()[0] as FakeExecution;
+                            setTimeout(() => w.tasks.finish(running, 130), 5);
+                        },
+                    });
+                    await replyAnswer(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'running');
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                        /^CMSIS 'stop_build' on HE: stopped 'cbuild setup .*' \(ended [\d.]+ s after the stop request; job b-1\)\./);
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                    assert.strictEqual(builds, 0, 'the held build never went out');
+                    assert.strictEqual(w.tracker.last('build')?.state, 'cancelled');
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
+                        /^No CMSIS job in flight in this window\. Last results: build on HE stopped before it started [\d.]+ s ago \(job b-1\)\.\nNo CMSIS task is running in this window\.$/);
+                });
+            });
+
             test('one deadline per call: a 20 s target switch still ends in the job\'s running reply, not the fence', async () => {
                 const solutionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-switch-'));
                 try {
