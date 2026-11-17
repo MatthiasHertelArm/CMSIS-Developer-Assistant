@@ -33,6 +33,9 @@ CMSIS Solution's API version 3 behind `cmsis_query` and `cmsis_action` (proposal
 - **Web examples alike are told apart without Arm's web catalog** when CMSIS Solution names their pack itself (#641 on its side); the catalog is asked only for those it names none for.
 - Agent-visible texts: the `cmsis_action` and `cmsis_query` descriptions and enums, the `cmsis-action` topic of the agent guide (one row for `convert`); surface snapshot updated. `tools/list` stays within its budget of 33 200 bytes.
 
+### Fixed
+- **`flash` waits for a pyOCD that starts slowly the first time.** The first start of a freshly installed or updated CMSIS Debugger's pyOCD on macOS can take longer than the 5 s `--version` check, and `flash` then said pyOCD was not found. A check that runs out of time now gets one 60 s wait. Found on an FRDM-MCXA156 over its on-board CMSIS-DAP (MCU-Link).
+
 ## [2.9.0] - 2026-11-11
 
 The first preview of the 2.10 line, published on the fork as a pre-release VSIX (odd minor version). The extension is that of 2.8.0; what is new is the core knowledge index it ships, and one more route name in the server instructions. No tool, argument or setting changed since 2.8.0.

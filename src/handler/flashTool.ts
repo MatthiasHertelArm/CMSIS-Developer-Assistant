@@ -169,6 +169,11 @@ function toolsEnvironment(cbuildRunFile: string, host: HandlerHost): string | un
     return undefined;
 }
 
+/** The usual wait for `pyocd --version`. */
+const PYOCD_PROBE_MS = 5_000;
+/** The wait for a pyOCD that did not answer in time, as on its first start after an install. */
+const PYOCD_FIRST_START_MS = 60_000;
+
 /** A runnable pyOCD, with its version and where it came from. */
 interface FoundPyocd extends PyocdCandidate {
     version: string;
@@ -188,7 +193,13 @@ async function findPyocd(cbuildRunFile: string, host: HandlerHost): Promise<{ fo
     });
     const unusable: string[] = [];
     for (const candidate of candidates) {
-        const version = await probePyocd(candidate.bin);
+        const started = Date.now();
+        let version = await probePyocd(candidate.bin, PYOCD_PROBE_MS);
+        if (!version && Date.now() - started >= PYOCD_PROBE_MS) {
+            // The first start of a freshly installed pyOCD on macOS (Gatekeeper's check, the bundle unpacking) can take
+            // longer than a usual answer: a probe that ran out of time gets one longer wait before it counts as unusable.
+            version = await probePyocd(candidate.bin, PYOCD_FIRST_START_MS);
+        }
         if (version) {
             return { found: { ...candidate, version }, unusable };
         }
