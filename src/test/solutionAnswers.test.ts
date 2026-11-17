@@ -33,10 +33,12 @@ import {
 import {
     activeCbuildRunFile,
     activePackFolders,
+    activeSolutionAnswer,
     askSolution,
     GET_BSP_PATH,
     GET_CBUILD_RUN_FILE,
     GET_DFP_PATH,
+    GET_SOLUTION_FILE,
     SolutionCommands,
 } from '../utils/solutionQueries';
 
@@ -175,5 +177,28 @@ suite('CMSIS Solution answers', () => {
         } finally {
             stand.dispose();
         }
+    });
+
+    test('the active solution: a file or none is an answer; no answer stays apart from "none" (#124)', async () => {
+        const file = path.resolve('/w/Blinky.csolution.yml');
+        assert.deepStrictEqual(await activeSolutionAnswer(stubCommands({ [GET_SOLUTION_FILE]: () => file }).source), { active: true, file });
+        for (const none of ['', undefined]) {
+            const { source, asked } = stubCommands({ [GET_SOLUTION_FILE]: () => none });
+            assert.deepStrictEqual(await activeSolutionAnswer(source), { active: false }, `${JSON.stringify(none)} means no solution is loaded`);
+            assert.deepStrictEqual(asked, [GET_SOLUTION_FILE]);
+        }
+
+        const inactive = stubCommands({ [GET_SOLUTION_FILE]: () => file }, { active: false });
+        assert.strictEqual(await activeSolutionAnswer(inactive.source), undefined);
+        assert.deepStrictEqual(inactive.asked, [], 'an inactive extension is not asked');
+        const unoffered = stubCommands({ [GET_SOLUTION_FILE]: () => file }, { registered: [GET_CBUILD_RUN_FILE] });
+        assert.strictEqual(await activeSolutionAnswer(unoffered.source), undefined);
+        assert.deepStrictEqual(unoffered.asked, []);
+        const failing = stubCommands({ [GET_SOLUTION_FILE]: () => { throw new Error('not ready'); } });
+        assert.strictEqual(await activeSolutionAnswer(failing.source), undefined);
+        const slow = stubCommands({ [GET_SOLUTION_FILE]: () => new Promise(() => { /* never answers */ }) }, { timeoutMs: 50 });
+        assert.strictEqual(await activeSolutionAnswer(slow.source), undefined, 'the fence ends the wait');
+        assert.strictEqual(await askSolution(GET_SOLUTION_FILE, stubCommands({ [GET_SOLUTION_FILE]: () => file }).source), file,
+            'askSolution answers the value as before');
     });
 });

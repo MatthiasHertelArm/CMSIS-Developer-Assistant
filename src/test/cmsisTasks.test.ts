@@ -22,11 +22,13 @@ import {
     classifyByLabelLoosely,
     classifyCmsisTask,
     CmsisTaskKind,
+    completedRun,
     executionIn,
     GuardedAction,
     guardProbe,
     hasCmsisTasks,
     isBuildAction,
+    isSettled,
     Job,
     JobEvent,
     nextTimeCheck,
@@ -50,6 +52,10 @@ const fold = (job: Job, ...events: JobEvent[]): Job => events.reduce(reduceJob, 
 const armed = (action: Job['action'], preexisting: number[] = []): Job => armJob({ id: 'j-1', action, origin: 'call', at: 0, preexisting });
 const start = (key: number, name: string, kind: CmsisTaskKind, at: number, type: 'taskStart' | 'processStart' = 'processStart'): JobEvent =>
     ({ type, key, name, kind, at });
+/** CMSIS Run whose command line hosts a GDB server, as the tracker reports it. */
+const serverStart = (key: number, at: number): JobEvent => ({ type: 'processStart', key, name: 'CMSIS Run', kind: 'run', at, runKind: 'gdbServer' });
+/** CMSIS Run whose command line is the FVP model's, as the tracker reports it; a plain `start` of a Run says neither. */
+const modelStart = (key: number, at: number): JobEvent => ({ type: 'processStart', key, name: 'CMSIS Run', kind: 'run', at, runKind: 'model' });
 
 suite('cmsisTasks', () => {
 
@@ -98,11 +104,11 @@ suite('cmsisTasks', () => {
 
     suite('reduceJob replays the task sequences of CMSIS Solution 1.70.1', () => {
         const fixtures = loadTaskFixtures();
-        test('the fixture set covers build, rebuild, clean, a stopped build, load, erase, the three Load+Run shapes, load_and_debug and stop_run', () => {
+        test('the fixture set covers build, rebuild, clean, a stopped build, load, erase, the Load+Run shapes, an FVP run that ends at EOT, load_and_debug and stop_run', () => {
             assert.deepStrictEqual(fixtures.map((fixture) => fixture.file), [
                 'build-failed.json', 'build-ok.json', 'build-stopped.json', 'build-with-setup.json', 'clean-ok.json', 'erase-failed.json',
-                'load-and-debug-pyocd.json', 'load-and-run-arm-debugger.json', 'load-and-run-load-failed.json', 'load-and-run-pyocd.json',
-                'load-ok.json', 'rebuild-ok.json', 'stop-run.json',
+                'load-and-debug-pyocd.json', 'load-and-run-arm-debugger.json', 'load-and-run-fvp-eot.json', 'load-and-run-load-failed.json',
+                'load-and-run-pyocd.json', 'load-ok.json', 'rebuild-ok.json', 'stop-run.json',
             ]);
         });
         for (const fixture of fixtures) {
@@ -224,10 +230,10 @@ suite('cmsisTasks', () => {
             assert.strictEqual(nextTimeCheck(job), undefined);
         });
 
-        test('load_and_run: Run must stay up for the grace; ending inside it fails with its code', () => {
+        test('load_and_run: a GDB server Run must stay up for the grace; ending inside it fails with its code, exit 0 included (#73)', () => {
             const flashed = fold(armed('load_and_run'), { type: 'issued', at: 0 },
                 start(1, 'CMSIS Load', 'load', 1), { type: 'processEnd', key: 1, exitCode: 0, at: 5 },
-                start(2, 'CMSIS Run', 'run', 6));
+                serverStart(2, 6));
             assert.strictEqual(flashed.state, 'started');
             assert.strictEqual(nextTimeCheck(flashed), 6 + RUN_GRACE_MS);
             const died = reduceJob(flashed, { type: 'processEnd', key: 2, exitCode: 1, at: 7 });
@@ -235,15 +241,36 @@ suite('cmsisTasks', () => {
             assert.strictEqual(died.decidedBy, 2);
             const exitedZero = reduceJob(flashed, { type: 'processEnd', key: 2, exitCode: 0, at: 7 });
             assert.strictEqual(exitedZero.state, 'failed', 'a GDB server that exits 0 at once is not running either');
+            assert.strictEqual(completedRun(exitedZero), undefined);
             const stayed = reduceJob(flashed, { type: 'tick', at: 6 + RUN_GRACE_MS });
             assert.strictEqual(stayed.state, 'running-ok');
             assert.strictEqual(reduceJob(stayed, { type: 'processEnd', key: 2, exitCode: 1, at: 99 }).state, 'running-ok',
                 'a settled job keeps its state');
         });
 
-        test('run: CMSIS Run alone must stay up for the grace; ending at all fails, even with exit 0 (#73)', () => {
-            const started = fold(armed('run'), { type: 'issued', at: 0 }, start(1, 'CMSIS Run', 'run', 3));
+        test('load_and_run: a Run that is the FVP model and ends by itself with exit 0 inside the grace completed the run (#134)', () => {
+            const loaded = fold(armed('load_and_run'), { type: 'issued', at: 0 },
+                start(1, 'CMSIS Load', 'load', 1), { type: 'processEnd', key: 1, exitCode: 0, at: 5 },
+                modelStart(2, 6));
+            const completed = reduceJob(loaded, { type: 'processEnd', key: 2, exitCode: 0, at: 6 + RUN_GRACE_MS - 100 });
+            assert.strictEqual(completed.state, 'ok');
+            assert.strictEqual(completed.decidedBy, 2);
+            assert.strictEqual(completedRun(completed)?.key, 2);
+            assert.strictEqual(reduceJob(completed, { type: 'taskEnd', key: 2, at: 6 + RUN_GRACE_MS }).state, 'ok', 'its task end changes nothing');
+            assert.strictEqual(reduceJob(loaded, { type: 'processEnd', key: 2, exitCode: 3, at: 7 }).state, 'failed', 'another code stays a failure');
+            assert.strictEqual(reduceJob(loaded, { type: 'processEnd', key: 2, exitCode: undefined, at: 7 }).state, 'cancelled',
+                'an end without a code (terminated, stopped) stays cancelled');
+            const stayed = reduceJob(loaded, { type: 'tick', at: 6 + RUN_GRACE_MS });
+            assert.strictEqual(stayed.state, 'running-ok', 'a model that keeps running is a persistent run as before');
+            assert.strictEqual(completedRun(stayed), undefined);
+            const failedLoad = fold(armed('load_and_run'), start(1, 'CMSIS Load', 'load', 1), { type: 'processEnd', key: 1, exitCode: 0, at: 5 });
+            assert.strictEqual(completedRun(settleJob(failedLoad, 'ok', 6)), undefined, 'only a job its Run decided is a completed run');
+        });
+
+        test('run: CMSIS Run alone must stay up for the grace; a GDB server that ends fails even with exit 0 (#73), a model that ends with exit 0 completed (#134)', () => {
+            const started = fold(armed('run'), { type: 'issued', at: 0 }, serverStart(1, 3));
             assert.strictEqual(started.state, 'started');
+            assert.strictEqual(executionIn(started, 'run')?.runKind, 'gdbServer');
             assert.strictEqual(nextTimeCheck(started), 3 + RUN_GRACE_MS);
             assert.strictEqual(reduceJob(started, { type: 'processEnd', key: 1, exitCode: 0, at: 4 }).state, 'failed');
             assert.strictEqual(reduceJob(started, { type: 'processEnd', key: 1, exitCode: undefined, at: 4 }).state, 'cancelled');
@@ -251,8 +278,36 @@ suite('cmsisTasks', () => {
             assert.strictEqual(up.state, 'running-ok');
             assert.strictEqual(up.decidedBy, 1);
             assert.strictEqual(nextTimeCheck(up), undefined);
+            const model = fold(armed('run'), { type: 'issued', at: 0 }, modelStart(1, 3));
+            assert.strictEqual(executionIn(model, 'run')?.runKind, 'model');
+            const ended = reduceJob(model, { type: 'processEnd', key: 1, exitCode: 0, at: 4 });
+            assert.strictEqual(ended.state, 'ok');
+            assert.strictEqual(completedRun(ended)?.name, 'CMSIS Run');
+            assert.strictEqual(reduceJob(model, { type: 'processEnd', key: 1, exitCode: 1, at: 4 }).state, 'failed');
             const nothing = fold(armed('run'), { type: 'issued', at: 0 }, { type: 'tick', at: NOTHING_STARTED_MS });
             assert.strictEqual(nothing.state, 'not-started');
+            assert.strictEqual(completedRun(fold(armed('load'), start(1, 'CMSIS Load', 'load', 1), { type: 'processEnd', key: 1, exitCode: 0, at: 2 })),
+                undefined, 'a load is no run');
+        });
+
+        test('a Run whose command line is neither the FVP model\'s nor a GDB server\'s and ends with exit 0 inside the grace is ambiguous: ended, neither ok nor failed (#134 review)', () => {
+            for (const action of ['run', 'load_and_run'] as const) {
+                const issued = fold(armed(action), { type: 'issued', at: 0 });
+                const before = action === 'run' ? issued
+                    : fold(issued, start(1, 'CMSIS Load', 'load', 1), { type: 'processEnd', key: 1, exitCode: 0, at: 5 });
+                const running = fold(before, start(2, 'CMSIS Run', 'run', 6));
+                assert.strictEqual(executionIn(running, 'run')?.runKind, undefined, 'its command line says neither');
+                const ended = reduceJob(running, { type: 'processEnd', key: 2, exitCode: 0, at: 7 });
+                assert.strictEqual(ended.state, 'ended', `${action}: a launcher of a GDB server that went away looks the same as a run that completed`);
+                assert.strictEqual(ended.decidedBy, 2);
+                assert.strictEqual(ended.settledAt, 7);
+                assert.ok(isSettled(ended.state), 'settled: no job in flight');
+                assert.strictEqual(completedRun(ended), undefined, `${action}: not a completed run`);
+                assert.strictEqual(reduceJob(ended, { type: 'tick', at: 6 + RUN_GRACE_MS }).state, 'ended', 'settled: the grace changes nothing');
+                assert.strictEqual(reduceJob(running, { type: 'processEnd', key: 2, exitCode: 1, at: 7 }).state, 'failed', `${action}: another code stays a failure`);
+                assert.strictEqual(reduceJob(running, { type: 'processEnd', key: 2, exitCode: undefined, at: 7 }).state, 'cancelled');
+                assert.strictEqual(reduceJob(running, { type: 'tick', at: 6 + RUN_GRACE_MS }).state, 'running-ok', `${action}: one that stays up is running`);
+            }
         });
 
         test('load_and_run: a compound that ends without a live Run fails', () => {

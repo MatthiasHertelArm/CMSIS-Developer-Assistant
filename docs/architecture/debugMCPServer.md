@@ -197,7 +197,8 @@ do when a tool fails. The block holds only the scope and the bans, because
 the same block goes into user-level rule files that agents read in every
 project; what matters in a session alone is said after it. Many clients keep
 the instructions in the system prompt for the whole session, and a client
-that shortens them keeps the beginning, so the rules lead. `DebugMCPServer` reads them once, when it
+that shortens them keeps the beginning (Claude Code keeps 4 096
+characters), so the rules lead. `DebugMCPServer` reads them once, when it
 is built (`loadToolRules()` through `ShippedDocs.readNow()`); without the
 file, or without its rules block, every session gets the instructions
 without the rules, and a warning says why.
@@ -210,13 +211,18 @@ cap on `timeoutMs` (600 s for `cmsis_action` and `flash`) and that a wait the
 client gives up on is no failure (the work goes on, `cmsis_action status`
 returns its result), how to read a
 result (`isError` and the `[CODE]` prefix; `timeout` and `running` are not
-failures; a running target wants `pause_execution` first), that the control
-server and the registry files are internal and several windows are told
-apart with `list_debug_windows` and `select_debug_window`, and one sentence
-each for the documentation and build-artefact groups. While a group is off,
-its sentence names the setting that enables it instead.
+failures; a running target wants `pause_execution` first), that the current
+or open solution is the Active solution `get_session_status` names, not the
+shell's working directory (#124), that the control server and the registry
+files are internal and several windows are told apart with
+`list_debug_windows` and `select_debug_window`, and one sentence each for the
+documentation and build-artefact groups. While a group is off, its sentence
+names the setting that enables it instead.
 `src/test/debugSkillGuidance.test.ts` and `src/test/toolContract.test.ts`
-pin the phrases agents rely on.
+pin the phrases agents rely on; `debugSkillGuidance.test.ts` also holds the
+sentence on the current solution to end by character 3 900, so that the
+rules in front can grow by about 200 bytes before it leaves the 4 096
+characters Claude Code keeps.
 
 The first `get_session_status` of a session repeats the rules in one line
 (`TOOL_RULES_REMINDER`), between the status and the call statistics: by then

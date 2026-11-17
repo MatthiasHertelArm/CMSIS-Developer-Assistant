@@ -245,7 +245,7 @@ suite('build failure (#15)', () => {
             const text = renderBuildFailure(report({
                 errors, warnings, errorCount: summary.errors, warningCount: summary.warnings, failedSteps: summary.failedSteps,
                 logFile: '/Users/dev/work/Blinky/out/cmsis-developer-assistant/build-diagnostic.log',
-                rerun: { exitCode: 1, stoppedAtCap: false, status: summary.status },
+                rerun: { exitCode: 1, status: summary.status },
             }), { root: '/Users/dev/work/Blinky' });
             assert.strictEqual(text, [
                 '2 errors (from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 1):',
@@ -273,7 +273,7 @@ suite('build failure (#15)', () => {
                 (_, index) => ({ severity, file: `/w/src/file${index}.c`, line: index + 1, message: `${severity} ${index} ${'x'.repeat(400)}` }));
             const text = renderBuildFailure(report({
                 errors: many('error', 30), warnings: many('warning', 30), errorCount: 30, warningCount: 30, logFile: LOG,
-                rerun: { exitCode: 2, stoppedAtCap: false },
+                rerun: { exitCode: 2 },
             }), { root: '/w' });
             assert.ok(text.length <= 3_000, `${text.length} characters`);
             const messageLines = text.split('\n').filter((line) => /^ {2}src\/file\d+\.c:/.test(line));
@@ -297,14 +297,41 @@ suite('build failure (#15)', () => {
         });
 
         test('a re-run that passes, one stopped at the cap, and one that printed nothing known', () => {
-            assert.strictEqual(renderBuildFailure(report({ rerun: { exitCode: 0, stoppedAtCap: false }, logFile: LOG }), { root: '/w' }),
+            assert.strictEqual(renderBuildFailure(report({ rerun: { exitCode: 0 }, logFile: LOG }), { root: '/w' }),
                 'A diagnostic re-run of cbuild with --log succeeded (exit 0): the failure did not repeat. cmsis_action build again to confirm.\n'
                 + 'Full log: out/cmsis-developer-assistant/build-diagnostic.log (get_build_diagnostics reads it).');
-            assert.ok(renderBuildFailure(report({ rerun: { exitCode: null, stoppedAtCap: true } }))
-                .startsWith('A diagnostic re-run of cbuild with --log was stopped after 120 s before it printed an error line.'));
-            assert.strictEqual(renderBuildFailure(report({ rerun: { exitCode: 2, stoppedAtCap: false, status: 'ninja: build stopped: interrupted by user.' } })),
+            assert.strictEqual(renderBuildFailure(report({ rerun: { exitCode: null, stopped: 'cap' } })),
+                'The diagnostic re-run of cbuild with --log was cut off: the CMSIS Developer Assistant stopped it at its 30 min limit, '
+                + 'before cbuild finished, and no compiler, linker or ninja error had appeared by then, so it shows no cause of the failure.');
+            assert.strictEqual(renderBuildFailure(report({ rerun: { exitCode: 2, status: 'ninja: build stopped: interrupted by user.' } })),
                 'A diagnostic re-run of cbuild with --log failed with exit code 2, "ninja: build stopped: interrupted by user." '
                 + 'but printed no error line in a known format.');
+        });
+
+        test('a re-run cut off at its limit says its lines are those it printed before the stop (#135)', () => {
+            const cut = { exitCode: null, stopped: 'cap' as const };
+            assert.strictEqual(renderBuildFailure(report({
+                errors: [{ severity: 'error', file: '/w/main.c', line: 3, message: 'boom' }], errorCount: 1, rerun: cut,
+            }), { root: '/w' }), '1 error (from a diagnostic re-run of cbuild with --log, printed before it was cut off at its 30 min limit; '
+                + 'warnings only from the files it recompiled: 0):\n'
+                + '  main.c:3 error: boom');
+            assert.strictEqual(renderBuildFailure(report({
+                failedSteps: ['…/Blinky/main.c.obj'], rerun: { ...cut, status: 'ninja: build stopped: subcommand failed.' },
+            })), 'No compiler error line, but ninja steps failed in a diagnostic re-run of cbuild with --log before it was cut off at its 30 min limit, '
+                + '"ninja: build stopped: subcommand failed.":\n'
+                + '  ninja FAILED: …/Blinky/main.c.obj');
+        });
+
+        test('a re-run that cmsis_action stop_build stopped says so, with what it printed before', () => {
+            const stopped = { exitCode: null, stopped: 'request' as const };
+            assert.strictEqual(renderBuildFailure(report({
+                errors: [{ severity: 'error', file: '/w/main.c', line: 3, message: 'boom' }], errorCount: 1, rerun: stopped,
+            }), { root: '/w' }), '1 error (from a diagnostic re-run of cbuild with --log, printed before cmsis_action stop_build stopped it; '
+                + 'warnings only from the files it recompiled: 0):\n'
+                + '  main.c:3 error: boom');
+            assert.strictEqual(renderBuildFailure(report({ rerun: stopped })),
+                'The diagnostic re-run of cbuild with --log was cut off: cmsis_action stop_build stopped it, before cbuild finished, '
+                + 'and no compiler, linker or ninja error had appeared by then, so it shows no cause of the failure.');
         });
 
         test('each reason for no re-run reads as a clause', () => {
@@ -317,6 +344,7 @@ suite('build failure (#15)', () => {
                 rerunSkipText({ kind: 'unresolved', field: 'toolchain' }),
                 rerunSkipText({ kind: 'build-running', name: 'cbuild setup Blinky.csolution.yml' }),
                 rerunSkipText({ kind: 'superseded' }),
+                rerunSkipText({ kind: 'stopped' }),
                 rerunSkipText({ kind: 'spawn-failed', error: 'spawn EACCES' }),
             ];
             assert.ok(reasons.every((reason) => reason.length > 10 && !reason.endsWith('.')), reasons.join('\n'));

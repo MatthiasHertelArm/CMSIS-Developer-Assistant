@@ -90,6 +90,26 @@ the breakpoint tools do not refuse a running target (see below). `get_session_st
 session's identity, the probe round trip and a hint for each state
 (`renderSessionStatus()`).
 
+In every state it also names the solution the CMSIS Solution extension has
+active in the window, with the workspace folder that holds it, or says that
+none is (#124). An active solution and a debug session are different
+things, and agents with several repositories at hand took the shell's
+working directory for "the current solution"; the server instructions now
+define the current solution as the one this line names. The handler asks
+`HandlerHost.activeSolution` (`getSolutionFile`, through
+`activeSolutionAnswer()` in `src/utils/solutionQueries.ts`, so never while
+the extension is inactive) before the executor probes the session, and
+waits at most 250 ms after the probe (`SOLUTION_GRACE_MS`, `settleWithin()`):
+a stalled CMSIS Solution must not make the status slower. Without an answer
+by then the line names the csolution the window published last
+(`HandlerHost.knownSolutionFile`, which the window coordinator refreshes at
+each publish and every 20 s) and says that it is the last known one, since a
+stall may come with a switch of solutions; without that either, there is no
+line, which is not the same as "none". The line is built by
+`solutionStatusLine()` in `src/core/bootstrapState.ts`. On a tie of windows
+the router answers instead, and its listing names each window's solution
+(`cmsis=`).
+
 ## Moving the target and waiting for the stop
 
 Steps, `continue_execution` and `pause_execution` go through
@@ -193,6 +213,47 @@ halted core, and then has the executor stop the session and start its
 launch configuration again; the answer says so, names the configuration's
 `preLaunchTask` and counts the GDB logpoints that ended with the old
 session.
+
+### A start that never got its session
+
+A launch reserves its GDB port before VS Code starts anything
+([GDB ports](windowRouting.md#gdb-ports)), and VS Code tells nobody about a
+start it drops before the debug adapter starts: a picker or a dialog
+cancelled, or one that waits for an answer nobody gives. `cmsis_action
+load_and_debug` cannot even ask: CMSIS Solution's command returns before VS
+Code has taken the launch up, and it reports a failed launch only in its own
+message. Nor does a late start pass the guard: VS Code takes a launch up
+after awaits of its own, a CMSIS Run task starts once CMSIS Solution has
+fetched the tasks, and after a failed pre-launch task VS Code may still
+"Debug Anyway" (unless `debug.onTaskErrors` is `abort` or `showErrors`). So a
+reservation ends only on evidence that its start is gone — its command
+failed, its task ran and ended, its session came and went, VS Code answered
+`start_debugging` that it did not start — and never on a timeout, a refusal
+or a stop (#127). What the window does instead (`src/handler/pendingStarts.ts`):
+
+- `get_session_status` and `cmsis_action status` add a line for each pending
+  start that nothing of the window may still take over: what reserved which
+  port and how long ago, what VS Code may be waiting for, and the way on.
+  While a session, a CMSIS Load, Run or Load+Run task, or a job whose task is
+  still to start may take a start over, the status shows that one instead.
+- The window's next start on such a port takes it over (`startsToTakeOver()`,
+  `acquire` with `takeOver`): once every port of the start has passed the
+  check, with no moment in which another window could have it, and after
+  asking VS Code to cancel what it still prepares of a launch taken over, so
+  that the old one does not come up beside the new one. The reservation still
+  covers the earlier start: when the new start is over, the port goes back to
+  it. A start that something of the window may still take over, or one
+  younger than `TAKE_OVER_AFTER_MS` (10 s, a CMSIS job's wait for its task),
+  is not taken over: the new start is refused, naming what it waits for.
+- `stop_debugging` without a session asks VS Code to cancel what it still
+  prepares of a pending launch (the executor's `cancelPendingStarts()`) and
+  says what stays pending. The port stays, since the cancel does not reach a
+  launch VS Code has not taken up yet; for `start_debugging`, whose promise
+  the handler holds, VS Code's answer that the start did not happen ends the
+  reservation.
+
+Nothing expires by itself; a reload of the window, which ends every start of
+it, frees such a port for another window.
 
 ## Breakpoints and logpoints
 
@@ -342,7 +403,11 @@ window's CMSIS job tracker (next section):
   result says what the task did to the target, because the adapters differ:
   the pyOCD task resets and runs, the J-Link task leaves the core as it was,
   and the FVP task starts the model with the last-built image and hosts no
-  GDB server, so `attach` has nothing to reach there. `rebuild` and `clean`
+  GDB server, so `attach` has nothing to reach there. The model ends when
+  the application stops it (an EOT shutdown, a semihosting exit), so a Run
+  of `run` or `load_and_run` whose command line is the FVP model's and
+  that ends by itself with exit 0 is a completed run (#134), shown with
+  what the Run printed (*What a CMSIS Run printed*, below). `rebuild` and `clean`
   (CMSIS Solution 1.72.0's Rebuild and Clean, the build task type with
   `--rebuild` or `--clean`) are jobs of their own, `rb-<n>` and `c-<n>`. A
   build, rebuild or clean while another of the three is in flight is
@@ -380,9 +445,9 @@ window's CMSIS job tracker (next section):
   listen, and GDB's own connect decides; a reply still `running` then says
   what happens when none does.
 - `status` launches nothing and needs no solution: it waits for the job in
-  flight, or lists the recent results and the live CMSIS tasks, with the
-  error lines of a failed build once they are in. A Load or Erase task alive
-  for `LONG_FLASH_MS` (2 min, `src/handler/jobText.ts`) is stuck, not
+  flight, or lists the recent results, the live CMSIS tasks and the window's
+  pending starts, with the error lines of a failed build once they are in. A
+  Load or Erase task alive for `LONG_FLASH_MS` (2 min, `src/handler/jobText.ts`) is stuck, not
   programming: pyOCD waits without a limit for a probe it cannot see or that
   another holds, and says so only in its terminal, which no tool reads.
   `status` then answers at once, and its reply, the `running` reply of the
@@ -405,9 +470,11 @@ window's CMSIS job tracker (next section):
   stopped once they end, whatever code the task closes with, without a
   failed-build diagnostic rerun. A short deadline also leaves this stop
   pending; `TASK_FAILED` requires the full verification period. With no
-  build running it issues nothing and says so, and names a build result that is still being
-  checked: that check is no task, and `status` waits for it. It never
-  switches the target.
+  build running it issues no command. A build result that is still being
+  checked has its diagnostic re-run of cbuild stopped through the tracker
+  (`stopFollowUps()`, #135), since that re-run is no task, and the reply
+  waits for the result within the same budget; with nothing to stop it says
+  so. It never switches the target.
 - `refresh` issues `cmsis-csolution.refresh`, the panel's Refresh, which in
   CMSIS Solution 1.72.0 is a convert with `updateRte`: it writes the files a
   component brings that a build reports as "not found; use --update-rte".
@@ -520,8 +587,12 @@ otherwise connect to that server and halt its target, while the session
 here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)). Partial
 acquisitions roll back on refusal. Pending starts retain their reservations;
 confirmed command/task failures release them only when no session or
-launch-related task remains, and the coordinator releases adopted batches
-when their session/task ends.
+launch-related task remains — a failed pre-launch Load only when
+`debug.onTaskErrors` makes VS Code end the launch, a job that settles as not
+started never — and the coordinator releases adopted batches when their
+session/task ends. A start that never got its session is named by the status
+tools and taken over by the window's next start
+([above](#a-start-that-never-got-its-session)).
 
 A `tasks.json` without any CMSIS task is a hand-off to the CMSIS Solution
 extension rather than a dead end: when the active target's cbuild-run.yml
@@ -703,7 +774,7 @@ Arm Debugger's flash task, exact labels from `tasks.json`); the build type
 splits into build, rebuild, clean and setup by its definition's flags, so
 that none answers for another. `reduceJob()`
 folds task events into a job's state (`armed`, `started`, then `ok`,
-`failed`, `cancelled`, `running-ok` or `not-started`), and `guardProbe()` is
+`failed`, `cancelled`, `running-ok`, `ended` or `not-started`), and `guardProbe()` is
 the matrix of which action may touch the probe beside which owner.
 
 `CmsisJobTracker` (`src/cmsisJobTracker.ts`) is one per window, shared by
@@ -715,10 +786,25 @@ the panel are seen too. It keeps the live CMSIS executions and the jobs:
   expects that starts afterwards — for a build, the execution the command
   returns. Other CMSIS executions are noted, never the result, so a
   `cbuild setup` after a target switch cannot answer for a build;
-- `load_and_run` counts as done once Load ended 0 and CMSIS Run, which
-  hosts the GDB server and never ends, stayed up for 2 s; `run` once CMSIS
-  Run alone stayed up that long, and a Run that ends earlier is `failed`
-  with its exit code;
+- `load_and_run` counts as done once Load ended 0 and CMSIS Run stayed up
+  for 2 s; `run` once CMSIS Run alone stayed up that long. A Run that ends
+  earlier is `failed` with its exit code when it hosts a GDB server, which
+  must stay up — exit 0 included (#73) — and so is any other Run that exits
+  with another code than 0. The FVP model that exits 0 completed its run
+  (#134, `completedRun()`); one without an exit code was stopped
+  (`cancelled`). A Run whose command line says neither, such as a model
+  shim or a launcher that starts a GDB server elsewhere, is `ended` when it
+  exits 0: the exit code cannot tell a run that completed from a server
+  that went away, so the job is settled, but neither a success nor a
+  failure — its reply is a warning that says only what is known, gives no
+  probe causes, and nothing is journaled; its port reservations are freed
+  like those of any Run that ended. The tracker reads what a Run runs when
+  it first sees it, from the task's command line, or from the definition
+  of CMSIS Solution 1.72.1's managed pyOCD task, which has none
+  (`runTaskKind()` in `src/core/gdbServerPorts.ts`). On macOS and Linux VS
+  Code reports a process that a signal ended as exit 0, so exit 0 proves no
+  clean end: the result of a completed run says that an exit code is no
+  test result and points at the application's own result line;
 - nothing expected starting within 10 s of the command is `not-started`;
 - a build-type task that closes with 130 (CMSIS Solution's Stop Build) or
   that `stop_build` asked to end is `cancelled` and reads as stopped, never
@@ -753,9 +839,33 @@ job carries a pending `diagnosis` until it is done.
   clean, `--skip-convert` after a fresh index, and the environment CMSIS
   Solution recorded in `.cmsis/tools-environment.yml`. Its log is parsed
   with the parser of `get_build_diagnostics`. The re-run starts only while
-  no other build or setup runs, is killed when one starts or after 120 s,
-  and can be switched off (`build.diagnosticRerun`). It is interim, until
-  CMSIS Solution offers a build log of its own (#21).
+  no other build or setup runs, is killed when one starts or after 30 min
+  (`DIAGNOSTIC_RERUN_CAP_MS`), and can be switched off
+  (`build.diagnosticRerun`). The limit is for a tool that hangs, not for a
+  long build: after a rebuild or a clean the re-run compiles everything
+  again, so it may take as long as a full build, and it goes on as the
+  job's follow-up that `status` waits for. It is interim, until CMSIS
+  Solution offers a build log of its own (#21).
+
+A stop ends what the re-run reports (#135). Killing it makes ninja print a
+`FAILED:` step for the compiler it ended and cbuild an `error building`
+line: the stop's, not the build's. So `run()` notes the log's length and
+keeps no more output when it stops the re-run. After a stop at the limit or
+by `cmsis_action stop_build`, `logBeforeStop()` reads the log only that far
+and cuts the file there, with a line that says so, for
+`get_build_diagnostics`. Error lines printed before the stop still count; a
+re-run cut off before any says so, which leaves a failed build without lines
+and a build that exited 0 `unverified`, never failed. `stop_build` reaches
+the re-run through the tracker (`stopFollowUps()`), since it is no task.
+
+One re-run at a time owns the log, which keeps one file for
+`get_build_diagnostics` to find. A newer re-run stops the older ones and
+waits until they have let go of it (`inLogTurn()`): until their cbuild
+closed, or the kill's grace ran out. A superseded re-run then reports at
+once without reading, cutting or marking the log, and the newer one
+removes the log before its cbuild starts, so a late write of the old one
+never lands in the new log. A re-run that waits for its turn starts only if
+no build, newer re-run or `stop_build` came since its build ended.
 
 The same machinery checks a build whose task exited 0. CMSIS Solution
 1.70.1 cannot report a failed build: its build runner drops the exit code
@@ -777,7 +887,8 @@ exit 0 is not a success until `BuildDiagnosisRunner.check` agrees:
 The check's verdict is `diagnosis.check`: `rebuilt` and `up-to-date` are
 successes, `failed` turns the job into a failed one (`withDiagnosis` in
 `src/core/cmsisTasks.ts`), and `unverified` — an image not rewritten and no
-re-run possible — is answered as a warning, not as ✅.
+re-run possible, or one cut off before it printed an error line — is
+answered as a warning, not as ✅.
 
 A clean that exited 0 has a check of its own, since exit 0 proves nothing
 there either: when its task starts, before cbuild gets to work,
@@ -843,6 +954,50 @@ broken.
 environment file and takes the setting, the environment and the file tests
 from the host's `toolEnvironment()`, so tests fake a Windows machine on any
 platform. Nothing is written and nothing is run.
+
+### What a CMSIS Run printed
+
+A test application on an FVP prints its verdict (`Test_result: PASS`) and
+shuts the model down; the exit code says only that the model ended, and on
+macOS and Linux not even that it ended cleanly. The verdict is in the CMSIS
+Run terminal, so the window reads that terminal (#134). VS Code's task
+system writes the sequences of its shell integration into the terminal of
+every shell and process task around the task's command line, and the
+stable API then reports that command to every extension: the window's
+`onDidStartTerminalShellExecution` gives a `TerminalShellExecution` whose
+`read()` streams what the terminal receives until the command ends. This
+does not depend on the setting `terminal.integrated.shellIntegration.enabled`,
+which governs the injection into interactive shells; it was observed with
+VS Code 1.146 for a task shaped like the FVP adapter's CMSIS Run, and it
+covers the FVP and J-Link Run and the pyOCD Run up to CMSIS Solution 1.72.0.
+A task its owner runs in a pseudoterminal — CMSIS Solution's builds, and
+from 1.72.1 its managed pyOCD tasks — is reported to no one.
+
+`src/runOutputCapture.ts` attaches a `RunOutputCapture` to the window's
+tracker (`windowJobTracker()`): it starts reading every terminal command as
+it starts, since only data after the first `read()` is streamed, and pairs
+it with the CMSIS Run the tracker sees start (`onDidStartExecution`) by the
+command line (`commandLineMatches()`), within 5 s either way, since the
+command can start before or after the task does. A command no Run claims in
+that time is let go, and what it printed is dropped, never shown. The
+output of the last four Runs is kept, each within its last 64 kB, in memory
+only (`TerminalOutput` in `src/core/runOutput.ts`, which also turns terminal
+data into the lines a reader sees). The last data arrives a few
+milliseconds after the task process end that settles a job, so a reply
+waits for the end of the stream, until at most 1 s after the Run's end
+(`runOutputsOf()`): a stream whose end VS Code never reports, as for a
+terminated task, delays no later reply.
+
+The texts are in `src/handler/jobText.ts`: a completed run, and an `ended`
+one, show the last 30 lines (3 000 characters) of the Run's output — for
+`ended` the output is what tells a completed run from a server that went
+away — a Run that failed shows them before the hint, and `status` shows
+the latest Run's last 20 lines, so far or to its end, and how a Run that
+the job counted as running ended since. Truncation is named; without a
+captured terminal the text says where the output is. Neither the FVP model
+nor an `ended` Run is sent to probe troubleshooting: the model's failure
+hint says that no probe or GDB port is involved. The terminals of Load,
+Erase and builds are not read (#69).
 
 ## The problem journal
 
@@ -982,11 +1137,13 @@ by #56.
 | `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
 | `src/core/solutionApi.ts`, `src/core/catalogQuery.ts`, `src/core/webCatalog.ts` | CMSIS Solution's API version 2 as far as it is used, `acquireSolutionApi()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s kinds, filters, caps, texts and data; the origin pack of web examples alike, from Arm's web catalog |
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
-| `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
+| `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution, and the active-solution line of `get_session_status`; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
 | `src/handler/jobText.ts` | job results, `running` replies, `status`, `PROBE_BUSY` refusals, the `get_session_status` task line; `flashFailedHint()` by the task's program |
+| `src/handler/pendingStarts.ts` | starts that reserved a GDB port and got no session or task (#127): their status lines, what they wait for, the take-over by the window's next start, the cancel `stop_debugging` asks for, the note of the `running` reply of `load_and_debug` |
 | `src/core/programLookup.ts`, `src/handler/taskProgram.ts` | The kind of a task's program, the PATH of the CMSIS tasks and VS Code's, the lookup and the SEGGER folders; `failedTaskProgram()`, `gdbServerMissingHint()` |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
+| `src/runOutputCapture.ts`, `src/core/runOutput.ts` | The terminal output of the CMSIS Run tasks (#134): the pairing of terminal commands with Runs, the kept output and its bound, the lines a reader sees, the block and `data` of a reply |
 | `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build or rebuild: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0, and of a clean |
 | `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
 | `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
@@ -1005,6 +1162,9 @@ by #56.
   classifier, the job state machine, the guard matrix and the tracker,
   replayed over task sequences derived from CMSIS Solution 1.70.1
   (`src/test/fixtures/cmsisTasks/`)
+- `src/test/runOutput.test.ts`: terminal data to lines, the kept output and
+  the reply block, the command-line match, and the capture over fake
+  terminal commands and a hand-moved clock
 - `src/test/programLookup.test.ts`: the kind of a task's program, the
   PATH of the CMSIS tasks, the lookup on Windows and elsewhere, the SEGGER
   folders

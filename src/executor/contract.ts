@@ -126,6 +126,17 @@ export interface SessionLifecycle {
     startDebuggingByName(folderPath: string, launchName: string): Promise<boolean>;
     stopDebugging(which?: vscode.DebugSession): Promise<void>;
     /**
+     * Ask VS Code to cancel what it still prepares of a debug start in this
+     * window, as the Debug toolbar's Stop does while no session runs: it
+     * closes a picker and ends the wait for a pre-launch task. Sent only while
+     * no debug session is listed here, since the same request ends every
+     * session there is. Best effort, and no evidence that the start is gone:
+     * a launch VS Code has not taken up yet, one past the steps that look at
+     * the cancel, and one in a modal dialog go on. True when the request went
+     * out.
+     */
+    cancelPendingStarts(): Promise<boolean>;
+    /**
      * On the CMSIS Debugger: stops the root of the session and starts its
      * launch configuration again through the debug API, so a failure comes
      * back here. Elsewhere: VS Code's restart command on the focused session.

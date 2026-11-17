@@ -71,6 +71,9 @@ suite('Tool contract', () => {
             'against it from a shell, and never install pyOCD',
             'with `cmsis_action`; program with `flash`',
             'a procedure from `knowledge_get` or a CMSIS skill names it',
+            // #128: an agent's shell found an older CMSIS-Toolbox first on the PATH and misread its errors as the project's;
+            // before a solution exists (the bootstrap's `csolution list …`) the environment check names the tools.
+            'then in the solution\'s `.cmsis/tools-environment.yml` environment (no solution yet: as `proc-check-cmsis-environment` reports), not the shell\'s',
             '`serial_*` tools',
             'never read a PDF into your context',
             'Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools',

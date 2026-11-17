@@ -35,9 +35,19 @@
  *
  * `classifyCmsisTask` says which of these a task is; `reduceJob` folds the
  * task events a job sees into its state (armed → started → ok, failed,
- * cancelled, running-ok, or not-started); `guardProbe` decides whether an
+ * cancelled, running-ok, ended, or not-started); `guardProbe` decides whether an
  * action may touch the probe while other owners hold it. The texts agents
  * read are built in `src/handler/jobText.ts`.
+ *
+ * CMSIS Run stays up when it hosts a GDB server (pyOCD, J-Link, an FVP with
+ * its GDBServer plugin); the FVP adapter's Run is the bare model, which ends
+ * by itself when the application stops it (an EOT shutdown, a semihosting
+ * exit). So a Run that ends with exit 0 before its grace is over completed
+ * its run (`completedRun`, #134) only when its command line is the model's
+ * (`runKind`); a GDB server that ends then failed, and a Run whose command
+ * line says neither has `ended`: the exit code cannot tell a run that
+ * completed from a launcher whose server went away. Any other end within
+ * the grace stays a failure.
  *
  * Pure: no `vscode`, no timers. Time comes in with every event.
  */
@@ -144,10 +154,23 @@ export function hasCmsisTasks(labels: ReadonlySet<string>): boolean {
 /** A job this window's cmsis_action began, or an execution started elsewhere (the panel) that the tracker adopted. */
 export type JobOrigin = 'call' | 'adopted';
 
-export type JobState = 'armed' | 'started' | 'ok' | 'failed' | 'cancelled' | 'running-ok' | 'not-started';
+/**
+ * Where a job is. `ended` is settled and neither a success nor a failure: a
+ * CMSIS Run whose command line is neither the FVP model's nor a GDB server's
+ * ended by itself with exit 0 before its grace was over, so nothing tells a
+ * run that completed from a launcher whose server went away (#134).
+ */
+export type JobState = 'armed' | 'started' | 'ok' | 'failed' | 'cancelled' | 'running-ok' | 'ended' | 'not-started';
 
 /** The part an execution plays in its job; undefined for one that is only noted. */
 export type JobRole = 'main' | 'load' | 'run';
+
+/**
+ * What a CMSIS Run's command line says it runs (`runTaskKind` in
+ * `./gdbServerPorts.ts`): a GDB server, meant to stay up (#73), or the FVP
+ * model alone, which ends when the application stops it (#134).
+ */
+export type RunKind = 'gdbServer' | 'model';
 
 /** How a job is judged done. */
 type SettleRule = 'main-ends' | 'load-ends' | 'run-stays-up' | 'load-then-run';
@@ -164,12 +187,14 @@ interface ActionPhase {
  * What each action waits for (#47, step 3):
  *   - build, rebuild, clean, load, erase: the bound execution's process ends;
  *   - run: `CMSIS Run` alone (the panel's Run button: the GDB server without
- *     a Load) — its process started and is still alive 2 s later; ending at
- *     all is a failure (#73);
+ *     a Load) — its process started and is still alive 2 s later (#73), or
+ *     it ended with exit 0 before that: the run is complete for the FVP
+ *     model (#134), and `ended` for a command line that says neither model
+ *     nor GDB server; any other end is a failure;
  *   - load_and_run: a single task (Arm Debugger, uVision) ends, or, for the
  *     compound of the pyOCD, J-Link and FVP templates, Load ended 0 and
  *     Run's process started and is still alive 2 s later — the rule the
- *     extension's own panel state uses;
+ *     extension's own panel state uses — or Run ended as for run;
  *   - load_and_debug: its pre-launch task `CMSIS Load` ends, when there is
  *     one (the FVP and Arm Debugger templates have none).
  */
@@ -204,6 +229,8 @@ export interface JobExecution {
     endedAt?: number;
     /** `cmsis_action stop_build` asked for its end: however it ends, it was stopped. */
     stopRequested?: boolean;
+    /** For a CMSIS Run, what its command line says it runs; unset when it says neither, and for any other execution. */
+    runKind?: RunKind;
 }
 
 export interface Job {
@@ -326,6 +353,8 @@ interface Sighting {
     name: string;
     kind: CmsisTaskKind;
     at: number;
+    /** For a CMSIS Run, what its command line says it runs (`runTaskKind` in `./gdbServerPorts.ts`). */
+    runKind?: RunKind;
 }
 
 /** What the tracker tells a job; only CMSIS executions are reported. */
@@ -339,7 +368,7 @@ export type JobEvent =
     | { type: 'issued'; at: number }
     | { type: 'tick'; at: number };
 
-const SETTLED: ReadonlySet<JobState> = new Set<JobState>(['ok', 'failed', 'cancelled', 'running-ok', 'not-started']);
+const SETTLED: ReadonlySet<JobState> = new Set<JobState>(['ok', 'failed', 'cancelled', 'running-ok', 'ended', 'not-started']);
 
 /** True once the state no longer changes. */
 export function isSettled(state: JobState): boolean {
@@ -414,6 +443,7 @@ function sighted(job: Job, event: Extract<JobEvent, { type: 'taskStart' | 'proce
     const execution: JobExecution = {
         key: event.key, name: event.name, kind: event.kind, role: freeRole(job, event.key, event.kind), startedAt: event.at,
         ...(event.type === 'processStart' ? { processStartedAt: event.at } : {}),
+        ...(event.runKind ? { runKind: event.runKind } : {}),
     };
     return { ...job, executions: [...job.executions, execution] };
 }
@@ -538,14 +568,46 @@ function verdictOf(job: Job, now: number): Verdict {
     }
 }
 
-/** `run`: CMSIS Run hosts the GDB server and is meant to stay up; it counts once its process has survived the grace. */
+/**
+ * A CMSIS Run that ended before its grace was over. Without an exit code it
+ * was stopped or cancelled; another code than 0 is a failure, and so is any
+ * end of a GDB server, which must stay up (#73). Exit 0 is a run that
+ * completed only for the FVP model, which ends when the application stops
+ * it (#134); for a command line that says neither it is `ended`: a launcher
+ * whose GDB server went away exits 0 just as a model shim does.
+ */
+function runEnded(run: JobExecution): Verdict {
+    if (run.exitCode === undefined) {
+        return { state: 'cancelled', by: run.key };
+    }
+    if (run.exitCode !== 0 || run.runKind === 'gdbServer') {
+        return { state: 'failed', by: run.key };
+    }
+    return { state: run.runKind === 'model' ? 'ok' : 'ended', by: run.key };
+}
+
+/**
+ * The CMSIS Run of a run or load_and_run job that settled because Run, the
+ * FVP model, ended by itself with exit 0 before its grace was over (#134): a
+ * completed run, not a GDB server that went away. Undefined for any other
+ * job, an `ended` one included.
+ */
+export function completedRun(job: Job): JobExecution | undefined {
+    if ((job.action !== 'run' && job.action !== 'load_and_run') || job.state !== 'ok') {
+        return undefined;
+    }
+    const run = executionIn(job, 'run');
+    return run !== undefined && run.key === job.decidedBy ? run : undefined;
+}
+
+/** `run`: CMSIS Run alone; it counts once its process has survived the grace, or once it ended as `runEnded` judges. */
 function runStaysUp(job: Job, now: number): Verdict {
     const run = executionIn(job, 'run');
     if (!run) {
         return awaitingStart(job, now);
     }
     if (hasEnded(run)) {
-        return { state: run.exitCode === undefined ? 'cancelled' : 'failed', by: run.key };
+        return runEnded(run);
     }
     if (run.processStartedAt !== undefined) {
         return now - run.processStartedAt >= RUN_GRACE_MS ? { state: 'running-ok', by: run.key } : { state: 'started' };
@@ -565,8 +627,8 @@ function loadThenRun(job: Job, now: number): Verdict {
         return byExitCode(load);
     }
     if (run && hasEnded(run)) {
-        // Run hosts the GDB server and is meant to stay up: ending at all is a failure.
-        return { state: run.exitCode === undefined ? 'cancelled' : 'failed', by: run.key };
+        // A GDB server must stay up; the model that ran its image to the end with exit 0 has completed.
+        return runEnded(run);
     }
     if (load && hasEnded(load) && run?.processStartedAt !== undefined) {
         return now - run.processStartedAt >= RUN_GRACE_MS ? { state: 'running-ok', by: run.key } : { state: 'started' };

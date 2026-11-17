@@ -94,7 +94,8 @@ import {
     actionTimeoutMs, activeTargetName, CMSIS_FENCE_ADVICE, CmsisAction, type LiveSessionWait, runCmsisAction, stateAfterStart,
 } from './handler/cmsisAction';
 import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
-import { acquireSolutionApi, type ApiPackId } from './core/solutionApi';
+import { acquireSolutionApi, settleWithin, type ApiPackId } from './core/solutionApi';
+import type { SolutionFileAnswer } from './core/solutionAnswers';
 import { packInstalledIn } from './core/packInstall';
 import { webExampleOrigins } from './core/webCatalog';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
@@ -105,12 +106,15 @@ import {
 } from './handler/gdbText';
 import { HandlerHost, VSCODE_HOST } from './handler/host';
 import { sessionTaskLine } from './handler/jobText';
+import {
+    cancelPendingLaunches, cancelPreparedLaunches, pendingStartLines, pendingStartsNote, startsToTakeOver, takeOverNote,
+} from './handler/pendingStarts';
 import { PROBLEMS_DEFAULT_LIMIT, PROBLEMS_MAX_LIMIT, renderProblemPage } from './handler/problemText';
 import {
     FVP_KEEPS_RUNNING, FVP_NO_RECOVERY_PAUSE, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, FVP_WAIT_RAN_OUT, fvpChangeRefusal, NO_FRAME_SELECTED,
     renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal,
 } from './handler/sessionText';
-import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID } from './core/bootstrapState';
+import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID, solutionStatusLine } from './core/bootstrapState';
 import {
     addressFromValue, isAddressLiteral, isHexWord, mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter,
     renderMemoryDump, sideEffectOf,
@@ -230,6 +234,12 @@ const PICKER_NAMES_LISTED = 10;
 const TRIAGE_REGISTERS = ['sp', 'lr', 'pc', 'xpsr', 'msp', 'psp', 'control', 'msplim', 'psplim'];
 
 const NO_ACTIVE_SESSION = 'No active debug session.';
+/**
+ * How long `get_session_status` waits for CMSIS Solution's active solution
+ * once its session probe is done (#124); after that it names the window's
+ * last known solution, so a stalled answer never slows the status down.
+ */
+const SOLUTION_GRACE_MS = 250;
 /** `cmsis_query`: the fence, and how much earlier the query's own deadline answers. */
 const QUERY_FENCE_MS = 60_000;
 const QUERY_MARGIN_MS = 3_000;
@@ -486,7 +496,9 @@ export class DebuggingHandler
     /**
      * `portWindows` lists the other registered windows with the GDB ports
      * they publish, read at each launch; without it only the bind test tells
-     * whether a GDB port is taken.
+     * whether a GDB port is taken. `knownSolution` is the csolution the
+     * window last published, which `get_session_status` names when CMSIS
+     * Solution does not answer in time.
      */
     constructor(
         executor: IDebuggingExecutor,
@@ -495,6 +507,7 @@ export class DebuggingHandler
         journal: ProblemJournal = problemJournal(),
         portWindows?: () => readonly PortClaimingWindow[],
         portReservations?: GdbPortReservations,
+        knownSolution?: () => string | undefined,
     ) {
         this.dbg = executor;
         this.launchConfigs = configurations;
@@ -503,9 +516,11 @@ export class DebuggingHandler
         this.defaultHost = {
             ...VSCODE_HOST,
             ...(portWindows ? { gdbPortHolder: (port: number) => findGdbPortHolder(port, portWindows()) } : {}),
+            ...(knownSolution ? { knownSolutionFile: knownSolution } : {}),
             ...(portReservations ? {
-                reserveGdbPort: (port: number, start: Parameters<HandlerHost['reserveGdbPort']>[1], group?: string) =>
-                    portReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group),
+                reserveGdbPort: (port: number, start: Parameters<HandlerHost['reserveGdbPort']>[1], group?: string, takeOver?: boolean) =>
+                    portReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group, takeOver),
+                pendingGdbStarts: () => portReservations.pending(),
             } : {}),
         };
     }
@@ -833,10 +848,12 @@ export class DebuggingHandler
         try {
             const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
-                reservation = await this.reserveGdbPortForStart(args.workingDirectory, chosen);
+                const reserved = await this.reserveGdbPortForStart(args.workingDirectory, chosen);
+                reservation = reserved.reservation;
                 const began = this.host().now();
                 // Before the start: a frame VS Code holds from an earlier session is not this one's.
                 const focus = this.dbg.watchStartFocus();
+                // VS Code's answer is the evidence the reservation waits for: false or an error ends it in the catch below.
                 if (!(await this.dbg.startDebuggingByName(args.workingDirectory, chosen))) {
                     throw new Error(`Failed to start debug session with configuration '${chosen}'.`);
                 }
@@ -844,7 +861,7 @@ export class DebuggingHandler
                 reservation?.adopt();
                 const shown = await this.startedState(focus, began);
                 const subject = args.fileFullPath ? args.fileFullPath : chosen;
-                return `Debug session started successfully for: ${subject} using configuration '${chosen}'. ${shown}`;
+                return `${reserved.note}Debug session started successfully for: ${subject} using configuration '${chosen}'. ${shown}`;
             }
             if (!args.fileFullPath) {
                 throw new ToolError('INVALID_ARGUMENT', 'fileFullPath is required when no named configuration is provided.');
@@ -876,27 +893,38 @@ export class DebuggingHandler
      * connect to that server instead (`src/core/gdbPortGuard.ts`). The
      * configuration is read from the launch.json of the workspace folder that
      * holds `workingDirectory`, else of `workingDirectory` itself; an attach
-     * connects to a server that is meant to listen, and is left alone.
+     * connects to a server that is meant to listen, and is left alone. A
+     * pending start of this window on that port is taken over once the port
+     * has passed the check (#127), so it is never free in between; `note`
+     * says so, for the reply.
      */
-    private async reserveGdbPortForStart(workingDirectory: string, name: string): Promise<GdbPortReservation | undefined> {
+    private async reserveGdbPortForStart(workingDirectory: string, name: string): Promise<{ reservation?: GdbPortReservation; note: string }> {
         const configuration = await this.launchConfiguration(workingDirectory, name);
         const listens = (configuration as { request?: unknown } | undefined)?.request === 'launch' ? configurationGdbPort(configuration) : undefined;
         if (!listens) {
-            return;
+            return { note: '' };
         }
+        const host = this.host();
         const start = { what: 'launch' as const, subject: 'Debug session not started', configuration: name, server: listens.server };
-        const reservation = this.host().reserveGdbPort(listens.port, start);
+        const takenOver = startsToTakeOver(this.dbg, host, [{ port: listens.port, start }]);
+        const fresh = takenOver.length === 0 ? host.reserveGdbPort(listens.port, start) : undefined;
         try {
-            const holder = await this.host().gdbPortHolder(listens.port);
+            const holder = await host.gdbPortHolder(listens.port);
             if (holder) {
                 logger.info(`start_debugging: '${name}' not started, its GDB port ${listens.port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
                 throw gdbPortRefusal(start, listens.port, holder);
             }
-            return reservation;
         } catch (caught) {
-            reservation.release();
+            fresh?.release();
             throw caught;
         }
+        if (fresh) {
+            return { reservation: fresh, note: '' };
+        }
+        // The check gave the earlier start time to come up: look again, synchronously, before taking its port over.
+        startsToTakeOver(this.dbg, host, [{ port: listens.port, start }]);
+        const reservation = host.reserveGdbPort(listens.port, start, undefined, true);
+        return { reservation, note: takeOverNote(takenOver, await cancelPreparedLaunches(this.dbg, takenOver)) };
     }
 
     /** The launch.json entry `name` that `start_debugging` would start, from the folders that may hold it, deepest first. */
@@ -961,12 +989,15 @@ export class DebuggingHandler
      * stop that does not settle in time, while the session is still listed,
      * answers with status `timeout`; one whose session is gone by then is a
      * success. On an Arm FVP that timeout says to stop once more: the
-     * adapter waits for a halt the model never reports.
+     * adapter waits for a halt the model never reports. Without a session it
+     * asks VS Code to cancel what it still prepares of this window's pending
+     * launch (#127) and says what is pending; the GDB port stays reserved,
+     * since a cancel does not reach a launch VS Code has not taken up yet.
      */
     async handleStopDebugging(): Answer {
         try {
             if (!this.dbg.hasDebugSession()) {
-                return NOTHING_TO_STOP;
+                return `${NOTHING_TO_STOP}${pendingStartsNote(await cancelPendingLaunches(this.dbg, this.host()))}`;
             }
             // Asked before the stop: once it is sent the session may already be on its way out.
             const fvp = this.onFvp();
@@ -1091,16 +1122,51 @@ export class DebuggingHandler
     }
 
     /**
-     * The session, plus one line on this window's CMSIS tasks when there is
-     * anything to say (#46), and one on its serial port (#49). Without a
-     * session, also what the window lacks for CMSIS work: a folder, the
-     * CMSIS Solution or the CMSIS Debugger extension.
+     * The session, plus one line on the solution the window has active
+     * (#124), one on this window's CMSIS tasks when there is anything to say
+     * (#46), one per start that reserved a GDB port and has no session or
+     * task yet (#127), and one on its serial port (#49). Without a session,
+     * also what the window lacks for CMSIS work: a folder, the CMSIS Solution
+     * or the CMSIS Debugger extension. The solution is asked for before the
+     * session is probed and waited for at most `SOLUTION_GRACE_MS` after it.
      */
     async handleGetSessionStatus(): Answer {
+        const host = this.host();
+        const asked = this.askSolution(host);
         const status = await this.dbg.getSessionStatus();
         const gaps = status.state === 'no-session' ? this.bootstrapLines() : [];
-        return renderSessionStatus(status, this.dbg.getDiagnostics(), [...gaps, ...this.cmsisTaskLines(), ...this.serialLines()], this.sessionRequest(),
-            this.onFvp());
+        const solution = await this.solutionLines(host, asked);
+        const extra = [...gaps, ...solution, ...this.cmsisTaskLines(), ...pendingStartLines(this.dbg, host), ...this.serialLines()];
+        return renderSessionStatus(status, this.dbg.getDiagnostics(), extra, this.sessionRequest(), this.onFvp());
+    }
+
+    /** The host's question for the active solution, asked now; a failure counts as no answer. Never rejects. */
+    private askSolution(host: HandlerHost): Promise<SolutionFileAnswer | undefined> {
+        return new Promise<SolutionFileAnswer | undefined>((resolve) => resolve(host.activeSolution())).catch((caught: unknown) => {
+            logger.warn('get_session_status could not ask for the active solution', caught);
+            return undefined;
+        });
+    }
+
+    /**
+     * The line on the solution the CMSIS Solution extension has active in
+     * this window and the folder that holds it, or that none is: its answer
+     * when it comes within `SOLUTION_GRACE_MS`, else the csolution the window
+     * published last, marked as that. Never rejects, since that tool must not.
+     */
+    private async solutionLines(host: HandlerHost, asked: Promise<SolutionFileAnswer | undefined>): Promise<string[]> {
+        try {
+            const answered = await settleWithin(asked, SOLUTION_GRACE_MS, host);
+            const line = solutionStatusLine({
+                answer: answered?.value,
+                lastKnown: host.knownSolutionFile(),
+                folders: host.workspaceFolders().map((folder) => folder.uri.fsPath),
+            });
+            return line === undefined ? [] : [line];
+        } catch (caught) {
+            logger.warn('The solution line of get_session_status could not be built', caught);
+            return [];
+        }
     }
 
     /**

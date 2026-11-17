@@ -26,6 +26,7 @@ import {
     cmsisRunCommand,
     commandLinePort,
     configurationGdbPort,
+    definitionCommandWords,
     folderCmsisRunCommand,
     folderLaunchConfiguration,
     gdbPortClaimsOf,
@@ -37,6 +38,7 @@ import {
     runCommandKind,
     runTaskCbuildRun,
     runTaskGdbPorts,
+    runTaskKind,
     sessionGdbPorts,
     taskCommandWords,
     windowGdbPorts,
@@ -131,6 +133,24 @@ suite('GDB server ports of the attach configurations', () => {
         assert.strictEqual(runCommandKind(['openocd', '-f', 'board.cfg']), 'unknown');
         assert.strictEqual(runCommandKind([]), 'unknown');
         assert.strictEqual(runCommandKind(undefined), 'unknown');
+    });
+
+    test('runTaskKind: a GDB server or the FVP model by the command line, else by the definition of a task without one (CMSIS Solution 1.72.1\'s managed pyOCD); neither when it does not say (#134)', () => {
+        const shell = (words: string[]): unknown => ({ execution: { command: words[0], args: words.slice(1) } });
+        assert.strictEqual(runTaskKind(shell(PYOCD_RUN)), 'gdbServer');
+        assert.strictEqual(runTaskKind(shell(JLINK_RUN)), 'gdbServer');
+        assert.strictEqual(runTaskKind(shell(CUSTOM_SERVER)), 'gdbServer', 'a custom or user debug setup that starts a gdbserver');
+        assert.strictEqual(runTaskKind(shell(FVP_RUN)), 'model', 'the FVP adapter\'s Run ends when the application stops it');
+        assert.strictEqual(runTaskKind(shell(['FVP_Corstone_SSE-320', '--plugin', '/opt/fvp/plugins/GDBServer.so'])), 'gdbServer', 'the model with its GDBServer plugin');
+        assert.strictEqual(runTaskKind(shell(['/w/.vscode/fvp.sh', '-f', 'board/fvp_config.txt'])), undefined, 'a model shim says neither');
+        assert.strictEqual(runTaskKind(shell(['/w/.vscode/start-debug-server.sh', '--port', '3333'])), undefined,
+            'nor does a launcher whose GDB server runs elsewhere');
+        const managed = { definition: { type: 'cmsis-csolution.pyocd', command: 'pyocd', args: PYOCD_RUN.slice(1) }, execution: { /* CustomExecution */ } };
+        assert.deepStrictEqual(definitionCommandWords(managed), PYOCD_RUN);
+        assert.strictEqual(runTaskKind(managed), 'gdbServer');
+        assert.strictEqual(definitionCommandWords({ definition: { type: 'shell' } }), undefined);
+        assert.strictEqual(definitionCommandWords({ definition: { command: ' ', args: ['x'] } }), undefined);
+        assert.strictEqual(runTaskKind({ name: 'CMSIS Run' }), undefined, 'a task that tells nothing');
     });
 
     test('isFvpSession: a CMSIS Debugger session on an Arm FVP by its name, its model or its GDBServer plugin', () => {

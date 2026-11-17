@@ -24,12 +24,15 @@
  * empty window is sent to `cmsis_action open_solution` and the `bootstrap`
  * topic of the guide instead of a shell. The search by which the CMSIS
  * Solution extension lists the csolution files of a window is here too, so
- * that `open_solution` can run the same one.
+ * that `open_solution` can run the same one. So is the line on the solution
+ * the window has active, which `get_session_status` carries in every state:
+ * the answer to which project "the current solution" is (#124).
  *
  * Pure: no `vscode`, no file access.
  */
 
 import * as path from 'path';
+import type { SolutionFileAnswer } from './solutionAnswers';
 import { ToolError } from './toolResult';
 
 /** The CMSIS Solution extension: build, load and debug commands, `launch.json`. */
@@ -132,6 +135,49 @@ export function bootstrapStatusLines(facts: WindowFacts): string[] {
             + INSTALL_STUDIO_PACK);
     }
     return lines;
+}
+
+/** What `get_session_status` knows about the solution of its window (#124). */
+export interface SolutionFacts {
+    /** What the CMSIS Solution extension answered in the time the status waits; undefined when it did not. */
+    answer: SolutionFileAnswer | undefined;
+    /** The csolution the window published last (`cmsis=` of the window listing), for when no answer came. */
+    lastKnown?: string;
+    /** The paths of the open workspace folders. */
+    folders: readonly string[];
+}
+
+/** How the line says that it names the csolution the window published last, not one the extension named just now. */
+const LAST_KNOWN = 'last known, CMSIS Solution did not answer just now';
+
+/**
+ * The line of `get_session_status` on the solution the CMSIS Solution
+ * extension has active in the window (#124): its csolution file and the
+ * workspace folder that holds it (the innermost one, when folders nest), or
+ * that none is active while a folder is open; a window without a folder has
+ * its `Workspace:` line instead. Without an answer the line names the
+ * csolution the window published last, and says so: a solution may have
+ * just been switched. Undefined when there is neither, or the answer names
+ * no file: agents are told to ask the user then, never to take the shell's
+ * working directory.
+ */
+export function solutionStatusLine(facts: SolutionFacts, platform: NodeJS.Platform = process.platform): string | undefined {
+    const { answer, lastKnown, folders } = facts;
+    if (answer === undefined) {
+        return lastKnown === undefined ? undefined : namedSolutionLine(lastKnown, folders, platform, LAST_KNOWN);
+    }
+    if (!answer.active) {
+        return folders.length > 0 ? 'Active solution: none in this VS Code window' : undefined;
+    }
+    return answer.file === undefined ? undefined : namedSolutionLine(answer.file, folders, platform);
+}
+
+/** `Active solution: <file> (workspace folder <folder>)`, with `note` after the folder when given. */
+function namedSolutionLine(file: string, folders: readonly string[], platform: NodeJS.Platform, note?: string): string {
+    const holder = folders.filter((folder) => liesInside(file, folder, platform))
+        .reduce<string | undefined>((inner, folder) => (inner === undefined || folder.length > inner.length ? folder : inner), undefined);
+    const where = holder === undefined ? 'in no open workspace folder' : `workspace folder ${holder}`;
+    return `Active solution: ${file} (${where}${note === undefined ? '' : `; ${note}`})`;
 }
 
 /** True for a `*.csolution.yml` or `*.csolution.yaml` path. */

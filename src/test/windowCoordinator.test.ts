@@ -23,6 +23,7 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { SERVER_VERSION } from '../debuggingExecutor';
+import type { DebuggingHandler } from '../debuggingHandler';
 import { WindowCoordinator, type DebugSessionEvents } from '../windowCoordinator';
 import { WindowRegistration, WorkspaceRegistry } from '../utils/workspaceRegistry';
 import { logger } from '../utils/logger';
@@ -30,7 +31,7 @@ import { createSessionTracker } from '../utils/sessionStateTracker';
 import type { PortClaimingWindow } from '../core/gdbPortGuard';
 import { GdbPortReservations } from '../core/gdbPortReservations';
 import type { GdbPortClaim } from '../core/gdbServerPorts';
-import { ToolError } from '../core/toolResult';
+import { ToolError, textOf } from '../core/toolResult';
 
 /** Poll `registry` until this window's entry lists `expected` as its GDB ports (none: undefined). */
 async function publishedPorts(registry: WorkspaceRegistry, expected: GdbPortClaim[] | undefined): Promise<void> {
@@ -193,12 +194,19 @@ suite('WindowCoordinator and the router window (#14)', () => {
             }
             assert.fail(`cmsisProject is not ${expected ?? 'unset'}`);
         };
+        // This VS Code has no CMSIS Solution extension, so the status's own question gets no answer (#124).
+        const status = async (): Promise<string> => textOf(await (coordinator as unknown as { localHandler: DebuggingHandler })
+            .localHandler.handleGetSessionStatus());
         try {
             await coordinator.start(context as unknown as vscode.ExtensionContext);
             await published('/w/Blinky.csolution.yml');
+            const named = await status();
+            assert.ok(named.includes('\nActive solution: /w/Blinky.csolution.yml (')
+                && named.includes('; last known, CMSIS Solution did not answer just now)\n'), `the window's status names what it published: ${named}`);
             answer = '';
             coordinator.publish();
             await published(undefined);
+            assert.ok(!(await status()).includes('Active solution:'), 'nor what it no longer publishes');
         } finally {
             await coordinator.dispose();
             for (const subscription of context.subscriptions) {

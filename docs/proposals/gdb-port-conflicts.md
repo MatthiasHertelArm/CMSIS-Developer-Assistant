@@ -62,7 +62,7 @@ So the silent case is the fixed port, which is exactly the case in which the por
 
 - Recognising more servers or wrappers by name.
 - Asking CMSIS Solution for the rendered port, which needs the commands of #41.
-- A Load that succeeds but whose launch never creates a session: its reservation stays until the window closes (known gap of K04).
+- A launch that never creates a session (a Load that succeeded, a picker or dialog cancelled, a launch CMSIS Solution reports only in its own message): its reservation stays pending (known gap of K04), since no late start passes the guard. Since #127 the owning window names it in `get_session_status` and `cmsis_action status`, and its next start on the port takes it over; a reload of that window frees it. Releasing it earlier would need the launch's outcome from CMSIS Solution.
 
 ## Review
 

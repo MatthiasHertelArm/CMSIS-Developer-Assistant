@@ -31,13 +31,36 @@ import { FakeExecution, FakeTasks, FixtureTask, ManualClock } from './cmsisTaskF
  * The runner of #15 over a tracker fed with fake task events: which stage
  * answers, the re-run's command line and guards (the cap, a build that
  * starts meanwhile, a build already running, no environment file, the
- * setting), and how the lines reach a waiting call and `status`. cbuild is a
- * fake: the test writes its log and ends it.
+ * setting), what a stop leaves of its lines and its log (#135), and how the
+ * lines reach a waiting call and `status`. cbuild is a fake: the test writes
+ * its log and ends it.
  */
 
 const FIXTURES = path.resolve(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'buildinfo');
 const GCC_LOG = fs.readFileSync(path.join(FIXTURES, 'build-failed-gcc.log'), 'utf8');
 const IDX = fs.readFileSync(path.join(FIXTURES, 'Blinky.cbuild-idx.yml'), 'utf8');
+
+/** A long build's progress so far: no error line yet. */
+const PROGRESS = [
+    '(1/1) Building context: "Blinky.Debug+MPS3"',
+    'Building CMake target \'Blinky.Debug+MPS3\'',
+    '[1/900] Building CXX object CMakeFiles/Group_Kernels.dir/kernels/op_mul.cpp.obj',
+    '[2/900] Building CXX object CMakeFiles/Group_Kernels.dir/kernels/op_sub.cpp.obj',
+    '',
+].join('\n');
+
+/** What ninja and cbuild print when the stop kills the compiler under them (#135): the stop's lines, not the build's. */
+const KILL_FALLOUT = [
+    'FAILED: [code=1] CMakeFiles/Group_Kernels.dir/kernels/op_add.cpp.obj ',
+    '/opt/gcc/bin/arm-none-eabi-g++ -c kernels/op_add.cpp -o CMakeFiles/Group_Kernels.dir/kernels/op_add.cpp.obj',
+    'ninja: build stopped: subcommand failed.',
+    'error cbuild: error building \'cmake --build /w/tmp --target Blinky.Debug+MPS3\'',
+    '',
+].join('\n');
+
+/** The line a stopped re-run leaves at the end of its log. */
+const stopLine = (cause: string): string => `[cmsis-developer-assistant] This diagnostic re-run was stopped here ${cause}, before cbuild finished; `
+    + 'what ninja and cbuild printed because of the stop is left out.\n';
 
 /** A cbuild that does nothing until the test ends it. */
 class FakeChild extends EventEmitter implements DiagnosticChild {
@@ -77,8 +100,16 @@ interface World {
     host: DiagnosisHost;
     children: FakeChild[];
     killed: FakeChild[];
-    settings: { rerun: boolean; closeOnKill: boolean };
+    /** `onKill`: what the killed cbuild, ninja and compilers write before the child closes. */
+    settings: { rerun: boolean; closeOnKill: boolean; onKill?: (child: FakeChild) => void };
+    /** End the diagnosis as the extension's end does, the tracker left as it is. */
+    detach(): void;
     dispose(): void;
+}
+
+/** The log file a spawned re-run was given. */
+function logOf(child: FakeChild): string {
+    return child.args[child.args.indexOf('--log') + 1];
 }
 
 /** A solution folder with (optionally) the environment file and a cbuild, a tracker, and the diagnosis attached to it. */
@@ -112,7 +143,7 @@ function world(options: { environment?: boolean; cbuild?: boolean } = {}): World
     const tracker = new CmsisJobTracker(tasks, clock);
     const children: FakeChild[] = [];
     const killed: FakeChild[] = [];
-    const settings = { rerun: true, closeOnKill: true };
+    const settings: World['settings'] = { rerun: true, closeOnKill: true };
     const host: DiagnosisHost = {
         rerunEnabled: () => settings.rerun,
         solutionFile: async () => solution,
@@ -129,6 +160,7 @@ function world(options: { environment?: boolean; cbuild?: boolean } = {}): World
         },
         killTree: (child) => {
             killed.push(child as FakeChild);
+            settings.onKill?.(child as FakeChild);
             if (settings.closeOnKill) {
                 setImmediate(() => (child as FakeChild).emit('close', null));
             }
@@ -138,6 +170,7 @@ function world(options: { environment?: boolean; cbuild?: boolean } = {}): World
     const attached = attachBuildDiagnosis(tracker, host);
     return {
         dir, solution, tasks, clock, tracker, host, children, killed, settings,
+        detach: () => attached.dispose(),
         dispose: () => {
             attached.dispose();
             tracker.dispose();
@@ -154,6 +187,13 @@ function buildTask(w: World, definition: Record<string, unknown> = {}): FixtureT
             setup: false, buildOutputVerbosity: 'normal', downloadPacks: true, cmakeTarget: 'all', ...definition,
         },
     };
+}
+
+/** Let promise chains and `setImmediate` callbacks run for a while, for a test that asserts something did not happen. */
+async function rounds(count = 50): Promise<void> {
+    for (let round = 0; round < count; round++) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+    }
 }
 
 /** Let promise chains and `setImmediate` callbacks run until `done` holds. */
@@ -394,6 +434,31 @@ suite('build diagnosis (#15)', () => {
         assert.strictEqual(clean.children.length, 0);
     });
 
+    test('the re-run\'s cbuild is the one the CMSIS-Toolbox entry names, never one from the PATH VS Code inherited (#128)', async () => {
+        const w = make();
+        // An older toolbox first on the inherited PATH, as a legacy installation had put it on Windows.
+        const legacy = path.join(w.dir, 'legacy', 'cmsis-toolbox', 'bin');
+        fs.mkdirSync(legacy, { recursive: true });
+        fs.writeFileSync(path.join(legacy, 'cbuild'), '');
+        w.host.baseEnvironment = () => ({ PATH: `${legacy}:/usr/bin` });
+        const toolbox = path.join(w.dir, 'toolbox', 'bin').replace(/\\/g, '/');
+
+        const first = failBuild(w);
+        await until(() => w.children.length === 1, 'cbuild was spawned');
+        assert.strictEqual(w.children[0].command, path.posix.join(toolbox, 'cbuild'), 'the file\'s cbuild, by its absolute path');
+        assert.strictEqual(w.children[0].options.env.PATH, `${toolbox}:${legacy}:/usr/bin`, 'the file\'s directories before the inherited PATH');
+        w.children[0].finish(1, GCC_LOG);
+        await diagnosed(w, first.job.id);
+
+        // A file that names no CMSIS-Toolbox: no re-run, although the inherited PATH has a cbuild.
+        fs.writeFileSync(path.join(w.dir, '.cmsis', 'tools-environment.yml'),
+            'cmsis-tools-environment:\n  environment:\n    path:\n      - /opt/gcc/bin\n  tools:\n    - name: Arm GNU GDB\n      directory: /opt/gdb/bin\n');
+        const second = failBuild(w);
+        assert.match((await diagnosed(w, second.job.id)).diagnosis?.text ?? '',
+            /^No error lines: \.cmsis\/tools-environment\.yml names no CMSIS-Toolbox directory/);
+        assert.strictEqual(w.children.length, 1, 'nothing else was started');
+    });
+
     test('a failed rebuild is diagnosed like a build: the re-run leaves out --rebuild, and the result names the rebuild', async () => {
         const w = make();
         const { job } = failBuild(w, 2, { rebuild: true }, 'rebuild');
@@ -434,19 +499,184 @@ suite('build diagnosis (#15)', () => {
             + 'cmsis_action build re-runs cbuild with --log itself when it can.');
     });
 
-    test('the re-run is killed at 120 s; what its log had by then is shown', async () => {
+    test('a superseded re-run leaves the log as it is: no cut and no mark, also after its kill grace', async () => {
+        const w = make();
+        w.settings.closeOnKill = false;
+        const { job } = failBuild(w);
+        await until(() => w.children.length === 1, 'cbuild was spawned');
+        const logFile = logOf(w.children[0]);
+        fs.writeFileSync(logFile, PROGRESS);
+        w.settings.onKill = () => fs.appendFileSync(logFile, KILL_FALLOUT);
+        w.tasks.start(w.tasks.execution({ name: 'cbuild other.csolution.yml', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build' } }));
+        assert.deepStrictEqual(w.killed, [w.children[0]], 'the build that started stopped the re-run');
+        w.clock.advance(w.clock.now() + 5_000);
+        const done = await diagnosed(w, job.id);
+        assert.match(done.diagnosis?.text ?? '', /^No error lines: the diagnostic re-run of cbuild was stopped because another build started;/);
+        assert.strictEqual(fs.readFileSync(logFile, 'utf8'), `${PROGRESS}${KILL_FALLOUT}`, 'a superseded re-run neither cuts nor marks the log');
+    });
+
+    test('a newer re-run starts only once the older one has let go of the log, and the log is its own', async () => {
+        const w = make();
+        w.settings.closeOnKill = false;
+        const first = failBuild(w).job;
+        await until(() => w.children.length === 1, 'the first re-run was spawned');
+        const logFile = logOf(w.children[0]);
+        fs.writeFileSync(logFile, PROGRESS);
+        const second = failBuild(w).job;
+        assert.deepStrictEqual(w.killed, [w.children[0]], 'the second build stopped the first re-run');
+        await rounds();
+        assert.strictEqual(w.children.length, 1, 'no second cbuild while the first one is in its kill grace');
+        fs.appendFileSync(logFile, KILL_FALLOUT);
+        w.clock.advance(w.clock.now() + 5_000);
+        await until(() => w.children.length === 2, 'the second re-run was spawned once the first one let go');
+        assert.ok(!fs.existsSync(logFile), 'the second re-run starts from an empty log');
+        w.children[1].finish(1, GCC_LOG);
+        const done = await diagnosed(w, second.id);
+        assert.strictEqual(done.diagnosis?.errorCount, 2);
+        assert.ok(!(done.diagnosis?.text ?? '').includes('op_add'), done.diagnosis?.text);
+        assert.strictEqual(fs.readFileSync(logFile, 'utf8'), GCC_LOG, 'neither cut nor marked by the first re-run');
+        assert.match((await diagnosed(w, first.id)).diagnosis?.text ?? '', /^No error lines: the diagnostic re-run of cbuild was stopped because another build started;/);
+    });
+
+    test('a re-run waiting for the log is superseded by a build that starts meanwhile, and never starts', async () => {
+        const w = make();
+        w.settings.closeOnKill = false;
+        failBuild(w);
+        await until(() => w.children.length === 1, 'the first re-run was spawned');
+        const second = failBuild(w).job;
+        await rounds();
+        // A third build starts and is stopped at once: nothing runs any more, but it came after the second build ended.
+        w.tasks.finish(w.tasks.start(w.tasks.execution(buildTask(w))), BUILD_STOPPED_EXIT_CODE);
+        w.clock.advance(w.clock.now() + 5_000);
+        const done = await diagnosed(w, second.id);
+        assert.strictEqual(w.children.length, 1, 'the waiting re-run never started');
+        assert.match(done.diagnosis?.text ?? '', /^No error lines: the diagnostic re-run of cbuild was stopped because another build started;/);
+    });
+
+    test('cmsis_action stop_build stops a running re-run: the lines it printed before count, and its log is cut and marked', async () => {
+        const w = make();
+        const { job } = failBuild(w);
+        await until(() => w.children.length === 1, 'cbuild was spawned');
+        const logFile = logOf(w.children[0]);
+        fs.writeFileSync(logFile, GCC_LOG);
+        w.settings.onKill = () => fs.appendFileSync(logFile, KILL_FALLOUT);
+        w.tracker.stopFollowUps();
+        assert.deepStrictEqual(w.killed, [w.children[0]]);
+        const done = await diagnosed(w, job.id);
+        assert.deepStrictEqual([done.state, done.diagnosis?.errorCount], ['failed', 2], 'the job stays as it settled');
+        assert.match(done.diagnosis?.text ?? '', /^2 errors \(from a diagnostic re-run of cbuild with --log, printed before cmsis_action stop_build stopped it; /);
+        assert.match(done.diagnosis?.note ?? '', /^the re-run was stopped by cmsis_action stop_build, so its lines are only those it printed before the stop; /);
+        assert.strictEqual(fs.readFileSync(logFile, 'utf8'), `${GCC_LOG}${GCC_LOG.endsWith('\n') ? '' : '\n'}${stopLine('by cmsis_action stop_build')}`);
+    });
+
+    test('cmsis_action stop_build also stops a re-run that waits for the log: it never starts', async () => {
+        const w = make();
+        w.settings.closeOnKill = false;
+        failBuild(w);
+        await until(() => w.children.length === 1, 'the first re-run was spawned');
+        const second = failBuild(w).job;
+        await rounds();
+        w.tracker.stopFollowUps();
+        w.clock.advance(w.clock.now() + 5_000);
+        const done = await diagnosed(w, second.id);
+        assert.strictEqual(w.children.length, 1);
+        assert.strictEqual(done.diagnosis?.text, 'No error lines: cmsis_action stop_build stopped the diagnostic re-run of cbuild before it started.\n'
+            + 'cmsis_action build re-runs cbuild with --log itself when it can.');
+    });
+
+    test('a re-run waiting for the log when the extension shuts down never starts', async () => {
+        const w = make();
+        w.settings.closeOnKill = false;
+        failBuild(w);
+        await until(() => w.children.length === 1, 'the first re-run was spawned');
+        const second = failBuild(w).job;
+        await rounds();
+        w.detach();
+        const done = await diagnosed(w, second.id);
+        assert.strictEqual(w.children.length, 1, 'no cbuild once the extension shuts down');
+        assert.match(done.diagnosis?.text ?? '', /^No error lines: the diagnostic re-run of cbuild could not start \(the extension shut down\)\./);
+    });
+
+    test('a re-run that runs longer than 2 min is not stopped: it goes on to its result', async () => {
+        const w = make();
+        const { job } = failBuild(w);
+        await until(() => w.children.length === 1, 'cbuild was spawned');
+        w.clock.advance(w.clock.now() + 25 * 60_000);
+        assert.deepStrictEqual(w.killed, []);
+        assert.strictEqual(w.tracker.job(job.id)?.diagnosis?.state, 'pending', 'the lines are still coming');
+        w.children[0].finish(1, GCC_LOG);
+        const done = await diagnosed(w, job.id);
+        assert.strictEqual(done.diagnosis?.errorCount, 2);
+        assert.match(done.diagnosis?.text ?? '', /^2 errors \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 1\):\n/);
+    });
+
+    test('at its 30 min limit the re-run is stopped: the error lines it had by then are shown, those the stop made it print are not', async () => {
         const w = make();
         const { job } = failBuild(w);
         await until(() => w.children.length === 1, 'cbuild was spawned');
         const child = w.children[0];
-        const logFile = child.args[child.args.indexOf('--log') + 1];
+        const logFile = logOf(child);
         fs.writeFileSync(logFile, GCC_LOG);
+        child.stdout.emit('data', Buffer.from(GCC_LOG));
+        w.settings.onKill = (killed) => {
+            fs.appendFileSync(logFile, KILL_FALLOUT);
+            killed.stdout.emit('data', Buffer.from(KILL_FALLOUT));
+        };
         w.clock.advance(w.clock.now() + DIAGNOSTIC_RERUN_CAP_MS - 1);
         assert.deepStrictEqual(w.killed, []);
         w.clock.advance(w.clock.now() + 1);
         assert.deepStrictEqual(w.killed, [child]);
         const done = await diagnosed(w, job.id);
-        assert.match(done.diagnosis?.text ?? '', /^2 errors \(from a diagnostic re-run of cbuild with --log; warnings only from the files it recompiled: 1; the re-run was stopped after 120 s\):/);
+        const diagnosis = done.diagnosis;
+        assert.strictEqual(diagnosis?.errorCount, 2, 'the two errors printed before the stop, not cbuild\'s error about the stop');
+        assert.match(diagnosis?.text ?? '', /^2 errors \(from a diagnostic re-run of cbuild with --log, printed before it was cut off at its 30 min limit; warnings only from the files it recompiled: 1\):\n {2}\S*main\.c:42:5 error: 'ledx' undeclared/);
+        assert.ok(!(diagnosis?.text ?? '').includes('op_add'), diagnosis?.text);
+        assert.match(diagnosis?.note ?? '', /^the re-run was cut off at its 30 min limit, so its lines are only those it printed before the stop; /);
+        assert.strictEqual(fs.readFileSync(logFile, 'utf8'), `${GCC_LOG}${GCC_LOG.endsWith('\n') ? '' : '\n'}${stopLine('at its 30 min limit')}`,
+            'the log keeps what it had at the stop and loses what the stop made ninja and cbuild print');
+    });
+
+    test('cut off before any error line: what the stop made ninja and cbuild print is no error, and the result says the re-run was cut off', async () => {
+        const w = make();
+        const { job } = failBuild(w);
+        await until(() => w.children.length === 1, 'cbuild was spawned');
+        const child = w.children[0];
+        const logFile = logOf(child);
+        fs.writeFileSync(logFile, PROGRESS);
+        child.stdout.emit('data', Buffer.from(PROGRESS));
+        w.settings.onKill = (killed) => {
+            fs.appendFileSync(logFile, KILL_FALLOUT);
+            killed.stdout.emit('data', Buffer.from(KILL_FALLOUT));
+        };
+        w.clock.advance(w.clock.now() + DIAGNOSTIC_RERUN_CAP_MS);
+        const done = await diagnosed(w, job.id);
+        const diagnosis = done.diagnosis;
+        assert.deepStrictEqual([diagnosis?.source, diagnosis?.errorCount, diagnosis?.errors.length], ['rerun', 0, 0]);
+        assert.strictEqual(diagnosis?.text, 'The diagnostic re-run of cbuild with --log was cut off: the CMSIS Developer Assistant stopped it at its 30 min limit, '
+            + 'before cbuild finished, and no compiler, linker or ninja error had appeared by then, so it shows no cause of the failure.\n'
+            + 'Full log: out/cmsis-developer-assistant/build-diagnostic.log (get_build_diagnostics reads it).');
+        const failure = resultError(done, w.clock.now());
+        assert.match(failure.message, /^❌ CMSIS 'build' FAILED on MPS3 — task '.*' exited with code 2 after 3 s \(job b-1\)\.\nThe diagnostic re-run of cbuild with --log was cut off: /);
+        assert.strictEqual(failure.hint, 'get_recent_problems lists what the Problems panel shows; otherwise ask the user for the errors in the cbuild terminal '
+            + '— do not run cbuild yourself. Fix them, then cmsis_action build again. This is a terminal result — do not wait for an output file.',
+        'no "fix the first error" without an error line');
+        assert.strictEqual(fs.readFileSync(logFile, 'utf8'), `${PROGRESS}${stopLine('at its 30 min limit')}`);
+        assert.match(idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now()), /\nBuild job b-1 failed: The diagnostic re-run of cbuild with --log was cut off: /);
+    });
+
+    test('without a log, cbuild\'s output stands in as far as it came before the stop', async () => {
+        const w = make();
+        const { job } = failBuild(w);
+        await until(() => w.children.length === 1, 'cbuild was spawned');
+        const child = w.children[0];
+        child.stdout.emit('data', Buffer.from(`${PROGRESS}/w/Blinky/main.c:7:1: error: expected ';' before '}' token\n`));
+        w.settings.onKill = (killed) => killed.stderr.emit('data', Buffer.from(KILL_FALLOUT));
+        w.clock.advance(w.clock.now() + DIAGNOSTIC_RERUN_CAP_MS);
+        const done = await diagnosed(w, job.id);
+        assert.deepStrictEqual([done.diagnosis?.errorCount, done.diagnosis?.logFile], [1, undefined]);
+        assert.deepStrictEqual(done.diagnosis?.errors.map((error) => error.message), ['expected \';\' before \'}\' token']);
+        assert.ok(!(done.diagnosis?.text ?? '').includes('ninja FAILED'), done.diagnosis?.text);
+        assert.ok(!fs.existsSync(logOf(child)), 'no log is made up');
     });
 
     test('a child that does not close after the kill counts as ended 5 s later', async () => {
@@ -459,7 +689,7 @@ suite('build diagnosis (#15)', () => {
         assert.strictEqual(w.tracker.job(job.id)?.diagnosis?.state, 'pending');
         w.clock.advance(w.clock.now() + 5_000);
         const done = await diagnosed(w, job.id);
-        assert.match(done.diagnosis?.text ?? '', /^A diagnostic re-run of cbuild with --log was stopped after 120 s before it printed an error line\./);
+        assert.match(done.diagnosis?.text ?? '', /^The diagnostic re-run of cbuild with --log was cut off: the CMSIS Developer Assistant stopped it at its 30 min limit, /);
     });
 
     test('no re-run beside another build that is running', async () => {
@@ -615,6 +845,74 @@ suite('build diagnosis (#15)', () => {
             assert.match(done.diagnosis?.text ?? '', /It could not be checked: the diagnostic re-run of cbuild was stopped because another build started/);
         });
 
+        test('a check re-run cut off at its limit before any error line: not confirmed, never failed by what the stop printed', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            const logFile = logOf(w.children[0]);
+            fs.writeFileSync(logFile, PROGRESS);
+            w.settings.onKill = () => fs.appendFileSync(logFile, KILL_FALLOUT);
+            w.clock.advance(w.clock.now() + DIAGNOSTIC_RERUN_CAP_MS);
+            const done = await diagnosed(w, job.id);
+            assert.deepStrictEqual([done.state, done.diagnosis?.check], ['ok', 'unverified'], 'the stop\'s FAILED step and cbuild error fail nothing');
+            const reply = jobResult(done, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof reply !== 'string');
+            assert.strictEqual(reply.status, 'ok');
+            assert.strictEqual(reply.text, '⚠️ CMSIS \'build\' on MPS3: task \'cbuild Blinky.csolution.yml --active MPS3 --packs\' exited 0 after 3 s (job b-1), '
+                + 'but that does not confirm the build. The image out/Blinky/MPS3/Debug/Blinky.axf was not rewritten: it is from 60 min before the build '
+                + 'started, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. The check could not decide: the CMSIS '
+                + 'Developer Assistant stopped its re-run of cbuild at its 30 min limit, before cbuild finished, and no compiler, linker or ninja error had '
+                + 'appeared by then. Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself.');
+            assert.strictEqual(((reply.data as Record<string, unknown>).diagnosis as Record<string, unknown>).note,
+                'the check re-run of cbuild was cut off at its 30 min limit');
+            assert.match(idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now()), /build on MPS3 ⚠️ exit 0, not confirmed /);
+        });
+
+        test('cmsis_action stop_build stops a check re-run: the build that exited 0 is not confirmed, never failed', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            const logFile = logOf(w.children[0]);
+            fs.writeFileSync(logFile, PROGRESS);
+            w.settings.onKill = () => fs.appendFileSync(logFile, KILL_FALLOUT);
+            w.tracker.stopFollowUps();
+            const done = await diagnosed(w, job.id);
+            assert.deepStrictEqual([done.state, done.diagnosis?.check], ['ok', 'unverified']);
+            assert.ok(done.diagnosis?.text.endsWith('The check could not decide: cmsis_action stop_build stopped its re-run of cbuild, before cbuild '
+                + 'finished, and no compiler, linker or ninja error had appeared by then.'), done.diagnosis?.text);
+            assert.strictEqual(done.diagnosis?.note, 'the check re-run of cbuild was stopped by cmsis_action stop_build');
+        });
+
+        test('a check re-run killed from elsewhere, without an exit code, is not said to be stopped at the limit', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            w.children[0].finish(null, PROGRESS);
+            const done = await diagnosed(w, job.id);
+            assert.deepStrictEqual([done.state, done.diagnosis?.check, w.killed.length], ['ok', 'unverified', 0]);
+            assert.ok(done.diagnosis?.text.endsWith('so this build may have failed. The check could not decide: its re-run of cbuild ended without '
+                + 'an exit code before it printed an error line.'), done.diagnosis?.text);
+        });
+
+        test('an error line printed before the limit still fails a build that exited 0, with that line and none of the stop\'s', async () => {
+            const w = make();
+            builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            const logFile = logOf(w.children[0]);
+            fs.writeFileSync(logFile, `${PROGRESS}/w/Blinky/main.c:7:1: error: expected ';' before '}' token\n`);
+            w.settings.onKill = () => fs.appendFileSync(logFile, KILL_FALLOUT);
+            w.clock.advance(w.clock.now() + DIAGNOSTIC_RERUN_CAP_MS);
+            const done = await diagnosed(w, job.id);
+            assert.deepStrictEqual([done.state, done.diagnosis?.check, done.diagnosis?.errorCount], ['failed', 'failed', 1]);
+            assert.deepStrictEqual(done.diagnosis?.errors.map((error) => error.message), ['expected \';\' before \'}\' token']);
+            assert.match(done.diagnosis?.text ?? '', /^1 error \(from a diagnostic re-run of cbuild with --log, printed before it was cut off at its 30 min limit; /);
+            assert.ok(!(done.diagnosis?.text ?? '').includes('ninja FAILED'), done.diagnosis?.text);
+        });
+
         test('an image younger than 2 s but unchanged since the build started is not its: the re-run decides', async () => {
             // A tester's failed build that started under 2 s after a good one read ✅ from the age of that one's image.
             const w = make();
@@ -757,7 +1055,7 @@ suite('build diagnosis (#15)', () => {
                 failure = caught;
             }
             assert.ok(failure instanceof ToolError);
-            assert.ok(failure.message.endsWith('\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most 120 s).'), failure.message);
+            assert.ok(failure.message.endsWith('\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most 30 min).'), failure.message);
             assert.strictEqual(failure.hint, 'Call cmsis_action {action:\'status\'} for the error lines — do not start another build to see them. '
                 + 'This is a terminal result — do not wait for an output file.');
             assert.match(idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now()),

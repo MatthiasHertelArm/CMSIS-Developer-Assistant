@@ -21,7 +21,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { IDebuggingHandler } from '..';
 import { sliceTopic } from '../core/instructionTopics';
-import { buildServerInstructions } from '../core/serverInstructions';
+import { buildServerInstructions, CURRENT_SOLUTION } from '../core/serverInstructions';
 import { RULES_HEADING } from '../core/toolContract';
 import { ToolMetrics } from '../core/toolMetrics';
 import { ShippedDocs, buildSessionServer, loadToolRules } from '../debugTools';
@@ -34,7 +34,8 @@ import { ShippedDocs, buildSessionServer, loadToolRules } from '../debugTools';
  * description, and the guide that harnesses without skills get from
  * get_debug_instructions. Each check pins that wording where it is made:
  * the instructions as `buildServerInstructions` composes them for a default
- * session, which is also what a session serves.
+ * session, which is also what a session serves. The same places say which
+ * solution the user means by the current one (#124).
  */
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
@@ -179,6 +180,25 @@ suite('Debugger-first guidance for agents', () => {
         assert.ok(embedded.includes('`stop_debugging`, then `cmsis_action load_and_debug` — a fresh connect and reset.'));
         const inspection = sliceTopic(fs.readFileSync(GUIDE_MD, 'utf8'), 'inspection');
         assert.ok(inspection.includes('`cmsis_action load_and_debug` again; power-cycle only if that fails too.'), 'the guide names the fallback order');
+    });
+
+    test('the current solution is the one get_session_status names, said where agents read first (#124)', () => {
+        // Claude Code keeps the first 4 096 characters of the instructions and drops the rest. With the tool
+        // rules of #128 in front the sentence ends at 3 983; text added before it has to keep it inside.
+        const at = instructions.indexOf(CURRENT_SOLUTION);
+        assert.ok(at >= 0, 'the instructions say what the current solution is');
+        assert.ok(at + CURRENT_SOLUTION.length <= 4096, `the sentence ends at character ${at + CURRENT_SOLUTION.length}`);
+        for (const phrase of ['Active solution that get_session_status names', 'not the shell\'s working directory', 'ask the user']) {
+            assert.ok(CURRENT_SOLUTION.includes(phrase), phrase);
+        }
+        const flat = (text: string): string => text.replace(/\s+/g, ' ');
+        const skill = flat(splitSkill(fs.readFileSync(SKILL_MD, 'utf8')).body);
+        const target = flat(sliceTopic(fs.readFileSync(GUIDE_MD, 'utf8'), 'target'));
+        for (const [label, text] of [['skill', skill], ['target topic', target]]) {
+            assert.ok(text.includes('the `Active solution:` line of `get_session_status`'), `${label} names the status line`);
+            assert.ok(text.includes('whatever the shell\'s working directory') || text.includes('not the shell\'s working directory'),
+                `${label} puts it over the shell's working directory`);
+        }
     });
 
     test('the guide speaks Cortex-M rather than host applications', () => {

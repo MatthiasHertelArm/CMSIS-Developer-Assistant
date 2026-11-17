@@ -229,6 +229,19 @@ export class DebuggingExecutor implements IDebuggingExecutor {
         }
     }
 
+    async cancelPendingStarts(): Promise<boolean> {
+        // With no session listed, VS Code's stop cancels the starts it still prepares; with one, it would end them all.
+        if (resolveActiveSession() !== undefined || getLiveSessionCount() > 0) {
+            return false;
+        }
+        try {
+            await vscode.debug.stopDebugging();
+            return true;
+        } catch (err) {
+            throw wrapError('Cancelling the pending debug start failed', err);
+        }
+    }
+
     async restart(): Promise<RestartOutcome> {
         try {
             expectAgentStart();

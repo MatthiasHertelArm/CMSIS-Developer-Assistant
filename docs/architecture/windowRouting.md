@@ -59,7 +59,8 @@ control port and token, the workspace folders, the window name, whether a
 debug session is active and with which configuration, the CMSIS solution
 path when the CMSIS Solution extension reports one (its `getSolutionFile`
 command, asked only while that extension is active, since running it would
-activate it; a changed answer is published at once), and its role (`router`
+activate it; a changed answer is published at once, and the window's
+`get_session_status` falls back to it when its own question stalls), and its role (`router`
 or `worker`; windows of 2.5.0 and earlier write none). Since 2.5.1 it also
 holds the extension `version`, and from the first heartbeat on `lagMs`, the
 event-loop delay of the last 20 s, and `busy`, the agent calls running there
@@ -198,7 +199,9 @@ the ladder, since a port is opened and read in one window.
 `get_session_status` is the call agents make when another one failed, and
 its description promises that it never fails. On a tie it is therefore
 answered, not refused (`resolveForStatus()`, `statusWithoutTarget()`): with
-idle windows `State: no-session`, why there is no target, and the windows;
+idle windows `State: no-session`, why there is no target, and the windows,
+each with the csolution it has active (`cmsis=`), which is how an agent
+asked about "the current solution" sees that it has to ask (#124);
 with several debugging windows `State: no target window`, and each of them
 with the state line its own status gives within 5 s, asked all at once
 (`State: stopped`, or `State: unknown` with why); then the same ways to
@@ -291,6 +294,20 @@ it looks:
   unique records; another window can reclaim a dead process's record.
   Unknown or malformed owners fail closed. The registry root and the
   reservation directory have the same ownership and symlink checks.
+  No late start passes this guard: VS Code takes a launch up after awaits of
+  its own, a CMSIS Run task starts once CMSIS Solution has fetched the tasks,
+  and VS Code may still "Debug Anyway" after a failed pre-launch task. So a
+  reservation ends only on evidence that its start is gone, never on a
+  timeout or a stop (#127). A start VS Code drops says so to nobody: its
+  reservation stays pending (`pending()` lists it for the owning window's
+  status tools), and that window's next start on the port takes it over
+  (`acquire` with `takeOver`), with no moment in which another window could
+  have it; the taken-over reservation still covers the earlier start and goes
+  back to it when the new start is over (see
+  [debuggingHandler.md](debuggingHandler.md#a-start-that-never-got-its-session)).
+  For another window, a reload of the owning window frees the port. The
+  owner record says whether a launch or a CMSIS Run reserved, so that another
+  window's refusal names the way out there.
 - **Checking.** After reserving, `cmsis_action load_and_debug` (for each launch
   configuration of the active target that fixes a port: those of its
   cbuild-run debugger, FVP or not, on that file's GDB ports,
@@ -598,7 +615,11 @@ releases the window's serial ports, giving that step at most two seconds.
   GDB port of a configuration, a session and a CMSIS Run, the cbuild-run
   file's ports, the claims a window publishes and what readers admit; the
   bind test against servers on 127.0.0.1 and the wildcard without a client,
-  the holder, the refusal texts
+  the holder, the refusal texts, this window's own pending start among them
+- `src/test/gdbPortReservations.test.ts`: one owner per port across
+  windows, adoption and release, batches, stale observations, dead owners,
+  unsafe directories; the pending starts a window lists and takes over, and
+  the way back to the earlier start (#127)
 - `src/test/windowStatus.test.ts`: the item's text and tooltip in every state,
   the Select Target Window entries, and a tool name for every op
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'

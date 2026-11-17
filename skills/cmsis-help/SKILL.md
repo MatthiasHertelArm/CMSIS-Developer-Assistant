@@ -1,7 +1,7 @@
 ---
 name: cmsis-help
-description: "Health check and entry point for the CMSIS Developer Assistant, and the first skill for any CMSIS or Cortex-M task. Use when firmware misbehaves on a board: faults, crashes, hangs, failing tests, wrong/null values, unexpected output, runtime bugs, a board that does not respond or a debug session that will not start. Also use to check whether the board, the debug session, the build or a serial port is ready, and for any other CMSIS task. It checks the session read-only, reads recent problems and names the debug topic or knowledge procedure that fits. Use it whenever live inspection is practical, instead of adding temporary printf/UART logging, LED toggles, or console output: halting the CPU and looking is cheaper and does not perturb the target."
-when_to_use: "First, before any work on a board's firmware; when a board, a probe or a debug session does not respond; to check that the board, the debug session, the build or a serial port is ready; instead of adding printf/UART logging; and when the cmsis-developer-assistant tools seem to be missing."
+description: "Health check and entry point for the CMSIS Developer Assistant, and the first skill for any CMSIS or Cortex-M task, host-side work included: building or refreshing a csolution, choosing its compiler, activating its tools environment. Use when firmware misbehaves on a board: faults, crashes, hangs, failing tests, wrong/null values, unexpected output, runtime bugs, a board that does not respond or a debug session that will not start. Also use to check whether the board, the debug session, the build or a serial port is ready. It checks the session read-only, reads recent problems and names the debug topic or knowledge procedure that fits; with the csolution open in VS Code, builds run through cmsis_action in that window, not cbuild in a shell. Use it whenever live inspection is practical, instead of adding temporary printf/UART logging, LED toggles, or console output: halting the CPU and looking is cheaper and does not perturb the target."
+when_to_use: "First, before any work on a CMSIS solution or a board's firmware, a build or a compiler change included, and before running cbuild, csolution, cpackget or vcpkg in a shell; when a board, a probe or a debug session does not respond; to check that the board, the debug session, the build or a serial port is ready; instead of adding printf/UART logging; and when the cmsis-developer-assistant tools seem to be missing."
 allowed-tools:
   - get_session_status
   - list_debug_windows
@@ -22,7 +22,7 @@ allowed-tools:
 These rules cover Arm Cortex-M targets of the CMSIS Debugger (`gdbtarget` launch configurations, CMSIS solutions). A host program or a board of another toolchain is not covered: use your usual tools there. For a covered target only the user lifts a rule, by asking for the specific command.
 
 - Talk to the board only through the cmsis-developer-assistant MCP tools: never run `pyocd`, `gdb`, `JLinkExe`, `JLinkGDBServer` or `openocd` against it from a shell, and never install pyOCD.
-- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a procedure from `knowledge_get` or a CMSIS skill names it.
+- Build, load, erase, run and debug with `cmsis_action`; program with `flash`. Run `cbuild`, `csolution` or `cpackget` in a shell only when the user asks or a procedure from `knowledge_get` or a CMSIS skill names it, then in the solution's `.cmsis/tools-environment.yml` environment (no solution yet: as `proc-check-cmsis-environment` reports), not the shell's.
 - Serial I/O only through the `serial_*` tools, not `screen`, PuTTY, a read of the port or a serial script.
 - Manuals, datasheets and register meanings through the documentation tools; use the web only to find a PDF URL for `fetch_doc`, and never read a PDF into your context.
 - Firmware symbol, section, memory-usage and build-log questions through the build-artefact tools, not `nm`, `size` or a grep of the map file.
@@ -62,9 +62,15 @@ Run these in order and stop as soon as an answer decides the next step:
 
 Report the answer in five short lines: session, target, windows, problems, next step. Name the next tool; do not run a tool that changes the board, the session or a file unless the user asks for it.
 
+"The current" or "open" solution, project or repository is the one the `Active solution:` line of `get_session_status` names, in that workspace folder, not the shell's working directory or a repository named earlier in the conversation. When the status lists several windows instead, or names none, ask the user which one before you read or change files.
+
 ## When the tools are missing
 
 No `get_session_status` in your tool list means this agent session is not connected to the CMSIS Developer Assistant. Its MCP server runs inside VS Code while a window has the extension active, and the command *CMSIS Developer Assistant: Configure Agent* in that window registers it with the agent. Most agents connect to their MCP servers only when a session starts: once VS Code serves, ask the user to start a new agent session (Kimi Code: restart `kimi`, `/reload` does not reconnect; in Kimi's VS Code extension, Developer: Reload Window once the status bar shows the CDA robot with R). A sub-agent has no tools its parent lacks, so do not hand the board to one. Meanwhile do not reach the board another way: no pyOCD or GDB in a shell.
+
+## Builds, the compiler and the tools environment
+
+This skill is the entry point for host-side CMSIS work too: builds, refreshes, the compiler, the tools environment. With the csolution open in a VS Code window where the CMSIS Developer Assistant is active, run that work there with `cmsis_action`: `build`, `rebuild` or `clean`; `refresh` for the RTE update; `activate_environment` after `vcpkg-configuration.json` changed. That window builds what its CMSIS Solution panel has selected, with the tools `.cmsis/tools-environment.yml` records; the progress and the diagnostics stay in the window, where the user sees them, and the result brings the error lines back. A shell gets neither: its `cbuild` is whichever one PATH finds first, possibly another CMSIS-Toolbox than the window's, and the window shows nothing of that build. A compiler change is an edit of `compiler:` in the csolution files, then `build`; a toolchain the environment lacks goes into `vcpkg-configuration.json` first, and `activate_environment` installs it. Run `cbuild`, `csolution`, `cpackget` or `vcpkg` in a shell only when the user asks for that command or a procedure from `knowledge_get` names it.
 
 ## Where a task's procedure is
 

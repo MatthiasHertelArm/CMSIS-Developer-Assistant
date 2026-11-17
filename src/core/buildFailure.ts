@@ -51,8 +51,17 @@ import { BuildMessage, MAX_BUILD_MESSAGES } from './cmsisTasks';
 
 /** Where the diagnostic re-run writes its log, under the solution directory; git-ignored with `out/`. */
 export const DIAGNOSTIC_LOG_PATH = 'out/cmsis-developer-assistant/build-diagnostic.log';
-/** The diagnostic re-run is killed after this long. */
-export const DIAGNOSTIC_RERUN_CAP_MS = 120_000;
+/**
+ * The diagnostic re-run is stopped after this long. It may have to compile
+ * much more than the build it diagnoses — after a rebuild or a clean, all of
+ * it — so its length follows no build's; large Zephyr and ExecuTorch
+ * solutions compile for many minutes (#135). The limit is for a tool that
+ * hangs, not for a build: it continues as the job's follow-up, which
+ * `cmsis_action {action:'status'}` waits for.
+ */
+export const DIAGNOSTIC_RERUN_CAP_MS = 30 * 60_000;
+/** The limit as the results name it. */
+export const DIAGNOSTIC_RERUN_CAP_TEXT = `${DIAGNOSTIC_RERUN_CAP_MS / 60_000} min`;
 /**
  * A cbuild-idx.yml or an image modified up to this long before the job
  * started still counts as written by it: file systems with a coarse
@@ -373,12 +382,20 @@ export function messagesFromLog(summary: BuildLogSummary): { errors: BuildMessag
 
 // ── The report ──────────────────────────────────────────────────────────────
 
+/** Why a diagnostic re-run that kept its log was stopped: at `DIAGNOSTIC_RERUN_CAP_MS`, or by `cmsis_action stop_build`. */
+export type RerunStopCause = 'cap' | 'request';
+
 /** How the diagnostic re-run ended. */
 export interface RerunOutcome {
     /** cbuild's exit code; null when it was killed. */
     exitCode: number | null;
-    /** Killed at `DIAGNOSTIC_RERUN_CAP_MS`. */
-    stoppedAtCap: boolean;
+    /**
+     * Set when it was stopped before cbuild finished. The report then holds
+     * only what it printed before the stop: the kill makes ninja print
+     * `FAILED:` for the compiler it ended and cbuild an error of its own,
+     * and those are not the build's (#135).
+     */
+    stopped?: RerunStopCause;
     /** The log's last status line (`Build summary: …`, `ninja: build stopped: …`). */
     status?: string;
 }
@@ -415,6 +432,7 @@ export type RerunSkip =
     | { kind: 'unresolved'; field: string }
     | { kind: 'build-running'; name: string }
     | { kind: 'superseded' }
+    | { kind: 'stopped' }
     | { kind: 'spawn-failed'; error: string };
 
 /** The sentence a skipped re-run adds to the result. */
@@ -438,6 +456,8 @@ export function rerunSkipText(skip: RerunSkip): string {
             return `'${skip.name}' is running, so cbuild was not re-run beside it`;
         case 'superseded':
             return 'the diagnostic re-run of cbuild was stopped because another build started; that build\'s result replaces this one';
+        case 'stopped':
+            return 'cmsis_action stop_build stopped the diagnostic re-run of cbuild before it started';
         case 'spawn-failed':
             return `the diagnostic re-run of cbuild could not start (${skip.error})`;
     }

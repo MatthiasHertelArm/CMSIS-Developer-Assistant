@@ -18,9 +18,10 @@
  * The `instructions` of the MCP initialize result, which most clients keep in
  * the system prompt for the whole session. They open with the tool rules of
  * the tool contract (toolContract.ts, #50): a client that shortens long
- * instructions keeps the beginning, and the rules are what must survive.
- * After them come what the tools are for, the skill to invoke first, how to
- * read a result, and one sentence per optional tool group.
+ * instructions keeps the beginning (Claude Code keeps 4 096 characters), and
+ * the rules are what must survive. After them come what the tools are for,
+ * the skill to invoke first, how to read a result, which solution is the
+ * current one, and one sentence per optional tool group.
  *
  * Nothing here counts towards `tools/list`, which rides along on every turn.
  * Pure: no I/O, no vscode.
@@ -74,6 +75,17 @@ const READING_RESULTS =
 const WINDOWS_AND_INTERNALS =
     'The control server and the registry files of the extension are internal: never call or read them. With several VS Code '
     + 'windows, list_debug_windows shows which one holds the target and select_debug_window pins it.';
+
+/**
+ * What the user means by the current or open solution (#124): an agent with
+ * several repositories at hand took the shell's working directory. Claude
+ * Code keeps the first 4 096 characters of the instructions, and the tool
+ * rules in front may grow; so it comes before the windows sentence and ends
+ * by character 3 900 (`debugSkillGuidance.test.ts`).
+ */
+export const CURRENT_SOLUTION =
+    'The current or open solution, project or repository is the Active solution that get_session_status names, '
+    + 'not the shell\'s working directory; if it lists several windows or names none, ask the user.';
 
 const DOCUMENTATION_ON =
     'The documentation tools (list_target_docs, search_target_docs, read_doc_pages, fetch_doc, get_peripheral_docs) answer ' +
@@ -140,7 +152,8 @@ export const TOOL_RULES_REMINDER =
  * is off is named with the setting that enables it.
  */
 export function composeInstructions(options: Readonly<InstructionOptions>): string {
-    const parts = [KNOWLEDGE_FIRST, PURPOSE, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS, WINDOWS_AND_INTERNALS];
+    const parts = [KNOWLEDGE_FIRST, PURPOSE, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS, CURRENT_SOLUTION,
+        WINDOWS_AND_INTERNALS];
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
     parts.push(options.buildInfoEnabled === true ? BUILD_ARTEFACTS_ON : BUILD_ARTEFACTS_OFF);
     parts.push(KNOWLEDGE_ON);

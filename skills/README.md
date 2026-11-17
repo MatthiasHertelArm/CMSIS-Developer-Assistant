@@ -12,6 +12,8 @@ npm run skills:sync
 
 This regenerates catalog.json from scripts/skills.config.json and the help frontmatter, and copies the tool-contract blocks into cmsis-help and the debugging guide. Run it after editing the help frontmatter, its agents/openai.yaml, the config or docs/agent-resources/tool-contract.md. The script requires the pinned core index so procedure hand-overs can be checked; run npm run knowledge:fetch when it is absent.
 
+The frontmatter decides whether a harness picks the skill at all. So `description` and `when_to_use` name every kind of CMSIS task, host-side builds as well as debugging, and stay within what the harnesses list: 1 024 characters of description (the Agent Skills limit), of which Kimi Code shows the first 250, and 1 536 for both fields together in Claude Code's skill listing. scripts/sync-skills.ts and src/test/skillCatalog.test.ts hold the description to 1 024 characters; src/test/skill.test.ts checks the other two limits and the host-side terms, src/test/debugSkillGuidance.test.ts the debugging ones.
+
 The config permits only cmsis-help. The installer retains the older catalog formats for migration, including the ability to remove obsolete managed skills without deleting personal content.
 
 ## Ownership and compatibility

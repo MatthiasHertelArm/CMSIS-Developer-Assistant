@@ -24,11 +24,13 @@
  * (for a build, the execution the command returns), and the result names the
  * task, its exit code, how long it ran and the job id. load_and_run is done
  * once Load ended 0 and CMSIS Run, which hosts the GDB server, stayed up for
- * 2 s. load_and_debug waits for its pre-launch Load, then, like attach, for a
- * session that it probes twice. rebuild and clean run CMSIS Solution's
- * Rebuild and Clean (1.72.0), the build task type with `--rebuild` or
- * `--clean`, as jobs of their own; stop_build ends the build-type tasks of
- * the window and says whether one was running.
+ * 2 s, or once a Run that hosts none — the FVP model — ended by itself with
+ * exit 0 before that: a completed run, shown with the Run's output when the
+ * window captured it (#134). load_and_debug waits for its pre-launch Load,
+ * then, like attach, for a session that it probes twice. rebuild and clean
+ * run CMSIS Solution's Rebuild and Clean (1.72.0), the build task type with
+ * `--rebuild` or `--clean`, as jobs of their own; stop_build ends the
+ * build-type tasks of the window and says whether one was running.
  *
  * One deadline per call (#12): the wait (60 s by default, up to 600 s) counts
  * from the call, so the solution checks and a target switch come out of it,
@@ -92,7 +94,7 @@ import {
     NOTHING_STARTED_MS,
     runtimeOf,
 } from '../core/cmsisTasks';
-import { DIAGNOSTIC_RERUN_CAP_MS, idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
+import { idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
 import {
     applyTargetSelection,
     formatTargetChoices,
@@ -159,6 +161,8 @@ import {
     stuckFlashTask,
 } from './jobText';
 import { runInstallPack } from './installPack';
+import { cancelPreparedLaunches, pendingLaunchNote, pendingStartLines, startsToTakeOver, takeOverNote } from './pendingStarts';
+import { runOutputsOf } from '../runOutputCapture';
 import { FVP_BREAK_FIRST, NO_FRAME_SELECTED } from './sessionText';
 import { failedTaskProgram, gdbServerMissingHint } from './taskProgram';
 
@@ -542,6 +546,13 @@ interface Issue {
     readonly portReservations?: readonly GdbPortReservation[];
 }
 
+/**
+ * The values of `debug.onTaskErrors` with which VS Code ends a launch whose
+ * pre-launch task exited non-zero; with `prompt` (the default) it asks the
+ * user, with `debugAnyway` it goes on.
+ */
+const LAUNCH_ENDS_ON_TASK_ERRORS: ReadonlySet<string> = new Set(['abort', 'showErrors']);
+
 /** A confirmed terminal start/run with no live owner: release only the ports this call reserved. */
 function releaseFailedStart(issue: Issue): void {
     const stillStarting = issue.tracker.liveExecutions().some((execution) => execution.kind === 'run' || execution.kind === 'load' || execution.kind === 'loadRun');
@@ -564,8 +575,12 @@ function followStartJob(issue: Issue, job: Job): { dispose(): void } {
                 reservation.adopt();
             }
         }
-        const runEnded = (ended.action === 'run' || ended.action === 'load_and_run') && ended.state === 'ok';
-        if (ended.state === 'failed' || ended.state === 'cancelled' || runEnded) {
+        // A Run that completed or ended by itself (#134) holds no port any more, as little as a failed one.
+        const runGone = (ended.action === 'run' || ended.action === 'load_and_run') && (ended.state === 'ok' || ended.state === 'ended');
+        // After a pre-launch Load that exited non-zero, VS Code may still "Debug Anyway" (#127).
+        const mayDebugAnyway = ended.action === 'load_and_debug' && ended.state === 'failed'
+            && !LAUNCH_ENDS_ON_TASK_ERRORS.has(issue.context.host.debugTaskErrors());
+        if ((ended.state === 'failed' || ended.state === 'cancelled' || runGone) && !mayDebugAnyway) {
             // The tracker announces the result before removing the live
             // execution. Inspect it after the task-end event has completed.
             queueMicrotask(() => releaseFailedStart(issue));
@@ -637,7 +652,9 @@ async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<strin
     tracker.issued(job.id);
     const outcome = await tracker.waitFor(job.id, answerBy(issue)) ?? job;
     const program = failedTaskProgram(issue.context.host, tracker, issue.solutionPath);
-    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface, program });
+    // The last lines of a CMSIS Run that ended arrive just after its end (#134).
+    const output = await runOutputsOf(tracker, [outcome], issue.context.host.now(), answerBy(issue) - issue.context.host.now());
+    return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface, program, output });
 }
 
 /** A repeated build, rebuild, clean, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
@@ -660,8 +677,10 @@ async function attachToJob(
     }
     const from = job.origin === 'adopted' ? ' from the CMSIS panel' : '';
     const preface = `Attached to the ${job.action} started${from} ${ago} ago (job ${job.id}, not started again). `;
-    const outcome = await host.cmsisJobs().waitFor(job.id, deadline - DEADLINE_MARGIN_MS) ?? job;
-    return jobResult(outcome, { tag: onTarget(runningOn), now: host.now(), preface, program: failedTaskProgram(host, host.cmsisJobs(), solutionPath) });
+    const tracker = host.cmsisJobs();
+    const outcome = await tracker.waitFor(job.id, deadline - DEADLINE_MARGIN_MS) ?? job;
+    const output = await runOutputsOf(tracker, [outcome], host.now(), deadline - DEADLINE_MARGIN_MS - host.now());
+    return jobResult(outcome, { tag: onTarget(runningOn), now: host.now(), preface, program: failedTaskProgram(host, tracker, solutionPath), output });
 }
 
 /**
@@ -680,13 +699,16 @@ async function reportStatus(context: CmsisActionContext, deadline: number): Prom
         if (completing) {
             await tracker.waitFor(completing.id, deadline - DEADLINE_MARGIN_MS);
         }
-        return idleStatus(tracker.recent(), tracker.liveExecutions(), host.now());
+        const output = await runOutputsOf(tracker, tracker.recent(), host.now(), deadline - DEADLINE_MARGIN_MS - host.now());
+        // A launch without a pre-launch task has no job to show: its GDB port reservation says what is waiting (#127).
+        return [idleStatus(tracker.recent(), tracker.liveExecutions(), host.now(), output), ...pendingStartLines(context.executor, host)].join('\n');
     }
     const others = open.filter((job) => job.id !== latest.id).map((job) => `${job.action} (job ${job.id})`);
     const preface = others.length > 0 ? `Also in flight: ${others.join(', ')}. ` : undefined;
     // A stuck Load or Erase is answered at once: waiting out the budget on every call only hides it.
     const outcome = stuckFlashTask(latest, host.now()) ? latest : await tracker.waitFor(latest.id, deadline - DEADLINE_MARGIN_MS) ?? latest;
-    return jobResult(outcome, { tag: onTarget(outcome.target), now: host.now(), preface, program: failedTaskProgram(host, tracker) });
+    const output = await runOutputsOf(tracker, [outcome], host.now(), deadline - DEADLINE_MARGIN_MS - host.now());
+    return jobResult(outcome, { tag: onTarget(outcome.target), now: host.now(), preface, program: failedTaskProgram(host, tracker), output });
 }
 
 /** Names as a list: `'A'`, `'A' and 'B'`, `'A', 'B' and 'C'`. */
@@ -769,6 +791,34 @@ async function stopRun(issue: Issue): Promise<ToolText> {
 }
 
 /**
+ * stop_build while no build task runs: the diagnostic re-run of cbuild that
+ * still checks a finished build, or collects its error lines, is no task, so
+ * the tracker asks it to stop (#135). Its result keeps what it printed
+ * before the stop; the answer waits for it as for a task, within the stop's
+ * budget.
+ */
+async function stopChecks(issue: Issue): Promise<ToolText> {
+    const { tracker, tag } = issue;
+    const { host } = issue.context;
+    const checking = tracker.recent().filter((job) => tracker.isCompleting(job.id));
+    if (checking.length === 0) {
+        return `CMSIS 'stop_build'${tag}: nothing to stop — no build is running in this window.`;
+    }
+    tracker.stopFollowUps();
+    const requestedAt = host.now();
+    const deadline = requestedAt + stopWaitMs(issue, requestedAt);
+    for (const job of checking) {
+        await tracker.waitFor(job.id, deadline);
+    }
+    const named = checking.map((job) => `${job.action} job ${job.id}`).join(' and ');
+    const after = checking.some((job) => tracker.isCompleting(job.id))
+        ? 'it is being stopped, and cmsis_action {action:\'status\'} shows what it found once it has ended'
+        : 'it is stopped now, and cmsis_action {action:\'status\'} shows what it found before the stop';
+    return `CMSIS 'stop_build'${tag}: no build is running in this window; the result of ${named} was still being checked by a diagnostic `
+        + `re-run of cbuild, which is no CMSIS task — ${after}.`;
+}
+
+/**
  * What became of the builds that ran when stop_run was issued: stop_run is
  * not for them, but CMSIS Solution's Stop Running can end one, and a build
  * that runs on is stop_build's.
@@ -795,9 +845,9 @@ async function buildsAfterStopRun(tracker: CmsisJobTracker, builds: readonly Exe
  * through `cmsis-csolution.stopBuild`, which ends one of them; give it 3 s,
  * terminate what is left ourselves, and report only what has ended within
  * 10 s; a shorter caller deadline leaves the stop pending. Their jobs count
- * as stopped once ended. With none running nothing is issued,
- * and the answer says so, also when a build's result is still being checked:
- * that check is no task, and `status` waits for it.
+ * as stopped once ended. With none running nothing is issued: a build whose
+ * result is still being checked has its diagnostic re-run of cbuild stopped
+ * instead (`stopChecks`), and with nothing at all the answer says so.
  */
 async function stopBuild(issue: Issue): Promise<ToolText> {
     const { tracker } = issue;
@@ -805,12 +855,7 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
     const tag = issue.tag;
     const running = tracker.buildExecutions();
     if (running.length === 0) {
-        const checking = tracker.recent().filter((job) => tracker.isCompleting(job.id)).map((job) => `${job.action} job ${job.id}`);
-        const note = checking.length > 0
-            ? ` The result of ${checking.join(' and ')} is still being checked (a diagnostic re-run of cbuild, at most `
-                + `${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s); that is no CMSIS task and ends by itself — cmsis_action {action:'status'} waits for it.`
-            : '';
-        return `CMSIS 'stop_build'${tag}: nothing to stop — no build is running in this window.${note}`;
+        return stopChecks(issue);
     }
     const jobs = tracker.requestStop(running);
     let direct = '';
@@ -1034,7 +1079,8 @@ async function sessionPhase(issue: Issue, action: string, loadNote: string, runA
                 + 'poll get_session_status until it reports \'running\' or \'stopped\'. '
                 + 'If get_session_status keeps reporting \'no-session\' with liveSessionsInThisWindow=0, '
                 + 'the CMSIS panel is most likely showing a picker the user must resolve. '
-                + 'Less often, this call and the poll landed in different windows — check with list_debug_windows and pin one with select_debug_window.',
+                + 'Less often, this call and the poll landed in different windows — check with list_debug_windows and pin one with select_debug_window.'
+                + pendingLaunchNote(issue.portReservations),
             status: 'running',
         };
     }
@@ -1690,69 +1736,93 @@ export async function runCmsisAction(
             // CMSIS Solution starts the configuration of the active target's debugger, not an FVP's or another board's kept beside it.
             const active = await activeDebugger(host);
             const launchOnes = activeLaunchConfigurations(launchConfigurations.filter((config) => config.request === 'launch'), active.name, active.ports);
-            const portReservations = await reserveLaunchPorts(issue, launchOnes);
+            const ports = await reserveLaunchPorts(issue, launchOnes);
             const loadFirst = launchOnes.some((config) => config.preLaunchTask === 'CMSIS Load');
             const servers = launchOnes.map((config) => config.server).filter((server): server is string => server !== undefined);
-            const reserved = { ...issue, portReservations };
-            try {
-                return withPreface(await loadAndDebug(reserved, loadFirst, servers), preface);
-            } catch (caught) {
-                releaseFailedStart(reserved);
-                throw caught;
-            }
+            // Released only on evidence that the launch is over (#127): its command failed (`issueCommand`), its Load ended
+            // it (`followStartJob`), or its session came and went (the coordinator). A refusal or a timeout is none.
+            return withPreface(await loadAndDebug({ ...issue, portReservations: ports.reservations }, loadFirst, servers),
+                prefaceWith(ports.note, preface));
         }
         case 'run':
         case 'load_and_run': {
-            const portReservations = solution.solutionPath
-                ? await reserveRunPorts(issue, action, selectionFolder(solution.solutionPath, host)) : [];
-            const reserved = { ...issue, portReservations };
-            try {
-                return await runJob(reserved, action, labels, preface);
-            } catch (caught) {
-                releaseFailedStart(reserved);
-                throw caught;
-            }
+            // As for load_and_debug: a Run that has not started may still start once CMSIS Solution has fetched the tasks.
+            const ports = solution.solutionPath
+                ? await reserveRunPorts(issue, action, selectionFolder(solution.solutionPath, host)) : { reservations: [], note: '' };
+            return runJob({ ...issue, portReservations: ports.reservations }, action, labels, prefaceWith(ports.note, preface));
         }
         default:
             return runJob(issue, action as JobAction, labels, preface);
     }
 }
 
+/** The reservations of a start's GDB ports, and the preface that says which pending starts of this window it took over. */
+interface ReservedPorts {
+    reservations: GdbPortReservation[];
+    note: string;
+}
+
+/** `note` before `preface`; undefined when both are empty. */
+function prefaceWith(note: string, preface: string | undefined): string | undefined {
+    const text = `${note}${preface ?? ''}`;
+    return text === '' ? undefined : text;
+}
+
 /**
  * Refuse a start whose GDB port another window or another program holds
  * (`HandlerHost.gdbPortHolder`, `src/core/gdbPortGuard.ts`): GDB would reach
  * that server instead of the new one, and halt that target. Each port is
- * asked once, in order, after atomically reserving it. Partial acquisition
- * is rolled back on any refusal; successful reservations outlive the call.
+ * asked once, in order, after atomically reserving it. A port this window
+ * holds for a pending start of its own is taken over instead
+ * (`startsToTakeOver`, #127): only once every port has passed, so that it is
+ * never free in between; then VS Code is asked to cancel what it still
+ * prepares of a launch taken over, before the new one goes out. Partial
+ * acquisition is rolled back on any refusal (a port taken over goes back to
+ * the start it covers); successful reservations outlive the call.
  */
-async function reservePorts(issue: Issue, ports: ReadonlyArray<{ port: number; start: PortStart }>): Promise<GdbPortReservation[]> {
-    const asked = new Set<number>();
+async function reservePorts(issue: Issue, ports: ReadonlyArray<{ port: number; start: PortStart }>): Promise<ReservedPorts> {
+    const { executor, host } = issue.context;
+    const wanted: Array<{ port: number; start: PortStart }> = [];
+    for (const entry of ports) {
+        if (!wanted.some((known) => known.port === entry.port)) {
+            wanted.push(entry);
+        }
+    }
+    const takenOver = startsToTakeOver(executor, host, wanted);
+    const own = new Set(wanted.map((entry) => entry.port).filter((port) => takenOver.some((start) => start.ports.includes(port))));
     const reservations: GdbPortReservation[] = [];
     const group = randomUUID();
     try {
-        for (const { port, start } of ports) {
-            if (asked.has(port)) {
-                continue;
+        for (const { port, start } of wanted) {
+            if (!own.has(port)) {
+                reservations.push(host.reserveGdbPort(port, start, group));
             }
-            asked.add(port);
-            reservations.push(issue.context.host.reserveGdbPort(port, start, group));
-            const holder = await issue.context.host.gdbPortHolder(port);
+            const holder = await host.gdbPortHolder(port);
             if (holder) {
                 logger.info(`${start.subject}: GDB port ${port} is held by ${holder.kind === 'window' ? `window pid ${holder.pid} (${holder.claim.label})` : 'another program'}`);
                 throw gdbPortRefusal(start, port, holder);
             }
         }
-        return reservations;
+        // The checks gave the earlier start time to come up: look again, synchronously, before taking its ports over.
+        if (own.size > 0) {
+            startsToTakeOver(executor, host, wanted.filter((entry) => own.has(entry.port)));
+        }
+        for (const { port, start } of wanted) {
+            if (own.has(port)) {
+                reservations.push(host.reserveGdbPort(port, start, group, true));
+            }
+        }
     } catch (caught) {
         for (const reservation of reservations) {
             reservation.release();
         }
         throw caught;
     }
+    return { reservations, note: takeOverNote(takenOver, await cancelPreparedLaunches(executor, takenOver)) };
 }
 
 /** load_and_debug: the GDB ports the launch configurations fix for their servers. */
-async function reserveLaunchPorts(issue: Issue, launches: readonly CmsisLaunchConfiguration[]): Promise<GdbPortReservation[]> {
+async function reserveLaunchPorts(issue: Issue, launches: readonly CmsisLaunchConfiguration[]): Promise<ReservedPorts> {
     const subject = `CMSIS 'load_and_debug'${issue.tag} not started`;
     return reservePorts(issue, launches.flatMap((config) => (config.gdbPort === undefined ? [] : [{
         port: config.gdbPort,
@@ -1766,7 +1836,7 @@ async function reserveLaunchPorts(issue: Issue, launches: readonly CmsisLaunchCo
  * line names that file and no port. A Run that hosts no GDB server (the FVP
  * adapter's model) has none.
  */
-async function reserveRunPorts(issue: Issue, action: string, folder: string): Promise<GdbPortReservation[]> {
+async function reserveRunPorts(issue: Issue, action: string, folder: string): Promise<ReservedPorts> {
     const words = await folderCmsisRunCommand(folder);
     const file = runTaskCbuildRun(words);
     let fromFile: number[] = [];

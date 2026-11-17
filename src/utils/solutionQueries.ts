@@ -16,8 +16,9 @@
 
 /**
  * Asking the CMSIS Solution extension what it knows about its active target
- * instead of guessing it: the `cbuild-run.yml` (`getCbuildRunFile`) and the
- * folders of the target's DFP and BSP (`getDfpPath`, `getBspPath`). These
+ * instead of guessing it: the `cbuild-run.yml` (`getCbuildRunFile`), the
+ * folders of the target's DFP and BSP (`getDfpPath`, `getBspPath`), and for
+ * `get_session_status` the active csolution (`getSolutionFile`). These
  * commands are hidden from the palette and not part of the extension's
  * public API, so each one is feature-detected (`getCommands(true)`), and it
  * is asked only while the extension is active: running it would activate the
@@ -29,13 +30,14 @@
 
 import * as vscode from 'vscode';
 import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
-import { ActivePackFolders, cbuildRunFileOf, packFolderOf } from '../core/solutionAnswers';
+import { ActivePackFolders, cbuildRunFileOf, packFolderOf, solutionAnswerOf, type SolutionFileAnswer } from '../core/solutionAnswers';
 import { logger } from './logger';
 import { withTimeout } from './timeout';
 
 export const GET_CBUILD_RUN_FILE = 'cmsis-csolution.getCbuildRunFile';
 export const GET_DFP_PATH = 'cmsis-csolution.getDfpPath';
 export const GET_BSP_PATH = 'cmsis-csolution.getBspPath';
+export const GET_SOLUTION_FILE = 'cmsis-csolution.getSolutionFile';
 
 /** How long one question may take, the command lookup included. */
 export const SOLUTION_QUERY_MS = 3_000;
@@ -59,26 +61,45 @@ export const VSCODE_SOLUTION_COMMANDS: SolutionCommands = {
     execute: (command) => vscode.commands.executeCommand<unknown>(command),
 };
 
+/** What one getter said, kept apart from no answer at all: `getSolutionFile` answers `undefined` for "no solution". */
+type SolutionReply = { answered: true; value: unknown } | { answered: false };
+
+/** One getter, asked as the module comment says. Never throws. */
+async function replyOf(command: string, source: SolutionCommands): Promise<SolutionReply> {
+    try {
+        if (!source.extensionActive()) {
+            return { answered: false };
+        }
+        return await withTimeout(`cmsis ${command}`, source.timeoutMs ?? SOLUTION_QUERY_MS, async (): Promise<SolutionReply> => {
+            if (!(await source.commands()).includes(command)) {
+                logger.debug(`${command}: not offered by this CMSIS Solution version`);
+                return { answered: false };
+            }
+            return { answered: true, value: await source.execute(command) };
+        });
+    } catch (caught) {
+        logger.debug(`${command}: no answer (${caught instanceof Error ? caught.message : String(caught)})`);
+        return { answered: false };
+    }
+}
+
 /**
  * The answer of one getter, or undefined when the extension is not active,
  * does not have the command, fails or does not answer in time. Never throws.
  */
 export async function askSolution(command: string, source: SolutionCommands = VSCODE_SOLUTION_COMMANDS): Promise<unknown> {
-    try {
-        if (!source.extensionActive()) {
-            return undefined;
-        }
-        return await withTimeout(`cmsis ${command}`, source.timeoutMs ?? SOLUTION_QUERY_MS, async () => {
-            if (!(await source.commands()).includes(command)) {
-                logger.debug(`${command}: not offered by this CMSIS Solution version`);
-                return undefined;
-            }
-            return source.execute(command);
-        });
-    } catch (caught) {
-        logger.debug(`${command}: no answer (${caught instanceof Error ? caught.message : String(caught)})`);
-        return undefined;
-    }
+    const reply = await replyOf(command, source);
+    return reply.answered ? reply.value : undefined;
+}
+
+/**
+ * Which csolution the extension has active in this window (#124): a file,
+ * or none. Undefined when the extension gave no answer, as for every getter
+ * here; that is not the same as "none". Never throws.
+ */
+export async function activeSolutionAnswer(source: SolutionCommands = VSCODE_SOLUTION_COMMANDS): Promise<SolutionFileAnswer | undefined> {
+    const reply = await replyOf(GET_SOLUTION_FILE, source);
+    return reply.answered ? solutionAnswerOf(reply.value) : undefined;
 }
 
 /**

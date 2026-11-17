@@ -28,7 +28,8 @@
 //
 // No VS Code window, network, probe or GDB is involved: `vscode` is the stub
 // from vscode-stub.js, extended below with a fake debug session, adapter
-// tracker, breakpoint model, tasks and command log.
+// tracker, breakpoint model, tasks, the terminal commands VS Code reports
+// with their output (#134), and a command log.
 //
 // The scripted adapter answers the way cdt-gdb-adapter (the adapter behind
 // `gdbtarget`) answers, including where that exposes bugs in the code under
@@ -88,7 +89,9 @@
 //
 // Scenarios are independent: each gets a fresh server, a fresh fake session
 // and an empty breakpoint model, the breakpoints the session tracker saw VS
-// Code adopt from an adapter included. Module-level state in the code under test
+// Code adopt from an adapter included. No extension is installed unless a
+// scenario names some (`extensions`, by id): then VS Code reports them, and
+// lists the scenario's commands as registered. Module-level state in the code under test
 // (the window's problem journal, whose record numbers count on across
 // scenarios and are masked in the replies, the pack-root answer, the parsed
 // SVD cache) persists across scenarios as it does across sessions in one
@@ -132,7 +135,35 @@ const bus = {
     didChangeStackItem: emitter(),
     taskStart: emitter(),
     taskEnd: emitter(),
+    shellExecutionStart: emitter(),
 };
+
+/**
+ * A terminal command as VS Code reports it to extensions (#134): the
+ * scenario writes what the terminal receives and ends it; `read()` streams
+ * what was written after it was first called.
+ */
+function shellExecution(commandLine) {
+    const queued = [];
+    let ended = false;
+    let wake;
+    return {
+        commandLine: { value: commandLine, isTrusted: true, confidence: 2 },
+        read() {
+            return {
+                async *[Symbol.asyncIterator]() {
+                    for (;;) {
+                        while (queued.length > 0) { yield queued.shift(); }
+                        if (ended) { return; }
+                        await new Promise((resolve) => { wake = resolve; });
+                    }
+                },
+            };
+        },
+        write(data) { queued.push(data); wake?.(); },
+        end() { ended = true; wake?.(); },
+    };
+}
 const trackerFactories = [];
 
 /** The scenario being recorded; the stub hooks delegate to it. */
@@ -179,6 +210,7 @@ Object.assign(stub.debug, {
 });
 
 stub.tasks = { onDidStartTaskProcess: bus.taskStart.event, onDidEndTaskProcess: bus.taskEnd.event };
+stub.window.onDidStartTerminalShellExecution = bus.shellExecutionStart.event;
 
 // Real files, read the way VS Code's TextDocument exposes them.
 stub.workspace.openTextDocument = async (uri) => {
@@ -1907,6 +1939,58 @@ const SCENARIOS = [
             { tool: 'get_session_status' },
         ],
     },
+    {
+        name: 'cmsis-fvp-run-eot',
+        description: 'No session: cmsis_action load_and_run whose CMSIS Run is an FVP model; the application prints its test result and asks for '
+            + 'an EOT shutdown, so the model ends with exit 0 inside the 2 s grace (#134). The run completed: the reply has the exit code, the run '
+            + 'time and the output VS Code reported for the Run terminal (its last data arrives after the task\'s end), and no probe advice; '
+            + 'status shows the result and the output again.',
+        commands: {
+            'cmsis-csolution.cmsisLoadAndRun': (sc) => {
+                const load = { name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } };
+                const words = ['FVP_Corstone_SSE-300', '-f', 'fvp_config.txt', '-a', 'out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf'];
+                const run = { name: 'CMSIS Run', source: 'Workspace', definition: { type: 'shell' }, execution: { command: words[0], args: words.slice(1) } };
+                setTimeout(() => {
+                    sc.record(`task: start ${JSON.stringify(load.name)}`);
+                    bus.taskStart.fire({ execution: { task: load } });
+                    sc.record(`task: end ${JSON.stringify(load.name)} exitCode=0`);
+                    bus.taskEnd.fire({ execution: { task: load }, exitCode: 0 });
+                    const terminal = shellExecution(words.join(' '));
+                    sc.record(`terminal: command ${JSON.stringify(words.join(' '))} started`);
+                    bus.shellExecutionStart.fire({ execution: terminal });
+                    sc.record(`task: start ${JSON.stringify(run.name)}`);
+                    bus.taskStart.fire({ execution: { task: run } });
+                    terminal.write('telnetterminal0: Listening for serial connection on port 5000\r\n\x1b[32mHello World\x1b[0m\r\nTest_result: PASS\r\n');
+                    setTimeout(() => {
+                        sc.record(`task: end ${JSON.stringify(run.name)} exitCode=0`);
+                        bus.taskEnd.fire({ execution: { task: run }, exitCode: 0 });
+                        setTimeout(() => {
+                            terminal.write('\x04\r\nInfo: Simulation is stopping. Reason: EOT received.\r\n');
+                            terminal.end();
+                            sc.record('terminal: command ended');
+                        }, 2);
+                    }, 50);
+                }, 20);
+            },
+        },
+        calls: [
+            { tool: 'cmsis_action', args: { action: 'load_and_run' } },
+            { tool: 'cmsis_action', args: { action: 'status' } },
+        ],
+    },
+    {
+        name: 'status-active-solution',
+        description: 'No session, the CMSIS Solution extension active (#124): get_session_status names the csolution it has active and the '
+            + 'workspace folder that holds it, then, once the extension answers "", that none is active.',
+        extensions: {
+            'Arm.cmsis-csolution': { id: 'Arm.cmsis-csolution', isActive: true, exports: undefined, extensionPath: '/ext/cmsis-csolution',
+                packageJSON: { version: '1.72.0' } },
+        },
+        calls: [
+            { tool: 'get_session_status' },
+            { tool: 'get_session_status', before: (sc) => { sc.commands['cmsis-csolution.getSolutionFile'] = () => ''; } },
+        ],
+    },
 ];
 
 // ── Workspace on disk ──────────────────────────────────────────────────────
@@ -2175,6 +2259,14 @@ async function runScenario(def, index, env, ctx, DebugMCPServer) {
     stub.debug.activeDebugSession = undefined;
     stub.debug.activeStackItem = undefined;
 
+    // Extensions a scenario installs, by id; VS Code then lists the scenario's commands as registered.
+    const { getExtension } = stub.extensions;
+    const { getCommands } = stub.commands;
+    if (def.extensions) {
+        stub.extensions.getExtension = (id) => def.extensions[id];
+        stub.commands.getCommands = async () => Object.keys(sc.commands);
+    }
+
     const server = new DebugMCPServer(0, 30);
     await server.initialize();
     await server.start();
@@ -2228,6 +2320,8 @@ async function runScenario(def, index, env, ctx, DebugMCPServer) {
     await client.close();
     await server.stop();
     sc.teardown();
+    stub.extensions.getExtension = getExtension;
+    stub.commands.getCommands = getCommands;
     current = null;
     return { name: def.name, description: def.description, ...(setup.length ? { setup } : {}), calls };
 }

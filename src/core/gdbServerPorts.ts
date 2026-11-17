@@ -285,6 +285,35 @@ export function runCommandKind(words: readonly string[] | undefined): RunCommand
     return FVP_MODEL.test(program) ? 'bareModel' : 'unknown';
 }
 
+/**
+ * The program and arguments a task's definition names (`command` and
+ * `args`): CMSIS Solution 1.72.1 runs its pyOCD tasks (type
+ * `cmsis-csolution.pyocd`) in a pseudoterminal of its own, so their
+ * execution has no command line and only the definition says what runs.
+ * Undefined without a command.
+ */
+export function definitionCommandWords(task: unknown): string[] | undefined {
+    const definition = (task as { definition?: unknown } | undefined)?.definition as { command?: unknown; args?: unknown } | undefined;
+    const program = wordOf(definition?.command);
+    if (program === undefined || program.trim() === '') {
+        return undefined;
+    }
+    const args = Array.isArray(definition?.args) ? definition.args.map(wordOf).filter((word): word is string => word !== undefined) : [];
+    return [program, ...args];
+}
+
+/**
+ * What a CMSIS Run task runs, as its end is judged: a GDB server, meant to
+ * stay up (#73), or the FVP model alone, which ends when the application
+ * stops it (#134) — read from its command line, or for a task without one
+ * from its definition (`runCommandKind`). Undefined when it says neither: a
+ * model shim and a launcher that starts a GDB server elsewhere look alike.
+ */
+export function runTaskKind(task: unknown): 'gdbServer' | 'model' | undefined {
+    const kind = runCommandKind(taskCommandWords(task) ?? definitionCommandWords(task));
+    return kind === 'gdbServer' ? 'gdbServer' : kind === 'bareModel' ? 'model' : undefined;
+}
+
 /** True for the FVP adapter's debugger name as a cbuild-run.yml writes it (`Arm-FVP`), in any case. */
 export function isFvpDebugger(name: string | undefined): boolean {
     return name !== undefined && name.trim().toLowerCase() === FVP_DEBUGGER.toLowerCase();

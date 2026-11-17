@@ -1331,6 +1331,28 @@ async function main() {
     }
     reset();
     {
+        // #127: with no session listed, VS Code's stop without an argument cancels the starts it still prepares;
+        // with one listed it would end every session, so nothing is sent.
+        const calls = [];
+        stub.debug.stopDebugging = async (...args) => { calls.push(args); };
+        const sent = await new DebuggingExecutor().cancelPendingStarts();
+        check('cancelPendingStarts without a session: one stop without an argument', sent === true && eq(calls, [[]]), calls);
+        const focused = makeSession(() => undefined);
+        focusOn(focused.session);
+        calls.length = 0;
+        check('cancelPendingStarts with a focused session: nothing sent', await new DebuggingExecutor().cancelPendingStarts() === false && calls.length === 0, calls);
+        reset();
+        trackerFor(makeSession(() => undefined).session);
+        check('cancelPendingStarts with a live session out of focus: nothing sent',
+            await new DebuggingExecutor().cancelPendingStarts() === false && calls.length === 0, calls);
+        reset();
+        stub.debug.stopDebugging = async () => { throw new Error('cancel bad'); };
+        const e = await rejects(new DebuggingExecutor().cancelPendingStarts());
+        check('cancelPendingStarts: a failure is wrapped', e && e.message === 'Cancelling the pending debug start failed: cancel bad', e && e.message);
+        stub.debug.stopDebugging = async () => {};
+    }
+    reset();
+    {
         const ex = new DebuggingExecutor();
         stub.debug.addBreakpoints = () => { throw new Error('add bad'); };
         console.log(`       S7 text: ${(await rejects(ex.addBreakpoint(stub.Uri.file('/a'), 1))).message}`);

@@ -75,7 +75,15 @@ can fake only the part a case drives.
   session (the parent of a multi-core launch) is stopped, and once the tracker
   has seen it end, its launch configuration is started again, so a failure
   comes back to the caller (#13). Other adapters use VS Code's restart
-  command.
+  command. `cancelPendingStarts()` asks VS Code to cancel what it still
+  prepares of a start that has no session yet, with
+  `vscode.debug.stopDebugging()` and no argument, as the Debug toolbar's Stop
+  does then (#127). It is sent only while no session is listed, since with
+  one the same call ends every session. It is best effort, not evidence that
+  the start is gone: VS Code registers a launch only after awaits of its own
+  (workspace trust, activation, saving), and looks at the cancel only at some
+  steps — a picker closes, the wait for a pre-launch task ends — so a launch
+  not registered yet, one past those steps and one in a modal dialog go on.
 - **Readiness.** `hasActiveSession()` is true when a session exists, answers
   a `threads` probe and is halted. `getSessionStatus()` classifies the session
   as `no-session`, `initializing`, `running`, `stopped` or `unresponsive`

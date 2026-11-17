@@ -3125,6 +3125,60 @@
           "traffic": []
         }
       ]
+    },
+    {
+      "name": "cmsis-fvp-run-eot",
+      "description": "No session: cmsis_action load_and_run whose CMSIS Run is an FVP model; the application prints its test result and asks for an EOT shutdown, so the model ends with exit 0 inside the 2 s grace (#134). The run completed: the reply has the exit code, the run time and the output VS Code reported for the Run terminal (its last data arrives after the task's end), and no probe advice; status shows the result and the output again.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "load_and_run"
+          },
+          "text": "✅ CMSIS 'load_and_run' on NUCLEO-F401RE: 'CMSIS Load' exited 0 after <n>s, then 'CMSIS Run' ended by itself with exit code 0 after <n>s — the run completed, and nothing hosts a GDB server now (job r-6). An exit code is no test result: check the application's own result line in the output below.\nOutput of 'CMSIS Run' (5 lines):\ntelnetterminal0: Listening for serial connection on port 5000\nHello World\nTest_result: PASS\n\nInfo: Simulation is stopping. Reason: EOT received.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.cmsisLoadAndRun",
+            "task: start \"CMSIS Load\"",
+            "task: end \"CMSIS Load\" exitCode=0",
+            "terminal: command \"FVP_Corstone_SSE-300 -f fvp_config.txt -a out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf\" started",
+            "task: start \"CMSIS Run\"",
+            "task: end \"CMSIS Run\" exitCode=0",
+            "terminal: command ended"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "status"
+          },
+          "text": "No CMSIS job in flight in this window. Last results: load_and_run on NUCLEO-F401RE ✅ ended by itself, exit 0 <n>s ago (job r-6, 'CMSIS Run'); clean on NUCLEO-F401RE ✅ <n>s ago (job c-5, 'cbuild Blinky.csolution.yml --clean --target all'); rebuild on NUCLEO-F401RE ✅ <n>s ago (job rb-4, 'cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE'); build on NUCLEO-F401RE ⚠️ exit 0, not confirmed <n>s ago (job b-3, 'cbuild Blinky.csolution.yml').\nBuild job b-3 exited 0, but that does not confirm it: The image out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf is missing, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. It could not be checked: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run. Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself.\nNo CMSIS task is running in this window.\nOutput of 'CMSIS Run' (5 lines):\ntelnetterminal0: Listening for serial connection on port 5000\nHello World\nTest_result: PASS\n\nInfo: Simulation is stopping. Reason: EOT received.",
+          "traffic": []
+        }
+      ]
+    },
+    {
+      "name": "status-active-solution",
+      "description": "No session, the CMSIS Solution extension active (#124): get_session_status names the csolution it has active and the workspace folder that holds it, then, once the extension answers \"\", that none is active.",
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nActive solution: <tmp>/project/Blinky.csolution.yml (workspace folder <tmp>/project)\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nActive solution: none in this VS Code window\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile"
+          ]
+        }
+      ]
     }
   ]
 }

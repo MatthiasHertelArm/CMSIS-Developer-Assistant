@@ -1,0 +1,94 @@
+{
+  "derivedFrom": "The FVP adapter template of the installed CMSIS Solution 1.72.1-86-20261109 (templates/debug/FVP.adapter.json: CMSIS Load an echo, CMSIS Run the model as a shell task, CMSIS Load+Run their dependsOn sequence), and the event order VS Code 1.146 fired for a tasks.json of that shape with a stand-in model that prints and exits at once: no start event of the compound, which ends after Run. Times are illustrative milliseconds from the call.",
+  "description": "cmsis_action load_and_run (FVP template): the model runs a test image that prints its result and requests an EOT shutdown, so the process of CMSIS Run ends with exit 0 inside the 2 s grace (#134). The run completed: the job is ok and decided by Run, not a GDB server that failed to stay up.",
+  "action": "load_and_run",
+  "tasks": {
+    "loadRun": {
+      "name": "CMSIS Load+Run",
+      "source": "Workspace",
+      "definition": {
+        "type": "$composite"
+      },
+      "execution": "none: dependsOn [CMSIS Load, CMSIS Run], dependsOrder sequence"
+    },
+    "load": {
+      "name": "CMSIS Load",
+      "source": "Workspace",
+      "definition": {
+        "type": "shell"
+      },
+      "execution": {
+        "commandLine": "echo CMSIS Load: images are loaded by the FVP model when CMSIS Run starts."
+      }
+    },
+    "run": {
+      "name": "CMSIS Run",
+      "source": "Workspace",
+      "definition": {
+        "type": "shell"
+      },
+      "execution": {
+        "command": "FVP_Corstone_SSE-300",
+        "args": ["-f", "fvp_config.txt", "-a", "out/Blinky/SSE-300-MPS3/Debug/Blinky.axf"]
+      }
+    }
+  },
+  "events": [
+    {
+      "at": 0,
+      "event": "issued"
+    },
+    {
+      "at": 60,
+      "event": "onDidStartTask",
+      "task": "load"
+    },
+    {
+      "at": 800,
+      "event": "onDidStartTaskProcess",
+      "task": "load"
+    },
+    {
+      "at": 1340,
+      "event": "onDidEndTaskProcess",
+      "task": "load",
+      "exitCode": 0
+    },
+    {
+      "at": 1341,
+      "event": "onDidEndTask",
+      "task": "load"
+    },
+    {
+      "at": 1350,
+      "event": "onDidStartTask",
+      "task": "run"
+    },
+    {
+      "at": 1350,
+      "event": "onDidStartTaskProcess",
+      "task": "run"
+    },
+    {
+      "at": 3250,
+      "event": "onDidEndTaskProcess",
+      "task": "run",
+      "exitCode": 0
+    },
+    {
+      "at": 3250,
+      "event": "onDidEndTask",
+      "task": "run"
+    },
+    {
+      "at": 3280,
+      "event": "onDidEndTask",
+      "task": "loadRun"
+    }
+  ],
+  "expect": {
+    "state": "ok",
+    "decidedBy": "run",
+    "exitCode": 0
+  }
+}

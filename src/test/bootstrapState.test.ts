@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// What an empty window lacks, as the refusals and status lines say it; path comparison, the CMSIS Solution extension's csolution search and the csolution walk of open_solution.
+// What an empty window lacks, as the refusals and status lines say it; the active-solution line; path comparison, the CMSIS Solution extension's csolution search and the csolution walk of open_solution.
 
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -30,7 +30,9 @@ import {
     noSolutionRefusal,
     noWorkspaceRefusal,
     samePath,
+    solutionStatusLine,
 } from '../core/bootstrapState';
+import type { SolutionFileAnswer } from '../core/solutionAnswers';
 import { errorDetail, isErrorCode } from '../core/toolResult';
 import { findSolutionFiles } from '../utils/solutionFiles';
 
@@ -73,6 +75,32 @@ suite('Bootstrap state', () => {
         const lines = bootstrapStatusLines({ folders: 0, solutionExtension: true, debuggerExtension: false });
         assert.strictEqual(lines.length, 2);
         assert.match(lines[1], /^Extensions: CMSIS Debugger \(Arm\.vscode-cmsis-debugger\) not installed/);
+    });
+
+    test('the active-solution line: the csolution and its innermost workspace folder, none, or nothing to say (#124)', () => {
+        const folders = ['/w/repo', '/w/repo/app', '/w/other'];
+        const line = (answer: SolutionFileAnswer | undefined, lastKnown?: string, open: readonly string[] = folders): string | undefined =>
+            solutionStatusLine({ answer, lastKnown, folders: open }, 'linux');
+        assert.strictEqual(line({ active: true, file: '/w/repo/app/Blinky.csolution.yml' }),
+            'Active solution: /w/repo/app/Blinky.csolution.yml (workspace folder /w/repo/app)');
+        assert.strictEqual(line({ active: true, file: '/w/repo/lib/Blinky.csolution.yml' }),
+            'Active solution: /w/repo/lib/Blinky.csolution.yml (workspace folder /w/repo)', 'a csolution below the folder');
+        assert.strictEqual(line({ active: true, file: '/x/Blinky.csolution.yml' }),
+            'Active solution: /x/Blinky.csolution.yml (in no open workspace folder)');
+        assert.strictEqual(solutionStatusLine({ answer: { active: true, file: 'C:\\W\\Repo\\Blinky.csolution.yml' }, folders: ['c:\\w\\repo'] }, 'win32'),
+            'Active solution: C:\\W\\Repo\\Blinky.csolution.yml (workspace folder c:\\w\\repo)', 'compared as the platform compares');
+        assert.strictEqual(line({ active: false }), 'Active solution: none in this VS Code window');
+        assert.strictEqual(line({ active: false }, undefined, []), undefined, 'the Workspace line says what an empty window lacks');
+        assert.strictEqual(line({ active: true }), undefined, 'active, but no file named: nothing to name');
+        assert.strictEqual(line(undefined), undefined, 'no answer is not "none"');
+
+        // Without an answer in time, the csolution the window published last, said to be that (a switch may be under way).
+        assert.strictEqual(line(undefined, '/w/repo/Blinky.csolution.yml'),
+            'Active solution: /w/repo/Blinky.csolution.yml (workspace folder /w/repo; last known, CMSIS Solution did not answer just now)');
+        assert.strictEqual(line({ active: false }, '/w/repo/Blinky.csolution.yml'), 'Active solution: none in this VS Code window',
+            'an answer in time wins over the last known one');
+        assert.strictEqual(line({ active: true, file: '/w/other/New.csolution.yml' }, '/w/repo/Blinky.csolution.yml'),
+            'Active solution: /w/other/New.csolution.yml (workspace folder /w/other)');
     });
 
     test('solution file names and path comparison follow the platform', () => {

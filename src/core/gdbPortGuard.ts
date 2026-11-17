@@ -45,7 +45,9 @@
  * the port that the real GDB server needs.
  *
  * `gdbPortRefusal` words the `PROBE_BUSY` refusal: what was not started, the
- * port, who holds it, and the way out — stop it there, or another port.
+ * port, who holds it, and the way out — stop it there, or another port. A
+ * pending start of this window that its next start may not take over yet is
+ * named as its own, with what it still waits for.
  *
  * No `vscode`: the windows and the probe come in.
  */
@@ -62,10 +64,28 @@ export interface PortClaimingWindow {
     claims: readonly GdbPortClaim[];
 }
 
-/** Who holds a GDB port: another window, by its claim, or a process that is no window of this extension. */
+/**
+ * Why a start of this window that reserved its GDB port and has no session
+ * yet may not be taken over by the window's next start: a debug session, a
+ * CMSIS task or a `cmsis_action` job of the window may still take it over, or
+ * it is younger than `takeOverAfterMs` and may come up any moment.
+ */
+export type StartWait =
+    | { kind: 'session' }
+    | { kind: 'task'; name: string }
+    | { kind: 'job'; id: string; action: string }
+    | { kind: 'starting'; takeOverAfterMs: number };
+
+/**
+ * Who holds a GDB port: another window, by its claim or its reservation;
+ * this window's own start, session or task (`own`: `adopted` once one of them
+ * took the reservation over, `waitingFor` what a pending start still waits
+ * for); or a process that is no window of this extension.
+ */
 export type GdbPortHolder =
     | { kind: 'window'; pid: number; name: string; claim: GdbPortClaim }
-    | { kind: 'reservation'; pid: number; name: string; label: string }
+    | { kind: 'reservation'; pid: number; name: string; label: string; what?: 'launch' | 'run' }
+    | { kind: 'own'; what: 'launch' | 'run'; label: string; ageMs: number; adopted: boolean; server?: GdbServerKind; waitingFor?: StartWait }
     | { kind: 'listener' };
 
 /** What one bind test says: another process listens, nothing does, or the bind failed for another reason. */
@@ -158,10 +178,27 @@ function serverText(server: GdbServerKind | undefined): string {
     return server ? `${server} GDB server` : 'GDB server';
 }
 
+/** How long ago, as the job texts say it: whole seconds below three minutes, then minutes. */
+function agoText(ms: number): string {
+    const safe = Math.max(0, ms);
+    return safe < 180_000 ? `${Math.round(safe / 1_000)} s` : `${Math.round(safe / 60_000)} min`;
+}
+
 /** What uses the port in that window: `its CMSIS Run task (pyOCD GDB server)`. */
 function claimText(claim: GdbPortClaim): string {
     const what = claim.source === 'cmsis-run' ? `its ${claim.label} task` : `its debug session '${claim.label}'`;
     return `${what} (${serverText(claim.server)})`;
+}
+
+/**
+ * What may hold a launch that reserved its GDB port but started no debug
+ * session: VS Code shows the start nowhere else, and CMSIS Solution reports
+ * a launch VS Code dropped only in its own message. `fvp` adds what the
+ * first start of an FVP on Windows can wait for.
+ */
+export function pendingLaunchCauses(fvp: boolean): string {
+    const prompt = fvp ? '; at the first start of an FVP on Windows, an access-permission prompt' : '';
+    return `VS Code may be waiting for the user (a picker or a dialog${prompt}), or it dropped the launch before its debug adapter started`;
 }
 
 /** Where this project sets another port, by what would have started. */
@@ -172,6 +209,40 @@ function anotherPort(start: PortStart): string {
     return start.server === 'Arm FVP'
         ? 'give this project another port: GDBServer.port in .vscode/launch.json'
         : `give this project another port: target.port of '${start.configuration ?? 'the launch configuration'}' in .vscode/launch.json`;
+}
+
+/**
+ * The refusal of a start whose port this window holds itself: its own
+ * session or task, or its own pending launch or Run that may not be taken
+ * over yet. A pending start that may be taken over is never refused: the
+ * window's next start takes its port over.
+ */
+function ownRefusal(start: PortStart, starts: string, follows: string, holder: Extract<GdbPortHolder, { kind: 'own' }>): Refusal {
+    if (holder.adopted) {
+        const owner = holder.what === 'run' ? `its ${holder.label} task` : `its debug session '${holder.label}'`;
+        return new Refusal('PROBE_BUSY', `${start.subject}: ${starts}, which this window uses for ${owner}. ${follows}`,
+            `Stop it first once the user agrees (${holder.what === 'run' ? 'cmsis_action stop_run' : 'stop_debugging'}), then repeat this call; `
+                + `or ${anotherPort(start)}.`);
+    }
+    const pending = holder.what === 'run' ? 'its own CMSIS Run' : `its own launch of '${holder.label}'`;
+    const reserved = `${start.subject}: ${starts}, which this window reserved ${agoText(holder.ageMs)} ago for ${pending}`;
+    const wait = holder.waitingFor;
+    switch (wait?.kind) {
+        case 'task':
+            return new Refusal('PROBE_BUSY', `${reserved}; its task '${wait.name}' still runs.`,
+                'Wait for it with cmsis_action {action:\'status\'}, or end that task with cmsis_action stop_run once the user agrees; then repeat this call.');
+        case 'job':
+            return new Refusal('PROBE_BUSY', `${reserved}; its ${wait.action} (job ${wait.id}) has not started its task yet.`,
+                'Wait for it with cmsis_action {action:\'status\'}, then repeat this call.');
+        case 'session':
+            return new Refusal('PROBE_BUSY', `${reserved}, and a debug session of this window may still take it over.`,
+                'Stop that session first once the user agrees (stop_debugging), then repeat this call.');
+        default: {
+            const after = wait ? ` A start here takes that port over once it has gone ${Math.round(wait.takeOverAfterMs / 1_000)} s without a session or task.` : '';
+            return new Refusal('PROBE_BUSY', `${reserved}, which has not come up yet.`,
+                `Wait for it: get_session_status shows its session once it is up. ${pendingLaunchCauses(holder.server === 'Arm FVP')}.${after}`);
+        }
+    }
 }
 
 /**
@@ -186,9 +257,24 @@ export function gdbPortRefusal(start: PortStart, port: number, holder: GdbPortHo
     const follows = start.what === 'run'
         ? 'Two GDB servers on one port: the new one fails to start, or a GDB meant for one of them reaches the other.'
         : 'GDB would connect to that server instead of the new one, and debug — and halt — that target.';
+    if (holder.kind === 'own') {
+        return ownRefusal(start, starts, follows, holder);
+    }
     if (holder.kind === 'reservation') {
-        return new Refusal('PROBE_BUSY',
-            `${start.subject}: ${starts}, which ${windowText(holder)} has reserved for '${holder.label}'. ${follows}`,
+        const message = `${start.subject}: ${starts}, which ${windowText(holder)} has reserved for '${holder.label}'. ${follows}`;
+        if (holder.what === 'run') {
+            return new Refusal('PROBE_BUSY', message,
+                `That window keeps the port while its CMSIS Run may still start. Wait for it, or end it there once the user agrees: `
+                    + `cmsis_action stop_run with window: '${holder.pid}' once it runs, or a reload of that window if it never starts; or ${anotherPort(start)}.`);
+        }
+        if (holder.what === 'launch') {
+            return new Refusal('PROBE_BUSY', message,
+                `That window keeps the port while its launch may still come up. Wait for it, or end it there once the user agrees: `
+                    + `select_debug_window {pid: ${holder.pid}}, then stop_debugging once its session is up, or a reload of that window if it never comes; `
+                    + `or ${anotherPort(start)}.`);
+        }
+        // A window of 2.8 or older writes no `what`.
+        return new Refusal('PROBE_BUSY', message,
             `Wait for that start to finish, or stop its session/task there once the user agrees. A pending picker keeps its reservation; `
                 + `cancel it and reload that window before retrying, or ${anotherPort(start)}.`);
     }

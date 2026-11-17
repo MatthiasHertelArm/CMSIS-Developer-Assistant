@@ -17,12 +17,14 @@
 /**
  * What the debugging handler takes from its surroundings apart from the
  * executor: a clock, VS Code's focused stack frame, the window's CMSIS job
- * tracker, its owned serial port, the workspace folders, the active target's
+ * tracker, its owned serial port, the workspace folders, the active solution
+ * (for `get_session_status`), the active target's
  * cbuild-run file (for `flash` and `cmsis_action`), where `flash` looks for
  * pyOCD and which probe it selects, where the hints after a failed J-Link
  * task or GDB server start look its program up, what `cmsis_action
- * install_pack` asks, the CMSIS Solution extension behind `cmsis_query`, and
- * who holds a GDB port a launch is about to use.
+ * install_pack` asks, the CMSIS Solution extension behind `cmsis_query`,
+ * who holds a GDB port a launch is about to use, the window's GDB port
+ * reservations, and what VS Code does after a failed pre-launch task.
  *
  * The default reads VS Code at the moment of each call, never at load time,
  * so the transport harness can swap parts of its `vscode` stub between
@@ -37,10 +39,11 @@ import { CmsisJobTracker, windowJobTracker } from '../cmsisJobTracker';
 import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
 import { fileExists } from '../core/flashController';
 import { findGdbPortHolder, type GdbPortHolder, type PortStart } from '../core/gdbPortGuard';
-import { GdbPortReservations, type GdbPortReservation } from '../core/gdbPortReservations';
+import { GdbPortReservations, type GdbPortReservation, type PendingGdbStart } from '../core/gdbPortReservations';
 import { SerialController, serialController } from '../core/serialController';
-import { activeCbuildRunFile } from '../utils/solutionQueries';
+import { activeCbuildRunFile, activeSolutionAnswer } from '../utils/solutionQueries';
 import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
+import type { SolutionFileAnswer } from '../core/solutionAnswers';
 import type { SolutionExtensionHandle } from '../core/solutionApi';
 import type { CatalogFetch } from '../core/webCatalog';
 
@@ -88,6 +91,20 @@ export interface HandlerHost {
     /** `vscode.workspace.findFiles`; without `maxResults`, every match. */
     findFiles(include: string, exclude: string, maxResults?: number): Thenable<vscode.Uri[]>;
     /**
+     * The csolution the CMSIS Solution extension has active in this window
+     * (`getSolutionFile`), or that it has none; undefined when the extension
+     * is not active, lacks the command, fails or does not answer within 3 s.
+     * `get_session_status` names it (#124).
+     */
+    activeSolution(): Promise<SolutionFileAnswer | undefined>;
+    /**
+     * The csolution this window last published in the registry (`cmsis=` of
+     * the window listing), which the window coordinator asks the extension
+     * for at each publish and every 20 s; undefined without a coordinator.
+     * `get_session_status` names it when `activeSolution` is not back in time.
+     */
+    knownSolutionFile(): string | undefined;
+    /**
      * The `cbuild-run.yml` of the CMSIS Solution extension's active target
      * (`getCbuildRunFile`); undefined when the extension is not active, lacks
      * the command, answers `""`, a relative path or not within 3 s. Whether
@@ -127,8 +144,20 @@ export interface HandlerHost {
      * other window; the window's `DebuggingHandler` is given the registry.
      */
     gdbPortHolder(port: number): Promise<GdbPortHolder | undefined>;
-    /** Atomically reserve a port across windows before probing it or starting its server. */
-    reserveGdbPort(port: number, start: PortStart, group?: string): GdbPortReservation;
+    /**
+     * Atomically reserve a port across windows before probing it or starting
+     * its server; with `takeOver`, take over this window's own pending
+     * reservation of it (`GdbPortReservations.acquire`).
+     */
+    reserveGdbPort(port: number, start: PortStart, group?: string, takeOver?: boolean): GdbPortReservation;
+    /** This window's starts whose GDB port reservations no session or task has taken over yet, oldest first. */
+    pendingGdbStarts(): readonly PendingGdbStart[];
+    /**
+     * The setting `debug.onTaskErrors`, as VS Code reads it after a failed
+     * pre-launch task: `prompt` (the default), `debugAnyway`, `showErrors`
+     * or `abort`.
+     */
+    debugTaskErrors(): string;
 }
 
 let defaultPortReservations: GdbPortReservations | undefined;
@@ -154,6 +183,9 @@ export const VSCODE_HOST: HandlerHost = {
     ownedSerial: () => serialController,
     workspaceFolders: () => vscode.workspace.workspaceFolders ?? [],
     findFiles: (include, exclude, maxResults) => vscode.workspace.findFiles(include, exclude, maxResults),
+    activeSolution: () => activeSolutionAnswer(),
+    // The window's DebuggingHandler is given the coordinator's answer.
+    knownSolutionFile: () => undefined,
     activeCbuildRunFile: () => activeCbuildRunFile(),
     toolEnvironment: () => ({
         extension: (id) => {
@@ -213,8 +245,17 @@ export const VSCODE_HOST: HandlerHost = {
     },
     webCatalogFetch: (url, init) => fetch(url, init),
     gdbPortHolder: (port) => findGdbPortHolder(port, []),
-    reserveGdbPort: (port, start, group) => {
+    reserveGdbPort: (port, start, group, takeOver) => {
         defaultPortReservations ??= new GdbPortReservations();
-        return defaultPortReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group);
+        return defaultPortReservations.acquire(port, start, vscode.workspace.name ?? '(no workspace)', group, takeOver);
+    },
+    pendingGdbStarts: () => defaultPortReservations?.pending() ?? [],
+    debugTaskErrors: () => {
+        try {
+            const value: unknown = vscode.workspace.getConfiguration('debug').get('onTaskErrors');
+            return typeof value === 'string' ? value : 'prompt';
+        } catch {
+            return 'prompt';
+        }
     },
 };

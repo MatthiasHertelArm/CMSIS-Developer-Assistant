@@ -22,8 +22,8 @@
  */
 
 import * as path from 'path';
-import { DIAGNOSTIC_LOG_PATH, DIAGNOSTIC_RERUN_CAP_MS } from '../buildFailure';
-import type { BuildFailureReport } from '../buildFailure';
+import { DIAGNOSTIC_LOG_PATH, DIAGNOSTIC_RERUN_CAP_TEXT } from '../buildFailure';
+import type { BuildFailureReport, RerunStopCause } from '../buildFailure';
 import type { BuildMessage } from '../cmsisTasks';
 import { clipValue, formatBytes, truncateList } from '../packDocs/textBudget';
 import { BuildContext, ImageArtifacts, MemoryRegion } from './artifacts';
@@ -449,6 +449,15 @@ function sharedContext(messages: readonly BuildMessage[]): string | undefined {
     return contexts.size === 1 ? [...contexts][0] : undefined;
 }
 
+/** How a stop that cut a re-run short reads: what came "before" it, and who made it. */
+const RERUN_STOPS: Readonly<Record<RerunStopCause, { before: string; by: string }>> = {
+    cap: {
+        before: `it was cut off at its ${DIAGNOSTIC_RERUN_CAP_TEXT} limit`,
+        by: `the CMSIS Developer Assistant stopped it at its ${DIAGNOSTIC_RERUN_CAP_TEXT} limit`,
+    },
+    request: { before: 'cmsis_action stop_build stopped it', by: 'cmsis_action stop_build stopped it' },
+};
+
 /** The first line: how many errors, from where, and what limits the warnings. */
 function buildFailureHeader(report: BuildFailureReport): string {
     const warnings = report.warningCount;
@@ -460,22 +469,25 @@ function buildFailureHeader(report: BuildFailureReport): string {
         }
         case 'rerun': {
             const rerun = report.rerun;
-            const stopped = rerun?.stoppedAtCap ? `; the re-run was stopped after ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s` : '';
+            // A re-run cut short reports only what it printed before the stop, never what the stop made it print (#135).
+            const stop = rerun?.stopped ? RERUN_STOPS[rerun.stopped] : undefined;
             if (report.errorCount > 0) {
-                return `${plural(report.errorCount, 'error')} (from a diagnostic re-run of cbuild with --log; `
-                    + `warnings only from the files it recompiled: ${warnings}${stopped}):`;
+                const printed = stop ? `, printed before ${stop.before}` : '';
+                return `${plural(report.errorCount, 'error')} (from a diagnostic re-run of cbuild with --log${printed}; `
+                    + `warnings only from the files it recompiled: ${warnings}):`;
             }
             const status = rerun?.status ? `, "${rerun.status}"` : '';
             if (report.failedSteps.length > 0) {
-                return `No compiler error line, but ninja steps failed in a diagnostic re-run of cbuild with --log${status}${stopped}:`;
+                const before = stop ? ` before ${stop.before}` : '';
+                return `No compiler error line, but ninja steps failed in a diagnostic re-run of cbuild with --log${before}${status}:`;
             }
             if (rerun?.exitCode === 0) {
                 return 'A diagnostic re-run of cbuild with --log succeeded (exit 0): the failure did not repeat. '
                     + 'cmsis_action build again to confirm.';
             }
-            if (rerun?.stoppedAtCap) {
-                return `A diagnostic re-run of cbuild with --log was stopped after ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s `
-                    + 'before it printed an error line.';
+            if (stop) {
+                return `The diagnostic re-run of cbuild with --log was cut off: ${stop.by}, before cbuild finished, `
+                    + 'and no compiler, linker or ninja error had appeared by then, so it shows no cause of the failure.';
             }
             const exit = rerun?.exitCode !== undefined && rerun.exitCode !== null ? ` with exit code ${rerun.exitCode}` : '';
             return `A diagnostic re-run of cbuild with --log failed${exit}${status} but printed no error line in a known format.`;

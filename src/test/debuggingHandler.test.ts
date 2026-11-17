@@ -35,13 +35,16 @@ import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from
 import { ProblemInput, ProblemJournal, problemJournal, problemJson } from '../core/problemJournal';
 import { renderProblemsBlock, runJournaled } from '../core/problemFeed';
 import type { HandlerHost, ToolEnvironment } from '../handler/host';
+import { cancelPendingLaunches, pendingStartLines, pendingStartsNote, startsToTakeOver } from '../handler/pendingStarts';
+import type { SolutionFileAnswer } from '../core/solutionAnswers';
 import { isAddressLiteral, sideEffectOf } from '../handler/targetText';
 import type { GdbPortHolder } from '../core/gdbPortGuard';
 import { GdbPortReservations } from '../core/gdbPortReservations';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
-import { FakeExecution, FakeTasks, FixtureTask, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
+import { attachRunOutput } from '../runOutputCapture';
+import { FakeExecution, FakeShell, FakeTasks, FixtureTask, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 import { MockSerial, mockSerial } from './serialFixtures';
 
 /**
@@ -185,6 +188,11 @@ class ScriptedExecutor {
     };
     stopDebugging: IDebuggingExecutor['stopDebugging'] = async (...args) => {
         this.note('stopDebugging', ...args);
+    };
+    /** Whether the cancel of a pending start goes out: as the executor does, only while no session is listed. */
+    cancelPendingStarts: IDebuggingExecutor['cancelPendingStarts'] = async () => {
+        this.note('cancelPendingStarts');
+        return !this.session;
     };
     restart: IDebuggingExecutor['restart'] = async () => {
         this.moves.push('restart');
@@ -352,7 +360,14 @@ class HostedHandler extends DebuggingHandler {
 
     protected host(): HandlerHost {
         // No GDB port is taken unless a test says so: the bind test would see whatever listens on this machine.
-        return { ...super.host(), gdbPortHolder: async () => undefined, reserveGdbPort: () => ({ adopt: () => undefined, release: () => undefined }), ...this.replaced };
+        return {
+            ...super.host(),
+            gdbPortHolder: async () => undefined,
+            reserveGdbPort: (port) => ({ port, pending: false, adopt: () => undefined, release: () => undefined }),
+            pendingGdbStarts: () => [],
+            debugTaskErrors: () => 'prompt',
+            ...this.replaced,
+        };
     }
 }
 
@@ -2495,6 +2510,88 @@ suite('DebuggingHandler', () => {
             SerialPortMock.binding.reset();
         });
 
+        test('session status names the solution the window has active, in every state, asked while the session is probed (#124)', async () => {
+            const folder = vscode.Uri.file('/w/blinky');
+            const file = path.join(folder.fsPath, 'Blinky.csolution.yml');
+            const named = `Active solution: ${file} (workspace folder ${folder.fsPath})`;
+            const x = new ScriptedExecutor();
+            x.getDiagnostics = () => ({ serverVersion: '1.2.3', liveSessionCount: 0, liveSessionNames: [], hasVscodeActiveSession: false });
+            let answer: () => Promise<SolutionFileAnswer | undefined> = async () => ({ active: true, file });
+            const host: Partial<HandlerHost> = {
+                workspaceFolders: () => [{ uri: folder, name: 'blinky', index: 0 }],
+                activeSolution: () => answer(),
+            };
+            const lines = async (): Promise<string[]> => (await textAnswer(handlerFor(x, host).handleGetSessionStatus())).split('\n');
+
+            x.sessionStatus = status('no-session', { sessionName: null, sessionType: null, configurationName: null });
+            const idle = await lines();
+            assert.deepStrictEqual(idle.slice(-3), [
+                'Diagnostics: serverVersion=1.2.3, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined',
+                named,
+                idle[idle.length - 1],
+            ], 'after the diagnostics, before the hint');
+            assert.ok(idle[idle.length - 1].startsWith('Hint: no debug session is running'), idle.join('\n'));
+            x.sessionStatus = status('stopped');
+            assert.ok((await lines()).includes(named), 'an active solution and a debug session are different things');
+
+            answer = async () => ({ active: false });
+            assert.ok((await lines()).includes('Active solution: none in this VS Code window'));
+            answer = async () => undefined;
+            assert.ok(!(await lines()).some((line) => line.startsWith('Active solution:')), 'no answer, no line');
+            answer = async () => {
+                throw new Error('boom');
+            };
+            assert.ok((await lines())[0].startsWith('State: stopped'), 'the status never fails for the solution line');
+
+            // The question goes out before the probe and is still open while the probe runs.
+            const order: string[] = [];
+            let answered = false;
+            answer = async () => {
+                order.push('solution asked');
+                await delay(50);
+                answered = true;
+                return { active: true, file };
+            };
+            x.getSessionStatus = async () => {
+                order.push(answered ? 'probe after the answer' : 'probe while asking');
+                return x.sessionStatus;
+            };
+            assert.ok((await lines()).includes(named));
+            assert.deepStrictEqual(order, ['solution asked', 'probe while asking']);
+        });
+
+        test('a getSolutionFile that stalls holds up no status: the probe and a short grace, then the last known solution (#124)', async () => {
+            const folder = vscode.Uri.file('/w/blinky');
+            const file = path.join(folder.fsPath, 'Blinky.csolution.yml');
+            const x = new ScriptedExecutor();
+            x.sessionStatus = status('no-session', { sessionName: null, sessionType: null, configurationName: null });
+            const stalls: Array<ReturnType<typeof setTimeout>> = [];
+            let known: string | undefined = file;
+            const host: Partial<HandlerHost> = {
+                workspaceFolders: () => [{ uri: folder, name: 'blinky', index: 0 }],
+                // What the real question does while CMSIS Solution does not answer: it waits for its 3 s fence.
+                activeSolution: () => new Promise((resolve) => {
+                    stalls.push(setTimeout(() => resolve(undefined), 3_000));
+                }),
+                knownSolutionFile: () => known,
+            };
+            try {
+                const started = Date.now();
+                const text = await textAnswer(handlerFor(x, host).handleGetSessionStatus());
+                const took = Date.now() - started;
+                assert.ok(took < 1_000, `the status waited ${took} ms for the solution`);
+                assert.ok(text.startsWith('State: no-session\n'), text);
+                assert.ok(text.includes(`\nActive solution: ${file} (workspace folder ${folder.fsPath}; `
+                    + 'last known, CMSIS Solution did not answer just now)\n'), text);
+
+                known = undefined;
+                const unknown = await textAnswer(handlerFor(x, host).handleGetSessionStatus());
+                assert.ok(!unknown.includes('Active solution:'), `nothing known, nothing named: ${unknown}`);
+            } finally {
+                stalls.forEach((stall) => clearTimeout(stall));
+            }
+        });
+
         test('device info adds the active CMSIS target', async () => {
             const x = new ScriptedExecutor();
             let answer: () => unknown = () => 'HP@debug';
@@ -3164,6 +3261,12 @@ suite('DebuggingHandler', () => {
                 name: 'cbuild demo.csolution.yml --active HE', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build' },
             };
             const shellTask = (name: string): FixtureTask => ({ name, source: 'Workspace', definition: { type: 'shell' } });
+            /** The CMSIS Run of the pyOCD adapter, a GDB server meant to stay up, and of the FVP adapter, the model alone (#134). */
+            const PYOCD_RUN_TASK: FixtureTask = { ...shellTask('CMSIS Run'), execution: { command: 'pyocd', args: ['gdbserver', '--persist', '--reset-run'] } };
+            const FVP_WORDS = ['FVP_Corstone_SSE-300', '-f', 'fvp_config.txt', '-a', 'out/Blinky/HE/Debug/Blinky.axf'];
+            const FVP_RUN_TASK: FixtureTask = { ...shellTask('CMSIS Run'), execution: { command: FVP_WORDS[0], args: FVP_WORDS.slice(1) } };
+            /** What VS Code reports as the command line of that task's terminal. */
+            const FVP_COMMAND_LINE = FVP_WORDS.join(' ');
 
             /** A handler on a clock `speedup` times real time, with a tracker over fake task events on the same clock. */
             const jobWorld = (speedup = 20, more: Partial<HandlerHost> = {}) => {
@@ -3236,7 +3339,7 @@ suite('DebuggingHandler', () => {
                 again();
                 solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 2, true) });
                 const early = await refusalOf(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'TASK_FAILED');
-                assert.ok(early.message.endsWith('(job b-2).\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most 120 s).'), early.message);
+                assert.ok(early.message.endsWith('(job b-2).\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most 30 min).'), early.message);
                 assert.strictEqual(early.hint, 'Call cmsis_action {action:\'status\'} for the error lines — do not start another build to see them. '
                     + 'This is a terminal result — do not wait for an output file.');
                 setTimeout(() => deliver(), 50);
@@ -3705,6 +3808,39 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(stops, 1, 'nothing was issued');
             });
 
+            test('stop_build with no build running stops the diagnostic re-run of a finished build, which is no task (#135)', async () => {
+                const w = jobWorld();
+                const stopped: JobDiagnosis = {
+                    state: 'done', source: 'rerun', errorCount: 0, warningCount: 0, errors: [], warnings: [],
+                    text: 'The diagnostic re-run of cbuild with --log was cut off: cmsis_action stop_build stopped it, before cbuild finished, '
+                        + 'and no compiler, linker or ninja error had appeared by then, so it shows no cause of the failure.',
+                };
+                let deliver: () => void = () => undefined;
+                let requests = 0;
+                w.tracker.onDidFinishJob((job) => {
+                    if (job.state === 'failed') {
+                        w.tracker.completeWith(job.id, new Promise<JobDiagnosis>((resolve) => {
+                            deliver = () => resolve(stopped);
+                        }));
+                    }
+                });
+                w.tracker.onDidRequestFollowUpStop(() => {
+                    requests++;
+                    setTimeout(() => deliver(), 5);
+                });
+                solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 2, true) });
+                await refusalOf(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'TASK_FAILED');
+                assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                    'CMSIS \'stop_build\' on HE: no build is running in this window; the result of build job b-1 was still being checked by a diagnostic '
+                    + 're-run of cbuild, which is no CMSIS task — it is stopped now, and cmsis_action {action:\'status\'} shows what it found before the stop.');
+                assert.strictEqual(requests, 1);
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
+                    /\nBuild job b-1 failed: The diagnostic re-run of cbuild with --log was cut off: cmsis_action stop_build stopped it/);
+                assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                    'CMSIS \'stop_build\' on HE: nothing to stop — no build is running in this window.');
+                assert.strictEqual(requests, 1, 'with nothing being checked, nothing is asked to stop');
+            });
+
             test('stop_build terminates what the command left, counts it as stopped whatever its exit code, and says when one survives', async () => {
                 const w = jobWorld();
                 let execution: FakeExecution | undefined;
@@ -4009,21 +4145,156 @@ suite('DebuggingHandler', () => {
                 assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'run' })),
                     /^✅ CMSIS 'run' on HE: 'CMSIS Run' started and stays active — with a probe adapter it hosts the GDB server \(job g-1\); nothing was built or programmed\. The flash is untouched; the pyOCD task resets the target and lets the firmware run \(--reset-run\), the J-Link task leaves it running as it was \(-nohalt\)\. The FVP task starts the model with the last-built image and hosts no GDB server: there, use load_and_debug for a session\. cmsis_action attach to debug; cmsis_action stop_run frees the probe\.$/);
 
-                const failing = jobWorld();
-                again();
+                for (const exitCode of [1, 0]) {
+                    const failing = jobWorld();
+                    again();
+                    solutionOn('HE', {
+                        'cmsis-csolution.cmsisRun': () => {
+                            const run = failing.tasks.execution(PYOCD_RUN_TASK);
+                            setTimeout(() => {
+                                failing.tasks.start(run);
+                                failing.tasks.finish(run, exitCode);
+                            }, 5);
+                        },
+                    });
+                    const failed = await refusalOf(failing.handler.handleCmsisCommand({ action: 'run' }), 'TASK_FAILED');
+                    assert.match(failed.message, new RegExp(`^❌ CMSIS 'run' FAILED on HE — 'CMSIS Run' ended with code ${exitCode} after [\\d.]+ s; `
+                        + 'it hosts the GDB server and must stay up \\(job g-1\\)\\.$'), 'a GDB server that ends at once failed, exit 0 included (#73)');
+                    assert.ok(failed.hint?.startsWith('A GDB server that ends at once usually finds the probe or its port taken, or no probe at all.'), failed.hint);
+                    assert.ok(failed.hint?.includes('which this window did not capture: ask the user for its last lines'), failed.hint);
+                }
+            });
+
+            test('load_and_run on an FVP: a model that ends by itself with exit 0 inside the grace completed the run, with its output; status shows it again (#134)', async () => {
+                const w = jobWorld();
+                const shell = new FakeShell();
+                const attached = attachRunOutput(w.tracker, shell, w.clock);
                 solutionOn('HE', {
-                    'cmsis-csolution.cmsisRun': () => {
-                        const run = failing.tasks.execution(shellTask('CMSIS Run'));
+                    'cmsis-csolution.cmsisLoadAndRun': () => {
+                        const load = w.tasks.execution(shellTask('CMSIS Load'));
                         setTimeout(() => {
-                            failing.tasks.start(run);
-                            failing.tasks.finish(run, 1);
+                            w.tasks.start(load);
+                            w.tasks.finish(load, 0);
+                            const command = shell.start(FVP_COMMAND_LINE);
+                            const run = w.tasks.start(w.tasks.execution(FVP_RUN_TASK));
+                            command.write('telnetterminal0: Listening for serial connection on port 5000\r\nTest_result: PASS\r\n');
+                            setTimeout(() => {
+                                // VS Code reports the end of the task's process before the terminal's last data.
+                                w.tasks.finish(run, 0);
+                                setTimeout(() => {
+                                    command.write('\x04\r\nInfo: Simulation is stopping. Reason: EOT received.\r\n');
+                                    command.end();
+                                }, 2);
+                            }, 20);
                         }, 5);
                     },
                 });
-                const failed = await refusalOf(failing.handler.handleCmsisCommand({ action: 'run' }), 'TASK_FAILED');
-                assert.match(failed.message, /^❌ CMSIS 'run' FAILED on HE — 'CMSIS Run' ended with code 1 after [\d.]+ s; it hosts the GDB server and must stay up \(job g-1\)\.$/);
-                assert.ok(failed.hint?.startsWith('A GDB server that ends at once usually finds the probe or its port taken, or no probe at all.'), failed.hint);
-                assert.ok(failed.hint?.includes('which no tool reads: ask the user for its last lines'), failed.hint);
+                const answer = await w.handler.handleCmsisCommand({ action: 'load_and_run' });
+                assert.ok(isToolReply(answer) && answer.status === 'ok', JSON.stringify(answer));
+                assert.match(answer.text, /^✅ CMSIS 'load_and_run' on HE: 'CMSIS Load' exited 0 after [\d.]+ s, then 'CMSIS Run' ended by itself with exit code 0 after [\d.]+ s — the run completed, and nothing hosts a GDB server now \(job r-1\)\. An exit code is no test result: check the application's own result line in the output below\.\nOutput of 'CMSIS Run' \(4 lines\):\ntelnetterminal0: Listening for serial connection on port 5000\nTest_result: PASS\n\nInfo: Simulation is stopping\. Reason: EOT received\.$/);
+                assert.ok(!/probe|PROBE|stop_run/.test(answer.text), 'no probe troubleshooting for a run that completed');
+                const data = answer.data as { run: { exitCode: number; task: string }; output: { shownLines: number; totalLines: number; complete: boolean } };
+                assert.deepStrictEqual([data.run.task, data.run.exitCode, data.output.shownLines, data.output.totalLines, data.output.complete],
+                    ['CMSIS Run', 0, 4, 4, true]);
+                assert.strictEqual(w.tracker.last('load_and_run')?.state, 'ok');
+
+                const status = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
+                assert.match(status, /^No CMSIS job in flight in this window\. Last results: load_and_run on HE ✅ ended by itself, exit 0 [\d.]+ s ago \(job r-1, 'CMSIS Run'\)\.\n/);
+                assert.ok(status.endsWith('No CMSIS task is running in this window.\nOutput of \'CMSIS Run\' (4 lines):\n'
+                    + 'telnetterminal0: Listening for serial connection on port 5000\nTest_result: PASS\n\nInfo: Simulation is stopping. Reason: EOT received.'), status);
+                attached.dispose();
+            });
+
+            test('load_and_run on an FVP without a captured terminal says where the output is; a model that ends with another code fails without probe advice (#134)', async () => {
+                const w = jobWorld();
+                const script = (exitCode: number) => (): void => {
+                    const load = w.tasks.execution(shellTask('CMSIS Load'));
+                    setTimeout(() => {
+                        w.tasks.start(load);
+                        w.tasks.finish(load, 0);
+                        const run = w.tasks.start(w.tasks.execution(FVP_RUN_TASK));
+                        setTimeout(() => w.tasks.finish(run, exitCode), 20);
+                    }, 5);
+                };
+                solutionOn('HE', { 'cmsis-csolution.cmsisLoadAndRun': script(0) });
+                const answer = await w.handler.handleCmsisCommand({ action: 'load_and_run' });
+                assert.ok(isToolReply(answer) && answer.status === 'ok', JSON.stringify(answer));
+                assert.ok(answer.text.endsWith('— the run completed, and nothing hosts a GDB server now (job r-1). An exit code is no test result: check the '
+                    + 'application\'s own result line. Its output is in the \'CMSIS Run\' terminal, which this window did not capture: ask the user for its '
+                    + 'last lines.'), answer.text);
+                assert.strictEqual((answer.data as { output: unknown }).output, null);
+                again();
+
+                solutionOn('HE', { 'cmsis-csolution.cmsisLoadAndRun': script(3) });
+                const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_run' }), 'TASK_FAILED');
+                assert.match(failed.message, /^❌ CMSIS 'load_and_run' FAILED on HE — 'CMSIS Load' exited 0 after [\d.]+ s, but 'CMSIS Run', the FVP model, ended with code 3 after [\d.]+ s \(job r-2\)\.$/);
+                assert.strictEqual(failed.hint, 'The FVP model ended with that code by itself; no probe and no GDB port are involved. Its output is in the '
+                    + '\'CMSIS Run\' terminal, which this window did not capture: ask the user for its last lines.');
+            });
+
+            test('run on an FVP that keeps running: the model text, then status tells when it ended by itself and how (#134)', async () => {
+                const w = jobWorld();
+                let model: FakeExecution | undefined;
+                solutionOn('HE', {
+                    'cmsis-csolution.cmsisRun': () => {
+                        setTimeout(() => {
+                            model = w.tasks.start(w.tasks.execution(FVP_RUN_TASK));
+                        }, 5);
+                    },
+                });
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'run' })),
+                    /^✅ CMSIS 'run' on HE: 'CMSIS Run' started the FVP model with the last-built image, and it keeps running \(job g-1\); nothing was built or programmed\. It hosts no GDB server: load_and_debug starts a session\. When the model ends by itself, cmsis_action \{action:'status'\} shows how it ended and what this window captured of its output; cmsis_action stop_run ends it\.$/);
+                assert.ok(model);
+                w.tasks.finish(model, 0);
+                const status = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
+                assert.match(status, /\n'CMSIS Run' of run job g-1 ended [\d.]+ s ago after [\d.]+ s, with exit code 0\.$/);
+            });
+
+            test('run whose Run command line says neither model nor GDB server, ending with exit 0 at once: ended — neither success nor failure, no probe advice (#134 review)', async () => {
+                const LAUNCHER_WORDS = ['/w/.vscode/start-debug-server.sh', '--port', '3333'];
+                const LAUNCHER: FixtureTask = { ...shellTask('CMSIS Run'), execution: { command: LAUNCHER_WORDS[0], args: LAUNCHER_WORDS.slice(1) } };
+                const w = jobWorld();
+                const shell = new FakeShell();
+                let captured = false;
+                const script = (exitCode: number) => (): void => {
+                    setTimeout(() => {
+                        const command = captured ? shell.start(LAUNCHER_WORDS.join(' ')) : undefined;
+                        const run = w.tasks.start(w.tasks.execution(LAUNCHER));
+                        command?.write('Starting the debug server in the background\r\n');
+                        setTimeout(() => {
+                            w.tasks.finish(run, exitCode);
+                            command?.end();
+                        }, 10);
+                    }, 5);
+                };
+                solutionOn('HE', { 'cmsis-csolution.cmsisRun': script(0) });
+                const answer = await w.handler.handleCmsisCommand({ action: 'run' });
+                assert.ok(isToolReply(answer) && answer.status === 'ok', JSON.stringify(answer));
+                assert.match(answer.text, /^⚠️ CMSIS 'run' on HE: 'CMSIS Run' ended by itself with exit code 0 after [\d.]+ s, and no GDB server or model is running now \(job g-1\)\. Its command line is neither the FVP model's, which ends when the application stops it, nor a GDB server's, which stays up, so exit 0 does not tell a run that completed from a server that went away\. Its output is in the 'CMSIS Run' terminal, which this window did not capture: ask the user for its last lines to tell which\.$/);
+                assert.ok(!/✅|must stay up|the run completed|probe|PROBE|stop_run/.test(answer.text), answer.text);
+                assert.strictEqual((answer.data as { job: { state: string } }).job.state, 'ended');
+                assert.strictEqual(w.tracker.last('run')?.state, 'ended');
+                const status = await textAnswer(w.handler.handleCmsisCommand({ action: 'status' }));
+                assert.match(status, /^No CMSIS job in flight in this window\. Last results: run on HE ⚠️ ended by itself, exit 0, nothing running [\d.]+ s ago \(job g-1, 'CMSIS Run'\)\.\n/);
+                again();
+
+                // With its terminal captured, its output is there to tell which it was.
+                const attached = attachRunOutput(w.tracker, shell, w.clock);
+                captured = true;
+                solutionOn('HE', { 'cmsis-csolution.cmsisRun': script(0) });
+                const shown = await w.handler.handleCmsisCommand({ action: 'run' });
+                assert.ok(isToolReply(shown) && shown.status === 'ok', JSON.stringify(shown));
+                assert.ok(shown.text.endsWith('a server that went away. Its output below tells which.\nOutput of \'CMSIS Run\' (1 line):\n'
+                    + 'Starting the debug server in the background'), shown.text);
+                attached.dispose();
+                again();
+
+                // Another exit code of a Run that says neither is a failure, without the claim that it hosts a GDB server.
+                captured = false;
+                solutionOn('HE', { 'cmsis-csolution.cmsisRun': script(1) });
+                const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'run' }), 'TASK_FAILED');
+                assert.match(failed.message, /^❌ CMSIS 'run' FAILED on HE — 'CMSIS Run' ended with code 1 after [\d.]+ s \(job g-3\)\.$/);
+                assert.strictEqual(w.tracker.last('run')?.state, 'failed');
             });
 
             test('load_and_debug: a failed pre-launch Load is the answer before any session probe; a good one leads the result', async () => {
@@ -4907,8 +5178,9 @@ suite('DebuggingHandler', () => {
             const managers: GdbPortReservations[] = [];
             const trackers: CmsisJobTracker[] = [];
             const otherStart = { what: 'launch' as const, subject: 'Other window not started', configuration: 'Other launch' };
-            const reservationManager = (): GdbPortReservations => {
-                const manager = new GdbPortReservations(path.join(dir, 'reservations'));
+            /** A window's reservations in the suite's shared directory; `now` is its clock (the ages a take-over waits for). */
+            const reservationManager = (now?: () => number): GdbPortReservations => {
+                const manager = new GdbPortReservations(path.join(dir, 'reservations'), process.pid, undefined, undefined, now);
                 managers.push(manager);
                 return manager;
             };
@@ -4940,11 +5212,15 @@ suite('DebuggingHandler', () => {
                 fs.rmSync(dir, { recursive: true, force: true });
             });
 
-            /** A window with that folder open; `holder` answers for each GDB port a call asks about, which `asked` records. */
+            /**
+             * A window with that folder open; `holder` answers for each GDB port a call asks about, which `asked` records.
+             * `replaced` overrides more of the host.
+             */
             const portWorld = (
                 holder: (port: number) => GdbPortHolder | undefined | Promise<GdbPortHolder | undefined>,
                 reservations?: GdbPortReservations,
                 command: (name: string) => unknown = () => undefined,
+                replaced: Partial<HandlerHost> = {},
             ) => {
                 const clock = fastClock(20);
                 const tasks = new FakeTasks();
@@ -4966,6 +5242,7 @@ suite('DebuggingHandler', () => {
                     'cmsis-csolution.cmsisLoadAndDebug': record('load_and_debug'),
                     'cmsis-csolution.cmsisRun': record('run'),
                     'cmsis-csolution.cmsisLoadAndRun': record('load_and_run'),
+                    'cmsis-csolution.cmsisStopRun': record('stop_run'),
                 });
                 const handler = handlerFor(x, {
                     ...clock,
@@ -4976,7 +5253,11 @@ suite('DebuggingHandler', () => {
                         asked.push(port);
                         return holder(port);
                     },
-                    ...(reservations ? { reserveGdbPort: (port, start, group) => reservations.acquire(port, start, 'ws', group) } : {}),
+                    ...(reservations ? {
+                        reserveGdbPort: (port, start, group, takeOver) => reservations.acquire(port, start, 'ws', group, takeOver),
+                        pendingGdbStarts: () => reservations.pending(),
+                    } : {}),
+                    ...replaced,
                 }, 5, {});
                 return { handler, asked, issued, x, tasks, tracker };
             };
@@ -5160,22 +5441,25 @@ suite('DebuggingHandler', () => {
                 }
             });
 
-            test('a pre-launch Load that fails after the running reply releases the reservation after its execution is removed', async () => {
-                writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
-                const owner = reservationManager();
-                const other = reservationManager();
-                let execution: FakeExecution | undefined;
-                const w = portWorld(() => undefined, owner, () => {
-                    execution = w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } }));
-                });
-                await replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 4_000 }), 'running');
-                assert.ok(execution);
-                assertReserved(other, 3333);
-                w.tasks.finish(execution, 1);
-                assertReserved(other, 3333);
-                await delay(0);
-                assert.deepStrictEqual(w.tracker.liveExecutions(), []);
-                assertAvailable(other, 3333);
+            /** With debug.onTaskErrors `abort` or `showErrors` VS Code ends the launch itself; `prompt`, the default, is below (#127 review). */
+            test('a pre-launch Load that fails after the running reply releases the reservation once VS Code ends that launch itself', async () => {
+                for (const onTaskErrors of ['abort', 'showErrors']) {
+                    writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    let execution: FakeExecution | undefined;
+                    const w = portWorld(() => undefined, owner, () => {
+                        execution = w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } }));
+                    }, { debugTaskErrors: () => onTaskErrors });
+                    await replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 4_000 }), 'running');
+                    assert.ok(execution);
+                    assertReserved(other, 3333);
+                    w.tasks.finish(execution, 1);
+                    assertReserved(other, 3333);
+                    await delay(0);
+                    assert.deepStrictEqual(w.tracker.liveExecutions(), []);
+                    assertAvailable(other, 3333);
+                }
             });
 
             test('a completed single-task Load+Run releases its port, but successful pre-launch Load retains it for the pending session', async () => {
@@ -5204,6 +5488,313 @@ suite('DebuggingHandler', () => {
                         assertAvailable(other, port);
                     }
                 }
+            });
+
+            /**
+             * Issue #127: an FVP load_and_debug answered running, but VS Code never started its launch, and its GDB port stayed
+             * reserved: the next load_and_debug was refused as if another window held it, stop_debugging found no session,
+             * stop_run no task, and only a window reload released it. Yet a reservation must stay while the start it covers may
+             * still begin (review of #127): VS Code takes a launch up only after awaits of its own, so a stop that comes first
+             * cancels nothing; a CMSIS Run task starts once CMSIS Solution has fetched the tasks; after a failed pre-launch task
+             * VS Code may still "Debug Anyway". No late start passes this window's guard, so only evidence ends a reservation,
+             * and the window's next start takes its own pending one over.
+             */
+            suite('a start that may still begin keeps its port; the window\'s next start takes it over (#127)', () => {
+                const FVP_RUN_FILE = 'cbuild-run:\n  debugger:\n    name: Arm-FVP\n    gdbserver:\n      - port: 3333\n';
+                /** The ST-Link debugger of the suite's setup: its CMSIS Run listens on 3334. */
+                const PYOCD_RUN_FILE = 'cbuild-run:\n  debugger:\n    name: ST-Link@pyOCD\n    gdbserver:\n      - port: 3334\n';
+                const AGE = '[\\d.]+ (?:s|min)';
+                /** Reservations on a clock as fast as the window's, so that a pending start outgrows the take-over wait in the test's time. */
+                const fastOwner = (): GdbPortReservations => reservationManager(fastClock(20).now);
+
+                /** load_and_debug on the FVP, whose launch never starts a session: its `running` reply. */
+                const pendingLaunch = async (w: ReturnType<typeof portWorld>): Promise<string> => {
+                    w.x.sessionStatus = status('no-session');
+                    return replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 30_000 }), 'running');
+                };
+
+                test('a launch VS Code takes up only after stop_debugging keeps its port until its session has come and gone', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), FVP_RUN_FILE);
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner);
+                    await pendingLaunch(w);
+                    assert.match(await textAnswer(w.handler.handleStopDebugging()), new RegExp('^Nothing to stop — no debug session is active\\. Pending: '
+                        + `this window's launch of 'Arm-FVP@GDB \\(launch\\)' \\(GDB port 3333, reserved ${AGE} ago\\), which has started no debug `
+                        + 'session\\. VS Code was asked to cancel what it still prepares of that launch, as the Debug toolbar\'s Stop does\\. Its port '
+                        + 'stays reserved for this window, since a cancel does not reach a launch VS Code has not taken up yet: the next start here '
+                        + 'takes it over, and a reload of the window frees it\\.$'));
+                    assert.deepStrictEqual(w.x.argsOf('cancelPendingStarts'), [[]]);
+                    assert.deepStrictEqual(w.x.argsOf('stopDebugging'), [], 'no session was there to stop');
+                    assertReserved(other, 3333);
+                    // VS Code takes the launch up only now: its adapter starts, the session runs and ends.
+                    owner.adoptPort(3333);
+                    owner.observe([{ port: 3333, source: 'session', label: 'Arm-FVP@GDB (launch)' }]);
+                    assertReserved(other, 3333);
+                    owner.observe([]);
+                    assertAvailable(other, 3333);
+                    assert.strictEqual(await textAnswer(w.handler.handleStopDebugging()), 'Nothing to stop — no debug session is active.');
+                    assert.strictEqual(w.x.argsOf('cancelPendingStarts').length, 1, 'nothing pending, nothing to cancel');
+                });
+
+                test('a CMSIS Run whose task has not started keeps its port after its job settled and after stop_run, until the task has run', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), PYOCD_RUN_FILE);
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner);
+                    await replyAnswer(w.handler.handleCmsisCommand({ action: 'run', timeoutMs: 2_000 }), 'running');
+                    assert.ok(!(await textAnswer(w.handler.handleGetSessionStatus())).includes('Pending CMSIS Run'), 'while its job is open, the status shows the job');
+                    // CMSIS Solution still fetches the tasks: the job settles as not started, the task may come later.
+                    await delay(800);
+                    assert.strictEqual(w.tracker.last('run')?.state, 'not-started');
+                    assertReserved(other, 3334);
+                    assert.match(await textAnswer(w.handler.handleGetSessionStatus()), new RegExp(`^Pending CMSIS Run: it reserved GDB port 3334 ${AGE} ago, `
+                        + 'and no CMSIS Run task has started yet\\. The port stays reserved for this window while that task may still start: a new start '
+                        + 'here takes it over\\.$', 'm'));
+                    const stopped = await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_run', timeoutMs: 30_000 }));
+                    assert.ok(stopped.startsWith('CMSIS \'stop_run\' on HE: no CMSIS task of a run was running in this window.'), stopped);
+                    assertReserved(other, 3334);
+                    owner.observe([{ port: 3334, source: 'cmsis-run', label: 'CMSIS Run', server: 'pyOCD' }]);
+                    assertReserved(other, 3334);
+                    owner.observe([]);
+                    assertAvailable(other, 3334);
+                });
+
+                test('a CMSIS Run that settles as not started while its call waits keeps its port', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), PYOCD_RUN_FILE);
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner);
+                    await refusalOf(w.handler.handleCmsisCommand({ action: 'run', timeoutMs: 30_000 }), 'TASK_FAILED');
+                    await delay(0);
+                    assertReserved(other, 3334);
+                });
+
+                test('a pre-launch Load that fails keeps the port while VS Code may still debug anyway', async () => {
+                    for (const onTaskErrors of ['prompt', 'debugAnyway']) {
+                        fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), PYOCD_RUN_FILE);
+                        writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
+                        const owner = reservationManager();
+                        const other = reservationManager();
+                        let execution: FakeExecution | undefined;
+                        const w = portWorld(() => undefined, owner, () => {
+                            execution = w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } }));
+                        }, { debugTaskErrors: () => onTaskErrors });
+                        await replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 4_000 }), 'running');
+                        assert.ok(execution);
+                        w.tasks.finish(execution, 1);
+                        await delay(0);
+                        assertReserved(other, 3333);
+                        // The next setting starts from a free port, as after a reload of the window.
+                        owner.dispose();
+                    }
+                });
+
+                test('a pre-launch Load that ends without an exit code ends the launch whatever the setting says: its port is free', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), PYOCD_RUN_FILE);
+                    writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    let execution: FakeExecution | undefined;
+                    const w = portWorld(() => undefined, owner, () => {
+                        execution = w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } }));
+                    });
+                    await replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 4_000 }), 'running');
+                    assert.ok(execution);
+                    w.tasks.finish(execution, undefined);
+                    await delay(0);
+                    assert.strictEqual(w.tracker.last('load_and_debug')?.state, 'cancelled');
+                    assertAvailable(other, 3333);
+                });
+
+                test('a start_debugging launch keeps its port across stop_debugging until VS Code answers that it did not start', async () => {
+                    writeVscode('launch.json', { configurations: [PYOCD_LAUNCH] });
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner);
+                    let answer: (started: boolean) => void = () => assert.fail('the start was not sent');
+                    const vscodeAnswer = new Promise<boolean>((settle) => {
+                        answer = settle;
+                    });
+                    w.x.startDebuggingByName = async (folder, name) => {
+                        w.x.note('startDebuggingByName', folder, name);
+                        return vscodeAnswer;
+                    };
+                    const starting = refusalOf(w.handler.handleStartDebugging({ workingDirectory: dir, configurationName: PYOCD_LAUNCH.name }));
+                    while (w.x.argsOf('startDebuggingByName').length === 0) {
+                        await delay(5);
+                    }
+                    assert.match(await textAnswer(w.handler.handleGetSessionStatus()), /^Pending launch: 'STLink@pyOCD \(launch\)' reserved GDB port 3333 /m);
+                    assert.match(await textAnswer(w.handler.handleStopDebugging()), /Pending: this window's launch of 'STLink@pyOCD \(launch\)'/);
+                    assert.deepStrictEqual(w.x.argsOf('cancelPendingStarts'), [[]]);
+                    assertReserved(other, 3333);
+                    // VS Code's start answers false: the evidence the reservation waited for.
+                    answer(false);
+                    assert.match((await starting).message, /Failed to start debug session with configuration 'STLink@pyOCD \(launch\)'/);
+                    assertAvailable(other, 3333);
+                });
+
+                test('the status tools name a pending launch; the next load_and_debug takes its port over after VS Code was asked to cancel the old launch, and no other window gets the port', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), FVP_RUN_FILE);
+                    const owner = fastOwner();
+                    const other = reservationManager();
+                    const order: string[] = [];
+                    const w = portWorld(() => undefined, owner, () => {
+                        order.push('command');
+                        assertReserved(other, 3333);
+                    });
+                    const cancel = w.x.cancelPendingStarts;
+                    w.x.cancelPendingStarts = async () => {
+                        order.push('cancel');
+                        return cancel();
+                    };
+                    const running = await pendingLaunch(w);
+                    assert.ok(running.endsWith(' Until a session of it has come up and ended, this window keeps GDB port 3333 reserved for it; if none '
+                        + 'comes, a new load_and_debug here takes the port over, and stop_debugging asks VS Code to cancel the launch.'), running);
+                    assertReserved(other, 3333);
+                    const line = new RegExp(`^Pending launch: 'Arm-FVP@GDB \\(launch\\)' reserved GDB port 3333 ${AGE} ago and has started no debug `
+                        + 'session yet\\. If none comes, VS Code may be waiting for the user \\(a picker or a dialog; at the first start of an FVP on '
+                        + 'Windows, an access-permission prompt\\), or it dropped the launch before its debug adapter started: ask the user what VS '
+                        + 'Code shows\\. The port stays reserved for this window while that launch may still begin: a new start here takes it over, '
+                        + 'and stop_debugging asks VS Code to cancel the launch\\.$', 'm');
+                    assert.match(await textAnswer(w.handler.handleGetSessionStatus()), line);
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status', timeoutMs: 2_000 })), line);
+
+                    const again = await pendingLaunch(w);
+                    assert.match(again, new RegExp(`^Took over the GDB port of this window's launch of 'Arm-FVP@GDB \\(launch\\)' \\(GDB port 3333, reserved ${AGE} `
+                        + 'ago\\), which has started no debug session; VS Code was asked to cancel that launch first\\. CMSIS \'load_and_debug\' on HE issued '));
+                    assert.deepStrictEqual(order, ['command', 'cancel', 'command'], 'the old launch is cancelled before the new one goes out');
+                    assert.deepStrictEqual(w.issued, ['load_and_debug', 'load_and_debug']);
+                    assertReserved(other, 3333);
+                });
+
+                test('a port taken over goes back to the earlier launch when the new start is over: its command failed, or its session came and went', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), FVP_RUN_FILE);
+                    const owner = fastOwner();
+                    const other = reservationManager();
+                    let rejectCommand = false;
+                    const w = portWorld(() => undefined, owner, () => {
+                        if (rejectCommand) {
+                            throw new Error('scripted command rejection');
+                        }
+                    });
+                    await pendingLaunch(w);
+                    const [earlier] = owner.pending();
+                    rejectCommand = true;
+                    const failed = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 30_000 }), 'TASK_FAILED');
+                    assert.match(failed.message, /scripted command rejection/);
+                    await delay(0);
+                    assertReserved(other, 3333);
+                    assert.deepStrictEqual(owner.pending().map((start) => start.since), [earlier.since], 'the earlier launch holds the port again');
+
+                    // Taken over once more; this time the session comes and goes, and the earlier launch keeps the port all the same.
+                    rejectCommand = false;
+                    await pendingLaunch(w);
+                    owner.adoptPort(3333);
+                    owner.observe([{ port: 3333, source: 'session', label: 'Arm-FVP@GDB (launch)' }]);
+                    owner.observe([]);
+                    assertReserved(other, 3333);
+                    assert.deepStrictEqual(owner.pending().map((start) => start.since), [earlier.since]);
+                    // A reload of the window ends every start of it.
+                    owner.dispose();
+                    assertAvailable(other, 3333);
+                });
+
+                test('a pending start that may still come up, or that a task of the window may still take over, refuses the next start and names what it waits for', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), FVP_RUN_FILE);
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner);
+                    await pendingLaunch(w);
+                    // On this clock the launch is about a second old: it may still come up.
+                    const young = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 30_000 }), 'PROBE_BUSY');
+                    assert.match(young.message, /, which this window reserved \d+ s ago for its own launch of 'Arm-FVP@GDB \(launch\)', which has not come up yet\.$/);
+                    assert.strictEqual(young.hint, 'Wait for it: get_session_status shows its session once it is up. VS Code may be waiting for the user (a picker '
+                        + 'or a dialog; at the first start of an FVP on Windows, an access-permission prompt), or it dropped the launch before its debug '
+                        + 'adapter started. A start here takes that port over once it has gone 10 s without a session or task.');
+                    assert.deepStrictEqual(w.issued, ['load_and_debug'], 'the refused call issued nothing');
+                    assertReserved(other, 3333);
+                });
+
+                test('an earlier start whose task comes up while the new start checks its port is not taken over', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), FVP_RUN_FILE);
+                    const owner = fastOwner();
+                    const other = reservationManager();
+                    let startTaskOnCheck = false;
+                    const w = portWorld(() => {
+                        if (startTaskOnCheck) {
+                            // The earlier start's task comes up while the new start asks who holds the port, before any port sample adopts it.
+                            startTaskOnCheck = false;
+                            w.tasks.start(w.tasks.execution({ name: 'CMSIS Run', source: 'Workspace', definition: { type: 'shell' } }));
+                        }
+                        return undefined;
+                    }, owner);
+                    await pendingLaunch(w);
+                    startTaskOnCheck = true;
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 30_000 }), 'PROBE_BUSY');
+                    assert.match(refused.message, /for its own launch of 'Arm-FVP@GDB \(launch\)'; its task 'CMSIS Run' still runs\.$/);
+                    assert.deepStrictEqual(w.issued, ['load_and_debug'], 'the refused call issued nothing');
+                    assert.deepStrictEqual(w.x.argsOf('cancelPendingStarts'), [], 'nothing was cancelled');
+                    assert.strictEqual(owner.pending()[0]?.label, 'Arm-FVP@GDB (launch)', 'the earlier start keeps its reservation');
+                    assertReserved(other, 3333);
+                });
+
+                test('a pending launch whose pre-launch Load still runs is neither taken over nor cancelled', async () => {
+                    fs.writeFileSync(path.join(dir, 'demo+HE.cbuild-run.yml'), PYOCD_RUN_FILE);
+                    writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
+                    const owner = fastOwner();
+                    const other = reservationManager();
+                    let execution: FakeExecution | undefined;
+                    const w = portWorld(() => undefined, owner, () => {
+                        execution = w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } }));
+                    });
+                    await replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 4_000 }), 'running');
+                    assert.ok(execution);
+                    const refused = await refusalOf(w.handler.handleStartDebugging({ workingDirectory: dir, configurationName: PYOCD_LAUNCH.name }), 'PROBE_BUSY');
+                    assert.match(refused.message, /which this window reserved \d+ s ago for its own launch of 'STLink@pyOCD \(launch\)'; its task 'CMSIS Load' still runs\.$/);
+                    assert.strictEqual(refused.hint, 'Wait for it with cmsis_action {action:\'status\'}, or end that task with cmsis_action stop_run once the user '
+                        + 'agrees; then repeat this call.');
+                    assert.match(await textAnswer(w.handler.handleStopDebugging()), new RegExp('^Nothing to stop — no debug session is active\\. Still pending: '
+                        + `this window's launch of 'STLink@pyOCD \\(launch\\)' \\(GDB port 3333, reserved ${AGE} ago\\), which has started no debug session `
+                        + '— its task \'CMSIS Load\' still runs; cmsis_action stop_run ends that task\\.$'));
+                    assert.deepStrictEqual(w.x.argsOf('cancelPendingStarts'), [], 'nothing is cancelled under a running Load');
+                    assert.deepStrictEqual(w.x.argsOf('startDebuggingByName'), []);
+                    assertReserved(other, 3333);
+                });
+
+                test('a CMSIS Run whose job is open is not taken over; once the job settled, the status names it and a start takes it over', async () => {
+                    const clock = new ManualClock(1_000);
+                    const tracker = new CmsisJobTracker(new FakeTasks(), clock);
+                    trackers.push(tracker);
+                    const owner = reservationManager(() => clock.now());
+                    const start = { what: 'run' as const, subject: 'CMSIS \'run\' on HE not started', server: 'pyOCD' as const };
+                    owner.acquire(3334, start, 'ws', 'run-batch');
+                    const job = tracker.begin('run', 'HE');
+                    tracker.issued(job.id);
+                    const x = new ScriptedExecutor();
+                    x.session = false;
+                    const executor = x as unknown as IDebuggingExecutor;
+                    const host = { now: () => clock.now(), cmsisJobs: () => tracker, pendingGdbStarts: () => owner.pending() } as unknown as HandlerHost;
+                    assert.throws(() => startsToTakeOver(executor, host, [{ port: 3334, start }]), (caught: unknown) => caught instanceof ToolError
+                        && caught.message.endsWith(`which this window reserved 0 s ago for its own CMSIS Run; its run (job ${job.id}) has not started its task yet.`));
+                    assert.deepStrictEqual(pendingStartLines(executor, host), [], 'the job says what is going on');
+                    assert.ok(pendingStartsNote(await cancelPendingLaunches(executor, host)).endsWith(`— its run (job ${job.id}) has not started its task yet; `
+                        + 'cmsis_action {action:\'status\'} follows it.'));
+
+                    // Nothing started: the job settles as not started; the task may still come, so the port stays, open to a start of this window.
+                    clock.advance(61_000);
+                    assert.strictEqual(tracker.job(job.id)?.state, 'not-started');
+                    assert.deepStrictEqual(pendingStartLines(executor, host), ['Pending CMSIS Run: it reserved GDB port 3334 60 s ago, and no CMSIS Run task '
+                        + 'has started yet. The port stays reserved for this window while that task may still start: a new start here takes it over.']);
+                    assert.deepStrictEqual(startsToTakeOver(executor, host, [{ port: 3334, start }]).map((pending) => pending.group), ['run-batch']);
+                    assert.deepStrictEqual(x.argsOf('cancelPendingStarts'), [], 'a CMSIS Run is no launch: nothing to cancel in VS Code');
+                });
+
+                test('stop_debugging without a session and without a pending start answers as before and cancels nothing', async () => {
+                    const w = portWorld(() => undefined, reservationManager());
+                    assert.strictEqual(await textAnswer(w.handler.handleStopDebugging()), 'Nothing to stop — no debug session is active.');
+                    assert.deepStrictEqual(w.x.argsOf('cancelPendingStarts'), []);
+                });
             });
 
             test('a confirmed running Run releases after it ends even when no positive port sample ever adopted it', async () => {
@@ -5238,6 +5829,30 @@ suite('DebuggingHandler', () => {
                     assert.deepStrictEqual(w.tracker.liveExecutions(), []);
                     assert.strictEqual(w.tracker.last(action)?.state, 'running-ok', 'settled jobs do not emit another completion at task end');
                     owner.observe([]);
+                    assertAvailable(other, 3334);
+                }
+            });
+
+            test('a Run that ended by itself with exit 0 frees what its start reserved, even when the task VS Code ran says neither model nor GDB server (#134 review)', async () => {
+                // tasks.json names pyOCD's server, so its port (3334, from the cbuild-run file) is reserved before the command; the task that
+                // runs then has another command line (one the reservation did not read: a platform block, an edit in between) and ends at once.
+                const words = ['/w/.vscode/start-debug-server.sh', '--port', '3334'];
+                for (const action of ['run', 'load_and_run'] as const) {
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner, () => {
+                        if (action === 'load_and_run') {
+                            w.tasks.finish(w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } })), 0);
+                        }
+                        const run = w.tasks.start(w.tasks.execution({
+                            name: 'CMSIS Run', source: 'Workspace', definition: { type: 'shell' }, execution: { command: words[0], args: words.slice(1) },
+                        }));
+                        w.tasks.finish(run, 0);
+                    });
+                    const answer = await w.handler.handleCmsisCommand({ action, timeoutMs: 10_000 });
+                    assert.ok(isToolReply(answer) && answer.text.startsWith(`⚠️ CMSIS '${action}' on HE: `), JSON.stringify(answer));
+                    assert.strictEqual(w.tracker.last(action)?.state, 'ended');
+                    assert.deepStrictEqual(w.asked, [3334], 'the port was reserved and asked about');
                     assertAvailable(other, 3334);
                 }
             });

@@ -18,13 +18,16 @@
  * Helpers of the CMSIS task tests: the recorded task sequences under
  * `src/test/fixtures/cmsisTasks/` (derived from the installed CMSIS Solution
  * 1.70.1 and 1.72.0, see each file's `derivedFrom`), a fake `vscode.tasks` that fires
- * their events, and a clock the test moves by hand.
+ * their events, a fake of VS Code's terminal shell executions, and a clock
+ * the test moves by hand.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ExecutionLike, FetchedTask, TaskEventSource, TrackerClock } from '../cmsisJobTracker';
 import { armJob, classifyCmsisTask, Job, JobAction, JobEvent, reduceJob } from '../core/cmsisTasks';
+import { runTaskKind } from '../core/gdbServerPorts';
+import type { ShellExecutionLike, ShellExecutionSource } from '../runOutputCapture';
 
 const FIXTURE_DIR = path.resolve(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'cmsisTasks');
 
@@ -94,11 +97,14 @@ function toJobEvent(fixture: TaskFixture, step: FixtureEvent, keys: Map<string, 
     if (!kind) {
         return undefined;
     }
+    // As the tracker marks a CMSIS Run: what its command line says it runs, a GDB server or the FVP model.
+    const runKind = kind === 'run' ? runTaskKind(task) : undefined;
+    const marked = runKind ? { runKind } : {};
     switch (step.event) {
         case 'onDidStartTask':
-            return { type: 'taskStart', key, name: task.name, kind, at: step.at };
+            return { type: 'taskStart', key, name: task.name, kind, at: step.at, ...marked };
         case 'onDidStartTaskProcess':
-            return { type: 'processStart', key, name: task.name, kind, at: step.at };
+            return { type: 'processStart', key, name: task.name, kind, at: step.at, ...marked };
         case 'commandReturned':
             return { type: 'identity', key, name: task.name, kind, at: step.at };
         case 'onDidEndTaskProcess':
@@ -287,4 +293,87 @@ export class FakeTasks implements TaskEventSource {
 /** Tasks as a pyOCD solution's tasks.json lists them through fetchTasks, scoped to `folder`. */
 export function workspaceTasks(folder: string, labels: readonly string[]): FetchedTask[] {
     return labels.map((name) => ({ name, source: 'Workspace', scope: { uri: { fsPath: folder } } }));
+}
+
+/**
+ * A terminal command as VS Code reports it (`TerminalShellExecution`): the
+ * test writes what the terminal receives and ends it; `read()` streams the
+ * data written after it was first called, as VS Code's does.
+ */
+export class FakeShellExecution implements ShellExecutionLike {
+    readonly commandLine: { value: string };
+    private readonly queued: string[] = [];
+    private ended = false;
+    private reading = false;
+    private wake: (() => void) | undefined;
+
+    constructor(commandLine: string) {
+        this.commandLine = { value: commandLine };
+    }
+
+    read(): AsyncIterable<string> {
+        this.reading = true;
+        const queued = this.queued;
+        const self = this;
+        return {
+            async *[Symbol.asyncIterator](): AsyncGenerator<string> {
+                for (;;) {
+                    while (queued.length > 0) {
+                        yield queued.shift() as string;
+                    }
+                    if (self.ended) {
+                        return;
+                    }
+                    await new Promise<void>((resolve) => {
+                        self.wake = resolve;
+                    });
+                    self.wake = undefined;
+                }
+            },
+        };
+    }
+
+    /** Data the terminal receives; lost unless someone reads. */
+    write(data: string): void {
+        if (this.reading && !this.ended) {
+            this.queued.push(data);
+            this.wake?.();
+        }
+    }
+
+    /** The command ended: the stream ends after the data written so far. */
+    end(): void {
+        this.ended = true;
+        this.wake?.();
+    }
+}
+
+/** `vscode.window`'s terminal shell executions, started by hand. */
+export class FakeShell implements ShellExecutionSource {
+    private readonly listeners = new Set<(event: { execution: ShellExecutionLike }) => unknown>();
+
+    onDidStartTerminalShellExecution: ShellExecutionSource['onDidStartTerminalShellExecution'] = (listener) => {
+        this.listeners.add(listener);
+        return { dispose: () => this.listeners.delete(listener) };
+    };
+
+    /** A command starts in a terminal, with this command line. */
+    start(commandLine: string): FakeShellExecution {
+        const execution = new FakeShellExecution(commandLine);
+        for (const listener of [...this.listeners]) {
+            listener({ execution });
+        }
+        return execution;
+    }
+
+    listenerCount(): number {
+        return this.listeners.size;
+    }
+}
+
+/** Lets the async iterators of fake shell executions run. */
+export async function settle(): Promise<void> {
+    for (let turn = 0; turn < 10; turn++) {
+        await Promise.resolve();
+    }
 }

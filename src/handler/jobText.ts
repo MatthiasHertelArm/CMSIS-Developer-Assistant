@@ -32,12 +32,22 @@
  * hint after a failed Load or Erase follows the program the task ran:
  * pyOCD, J-Link — missing from the tasks' PATH when it failed at once — or
  * another one.
+ *
+ * A run or load_and_run whose CMSIS Run, the FVP model, ended by itself with
+ * exit 0 is a completed run (#134), not a GDB server that went away; one
+ * whose command line says neither model nor GDB server has `ended`, a
+ * warning that claims neither success nor failure. These results, the
+ * failure of a Run, and `status` show the Run's output when this window
+ * captured its terminal (`src/runOutputCapture.ts`), and say where it is
+ * when it did not. Neither the FVP model nor an `ended` Run is sent to probe
+ * troubleshooting.
  */
 
 import {
     ACTION_PHASES,
     BuildMessage,
     bystanders,
+    completedRun,
     executionIn,
     GuardVerdict,
     hasCmsisTasks,
@@ -51,8 +61,18 @@ import {
     runtimeOf,
     wasStopped,
 } from '../core/cmsisTasks';
-import { DIAGNOSTIC_RERUN_CAP_MS } from '../core/buildFailure';
+import { DIAGNOSTIC_RERUN_CAP_TEXT } from '../core/buildFailure';
 import { PROBE_SOFTWARE_STEPS, ProgramFacts, RESTART_VS_CODE } from '../core/programLookup';
+import {
+    OutputView,
+    outputData,
+    renderOutput,
+    RESULT_CHARS,
+    RESULT_LINES,
+    STATUS_CHARS,
+    STATUS_LINES,
+    TerminalOutput,
+} from '../core/runOutput';
 import { JsonObject, ToolError, ToolReply, ToolText } from '../core/toolResult';
 import type { LiveExecution } from '../cmsisJobTracker';
 
@@ -180,9 +200,27 @@ export function flashFailedHint(task: string, facts?: ProgramFacts): string {
         + 'This is a terminal result — do not wait for an output file.';
 }
 
-const RUN_FAILED_HINT = 'A GDB server that ends at once usually finds the probe or its port taken, or no probe at all. Its output is in the '
-    + '\'CMSIS Run\' terminal, which no tool reads: ask the user for its last lines when the cause is not clear. '
-    + 'cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks; cmsis_action {action:\'stop_run\'} ends them.';
+/** Where a CMSIS Run's output is when this window did not capture its terminal (#134). */
+function uncapturedOutput(task: string): string {
+    return `Its output is in the '${task}' terminal, which this window did not capture: ask the user for its last lines`;
+}
+
+/** After a CMSIS Run that ended at once: why a GDB server usually does, and where its output is. */
+function runFailedHint(task: string, captured: boolean): string {
+    const output = captured ? 'Its last lines above say which.' : `${uncapturedOutput(task)} when the cause is not clear.`;
+    return `A GDB server that ends at once usually finds the probe or its port taken, or no probe at all. ${output} `
+        + 'cmsis_action {action:\'status\'} lists this window\'s CMSIS tasks; cmsis_action {action:\'stop_run\'} ends them.';
+}
+
+/** After the FVP model ended with a code other than 0: it uses no probe and no GDB port, so only its output can say why. */
+function modelFailedHint(task: string, captured: boolean): string {
+    const output = captured ? 'Its last lines above are what it printed.' : `${uncapturedOutput(task)}.`;
+    return `The FVP model ended with that code by itself; no probe and no GDB port are involved. ${output}`;
+}
+
+/** After an FVP model that keeps running (#134): it hosts no GDB server, and `status` tells when it ended by itself. */
+const MODEL_RUNNING = 'It hosts no GDB server: load_and_debug starts a session. When the model ends by itself, cmsis_action {action:\'status\'} '
+    + 'shows how it ended and what this window captured of its output; cmsis_action stop_run ends it.';
 
 /**
  * What the adapters' CMSIS Run task does, so an agent does not promise more than the task keeps (#73).
@@ -206,6 +244,8 @@ export interface ResultContext {
     labels?: ReadonlySet<string>;
     /** What a failed Load or Erase task ran, for its hint; asked only on a failure. */
     program?: (execution: JobExecution) => ProgramFacts | undefined;
+    /** The terminal output of a CMSIS Run, when this window captured it (#134). */
+    output?: (execution: JobExecution) => TerminalOutput | undefined;
 }
 
 function ranFor(execution: JobExecution, now: number): string {
@@ -397,7 +437,7 @@ export function diagnosisData(diagnosis: JobDiagnosis): JsonObject {
 /** The lines a failed build's diagnosis adds to its result: its block, or that it is still coming. */
 function diagnosisLines(diagnosis: JobDiagnosis): string {
     if (diagnosis.state === 'pending') {
-        return `\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s).`;
+        return `\nError lines: still being collected (a diagnostic re-run of cbuild with --log, at most ${DIAGNOSTIC_RERUN_CAP_TEXT}).`;
     }
     return `\n${diagnosis.text}`;
 }
@@ -412,11 +452,101 @@ function failedBuild(job: Job, context: ResultContext, decided: JobExecution): T
     if (!diagnosis) {
         return new ToolError('TASK_FAILED', head, BUILD_FAILED_HINT);
     }
+    // Without an error line — none found, or a re-run cut off before any (#135) — there is no first error to fix.
     const hint = diagnosis.state === 'pending' ? BUILD_LINES_PENDING_HINT
-        : diagnosis.source === 'none' ? BUILD_FAILED_HINT
+        : diagnosis.source === 'none' || diagnosis.errorCount === 0 ? BUILD_FAILED_HINT
         : diagnosis.errors.some((error) => NEEDS_RTE_UPDATE.test(error.message)) ? RTE_UPDATE_HINT : BUILD_ERRORS_HINT;
     return new ToolError('TASK_FAILED', `${head}${diagnosisLines(diagnosis)}`, hint,
         { job: jobData(job, context.now), diagnosis: diagnosisData(diagnosis) });
+}
+
+/** The job's CMSIS Run when its command line is the FVP model's alone, which hosts no GDB server and ends when the application stops it (#134). */
+function modelRun(job: Job): JobExecution | undefined {
+    const run = executionIn(job, 'run');
+    return run?.runKind === 'model' ? run : undefined;
+}
+
+/** What the result shows of a Run's output; undefined when this window did not capture its terminal. */
+function runOutputView(run: JobExecution, context: ResultContext): OutputView | undefined {
+    return context.output?.(run)?.view(RESULT_LINES, RESULT_CHARS);
+}
+
+/** A Run as `data` carries it: its task, its exit code and how long it ran. */
+function runData(run: JobExecution, now: number): JsonObject {
+    return { task: run.name, exitCode: run.exitCode ?? null, ranMs: runtimeOf(run, now) };
+}
+
+/**
+ * A run or load_and_run whose CMSIS Run, the FVP model, ended by itself with
+ * exit 0 before its grace was over (#134): the run completed, and nothing
+ * went wrong with a probe. Exit 0 is all the task reports, so the result
+ * points at the application's own result line: in the Run's output when
+ * this window captured it, else in its terminal.
+ */
+function completedRunResult(job: Job, context: ResultContext, run: JobExecution): ToolReply {
+    const { tag, now } = context;
+    const load = executionIn(job, 'load');
+    const loaded = job.action === 'load_and_run' && load ? `'${load.name}' exited 0 after ${ranFor(load, now)}, then ` : '';
+    const programmed = job.action === 'run' ? ' Nothing was built or programmed.' : '';
+    const view = runOutputView(run, context);
+    const verdict = view
+        ? 'An exit code is no test result: check the application\'s own result line in the output below.'
+        : `An exit code is no test result: check the application's own result line. ${uncapturedOutput(run.name)}.`;
+    const head = `${context.preface ?? ''}✅ CMSIS '${job.action}'${tag}: ${loaded}'${run.name}' ended by itself with exit code 0 after ${ranFor(run, now)} — `
+        + `the run completed, and nothing hosts a GDB server now (job ${job.id}).${programmed} ${verdict}${meanwhile(job)}`;
+    return {
+        text: view ? `${head}\n${renderOutput(run.name, view, false)}` : head,
+        status: 'ok',
+        data: { job: jobData(job, now), run: runData(run, now), output: view ? outputData(run.name, view) : null },
+    };
+}
+
+/**
+ * A run or load_and_run whose CMSIS Run ended by itself with exit 0 before
+ * its grace was over while its command line is neither the FVP model's nor
+ * a GDB server's (`ended`, #134). A launcher whose GDB server went away ends
+ * so just as a model shim that ran its image to the end does, so the reply
+ * says what is known — the exit code, the run time, that nothing runs now —
+ * and claims neither a success nor a failure, nor any probe cause. The Run's
+ * output, or where it is, tells which it was.
+ */
+function endedRunResult(job: Job, context: ResultContext, run: JobExecution): ToolReply {
+    const { tag, now } = context;
+    const load = executionIn(job, 'load');
+    const loaded = job.action === 'load_and_run' && load ? `'${load.name}' exited 0 after ${ranFor(load, now)}, then ` : '';
+    const view = runOutputView(run, context);
+    const which = view ? 'Its output below tells which.' : `${uncapturedOutput(run.name)} to tell which.`;
+    const head = `${context.preface ?? ''}⚠️ CMSIS '${job.action}'${tag}: ${loaded}'${run.name}' ended by itself with exit code 0 after ${ranFor(run, now)}, `
+        + `and no GDB server or model is running now (job ${job.id}). Its command line is neither the FVP model's, which ends when the `
+        + `application stops it, nor a GDB server's, which stays up, so exit 0 does not tell a run that completed from a server that went away. `
+        + `${which}${meanwhile(job)}`;
+    return {
+        text: view ? `${head}\n${renderOutput(run.name, view, false)}` : head,
+        status: 'ok',
+        data: { job: jobData(job, now), run: runData(run, now), output: view ? outputData(run.name, view) : null },
+    };
+}
+
+/**
+ * A CMSIS Run that ended before its grace was over and did not complete a
+ * run: a GDB server that went away, whatever its exit code, or another
+ * program that exited with a code other than 0. The FVP model's failure
+ * names no probe causes. With the Run's output when this window captured it.
+ */
+function runFailure(job: Job, context: ResultContext, run: JobExecution): ToolError {
+    const { tag, now } = context;
+    const load = executionIn(job, 'load');
+    const model = modelRun(job) !== undefined;
+    const before = job.action !== 'load_and_run' || !load ? ''
+        : model ? `'${load.name}' exited 0 after ${ranFor(load, now)}, but ` : `flashed ('${load.name}' exited 0 after ${ranFor(load, now)}), but `;
+    const subject = model ? `'${run.name}', the FVP model,` : `'${run.name}'`;
+    const ended = run.exitCode === undefined ? 'ended without an exit code' : `ended with code ${run.exitCode}`;
+    const stayUp = run.runKind === 'gdbServer' ? '; it hosts the GDB server and must stay up' : '';
+    const view = runOutputView(run, context);
+    const message = `${context.preface ?? ''}❌ CMSIS '${job.action}' FAILED${tag} — ${before}${subject} ${ended} after ${ranFor(run, now)}${stayUp} `
+        + `(job ${job.id}).${meanwhile(job)}${view ? `\n${renderOutput(run.name, view, false)}` : ''}`;
+    const hint = model ? modelFailedHint(run.name, view !== undefined) : runFailedHint(run.name, view !== undefined);
+    return new ToolError('TASK_FAILED', message, hint, view ? { job: jobData(job, now), run: runData(run, now), output: outputData(run.name, view) } : undefined);
 }
 
 function failed(job: Job, context: ResultContext, decided: JobExecution): ToolError {
@@ -431,23 +561,15 @@ function failed(job: Job, context: ResultContext, decided: JobExecution): ToolEr
                     + `so 'CMSIS Run' was not started (job ${id}).${meanwhile(job)}`,
                 flashFailedHint(decided.name, context.program?.(decided)));
         }
-        const load = executionIn(job, 'load');
-        const flashed = load ? `flashed ('${load.name}' exited 0 after ${ranFor(load, now)}), but ` : '';
-        return new ToolError('TASK_FAILED',
-            `${preface}❌ CMSIS 'load_and_run' FAILED${tag} — ${flashed}'${decided.name}' ended with code ${code} after ${ranFor(decided, now)}; `
-                + `it hosts the GDB server and must stay up (job ${id}).${meanwhile(job)}`,
-            RUN_FAILED_HINT);
+        return runFailure(job, context, decided);
     }
     if (job.action === 'run') {
-        return new ToolError('TASK_FAILED',
-            `${preface}❌ CMSIS 'run' FAILED${tag} — '${decided.name}' ended ${code === undefined ? 'without an exit code' : `with code ${code}`} `
-                + `after ${ranFor(decided, now)}; it hosts the GDB server and must stay up (job ${id}).${meanwhile(job)}`,
-            RUN_FAILED_HINT);
+        return runFailure(job, context, decided);
     }
     if (job.action === 'load_and_run' && code === undefined) {
         return new ToolError('TASK_FAILED',
             `${preface}❌ CMSIS 'load_and_run' FAILED${tag} — '${decided.name}' ended without a live 'CMSIS Run' (job ${id}).${meanwhile(job)}`,
-            RUN_FAILED_HINT);
+            runFailedHint('CMSIS Run', false));
     }
     if (isBuildAction(job.action)) {
         return failedBuild(job, context, decided);
@@ -471,7 +593,7 @@ function buildCheckResult(job: Job, context: ResultContext, task: JobExecution):
     const data = (): JsonObject => ({ job: jobData(job, context.now), ...(diagnosis ? { diagnosis: diagnosisData(diagnosis) } : {}) });
     if (diagnosis?.state === 'pending') {
         const how = action === 'clean' ? ''
-            : ` (a diagnostic re-run of cbuild with --log when the image was not rewritten, at most ${DIAGNOSTIC_RERUN_CAP_MS / 1_000} s)`;
+            : ` (a diagnostic re-run of cbuild with --log when the image was not rewritten, at most ${DIAGNOSTIC_RERUN_CAP_TEXT})`;
         return {
             text: `${context.preface ?? ''}CMSIS '${action}'${context.tag}: ${ran} (job ${job.id}); its result is still being checked${how}, `
                 + `since CMSIS Solution reports exit 0 for a failed ${noun} too. Call cmsis_action {action:'status'} for the result — `
@@ -516,6 +638,10 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
         case 'started':
             return stillRunning(job, context);
         case 'ok': {
+            const run = completedRun(job);
+            if (run) {
+                return completedRunResult(job, context, run);
+            }
             const task = decided ?? currentTask(job);
             if (isBuildAction(job.action) && task && job.diagnosis) {
                 const checkedBuild = buildCheckResult(job, context, task);
@@ -531,6 +657,16 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
         case 'running-ok': {
             const load = executionIn(job, 'load');
             const run = executionIn(job, 'run');
+            const model = modelRun(job);
+            if (model && job.action === 'run') {
+                return `${preface}✅ CMSIS 'run'${tag}: '${model.name}' started the FVP model with the last-built image, and it keeps running `
+                    + `(job ${job.id}); nothing was built or programmed. ${MODEL_RUNNING}${meanwhile(job)}`;
+            }
+            if (model) {
+                const loaded = load ? `'${load.name}' exited 0 after ${ranFor(load, now)}; ` : '';
+                return `${preface}✅ CMSIS 'load_and_run'${tag}: ${loaded}'${model.name}' started the FVP model, and it keeps running `
+                    + `(job ${job.id}). ${MODEL_RUNNING}${meanwhile(job)}`;
+            }
             if (job.action === 'run') {
                 return `${preface}✅ CMSIS 'run'${tag}: '${run?.name ?? 'CMSIS Run'}' started and stays active — with a probe adapter it hosts `
                     + `the GDB server (job ${job.id}); nothing was built or programmed. ${RUN_TASK_EFFECT} cmsis_action attach to debug; `
@@ -540,6 +676,19 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
             return `${preface}✅ CMSIS 'load_and_run'${tag}: ${flashed}'${run?.name ?? 'CMSIS Run'}' started and stays active — `
                 + `with a probe adapter it hosts the GDB server (job ${job.id}); an FVP runs the image without one. `
                 + `cmsis_action attach to debug; cmsis_action stop_run frees the probe.${meanwhile(job)}`;
+        }
+        case 'ended': {
+            // Only a CMSIS Run whose command line says neither model nor GDB server settles so (#134).
+            const run = decided ?? executionIn(job, 'run');
+            if (run) {
+                return endedRunResult(job, context, run);
+            }
+            return {
+                text: `${preface}⚠️ CMSIS '${job.action}'${tag}: its task ended by itself with exit code 0, and nothing is running now `
+                    + `(job ${job.id}).${meanwhile(job)}`,
+                status: 'ok',
+                data: { job: jobData(job, now) },
+            };
         }
         case 'failed':
             if (decided) {
@@ -555,8 +704,11 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
                     `cmsis_action ${job.action} starts it again.`);
             }
             const task = decided ? `task '${decided.name}' ended without an exit code after ${ranFor(decided, now)}` : 'its task ended without an exit code';
+            // A CMSIS Run's lines show what it did before it was stopped (#134).
+            const view = decided && decided.role === 'run' ? runOutputView(decided, context) : undefined;
             throw new ToolError('TASK_FAILED',
-                `${preface}CMSIS '${job.action}'${tag} — ${task} (it may have been cancelled; job ${job.id}).${meanwhile(job)}`,
+                `${preface}CMSIS '${job.action}'${tag} — ${task} (it may have been cancelled; job ${job.id}).${meanwhile(job)}`
+                    + `${view && decided ? `\n${renderOutput(decided.name, view, false)}` : ''}`,
                 `Re-run cmsis_action ${job.action} to get a definite result.`);
         }
         case 'not-started': {
@@ -577,12 +729,17 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
 function verdictMark(job: Job): string {
     switch (job.state) {
         case 'ok':
+            if (completedRun(job)) {
+                return '✅ ended by itself, exit 0';
+            }
             if (job.diagnosis?.state === 'pending') {
                 return 'exit 0, being checked';
             }
             return job.diagnosis?.check === 'unverified' ? '⚠️ exit 0, not confirmed' : '✅';
         case 'running-ok':
             return '✅';
+        case 'ended':
+            return '⚠️ ended by itself, exit 0, nothing running';
         case 'failed': {
             const decided = job.executions.find((execution) => execution.key === job.decidedBy);
             if (decided?.exitCode === 0 && job.diagnosis?.check === 'failed') {
@@ -609,10 +766,41 @@ function liveEntry(execution: LiveExecution, now: number, holds: (kind: string) 
 const PROBE_HOLDERS: ReadonlySet<string> = new Set(['run', 'loadRun', 'load', 'erase', 'targetInfo']);
 
 /**
- * The `status` answer when no job is open: recent results with the error
- * lines of a failed build, and the live CMSIS tasks of the window.
+ * What `status` adds about the latest run or load_and_run (#134): that its
+ * CMSIS Run ended after the job counted it as running — an FVP model that
+ * ran its image to the end, or a GDB server that went away — and the Run's
+ * output when this window captured it, so far or to its end.
  */
-export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[], now: number): string {
+function latestRunLines(recent: readonly Job[], now: number, output?: (execution: JobExecution) => TerminalOutput | undefined): string[] {
+    const job = recent.find((candidate) => (candidate.action === 'run' || candidate.action === 'load_and_run') && executionIn(candidate, 'run') !== undefined);
+    const run = job ? executionIn(job, 'run') : undefined;
+    if (!job || !run) {
+        return [];
+    }
+    const lines: string[] = [];
+    const endedAt = run.processEndedAt ?? run.endedAt;
+    if (job.state === 'running-ok' && endedAt !== undefined) {
+        const how = run.exitCode === undefined ? 'without an exit code (it was stopped or cancelled)' : `with exit code ${run.exitCode}`;
+        lines.push(`'${run.name}' of ${job.action} job ${job.id} ended ${formatDuration(now - endedAt)} ago after ${ranFor(run, now)}, ${how}.`);
+    }
+    const captured = output?.(run);
+    if (captured) {
+        lines.push(renderOutput(run.name, captured.view(STATUS_LINES, STATUS_CHARS), endedAt === undefined));
+    }
+    return lines;
+}
+
+/**
+ * The `status` answer when no job is open: recent results with the error
+ * lines of a failed build, the live CMSIS tasks of the window, and how the
+ * latest CMSIS Run ended and what it printed, when this window captured it.
+ */
+export function idleStatus(
+    recent: readonly Job[],
+    live: readonly LiveExecution[],
+    now: number,
+    output?: (execution: JobExecution) => TerminalOutput | undefined,
+): string {
     const lines: string[] = [];
     if (recent.length === 0) {
         lines.push('No CMSIS job in this window: nothing is in flight and none has finished since the window started.');
@@ -651,6 +839,7 @@ export function idleStatus(recent: readonly Job[], live: readonly LiveExecution[
             lines.push(stuckFlashText(stuck));
         }
     }
+    lines.push(...latestRunLines(recent, now, output));
     return lines.join('\n');
 }
 

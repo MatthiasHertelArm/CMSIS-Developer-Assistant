@@ -20,6 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { CmsisJobTracker, JOB_RETENTION_MS, LABEL_FETCH_MS } from '../cmsisJobTracker';
 import { executionIn, Job, JobDiagnosis } from '../core/cmsisTasks';
+import { TerminalOutput } from '../core/runOutput';
 import { flashFailedHint, formatDuration, idleStatus, LONG_FLASH_MS, sessionTaskLine, stillRunning, stuckFlashTask } from '../handler/jobText';
 import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 
@@ -31,6 +32,10 @@ import { FakeExecution, FakeTasks, FixtureTask, loadTaskFixtures, ManualClock, w
  */
 
 const shell = (name: string): FixtureTask => ({ name, source: 'Workspace', definition: { type: 'shell' } });
+/** The FVP adapter's CMSIS Run: the model alone, which ends when the application stops it. */
+const FVP_RUN: FixtureTask = {
+    ...shell('CMSIS Run'), execution: { command: 'FVP_Corstone_SSE-300', args: ['-f', 'fvp_config.txt', '-a', 'out/Blinky.axf'] },
+};
 const BUILD: FixtureTask = { name: 'cbuild Blinky.csolution.yml --active MPS3', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build' } };
 const SETUP: FixtureTask = { name: 'cbuild setup Blinky.csolution.yml', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build', setup: true } };
 
@@ -190,6 +195,41 @@ suite('CmsisJobTracker', () => {
             assert.strictEqual(tracker.job(job.id)?.state, 'started');
             clock.advance(clock.now() + 1);
             assert.strictEqual(tracker.job(job.id)?.state, 'running-ok');
+        });
+
+        test('a CMSIS Run that ends with exit 0 inside the grace: the FVP model completed its run (#134), a GDB server failed to stay up (#73)', () => {
+            const { tasks, tracker } = world();
+            const model = tracker.begin('run', 'SSE-300');
+            const fvp = tasks.start(tasks.execution(FVP_RUN));
+            assert.strictEqual(tracker.liveExecutions()[0].runKind, 'model');
+            tasks.finish(fvp, 0);
+            assert.strictEqual(tracker.job(model.id)?.state, 'ok');
+            assert.strictEqual(tracker.liveExecutions().length, 0, 'the model is gone: nothing holds the probe');
+            const server = tracker.begin('run', 'F401');
+            const pyocd = tasks.start(tasks.execution({ ...shell('CMSIS Run'), execution: { command: 'pyocd', args: ['gdbserver', '--persist', '--reset-run'] } }));
+            assert.strictEqual(tracker.liveExecutions()[0].runKind, 'gdbServer');
+            tasks.finish(pyocd, 0);
+            assert.strictEqual(tracker.job(server.id)?.state, 'failed');
+            const managed = tracker.begin('load_and_run', 'F401');
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Load'))), 0);
+            const managedRun = tasks.start(tasks.execution({
+                name: 'CMSIS Run', source: 'Workspace', definition: { type: 'cmsis-csolution.pyocd', command: 'pyocd', args: ['gdbserver', '--persist'] },
+            }));
+            tasks.finish(managedRun, 0);
+            assert.strictEqual(tracker.job(managed.id)?.state, 'failed', 'CMSIS Solution 1.72.1\'s managed pyOCD: its definition names the gdbserver');
+        });
+
+        test('a custom launcher of a GDB server whose command line names none, exiting 0 at once, is no completed run: the job ended, and nothing runs (#134 review)', () => {
+            const { tasks, tracker } = world();
+            const job = tracker.begin('run', 'F401');
+            const launcher = tasks.start(tasks.execution({ ...shell('CMSIS Run'), execution: { command: '/w/.vscode/start-debug-server.sh', args: ['--port', '3333'] } }));
+            assert.strictEqual(tracker.liveExecutions()[0].runKind, undefined, 'its command line names neither a model nor a GDB server');
+            tasks.finish(launcher, 0);
+            assert.strictEqual(tracker.job(job.id)?.state, 'ended');
+            assert.deepStrictEqual(tracker.liveExecutions(), [], 'no GDB server and no model runs now');
+            assert.deepStrictEqual(tracker.probeOwners(), []);
+            assert.strictEqual(tracker.inFlight('run'), undefined, 'settled: a repeated run starts afresh');
+            assert.strictEqual(sessionTaskLine(tracker.recent(), tracker.liveExecutions(), 1_000), 'CMSIS tasks: last run ⚠️ ended by itself, exit 0, nothing running 0.0 s ago');
         });
 
         test(`the latest settled job of each action stays until a newer one settles; older ones are kept ${JOB_RETENTION_MS / 60_000} min; open ones are never dropped`, () => {
@@ -507,6 +547,55 @@ suite('CmsisJobTracker', () => {
             assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
                 `No CMSIS job in flight in this window. Last results: build on MPS3 ❌ exit 2 5 s ago (job ${job.id}, '${BUILD.name}').\n`
                 + 'CMSIS tasks running: \'CMSIS Run\' for 5 s (holds the probe). cmsis_action {action:\'stop_run\'} ends them.');
+        });
+
+        test('status after a completed run: its mark, and the output of its Run when this window captured it (#134)', () => {
+            const { tasks, clock, tracker } = world();
+            const job = tracker.begin('load_and_run', 'SSE-300');
+            tasks.finish(tasks.start(tasks.execution(shell('CMSIS Load'))), 0);
+            const run = tasks.start(tasks.execution(FVP_RUN));
+            clock.advance(clock.now() + 1_900);
+            tasks.finish(run, 0);
+            clock.advance(clock.now() + 4_000);
+            const settled = tracker.job(job.id) ?? job;
+            const ran = executionIn(settled, 'run');
+            assert.ok(ran);
+            const output = new TerminalOutput();
+            output.append('Test_result: PASS\r\n\x04\r\n');
+            output.finish();
+            assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now(), (execution) => (execution.key === ran.key ? output : undefined)),
+                `No CMSIS job in flight in this window. Last results: load_and_run on SSE-300 ✅ ended by itself, exit 0 4 s ago (job ${job.id}, 'CMSIS Run').\n`
+                + 'No CMSIS task is running in this window.\n'
+                + 'Output of \'CMSIS Run\' (2 lines):\nTest_result: PASS\n');
+            assert.strictEqual(sessionTaskLine(tracker.recent(), tracker.liveExecutions(), clock.now()), 'CMSIS tasks: last load_and_run ✅ ended by itself, exit 0 4 s ago');
+            assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now()),
+                `No CMSIS job in flight in this window. Last results: load_and_run on SSE-300 ✅ ended by itself, exit 0 4 s ago (job ${job.id}, 'CMSIS Run').\n`
+                + 'No CMSIS task is running in this window.', 'without captured output, nothing more');
+        });
+
+        test('status after a run that counted as running: when its Run has ended since, how, and its output so far while it runs (#134)', () => {
+            const { tasks, clock, tracker } = world();
+            const job = tracker.begin('run', 'SSE-300');
+            const run = tasks.start(tasks.execution(FVP_RUN));
+            clock.advance(clock.now() + 2_000);
+            assert.strictEqual(tracker.job(job.id)?.state, 'running-ok');
+            const output = new TerminalOutput();
+            output.append('Booting\r\nTest 1: ok\r\n');
+            const of = (): TerminalOutput => output;
+            assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now(), of),
+                `No CMSIS job in flight in this window. Last results: run on SSE-300 ✅ 0.0 s ago (job ${job.id}, 'CMSIS Run').\n`
+                + 'CMSIS tasks running: \'CMSIS Run\' for 2 s (holds the probe). cmsis_action {action:\'stop_run\'} ends them.\n'
+                + 'Output of \'CMSIS Run\' so far (2 lines):\nBooting\nTest 1: ok');
+            clock.advance(clock.now() + 10_000);
+            output.append('Test_result: FAIL\r\n');
+            tasks.finish(run, 0);
+            output.finish();
+            clock.advance(clock.now() + 3_000);
+            assert.strictEqual(idleStatus(tracker.recent(), tracker.liveExecutions(), clock.now(), of),
+                `No CMSIS job in flight in this window. Last results: run on SSE-300 ✅ 13 s ago (job ${job.id}, 'CMSIS Run').\n`
+                + 'No CMSIS task is running in this window.\n'
+                + `'CMSIS Run' of run job ${job.id} ended 3 s ago after 12 s, with exit code 0.\n`
+                + 'Output of \'CMSIS Run\' (3 lines):\nBooting\nTest 1: ok\nTest_result: FAIL');
         });
     });
 });

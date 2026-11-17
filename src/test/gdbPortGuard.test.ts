@@ -109,4 +109,57 @@ suite('GDB port guard', () => {
         assert.strictEqual(byProgram.hint, 'Free the port (the user can end that program), or give this project another port: target.port of '
             + '\'STLink@pyOCD (launch)\' in .vscode/launch.json.');
     });
+
+    /**
+     * Issue #127: an FVP launch whose session never began kept port 3333 reserved, and the next load_and_debug of the same
+     * window was refused as if another window held it. Since the review of #127 the window's next start takes such a port
+     * over; it is refused only while that start may still come up, naming what it waits for, and nothing promises a release
+     * that only evidence of the start's end may bring.
+     */
+    test('this window\'s own pending start is refused only while it may still come up, naming what it waits for; another window names that one\'s way out', () => {
+        const launch = { what: 'launch' as const, subject: 'CMSIS \'load_and_debug\' on MPS3 not started', configuration: 'Arm-FVP@GDB (launch)', server: 'Arm FVP' as const };
+        const starts = 'CMSIS \'load_and_debug\' on MPS3 not started: the Arm FVP GDB server of \'Arm-FVP@GDB (launch)\' would use port 3333, ';
+        const follows = 'GDB would connect to that server instead of the new one, and debug — and halt — that target.';
+        const another = 'give this project another port: GDBServer.port in .vscode/launch.json.';
+        const ownLaunch = { kind: 'own' as const, what: 'launch' as const, label: 'Arm-FVP@GDB (launch)', adopted: false, server: 'Arm FVP' as const };
+
+        const starting = gdbPortRefusal(launch, 3333, { ...ownLaunch, ageMs: 4_000, waitingFor: { kind: 'starting', takeOverAfterMs: 10_000 } });
+        assert.strictEqual(starting.code, 'PROBE_BUSY');
+        assert.strictEqual(starting.message, `${starts}which this window reserved 4 s ago for its own launch of 'Arm-FVP@GDB (launch)', which has not come up yet.`);
+        assert.strictEqual(starting.hint, 'Wait for it: get_session_status shows its session once it is up. VS Code may be waiting for the user (a picker or a '
+            + 'dialog; at the first start of an FVP on Windows, an access-permission prompt), or it dropped the launch before its debug adapter started. '
+            + 'A start here takes that port over once it has gone 10 s without a session or task.');
+        const board = gdbPortRefusal(launch, 3333, { ...ownLaunch, label: 'STLink@pyOCD (launch)', server: 'pyOCD', ageMs: 200_000 });
+        assert.strictEqual(board.message, `${starts}which this window reserved 3 min ago for its own launch of 'STLink@pyOCD (launch)', which has not come up yet.`);
+        assert.strictEqual(board.hint, 'Wait for it: get_session_status shows its session once it is up. VS Code may be waiting for the user (a picker or a '
+            + 'dialog), or it dropped the launch before its debug adapter started.');
+
+        const byTask = gdbPortRefusal(launch, 3333, { ...ownLaunch, ageMs: 40_000, waitingFor: { kind: 'task', name: 'CMSIS Load' } });
+        assert.strictEqual(byTask.message, `${starts}which this window reserved 40 s ago for its own launch of 'Arm-FVP@GDB (launch)'; its task 'CMSIS Load' still runs.`);
+        assert.strictEqual(byTask.hint, 'Wait for it with cmsis_action {action:\'status\'}, or end that task with cmsis_action stop_run once the user agrees; '
+            + 'then repeat this call.');
+        const byJob = gdbPortRefusal(launch, 3333, { ...ownLaunch, what: 'run', label: 'CMSIS Run', ageMs: 5_000, waitingFor: { kind: 'job', id: 'r-2', action: 'run' } });
+        assert.strictEqual(byJob.message, `${starts}which this window reserved 5 s ago for its own CMSIS Run; its run (job r-2) has not started its task yet.`);
+        assert.strictEqual(byJob.hint, 'Wait for it with cmsis_action {action:\'status\'}, then repeat this call.');
+        const bySession = gdbPortRefusal(launch, 3333, { ...ownLaunch, ageMs: 5_000, waitingFor: { kind: 'session' } });
+        assert.strictEqual(bySession.message, `${starts}which this window reserved 5 s ago for its own launch of 'Arm-FVP@GDB (launch)', and a debug session `
+            + 'of this window may still take it over.');
+        assert.strictEqual(bySession.hint, 'Stop that session first once the user agrees (stop_debugging), then repeat this call.');
+        const ownSession = gdbPortRefusal(launch, 3333, { ...ownLaunch, ageMs: 9_000, adopted: true });
+        assert.strictEqual(ownSession.message, `${starts}which this window uses for its debug session 'Arm-FVP@GDB (launch)'. ${follows}`);
+        assert.strictEqual(ownSession.hint, `Stop it first once the user agrees (stop_debugging), then repeat this call; or ${another}`);
+        for (const refusal of [starting, board, byTask, byJob, bySession, ownSession]) {
+            assert.ok(!`${refusal.message} ${refusal.hint}`.includes('release'), `${refusal.message} ${refusal.hint}`);
+        }
+
+        const otherLaunch = gdbPortRefusal(launch, 3333, { kind: 'reservation', pid: 70401, name: 'item13', label: 'Arm-FVP@GDB (launch)', what: 'launch' });
+        assert.strictEqual(otherLaunch.message, `${starts}which window 'item13' (pid 70401) has reserved for 'Arm-FVP@GDB (launch)'. ${follows}`);
+        assert.strictEqual(otherLaunch.hint, 'That window keeps the port while its launch may still come up. Wait for it, or end it there once the user agrees: '
+            + `select_debug_window {pid: 70401}, then stop_debugging once its session is up, or a reload of that window if it never comes; or ${another}`);
+        const otherRun = gdbPortRefusal(launch, 3333, { kind: 'reservation', pid: 70401, name: 'item13', label: 'CMSIS Run', what: 'run' });
+        assert.strictEqual(otherRun.hint, 'That window keeps the port while its CMSIS Run may still start. Wait for it, or end it there once the user agrees: '
+            + `cmsis_action stop_run with window: '70401' once it runs, or a reload of that window if it never starts; or ${another}`);
+        const olderWindow = gdbPortRefusal(launch, 3333, { kind: 'reservation', pid: 70401, name: 'item13', label: 'Arm-FVP@GDB (launch)' });
+        assert.ok(olderWindow.hint?.includes('cancel it and reload that window'), 'a window of 2.8 or older keeps its old advice');
+    });
 });

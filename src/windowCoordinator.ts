@@ -271,7 +271,7 @@ export class WindowCoordinator {
         this.portReservations = new GdbPortReservations(this.registry.gdbReservationDirectory(), this.registry.ownPid(), undefined,
             path.dirname(this.registry.gdbReservationDirectory()));
         this.localHandler = new DebuggingHandler(executor, configManager, options.timeoutInSeconds, this.journal,
-            () => this.otherWindowPorts(), this.portReservations);
+            () => this.otherWindowPorts(), this.portReservations, () => this.solutionFile);
     }
 
     /** True when this window owns the well-known port. */
@@ -734,7 +734,8 @@ export class WindowCoordinator {
      * the window listing, and publish again when the answer changed. The
      * extension exports no active solution, so this asks its command. A
      * display detail, not a routing decision: it never throws, and a failed
-     * or slow query keeps the last answer.
+     * or slow query keeps the last answer. The window's `get_session_status`
+     * names this answer when its own question is not back in time (#124).
      */
     private refreshSolutionFile(): void {
         if (this.disposed) { return; }

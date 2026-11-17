@@ -21,44 +21,97 @@
  * it. No TCP connection is made and the real server can bind normally.
  *
  * There is no time-based expiry: a slow flash or picker can outlive a tool
- * deadline. Once a session/task claims the port, its end releases the
- * reservation; a session claims it when its adapter starts (`adoptPort`),
- * whatever the tool call saw. A confirmed start failure releases it too.
- * Shutdown releases this window's claims, and a later contender can reclaim
- * a dead process's claim. Unknown/malformed owners fail closed rather than
- * risk a target.
+ * deadline. A reservation ends only on evidence that its start is gone.
+ * Once a session/task claims the port, its end releases the reservation; a
+ * session claims it when its adapter starts (`adoptPort`), whatever the tool
+ * call saw. A confirmed start failure releases it too. Shutdown releases this
+ * window's claims, and a later contender can reclaim a dead process's claim.
+ * Unknown/malformed owners fail closed rather than risk a target.
+ *
+ * No late start passes this guard: VS Code takes a launch up after awaits of
+ * its own, a CMSIS Run task starts once CMSIS Solution has fetched the
+ * tasks, and VS Code may still "Debug Anyway" after a failed pre-launch task.
+ * A start that VS Code drops tells nobody, so it stays pending: `pending()`
+ * lists what this window reserved and no session or task has taken over, for
+ * the status tools. The window's next start on such a port takes it over
+ * (`acquire` with `takeOver`): the owner record stays, so no other window can
+ * have the port in between. The taken-over reservation still covers the
+ * earlier start, which may yet begin: when the new start is over, it falls
+ * back to that start instead of freeing the port.
  */
 
 import { randomUUID } from 'node:crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { gdbPortRefusal, type PortStart } from './gdbPortGuard';
-import type { GdbPortClaim } from './gdbServerPorts';
+import type { GdbPortClaim, GdbServerKind } from './gdbServerPorts';
 import { ToolError } from './toolResult';
 import { defaultRegistryDir, ensureRegistryDir, isProcessAlive } from '../utils/workspaceRegistry';
 import { logger } from '../utils/logger';
 
 /** A reservation stays held until its confirmed failure or owning session/task ends. */
 export interface GdbPortReservation {
+    /** The reserved port. */
+    readonly port: number;
+    /** True while it is held and no session or task of this window has taken its batch over. */
+    readonly pending: boolean;
     /** A verified session/run owns this batch, even when a periodic port sample missed its start. */
     adopt(): void;
-    /** Idempotent; can remove only this reservation's unique owner record. */
+    /**
+     * Evidence that this start is over: removes this reservation's unique
+     * owner record, or, after a take-over, hands the port back to the earlier
+     * start it still covers. Idempotent; does nothing once taken over.
+     */
     release(): void;
+}
+
+/** One batch of reservations that no session or task of this window has taken over yet: a start in progress, or one VS Code dropped. */
+export interface PendingGdbStart {
+    /** The batch, as `acquire` was given it. */
+    group: string;
+    /** A debug launch (`load_and_debug`, `start_debugging`) or a CMSIS Run (`run`, `load_and_run`). */
+    what: PortStart['what'];
+    /** The launch configuration, or `CMSIS Run`. */
+    label: string;
+    /** The GDB server that would have started, when known. */
+    server?: GdbServerKind;
+    /** The reserved ports, ascending. */
+    ports: number[];
+    /** When its first port was reserved, on the manager's clock. */
+    since: number;
+    /** How long ago that was, on the manager's clock. */
+    ageMs: number;
+}
+
+/** A start of this window that a reservation still covers after a newer start took it over. */
+interface EarlierStart {
+    start: PortStart;
+    since: number;
 }
 
 interface ReservationOwner {
     pid: number;
     name: string;
     label: string;
+    /** What reserved, so that another window's refusal names the way out; records of windows of 2.8 or older lack it. */
+    what?: PortStart['what'];
 }
 
 interface HeldReservation extends GdbPortReservation {
-    port: number;
     directory: string;
     ownerFile: string;
     group: string;
     generation: number;
     adopted: boolean;
+    start: PortStart;
+    since: number;
+    /** The earlier start of this window it took over, which may still begin. */
+    earlier?: EarlierStart;
+}
+
+/** What a reservation is for, as its owner record and the refusals name it: the launch configuration, or the CMSIS Run task. */
+function labelOf(start: PortStart): string {
+    return start.configuration ?? (start.what === 'run' ? 'CMSIS Run' : start.subject);
 }
 
 /** A filesystem error code without assuming a thrown value is an Error. */
@@ -99,15 +152,32 @@ export class GdbPortReservations {
         private readonly pid: number = process.pid,
         private readonly alive: (pid: number) => boolean = isProcessAlive,
         registryRoot?: string,
+        private readonly now: () => number = Date.now,
     ) {
         this.registryRoot = registryRoot ?? (directory === undefined ? defaultRegistryDir() : undefined);
         this.directory = directory ?? path.join(this.registryRoot as string, 'gdb-port-reservations');
     }
 
-    /** Reserve before any asynchronous preflight or launch. A live contender is PROBE_BUSY. */
-    acquire(port: number, start: PortStart, name: string, group: string = randomUUID()): GdbPortReservation {
+    /**
+     * Reserve before any asynchronous preflight or launch. A live contender
+     * is PROBE_BUSY; so is a port this window holds already, named as its own
+     * start, session or task, unless `takeOver` says that this window's
+     * pending start there may be taken over: the caller has checked that
+     * nothing of the window may still take that start over.
+     */
+    acquire(port: number, start: PortStart, name: string, group: string = randomUUID(), takeOver = false): GdbPortReservation {
         if (!Number.isInteger(port) || port < 1 || port > 65535) {
             throw new ToolError('INVALID_ARGUMENT', `Invalid GDB port ${port}.`);
+        }
+        const own = [...this.held].find((held) => held.port === port);
+        if (own) {
+            if (takeOver && !own.adopted) {
+                return this.takeOver(own, start, group);
+            }
+            throw gdbPortRefusal(start, port, {
+                kind: 'own', what: own.start.what, label: labelOf(own.start), ageMs: Math.max(0, this.now() - own.since), adopted: own.adopted,
+                server: own.start.server,
+            });
         }
         const target = path.join(this.directory, `port-${port}`);
         const ownerFile = `owner-${randomUUID()}.json`;
@@ -125,14 +195,14 @@ export class GdbPortReservations {
             }
             staging = fs.mkdtempSync(path.join(this.directory, `.port-${port}-`));
             const prepared = staging;
-            const owner: ReservationOwner = { pid: this.pid, name, label: start.configuration ?? start.subject };
+            const owner: ReservationOwner = { pid: this.pid, name, label: labelOf(start), what: start.what };
             fs.writeFileSync(path.join(staging, ownerFile), JSON.stringify(owner), { mode: 0o600, flag: 'wx' });
             // Bounded retries cover a release/reclaim racing this acquire.
             for (let attempt = 0; attempt < 4; attempt++) {
                 try {
                     fs.renameSync(prepared, target);
                     staging = undefined;
-                    return this.remember(port, target, ownerFile, group);
+                    return this.remember(port, target, ownerFile, group, start);
                 } catch (caught) {
                     if (!['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(codeOf(caught) ?? '')) {
                         throw caught;
@@ -184,7 +254,8 @@ export class GdbPortReservations {
                     throw new Error(`${target} has an invalid owner record`);
                 }
                 if (this.alive(other.pid)) {
-                    throw gdbPortRefusal(start, port, { kind: 'reservation', pid: other.pid, name: other.name, label: other.label });
+                    const what = other.what === 'launch' || other.what === 'run' ? other.what : undefined;
+                    throw gdbPortRefusal(start, port, { kind: 'reservation', pid: other.pid, name: other.name, label: other.label, what });
                 }
                 // Only the reaper that removed this unique dead owner's file
                 // may remove the directory. Another reaper cannot erase a new claim.
@@ -243,16 +314,78 @@ export class GdbPortReservations {
         }
     }
 
-    /** Normal window shutdown: release only records created by this manager. */
+    /**
+     * This window's starts whose reservations no session or task has taken
+     * over: a start in progress, or one that VS Code dropped without a word.
+     * Oldest first, one entry per batch.
+     */
+    pending(): PendingGdbStart[] {
+        const now = this.now();
+        const batches = new Map<string, PendingGdbStart>();
+        for (const held of this.held) {
+            if (held.adopted) {
+                continue;
+            }
+            const batch = batches.get(held.group);
+            if (batch) {
+                batch.ports.push(held.port);
+                batch.since = Math.min(batch.since, held.since);
+            } else {
+                batches.set(held.group, {
+                    group: held.group, what: held.start.what, label: labelOf(held.start), server: held.start.server, ports: [held.port],
+                    since: held.since, ageMs: 0,
+                });
+            }
+        }
+        return [...batches.values()]
+            .map((batch) => ({ ...batch, ports: [...new Set(batch.ports)].sort((a, b) => a - b), ageMs: Math.max(0, now - batch.since) }))
+            .sort((a, b) => a.since - b.since);
+    }
+
+    /** Normal window shutdown: drop only records created by this manager. */
     dispose(): void {
         for (const reservation of [...this.held]) {
-            reservation.release();
+            this.drop(reservation);
         }
     }
 
-    private remember(port: number, directory: string, ownerFile: string, group: string): GdbPortReservation {
+    /**
+     * A new start of this window takes over its own pending reservation of
+     * `previous.port`. The owner record stays on disk, so no other window can
+     * have the port in between, and the earlier start stays covered, since
+     * it may still begin. The earlier start's handle no longer acts on it, and
+     * the new generation keeps an older port sample from adopting or
+     * releasing it.
+     */
+    private takeOver(previous: HeldReservation, start: PortStart, group: string): GdbPortReservation {
+        this.held.delete(previous);
+        const earlier = previous.earlier ?? { start: previous.start, since: previous.since };
+        logger.info(`GDB port ${previous.port}: '${labelOf(start)}' takes over this window's reservation for '${labelOf(earlier.start)}', `
+            + 'which has started no session or task');
+        return this.remember(previous.port, previous.directory, previous.ownerFile, group, start, earlier);
+    }
+
+    /** Remove a reservation's owner record: its start is gone, or the window shuts down. */
+    private drop(reservation: HeldReservation): void {
+        try {
+            removeOwner(reservation.directory, reservation.ownerFile);
+            this.held.delete(reservation);
+        } catch (caught) {
+            // A failed cleanup must neither mask the launch error
+            // nor prevent other window resources from closing.
+            logger.warn(`Could not release GDB port ${reservation.port} reservation`, caught);
+        }
+    }
+
+    private remember(
+        port: number, directory: string, ownerFile: string, group: string, start: PortStart, earlier?: EarlierStart, since: number = this.now(),
+    ): GdbPortReservation {
+        const held = this.held;
         const reservation: HeldReservation = {
-            port, directory, ownerFile, group, generation: ++this.generation, adopted: false,
+            port, directory, ownerFile, group, generation: ++this.generation, adopted: false, start, since, earlier,
+            get pending(): boolean {
+                return held.has(reservation) && !reservation.adopted;
+            },
             adopt: () => {
                 if (!this.held.has(reservation)) {
                     return;
@@ -266,16 +399,16 @@ export class GdbPortReservations {
                 }
             },
             release: () => {
-                if (this.held.has(reservation)) {
-                    try {
-                        removeOwner(directory, ownerFile);
-                        this.held.delete(reservation);
-                    } catch (caught) {
-                        // A failed cleanup must neither mask the launch error
-                        // nor prevent other window resources from closing.
-                        logger.warn(`Could not release GDB port ${port} reservation`, caught);
-                    }
+                if (!this.held.has(reservation)) {
+                    return;
                 }
+                if (reservation.earlier) {
+                    // This start is over, not the earlier one it took over: that one keeps the port, as a pending start of its own.
+                    this.held.delete(reservation);
+                    this.remember(port, directory, ownerFile, randomUUID(), reservation.earlier.start, undefined, reservation.earlier.since);
+                    return;
+                }
+                this.drop(reservation);
             },
         };
         this.held.add(reservation);

@@ -48,8 +48,11 @@
  * meanwhile, and `waitFor` waits for it as it waits for the job. The window's tracker gets that listener from
  * `src/cmsisBuildDiagnosis.ts`; it reads the failed task's definition
  * (`definitionOf`) and stops its re-run when a build starts
- * (`onDidStartExecution`). `src/windowProblems.ts` journals failed jobs and
- * the error lines of failed builds for the problem journal (#48).
+ * (`onDidStartExecution`) or `cmsis_action stop_build` asks for it
+ * (`stopFollowUps`). `src/windowProblems.ts` journals failed jobs and
+ * the error lines of failed builds for the problem journal (#48), and
+ * `src/runOutputCapture.ts` reads the terminal output of the CMSIS Run
+ * tasks it sees start (#134).
  *
  * The class reads its events from a `TaskEventSource` and time from a
  * `TrackerClock`; tests hand it fakes.
@@ -78,12 +81,14 @@ import {
     PENDING_DIAGNOSIS,
     ProbeOwner,
     reduceJob,
+    RunKind,
     settleJob,
     TaskFacts,
     withDiagnosis,
     WORKSPACE_SOURCE,
 } from './core/cmsisTasks';
-import { taskCommandWords } from './core/gdbServerPorts';
+import { runTaskKind, taskCommandWords } from './core/gdbServerPorts';
+import { attachRunOutput, vscodeShellSource } from './runOutputCapture';
 import { logger } from './utils/logger';
 
 /** A task's definition: `type`, and for a build the fields cbuild's command line is made from. */
@@ -145,6 +150,8 @@ export interface LiveExecution {
     /** Already running when the tracker started, so its real start is unknown. */
     readonly seeded: boolean;
     processStartedAt?: number;
+    /** For a CMSIS Run, what its command line says it runs (`runTaskKind`): a GDB server or the FVP model; unset when it says neither. */
+    readonly runKind?: RunKind;
 }
 
 /** What `waitForEnd` found: when each execution ended, and which are still alive. */
@@ -232,6 +239,7 @@ export class CmsisJobTracker {
     private readonly endWatchers = new Set<() => void>();
     private readonly finishListeners = new Set<(job: Job) => void>();
     private readonly diagnosisListeners = new Set<(job: Job) => void>();
+    private readonly followUpStopListeners = new Set<() => void>();
     private readonly startListeners = new Set<(execution: LiveExecution) => void>();
     /** Work that completes a settled job's result (#15), by job id. */
     private readonly followUps = new Map<string, Promise<void>>();
@@ -446,6 +454,28 @@ export class CmsisJobTracker {
     onDidDiagnoseJob(listener: (job: Job) => void): { dispose(): void } {
         this.diagnosisListeners.add(listener);
         return { dispose: () => this.diagnosisListeners.delete(listener) };
+    }
+
+    /**
+     * Ask the work handed to `completeWith` to stop now (`cmsis_action
+     * stop_build`, #135): the diagnostic re-run of cbuild is no task, so
+     * ending tasks does not reach it. The jobs' diagnoses then say what the
+     * work found before the stop.
+     */
+    stopFollowUps(): void {
+        for (const listener of [...this.followUpStopListeners]) {
+            try {
+                listener();
+            } catch (caught) {
+                logger.error('CMSIS job tracker: a follow-up stop listener failed', caught);
+            }
+        }
+    }
+
+    /** Called when `stopFollowUps` asks the work handed to `completeWith` to stop. */
+    onDidRequestFollowUpStop(listener: () => void): { dispose(): void } {
+        this.followUpStopListeners.add(listener);
+        return { dispose: () => this.followUpStopListeners.delete(listener) };
     }
 
     /** The definition of the task an execution the tracker saw ran, by its key; kept while a job or the live list refers to it. */
@@ -738,7 +768,8 @@ export class CmsisJobTracker {
         let entry = this.live.get(known ?? this.liveKeyOf(execution) ?? -1);
         const first = entry === undefined;
         if (!entry) {
-            entry = { key: this.nextKey++, execution, name: facts.name, kind, startedAt: now, seeded };
+            const runKind = kind === 'run' ? runTaskKind(execution.task) : undefined;
+            entry = { key: this.nextKey++, execution, name: facts.name, kind, startedAt: now, seeded, ...(runKind ? { runKind } : {}) };
             this.live.set(entry.key, entry);
             const definition = execution.task?.definition;
             if (definition && typeof definition === 'object') {
@@ -753,7 +784,7 @@ export class CmsisJobTracker {
         if (type === 'processStart' && entry.processStartedAt === undefined) {
             entry.processStartedAt = now;
         }
-        const event: JobEvent = { type, key: entry.key, name: entry.name, kind, at: now };
+        const event: JobEvent = { type, key: entry.key, name: entry.name, kind, at: now, ...(entry.runKind ? { runKind: entry.runKind } : {}) };
         this.dispatch(event);
         if (first && !this.isBound(entry.key)) {
             this.adopt(kind, event);
@@ -955,17 +986,19 @@ function vscodeTaskSource(): TaskEventSource {
 let windowTracker: CmsisJobTracker | undefined;
 let windowDiagnosis: { dispose(): void } | undefined;
 let windowJournal: { dispose(): void } | undefined;
+let windowRunOutput: { dispose(): void } | undefined;
 
 /**
  * This window's tracker, created on first use, with the error lines of
- * failed builds (#15) and its failures journaled in the window's problem
- * journal (#48).
+ * failed builds (#15), its failures journaled in the window's problem
+ * journal (#48), and the output of its CMSIS Run tasks (#134).
  */
 export function windowJobTracker(): CmsisJobTracker {
     if (!windowTracker) {
         windowTracker = new CmsisJobTracker(vscodeTaskSource(), SYSTEM_CLOCK, (message) => logger.info(message));
         windowDiagnosis = attachBuildDiagnosis(windowTracker, vscodeDiagnosisHost(SYSTEM_CLOCK));
         windowJournal = attachJobJournal(windowTracker, problemJournal());
+        windowRunOutput = attachRunOutput(windowTracker, vscodeShellSource(), SYSTEM_CLOCK);
     }
     return windowTracker;
 }
@@ -984,6 +1017,8 @@ export function registerCmsisJobTracker(context: vscode.ExtensionContext): void 
                 windowDiagnosis = undefined;
                 windowJournal?.dispose();
                 windowJournal = undefined;
+                windowRunOutput?.dispose();
+                windowRunOutput = undefined;
                 windowTracker = undefined;
             }
             tracker.dispose();
