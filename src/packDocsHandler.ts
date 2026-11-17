@@ -41,7 +41,7 @@ import { targetParents } from './core/packDocs/serviceDocs';
 import { targetCores, targetSolution } from './core/packDocs/targetDocs';
 import { migrateLegacyDocuments } from './core/packDocs/legacyMigration';
 import { resolveUserDocsDir } from './core/packDocs/userDocs';
-import { DocParent, DocumentFailure, DocumentService } from './docService/contract';
+import { DocParent, DocumentFailure, DocumentInfo, DocumentService } from './docService/contract';
 import type { FetchRecord } from './core/packDocs/pageStore';
 import { inventoryErrorOf, REQUEST_PREFIX, requestErrorText, setInventoryError } from './core/packDocs/inventoryWriter';
 import { runTool } from './core/toolRun';
@@ -972,6 +972,7 @@ export class PackDocsHandler {
         try {
             const lists = await Promise.all(parents.map((parent) => chosen.service.getDocuments(parent, solution)));
             res.serviceDocs = { infos: lists.flat(), view: chosen.view };
+            this.registerServiceRoots(res.serviceDocs.infos);
         } catch (caught) {
             log.warn(`the document service did not answer: ${documentFailureText(caught)}`);
         }
@@ -986,9 +987,19 @@ export class PackDocsHandler {
         const chosen = this.host.documentService?.();
         if (!chosen) { return undefined; }
         const inventory = (chosen.service as { inventoryFile?: unknown }).inventoryFile;
-        return typeof inventory === 'string'
-            ? { view: chosen.view, inventory, dir: path.dirname(inventory) }
-            : { view: chosen.view };
+        if (typeof inventory !== 'string') {
+            return { view: chosen.view };
+        }
+        // The emulator keeps its copies, and their extracted text, under its own folder.
+        this.store.addRoot(path.dirname(inventory));
+        return { view: chosen.view, inventory, dir: path.dirname(inventory) };
+    }
+
+    /** The folders of the service's copies, where their extracted text sits (`PageStore` extracts them in place). */
+    private registerServiceRoots(infos: readonly DocumentInfo[]): void {
+        for (const info of infos) {
+            if (info.path && info.scope !== 'project') { this.store.addRoot(path.dirname(info.path)); }
+        }
     }
 
     /** Move the retired document path's documents into the service, once per machine. Never throws. */

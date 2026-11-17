@@ -229,6 +229,55 @@ suite('pageStore', () => {
         assert.deepStrictEqual(new PageStore(path.join(dir, 'nowhere')).clearExtracted(), { documents: 0, files: 0, bytes: 0 }, 'a missing store is fine');
     });
 
+    test('a document the service keeps is extracted next to its copy and listed from the registered root', async () => {
+        const dir = tmp();
+        const copyDir = path.join(dir, 'docservice', 'files', 'abc');
+        fs.mkdirSync(copyDir, { recursive: true });
+        const copy = path.join(copyDir, 'Vendor_RM.pdf');
+        fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), copy);
+        const store = new PageStore(path.join(dir, 'store'));
+        const doc: DocRef = { id: 'web/vendor/1234', title: 'Vendor RM', scope: 'user', source: 'web', url: 'https://vendor.example/rm.pdf', path: copy, cached: true, indexed: false,
+            service: { parent: { all: true }, name: 'https://vendor.example/rm.pdf', scope: 'user', copy, view: 'the Target Documents view' } };
+        await store.ensure(doc, new FakeExtractor(['1 Intro\nHello']));
+        for (const ext of ['meta.json', 'pages.jsonl', 'idx.json']) {
+            assert.ok(fs.existsSync(path.join(copyDir, `Vendor_RM.${ext}`)), ext);
+        }
+        assert.ok(!fs.existsSync(path.join(dir, 'store', 'web')), 'nothing in the storage directory');
+        assert.deepStrictEqual(store.listCached().map(e => e.id), [], 'an unregistered root is not walked');
+        store.addRoot(path.join(dir, 'docservice'));
+        assert.deepStrictEqual(store.listCached().map(e => e.id), ['web/vendor/1234']);
+        assert.strictEqual(store.clearExtracted().documents, 1);
+        assert.ok(fs.existsSync(copy), 'the copy stays');
+        assert.ok(!fs.existsSync(path.join(copyDir, 'Vendor_RM.meta.json')));
+    });
+
+    test('an index in the storage directory moves next to the copy instead of being extracted again; project documents stay', async () => {
+        const dir = tmp();
+        const copyDir = path.join(dir, 'files', 'def');
+        fs.mkdirSync(copyDir, { recursive: true });
+        const copy = path.join(copyDir, 'ddi0439.pdf');
+        fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), copy);
+        const store = new PageStore(path.join(dir, 'store'));
+        const legacy: DocRef = { id: 'arm/ddi0439-b', title: 'TRM', scope: 'arm', source: 'web', url: 'https://developer.arm.com/documentation/ddi0439/b', path: copy, cached: true, indexed: false };
+        const fake = new FakeExtractor(['1 Intro\nHello']);
+        await store.ensure(legacy, fake);
+        assert.ok(fs.existsSync(path.join(dir, 'store', 'arm', 'ddi0439-b', 'doc.meta.json')), 'written where it was before');
+        const kept: DocRef = { ...legacy, cached: true, indexed: false, service: { parent: { all: true }, name: legacy.url!, scope: 'user', copy, view: 'v' } };
+        const loaded = store.load(kept);
+        assert.ok(loaded, 'still current after the move');
+        assert.strictEqual(fake.calls, 1, 'not extracted again');
+        assert.ok(fs.existsSync(path.join(copyDir, 'ddi0439.meta.json')));
+        assert.ok(!fs.existsSync(path.join(dir, 'store', 'arm')), 'the emptied folder is pruned');
+
+        const projectFile = path.join(dir, 'project', 'docs', 'notes.pdf');
+        fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+        fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), projectFile);
+        const project: DocRef = { id: 'project/x/notes', title: 'Notes', scope: 'project', source: 'workspace', path: projectFile, cached: false, indexed: false,
+            service: { parent: { all: true }, name: 'docs/notes.pdf', scope: 'project', copy: projectFile, view: 'v' } };
+        await store.ensure(project, fake);
+        assert.ok(!fs.existsSync(path.join(path.dirname(projectFile), 'notes.meta.json')), 'nothing written into the project');
+    });
+
     test('concurrent ensure calls share one extraction', async () => {
         const dir = tmp();
         const file = path.join(dir, 'test-rm.pdf');

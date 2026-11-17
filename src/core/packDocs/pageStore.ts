@@ -23,6 +23,15 @@
  *   <storageDir>/workspace/<folder hash>/<file slug>.*               workspace PDFs
  *   <storageDir>/user/<folder hash>/<file slug>.*                    user documents (NDA manuals etc.)
  *   <storageDir>/web/<id path>/doc.{pdf,pages.jsonl,meta.json,idx.json} + fetch.json   fetched web documents
+ *   <copy folder>/<file slug>.*                                      a document the document service keeps
+ *
+ * A document the document service keeps (a user document or a download,
+ * not a project document) is extracted in place: its sidecars sit next to
+ * the service's copy, so they go when the service replaces or removes the
+ * copy. A folder that cannot be written falls back to the layout above, and
+ * sidecars found there are moved next to the copy on first use. The roots
+ * the service keeps copies under are registered (`addRoot`) so the listing
+ * and the clear operations find these sidecars too.
  *
  * A document is re-extracted when its size or mtime changed. Concurrent
  * requests for the same document share one extraction. The store never
@@ -186,12 +195,89 @@ export class PageStore {
     private readonly indexCache = new Map<string, DocIndex>();
     private readonly maxCached = 6;
 
+    /** Folders outside the storage directory that hold sidecars next to the document service's copies. */
+    private readonly roots = new Set<string>();
+
     constructor(private readonly storageDir: string, private readonly log: PackDocsLog = silentLog) { }
 
     /** The storage directory (for diagnostics). */
     get dir(): string { return this.storageDir; }
 
+    /** Register a folder the document service keeps its copies under, for the listing and the clear operations. */
+    addRoot(dir: string): void {
+        this.roots.add(path.resolve(dir));
+    }
+
+    /** The storage directory and the registered roots, each once. */
+    private allRoots(): string[] {
+        return [this.storageDir, ...[...this.roots].filter((root) => root !== path.resolve(this.storageDir))];
+    }
+
+    /**
+     * The sidecars of `doc` next to its document-service copy, when there is
+     * one this extension may write beside: a PDF the service keeps for the
+     * user (a project document lives in the project and stays out of it).
+     */
+    private inPlace(doc: DocRef): { dir: string; fileSlug: string } | undefined {
+        const copy = doc.service?.copy;
+        if (!copy || doc.service?.scope === 'project' || path.extname(copy).toLowerCase() !== '.pdf') {
+            return undefined;
+        }
+        const dir = path.dirname(copy);
+        try {
+            fs.accessSync(dir, fs.constants.W_OK);
+        } catch {
+            return undefined;
+        }
+        return { dir, fileSlug: path.basename(copy).replace(/\.pdf$/i, '') };
+    }
+
     paths(doc: DocRef): Paths {
+        const legacy = this.legacyPaths(doc);
+        const place = this.inPlace(doc);
+        if (!place) {
+            return legacy;
+        }
+        const inPlace: Paths = {
+            ...legacy,
+            dir: place.dir,
+            pages: path.join(place.dir, `${place.fileSlug}.pages.jsonl`),
+            meta: path.join(place.dir, `${place.fileSlug}.meta.json`),
+            index: path.join(place.dir, `${place.fileSlug}.idx.json`),
+        };
+        this.adoptLegacy(doc, legacy, inPlace);
+        return inPlace;
+    }
+
+    /** Move sidecars an earlier release wrote into the storage directory next to the copy, once; a failure leaves them. */
+    private adoptLegacy(doc: DocRef, from: Paths, to: Paths): void {
+        if (fs.existsSync(to.meta) || !fs.existsSync(from.meta)) {
+            return;
+        }
+        try {
+            for (const key of ['pages', 'index', 'meta'] as const) {
+                if (!fs.existsSync(from[key])) { continue; }
+                try {
+                    fs.renameSync(from[key], to[key]);
+                } catch {
+                    // Another volume: copy, then remove.
+                    fs.copyFileSync(from[key], to[key]);
+                    fs.rmSync(from[key], { force: true });
+                }
+            }
+            const meta = JSON.parse(fs.readFileSync(to.meta, 'utf-8')) as StoreMeta;
+            if (doc.path && meta.file !== doc.path) {
+                fs.writeFileSync(to.meta, JSON.stringify({ ...meta, file: doc.path }, null, 2));
+            }
+            this.pruneEmptyDirs(this.storageDir);
+            this.log.info(`${doc.id}: extracted text moved next to the document service's copy in ${to.dir}`);
+        } catch (caught) {
+            this.log.debug(`${doc.id}: extracted text stays in ${from.dir} (${caught instanceof Error ? caught.message : String(caught)})`);
+        }
+    }
+
+    /** The layout inside the storage directory (see the module comment). */
+    private legacyPaths(doc: DocRef): Paths {
         let dir: string;
         let fileSlug: string;
         if (doc.source === 'pack' && doc.packId) {
@@ -297,7 +383,7 @@ export class PageStore {
                 });
             }
         };
-        walk(this.storageDir, 0);
+        for (const root of this.allRoots()) { walk(root, 0); }
         return out.sort((a, b) => a.id.localeCompare(b.id));
     }
 
@@ -360,7 +446,7 @@ export class PageStore {
      */
     storeUsage(): StoreUsage {
         const usage: StoreUsage = { extracted: { documents: 0, files: 0, bytes: 0 }, downloads: { documents: 0, files: 0, bytes: 0 } };
-        for (const f of this.walkFiles(this.storageDir)) {
+        for (const f of this.allRoots().flatMap((root) => [...this.walkFiles(root)])) {
             if (isSidecar(f.name)) {
                 usage.extracted.files++;
                 usage.extracted.bytes += f.size;
@@ -385,7 +471,7 @@ export class PageStore {
      */
     clearExtracted(): ClearResult {
         const result: ClearResult = { documents: 0, files: 0, bytes: 0 };
-        for (const f of this.walkFiles(this.storageDir)) {
+        for (const f of this.allRoots().flatMap((root) => [...this.walkFiles(root)])) {
             if (!isSidecar(f.name)) { continue; }
             try {
                 fs.unlinkSync(f.path);
