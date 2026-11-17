@@ -413,6 +413,19 @@ window's CMSIS job tracker (next section):
   build, rebuild or clean while another of the three is in flight is
   refused: CMSIS Solution would start it only after that one ended, too late
   for the job's not-started window.
+- CMSIS Solution's own `cbuild setup …` (after loading a solution, a target
+  switch or a refresh; `--target database`, `--packs`, `--skip-convert`)
+  belongs to no job, but it is work in flight (#138). A build, rebuild or
+  clean while one runs is held back: `runJob()` arms the job at once, so
+  `status` and a repeat find it, marks it held (`CmsisJobTracker.holdBack`,
+  the job's `heldBy`), and issues the command once no setup is alive any
+  more (`setupsEnded()`). When the call's deadline comes first it answers
+  `running` with the task it waits for, and `issueWhenSetupEnded()` goes on
+  after the call, for at most `SETUP_WAIT_MS` (10 min). The held job is not
+  issued, and its result says why, when `stop_build` stopped it, the active
+  target changed meanwhile, or the setup outlasted that limit; a build of the
+  action that started meanwhile (the panel) becomes its result instead.
+  load, erase and run are not held: they do not run cbuild.
 - `load_and_debug` waits for its pre-launch `CMSIS Load` when the launch
   configuration has one (a failed Load is the answer, before any session
   probe); then it and `attach` wait for a live session and probe its threads
@@ -446,7 +459,10 @@ window's CMSIS job tracker (next section):
   what happens when none does.
 - `status` launches nothing and needs no solution: it waits for the job in
   flight, or lists the recent results, the live CMSIS tasks and the window's
-  pending starts, with the error lines of a failed build once they are in. A
+  pending starts, with the error lines of a failed build once they are in.
+  Without an open job it waits for a running setup as for a job, and while
+  one still runs it answers `running` and never says that nothing is in
+  flight (`idleStatus()`). A
   Load or Erase task alive for `LONG_FLASH_MS` (2 min, `src/handler/jobText.ts`) is stuck, not
   programming: pyOCD waits without a limit for a probe it cannot see or that
   another holds, and says so only in its terminal, which no tool reads.
@@ -465,7 +481,8 @@ window's CMSIS job tracker (next section):
   and one that runs on, which `stop_build` ends. `detach` returns at once.
 - `stop_build` does the same for the build-type tasks of the window (build,
   rebuild, clean, or the `cbuild setup` CMSIS Solution runs after loading a
-  solution), over `cmsis-csolution.stopBuild`, which ends only one of them.
+  solution), over `cmsis-csolution.stopBuild`, which ends only one of them;
+  a build held back behind the setup it stops is stopped before it starts.
   It marks their jobs first (`CmsisJobTracker.requestStop`), so they read as
   stopped once they end, whatever code the task closes with, without a
   failed-build diagnostic rerun. A short deadline also leaves this stop
@@ -839,13 +856,17 @@ job carries a pending `diagnosis` until it is done.
   clean, `--skip-convert` after a fresh index, and the environment CMSIS
   Solution recorded in `.cmsis/tools-environment.yml`. Its log is parsed
   with the parser of `get_build_diagnostics`. The re-run starts only while
-  no other build or setup runs, is killed when one starts or after 30 min
+  no other build runs, is killed when one starts or after 30 min
   (`DIAGNOSTIC_RERUN_CAP_MS`), and can be switched off
   (`build.diagnosticRerun`). The limit is for a tool that hangs, not for a
   long build: after a rebuild or a clean the re-run compiles everything
   again, so it may take as long as a full build, and it goes on as the
   job's follow-up that `status` waits for. It is interim, until CMSIS
-  Solution offers a build log of its own (#21).
+  Solution offers a build log of its own (#21). CMSIS Solution's setup task
+  is no newer build (#138): the re-run waits until no setup runs (at most
+  `SETUP_WAIT_MS`), and one that starts during the re-run stops it; the
+  re-run then waits for that setup and runs again from an empty log, so the
+  build still gets a verified result rather than "another build started".
 
 A stop ends what the re-run reports (#135). Killing it makes ninja print a
 `FAILED:` step for the compiler it ended and cbuild an `error building`

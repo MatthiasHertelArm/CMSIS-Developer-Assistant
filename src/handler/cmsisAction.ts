@@ -39,7 +39,14 @@
  * rebuild, clean, load, erase or load_and_run attaches to the job in flight
  * instead of starting a second one. A build, rebuild or clean while another
  * of the three is in flight is refused: CMSIS Solution would start it only
- * after that one ended.
+ * after that one ended. A build, rebuild or clean while CMSIS Solution's own
+ * setup task (`cbuild setup …`, after loading a solution or a target switch)
+ * runs is held back until the setup ended (#138): the job is armed at once,
+ * so `status` and a repeat find it, and its command goes out once no setup
+ * is alive any more — after the call answered `running`, if need be. Held
+ * longer than `SETUP_WAIT_MS`, stopped by stop_build, or overtaken by a
+ * switch to another target, it is not started, and its result says why.
+ * Without an open job, `status` waits for a running setup as for a job.
  *
  * Before anything is issued (#46): a debug session refuses load_and_debug and
  * attach, the probe guard refuses what CMSIS Run, a Load, an Erase, `flash` or
@@ -93,6 +100,7 @@ import {
     JobAction,
     NOTHING_STARTED_MS,
     runtimeOf,
+    SETUP_WAIT_MS,
 } from '../core/cmsisTasks';
 import { idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
 import {
@@ -643,18 +651,110 @@ async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<strin
     if (issue.portReservations?.length) {
         followStartJob(issue, job);
     }
-    try {
-        await issueCommand(issue, action, isBuildAction(action) ? (value) => tracker.identify(job.id, value) : undefined);
-    } catch (caught) {
-        tracker.settle(job.id, 'not-started', 'Its command failed.');
-        throw caught;
+    let issueNow = true;
+    if (isBuildAction(action) && tracker.setupExecutions().length > 0) {
+        // CMSIS Solution's setup is running: the build goes out once it ended (#138).
+        if (!await setupsEnded(issue, job.id, answerBy(issue))) {
+            void issueWhenSetupEnded(issue, job.id, action);
+            const held = tracker.job(job.id) ?? job;
+            return jobResult(held, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface });
+        }
+        issueNow = await mayIssueAfterHold(issue, job.id, action);
     }
-    tracker.issued(job.id);
+    if (issueNow) {
+        try {
+            await issueCommand(issue, action, isBuildAction(action) ? (value) => tracker.identify(job.id, value) : undefined);
+        } catch (caught) {
+            tracker.settle(job.id, 'not-started', 'Its command failed.');
+            throw caught;
+        }
+        tracker.issued(job.id);
+    }
     const outcome = await tracker.waitFor(job.id, answerBy(issue)) ?? job;
     const program = failedTaskProgram(issue.context.host, tracker, issue.solutionPath);
     // The last lines of a CMSIS Run that ended arrive just after its end (#134).
     const output = await runOutputsOf(tracker, [outcome], issue.context.host.now(), answerBy(issue) - issue.context.host.now());
     return jobResult(outcome, { tag: issue.tag, now: issue.context.host.now(), command: issue.command, labels, preface, program, output });
+}
+
+/**
+ * Hold job `id` back while CMSIS Solution's setup tasks run (#138): true once
+ * none is alive any more, or the job settled meanwhile (stop_build); false
+ * when `until` (the host's clock) came first. A setup that follows another
+ * is waited for too.
+ */
+async function setupsEnded(issue: Pick<Issue, 'tracker' | 'context'>, id: string, until: number): Promise<boolean> {
+    const { tracker } = issue;
+    const { host } = issue.context;
+    for (;;) {
+        const setups = tracker.setupExecutions();
+        const job = tracker.job(id);
+        if (setups.length === 0 || !job || isSettled(job.state)) {
+            tracker.release(id);
+            return true;
+        }
+        tracker.holdBack(id, setups[setups.length - 1].name);
+        const left = until - host.now();
+        if (left <= 0) {
+            return false;
+        }
+        await tracker.waitForEnd(setups.map((setup) => setup.execution), left);
+    }
+}
+
+/**
+ * After the hold: may the held job's command go out? Not when the job
+ * settled meanwhile (stop_build), nor when a build of its action already
+ * started for it (the panel), nor when the active target is no longer the
+ * job's — the setup it waited for may have been a switch to another one.
+ * The job is settled with the reason in the last case.
+ */
+async function mayIssueAfterHold(issue: Issue, id: string, action: JobAction): Promise<boolean> {
+    const job = issue.tracker.job(id);
+    if (!job || isSettled(job.state) || executionIn(job, 'main') !== undefined) {
+        return false;
+    }
+    const active = await activeTargetName();
+    if (issue.target !== undefined && active !== undefined && active !== issue.target) {
+        issue.tracker.settle(id, 'not-started', `The active target changed to '${active}' meanwhile, so the ${action} of '${issue.target}' `
+            + 'did not go out.');
+        return false;
+    }
+    return true;
+}
+
+/**
+ * The rest of a held build after its call answered `running` (#138): wait
+ * for the setups to end (at most `SETUP_WAIT_MS` from the start of the hold),
+ * then issue the command with a kick-off of its own. Never rejects: what goes
+ * wrong settles the job, and `status` reports it.
+ */
+async function issueWhenSetupEnded(issue: Issue, id: string, action: JobAction): Promise<void> {
+    const { tracker } = issue;
+    const { host } = issue.context;
+    try {
+        const since = tracker.job(id)?.heldBy?.since ?? host.now();
+        if (!await setupsEnded(issue, id, since + SETUP_WAIT_MS)) {
+            const name = tracker.job(id)?.heldBy?.name ?? 'cbuild setup';
+            tracker.settle(id, 'not-started', `'${name}' was still running after ${formatDuration(SETUP_WAIT_MS)}, so the ${action} did not go out; `
+                + 'it may be stuck: cmsis_action stop_build ends it.');
+            return;
+        }
+        if (!await mayIssueAfterHold(issue, id, action)) {
+            return;
+        }
+        const late: Issue = { ...issue, deadline: host.now() + KICKOFF_MS + DEADLINE_MARGIN_MS };
+        try {
+            await issueCommand(late, action, (value) => tracker.identify(id, value));
+        } catch (caught) {
+            tracker.settle(id, 'not-started', `Its command failed: ${failureText(caught)}`);
+            return;
+        }
+        tracker.issued(id);
+    } catch (caught) {
+        logger.warn(`CMSIS ${action}: the held job ${id} could not be started`, caught);
+        tracker.settle(id, 'not-started', `Starting it failed: ${failureText(caught)}`);
+    }
 }
 
 /** A repeated build, rebuild, clean, load, erase, run or load_and_run waits for the job in flight instead of starting a second one (#12). */
@@ -695,13 +795,29 @@ async function reportStatus(context: CmsisActionContext, deadline: number): Prom
     const open = tracker.openJobs();
     const latest = open[open.length - 1];
     if (!latest) {
+        // CMSIS Solution's own setup is work in flight, though no job's (#138): status waits for it as for a job.
+        const setups = tracker.setupExecutions();
+        if (setups.length > 0) {
+            await tracker.waitForEnd(setups.map((setup) => setup.execution), deadline - DEADLINE_MARGIN_MS - host.now());
+        }
         const completing = tracker.recent().find((job) => tracker.isCompleting(job.id));
         if (completing) {
             await tracker.waitFor(completing.id, deadline - DEADLINE_MARGIN_MS);
         }
         const output = await runOutputsOf(tracker, tracker.recent(), host.now(), deadline - DEADLINE_MARGIN_MS - host.now());
         // A launch without a pre-launch task has no job to show: its GDB port reservation says what is waiting (#127).
-        return [idleStatus(tracker.recent(), tracker.liveExecutions(), host.now(), output), ...pendingStartLines(context.executor, host)].join('\n');
+        const live = tracker.liveExecutions();
+        const text = [idleStatus(tracker.recent(), live, host.now(), output), ...pendingStartLines(context.executor, host)].join('\n');
+        const setup = tracker.setupExecutions()[0];
+        if (!setup) {
+            return text;
+        }
+        return {
+            text: `${text}\nThis is not a failure: call cmsis_action {action:'status'} again to wait for the setup — a build, rebuild or clean `
+                + 'started now waits for it too.',
+            status: 'running',
+            data: { task: { name: setup.name, kind: setup.kind, elapsedMs: setup.seeded ? null : Math.max(0, host.now() - setup.startedAt) } },
+        };
     }
     const others = open.filter((job) => job.id !== latest.id).map((job) => `${job.action} (job ${job.id})`);
     const preface = others.length > 0 ? `Also in flight: ${others.join(', ')}. ` : undefined;
@@ -857,7 +973,12 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
     if (running.length === 0) {
         return stopChecks(issue);
     }
-    const jobs = tracker.requestStop(running);
+    // A build held back behind the setup this stops would go out once it ended (#138): it is stopped before it starts.
+    const held = tracker.heldJobs();
+    for (const job of held) {
+        tracker.settle(job.id, 'cancelled', 'cmsis_action stop_build stopped it before its command went out.');
+    }
+    const jobs = [...held, ...tracker.requestStop(running)];
     let direct = '';
     try {
         await issueCommand(issue, 'stop_build');

@@ -72,6 +72,20 @@ export const BUILD_TASK_TYPE = 'cmsis-csolution.build';
 /** The kinds of the build task type; CMSIS Solution runs one at a time, and its Stop Build ends any of them. */
 export const BUILD_TASK_KINDS: ReadonlySet<CmsisTaskKind> = new Set<CmsisTaskKind>(['build', 'rebuild', 'clean', 'setup']);
 /**
+ * CMSIS Solution's own background work on the build task type: `cbuild setup`
+ * (`setup: true`), which it runs after loading a solution, a target switch or
+ * a refresh, with `--target database`, `--packs`, `--skip-convert` as the
+ * case needs. It belongs to no `cmsis_action` job, but a build, rebuild or
+ * clean and the diagnostic re-run of cbuild wait for it to end (#138).
+ */
+export const SETUP_TASK_KINDS: ReadonlySet<CmsisTaskKind> = new Set<CmsisTaskKind>(['setup']);
+/**
+ * How long a build, rebuild or clean held back behind a setup task, and a
+ * diagnostic re-run of cbuild, wait for it to end (#138). A setup that
+ * downloads packs can take minutes; one that runs longer is taken as stuck.
+ */
+export const SETUP_WAIT_MS = 10 * 60_000;
+/**
  * The exit code CMSIS Solution (1.72.0) closes a build task with when it is
  * stopped: its task runner's `terminateProcess`, behind Stop Build.
  */
@@ -256,6 +270,11 @@ export interface Job {
     readonly notes: readonly string[];
     /** Why a failed build failed (#15), attached after the job settled; see `JobDiagnosis`. */
     readonly diagnosis?: JobDiagnosis;
+    /**
+     * Set while the job's command is held back until CMSIS Solution's setup
+     * task ends (#138): the task's name and since when the job waits.
+     */
+    readonly heldBy?: { readonly name: string; readonly since: number };
 }
 
 /**
