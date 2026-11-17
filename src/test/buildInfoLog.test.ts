@@ -120,6 +120,31 @@ suite('buildInfo/buildLog', () => {
         assert.deepStrictEqual(s.failedSteps, ['…/Test/DUT/startup_stm32f746xx.o']);
     });
 
+    test('a CMake message that continues after a blank line keeps its text: the path of a missing source file (#144)', () => {
+        const s = parseBuildLog([
+            'CMake Error at C:/w/SEGGER-RTT/tmp/CMakeLists.txt:91 (add_library):',
+            '  Cannot find source file:',
+            '',
+            '    C:/Users/dev/AppData/Local/Arm/Packs/Vendor/DFP/1.0.0/Source/system.c',
+            '',
+            '  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm',
+            '  .ccm .cxxm .c++m .h .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90',
+            '',
+            '',
+            'CMake Error at C:/w/SEGGER-RTT/tmp/CMakeLists.txt:91 (add_library):',
+            '  No SOURCES given to target: Group_Device',
+            '',
+            'CMake Warning (dev) at CMakeLists.txt:3 (project):',
+            '  Policy CMP0048 is not set',
+            'Call Stack (most recent call first):',
+        ].join('\r\n'), 'cmake.log');
+        assert.deepStrictEqual(s.diagnostics.map((d) => [d.severity, d.file, d.line, d.message]), [
+            ['error', 'C:/w/SEGGER-RTT/tmp/CMakeLists.txt', 91,
+                'Cannot find source file: C:/Users/dev/AppData/Local/Arm/Packs/Vendor/DFP/1.0.0/Source/system.c'],
+            ['error', 'C:/w/SEGGER-RTT/tmp/CMakeLists.txt', 91, 'No SOURCES given to target: Group_Device'],
+        ]);
+    });
+
     test('csolution lines with the YAML file\'s location before " - ": Windows and POSIX paths, spaces, no line, CRLF', () => {
         // A tester's schema error (Windows), the forms the knowledge index cites, and the plain form without a location.
         const s = parseBuildLog([
