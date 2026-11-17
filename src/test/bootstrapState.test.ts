@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// What an empty window lacks, as the refusals and status lines say it; the active-solution line; path comparison, the CMSIS Solution extension's csolution search and the csolution walk of open_solution.
+// What an empty window lacks, as the refusals and status lines say it; the active-solution line; path comparison, the CMSIS Solution extension's csolution search, the csolution walk and the project root of open_solution.
 
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -29,6 +29,7 @@ import {
     missingSolutionExtensionRefusal,
     noSolutionRefusal,
     noWorkspaceRefusal,
+    projectRootOf,
     samePath,
     solutionStatusLine,
 } from '../core/bootstrapState';
@@ -144,6 +145,38 @@ suite('Bootstrap state', () => {
         assert.strictEqual(listedSolutionExclude(42), '**/.*/**');
         assert.strictEqual(listedSolutionExclude(' **/legacy/** '), '{**/.*/**,**/legacy/**}');
         assert.strictEqual(listedSolutionExclude('{**/a/**, **/b/**}'), '{**/.*/**,**/a/**, **/b/**}');
+    });
+
+    test('the project root open_solution opens for a csolution: the nearest folder with .git or vcpkg-configuration.json, never home or above (#145)', () => {
+        const markers = (...present: string[]): ((file: string) => boolean) => (file) => present.includes(file);
+        const home = '/home/u';
+        const solution = '/home/u/repo/Infineon/T2G-B-H/App.csolution.yml';
+        // The manifest at the repository root, the .git folder there, or a .git file (a worktree, a submodule): all the same.
+        assert.strictEqual(projectRootOf(solution, home, markers('/home/u/repo/vcpkg-configuration.json'), 'linux'), '/home/u/repo');
+        assert.strictEqual(projectRootOf(solution, home, markers('/home/u/repo/.git'), 'linux'), '/home/u/repo');
+        // The nearest marker wins, the csolution's own folder included.
+        assert.strictEqual(projectRootOf(solution, home, markers('/home/u/repo/.git', '/home/u/repo/Infineon/vcpkg-configuration.json'), 'linux'),
+            '/home/u/repo/Infineon');
+        assert.strictEqual(projectRootOf(solution, home, markers('/home/u/repo/.git', '/home/u/repo/Infineon/T2G-B-H/.git'), 'linux'),
+            '/home/u/repo/Infineon/T2G-B-H');
+        // No marker, or one only in home or above it: the csolution's own folder.
+        assert.strictEqual(projectRootOf(solution, home, markers(), 'linux'), '/home/u/repo/Infineon/T2G-B-H');
+        assert.strictEqual(projectRootOf(solution, home, markers('/home/u/.git', '/home/.git', '/.git'), 'linux'), '/home/u/repo/Infineon/T2G-B-H');
+        // Outside home the walk goes up to the file system root, which it never takes.
+        assert.strictEqual(projectRootOf('/opt/fw/app/App.csolution.yml', home, markers('/opt/fw/.git'), 'linux'), '/opt/fw');
+        assert.strictEqual(projectRootOf('/opt/fw/app/App.csolution.yml', home, markers('/.git'), 'linux'), '/opt/fw/app');
+        // Beside home, the folders that hold home are not taken either.
+        assert.strictEqual(projectRootOf('/home/shared/app/App.csolution.yml', home, markers('/home/.git'), 'linux'), '/home/shared/app');
+        assert.strictEqual(projectRootOf('/home/shared/app/App.csolution.yml', home, markers('/home/shared/.git'), 'linux'), '/home/shared');
+        // Windows: home compared without letter case, the drive root never taken.
+        const asked: string[] = [];
+        const winRoot = projectRootOf('C:\\Users\\U\\repo\\app\\App.csolution.yml', 'c:\\users\\u', (file) => {
+            asked.push(file);
+            return false;
+        }, 'win32');
+        assert.strictEqual(winRoot, 'C:\\Users\\U\\repo\\app');
+        assert.deepStrictEqual(asked, ['C:\\Users\\U\\repo\\app\\.git', 'C:\\Users\\U\\repo\\app\\vcpkg-configuration.json',
+            'C:\\Users\\U\\repo\\.git', 'C:\\Users\\U\\repo\\vcpkg-configuration.json']);
     });
 
     suite('the csolution walk', () => {
