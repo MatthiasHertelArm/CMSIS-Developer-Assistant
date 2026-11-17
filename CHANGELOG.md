@@ -34,6 +34,8 @@ CMSIS Solution's API version 3 behind `cmsis_query` and `cmsis_action` (proposal
 - Agent-visible texts: the `cmsis_action` and `cmsis_query` descriptions and enums, the `cmsis-action` topic of the agent guide (one row for `convert`); surface snapshot updated. `tools/list` stays within its budget of 33 200 bytes.
 
 ### Fixed
+- **`activate_environment` answers when the environment was already current.** CMSIS Solution rewrites `.cmsis/tools-environment.yml` only when the environment changed, so the call waited for a rewrite that never came and answered `running` after two minutes. It now follows the Arm Tools Environment Manager's activation events: an unchanged record a few seconds after the activation is ✅ "already current", and a failed activation is `TASK_FAILED`.
+- **A build that fails in ninja itself shows the error.** `ninja: error: '<file>', needed by '<target>', missing and no known rule to make it` was not recognised, so `cmsis_action build` and `get_build_diagnostics` said the log held no error line in a known format. Such lines are now errors, with the missing file as their location.
 - **`flash` waits for a pyOCD that starts slowly the first time.** The first start of a freshly installed or updated CMSIS Debugger's pyOCD on macOS can take longer than the 5 s `--version` check, and `flash` then said pyOCD was not found. A check that runs out of time now gets one 60 s wait. Found on an FRDM-MCXA156 over its on-board CMSIS-DAP (MCU-Link).
 
 ## [2.9.0] - 2026-11-11

@@ -427,8 +427,13 @@ window's CMSIS job tracker (next section):
   command is not registered (the extension is missing) or the solution has
   no manifest, and otherwise waits as `refresh` does, for the record to
   change and stay unchanged one more look, then lists the tools it names
-  (`readToolsEnvironment()`); a resolution that outlasts the wait answers
-  `running`. The task actions compare the two files first
+  (`readToolsEnvironment()`). The command itself settles at once, so the
+  Environment Manager's API events (`onDidActivate`,
+  `onDidFailActivation`, `watchActivation()`) say when the activation is
+  over: CMSIS Solution rewrites the record only when the environment
+  changed, so a record still unchanged a few seconds after the event means
+  the environment was current, and a failure event is `TASK_FAILED`. A
+  resolution that outlasts the wait answers `running`. The task actions compare the two files first
   (`staleEnvironmentNote()`): a manifest newer than the record, or a record
   that is missing, puts one sentence before the result, so that a build
   that ran with the tools of an earlier activation says so.

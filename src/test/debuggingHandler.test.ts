@@ -4450,6 +4450,39 @@ suite('DebuggingHandler', () => {
                         /^CMSIS 'activate_environment' on HE issued via 'environment-manager\.reactivate'; CMSIS Solution has not rewritten \.cmsis\/tools-environment\.yml after [\d.]+ s\. /);
                     assert.strictEqual(activations, 2);
 
+                    // The record stays as it is when the environment did not change: the Environment Manager's event
+                    // ends the wait (FRDM-MCXA156 run, 2026-11-17); its failure event is a failure.
+                    const listeners: { activate?: () => void; fail?: () => void } = {};
+                    const manager = {
+                        onDidActivate: (listener: () => void) => { listeners.activate = listener; return { dispose: () => { listeners.activate = undefined; } }; },
+                        onDidFailActivation: (listener: () => void) => { listeners.fail = listener; return { dispose: () => { listeners.fail = undefined; } }; },
+                    };
+                    const extensions = vscode.extensions as { getExtension: typeof vscode.extensions.getExtension };
+                    const realGetExtension = extensions.getExtension;
+                    extensions.getExtension = ((id: string) => (id === 'Arm.environment-manager'
+                        ? { exports: { getApi: (version: number) => (version === 1 ? manager : undefined) } }
+                        : realGetExtension(id))) as typeof vscode.extensions.getExtension;
+                    try {
+                        again();
+                        solutionOn('HE', {
+                            'cmsis-csolution.getSolutionFile': () => solutionFile,
+                            'environment-manager.reactivate': () => { setTimeout(() => listeners.activate?.(), 20); },
+                        });
+                        assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 30_000 })),
+                            /^✅ CMSIS 'activate_environment' on HE: vcpkg-configuration\.json was activated after [\d.]+ s; CMSIS Solution left \.cmsis\/tools-environment\.yml as it was, so the environment was already current\. Tools of the CMSIS tasks:\n  CMSIS-Toolbox 2\.15\.1\n/);
+                        assert.strictEqual(listeners.activate, undefined, 'the listener is disposed');
+
+                        again();
+                        solutionOn('HE', {
+                            'cmsis-csolution.getSolutionFile': () => solutionFile,
+                            'environment-manager.reactivate': () => { setTimeout(() => listeners.fail?.(), 20); },
+                        });
+                        const failedActivation = await refusalOf(w.handler.handleCmsisCommand({ action: 'activate_environment', timeoutMs: 30_000 }), 'TASK_FAILED');
+                        assert.ok(failedActivation.message.endsWith('the Arm Tools Environment Manager could not activate vcpkg-configuration.json.'), failedActivation.message);
+                    } finally {
+                        extensions.getExtension = realGetExtension;
+                    }
+
                     // Without the Environment Manager the command is not registered: refused before anything runs.
                     again();
                     solutionOn('HE', { 'cmsis-csolution.getSolutionFile': () => solutionFile });

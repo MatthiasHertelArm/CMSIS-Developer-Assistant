@@ -126,6 +126,9 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
     // column (`/.cbuild-pack.yml - error csolution: ...`). The file is absolute, POSIX or Windows, spaces included.
     const cbuildRe = /^(?:((?:[A-Za-z]:[\\/]|\/)[^:"]*?)(?::(\d+)(?::(\d+))?)?\s+-\s+)?(error|warning|info)\s+(csolution|cbuild|cpackget|cbuild2cmake|cbuildgen):\s*(.*?)\s*$/;
     const ninjaFailedRe = /^FAILED:\s*(?:\[code=\d+\]\s*)?(.*?)\s*$/;
+    // ninja's own: `ninja: error: 'x.sds', needed by 'y.h', missing and no known rule to make it`, `ninja: error: loading 'build.ninja': …`.
+    const ninjaErrorRe = /^ninja: (error|warning): (.*?)\s*$/;
+    const ninjaMissingRe = /^'([^']+)', needed by '([^']+)', (missing and no known rule to make it)$/;
     const contextRe = /^\(\d+\/\d+\) Building context:\s*"?([^"]+)"?\s*$/;
     const compilerRe = /^(?:Using compiler:\s*(.+)|Using (\S+ V[\d.]+) compiler,.*)$/;
     const statusRe = /^(Build summary: .*|.*build (?:finished successfully|failed)!?|ninja: build stopped: .*|ninja: no work to do\.|.*Build completed successfully.*|.*Build failed.*|Finished: \d+ information, \d+ warning, \d+ error and \d+ fatal error messages\.)\s*$/i;
@@ -149,6 +152,14 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
         if ((m = line.match(compilerRe))) { summary.compilerLine = (m[1] ?? m[2]).trim(); return; }
         if ((m = line.match(ninjaFailedRe))) { summary.failedSteps.push(shortPath(m[1].split(/\s+/)[0] ?? m[1])); return; }
         if ((m = line.match(statusRe))) { summary.status = m[1].trim(); return; }
+        if ((m = line.match(ninjaErrorRe))) {
+            const missing = m[2].match(ninjaMissingRe);
+            // The missing file is the location; the message keeps what needs it, short, so a clipped line still says why.
+            push(missing
+                ? { severity: sev(m[1]), file: missing[1], message: `${missing[3]} (needed by ${shortPath(missing[2])})`, tool: 'ninja' }
+                : { severity: sev(m[1]), message: m[2], tool: 'ninja' }, n);
+            return;
+        }
         if ((m = line.match(cmakeRe))) {
             pendingCMake = { d: { severity: sev(m[1]), file: m[2], line: m[3] ? Number(m[3]) : undefined, message: m[4], tool: 'cmake' }, logLine: n };
             return;

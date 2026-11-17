@@ -2069,34 +2069,96 @@ async function activateEnvironment(issue: Issue, solutionPath: string): Promise<
     }
     const before = mtimeOf(environment);
     const issuedAt = host.now();
-    await issueCommand(issue, 'activate_environment', undefined, [vscode.Uri.file(configuration)]);
-    let seen: number | undefined;
-    for (;;) {
-        const now = mtimeOf(environment);
-        if (now !== undefined && now !== before && now === seen) {
-            break;
+    // The command settles at once (measured: 68 ms); the Environment Manager's own events say when the activation is over.
+    // CMSIS Solution rewrites the record only when the environment changed, so an unchanged file a little after the
+    // activation is an answer too (FRDM-MCXA156 run, 2026-11-17).
+    const activation = watchActivation(() => host.now());
+    try {
+        await issueCommand(issue, 'activate_environment', undefined, [vscode.Uri.file(configuration)]);
+        let seen: number | undefined;
+        for (;;) {
+            const now = mtimeOf(environment);
+            if (now !== undefined && now !== before && now === seen) {
+                break;
+            }
+            if (activation.failed) {
+                throw new ToolError('TASK_FAILED',
+                    `CMSIS 'activate_environment'${issue.tag}: the Arm Tools Environment Manager could not activate ${path.basename(configuration)}.`,
+                    'Its output channel "Arm Tools" says why (a tool that did not download, a licence): ask the user to look, fix it, then call cmsis_action activate_environment again.');
+            }
+            if (now !== undefined && now === before && activation.at !== undefined && host.now() - activation.at >= UNCHANGED_ENVIRONMENT_GRACE_MS) {
+                return unchangedActivationResult(issue.tag, path.basename(configuration), environment, host.now() - issuedAt);
+            }
+            seen = now;
+            if (host.now() >= answerBy(issue)) {
+                return {
+                    text: `CMSIS 'activate_environment'${issue.tag} issued via '${issue.command}'; CMSIS Solution has not rewritten `
+                        + `${TOOLS_ENVIRONMENT_FILE} after ${formatDuration(host.now() - issuedAt)}. The Environment Manager may still download tools, `
+                        + 'or wait for the user in the window (a licence or an activation prompt): ask the user to look, then call '
+                        + 'cmsis_action activate_environment again — a second activation of the same manifest is harmless.',
+                    status: 'running',
+                };
+            }
+            await host.sleep(REFRESH_POLL_MS);
         }
-        seen = now;
-        if (host.now() >= answerBy(issue)) {
-            return {
-                text: `CMSIS 'activate_environment'${issue.tag} issued via '${issue.command}'; CMSIS Solution has not rewritten `
-                    + `${TOOLS_ENVIRONMENT_FILE} after ${formatDuration(host.now() - issuedAt)}. The Environment Manager may still download tools, `
-                    + 'or wait for the user in the window (a licence or an activation prompt): ask the user to look, then call '
-                    + 'cmsis_action activate_environment again — a second activation of the same manifest is harmless.',
-                status: 'running',
-            };
+        let tools: ToolsEnvironment;
+        try {
+            tools = readToolsEnvironment(fs.readFileSync(environment, 'utf8'));
+        } catch (caught) {
+            throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${issue.tag}: ${environment} was rewritten, but it could not be read (${failureText(caught)}).`);
         }
-        await host.sleep(REFRESH_POLL_MS);
+        // The API's environment from before the activation may lack the tools it just activated (measured: test/measure/solution-api).
+        resetApiToolsEnvironment();
+        return activationResult(issue.tag, path.basename(configuration), tools, host.now() - issuedAt);
+    } finally {
+        activation.dispose();
     }
-    let tools: ToolsEnvironment;
+}
+
+/** What the Environment Manager reported since `watchActivation` began: when an activation ended, or that one failed. */
+interface ActivationWatch {
+    at?: number;
+    failed?: boolean;
+    dispose(): void;
+}
+
+/** The Environment Manager's activation events (its API version 1), or a watch that never fires when it offers none. */
+function watchActivation(now: () => number): ActivationWatch {
+    const watch: ActivationWatch = { dispose: () => undefined };
+    try {
+        const exports = vscode.extensions.getExtension(ENVIRONMENT_EXTENSION)?.exports as { getApi?: (version: number) => unknown } | undefined;
+        const manager = exports?.getApi?.(1) as { onDidActivate?: vscode.Event<unknown>; onDidFailActivation?: vscode.Event<unknown> } | undefined;
+        const subscriptions = [
+            manager?.onDidActivate?.(() => { watch.at = now(); }),
+            manager?.onDidFailActivation?.(() => { watch.failed = true; }),
+        ].filter((s): s is vscode.Disposable => s !== undefined);
+        watch.dispose = () => subscriptions.forEach((s) => s.dispose());
+    } catch (caught) {
+        logger.debug(`activate_environment: no activation events from ${ENVIRONMENT_EXTENSION} (${failureText(caught)})`);
+    }
+    return watch;
+}
+
+/** How long the record may stay unchanged after the Environment Manager's command settled before the environment counts as current. */
+const UNCHANGED_ENVIRONMENT_GRACE_MS = 5_000;
+
+/** The answer of `activate_environment` when the activation ended and CMSIS Solution kept the record: the environment was current. */
+function unchangedActivationResult(tag: string, manifest: string, environment: string, tookMs: number): ToolText {
+    resetApiToolsEnvironment();
+    let tools: ToolsEnvironment | undefined;
     try {
         tools = readToolsEnvironment(fs.readFileSync(environment, 'utf8'));
-    } catch (caught) {
-        throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${issue.tag}: ${environment} was rewritten, but it could not be read (${failureText(caught)}).`);
+    } catch {
+        tools = undefined;
     }
-    // The API's environment from before the activation may lack the tools it just activated (measured: test/measure/solution-api).
-    resetApiToolsEnvironment();
-    return activationResult(issue.tag, path.basename(configuration), tools, host.now() - issuedAt);
+    const named = (tools?.tools ?? []).map((tool) => (tool.version && !tool.name.includes(tool.version) ? `${tool.name} ${tool.version}` : tool.name));
+    const listed = named.slice(0, ENVIRONMENT_TOOLS_LISTED).map((line) => `  ${line}`);
+    if (named.length > ENVIRONMENT_TOOLS_LISTED) {
+        listed.push(`  … ${named.length - ENVIRONMENT_TOOLS_LISTED} more`);
+    }
+    const inventory = listed.length > 0 ? ` Tools of the CMSIS tasks:\n${listed.join('\n')}\n` : ' ';
+    return `✅ CMSIS 'activate_environment'${tag}: ${manifest} was activated after ${formatDuration(tookMs)}; CMSIS Solution left `
+        + `${TOOLS_ENVIRONMENT_FILE} as it was, so the environment was already current.${inventory}Next: cmsis_action build.`;
 }
 
 /** The answer of `activate_environment`: the tools the rewritten record names. */
