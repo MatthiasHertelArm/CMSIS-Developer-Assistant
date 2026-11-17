@@ -20,7 +20,7 @@
  * extension reports as active (`cmsis-csolution.getActiveTargetSet`, same
  * format), listing the target-types a csolution declares, and editing the
  * extension's `.vscode/cmsis.json` selection so a re-activated solution comes
- * up on the requested target.
+ * up on the requested target, and naming the solution a folder opens with.
  *
  * The cmsis.json layout mirrors what the CMSIS Solution extension (1.72.0,
  * `CmsisSettingsJsonFile`) reads and writes itself:
@@ -212,6 +212,23 @@ export function applyTargetSelection(
         text = applyEdits(text, modify(text, [...selection, type], setIndex, { formattingOptions }));
     }
     return text.endsWith('\n') ? text : `${text}\n`;
+}
+
+/**
+ * Return cmsis.json text that names `solutionPath` as the active solution
+ * of the folder `workspaceFolder`: `activeSolution`, the csolution path
+ * relative to the `.vscode` folder with forward slashes, as the extension
+ * writes it itself (1.72.0 `setActiveSolution`). The extension reads it when
+ * the folder opens and remembers no other solution for it, which is how
+ * `open_solution` gets a csolution below the opened folder activated (#145).
+ * Existing content is preserved, as in `applyTargetSelection`.
+ */
+export function applyActiveSolution(cmsisJsonText: string, workspaceFolder: string, solutionPath: string): string {
+    const formattingOptions = { insertSpaces: true, tabSize: 4, eol: '\n' };
+    const relative = path.relative(path.join(workspaceFolder, '.vscode'), solutionPath).split(path.sep).join('/').replace(/\\/g, '/');
+    const text = cmsisJsonText.trim() ? cmsisJsonText : '{}';
+    const updated = applyEdits(text, modify(text, ['activeSolution'], relative, { formattingOptions }));
+    return updated.endsWith('\n') ? updated : `${updated}\n`;
 }
 
 /** Require the YAML mapping at a selection path, without coercing scalar/collection types. */

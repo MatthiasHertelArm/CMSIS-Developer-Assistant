@@ -538,7 +538,24 @@ window's CMSIS job tracker (next section):
   compared by real path (`solutionAsListed()`), whatever the letter case,
   the separators or the links on the way. A csolution the extension does
   not list is refused before it is asked, and one it did not take while
-  another stays active is `TASK_FAILED`, not a hint to build. A window without any folder opens it in itself
+  another stays active is `TASK_FAILED`, not a hint to build.
+  A csolution that no open folder holds opens with its project root, not
+  its own folder (#145): the nearest folder from its own up with a `.git`
+  entry or a `vcpkg-configuration.json`, never the home folder, a folder
+  that holds it or the file system root (`projectRootOf()` in
+  `src/core/bootstrapState.ts`,
+  `projectPlaceOf()`), so that a tools manifest at the repository root lies
+  inside the window — for the Arm Tools Environment Manager and for
+  `environmentFiles()`, which looks only up to the workspace folder. The
+  extension activates by itself only a csolution directly in the opened
+  folder, or the `activeSolution` of its `.vscode/cmsis.json`, so a deeper
+  one is named there first (`rememberActiveSolution()`, the extension's own
+  format, `applyActiveSolution()` in `src/core/cmsisTarget.ts`). What the
+  extension remembers from an earlier opening of the folder still wins;
+  the reply says to repeat the call in the new window then, which activates
+  through `activateHere()`. A folder path is opened as given.
+  `create_solution` activates through `placeOf()` alone, without the root.
+  A window without any folder opens it in itself
   (`openHere()`) when the client runs outside the window — the tool passes
   the client's `initialize` name, `src/core/clientHosting.ts` knows the
   CLIs: VS Code reloads the window for that, the MCP server with it, so the

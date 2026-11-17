@@ -18,7 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-    applyTargetSelection, formatTargetChoices, listTargetTypes, parseTargetRef, resolveTargetSelection,
+    applyActiveSolution, applyTargetSelection, formatTargetChoices, listTargetTypes, parseTargetRef, resolveTargetSelection,
     solutionDisplayName, targetMatches,
 } from '../core/cmsisTarget';
 
@@ -343,6 +343,18 @@ solution:
 
     test('solutionDisplayName of a solution in the second folder of a multi-root workspace goes up from the first', () => {
         assert.strictEqual(solutionDisplayName('/ws/app', '/ws/fw/demo.csolution.yml'), '../fw/demo');
+    });
+
+    test('applyActiveSolution names the csolution relative to .vscode with forward slashes, as the extension does, and keeps the rest (#145)', () => {
+        const root = path.join(path.sep, 'repo');
+        const solution = path.join(root, 'Infineon', 'T2G-B-H', 'App.csolution.yml');
+        assert.strictEqual(applyActiveSolution('', root, solution), '{\n    "activeSolution": "../Infineon/T2G-B-H/App.csolution.yml"\n}\n');
+        const kept = '{\n    // the user\'s\n    "activeTarget": "HP",\n    "activeSolution": "../Old.csolution.yml"\n}\n';
+        const updated = applyActiveSolution(kept, root, solution);
+        assert.match(updated, /\/\/ the user's/);
+        assert.match(updated, /"activeTarget": "HP"/);
+        assert.match(updated, /"activeSolution": "\.\.\/Infineon\/T2G-B-H\/App\.csolution\.yml"/);
+        assert.doesNotMatch(updated, /Old\.csolution/);
     });
 
     test('applyTargetSelection writes the key where the extension looks it up: the display name split at every dot', () => {

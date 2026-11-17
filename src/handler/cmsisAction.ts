@@ -83,6 +83,7 @@
 import * as vscode from 'vscode';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { DebugState } from '../debugState';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
@@ -104,6 +105,7 @@ import {
 } from '../core/cmsisTasks';
 import { idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
 import {
+    applyActiveSolution,
     applyTargetSelection,
     formatTargetChoices,
     formatTargetName,
@@ -122,6 +124,7 @@ import {
     missingSolutionExtensionRefusal,
     noSolutionRefusal,
     noWorkspaceRefusal,
+    projectRootOf,
     samePath,
     SOLUTION_EXTENSION_ID,
 } from '../core/bootstrapState';
@@ -1484,15 +1487,26 @@ async function whyNoSolution(what: string, queried: string, host: HandlerHost, s
     return noSolutionRefusal(what, queried, await workspaceSolutionFiles(host), folders.map((folder) => folder.name), serverVersion);
 }
 
-/** What `open_solution` found at its path: the folder to open and the csolution files in it. */
+/**
+ * What `open_solution` found at its path: the folder to open and the
+ * csolution files in it. For a csolution no open folder holds, `folder`
+ * becomes its project root (`projectRootOf`, #145) and `nested` is set when
+ * that is not the csolution's own folder.
+ */
 interface SolutionPlace {
     folder: string;
+    /** The csolution lies below `folder`, so the extension activates it only through `.vscode/cmsis.json`. */
+    nested?: boolean;
     /** The csolution the caller named, when the path is a file. */
     named?: string;
     solutions: string[];
 }
 
-/** The folder and csolution files `given` stands for; a path that cannot be opened is `INVALID_ARGUMENT`. */
+/**
+ * The folder and csolution files `given` stands for: a folder as given, a
+ * csolution with its own folder; a path that cannot be opened is
+ * `INVALID_ARGUMENT`. `create_solution` activates through this too.
+ */
 function placeOf(given: string | undefined): SolutionPlace {
     const usage = 'Pass path: the absolute path of a *.csolution.yml, or of the folder that holds the project.';
     if (typeof given !== 'string' || given.trim().length === 0) {
@@ -1524,6 +1538,70 @@ function solutionsNote(place: SolutionPlace): string {
     }
     const names = place.solutions.map((file) => path.relative(place.folder, file) || path.basename(file));
     return place.solutions.length === 1 ? `Solution: ${names[0]}.` : `Solutions: ${names.join(', ')}.`;
+}
+
+/** Whether a file or folder exists at `file`. */
+function entryExists(file: string): boolean {
+    try {
+        fs.statSync(file);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * The place to open for a csolution no open folder holds: its project root
+ * (#145), where a `vcpkg-configuration.json` at the repository root lies
+ * inside the opened folder. A folder path, and a csolution without a root
+ * above its own folder, stay as they are.
+ */
+function projectPlaceOf(place: SolutionPlace): SolutionPlace {
+    if (place.named === undefined) {
+        return place;
+    }
+    const root = projectRootOf(place.named, os.homedir(), entryExists);
+    return samePath(root, place.folder) ? place : { ...place, folder: root, nested: true };
+}
+
+/**
+ * Before a folder opens with a csolution below it: name the csolution as
+ * the folder's active solution in `.vscode/cmsis.json`, which the CMSIS
+ * Solution extension reads when the folder opens (it activates by itself
+ * only a csolution directly in the folder). A failure is logged and the
+ * reply says how to activate the csolution once the window is there.
+ */
+function rememberActiveSolution(place: SolutionPlace): boolean {
+    if (!place.nested || place.named === undefined) {
+        return true;
+    }
+    const selectionFile = path.join(place.folder, '.vscode', 'cmsis.json');
+    try {
+        fs.mkdirSync(path.dirname(selectionFile), { recursive: true });
+        const previous = fs.existsSync(selectionFile) ? fs.readFileSync(selectionFile, 'utf8') : '';
+        fs.writeFileSync(selectionFile, applyActiveSolution(previous, place.folder, place.named), 'utf8');
+        return true;
+    } catch (caught) {
+        logger.warn(`open_solution: could not name ${place.named} as the active solution in ${selectionFile}`, failureText(caught));
+        return false;
+    }
+}
+
+/**
+ * What the reply adds for a csolution below the opened folder: that the
+ * extension was told to activate it, and how to make sure it did; nothing
+ * for a csolution directly in the folder.
+ */
+function nestedNote(place: SolutionPlace, remembered: boolean): string {
+    if (!place.nested || place.named === undefined) {
+        return '';
+    }
+    const repeat = `cmsis_action {action:'open_solution', path:'${place.named}'}`;
+    return remembered
+        ? ` ${place.folder} is the project root that holds it; .vscode/cmsis.json there names it as the active solution. `
+            + `If get_session_status then shows another active solution, ${repeat} in that window activates it.`
+        : ` ${place.folder} is the project root that holds it; the solution could not be named in its .vscode/cmsis.json, `
+            + `so once the window is there, ${repeat} activates it.`;
 }
 
 /**
@@ -1617,7 +1695,10 @@ const RELOAD_DELAY_MS = 1_000;
 /**
  * `open_solution`: open the folder of a csolution in a VS Code window and
  * make the solution active. A folder this window has open is activated
- * here. A window without any folder opens it in itself when the client runs
+ * here. For a csolution no open folder holds, the folder opened is its
+ * project root (`projectPlaceOf`), and a csolution below that root is named
+ * in the root's `.vscode/cmsis.json` first, for the extension to activate
+ * when the folder opens. A window without any folder opens it in itself when the client runs
  * outside the window (`survivesWindowReload`): VS Code reloads the window
  * for that, the MCP server with it, so the reply goes out first and the
  * folder is opened a second later; the agent is told to come back after the
@@ -1628,15 +1709,17 @@ const RELOAD_DELAY_MS = 1_000;
  */
 async function openSolution(context: CmsisActionContext, given: string | undefined, deadline: number, client: string | undefined): Promise<ToolText> {
     const { host } = context;
-    const place = placeOf(given);
-    const probe = place.named ?? place.folder;
+    const asGiven = placeOf(given);
+    const probe = asGiven.named ?? asGiven.folder;
     const folders = host.workspaceFolders();
     if (folders.some((folder) => liesInFolder(probe, folder.uri.fsPath))) {
-        return activateHere(context, place, deadline);
+        return activateHere(context, asGiven, deadline);
     }
+    const place = projectPlaceOf(asGiven);
+    const remembered = rememberActiveSolution(place);
     const empty = folders.length === 0;
     if (empty && survivesWindowReload(client)) {
-        return openHere(context, place);
+        return openHere(context, place, remembered);
     }
     try {
         await withTimeout('vscode.openFolder', KICKOFF_MS, () => Promise.resolve(host.openFolder(place.folder, true)));
@@ -1650,7 +1733,7 @@ async function openSolution(context: CmsisActionContext, given: string | undefin
     }
     const stays = empty ? ' This window stays without a folder: your client runs inside it, and opening the folder here would reload the window and end your session.' : '';
     return {
-        text: `Opening ${place.folder} in a new VS Code window. ${solutionsNote(place)} `
+        text: `Opening ${place.folder} in a new VS Code window. ${solutionsNote(place)}${nestedNote(place, remembered)} `
             + 'The window joins the CMSIS Developer Assistant once its extensions have started, and the CMSIS Solution extension '
             + `then loads the solution. Reach it with window: '${place.folder}' on cmsis_action, or select_debug_window.${stays}`,
         status: 'ok',
@@ -1665,7 +1748,7 @@ async function openSolution(context: CmsisActionContext, given: string | undefin
  * the agent does then. A failure to open is logged, since nobody is left to
  * tell: the agent sees it when the status still shows no folder.
  */
-function openHere(context: CmsisActionContext, place: SolutionPlace): ToolText {
+function openHere(context: CmsisActionContext, place: SolutionPlace, remembered: boolean): ToolText {
     const { host } = context;
     void host.sleep(RELOAD_DELAY_MS).then(() => host.openFolder(place.folder, false)).catch((caught: unknown) => {
         logger.warn(`open_solution: VS Code did not open ${place.folder} in this window`, failureText(caught));
@@ -1676,7 +1759,7 @@ function openHere(context: CmsisActionContext, place: SolutionPlace): ToolText {
     }
     return {
         text: `Opening ${place.folder} in this window, which has no folder: VS Code reloads it in a second, and the MCP server with it. `
-            + `${solutionsNote(place)} Wait about 10 s, then call get_session_status; if the connection is refused or the session is unknown, `
+            + `${solutionsNote(place)}${nestedNote(place, remembered)} Wait about 10 s, then call get_session_status; if the connection is refused or the session is unknown, `
             + 'connect again — the server listens on the same port. The CMSIS Solution extension loads the solution once the window is back.',
         status: 'ok',
         data,
