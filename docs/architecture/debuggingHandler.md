@@ -975,6 +975,27 @@ there either: when its task starts, before cbuild gets to work,
 exist; at its end, `checkClean` names those it removed (`cleaned`), or the
 one still there (`unverified`). A failed clean is never re-run.
 
+None of this is needed where CMSIS Solution captures the result of its build
+tasks (#140). A CMSIS Solution with `getBuildResult` in its API version 3
+hands out cbuild's own exit code and everything the task wrote to its
+terminal for a task execution, whoever started the task. The runner asks for
+it when a build, rebuild or clean task starts (`noteResult`), notes the
+solution and the target set of that moment, and makes the diagnosis from it
+when the job settles (`fromResult`): exit 0 is the success (`succeeded`),
+another code the failure, and no exit code at all — a build skipped as a
+duplicate of a queued one, or stopped — is `unverified`, never a success.
+The lines come from the build's own output: the errors of a failed build,
+and the warnings of a successful one, which the result lists and the
+journal keeps. The output of a build or rebuild, its control sequences
+removed (`cleanBuildOutput` in `src/core/buildResult.ts`), is written to
+`out/cmsis-developer-assistant/build-<target set>.log` under the solution's
+folder, where `get_build_diagnostics` finds it; a clean leaves that file
+alone. No image is looked at and cbuild is never run a second time, which is
+what interfered with CMSIS Solution's own setup task. The job itself still
+settles from the task's end event: the captured result settles with it. A
+result that is refused, has another shape or does not settle within 10 s
+of the task's end leaves the build to the check above.
+
 The `diagnosis` holds the errors and warnings with file and line, which
 `onDidDiagnoseJob` announces for the problem journal (#48), and the short
 block `renderBuildFailure` makes for the result. When it arrives within the
@@ -1223,7 +1244,8 @@ by #56.
 | `src/core/programLookup.ts`, `src/handler/taskProgram.ts` | The kind of a task's program, the PATH of the CMSIS tasks and VS Code's, the lookup and the SEGGER folders; `failedTaskProgram()`, `gdbServerMissingHint()` |
 | `src/cmsisJobTracker.ts` | `CmsisJobTracker`: live CMSIS executions, jobs, probe owners, the label pre-check, work that completes a settled job; the window's instance |
 | `src/runOutputCapture.ts`, `src/core/runOutput.ts` | The terminal output of the CMSIS Run tasks (#134): the pairing of terminal commands with Runs, the kept output and its bound, the lines a reader sees, the block and `data` of a reply |
-| `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build or rebuild: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0, and of a clean |
+| `src/cmsisBuildDiagnosis.ts` | The error lines of a failed build or rebuild: csolution's index, the diagnostic re-run of cbuild and its guards (#15); the check of a build that exited 0, and of a clean; the diagnosis from the result CMSIS Solution captured for a build task (#140) |
+| `src/core/buildResult.ts` | The captured result of a build task (#140): its shape, the terminal output as the lines of a log, the log's place |
 | `src/core/buildFailure.ts` | The readers of `cbuild-idx.yml` and `tools-environment.yml`, the re-run's arguments and environment, the reasons for no re-run; `renderBuildFailure()` is in `src/core/buildInfo/render.ts` |
 | `src/core/cmsisTasks.ts` | task classifier, `reduceJob()`, `guardProbe()` |
 | `src/core/gdbServerPorts.ts`, `src/core/gdbPortGuard.ts` | The GDB port of a launch configuration, a session and a CMSIS Run task, the claims a window publishes; who holds a port (the other windows' claims, the bind test) and the `PROBE_BUSY` refusal |

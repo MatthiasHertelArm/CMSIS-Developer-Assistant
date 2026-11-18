@@ -1,0 +1,2 @@
+# Captured terminal output: its CR, CR CR LF and escape bytes are what the tests read.
+src/test/fixtures/buildresult/* -text

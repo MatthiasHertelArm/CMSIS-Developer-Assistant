@@ -3179,6 +3179,66 @@
           ]
         }
       ]
+    },
+    {
+      "name": "cmsis-build-captured",
+      "description": "No session, a CMSIS Solution whose API version 3 hands out the result it captured for a build task (#140): cmsis_action build succeeds on cbuild's own exit code with the warnings of its output, without a check of the image; the next build fails with the error lines of its output, without a re-run of cbuild; get_recent_problems lists the lines of both builds.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "build"
+          },
+          "text": "✅ CMSIS 'build' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs' exited 0 after <n>s, cbuild's own exit code, job b-7). The firmware is built — use cmsis_action load or load_and_debug to flash it.\n5 warnings in its output:\n  warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown\n  warning: argument unused during compilation: '-MD' [-Wunused-command-line-argument]\n  warning: argument unused during compilation: '-MT …' [-Wunused-command-line-argument]\n  warning: argument unused during compilation: '-MF …' [-Wunused-command-line-argument]\n  warning A1950W: The legacy armasm assembler is deprecated. Consider using the armclang integrated assembler instead.\nFull output: out/cmsis-developer-assistant/build-NUCLEO-F401RE.log (get_build_diagnostics reads it).",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.build",
+            "task: start \"cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs\"",
+            "getBuildResult: \"cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs\"",
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "task: end \"cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs\" exitCode=0"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "build"
+          },
+          "isError": true,
+          "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs' exited with code 1 after <n>s (job b-8).\n3 errors in the build's own output (cbuild exit 1), 1 warning:\n  …/work/Blinky/Blinky.c:43:19 error: expected parameter declarator\n  …/work/Blinky/Blinky.c:43:19 error: expected ')'\n  …/work/Blinky/Blinky.c:43:36 error: expected function body after function declarator\n  ninja FAILED: …/work/Blinky/Blinky.o\n  ninja FAILED: …/src/Blinky.Debug+microbit-v2-stamp/Blinky.Debug+microbit-v2-build\n  warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown\nFull log: out/cmsis-developer-assistant/build-NUCLEO-F401RE.log (get_build_diagnostics reads it).\nFix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.",
+          "traffic": [
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "command: cmsis-csolution.build",
+            "task: start \"cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs\"",
+            "getBuildResult: \"cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs\"",
+            "command: cmsis-csolution.getSolutionFile",
+            "command: cmsis-csolution.getActiveTargetSet",
+            "task: end \"cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs\" exitCode=1"
+          ]
+        },
+        {
+          "tool": "get_recent_problems",
+          "args": {
+            "sources": [
+              "build"
+            ],
+            "limit": 8
+          },
+          "text": "… <n> older record(s) left out: raise limit (at most 50) or narrow sources or minSeverity.\n#<seq> warning build argument unused during compilation: '-MT …' [-Wunused-command-line-argument]\n#<seq> warning build argument unused during compilation: '-MF …' [-Wunused-command-line-argument]\n#<seq> warning build The legacy armasm assembler is deprecated. Consider using the armclang integrated assembler instead. [A1950W]\n#<seq> error build [TASK_FAILED] 'cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs' exited with code 1 on NUCLEO-F401RE (job b-8) → cmsis_action {action:'status'} shows its error lines.\n#<seq> error build [BUILD_ERROR] /work/Blinky/Blinky.c:43:19: expected parameter declarator\n#<seq> error build [BUILD_ERROR] /work/Blinky/Blinky.c:43:19: expected ')'\n#<seq> error build [BUILD_ERROR] /work/Blinky/Blinky.c:43:36: expected function body after function declarator\n#<seq> warning build file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown (×2)\nnextSeq=<seq>",
+          "traffic": []
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "status"
+          },
+          "text": "No CMSIS job in flight in this window. Last results: build on NUCLEO-F401RE ❌ exit 1 <n>s ago (job b-8, 'cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs'); load_and_run on NUCLEO-F401RE ✅ ended by itself, exit 0 <n>s ago (job r-6, 'CMSIS Run'); clean on NUCLEO-F401RE ✅ <n>s ago (job c-5, 'cbuild Blinky.csolution.yml --clean --target all'); rebuild on NUCLEO-F401RE ✅ <n>s ago (job rb-4, 'cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE').\nBuild job b-8 failed: 3 errors in the build's own output (cbuild exit 1), 1 warning:\n  …/work/Blinky/Blinky.c:43:19 error: expected parameter declarator\n  …/work/Blinky/Blinky.c:43:19 error: expected ')'\n  …/work/Blinky/Blinky.c:43:36 error: expected function body after function declarator\n  ninja FAILED: …/work/Blinky/Blinky.o\n  ninja FAILED: …/src/Blinky.Debug+microbit-v2-stamp/Blinky.Debug+microbit-v2-build\n  warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown\nFull log: out/cmsis-developer-assistant/build-NUCLEO-F401RE.log (get_build_diagnostics reads it).\nNo CMSIS task is running in this window.\nOutput of 'CMSIS Run' (5 lines):\ntelnetterminal0: Listening for serial connection on port 5000\nHello World\nTest_result: PASS\n\nInfo: Simulation is stopping. Reason: EOT received.",
+          "traffic": []
+        }
+      ]
     }
   ]
 }

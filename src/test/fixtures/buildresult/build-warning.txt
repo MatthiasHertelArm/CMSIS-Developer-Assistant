@@ -1,0 +1,16 @@
+warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown
++-------------------------------------------------
+(1/1) Building context: "Blinky.Debug+microbit-v2"
+Using AC6 V6.24.0 compiler, from: '/Users/dev/.vcpkg/artifacts/0a1b2c3d/compilers.arm.armclang/6.24.0/bin'
+[1m[34mBuilding CMake target 'Blinky.Debug+microbit-v2'[0m
+Using compiler: AC6 V6.24.0
+[0/2] Building C object CMakeFiles/Group_Source_File.../Blinky/Blinky.o[K[1/2] Building C object CMakeFiles/Group_Source_File.../Blinky/Blinky.o[K
+[1m/work/Blinky/Blinky.c:43:2: [0m[0;1;35mwarning: [0m[1mprobe-warning-720 [-W#warnings][0m
+   43 | #warning probe-warning-[0;32m720[0m
+      | [0;1;32m ^
+[0m1 warning generated.
+[1/2] Linking C executable /work/...inky/out/Blinky/microbit-v2/Debug/Blinky.axf[K[2/2] Linking C executable /work/...inky/out/Blinky/microbit-v2/Debug/Blinky.axf[K
+Program Size: Code=1320 RO-data=584 RW-data=4 ZI-data=19988  
++------------------------------------------------------------
+Build summary: 1 succeeded, 0 failed - Time Elapsed: 00:00:00
++============================================================

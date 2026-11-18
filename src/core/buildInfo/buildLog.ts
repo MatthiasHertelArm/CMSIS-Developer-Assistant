@@ -65,6 +65,9 @@ export interface BuildLogSummary {
 
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
 
+/** The code of a tool-version recommendation (`CMake 4.2.1 or newer is recommended …`): no error of the project, a note on the environment. */
+export const TOOL_VERSION_CODE = 'tool-version';
+
 function sev(word: string): Severity {
     const w = word.toLowerCase();
     if (w.includes('error')) { return 'error'; }
@@ -113,6 +116,8 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
     const armOldRe = /^"([^"]+)", line (\d+)(?: \(column (\d+)\))?:\s*(Error|Warning|Fatal error|Remark|Info):\s*(#[\w-]+:)?\s*(.*?)\s*$/;
     // armlink: Error: L6218E: Undefined symbol ...  /  Warning: L6329W: ... / Fatal error: L6002U:
     const armlinkRe = /^(?:.*?:\s*)?(Error|Warning|Fatal error):\s*(L\d{4}[A-Z]):\s*(.*?)\s*$/;
+    // armasm without a location: Warning: A1950W: The legacy armasm assembler is deprecated. …  (with one it is armOldRe's)
+    const armasmRe = /^(Error|Warning|Fatal error):\s*(A\d{4}[A-Z]):\s*(.*?)\s*$/;
     // GNU ld: file.o: in function `x': path:12: undefined reference to `y'   /   ld: region `FLASH' overflowed by 123 bytes
     const ldUndefRe = /^(?:\S*(?:ld|ld\.lld|ld\.bfd|collect2): )?(?:((?:[A-Za-z]:[\\/]|\/)[^:]*?|\S+?):(\d+):|(\S+?):\(\S+?\+0x[0-9a-fA-F]+\):)?\s*(undefined reference to .*|multiple definition of .*|cannot find .*|.*will not fit in region .*|region [`'].*?' overflowed by .*|.* exceeds available memory .*)$/;
     // A tool's own line: `armclang: warning: argument unused …` and `arm-none-eabi-gcc.exe: error: …` come from the
@@ -125,6 +130,11 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
     // comes after its location and ` - `: `C:/x/Demo.csolution.yml:43:7 - error csolution: ...`, also without line and
     // column (`/.cbuild-pack.yml - error csolution: ...`). The file is absolute, POSIX or Windows, spaces included.
     const cbuildRe = /^(?:((?:[A-Za-z]:[\\/]|\/)[^:"]*?)(?::(\d+)(?::(\d+))?)?\s+-\s+)?(error|warning|info)\s+(csolution|cbuild|cpackget|cbuild2cmake|cbuildgen):\s*(.*?)\s*$/;
+    // A tool older than CMSIS-Toolbox recommends, printed by a build that succeeds (#140):
+    // `CMake 4.2.1 or newer is recommended for CMSIS-Toolbox. You are using CMake 3.31.12.`
+    const toolVersionRe = /^(\S(?:.*?\S)?) \d[\w.+-]* or newer is recommended for .+?\. You are using \1 \d[\w.+-]*\.?$/;
+    // The dependency-file options armclang ignores when it assembles differ only in their file: one warning per option.
+    const unusedArgumentRe = /^(argument unused during compilation: '-\w+) [^']+'$/;
     const ninjaFailedRe = /^FAILED:\s*(?:\[code=\d+\]\s*)?(.*?)\s*$/;
     // ninja's own: `ninja: error: 'x.sds', needed by 'y.h', missing and no known rule to make it`, `ninja: error: loading 'build.ninja': …`.
     const ninjaErrorRe = /^ninja: (error|warning): (.*?)\s*$/;
@@ -179,6 +189,14 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
             push({ severity: sev(m[1]), code: m[2], message: m[3], tool: 'linker' }, n);
             return;
         }
+        if ((m = line.match(armasmRe))) {
+            push({ severity: sev(m[1]), code: m[2], message: m[3], tool: 'compiler' }, n);
+            return;
+        }
+        if (toolVersionRe.test(line)) {
+            push({ severity: 'warning', code: TOOL_VERSION_CODE, message: line.trim(), tool: 'cbuild' }, n);
+            return;
+        }
         if ((m = line.match(armOldRe))) {
             if (m[4] === 'Remark' || m[4] === 'Info') { return; }
             push({ severity: sev(m[4]), file: m[1], line: Number(m[2]), col: m[3] ? Number(m[3]) : undefined, code: m[5]?.replace(/:$/, ''), message: m[6], tool: 'compiler' }, n);
@@ -198,7 +216,7 @@ export function parseBuildLog(text: string, file: string, stat?: { size: number;
         if ((m = line.match(ldGenericRe))) {
             if (/ld returned \d+ exit status/.test(m[3])) { return; }
             const { code, message } = splitWarningFlag(m[3]);
-            push({ severity: sev(m[2]), code, message, tool: driverRe.test(m[1]) ? 'compiler' : 'linker' }, n);
+            push({ severity: sev(m[2]), code, message: message.replace(unusedArgumentRe, '$1 …\''), tool: driverRe.test(m[1]) ? 'compiler' : 'linker' }, n);
             return;
         }
     });

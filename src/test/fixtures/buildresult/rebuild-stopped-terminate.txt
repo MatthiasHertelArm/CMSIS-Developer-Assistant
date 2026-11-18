@@ -1,0 +1,7 @@
++-------------------------------------------------
+(1/1) Cleaning context: "Blinky.Debug+microbit-v2"
+warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown
++-------------------------------------------------
+(1/1) Building context: "Blinky.Debug+microbit-v2"
+Using AC6 V6.24.0 compiler, from: '/Users/dev/.vcpkg/artifacts/0a1b2c3d/compilers.arm.armclang/6.24.0/bin'
+^C

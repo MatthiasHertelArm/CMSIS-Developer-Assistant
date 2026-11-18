@@ -1,0 +1,27 @@
+warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown
++-------------------------------------------------
+(1/1) Building context: "Blinky.Debug+microbit-v2"
+Using AC6 V6.24.0 compiler, from: '/Users/dev/.vcpkg/artifacts/0a1b2c3d/compilers.arm.armclang/6.24.0/bin'
+[1m[34mBuilding CMake target 'Blinky.Debug+microbit-v2'[0m
+Using compiler: AC6 V6.24.0
+[0/2] Building C object CMakeFiles/Group_Source_File.../Blinky/Blinky.o[K[1/2] Building C object CMakeFiles/Group_Source_File.../Blinky/Blinky.o[K
+[31mFAILED: [code=1] [0mCMakeFiles/Group_Source_Files.dir/work/Blinky/Blinky.o 
+/Users/dev/.vcpkg/artifacts/0a1b2c3d/compilers.arm.armclang/6.24.0/bin/armclang --target=arm-arm-none-eabi -DNRF52833_XXAA -D_RTE_ -I/work/Blinky/RTE/_Debug_microbit-v2 -I/Users/dev/.cache/arm/packs/ARM/CMSIS/6.3.0/CMSIS/Core/Include -I/Users/dev/.cache/arm/packs/MicroBit/MicroBit_V2_BSP/0.1.1/Board/Include -I/Users/dev/.cache/arm/packs/NordicSemiconductor/nRF_DeviceFamilyPack/8.44.1/Device/Include -isystem /Users/dev/.vcpkg/artifacts/0a1b2c3d/compilers.arm.armclang/6.24.0/include --target=arm-arm-none-eabi -mcpu=Cortex-M4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard --target=arm-arm-none-eabi -c -std=gnu11 -Wno-macro-redefined -Wno-pragma-pack -Wno-parentheses-equality -Wno-license-management -fcolor-diagnostics -mlittle-endian -g -O1 -MD -MT CMakeFiles/Group_Source_Files.dir/work/Blinky/Blinky.o -MF CMakeFiles/Group_Source_Files.dir/work/Blinky/Blinky.o.d -o CMakeFiles/Group_Source_Files.dir/work/Blinky/Blinky.o -c /work/Blinky/Blinky.c
+[1m/work/Blinky/Blinky.c:43:19: [0m[0;1;31merror: [0m[1mexpected parameter declarator[0m
+   43 | [0;34mint[0m probe_broken( { this is not C }[0m
+      | [0;1;32m                  ^
+[0m[1m/work/Blinky/Blinky.c:43:19: [0m[0;1;31merror: [0m[1mexpected ')'[0m
+[1m/work/Blinky/Blinky.c:43:17: [0m[0;1;36mnote: [0mto match this '('[0m
+   43 | [0;34mint[0m probe_broken( { this is not C }[0m
+      | [0;1;32m                ^
+[0m[1m/work/Blinky/Blinky.c:43:36: [0m[0;1;31merror: [0m[1mexpected function body after function declarator[0m
+   43 | [0;34mint[0m probe_broken( { this is not C }[0m
+      | [0;1;32m                                   ^
+[0m3 errors generated.
+ninja: build stopped: subcommand failed.
+[31mFAILED: [code=1] [0mBlinky.Debug+microbit-v2/src/Blinky.Debug+microbit-v2-stamp/Blinky.Debug+microbit-v2-build /work/Blinky/out/Blinky/microbit-v2/Debug/Blinky.axf /work/Blinky/out/Blinky/microbit-v2/Debug/Blinky.hex /work/Blinky/out/Blinky/microbit-v2/Debug/Blinky.axf.map /work/Blinky/out/Blinky/microbit-v2/Debug/compile_commands.json /work/Blinky/out/Blinky/microbit-v2/Debug/compile_macros_c.h /work/Blinky/out/Blinky/microbit-v2/Debug/compile_macros_cxx.h /work/Blinky/tmp/microbit-v2/default/Blinky.Debug+microbit-v2/src/Blinky.Debug+microbit-v2-stamp/Blinky.Debug+microbit-v2-build 
+cd /work/Blinky/tmp/microbit-v2/default/1 && /opt/homebrew/bin/cmake -E cmake_echo_color --blue --bold "Building CMake target 'Blinky.Debug+microbit-v2'" && /opt/homebrew/bin/cmake -E echo "Using compiler: AC6 V6.24.0" && /opt/homebrew/bin/cmake --build /work/Blinky/tmp/microbit-v2/default/1
+ninja: build stopped: subcommand failed.
++------------------------------------------------------------
+Build summary: 0 succeeded, 1 failed - Time Elapsed: 00:00:00
++============================================================

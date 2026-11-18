@@ -34,7 +34,9 @@ suite('buildInfo/buildLog', () => {
         ].join('\n'), 'build.log');
         assert.strictEqual(summary.errors, 1);
         assert.strictEqual(summary.ok, false);
-        const [d] = summary.diagnostics;
+        // The recommendation above it is a warning of its own (#140), no error.
+        const [recommended, d] = summary.diagnostics;
+        assert.deepStrictEqual([recommended.severity, recommended.code, summary.warnings], ['warning', 'tool-version', 1]);
         assert.strictEqual(d.tool, 'ninja');
         assert.strictEqual(d.file, '/ws/sds_recordings/p3t1755_avg.5.sds');
         assert.match(d.message, /^missing and no known rule to make it \(needed by .*model_pte\.h\)$/);

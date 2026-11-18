@@ -226,6 +226,12 @@ export interface SolutionApiV3Methods {
     getToolchains(): PromiseLike<ApiToolchain[]>;
     getPacks(options?: ApiPackQuery): PromiseLike<{ packs: ApiPackData[] }>;
     installPacks(options: { packs: string[]; approved: boolean }): PromiseLike<ApiPackInstallResult[]>;
+    /**
+     * The result CMSIS Solution captured for a build task (#140): its exit code and terminal output, read by
+     * `capturedResultOf`. `execution` is the task's `vscode.TaskExecution`; without one, the latest completed build
+     * of the loaded solution and its active target set, or undefined.
+     */
+    getBuildResult(execution?: unknown): PromiseLike<unknown>;
 }
 
 /** The API object `acquireSolutionApi` returns: version 2's methods, and whichever of version 3's the extension offers. */

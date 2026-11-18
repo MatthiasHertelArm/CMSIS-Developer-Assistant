@@ -601,6 +601,15 @@ function buildCheckResult(job: Job, context: ResultContext, task: JobExecution):
     const noun = action === 'clean' ? 'clean' : 'build';
     const ran = `task '${task.name}' exited 0 after ${ranFor(task, context.now)}`;
     const data = (): JsonObject => ({ job: jobData(job, context.now), ...(diagnosis ? { diagnosis: diagnosisData(diagnosis) } : {}) });
+    if (diagnosis?.state === 'pending' && diagnosis.source === 'build') {
+        // The result CMSIS Solution captured for the task is being read (#140): no check, no re-run.
+        return {
+            text: `${context.preface ?? ''}CMSIS '${action}'${context.tag}: ${ran} (job ${job.id}); the output CMSIS Solution captured for it is `
+                + `still being read. Call cmsis_action {action:'status'} for the result — do not start another ${action}.${meanwhile(job)}`,
+            status: 'running',
+            data: data(),
+        };
+    }
     if (diagnosis?.state === 'pending') {
         const how = action === 'clean' ? ''
             : ` (a diagnostic re-run of cbuild with --log when the image was not rewritten, at most ${DIAGNOSTIC_RERUN_CAP_TEXT})`;
@@ -659,10 +668,21 @@ export function jobResult(job: Job, context: ResultContext): ToolText {
                     return checkedBuild;
                 }
             }
-            const ran = task ? `task '${task.name}' exited 0 after ${ranFor(task, now)}, ` : '';
             const check = job.diagnosis?.check;
+            // `succeeded`: the exit code is cbuild's own, from the result CMSIS Solution captured (#140).
+            const own = check === 'succeeded' ? ', cbuild\'s own exit code' : '';
+            const ran = task ? `task '${task.name}' exited 0 after ${ranFor(task, now)}${own}, ` : '';
             const upToDate = (check === 'up-to-date' || check === 'cleaned') && job.diagnosis?.text ? ` ${job.diagnosis.text}` : '';
-            return `${preface}✅ CMSIS '${job.action}' succeeded${tag} (${ran}job ${job.id}).${upToDate}${AFTER_SUCCESS[job.action]}${meanwhile(job)}`;
+            const text = `${preface}✅ CMSIS '${job.action}' succeeded${tag} (${ran}job ${job.id}).${upToDate}${AFTER_SUCCESS[job.action]}${meanwhile(job)}`;
+            if (check !== 'succeeded' || !job.diagnosis) {
+                return text;
+            }
+            // The warnings of the build's own output: a successful build is no longer silent about them.
+            return {
+                text: job.diagnosis.text ? `${text}\n${job.diagnosis.text}` : text,
+                status: 'ok',
+                data: { job: jobData(job, now), diagnosis: diagnosisData(job.diagnosis) },
+            };
         }
         case 'running-ok': {
             const load = executionIn(job, 'load');
@@ -865,6 +885,8 @@ export function idleStatus(
             } else if (diagnosis?.check === 'unverified') {
                 const next = job.action === 'clean' ? CLEAN_UNVERIFIED_NEXT : BUILD_UNVERIFIED_NEXT;
                 lines.push(`${capitalized} exited 0, but that does not confirm it: ${diagnosis.text} ${next}`);
+            } else if (diagnosis?.check === 'succeeded' && diagnosis.text) {
+                lines.push(`${capitalized} succeeded: ${diagnosis.text}`);
             }
         }
     }

@@ -99,6 +99,23 @@
  *   - CMSIS Solution does not write build outputs from its csolution RPC
  *     while the re-run builds (only its build tasks are watched).
  *
+ * None of the above runs for a build whose result CMSIS Solution captured
+ * (#140): a CMSIS Solution with `getBuildResult` in its API version 3 hands
+ * out cbuild's own exit code and the task's terminal output for a task
+ * execution. The runner asks for it when a build, rebuild or clean task
+ * starts, however it was started, and makes the job's diagnosis from it
+ * when the job settles: exit 0 is the success (`succeeded`), with the
+ * warnings of the output; another code is the failure, with the error lines
+ * of the output; no exit code (a build skipped as a duplicate of a queued
+ * one, or stopped) is never a success. The output of a build or rebuild
+ * is written, control sequences removed, to
+ * `<solutionDir>/out/cmsis-developer-assistant/build-<target set>.log`,
+ * which `get_build_diagnostics` reads; the solution and the target set are
+ * noted when the task starts, since the active ones can change while it
+ * runs. A result that is refused, has another shape or has not settled
+ * `RESULT_FENCE_MS` after the task ended leaves the build to the stages
+ * above.
+ *
  * Everything outside VS Code and the file system comes through a
  * `DiagnosisHost`; tests give it a fake spawn, a hand-moved clock and fixed
  * settings, and `vscodeDiagnosisHost` is the real one.
@@ -108,7 +125,8 @@ import * as vscode from 'vscode';
 import { spawn as spawnProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { CmsisJobTracker, LiveExecution, TaskDefinitionLike, TrackerClock } from './cmsisJobTracker';
+import type { CmsisJobTracker, ExecutionLike, LiveExecution, TaskDefinitionLike, TrackerClock } from './cmsisJobTracker';
+import { SOLUTION_EXTENSION_ID } from './core/bootstrapState';
 import {
     BuildFailureReport,
     cbuildDiagnosticArgs,
@@ -129,9 +147,11 @@ import {
     RerunSkip,
     rerunSkipText,
 } from './core/buildFailure';
+import { capturedResultOf, cleanBuildOutput, RESULT_FENCE_MS, resultLogHeader, resultLogPath } from './core/buildResult';
+import type { CapturedBuildResult } from './core/buildResult';
 import { parseCbuildRunOutputs, parseCbuildYml } from './core/buildInfo/artifacts';
 import { BuildLogSummary, parseBuildLog, readBuildLog } from './core/buildInfo/buildLog';
-import { renderBuildFailure } from './core/buildInfo/render';
+import { renderBuildFailure, renderBuildWarnings } from './core/buildInfo/render';
 import {
     BUILD_TASK_KINDS,
     BuildCheck,
@@ -141,11 +161,13 @@ import {
     JobDiagnosis,
     JobExecution,
     MAX_BUILD_MESSAGES,
+    PENDING_RESULT,
     SETUP_TASK_KINDS,
     SETUP_WAIT_MS,
 } from './core/cmsisTasks';
 import { knownMessageLines } from './core/knowledge/knownMessageLookup';
 import { activeTargetSetOf, solutionFileOf } from './core/solutionAnswers';
+import { peekSolutionApi, settleWithin, v3Method } from './core/solutionApi';
 import { formatDuration } from './handler/jobText';
 import { logger } from './utils/logger';
 import { apiToolsEnvironment, solutionGetter } from './utils/solutionQueries';
@@ -206,6 +228,11 @@ export interface DiagnosisHost {
     readonly clock: TrackerClock;
     /** Lines for the error messages the knowledge index knows; absent or empty without the knowledge tools. */
     knownMessageLines?(messages: readonly string[]): string[] | Promise<string[]>;
+    /**
+     * The result CMSIS Solution captured for a build task (`getBuildResult` of its API version 3, #140), read by
+     * `capturedResultOf`; absent or undefined when it offers none, and the build is then checked as before.
+     */
+    buildResult?(execution: ExecutionLike): PromiseLike<unknown> | undefined;
 }
 
 /** A build result names at most this many units of the knowledge index. */
@@ -222,6 +249,10 @@ const QUERY_MS = 5_000;
 const MAX_SETUP_RESTARTS = 3;
 /** At most this many cleans keep the images they found at their start, waiting for their end. */
 const MAX_CLEAN_SNAPSHOTS = 8;
+/** At most this many started builds keep the result asked for them, waiting for their end. */
+const MAX_CAPTURED_RESULTS = 16;
+/** What a build without an exit code in its captured result is told (#140). */
+const NO_EXIT_CODE = 'CMSIS Solution recorded no exit code of cbuild for it: the build was skipped as a duplicate of one already queued, or stopped.';
 /** Definition fields that must not hold a variable the re-run cannot resolve (`solution` and `active` are resolved). */
 const LITERAL_FIELDS = ['generator', 'intermediateDirectory', 'outputDirectory', 'cmakeTarget', 'toolchain'];
 
@@ -268,6 +299,18 @@ export interface CleanSnapshot {
     images?: string[];
     solutionDir?: string;
     target?: string;
+}
+
+/** Where a build's captured output goes: the solution's folder and the target set, as they were when its task started. */
+interface ResultPlace {
+    solutionDir: string;
+    target?: string;
+}
+
+/** The result asked for a build when its task started (#140): settled either way, never rejected. */
+interface CapturedEntry {
+    result: Promise<{ value: unknown } | { refused: string }>;
+    place: Promise<ResultPlace | undefined>;
 }
 
 /** A re-run in progress, as `dispose` and the build-start watch stop it. */
@@ -521,6 +564,25 @@ function checked(check: BuildCheck, text: string, note?: string): JobDiagnosis {
     };
 }
 
+/** A diagnosis that found nothing to say: for a job whose captured result could not be used and that has no other check. */
+const NOTHING_FOUND: JobDiagnosis = Object.freeze({ state: 'done', source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '' });
+
+/**
+ * Write a build's captured output, already cleaned, where `get_build_diagnostics` finds it (#140); the file's
+ * path, or undefined when it could not be written.
+ */
+function writeResultLog(place: ResultPlace, taskName: string, exitCode: number, text: string): string | undefined {
+    const file = path.join(place.solutionDir, ...resultLogPath(place.target).split('/'));
+    try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, `${resultLogHeader(taskName, exitCode)}${text}`);
+        return file;
+    } catch (caught) {
+        logger.warn(`Build result: the captured output could not be written to ${file}`, caught);
+        return undefined;
+    }
+}
+
 /** The job's diagnosis from a report: the structured lists, the counts and the text the result shows. */
 export function diagnosisOf(report: BuildFailureReport, solutionDir: string | undefined): JobDiagnosis {
     const warnings = [...report.warnings, ...report.csolutionWarnings];
@@ -558,6 +620,8 @@ export class BuildDiagnosisRunner {
     private readonly cleanSnapshots = new Map<number, CleanSnapshot>();
     /** When each image of a build or rebuild was written last, as its start found them, by execution key. */
     private readonly buildSnapshots = new Map<number, ImageStamps>();
+    /** The result CMSIS Solution captures for each build task that started, by execution key (#140). */
+    private readonly captured = new Map<number, CapturedEntry>();
     /** Settles when the re-run that holds the log lets go of it; the next one waits for it (#135). */
     private logTurn: Promise<void> = Promise.resolve();
     /** Re-runs that asked for the log so far: one whose number is not the last was superseded by a newer one. */
@@ -586,6 +650,11 @@ export class BuildDiagnosisRunner {
      */
     onFinished(job: Job): void {
         const decided = job.executions.find((execution) => execution.key === job.decidedBy);
+        const entry = decided ? this.captured.get(decided.key) : undefined;
+        if (decided) {
+            // Holding the promise keeps the output alive in CMSIS Solution: let go of it here, used or not.
+            this.captured.delete(decided.key);
+        }
         if (!isBuildAction(job.action) || !decided || decided.exitCode === undefined) {
             return;
         }
@@ -593,13 +662,144 @@ export class BuildDiagnosisRunner {
         this.cleanSnapshots.delete(decided.key);
         const before = this.buildSnapshots.get(decided.key);
         this.buildSnapshots.delete(decided.key);
-        if (job.state === 'failed' && decided.exitCode !== 0) {
-            this.tracker.completeWith(job.id, this.diagnose(decided).then((diagnosis) => this.withKnownMessages(diagnosis)));
-        } else if (job.state === 'ok' && decided.exitCode === 0 && job.action === 'clean') {
-            this.tracker.completeWith(job.id, Promise.resolve(this.checkClean(snapshot)));
-        } else if (job.state === 'ok' && decided.exitCode === 0 && this.tracker.definitionOf(decided.key)?.clean !== true) {
-            this.tracker.completeWith(job.id, this.check(decided, before).then((diagnosis) => this.withKnownMessages(diagnosis)));
+        if (entry && (job.state === 'ok' || job.state === 'failed')) {
+            this.tracker.completeWith(job.id, this.fromResult(job, decided, entry, snapshot, before), PENDING_RESULT);
+            return;
         }
+        const work = this.withoutResult(job, decided, snapshot, before);
+        if (work) {
+            this.tracker.completeWith(job.id, work);
+        }
+    }
+
+    /**
+     * The work for a job without a captured result: the diagnosis of a failed build or rebuild, the check of one
+     * that exited 0, the check of what a clean that exited 0 removed. Undefined when there is nothing to find out.
+     */
+    private withoutResult(job: Job, decided: JobExecution, snapshot: CleanSnapshot | undefined, before: ImageStamps | undefined): Promise<JobDiagnosis> | undefined {
+        if (job.state === 'failed' && decided.exitCode !== 0) {
+            return this.diagnose(decided).then((diagnosis) => this.withKnownMessages(diagnosis));
+        }
+        if (job.state === 'ok' && decided.exitCode === 0 && job.action === 'clean') {
+            return Promise.resolve(this.checkClean(snapshot));
+        }
+        if (job.state === 'ok' && decided.exitCode === 0 && this.tracker.definitionOf(decided.key)?.clean !== true) {
+            return this.check(decided, before).then((diagnosis) => this.withKnownMessages(diagnosis));
+        }
+        return undefined;
+    }
+
+    /**
+     * The diagnosis of a build from the result CMSIS Solution captured for it (#140); never rejects. A result
+     * that was refused, is none or does not settle within `RESULT_FENCE_MS` leaves the build to `withoutResult`.
+     */
+    private async fromResult(
+        job: Job,
+        decided: JobExecution,
+        entry: CapturedEntry,
+        snapshot: CleanSnapshot | undefined,
+        before: ImageStamps | undefined,
+    ): Promise<JobDiagnosis> {
+        let result: CapturedBuildResult | undefined;
+        let why = `it had not settled ${formatDuration(RESULT_FENCE_MS)} after the task ended`;
+        try {
+            const settled = await settleWithin(entry.result, RESULT_FENCE_MS, this.host.clock);
+            if (settled && 'refused' in settled.value) {
+                why = settled.value.refused;
+            } else if (settled) {
+                result = capturedResultOf((settled.value as { value: unknown }).value);
+                why = 'it has another shape than { exitCode, output }';
+            }
+        } catch (caught) {
+            why = messageOf(caught);
+        }
+        if (!result) {
+            logger.info(`Build result: CMSIS Solution's captured result of '${decided.name}' is not used (${why}); the build is checked as before`);
+            return await (this.withoutResult(job, decided, snapshot, before) ?? Promise.resolve(NOTHING_FOUND));
+        }
+        try {
+            return await this.withKnownMessages(await this.diagnosisOfResult(job, decided, result, entry, snapshot));
+        } catch (caught) {
+            logger.warn('Build result: reading the captured result failed', caught);
+            return await (this.withoutResult(job, decided, snapshot, before) ?? Promise.resolve(NOTHING_FOUND));
+        }
+    }
+
+    /** What a captured result says about its build: see the module comment. */
+    private async diagnosisOfResult(
+        job: Job,
+        decided: JobExecution,
+        result: CapturedBuildResult,
+        entry: CapturedEntry,
+        snapshot: CleanSnapshot | undefined,
+    ): Promise<JobDiagnosis> {
+        if (result.exitCode === undefined) {
+            return checked('unverified', NO_EXIT_CODE);
+        }
+        const exitCode = result.exitCode;
+        const cleans = job.action === 'clean' || this.tracker.definitionOf(decided.key)?.clean === true;
+        if (cleans && exitCode === 0) {
+            return this.checkClean(snapshot, true);
+        }
+        const place = await entry.place;
+        const text = cleanBuildOutput(result.output);
+        // A clean keeps the log of the build before it; so does a build whose place is not known.
+        const logFile = cleans || !place ? undefined : writeResultLog(place, decided.name, exitCode, text);
+        const summary = parseBuildLog(text, logFile ?? 'build output');
+        const { errors, warnings } = messagesFromLog(summary);
+        if (exitCode === 0) {
+            return {
+                state: 'done', check: 'succeeded', source: 'build',
+                errors, warnings, errorCount: summary.errors, warningCount: summary.warnings, ...(logFile ? { logFile } : {}),
+                text: renderBuildWarnings({ errors, warnings, errorCount: summary.errors, warningCount: summary.warnings, logFile }, { root: place?.solutionDir }),
+            };
+        }
+        const diagnosis = diagnosisOf({
+            source: 'build', errors, warnings, errorCount: summary.errors, warningCount: summary.warnings,
+            failedSteps: summary.failedSteps, csolutionWarnings: [], ...(logFile ? { logFile } : {}),
+            build: { exitCode, ...(summary.status ? { status: summary.status } : {}) },
+        }, place?.solutionDir);
+        // The task closed with 0 although cbuild did not: the job is a failed one.
+        return job.state === 'ok' ? { ...diagnosis, check: 'failed' } : diagnosis;
+    }
+
+    /**
+     * Ask CMSIS Solution for the result of a build task that starts (#140), and note where its output goes: the
+     * solution and the target set of now. Nothing is noted on a host without `getBuildResult`.
+     */
+    private noteResult(execution: LiveExecution): void {
+        let pending: PromiseLike<unknown> | undefined;
+        try {
+            pending = this.host.buildResult?.(execution.execution);
+        } catch (caught) {
+            pending = Promise.reject(caught);
+        }
+        if (pending === undefined) {
+            return;
+        }
+        const result = Promise.resolve(pending).then(
+            (value: unknown) => ({ value }),
+            (caught: unknown) => ({ refused: `CMSIS Solution refused it: ${messageOf(caught)}` }),
+        );
+        const place = this.placeOf(this.tracker.definitionOf(execution.key) ?? {}).catch(() => undefined);
+        this.captured.set(execution.key, { result, place });
+        for (const old of this.captured.keys()) {
+            if (this.captured.size <= MAX_CAPTURED_RESULTS) {
+                break;
+            }
+            this.captured.delete(old);
+        }
+    }
+
+    /** The solution's folder and the target set a starting build runs for: its definition's, else the active ones. */
+    private async placeOf(definition: TaskDefinitionLike): Promise<ResultPlace | undefined> {
+        const named = this.buildFiles(definition);
+        const solution = named?.solution ?? await this.solutionOf(definition, this.host.workingDirectory());
+        if (!solution) {
+            return undefined;
+        }
+        const target = named?.target ?? await this.host.activeTarget();
+        return { solutionDir: path.dirname(solution), ...(target ? { target } : {}) };
     }
 
     /**
@@ -614,6 +814,7 @@ export class BuildDiagnosisRunner {
         if (BUILD_TASK_KINDS.has(execution.kind) && !SETUP_TASK_KINDS.has(execution.kind)) {
             this.buildStarts++;
             this.nudge();
+            this.noteResult(execution);
         }
         if (execution.kind === 'build' || execution.kind === 'rebuild') {
             this.noteImageStamps(execution.key);
@@ -688,9 +889,11 @@ export class BuildDiagnosisRunner {
 
     /**
      * The check of a clean that exited 0: are the images that were there when
-     * it started gone? CMSIS Solution reports exit 0 for a failed clean too.
+     * it started gone? CMSIS Solution reports exit 0 for a failed clean too;
+     * `trusted` says the exit code is cbuild's own, and an image left is then
+     * only named.
      */
-    checkClean(snapshot: CleanSnapshot | undefined): JobDiagnosis {
+    checkClean(snapshot: CleanSnapshot | undefined, trusted = false): JobDiagnosis {
         const images = snapshot?.images;
         if (!images) {
             return checked('cleaned', 'Which images were there before the clean is not known, so their removal was not checked.');
@@ -701,6 +904,10 @@ export class BuildDiagnosisRunner {
         }
         const more = (list: readonly string[]): string => (list.length > 1 ? ` (and ${list.length - 1} more)` : '');
         const left = images.filter((file) => mtimeOf(file) !== undefined);
+        if (left.length > 0 && trusted) {
+            // The exit code is cbuild's own (#140): the clean ran, whatever it left.
+            return checked('cleaned', `cbuild exited 0, and ${shown(left[0], solutionDir)}${more(left)} is still there.`);
+        }
         if (left.length > 0) {
             return checked('unverified', `${shown(left[0], solutionDir)}${more(left)} is still there, and CMSIS Solution reports exit 0 `
                 + 'for a failed clean too, so this clean may have failed.');
@@ -771,6 +978,7 @@ export class BuildDiagnosisRunner {
             rerun.stop('disposed');
         }
         this.cleanSnapshots.clear();
+        this.captured.clear();
     }
 
     private async collect(decided: JobExecution, marks: RerunMarks): Promise<JobDiagnosis> {
@@ -1204,5 +1412,6 @@ export function vscodeDiagnosisHost(clock: TrackerClock): DiagnosisHost {
         killTree: (child) => killProcessTree(child, process.platform),
         clock,
         knownMessageLines,
+        buildResult: (execution) => v3Method(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)), 'getBuildResult')?.(execution),
     };
 }

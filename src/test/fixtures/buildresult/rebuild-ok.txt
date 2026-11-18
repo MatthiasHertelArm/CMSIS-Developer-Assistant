@@ -1,0 +1,19 @@
++-------------------------------------------------
+(1/1) Cleaning context: "Blinky.Debug+microbit-v2"
+warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown
++-------------------------------------------------
+(1/1) Building context: "Blinky.Debug+microbit-v2"
+Using AC6 V6.24.0 compiler, from: '/Users/dev/.vcpkg/artifacts/0a1b2c3d/compilers.arm.armclang/6.24.0/bin'
+[1m[34mBuilding CMake target 'Blinky.Debug+microbit-v2'[0m
+Using compiler: AC6 V6.24.0
+[0/7] Building C object CMakeFiles/Gro...chpad/Blinky/Blinky.o[K[0/7] Building C object CMakeFiles/Mic...oBit_V2_BSP/0.1.1/Board/microbit_gpio.o[K[0/7] Building C object CMakeFiles/Mic...t_V2_BSP/0.1.1/Board/microbit_display.o[K[0/7] Building C object CMakeFiles/Mic...oBit_V2_BSP/0.1.1/Board/microbit_time.o[K[0/7] Building ASM object CMakeFiles/N...ce/nRF52833_xxAA/arm_startup_nrf52833.o[K[0/7] Building C object CMakeFiles/Nor...RTE/Device/nRF52833_xxAA/system_nrf52.o[K[1/7] Building C object CMakeFiles/Gro...chpad/Blinky/Blinky.o[K[2/7] Building C object CMakeFiles/Mic...oBit_V2_BSP/0.1.1/Board/microbit_gpio.o[K[3/7] Building C object CMakeFiles/Mic...oBit_V2_BSP/0.1.1/Board/microbit_time.o[K[4/7] Building C object CMakeFiles/Nor...RTE/Device/nRF52833_xxAA/system_nrf52.o[K[5/7] Building C object CMakeFiles/Mic...t_V2_BSP/0.1.1/Board/microbit_display.o[K[6/7] Building ASM object CMakeFiles/N...ce/nRF52833_xxAA/arm_startup_nrf52833.o[K
+armclang: warning: argument unused during compilation: '-MD' [-Wunused-command-line-argument]
+armclang: warning: argument unused during compilation: '-MT CMakeFiles/NordicSemiconductor_Device_Startup_8_44_1.dir/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.o' [-Wunused-command-line-argument]
+armclang: warning: argument unused during compilation: '-MF CMakeFiles/NordicSemiconductor_Device_Startup_8_44_1.dir/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.o.d' [-Wunused-command-line-argument]
+Warning: A1950W: The legacy armasm assembler is deprecated. Consider using the armclang integrated assembler instead.
+0 Errors, 1 Warning
+[6/7] Linking C executable /private/tm...out/Blinky/microbit-v2/Debug/Blinky.axf[K[7/7] Linking C executable /private/tm...out/Blinky/microbit-v2/Debug/Blinky.axf[K
+Program Size: Code=1320 RO-data=584 RW-data=4 ZI-data=19988  
++------------------------------------------------------------
+Build summary: 1 succeeded, 0 failed - Time Elapsed: 00:00:02
++============================================================

@@ -464,14 +464,14 @@ export class CmsisJobTracker {
      * and `waitFor` waits for it. A rejected `work` becomes a diagnosis that
      * says so. A build that exited 0 whose check says `failed` becomes a
      * failed job (`withDiagnosis`). Meant for `onDidFinishJob` listeners;
-     * once per job.
+     * once per job. `pending` is what the job carries meanwhile.
      */
-    completeWith(id: string, work: Promise<JobDiagnosis>): void {
+    completeWith(id: string, work: Promise<JobDiagnosis>, pending: JobDiagnosis = PENDING_DIAGNOSIS): void {
         const job = this.jobs.get(id);
         if (!job || !isSettled(job.state) || this.followUps.has(id)) {
             return;
         }
-        this.jobs.set(id, { ...job, diagnosis: PENDING_DIAGNOSIS });
+        this.jobs.set(id, { ...job, diagnosis: pending });
         const settled = work.then((diagnosis) => diagnosis, (caught: unknown) => failedDiagnosis(caught)).then((diagnosis) => {
             this.followUps.delete(id);
             const current = this.jobs.get(id);

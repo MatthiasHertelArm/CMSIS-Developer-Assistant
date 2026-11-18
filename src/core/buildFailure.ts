@@ -402,8 +402,8 @@ export interface RerunOutcome {
 
 /** Everything `renderBuildFailure` shows about a failed build. */
 export interface BuildFailureReport {
-    /** Where the lines come from: csolution's index, the diagnostic re-run, or neither. */
-    source: 'csolution' | 'rerun' | 'none';
+    /** Where the lines come from: csolution's index, the diagnostic re-run, the build's own captured output (#140), or none of them. */
+    source: 'csolution' | 'rerun' | 'build' | 'none';
     errors: BuildMessage[];
     warnings: BuildMessage[];
     /** The full counts; a re-run's warnings are only those of the files it recompiled. */
@@ -415,9 +415,11 @@ export interface BuildFailureReport {
     csolutionWarnings: BuildMessage[];
     /** The index the csolution messages come from. */
     idxFile?: string;
-    /** The re-run's log. */
+    /** The re-run's log, or the file the build's captured output was written to. */
     logFile?: string;
     rerun?: RerunOutcome;
+    /** For source `build`: cbuild's exit code and the last status line of its output. */
+    build?: { exitCode: number; status?: string };
     /** Why cbuild was not re-run, or why the re-run has no lines. */
     skipped?: string;
 }

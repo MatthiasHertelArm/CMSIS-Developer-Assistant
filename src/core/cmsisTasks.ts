@@ -309,8 +309,17 @@ export interface BuildMessage {
  *     it was to remove is still there;
  *   - `cleaned`: a clean that exited 0 left none of the images the active
  *     target had before it started.
+ *
+ * A CMSIS Solution that hands out the result it captured for a build task
+ * (`getBuildResult` of API version 3, #140) needs none of this:
+ *
+ *   - `succeeded`: cbuild's own exit code, from that result, is 0. Nothing
+ *     else is looked at and nothing is re-run; the diagnosis carries the
+ *     warnings of the build's output. `failed` and `unverified` then mean
+ *     an exit code other than 0, and no exit code at all (a build skipped
+ *     as a duplicate of a queued one, or stopped).
  */
-export type BuildCheck = 'rebuilt' | 'up-to-date' | 'failed' | 'unverified' | 'cleaned';
+export type BuildCheck = 'rebuilt' | 'up-to-date' | 'failed' | 'unverified' | 'cleaned' | 'succeeded';
 
 /**
  * What the extension found out about a build after its task ended, attached
@@ -332,13 +341,16 @@ export interface JobDiagnosis {
     state: 'pending' | 'done';
     /** Set for a build whose task exited 0: what the check of its result found. */
     check?: BuildCheck;
-    /** `csolution`: a fresh cbuild-idx.yml; `rerun`: cbuild re-run with --log; `none`: neither produced lines. */
-    source: 'csolution' | 'rerun' | 'none';
+    /**
+     * `csolution`: a fresh cbuild-idx.yml; `rerun`: cbuild re-run with --log; `build`: the build's own output, as
+     * CMSIS Solution captured it (#140); `none`: none of them produced lines.
+     */
+    source: 'csolution' | 'rerun' | 'build' | 'none';
     errors: readonly BuildMessage[];
     warnings: readonly BuildMessage[];
     errorCount: number;
     warningCount: number;
-    /** The re-run's log file, absolute. */
+    /** The re-run's log file, or the file the build's captured output was written to; absolute. */
     logFile?: string;
     /** Why there was no re-run, or what limits its lines. */
     note?: string;
@@ -353,6 +365,9 @@ export const MAX_BUILD_MESSAGES = 200;
 export const PENDING_DIAGNOSIS: JobDiagnosis = Object.freeze({
     state: 'pending', source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '',
 });
+
+/** A build's diagnosis while the result CMSIS Solution captured for it is read (#140): no check and no re-run is going on. */
+export const PENDING_RESULT: JobDiagnosis = Object.freeze({ ...PENDING_DIAGNOSIS, source: 'build' });
 
 /**
  * The job with its final diagnosis. A build that exited 0 but whose check

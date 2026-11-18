@@ -1099,6 +1099,263 @@ suite('build diagnosis (#15)', () => {
         });
     });
 
+    suite('a build whose result CMSIS Solution captured needs no check and no re-run (#140)', () => {
+        const CAPTURED = path.resolve(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'buildresult');
+        const output = (name: string): string => fs.readFileSync(path.join(CAPTURED, `${name}.txt`), 'utf8');
+        /** What `build()` of API version 3 starts: a task whose definition names neither the solution nor the target. */
+        const API_TASK: FixtureTask = {
+            name: 'cbuild --active "" --schema', source: 'cmsis-csolution.build',
+            definition: { type: 'cmsis-csolution.build', clean: false, rebuild: false, downloadPacks: false, updateRte: false },
+        };
+        interface Capture {
+            asked: FakeExecution[];
+            /** Settle the result of the n-th build task that started. */
+            settle(index: number, result: unknown): void;
+            refuse(index: number, error: Error): void;
+        }
+        /** A host with `getBuildResult`: each started build task is asked for, and the test settles its result. */
+        const capturing = (w: World): Capture => {
+            const pending: { resolve(value: unknown): void; reject(error: Error): void }[] = [];
+            const asked: FakeExecution[] = [];
+            w.host.buildResult = (execution) => {
+                asked.push(execution as FakeExecution);
+                return new Promise<unknown>((resolve, reject) => pending.push({ resolve, reject }));
+            };
+            return { asked, settle: (index, result) => pending[index].resolve(result), refuse: (index, error) => pending[index].reject(error) };
+        };
+        /** A build job whose task starts, ends with `exitCode` 3 s later, and whose captured result is `result`. */
+        const captured = (w: World, capture: Capture, exitCode: number | undefined, result: unknown, task: FixtureTask = buildTask(w), action: JobAction = 'build'): Job => {
+            const job = w.tracker.begin(action, 'MPS3');
+            w.tracker.issued(job.id);
+            const execution = w.tasks.start(w.tasks.execution(task));
+            w.clock.advance(w.clock.now() + 3_000);
+            capture.settle(capture.asked.indexOf(execution), result);
+            w.tasks.finish(execution, exitCode);
+            return job;
+        };
+        const logOfTarget = (w: World, target: string): string => path.join(w.dir, 'out', 'cmsis-developer-assistant', `build-${target}.log`);
+
+        test('exit 0 is the success: the warnings of the output are in the result, the output is the log, nothing is re-run', async () => {
+            const w = make();
+            const capture = capturing(w);
+            // An image older than the build would send the old check into a re-run.
+            builtLayout(w, { ageMs: 3_600_000 });
+            const job = captured(w, capture, 0, { exitCode: 0, output: output('rebuild-ok') });
+            assert.deepStrictEqual(w.tracker.job(job.id)?.diagnosis, { state: 'pending', source: 'build', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '' });
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(capture.asked.length, 1, 'asked once, when the task started');
+            assert.strictEqual(done.state, 'ok');
+            assert.deepStrictEqual([done.diagnosis?.check, done.diagnosis?.source, done.diagnosis?.errorCount, done.diagnosis?.warningCount], ['succeeded', 'build', 0, 5]);
+            assert.strictEqual(w.children.length, 0, 'no diagnostic re-run of cbuild');
+            const logFile = logOfTarget(w, 'MPS3');
+            assert.strictEqual(done.diagnosis?.logFile, logFile);
+            const log = fs.readFileSync(logFile, 'utf8');
+            assert.ok(log.startsWith('[cmsis-developer-assistant] Output of \'cbuild Blinky.csolution.yml --active MPS3 --packs\' as CMSIS Solution captured it; cbuild exit code 0.\n'), log);
+            assert.ok(!/[\x1b\r]/.test(log) && log.includes('\nWarning: A1950W: The legacy armasm assembler is deprecated.'), 'the output without its control sequences');
+            const reply = jobResult(done, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof reply !== 'string' && reply.status === 'ok');
+            assert.strictEqual(reply.text, [
+                '✅ CMSIS \'build\' succeeded on MPS3 (task \'cbuild Blinky.csolution.yml --active MPS3 --packs\' exited 0 after 3 s, cbuild\'s own exit code, job b-1). '
+                    + 'The firmware is built — use cmsis_action load or load_and_debug to flash it.',
+                '5 warnings in its output:',
+                '  warning csolution: file \'/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base\' not found; base version unknown',
+                '  warning: argument unused during compilation: \'-MD\' [-Wunused-command-line-argument]',
+                '  warning: argument unused during compilation: \'-MT …\' [-Wunused-command-line-argument]',
+                '  warning: argument unused during compilation: \'-MF …\' [-Wunused-command-line-argument]',
+                '  warning A1950W: The legacy armasm assembler is deprecated. Consider using the armclang integrated assembler instead.',
+                'Full output: out/cmsis-developer-assistant/build-MPS3.log (get_build_diagnostics reads it).',
+            ].join('\n'));
+            const data = reply.data?.diagnosis as Record<string, unknown>;
+            assert.deepStrictEqual([data.state, data.check, data.source, data.warningCount, data.logFile], ['done', 'succeeded', 'build', 5, logFile]);
+            const idle = idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now());
+            assert.match(idle, /Last results: build on MPS3 ✅ [\d.]+ s ago \(job b-1, /);
+            assert.ok(idle.includes('\nBuild job b-1 succeeded: 5 warnings in its output:\n'), idle);
+        });
+
+        test('a build without a warning says only whose exit code it is', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const job = captured(w, capture, 0, { exitCode: 0, output: '(1/1) Building context: "Blinky.Debug+MPS3"\r\nninja: no work to do.\r\r\n' });
+            const done = await diagnosed(w, job.id);
+            const reply = jobResult(done, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof reply !== 'string');
+            assert.match(reply.text, /^✅ CMSIS 'build' succeeded on MPS3 \(task '.*' exited 0 after 3 s, cbuild's own exit code, job b-1\)\. The firmware is built — use cmsis_action load or load_and_debug to flash it\.$/);
+            assert.ok(!idleStatus(w.tracker.recent(), w.tracker.liveExecutions(), w.clock.now()).includes('succeeded:'));
+        });
+
+        test('the CMake recommendation of a successful build reaches the result, with the code tool-version', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const line = 'CMake 4.2.1 or newer is recommended for CMSIS-Toolbox. You are using CMake 3.31.12.';
+            const job = captured(w, capture, 0, { exitCode: 0, output: `${line}\r\n${output('build-noop')}` });
+            const done = await diagnosed(w, job.id);
+            assert.deepStrictEqual(done.diagnosis?.warnings[0], { severity: 'warning', code: 'tool-version', message: line });
+            const reply = jobResult(done, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof reply !== 'string' && reply.text.includes(`\n2 warnings in its output:\n  warning tool-version: ${line}\n`), JSON.stringify(reply));
+        });
+
+        test('another exit code is the failure: the error lines come from the build\'s own output', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const job = captured(w, capture, 1, { exitCode: 1, output: output('build-error') });
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.state, 'failed');
+            assert.deepStrictEqual([done.diagnosis?.source, done.diagnosis?.check, done.diagnosis?.errorCount, done.diagnosis?.warningCount], ['build', undefined, 3, 1]);
+            assert.strictEqual(w.children.length, 0, 'no diagnostic re-run of cbuild');
+            const failure = resultError(done, w.clock.now());
+            assert.match(failure.message, /^❌ CMSIS 'build' FAILED on MPS3 — task '.*' exited with code 1 after 3 s \(job b-1\)\.\n3 errors in the build's own output \(cbuild exit 1\), 1 warning:\n {2}…\/work\/Blinky\/Blinky\.c:43:19 error: expected parameter declarator\n/);
+            assert.ok(failure.message.endsWith('\nFull log: out/cmsis-developer-assistant/build-MPS3.log (get_build_diagnostics reads it).'), failure.message);
+            assert.strictEqual(failure.hint, 'Fix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.');
+            assert.ok(fs.readFileSync(logOfTarget(w, 'MPS3'), 'utf8').includes('cbuild exit code 1.\n'));
+        });
+
+        test('a linker error is read from the output as well', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const done = await diagnosed(w, captured(w, capture, 1, { exitCode: 1, output: output('build-link-error') }).id);
+            assert.deepStrictEqual(done.diagnosis?.errors, [{ severity: 'error', code: 'L6218E', message: 'Undefined symbol probe_missing (referred from Blinky.o).' }]);
+        });
+
+        test('a task that closed with 0 although cbuild did not is a failed build', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const done = await diagnosed(w, captured(w, capture, 0, { exitCode: 1, output: output('build-error') }).id);
+            assert.deepStrictEqual([done.state, done.diagnosis?.check], ['failed', 'failed']);
+        });
+
+        test('no exit code is never a success: the build was skipped or stopped, and nothing is re-run', async () => {
+            const w = make();
+            const capture = capturing(w);
+            builtLayout(w, { ageMs: 3_600_000 });
+            const done = await diagnosed(w, captured(w, capture, 0, { output: '' }).id);
+            assert.deepStrictEqual([done.state, done.diagnosis?.check], ['ok', 'unverified']);
+            assert.strictEqual(w.children.length, 0);
+            assert.ok(!fs.existsSync(logOfTarget(w, 'MPS3')), 'no log of a build that has no result');
+            const reply = jobResult(done, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof reply !== 'string');
+            assert.match(reply.text, /^⚠️ CMSIS 'build' on MPS3: task '.*' exited 0 after 3 s \(job b-1\), but that does not confirm the build\. CMSIS Solution recorded no exit code of cbuild for it: the build was skipped as a duplicate of one already queued, or stopped\. Before you load this image, ask the user/);
+        });
+
+        test('a build stopped with Stop Build is cancelled as before: no diagnosis, and its result is let go', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const job = captured(w, capture, BUILD_STOPPED_EXIT_CODE, { output: output('rebuild-stopped-command') });
+            await rounds();
+            assert.deepStrictEqual([w.tracker.job(job.id)?.state, w.tracker.job(job.id)?.diagnosis], ['cancelled', undefined]);
+            assert.ok(!fs.existsSync(logOfTarget(w, 'MPS3')));
+        });
+
+        test('the solution and the target set are those of the task\'s start, also for a task that names neither', async () => {
+            const w = make();
+            const capture = capturing(w);
+            let active = 'MPS3@debug';
+            w.host.activeTarget = async () => active;
+            const job = w.tracker.begin('build', 'MPS3@debug');
+            w.tracker.issued(job.id);
+            const execution = w.tasks.start(w.tasks.execution(API_TASK));
+            await rounds(5);
+            active = 'Other';
+            w.clock.advance(w.clock.now() + 3_000);
+            capture.settle(0, { exitCode: 0, output: output('build-warning') });
+            w.tasks.finish(execution, 0);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.diagnosis?.logFile, logOfTarget(w, 'MPS3@debug'));
+            assert.ok(fs.readFileSync(logOfTarget(w, 'MPS3@debug'), 'utf8').startsWith('[cmsis-developer-assistant] Output of \'cbuild --active "" --schema\' as CMSIS Solution captured it;'));
+            assert.ok(!fs.existsSync(logOfTarget(w, 'Other')));
+        });
+
+        test('a clean that exited 0 is cleaned, and leaves the log of the build before it', async () => {
+            const w = make();
+            const capture = capturing(w);
+            await diagnosed(w, captured(w, capture, 0, { exitCode: 0, output: output('build-noop') }).id);
+            const before = fs.readFileSync(logOfTarget(w, 'MPS3'), 'utf8');
+            const image = builtLayout(w);
+            const cleanTask: FixtureTask = { name: 'cbuild Blinky.csolution.yml --clean', source: 'cmsis-csolution.build', definition: { ...buildTask(w).definition, clean: true } };
+            const job = w.tracker.begin('clean', 'MPS3');
+            w.tracker.issued(job.id);
+            const execution = w.tasks.start(w.tasks.execution(cleanTask));
+            fs.rmSync(image);
+            w.clock.advance(w.clock.now() + 1_000);
+            capture.settle(1, { exitCode: 0, output: output('clean') });
+            w.tasks.finish(execution, 0);
+            const done = await diagnosed(w, job.id);
+            assert.deepStrictEqual([done.state, done.diagnosis?.check, done.diagnosis?.text], ['ok', 'cleaned', 'Removed: out/Blinky/MPS3/Debug/Blinky.axf.']);
+            assert.strictEqual(fs.readFileSync(logOfTarget(w, 'MPS3'), 'utf8'), before);
+        });
+
+        test('an image a clean left is named, not doubted: the exit code is cbuild\'s own', async () => {
+            const w = make();
+            const capture = capturing(w);
+            builtLayout(w);
+            const cleanTask: FixtureTask = { name: 'cbuild Blinky.csolution.yml --clean', source: 'cmsis-csolution.build', definition: { ...buildTask(w).definition, clean: true } };
+            const done = await diagnosed(w, captured(w, capture, 0, { exitCode: 0, output: output('clean') }, cleanTask, 'clean').id);
+            assert.deepStrictEqual([done.diagnosis?.check, done.diagnosis?.text], ['cleaned', 'cbuild exited 0, and out/Blinky/MPS3/Debug/Blinky.axf is still there.']);
+        });
+
+        test('a result CMSIS Solution refuses leaves the build to the old check', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const job = w.tracker.begin('build', 'MPS3');
+            w.tracker.issued(job.id);
+            const execution = w.tasks.start(w.tasks.execution(buildTask(w)));
+            capture.refuse(0, new Error('No captured build result is available for this task execution'));
+            w.clock.advance(w.clock.now() + 3_000);
+            w.tasks.finish(execution, 2);
+            await until(() => w.children.length === 1, 'cbuild was re-run');
+            w.children[0].finish(1, GCC_LOG);
+            assert.strictEqual((await diagnosed(w, job.id)).diagnosis?.source, 'rerun');
+        });
+
+        test('a result of another shape leaves the build to the old check', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const image = builtLayout(w, { ageMs: 3_600_000 });
+            const job = w.tracker.begin('build', 'MPS3');
+            w.tracker.issued(job.id);
+            const execution = w.tasks.start(w.tasks.execution(buildTask(w)));
+            fs.writeFileSync(image, 'ELF, linked again');
+            w.clock.advance(w.clock.now() + 3_000);
+            capture.settle(0, { status: 'success', logFile: '/tmp/build.log' });
+            w.tasks.finish(execution, 0);
+            assert.strictEqual((await diagnosed(w, job.id)).diagnosis?.check, 'rebuilt');
+        });
+
+        test(`a result that has not settled ${10} s after the task ended leaves the build to the old check`, async () => {
+            const w = make();
+            capturing(w);
+            const image = builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w, {}, 'build', () => fs.writeFileSync(image, 'ELF, linked again'));
+            await rounds();
+            assert.strictEqual(w.tracker.job(job.id)?.diagnosis?.state, 'pending');
+            const early = jobResult(w.tracker.job(job.id) as Job, { tag: ' on MPS3', now: w.clock.now() });
+            assert.ok(typeof early !== 'string' && early.status === 'running');
+            assert.match(early.text, /exited 0 after 3 s \(job b-1\); the output CMSIS Solution captured for it is still being read\. Call cmsis_action \{action:'status'\} for the result — do not start another build\./);
+            w.clock.advance(w.clock.now() + 10_000);
+            assert.strictEqual((await diagnosed(w, job.id)).diagnosis?.check, 'rebuilt');
+        });
+
+        test('a host without getBuildResult is never asked, and builds are checked as before', async () => {
+            const w = make();
+            const image = builtLayout(w, { ageMs: 3_600_000 });
+            const { job } = passBuild(w, {}, 'build', () => fs.writeFileSync(image, 'ELF, linked again'));
+            assert.deepStrictEqual(w.tracker.job(job.id)?.diagnosis?.source, 'none', 'the pending check of before');
+            assert.strictEqual((await diagnosed(w, job.id)).diagnosis?.check, 'rebuilt');
+        });
+
+        test('a build the user started in the CMSIS view gets its result the same way', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const execution = w.tasks.start(w.tasks.execution(buildTask(w)));
+            w.clock.advance(w.clock.now() + 3_000);
+            capture.settle(0, { exitCode: 0, output: output('build-warning') });
+            w.tasks.finish(execution, 0);
+            await until(() => w.tracker.recent().some((job) => job.diagnosis?.state === 'done'), 'the adopted job is diagnosed');
+            const adopted = w.tracker.recent()[0];
+            assert.deepStrictEqual([adopted.origin, adopted.diagnosis?.check, adopted.diagnosis?.warningCount], ['adopted', 'succeeded', 2]);
+            assert.ok(fs.existsSync(logOfTarget(w, 'MPS3')));
+        });
+    });
+
     suite('the lines reach the waiting call, or status afterwards', () => {
         test('within the deadline: the failed build\'s result carries the lines and the data', async () => {
             const w = make();

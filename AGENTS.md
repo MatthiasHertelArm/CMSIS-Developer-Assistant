@@ -72,7 +72,8 @@ Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts`,
 and what holds the probe); `src/runOutputCapture.ts` with
 `src/core/runOutput.ts` (what the CMSIS Run task printed, as VS Code reports
 its terminal); `src/cmsisBuildDiagnosis.ts` with
-`src/core/buildFailure.ts` (the error lines of a failed build);
+`src/core/buildFailure.ts` and `src/core/buildResult.ts` (the error lines
+of a failed build, the warnings of a successful one);
 `src/core/problemJournal.ts`, `src/core/problemFeed.ts` and
 `src/windowProblems.ts` (the window's problem journal behind
 `get_recent_problems`; sources append through `problemJournal()`);
@@ -131,7 +132,7 @@ checks a built package.
 | `cmsis-developer-assistant.dapRequestTimeoutMs` | 10000 | Deadline of one DAP request |
 | `cmsis-developer-assistant.memoryReadTimeoutMs` | 30000 | Deadline of a read that takes several requests (memory, registers, peripherals) |
 | `cmsis-developer-assistant.redactSecrets` | `true` | Withhold variable and expression values that look like credentials; raw target reads are never redacted |
-| `cmsis-developer-assistant.build.diagnosticRerun` | `true` | After a failed build, and after one that exited 0 without rewriting its image (CMSIS Solution reports 0 for failed builds too), re-run cbuild once with `--log` (no pack download, RTE update or clean; 30 min cap, also stopped by `cmsis_action stop_build`, and a stopped re-run reports only what it printed before the stop) so the `cmsis_action` result shows the error lines; off leaves only the csolution messages of `cbuild-idx.yml`. Scope `window` |
+| `cmsis-developer-assistant.build.diagnosticRerun` | `true` | After a failed build, and after one that exited 0 without rewriting its image (CMSIS Solution reports 0 for failed builds too), re-run cbuild once with `--log` (no pack download, RTE update or clean; 30 min cap, also stopped by `cmsis_action stop_build`, and a stopped re-run reports only what it printed before the stop) so the `cmsis_action` result shows the error lines; off leaves only the csolution messages of `cbuild-idx.yml`. Not used where CMSIS Solution hands out the result it captured for the build task (`getBuildResult` of its API version 3): the exit code and the lines are then the build's own. Scope `window` |
 | `cmsis-developer-assistant.serial.enabled` | `true` | Offer the eleven `serial_*` tools |
 | `cmsis-developer-assistant.serial.idleCloseSeconds` | 300 | Release a serial port an agent opened after this many seconds without a serial tool call; 0 is off. Scope `window` |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per tool call to this file; empty is off |

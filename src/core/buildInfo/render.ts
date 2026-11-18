@@ -492,9 +492,55 @@ function buildFailureHeader(report: BuildFailureReport): string {
             const exit = rerun?.exitCode !== undefined && rerun.exitCode !== null ? ` with exit code ${rerun.exitCode}` : '';
             return `A diagnostic re-run of cbuild with --log failed${exit}${status} but printed no error line in a known format.`;
         }
+        case 'build': {
+            const exit = report.build ? `cbuild exit ${report.build.exitCode}` : 'cbuild failed';
+            const status = report.build?.status ? `, "${report.build.status}"` : '';
+            if (report.errorCount > 0) {
+                return `${plural(report.errorCount, 'error')} in the build's own output (${exit})${warnings > 0 ? `, ${plural(warnings, 'warning')}` : ''}:`;
+            }
+            if (report.failedSteps.length > 0) {
+                return `No compiler error line in the build's own output, but ninja steps failed (${exit}${status}):`;
+            }
+            return `The build's own output holds no error line in a known format (${exit}${status}).`;
+        }
         case 'none':
             return `No error lines: ${report.skipped ?? 'there was nothing to read'}.`;
     }
+}
+
+/**
+ * The block a successful build's result shows when its output holds
+ * warnings (#140): how many, the first of them, at most `limit` lines and
+ * `maxChars` characters, and the log that holds all of them. Error lines a
+ * tool printed although cbuild exited 0 come first and are counted apart.
+ * Empty without a message.
+ */
+export function renderBuildWarnings(
+    found: { errors: readonly BuildMessage[]; warnings: readonly BuildMessage[]; errorCount: number; warningCount: number; logFile?: string },
+    options: BuildFailureRenderOptions = {},
+): string {
+    if (found.errorCount + found.warningCount === 0) {
+        return '';
+    }
+    const limit = options.limit ?? BUILD_FAILURE_LIMIT;
+    const maxChars = options.maxChars ?? BUILD_FAILURE_MAX_CHARS;
+    const counts = [found.errorCount > 0 ? plural(found.errorCount, 'error line') : '', found.warningCount > 0 ? plural(found.warningCount, 'warning') : '']
+        .filter((part) => part.length > 0).join(' and ');
+    const header = `${counts} in its output${found.errorCount > 0 ? ', although cbuild exited 0' : ''}:`;
+    const entries = [...found.errors, ...found.warnings].map((message) => buildMessageLine(message, options.root));
+    const footer = found.logFile ? [`Full output: ${shownPath(found.logFile, options.root)} (get_build_diagnostics reads it).`] : [];
+    const shown: string[] = [];
+    for (const entry of entries) {
+        if (shown.length >= limit || [header, ...shown, entry, '  … 999 more', ...footer].join('\n').length > maxChars) {
+            break;
+        }
+        shown.push(entry);
+    }
+    const left = found.errorCount + found.warningCount - shown.length;
+    if (left > 0) {
+        shown.push(`  … ${left} more${found.logFile ? ' in the log' : ''}`);
+    }
+    return [header, ...shown, ...footer].join('\n');
 }
 
 /**

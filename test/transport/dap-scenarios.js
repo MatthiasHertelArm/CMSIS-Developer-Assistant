@@ -169,6 +169,25 @@ const trackerFactories = [];
 /** The scenario being recorded; the stub hooks delegate to it. */
 let current = null;
 
+/** The repository's root: the captured build output of `src/test/fixtures/buildresult` is read from there. */
+const REPO = path.resolve(__dirname, '..', '..');
+
+/**
+ * CMSIS Solution's API version 3 as far as a build needs it (#140): the four
+ * methods of version 2, by which the extension recognises the API, and
+ * `getBuildResult`, which answers what the running scenario captured.
+ */
+const CAPTURING_API = {
+    getBoards: async () => [],
+    getDevices: async () => [],
+    getDraftProjects: async () => [],
+    createNewSolution: async () => undefined,
+    getBuildResult: async (execution) => {
+        current?.record(`getBuildResult: ${JSON.stringify(execution?.task?.name)}`);
+        return current?.capturedResult;
+    },
+};
+
 function describeBreakpoint(bp) {
     const where = `${bp.location.uri.fsPath}:${bp.location.range.start.line + 1}`;
     const mods = [];
@@ -1989,6 +2008,42 @@ const SCENARIOS = [
         calls: [
             { tool: 'get_session_status' },
             { tool: 'get_session_status', before: (sc) => { sc.commands['cmsis-csolution.getSolutionFile'] = () => ''; } },
+        ],
+    },
+    {
+        name: 'cmsis-build-captured',
+        description: 'No session, a CMSIS Solution whose API version 3 hands out the result it captured for a build task (#140): cmsis_action build '
+            + 'succeeds on cbuild\'s own exit code with the warnings of its output, without a check of the image; the next build fails with the error '
+            + 'lines of its output, without a re-run of cbuild; get_recent_problems lists the lines of both builds.',
+        extensions: {
+            'Arm.cmsis-csolution': {
+                id: 'Arm.cmsis-csolution', isActive: true, extensionPath: '/ext/cmsis-csolution', packageJSON: { version: '1.73.0' },
+                exports: { getApi: (version) => (version === 3 ? CAPTURING_API : undefined) },
+            },
+        },
+        commands: {
+            'cmsis-csolution.build': (sc) => {
+                const build = (sc.builds = (sc.builds ?? 0) + 1);
+                const exitCode = build === 1 ? 0 : 1;
+                const output = fs.readFileSync(path.join(REPO, 'src', 'test', 'fixtures', 'buildresult', build === 1 ? 'rebuild-ok.txt' : 'build-error.txt'), 'utf8');
+                const task = { name: 'cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build' } };
+                sc.capturedResult = { exitCode, output };
+                setTimeout(() => {
+                    sc.record(`task: start ${JSON.stringify(task.name)}`);
+                    bus.taskStart.fire({ execution: { task } });
+                    setTimeout(() => {
+                        sc.record(`task: end ${JSON.stringify(task.name)} exitCode=${exitCode}`);
+                        bus.taskEnd.fire({ execution: { task }, exitCode });
+                    }, 20);
+                }, 20);
+            },
+        },
+        calls: [
+            { tool: 'cmsis_action', args: { action: 'build' } },
+            { tool: 'cmsis_action', args: { action: 'build' } },
+            { tool: 'get_recent_problems', args: { sources: ['build'], limit: 8 } },
+            // The log goes again, so that the workspace is as before the scenario.
+            { tool: 'cmsis_action', args: { action: 'status' }, before: (sc) => { fs.rmSync(path.join(sc.env.project, 'out', 'cmsis-developer-assistant'), { recursive: true, force: true }); } },
         ],
     },
 ];
