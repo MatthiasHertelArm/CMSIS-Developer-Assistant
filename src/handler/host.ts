@@ -158,6 +158,11 @@ export interface HandlerHost {
      * or `abort`.
      */
     debugTaskErrors(): string;
+    /**
+     * CMSIS Solution's setting `cmsis-csolution.downloadPacks` (on by default): its build commands pass cbuild
+     * `--packs` with it, and so does a build this extension starts through its API. Absent: on.
+     */
+    downloadMissingPacks?(): boolean;
 }
 
 let defaultPortReservations: GdbPortReservations | undefined;
@@ -256,6 +261,13 @@ export const VSCODE_HOST: HandlerHost = {
             return typeof value === 'string' ? value : 'prompt';
         } catch {
             return 'prompt';
+        }
+    },
+    downloadMissingPacks: () => {
+        try {
+            return vscode.workspace.getConfiguration('cmsis-csolution').get<boolean>('downloadPacks', true) !== false;
+        } catch {
+            return true;
         }
     },
 };

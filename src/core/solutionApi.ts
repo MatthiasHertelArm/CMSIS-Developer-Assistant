@@ -145,12 +145,27 @@ export interface ApiCreateOptions {
     git?: boolean;
 }
 
+/** What `build` takes: cbuild's `--clean`, `--rebuild`, `--packs` and `--update-rte`, each off unless set. */
+export interface ApiBuildOptions {
+    clean?: boolean;
+    rebuild?: boolean;
+    packs?: boolean;
+    updateRte?: boolean;
+}
+
 /** The part of `CsolutionApiV2` this extension calls. */
 export interface SolutionApiV2 {
     getBoards(filter?: ApiBoardFilter): PromiseLike<ApiBoard[]>;
     getDevices(filter?: ApiDeviceFilter): PromiseLike<ApiDevice[]>;
     getDraftProjects(board?: ApiBoardId, device?: ApiDeviceId): PromiseLike<ApiDraft[]>;
     createNewSolution(options: ApiCreateOptions): PromiseLike<void>;
+    /**
+     * Start the build task of the loaded solution's active target set; resolves with its `vscode.TaskExecution`.
+     * Optional here and not among the methods an API object is recognised by: this extension calls it only
+     * beside `getBuildResult` (#140). Before CMSIS Solution captured build results, it started cbuild without
+     * the solution and the target set (`cbuild --active ""`), which fails.
+     */
+    build?(options?: ApiBuildOptions): PromiseLike<unknown>;
 }
 
 /** What `convertSolution` of API version 3 answers. */

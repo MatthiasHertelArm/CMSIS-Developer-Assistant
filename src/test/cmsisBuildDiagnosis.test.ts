@@ -1093,9 +1093,29 @@ suite('build diagnosis (#15)', () => {
             assert.strictEqual(none.diagnosis?.check, 'cleaned');
             assert.strictEqual(none.diagnosis?.text, 'No image of MPS3 was there to remove.');
             builtLayout(w);
+            // The solution named through a variable, and CMSIS Solution does not say which one is active either.
+            w.host.solutionFile = async () => undefined;
             const unknown = await diagnosed(w, runClean(w, () => undefined, { solution: '${command:cmsis-csolution.getSolutionFile}' }).id);
             assert.strictEqual(unknown.diagnosis?.check, 'cleaned');
             assert.strictEqual(unknown.diagnosis?.text, 'Which images were there before the clean is not known, so their removal was not checked.');
+        });
+
+        test('a clean whose task names no solution, as one started through CMSIS Solution\'s API: the active solution\'s images are read at its start', async () => {
+            const w = make();
+            const image = builtLayout(w);
+            const job = w.tracker.begin('clean', 'MPS3');
+            w.tracker.issued(job.id);
+            const execution = w.tasks.start(w.tasks.execution({
+                name: 'cbuild --clean --schema', source: 'cmsis-csolution.build',
+                definition: { type: 'cmsis-csolution.build', clean: true, rebuild: false, downloadPacks: false, updateRte: false },
+            }));
+            // CMSIS Solution names the solution and the target set before cbuild gets to the images.
+            await rounds(5);
+            fs.rmSync(image);
+            w.clock.advance(w.clock.now() + 1_000);
+            w.tasks.finish(execution, 0);
+            const done = await diagnosed(w, job.id);
+            assert.deepStrictEqual([done.diagnosis?.check, done.diagnosis?.text], ['cleaned', 'Removed: out/Blinky/MPS3/Debug/Blinky.axf.']);
         });
     });
 

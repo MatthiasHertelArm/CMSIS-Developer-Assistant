@@ -303,6 +303,7 @@ export interface CleanSnapshot {
 
 /** Where a build's captured output goes: the solution's folder and the target set, as they were when its task started. */
 interface ResultPlace {
+    solution: string;
     solutionDir: string;
     target?: string;
 }
@@ -616,8 +617,8 @@ export function diagnosisOf(report: BuildFailureReport, solutionDir: string | un
  */
 export class BuildDiagnosisRunner {
     private readonly running = new Set<RunningRerun>();
-    /** The images each clean found at its start, by execution key. */
-    private readonly cleanSnapshots = new Map<number, CleanSnapshot>();
+    /** The images each clean found at its start, by execution key; read at once, or as soon as CMSIS Solution named the solution. */
+    private readonly cleanSnapshots = new Map<number, Promise<CleanSnapshot>>();
     /** When each image of a build or rebuild was written last, as its start found them, by execution key. */
     private readonly buildSnapshots = new Map<number, ImageStamps>();
     /** The result CMSIS Solution captures for each build task that started, by execution key (#140). */
@@ -676,12 +677,12 @@ export class BuildDiagnosisRunner {
      * The work for a job without a captured result: the diagnosis of a failed build or rebuild, the check of one
      * that exited 0, the check of what a clean that exited 0 removed. Undefined when there is nothing to find out.
      */
-    private withoutResult(job: Job, decided: JobExecution, snapshot: CleanSnapshot | undefined, before: ImageStamps | undefined): Promise<JobDiagnosis> | undefined {
+    private withoutResult(job: Job, decided: JobExecution, snapshot: Promise<CleanSnapshot> | undefined, before: ImageStamps | undefined): Promise<JobDiagnosis> | undefined {
         if (job.state === 'failed' && decided.exitCode !== 0) {
             return this.diagnose(decided).then((diagnosis) => this.withKnownMessages(diagnosis));
         }
         if (job.state === 'ok' && decided.exitCode === 0 && job.action === 'clean') {
-            return Promise.resolve(this.checkClean(snapshot));
+            return Promise.resolve(snapshot).then((images) => this.checkClean(images));
         }
         if (job.state === 'ok' && decided.exitCode === 0 && this.tracker.definitionOf(decided.key)?.clean !== true) {
             return this.check(decided, before).then((diagnosis) => this.withKnownMessages(diagnosis));
@@ -697,7 +698,7 @@ export class BuildDiagnosisRunner {
         job: Job,
         decided: JobExecution,
         entry: CapturedEntry,
-        snapshot: CleanSnapshot | undefined,
+        snapshot: Promise<CleanSnapshot> | undefined,
         before: ImageStamps | undefined,
     ): Promise<JobDiagnosis> {
         let result: CapturedBuildResult | undefined;
@@ -731,7 +732,7 @@ export class BuildDiagnosisRunner {
         decided: JobExecution,
         result: CapturedBuildResult,
         entry: CapturedEntry,
-        snapshot: CleanSnapshot | undefined,
+        snapshot: Promise<CleanSnapshot> | undefined,
     ): Promise<JobDiagnosis> {
         if (result.exitCode === undefined) {
             return checked('unverified', NO_EXIT_CODE);
@@ -739,7 +740,7 @@ export class BuildDiagnosisRunner {
         const exitCode = result.exitCode;
         const cleans = job.action === 'clean' || this.tracker.definitionOf(decided.key)?.clean === true;
         if (cleans && exitCode === 0) {
-            return this.checkClean(snapshot, true);
+            return this.checkClean(await snapshot, true);
         }
         const place = await entry.place;
         const text = cleanBuildOutput(result.output);
@@ -799,7 +800,7 @@ export class BuildDiagnosisRunner {
             return undefined;
         }
         const target = named?.target ?? await this.host.activeTarget();
-        return { solutionDir: path.dirname(solution), ...(target ? { target } : {}) };
+        return { solution, solutionDir: path.dirname(solution), ...(target ? { target } : {}) };
     }
 
     /**
@@ -823,12 +824,7 @@ export class BuildDiagnosisRunner {
         if (execution.kind !== 'clean') {
             return;
         }
-        try {
-            this.cleanSnapshots.set(execution.key, this.imagesNow(this.tracker.definitionOf(execution.key) ?? {}));
-        } catch (caught) {
-            logger.debug('Build check: the images before a clean could not be read', caught);
-            this.cleanSnapshots.set(execution.key, {});
-        }
+        this.cleanSnapshots.set(execution.key, this.imagesAtStart(this.tracker.definitionOf(execution.key) ?? {}));
         for (const key of this.cleanSnapshots.keys()) {
             if (this.cleanSnapshots.size <= MAX_CLEAN_SNAPSHOTS) {
                 break;
@@ -885,6 +881,34 @@ export class BuildDiagnosisRunner {
         }
         const images = expectedImages(where.solution, where.output, where.target).filter((file) => mtimeOf(file) !== undefined);
         return { images, solutionDir: where.solutionDir, ...(where.target ? { target: where.target } : {}) };
+    }
+
+    /**
+     * The images a starting clean finds; never rejects. Read at once when the task's definition names the
+     * solution. One that names none — a clean started through CMSIS Solution's API — is asked for the active
+     * solution and target set first, which answers before cbuild gets to the images.
+     */
+    private imagesAtStart(definition: TaskDefinitionLike): Promise<CleanSnapshot> {
+        const unknown = (caught: unknown): CleanSnapshot => {
+            logger.debug('Build check: the images before a clean could not be read', caught);
+            return {};
+        };
+        try {
+            if (this.buildFiles(definition)) {
+                return Promise.resolve(this.imagesNow(definition));
+            }
+        } catch (caught) {
+            return Promise.resolve(unknown(caught));
+        }
+        return this.placeOf(definition).then((place): CleanSnapshot => {
+            if (!place) {
+                return {};
+            }
+            const setting = this.host.outputDirectorySetting();
+            const images = expectedImages(place.solution, setting ? path.join(place.solutionDir, setting) : undefined, place.target)
+                .filter((file) => mtimeOf(file) !== undefined);
+            return { images, solutionDir: place.solutionDir, ...(place.target ? { target: place.target } : {}) };
+        }).catch(unknown);
     }
 
     /**

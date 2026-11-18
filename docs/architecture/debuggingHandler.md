@@ -409,7 +409,17 @@ window's CMSIS job tracker (next section):
   that ends by itself with exit 0 is a completed run (#134), shown with
   what the Run printed (*What a CMSIS Run printed*, below). `rebuild` and `clean`
   (CMSIS Solution 1.72.0's Rebuild and Clean, the build task type with
-  `--rebuild` or `--clean`) are jobs of their own, `rb-<n>` and `c-<n>`. A
+  `--rebuild` or `--clean`) are jobs of their own, `rb-<n>` and `c-<n>`.
+  The three start through `build()` of CMSIS Solution's API instead of
+  their commands where that API also hands out the result it captured for
+  the task (`apiBuildStart`, #140): no command where the API offers the
+  call. `build()` is the smaller start: its task's name and definition show
+  neither the solution nor the target set, which CMSIS Solution fills in
+  when the task runs, so the diagnosis asks for both at the task's start;
+  `--packs` goes along as CMSIS Solution's setting `downloadPacks` says;
+  the schema check, which the commands switch off, stays on. An API with
+  `build()` and without `getBuildResult` keeps the commands: that
+  `build()` ran cbuild without the solution and failed. A
   build, rebuild or clean while another of the three is in flight is
   refused: CMSIS Solution would start it only after that one ended, too late
   for the job's not-started window.

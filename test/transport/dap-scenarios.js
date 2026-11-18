@@ -174,8 +174,10 @@ const REPO = path.resolve(__dirname, '..', '..');
 
 /**
  * CMSIS Solution's API version 3 as far as a build needs it (#140): the four
- * methods of version 2, by which the extension recognises the API, and
- * `getBuildResult`, which answers what the running scenario captured.
+ * methods of version 2, by which the extension recognises the API,
+ * `getBuildResult`, which answers what the running scenario captured, and
+ * `build`, which starts the scenario's build task as the API does: with a
+ * name and a definition that show neither the solution nor the target set.
  */
 const CAPTURING_API = {
     getBoards: async () => [],
@@ -185,6 +187,10 @@ const CAPTURING_API = {
     getBuildResult: async (execution) => {
         current?.record(`getBuildResult: ${JSON.stringify(execution?.task?.name)}`);
         return current?.capturedResult;
+    },
+    build: async (options) => {
+        current?.record(`api: build(${JSON.stringify(options)})`);
+        return current?.def.apiBuild(current, options);
     },
 };
 
@@ -2013,7 +2019,7 @@ const SCENARIOS = [
     {
         name: 'cmsis-build-captured',
         description: 'No session, a CMSIS Solution whose API version 3 hands out the result it captured for a build task (#140): cmsis_action build '
-            + 'succeeds on cbuild\'s own exit code with the warnings of its output, without a check of the image; the next build fails with the error '
+            + 'starts through build() of that API, not the command, and succeeds on cbuild\'s own exit code with the warnings of its output, without a check of the image; the next build fails with the error '
             + 'lines of its output, without a re-run of cbuild; get_recent_problems lists the lines of both builds.',
         extensions: {
             'Arm.cmsis-csolution': {
@@ -2021,22 +2027,25 @@ const SCENARIOS = [
                 exports: { getApi: (version) => (version === 3 ? CAPTURING_API : undefined) },
             },
         },
-        commands: {
-            'cmsis-csolution.build': (sc) => {
-                const build = (sc.builds = (sc.builds ?? 0) + 1);
-                const exitCode = build === 1 ? 0 : 1;
-                const output = fs.readFileSync(path.join(REPO, 'src', 'test', 'fixtures', 'buildresult', build === 1 ? 'rebuild-ok.txt' : 'build-error.txt'), 'utf8');
-                const task = { name: 'cbuild Blinky.csolution.yml --target all --active NUCLEO-F401RE --packs', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build' } };
-                sc.capturedResult = { exitCode, output };
+        apiBuild: (sc, options) => {
+            const build = (sc.builds = (sc.builds ?? 0) + 1);
+            const exitCode = build === 1 ? 0 : 1;
+            const output = fs.readFileSync(path.join(REPO, 'src', 'test', 'fixtures', 'buildresult', build === 1 ? 'rebuild-ok.txt' : 'build-error.txt'), 'utf8');
+            const task = {
+                name: `cbuild --active "" --schema${options?.packs ? ' --packs' : ''}`, source: 'cmsis-csolution.build',
+                definition: { type: 'cmsis-csolution.build', clean: false, rebuild: false, downloadPacks: options?.packs === true, updateRte: false },
+            };
+            const execution = { task, terminate: () => undefined };
+            sc.capturedResult = { exitCode, output };
+            setTimeout(() => {
+                sc.record(`task: start ${JSON.stringify(task.name)}`);
+                bus.taskStart.fire({ execution });
                 setTimeout(() => {
-                    sc.record(`task: start ${JSON.stringify(task.name)}`);
-                    bus.taskStart.fire({ execution: { task } });
-                    setTimeout(() => {
-                        sc.record(`task: end ${JSON.stringify(task.name)} exitCode=${exitCode}`);
-                        bus.taskEnd.fire({ execution: { task }, exitCode });
-                    }, 20);
+                    sc.record(`task: end ${JSON.stringify(task.name)} exitCode=${exitCode}`);
+                    bus.taskEnd.fire({ execution, exitCode });
                 }, 20);
-            },
+            }, 20);
+            return execution;
         },
         calls: [
             { tool: 'cmsis_action', args: { action: 'build' } },

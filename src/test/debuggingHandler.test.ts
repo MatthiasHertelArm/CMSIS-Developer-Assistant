@@ -3385,6 +3385,83 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(cancelled.hint, 'Re-run cmsis_action build to get a definite result.');
             });
 
+            suite('builds start through build() of CMSIS Solution\'s API where it hands out their result (#140)', () => {
+                /** The task `build()` starts: its definition and name show neither the solution nor the target set. */
+                const apiTask = (options: { clean?: boolean; rebuild?: boolean }): FixtureTask => ({
+                    name: options.clean ? 'cbuild --clean --schema' : `cbuild${options.rebuild ? ' --rebuild' : ''} --active "" --schema`,
+                    source: 'cmsis-csolution.build',
+                    definition: { type: 'cmsis-csolution.build', clean: options.clean === true, rebuild: options.rebuild === true, downloadPacks: false, updateRte: false },
+                });
+                const V2_METHODS = { getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined };
+                const handleOf = (api: Record<string, unknown>) => ({
+                    isActive: true, version: '1.73.0', activate: async () => undefined,
+                    exports: { getApi: (version: number) => { if (version !== 3) { throw new Error('no'); } return api; } },
+                });
+                const NOT_THE_COMMAND = {
+                    'cmsis-csolution.build': () => { throw new Error('the command went out'); },
+                    'cmsis-csolution.rebuild': () => { throw new Error('the command went out'); },
+                    'cmsis-csolution.clean': () => { throw new Error('the command went out'); },
+                };
+
+                test('build, rebuild and clean call build() with their options and --packs as CMSIS Solution\'s setting says; no command goes out', async () => {
+                    const built: unknown[] = [];
+                    let packs = true;
+                    const tasks: { current?: FakeTasks } = {};
+                    const api = {
+                        ...V2_METHODS,
+                        getBuildResult: async () => ({ exitCode: 0, output: '' }),
+                        build: async (options: { clean?: boolean; rebuild?: boolean }) => {
+                            built.push(options);
+                            return runs(tasks.current as FakeTasks, apiTask(options), 0, true)();
+                        },
+                    };
+                    const w = jobWorld(20, { solutionExtension: () => handleOf(api), downloadMissingPacks: () => packs });
+                    tasks.current = w.tasks;
+                    solutionOn('HE', NOT_THE_COMMAND);
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })),
+                        /^✅ CMSIS 'build' succeeded on HE \(task 'cbuild --active "" --schema' exited 0 after [\d.]+ s, job b-1\)\. The firmware is built/);
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'rebuild' })),
+                        /^✅ CMSIS 'rebuild' succeeded on HE \(task 'cbuild --rebuild --active "" --schema' exited 0 after [\d.]+ s, job rb-2\)\./);
+                    packs = false;
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'clean' })),
+                        /^✅ CMSIS 'clean' succeeded on HE \(task 'cbuild --clean --schema' exited 0 after [\d.]+ s, job c-3\)\./);
+                    assert.deepStrictEqual(built, [
+                        { clean: false, rebuild: false, packs: true },
+                        { clean: false, rebuild: true, packs: true },
+                        { clean: true, rebuild: false, packs: false },
+                    ]);
+                    w.tracker.dispose();
+                });
+
+                test('an API with build() but without getBuildResult keeps the command: that build() ran cbuild without the solution', async () => {
+                    let built = 0;
+                    const api = { ...V2_METHODS, getTargets: async () => ['HE'], build: async () => { built++; } };
+                    const w = jobWorld(20, { solutionExtension: () => handleOf(api) });
+                    solutionOn('HE', { 'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 0, true) });
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'build' })),
+                        /^✅ CMSIS 'build' succeeded on HE \(task 'cbuild demo\.csolution\.yml --active HE' exited 0 after [\d.]+ s, job b-1\)\./);
+                    assert.strictEqual(built, 0);
+                    w.tracker.dispose();
+                });
+
+                test('a build() that rejects is the failed start, named as the API\'s; a task that never starts names it too', async () => {
+                    let fail = true;
+                    const api = {
+                        ...V2_METHODS,
+                        getBuildResult: async () => ({ exitCode: 0, output: '' }),
+                        build: async () => { if (fail) { throw new Error('task execution refused'); } return undefined; },
+                    };
+                    const w = jobWorld(20, { solutionExtension: () => handleOf(api) });
+                    solutionOn('HE', NOT_THE_COMMAND);
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'build' }), 'TASK_FAILED');
+                    assert.match(refused.message, /^build\(\) of the CMSIS Solution API failed: Error: task execution refused\.$/);
+                    fail = false;
+                    const silent = await refusalOf(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 60_000 }), 'TASK_FAILED');
+                    assert.match(silent.message, /^CMSIS 'build' on HE: nothing started within 10 s of issuing 'build\(\) of the CMSIS Solution API' \(job b-2\)\./);
+                    w.tracker.dispose();
+                });
+            });
+
             test('a failed build shows its error lines when they arrive within the deadline; after it, status shows them (#15)', async () => {
                 const w = jobWorld();
                 const diagnosis: JobDiagnosis = {

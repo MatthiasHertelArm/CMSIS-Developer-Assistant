@@ -48,6 +48,19 @@
  * switch to another target, it is not started, and its result says why.
  * Without an open job, `status` waits for a running setup as for a job.
  *
+ * A build, rebuild or clean starts through `build()` of CMSIS Solution's API
+ * instead of its command where that API also hands out the result it
+ * captured for the task (`getBuildResult`, #140): no command where the API
+ * offers the call. `build()` starts the same task type with fewer options
+ * than the command: `--packs` is passed as CMSIS Solution's setting
+ * `downloadPacks` says, the schema check stays on, and the task's name shows
+ * neither the solution nor the target set (`cbuild --active "" --schema`),
+ * which CMSIS Solution fills in when the task runs. VS Code saves modified
+ * files before the task as for any task (`task.saveBeforeRun`); a running
+ * setup is waited for as below. On every other host the commands go out as
+ * before: without `getBuildResult`, `build()` runs cbuild without the
+ * solution and fails.
+ *
  * Before anything is issued (#46): a debug session refuses load_and_debug and
  * attach, the probe guard refuses what CMSIS Run, a Load, an Erase, `flash` or
  * a session blocks, a target that is not active is switched through
@@ -576,6 +589,9 @@ async function checkSurvival(executor: IDebuggingExecutor, host: HandlerHost): P
 }
 
 /** How a rejected CMSIS command reads once it reaches the fence. */
+/** How a result names the start of a build that went through CMSIS Solution's API, where others name the command. */
+const API_BUILD = 'build() of the CMSIS Solution API';
+
 function commandFailure(command: string, action: string, caught: unknown, serverVersion: string): ToolError {
     if (/no active solution/i.test(failureText(caught))) {
         return new ToolError('CMSIS_NO_SOLUTION',
@@ -586,8 +602,32 @@ function commandFailure(command: string, action: string, caught: unknown, server
             + '  3. If the solution is open in a different window, drive cmsis_action from that window\'s MCP server instead.\n'
             + 'cmsis_action operates on whatever solution the CMSIS Solution extension has active — it cannot select one for you.');
     }
-    return new ToolError('TASK_FAILED', `CMSIS command '${command}' failed: ${String(caught)}.`,
+    const what = command === API_BUILD ? `${API_BUILD} failed` : `CMSIS command '${command}' failed`;
+    return new ToolError('TASK_FAILED', `${what}: ${String(caught)}.`,
         'Ensure the CMSIS Solution extension is installed and a solution context is active.');
+}
+
+/**
+ * The start of a build, rebuild or clean through `build()` of CMSIS Solution's API (#140); undefined where the
+ * command starts it: another action, or an API without `build` or without `getBuildResult` — never on API version 3
+ * alone, whose `build()` ran cbuild without the solution and the target set before build results were captured.
+ */
+function apiBuildStart(action: string, host: HandlerHost): (() => Thenable<unknown>) | undefined {
+    if (!isBuildAction(action)) {
+        return undefined;
+    }
+    let api: SolutionApi | undefined;
+    try {
+        api = peekSolutionApi(host.solutionExtension());
+    } catch {
+        return undefined;
+    }
+    const build = api?.build;
+    if (!api || typeof build !== 'function' || v3Method(api, 'getBuildResult') === undefined) {
+        return undefined;
+    }
+    const packs = host.downloadMissingPacks?.() ?? true;
+    return () => build.call(api, { clean: action === 'clean', rebuild: action === 'rebuild', packs });
 }
 
 /** ` on HE`, or nothing when the target is unknown. */
@@ -663,7 +703,8 @@ function answerBy(issue: Issue): number {
  * Issue the command, with `args` when it takes any, and give it the kick-off
  * (4 s, or what is left of the call) to fail; a failure within it rejects the
  * call, a later one is dropped (KB11). `returned` sees what the command
- * resolves with, `rejected` how it failed, early or late.
+ * resolves with, `rejected` how it failed, early or late. `start` stands in
+ * for the command: the API call that starts a build (`apiBuildStart`).
  */
 async function issueCommand(
     issue: Issue,
@@ -671,12 +712,13 @@ async function issueCommand(
     returned?: (value: unknown) => void,
     args: readonly unknown[] = [],
     rejected?: (failure: ToolError) => void,
+    start?: () => Thenable<unknown>,
 ): Promise<void> {
     const { executor, host } = issue.context;
     let failure: ToolError | undefined;
     let pending: Thenable<unknown>;
     try {
-        pending = vscode.commands.executeCommand(issue.command, ...args);
+        pending = start ? start() : vscode.commands.executeCommand(issue.command, ...args);
     } catch (caught) {
         pending = Promise.reject(caught);
     }
@@ -709,7 +751,10 @@ async function issueCommand(
  * their task's execution, which is the job's task. `preface` goes before the
  * result.
  */
-async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<string> | undefined, preface?: string): Promise<ToolText> {
+async function runJob(given: Issue, action: JobAction, labels: ReadonlySet<string> | undefined, preface?: string): Promise<ToolText> {
+    const start = apiBuildStart(action, given.context.host);
+    // A build that goes through the API names that instead of the command in its results.
+    const issue: Issue = start ? { ...given, command: API_BUILD } : given;
     const { tracker } = issue;
     const job = tracker.begin(action, issue.target);
     if (issue.portReservations?.length) {
@@ -727,9 +772,9 @@ async function runJob(issue: Issue, action: JobAction, labels: ReadonlySet<strin
     }
     if (issueNow) {
         try {
-            await issueCommand(issue, action, isBuildAction(action) ? (value) => tracker.identify(job.id, value) : undefined);
+            await issueCommand(issue, action, isBuildAction(action) ? (value) => tracker.identify(job.id, value) : undefined, [], undefined, start);
         } catch (caught) {
-            tracker.settle(job.id, 'not-started', 'Its command failed.');
+            tracker.settle(job.id, 'not-started', start ? 'Its start failed.' : 'Its command failed.');
             throw caught;
         }
         tracker.issued(job.id);
@@ -809,7 +854,8 @@ async function issueWhenSetupEnded(issue: Issue, id: string, action: JobAction):
         }
         const late: Issue = { ...issue, deadline: host.now() + KICKOFF_MS + DEADLINE_MARGIN_MS };
         try {
-            await issueCommand(late, action, (value) => tracker.identify(id, value));
+            // Looked up now: the extension may have been updated or reloaded while the build waited.
+            await issueCommand(late, action, (value) => tracker.identify(id, value), [], undefined, apiBuildStart(action, host));
         } catch (caught) {
             tracker.settle(id, 'not-started', `Its command failed: ${failureText(caught)}`);
             return;
