@@ -853,10 +853,15 @@ async function issueWhenSetupEnded(issue: Issue, id: string, action: JobAction):
         if (!await mayIssueAfterHold(issue, id, action)) {
             return;
         }
-        const late: Issue = { ...issue, deadline: host.now() + KICKOFF_MS + DEADLINE_MARGIN_MS };
+        // Looked up now: the extension may have been updated or reloaded while the build waited, and the
+        // start then is the command again, under its own name.
+        const start = apiBuildStart(action, host);
+        const late: Issue = {
+            ...issue, command: start ? API_BUILD : ACTION_COMMANDS.get(action) ?? issue.command,
+            deadline: host.now() + KICKOFF_MS + DEADLINE_MARGIN_MS,
+        };
         try {
-            // Looked up now: the extension may have been updated or reloaded while the build waited.
-            await issueCommand(late, action, (value) => tracker.identify(id, value), [], undefined, apiBuildStart(action, host));
+            await issueCommand(late, action, (value) => tracker.identify(id, value), [], undefined, start);
         } catch (caught) {
             tracker.settle(id, 'not-started', `Its command failed: ${failureText(caught)}`);
             return;

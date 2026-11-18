@@ -251,6 +251,8 @@ const MAX_SETUP_RESTARTS = 3;
 const MAX_CLEAN_SNAPSHOTS = 8;
 /** At most this many started builds keep the result asked for them, waiting for their end. */
 const MAX_CAPTURED_RESULTS = 16;
+/** A result whose task ended this long ago and that no job took is let go: holding it keeps the output alive in CMSIS Solution. */
+const UNCLAIMED_RESULT_MS = 60_000;
 /** What a build without an exit code in its captured result is told (#140). */
 const NO_EXIT_CODE = 'CMSIS Solution recorded no exit code of cbuild for it: the build was skipped as a duplicate of one already queued, or stopped.';
 /** Definition fields that must not hold a variable the re-run cannot resolve (`solution` and `active` are resolved). */
@@ -312,6 +314,8 @@ interface ResultPlace {
 interface CapturedEntry {
     result: Promise<{ value: unknown } | { refused: string }>;
     place: Promise<ResultPlace | undefined>;
+    /** When the result settled, which is when its task ended; unset while the task runs. */
+    settledAt?: number;
 }
 
 /** A re-run in progress, as `dispose` and the build-start watch stop it. */
@@ -783,7 +787,18 @@ export class BuildDiagnosisRunner {
             (caught: unknown) => ({ refused: `CMSIS Solution refused it: ${messageOf(caught)}` }),
         );
         const place = this.placeOf(this.tracker.definitionOf(execution.key) ?? {}).catch(() => undefined);
-        this.captured.set(execution.key, { result, place });
+        const entry: CapturedEntry = { result, place };
+        void result.then(() => {
+            entry.settledAt = this.host.clock.now();
+        });
+        // A task that decided no job (a second build beside a job's own) leaves its result unclaimed.
+        const now = this.host.clock.now();
+        for (const [key, old] of this.captured) {
+            if (old.settledAt !== undefined && now - old.settledAt > UNCLAIMED_RESULT_MS) {
+                this.captured.delete(key);
+            }
+        }
+        this.captured.set(execution.key, entry);
         for (const old of this.captured.keys()) {
             if (this.captured.size <= MAX_CAPTURED_RESULTS) {
                 break;

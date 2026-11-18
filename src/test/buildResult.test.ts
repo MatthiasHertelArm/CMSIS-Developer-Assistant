@@ -18,7 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseBuildLog } from '../core/buildInfo/buildLog';
-import { capturedResultOf, cleanBuildOutput, resultLogHeader, resultLogPath } from '../core/buildResult';
+import { capturedResultOf, cleanBuildOutput, RESULT_OUTPUT_CUT, RESULT_OUTPUT_MAX_CHARS, resultLogHeader, resultLogPath } from '../core/buildResult';
 
 /**
  * The result CMSIS Solution captures for a build task (#140), over output
@@ -64,6 +64,20 @@ suite('captured build result (#140)', () => {
         assert.strictEqual(cleanBuildOutput('\r[1/2] x\x1b[K\r[2/2] y\x1b[K\r\r\ndone'), '[1/2] x\n[2/2] y\ndone\n');
         assert.strictEqual(cleanBuildOutput(''), '');
         assert.strictEqual(cleanBuildOutput('\r\n\r\n'), '');
+    });
+
+    test('sequences a Windows pseudoconsole adds are removed like colours: cursor, clear, window title (synthetic, not captured)', () => {
+        const conpty = '\x1b[?25l\x1b[2J\x1b[H\x1b]0;cbuild\x07(1/1) Building context: "App.Debug+T"\r\n\x1b[?25hC:\\w\\main.c:3:5: \x1b[31merror: \x1b[0mboom\r\n';
+        assert.strictEqual(cleanBuildOutput(conpty), '(1/1) Building context: "App.Debug+T"\nC:\\w\\main.c:3:5: error: boom\n');
+    });
+
+    test('of an output longer than 16 MB the end is kept, from the start of a line, and the first line says so', () => {
+        const line = `${'x'.repeat(1023)}\n`;
+        const long = `first line\n${line.repeat(RESULT_OUTPUT_MAX_CHARS / line.length + 8)}error csolution: the last line\n`;
+        const text = cleanBuildOutput(long);
+        assert.ok(text.startsWith(`${RESULT_OUTPUT_CUT}\nx`), text.slice(0, 120));
+        assert.ok(text.endsWith('\nerror csolution: the last line\n'));
+        assert.ok(text.length <= RESULT_OUTPUT_MAX_CHARS + RESULT_OUTPUT_CUT.length + 1 && !text.includes('first line'));
     });
 
     test('a stopped build ends in ^C, with Stop Build\'s line when CMSIS Solution stopped it', () => {

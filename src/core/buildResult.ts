@@ -47,6 +47,12 @@ export interface CapturedBuildResult {
 /** How long a captured result may take to settle after its task ended, before the build is checked the old way. */
 export const RESULT_FENCE_MS = 10_000;
 
+/** What is read of a captured output, the end of it, as `readBuildLog` reads a log: the failure and the summary are there. */
+export const RESULT_OUTPUT_MAX_CHARS = 16 * 1024 * 1024;
+
+/** The first line of an output whose beginning was left out. */
+export const RESULT_OUTPUT_CUT = '[cmsis-developer-assistant] The output was longer than 16 MB: its beginning is left out.';
+
 /** The folder of the logs this extension writes, under the solution's folder; with forward slashes on every platform. */
 export const RESULT_LOG_FOLDER = 'out/cmsis-developer-assistant';
 
@@ -69,11 +75,20 @@ export function capturedResultOf(value: unknown): CapturedBuildResult | undefine
  * The terminal output of a build as the lines of a log: control sequences
  * removed, every line ending a plain LF, and each state of a line that a
  * bare CR redrew (ninja's progress) on a line of its own, without the
- * repeats. Ends with a line feed unless it is empty.
+ * repeats. Ends with a line feed unless it is empty. Of an output longer
+ * than `RESULT_OUTPUT_MAX_CHARS` only the end is kept, from a line's start,
+ * under a line that says so.
  */
 export function cleanBuildOutput(output: string): string {
     const lines: string[] = [];
-    for (const raw of output.replace(CONTROL_SEQUENCES, '').split(/\r*\n/)) {
+    let text = output;
+    if (text.length > RESULT_OUTPUT_MAX_CHARS) {
+        const tail = text.slice(text.length - RESULT_OUTPUT_MAX_CHARS);
+        const lineStart = tail.indexOf('\n');
+        text = tail.slice(lineStart + 1);
+        lines.push(RESULT_OUTPUT_CUT);
+    }
+    for (const raw of text.replace(CONTROL_SEQUENCES, '').split(/\r*\n/)) {
         const states = raw.split('\r').map((state) => state.trimEnd()).filter((state) => state.length > 0);
         if (states.length === 0) {
             // A blank line stays one; the blank a CR-first line leaves does not.
