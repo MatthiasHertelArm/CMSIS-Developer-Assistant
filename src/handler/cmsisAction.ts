@@ -29,8 +29,9 @@
  * window captured it (#134). load_and_debug waits for its pre-launch Load,
  * then, like attach, for a session that it probes twice. rebuild and clean
  * run CMSIS Solution's Rebuild and Clean (1.72.0), the build task type with
- * `--rebuild` or `--clean`, as jobs of their own; stop_build ends the
- * build-type tasks of the window and says whether one was running.
+ * `--rebuild` or `--clean`, as jobs of their own; stop_build ends the build
+ * a call of this tool started, or, with none of its own running, the
+ * build-type tasks of the window, and says whether one was running.
  *
  * One deadline per call (#12): the wait (60 s by default, up to 600 s) counts
  * from the call, so the solution checks and a target switch come out of it,
@@ -1066,9 +1067,62 @@ async function buildsAfterStopRun(tracker: CmsisJobTracker, builds: readonly Exe
 }
 
 /**
- * stop_build: end the window's build-type tasks — a build, rebuild or clean,
- * or the cbuild setup CMSIS Solution runs after loading a solution —
- * through `cmsis-csolution.stopBuild`, which ends one of them; give it 3 s,
+ * stop_build with a build of this extension's own in flight: terminate the
+ * task executions `own` that `cmsis_action` calls started, and settle the
+ * builds still held back behind a setup (#138) before their start goes out.
+ * No command is issued: `cmsis-csolution.stopBuild` ends whichever build-type
+ * task it finds. The executions get the stop's whole budget to end; the
+ * answer names what else still runs, which the next stop_build ends.
+ */
+async function stopOwnBuilds(issue: Issue, own: readonly ExecutionLike[]): Promise<ToolText> {
+    const { tracker, tag } = issue;
+    const { host } = issue.context;
+    const held = tracker.heldJobs();
+    for (const job of held) {
+        tracker.settle(job.id, 'cancelled', 'cmsis_action stop_build stopped it before its command went out.');
+    }
+    const jobs = [...held, ...tracker.requestStop(own)];
+    const requestedAt = host.now();
+    const totalMs = stopWaitMs(issue, requestedAt);
+    for (const execution of own) {
+        try {
+            execution.terminate();
+        } catch {
+            // It may have ended in the meantime.
+        }
+    }
+    const ended = await tracker.waitForEnd(own, totalMs);
+    if (ended.alive.length > 0) {
+        if (totalMs < STOP_TOTAL_MS) {
+            return stopPending(issue, 'stop_build', ended.alive, requestedAt, ' Its outputs are incomplete: cmsis_action build before load or flash.');
+        }
+        throw new ToolError('TASK_FAILED',
+            `CMSIS 'stop_build'${tag}: ${nameList(ended.alive)} ${ended.alive.length === 1 ? 'is' : 'are'} still running `
+                + `${formatDuration(host.now() - requestedAt)} after the stop request, although terminated.`,
+            'Stop it with the trash icon of its terminal in the Terminal panel, then call cmsis_action {action:\'status\'}.');
+    }
+    const others = tracker.buildExecutions().filter((execution) => !own.includes(execution));
+    const left = others.length > 0
+        ? ` ${nameList(others)} ${others.length === 1 ? 'was' : 'were'} not started by cmsis_action and still ${others.length === 1 ? 'runs' : 'run'}: `
+            + `cmsis_action stop_build again ends ${others.length === 1 ? 'it' : 'them'}.`
+        : '';
+    const ids = jobs.length > 0 ? `job ${jobs.map((job) => job.id).join(', ')}` : '';
+    if (own.length === 0) {
+        return `CMSIS 'stop_build'${tag}: stopped ${held.map((job) => job.action).join(', ')} before ${held.length === 1 ? 'it' : 'they'} started (${ids}).${left}`;
+    }
+    const endedLast = Math.max(requestedAt, ...ended.endedAt.values());
+    return `CMSIS 'stop_build'${tag}: stopped ${nameList(own)} (ended ${formatDuration(endedLast - requestedAt)} after the stop request`
+        + `${ids ? `; ${ids}` : ''}). Its outputs are incomplete: cmsis_action build before load or flash.${left}`;
+}
+
+/**
+ * stop_build: end a build that hangs. A build, rebuild or clean that a
+ * `cmsis_action` call started is this extension's own and goes first
+ * (`stopOwnBuilds`): only it is ended, and what else runs — a build the user
+ * started in the CMSIS view, the cbuild setup CMSIS Solution runs after
+ * loading a solution — is left alone and named. With no build of its own in
+ * flight, the window's build-type tasks are ended through
+ * `cmsis-csolution.stopBuild`, which ends one of them; give it 3 s,
  * terminate what is left ourselves, and report only what has ended within
  * 10 s; a shorter caller deadline leaves the stop pending. Their jobs count
  * as stopped once ended. With none running nothing is issued: a build whose
@@ -1080,15 +1134,14 @@ async function stopBuild(issue: Issue): Promise<ToolText> {
     const { host } = issue.context;
     const tag = issue.tag;
     const running = tracker.buildExecutions();
+    const own = tracker.ownBuildExecutions();
+    if (own.length > 0 || tracker.heldJobs().length > 0) {
+        return stopOwnBuilds(issue, own);
+    }
     if (running.length === 0) {
         return stopChecks(issue);
     }
-    // A build held back behind the setup this stops would go out once it ended (#138): it is stopped before it starts.
-    const held = tracker.heldJobs();
-    for (const job of held) {
-        tracker.settle(job.id, 'cancelled', 'cmsis_action stop_build stopped it before its command went out.');
-    }
-    const jobs = [...held, ...tracker.requestStop(running)];
+    const jobs = tracker.requestStop(running);
     let direct = '';
     try {
         await issueCommand(issue, 'stop_build');

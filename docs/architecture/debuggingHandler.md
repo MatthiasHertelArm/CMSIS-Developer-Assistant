@@ -489,10 +489,17 @@ window's CMSIS job tracker (next section):
   not its tasks, but CMSIS Solution's Stop Running can end one: the reply
   names a build that ended during the wait
   and one that runs on, which `stop_build` ends. `detach` returns at once.
-- `stop_build` does the same for the build-type tasks of the window (build,
+- `stop_build` ends a build that hangs, its own first (`stopOwnBuilds`): a
+  build, rebuild or clean that a `cmsis_action` call started is ended by
+  terminating its task execution, and one still held back behind a setup
+  is settled before its start goes out. No command is issued then, since
+  `cmsis-csolution.stopBuild` ends whichever build-type task it finds; what
+  else runs — a build the user started in the CMSIS view, CMSIS Solution's
+  own `cbuild setup` — is left alone and named, and the next `stop_build`
+  ends it. With no build of its own in flight it does what `stop_run` does,
+  for the build-type tasks of the window (build,
   rebuild, clean, or the `cbuild setup` CMSIS Solution runs after loading a
-  solution), over `cmsis-csolution.stopBuild`, which ends only one of them;
-  a build held back behind the setup it stops is stopped before it starts.
+  solution), over `cmsis-csolution.stopBuild`, which ends only one of them.
   It marks their jobs first (`CmsisJobTracker.requestStop`), so they read as
   stopped once they end, whatever code the task closes with, without a
   failed-build diagnostic rerun. A short deadline also leaves this stop

@@ -3691,25 +3691,31 @@ suite('DebuggingHandler', () => {
                         + 'No CMSIS task is running in this window.');
                 });
 
-                test('stop_build while a build is held back stops the setup and the build: it never goes out', async () => {
+                test('stop_build while a build is held back stops the build, which never goes out; the setup is CMSIS Solution\'s and the next stop_build\'s', async () => {
                     const w = jobWorld();
                     w.tasks.start(w.tasks.execution(SETUP_TASK));
                     let builds = 0;
+                    let stops = 0;
                     solutionOn('HE', {
                         'cmsis-csolution.build': () => {
                             builds++;
                         },
                         'cmsis-csolution.stopBuild': () => {
+                            stops++;
                             const running = w.tasks.taskExecutions()[0] as FakeExecution;
                             setTimeout(() => w.tasks.finish(running, 130), 5);
                         },
                     });
                     await replyAnswer(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'running');
                     assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
-                        /^CMSIS 'stop_build' on HE: stopped 'cbuild setup .*' \(ended [\d.]+ s after the stop request; job b-1\)\./);
+                        /^CMSIS 'stop_build' on HE: stopped build before it started \(job b-1\)\. 'cbuild setup .*' was not started by cmsis_action and still runs: cmsis_action stop_build again ends it\.$/);
+                    assert.strictEqual(stops, 0, 'the build was this extension\'s own: no command went out');
                     await new Promise((resolve) => setTimeout(resolve, 50));
                     assert.strictEqual(builds, 0, 'the held build never went out');
                     assert.strictEqual(w.tracker.last('build')?.state, 'cancelled');
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                        /^CMSIS 'stop_build' on HE: stopped 'cbuild setup .*' \(ended [\d.]+ s after the stop request\)\./);
+                    assert.strictEqual(stops, 1, 'with no build of its own left, CMSIS Solution\'s Stop Build ends the setup');
                     assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
                         /^No CMSIS job in flight in this window\. Last results: build on HE stopped before it started [\d.]+ s ago \(job b-1\)\.\nNo CMSIS task is running in this window\.$/);
                 });
@@ -4078,29 +4084,53 @@ suite('DebuggingHandler', () => {
                 w.tracker.dispose();
             });
 
-            test('stop_build ends a running build and says so; with none running it issues nothing and says that', async () => {
+            test('stop_build ends the build cmsis_action started by terminating its task, without CMSIS Solution\'s Stop Build; with none running it issues nothing and says that', async () => {
                 const w = jobWorld();
                 let stops = 0;
+                let own: FakeExecution | undefined;
                 solutionOn('HE', {
-                    'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 'never', true),
-                    // CMSIS Solution's stopBuildTask: the task runner's terminateProcess closes the task with 130.
+                    'cmsis-csolution.build': () => {
+                        own = runs(w.tasks, BUILD_TASK, 'never', true)() as FakeExecution;
+                        return own;
+                    },
                     'cmsis-csolution.stopBuild': () => {
                         stops++;
-                        const running = w.tasks.taskExecutions()[0] as FakeExecution;
-                        setTimeout(() => w.tasks.finish(running, 130), 5);
                     },
                 });
                 await replyAnswer(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'running');
                 assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
                     /^CMSIS 'stop_build' on HE: stopped 'cbuild demo\.csolution\.yml --active HE' \(ended [\d.]+ s after the stop request; job b-1\)\. Its outputs are incomplete: cmsis_action build before load or flash\.$/);
-                assert.strictEqual(stops, 1);
+                assert.strictEqual(stops, 0, 'the command would end whichever build-type task it finds');
+                assert.strictEqual(own?.terminateCalls, 1);
                 assert.strictEqual(w.tracker.last('build')?.state, 'cancelled');
                 assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'status' })),
                     /^No CMSIS job in flight in this window\. Last results: build on HE stopped [\d.]+ s ago \(job b-1, 'cbuild demo\.csolution\.yml --active HE'\)\.\nNo CMSIS task is running in this window\.$/);
 
                 assert.strictEqual(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
                     'CMSIS \'stop_build\' on HE: nothing to stop — no build is running in this window.');
-                assert.strictEqual(stops, 1, 'nothing was issued');
+                assert.strictEqual(stops, 0, 'nothing was issued');
+            });
+
+            test('stop_build leaves a build of the CMSIS view alone while one of its own runs, and names it; the next stop_build ends that one through the command', async () => {
+                const w = jobWorld();
+                let stops = 0;
+                solutionOn('HE', {
+                    'cmsis-csolution.rebuild': runs(w.tasks, { ...BUILD_TASK, name: 'cbuild demo.csolution.yml --rebuild --active HE', definition: { type: 'cmsis-csolution.build', rebuild: true } }, 'never', true),
+                    'cmsis-csolution.stopBuild': () => {
+                        stops++;
+                        const running = w.tasks.taskExecutions()[0] as FakeExecution;
+                        setTimeout(() => w.tasks.finish(running, 130), 5);
+                    },
+                });
+                await replyAnswer(w.handler.handleCmsisCommand({ action: 'rebuild', timeoutMs: 4_000 }), 'running');
+                // The user's clean, from the panel, queued behind it: no cmsis_action call started it.
+                const users = w.tasks.start(w.tasks.execution({ name: 'cbuild demo.csolution.yml --clean', source: 'cmsis-csolution.build', definition: { type: 'cmsis-csolution.build', clean: true } }));
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                    /^CMSIS 'stop_build' on HE: stopped 'cbuild demo\.csolution\.yml --rebuild --active HE' \(ended [\d.]+ s after the stop request; job rb-\d\)\. Its outputs are incomplete: cmsis_action build before load or flash\. 'cbuild demo\.csolution\.yml --clean' was not started by cmsis_action and still runs: cmsis_action stop_build again ends it\.$/);
+                assert.deepStrictEqual([stops, users.terminateCalls], [0, 0]);
+                assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
+                    /^CMSIS 'stop_build' on HE: stopped 'cbuild demo\.csolution\.yml --clean' \(ended [\d.]+ s after the stop request/);
+                assert.strictEqual(stops, 1);
             });
 
             test('stop_build with no build running stops the diagnostic re-run of a finished build, which is no task (#135)', async () => {
@@ -4136,20 +4166,14 @@ suite('DebuggingHandler', () => {
                 assert.strictEqual(requests, 1, 'with nothing being checked, nothing is asked to stop');
             });
 
-            test('stop_build terminates what the command left, counts it as stopped whatever its exit code, and says when one survives', async () => {
+            test('stop_build terminates what the command left of a build from the CMSIS view, counts it as stopped whatever its exit code, and says when one survives', async () => {
                 const w = jobWorld();
-                let execution: FakeExecution | undefined;
-                solutionOn('HE', {
-                    'cmsis-csolution.build': () => {
-                        execution = w.tasks.start(w.tasks.execution(BUILD_TASK));
-                        return execution;
-                    },
-                    'cmsis-csolution.stopBuild': () => undefined,
-                });
-                await replyAnswer(w.handler.handleCmsisCommand({ action: 'build', timeoutMs: 4_000 }), 'running');
+                solutionOn('HE', { 'cmsis-csolution.stopBuild': () => undefined });
+                // Started in the panel, not by a call: CMSIS Solution's Stop Build goes first, and here it ends nothing.
+                const execution = w.tasks.start(w.tasks.execution(BUILD_TASK));
                 assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'stop_build' })),
                     /^CMSIS 'stop_build' on HE: stopped 'cbuild demo\.csolution\.yml --active HE' \(ended [\d.]+ s after the stop request; 'cbuild demo\.csolution\.yml --active HE' needed a second terminate; job b-1\)\./);
-                assert.strictEqual(execution?.terminateCalls, 1);
+                assert.strictEqual(execution.terminateCalls, 1);
                 const stopped = w.tracker.last('build');
                 assert.strictEqual(stopped?.state, 'cancelled', 'ended without an exit code after the stop request: stopped');
                 assert.strictEqual(stopped?.executions[0].stopRequested, true);

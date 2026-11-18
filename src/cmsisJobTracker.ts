@@ -71,6 +71,8 @@ import {
     classifyByLabelLoosely,
     classifyCmsisTask,
     CmsisTaskKind,
+    executionIn,
+    isBuildAction,
     isSettled,
     Job,
     JobAction,
@@ -603,6 +605,26 @@ export class CmsisJobTracker {
         const listed = this.aliveInVsCode();
         const all = listed ?? this.liveExecutions().map((execution) => execution.execution);
         return all.filter((execution) => factsOf(execution)?.type === BUILD_TASK_TYPE);
+    }
+
+    /**
+     * The build-type executions alive now that a `cmsis_action` call started: the build, rebuild or clean of an
+     * open job that a call armed. What `stop_build` ends first: a build the user started in the CMSIS view and
+     * CMSIS Solution's own setup are not this extension's to stop while one of its own runs.
+     */
+    ownBuildExecutions(): ExecutionLike[] {
+        const own: ExecutionLike[] = [];
+        for (const job of this.openJobs()) {
+            if (job.origin !== 'call' || !isBuildAction(job.action)) {
+                continue;
+            }
+            const main = executionIn(job, 'main');
+            const live = main ? this.live.get(main.key) : undefined;
+            if (live && factsOf(live.execution)?.type === BUILD_TASK_TYPE) {
+                own.push(live.execution);
+            }
+        }
+        return own;
     }
 
     /**
