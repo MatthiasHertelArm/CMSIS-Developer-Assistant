@@ -181,6 +181,36 @@ function namedSolutionLine(file: string, folders: readonly string[], platform: N
     return `Active solution: ${file} (${where}${note === undefined ? '' : `; ${note}`})`;
 }
 
+/** What `get_session_status` knows about the target of the active solution (#141). */
+export interface TargetFacts {
+    /** The active target set, `type` or `type@set`. */
+    active?: string;
+    /** The target sets the solution declares, as `cmsis_action` takes them. */
+    declared?: readonly string[];
+}
+
+/** The line names at most this many declared targets, and counts the rest. */
+const MAX_DECLARED_TARGETS = 12;
+
+/**
+ * The line of `get_session_status` on the target set the active solution
+ * builds, loads and debugs (#141), and the target sets it declares, any of
+ * which `cmsis_action` takes as its `target`. Undefined when neither is
+ * known.
+ */
+export function targetStatusLine(facts: TargetFacts): string | undefined {
+    const declared = [...new Set(facts.declared ?? [])];
+    if (facts.active === undefined && declared.length === 0) {
+        return undefined;
+    }
+    const more = declared.length > MAX_DECLARED_TARGETS ? `, … ${declared.length - MAX_DECLARED_TARGETS} more` : '';
+    const list = declared.length > 0 ? `declared: ${declared.slice(0, MAX_DECLARED_TARGETS).join(', ')}${more}` : '';
+    if (facts.active === undefined) {
+        return `Active target: none selected (${list})`;
+    }
+    return list ? `Active target: ${facts.active} (${list})` : `Active target: ${facts.active}`;
+}
+
 /** True for a `*.csolution.yml` or `*.csolution.yaml` path. */
 export function isSolutionFile(file: string): boolean {
     return /\.csolution\.ya?ml$/i.test(file);

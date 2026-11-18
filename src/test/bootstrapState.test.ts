@@ -32,6 +32,7 @@ import {
     projectRootOf,
     samePath,
     solutionStatusLine,
+    targetStatusLine,
 } from '../core/bootstrapState';
 import type { SolutionFileAnswer } from '../core/solutionAnswers';
 import { errorDetail, isErrorCode } from '../core/toolResult';
@@ -76,6 +77,18 @@ suite('Bootstrap state', () => {
         const lines = bootstrapStatusLines({ folders: 0, solutionExtension: true, debuggerExtension: false });
         assert.strictEqual(lines.length, 2);
         assert.match(lines[1], /^Extensions: CMSIS Debugger \(Arm\.vscode-cmsis-debugger\) not installed/);
+    });
+
+    test('the active-target line: the target set and the declared ones, as cmsis_action takes them (#141)', () => {
+        assert.strictEqual(targetStatusLine({ active: 'STM32F407VGTx@console', declared: ['STM32F407VGTx@console', 'STM32F407VGTx@file-io'] }),
+            'Active target: STM32F407VGTx@console (declared: STM32F407VGTx@console, STM32F407VGTx@file-io)');
+        assert.strictEqual(targetStatusLine({ active: 'MPS3' }), 'Active target: MPS3', 'the list is not known');
+        assert.strictEqual(targetStatusLine({ active: 'MPS3', declared: [] }), 'Active target: MPS3');
+        assert.strictEqual(targetStatusLine({ declared: ['HE', 'HP'] }), 'Active target: none selected (declared: HE, HP)');
+        assert.strictEqual(targetStatusLine({}), undefined, 'nothing known, nothing said');
+        const many = Array.from({ length: 15 }, (_, index) => `T${index}`);
+        assert.strictEqual(targetStatusLine({ active: 'T0', declared: [...many, 'T0'] }),
+            `Active target: T0 (declared: ${many.slice(0, 12).join(', ')}, … 3 more)`, 'at most twelve, a repeated name once');
     });
 
     test('the active-solution line: the csolution and its innermost workspace folder, none, or nothing to say (#124)', () => {

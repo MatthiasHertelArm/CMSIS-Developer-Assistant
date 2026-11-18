@@ -203,7 +203,7 @@ The CMSIS procedures, rules, concepts and the causes and fixes of tool messages,
 
 | Tool | Description |
 |------|-------------|
-| `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state, counts the errors recorded since the agent last looked, and names the serial port the window holds or why it was released. Never throws. |
+| `get_session_status` | Classifies the session as `no-session`, `initializing`, `running`, `stopped`, or `unresponsive`, with a hint for each state, counts the errors recorded since the agent last looked, names the solution that is active in the window, its active target set and the target sets it declares (any of which `cmsis_action` takes as `target`), and the serial port the window holds or why it was released. Never throws. |
 | `get_recent_problems` | The problem journal of the window the session drives: failed debug-adapter requests (including those of breakpoints set in the editor while the target runs), GDB-server errors, failed CMSIS tasks and build errors with file and line, Problems-panel errors, the extension's notifications, serial ports that went away. One line per record with number, severity, source, code and next step; `sinceSeq`, `sources`, `minSeverity` and `limit` narrow it. |
 | `check_target_connection` | Low-cost liveness check of the debug adapter and probe. |
 | `get_debug_instructions` | Returns the debugging guide for agents that cannot read MCP resources: a short overview with the topic list by default, or one section with `topic` (`bootstrap`, `session`, `target`, `cmsis-action`, `flash`, `breakpoints`, `inspection`, `faults`, `troubleshooting`; `build`, the name before 2.7.0, serves `cmsis-action`). |

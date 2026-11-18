@@ -55,6 +55,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import * as path from 'path';
 import { DebugState, formatBreakpointModifiers, StackFrame } from './debugState';
 import type { AdoptedBreakpoint, BreakpointBinding, FrameFocusWatch, GdbLogpoint, IDebuggingExecutor, StartFocusWatch } from './debuggingExecutor';
@@ -97,6 +98,7 @@ import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery
 import { answersSolutionKind, querySolution, type SolutionQuery } from './core/solutionQuery';
 import { acquireSolutionApi, settleWithin, type ApiPackId } from './core/solutionApi';
 import type { SolutionFileAnswer } from './core/solutionAnswers';
+import type { ActiveTargetAnswer } from './utils/solutionQueries';
 import { packInstalledIn } from './core/packInstall';
 import { webExampleOrigins } from './core/webCatalog';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
@@ -115,7 +117,8 @@ import {
     FVP_KEEPS_RUNNING, FVP_NO_RECOVERY_PAUSE, FVP_PAUSE_IGNORED, FVP_STOP_UNCONFIRMED, FVP_WAIT_RAN_OUT, fvpChangeRefusal, NO_FRAME_SELECTED,
     renderCallStack, renderSessionStatus, renderThreads, stoppedTargetRefusal,
 } from './handler/sessionText';
-import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID, solutionStatusLine } from './core/bootstrapState';
+import { bootstrapStatusLines, DEBUGGER_EXTENSION_ID, SOLUTION_EXTENSION_ID, solutionStatusLine, targetStatusLine } from './core/bootstrapState';
+import { declaredTargetNames, listTargetTypes } from './core/cmsisTarget';
 import {
     addressFromValue, isAddressLiteral, isHexWord, mspFromHandlerSp, normaliseRegister, registerNumber, renderCoreRegisters, renderCycleCounter,
     renderMemoryDump, sideEffectOf,
@@ -241,6 +244,15 @@ const NO_ACTIVE_SESSION = 'No active debug session.';
  * last known solution, so a stalled answer never slows the status down.
  */
 const SOLUTION_GRACE_MS = 250;
+
+/** The target sets a csolution file declares, for a CMSIS Solution that does not list them; none when the file cannot be read. */
+function declaredIn(csolution: string): string[] {
+    try {
+        return declaredTargetNames(listTargetTypes(fs.readFileSync(csolution, 'utf8')));
+    } catch {
+        return [];
+    }
+}
 /** `cmsis_query`: the fence, and how much earlier the query's own deadline answers. */
 const QUERY_FENCE_MS = 60_000;
 const QUERY_MARGIN_MS = 3_000;
@@ -1124,7 +1136,8 @@ export class DebuggingHandler
 
     /**
      * The session, plus one line on the solution the window has active
-     * (#124), one on this window's CMSIS tasks when there is anything to say
+     * (#124) and one on its active target set and the declared ones (#141),
+     * one on this window's CMSIS tasks when there is anything to say
      * (#46), one per start that reserved a GDB port and has no session or
      * task yet (#127), and one on its serial port (#49). Without a session,
      * also what the window lacks for CMSIS work: a folder, the CMSIS Solution
@@ -1134,9 +1147,10 @@ export class DebuggingHandler
     async handleGetSessionStatus(): Answer {
         const host = this.host();
         const asked = this.askSolution(host);
+        const askedTarget = this.askTarget(host);
         const status = await this.dbg.getSessionStatus();
         const gaps = status.state === 'no-session' ? this.bootstrapLines() : [];
-        const solution = await this.solutionLines(host, asked);
+        const solution = await this.solutionLines(host, asked, askedTarget);
         const extra = [...gaps, ...solution, ...this.cmsisTaskLines(), ...pendingStartLines(this.dbg, host), ...this.serialLines()];
         return renderSessionStatus(status, this.dbg.getDiagnostics(), extra, this.sessionRequest(), this.onFvp());
     }
@@ -1149,21 +1163,46 @@ export class DebuggingHandler
         });
     }
 
+    /** The host's question for the active target set and the declared ones (#141), asked now. Never rejects. */
+    private askTarget(host: HandlerHost): Promise<ActiveTargetAnswer | undefined> {
+        return new Promise<ActiveTargetAnswer | undefined>((resolve) => resolve(host.activeTarget?.())).catch((caught: unknown) => {
+            logger.debug('get_session_status could not ask for the active target', caught);
+            return undefined;
+        });
+    }
+
     /**
      * The line on the solution the CMSIS Solution extension has active in
      * this window and the folder that holds it, or that none is: its answer
      * when it comes within `SOLUTION_GRACE_MS`, else the csolution the window
-     * published last, marked as that. Never rejects, since that tool must not.
+     * published last, marked as that. Under a solution it named just now, the
+     * line on its active target set and the target sets it declares (#141):
+     * CMSIS Solution's list when it gives one, else the csolution file's. Both
+     * answers share the one grace. Never rejects, since that tool must not.
      */
-    private async solutionLines(host: HandlerHost, asked: Promise<SolutionFileAnswer | undefined>): Promise<string[]> {
+    private async solutionLines(
+        host: HandlerHost,
+        asked: Promise<SolutionFileAnswer | undefined>,
+        askedTarget: Promise<ActiveTargetAnswer | undefined>,
+    ): Promise<string[]> {
         try {
+            const until = host.now() + SOLUTION_GRACE_MS;
             const answered = await settleWithin(asked, SOLUTION_GRACE_MS, host);
             const line = solutionStatusLine({
                 answer: answered?.value,
                 lastKnown: host.knownSolutionFile(),
                 folders: host.workspaceFolders().map((folder) => folder.uri.fsPath),
             });
-            return line === undefined ? [] : [line];
+            if (line === undefined) {
+                return [];
+            }
+            const file = answered?.value?.active ? answered.value.file : undefined;
+            if (file === undefined) {
+                return [line];
+            }
+            const target = (await settleWithin(askedTarget, Math.max(0, until - host.now()), host))?.value;
+            const targetLine = target === undefined ? undefined : targetStatusLine({ active: target.active, declared: target.declared ?? declaredIn(file) });
+            return targetLine === undefined ? [line] : [line, targetLine];
         } catch (caught) {
             logger.warn('The solution line of get_session_status could not be built', caught);
             return [];

@@ -33,7 +33,7 @@
 
 import * as vscode from 'vscode';
 import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
-import { ActivePackFolders, cbuildRunFileOf, packFolderOf, solutionAnswerOf, type SolutionFileAnswer } from '../core/solutionAnswers';
+import { ActivePackFolders, activeTargetSetOf, cbuildRunFileOf, packFolderOf, solutionAnswerOf, type SolutionFileAnswer } from '../core/solutionAnswers';
 import { peekSolutionApi, v3Method, type SolutionApi, type SolutionApiV3Methods } from '../core/solutionApi';
 import { logger } from './logger';
 import { withTimeout } from './timeout';
@@ -42,6 +42,7 @@ export const GET_CBUILD_RUN_FILE = 'cmsis-csolution.getCbuildRunFile';
 export const GET_DFP_PATH = 'cmsis-csolution.getDfpPath';
 export const GET_BSP_PATH = 'cmsis-csolution.getBspPath';
 export const GET_SOLUTION_FILE = 'cmsis-csolution.getSolutionFile';
+export const GET_ACTIVE_TARGET_SET = 'cmsis-csolution.getActiveTargetSet';
 
 /** How long one question may take, the command lookup included. */
 export const SOLUTION_QUERY_MS = 3_000;
@@ -73,7 +74,7 @@ type V3Getter = 'getSolutionFile' | 'getActiveTarget' | 'getDeviceName' | 'getBo
     | 'getDfpPath' | 'getBspPath' | 'getPackRootPath' | 'getCbuildRunFile';
 const V3_GETTERS: Readonly<Record<string, V3Getter>> = {
     'cmsis-csolution.getSolutionFile': 'getSolutionFile',
-    'cmsis-csolution.getActiveTargetSet': 'getActiveTarget',
+    [GET_ACTIVE_TARGET_SET]: 'getActiveTarget',
     'cmsis-csolution.getDeviceName': 'getDeviceName',
     'cmsis-csolution.getBoardName': 'getBoardName',
     'cmsis-csolution.getDfpName': 'getDfpName',
@@ -152,6 +153,40 @@ export async function askSolution(command: string, source: SolutionCommands = VS
 export async function activeSolutionAnswer(source: SolutionCommands = VSCODE_SOLUTION_COMMANDS): Promise<SolutionFileAnswer | undefined> {
     const reply = await replyOf(GET_SOLUTION_FILE, source);
     return reply.answered ? solutionAnswerOf(reply.value) : undefined;
+}
+
+/** What CMSIS Solution says about the target of its active solution (#141). */
+export interface ActiveTargetAnswer {
+    /** The active target set, `type` or `type@set`; absent when none is selected. */
+    active?: string;
+    /** Every target set the solution declares, in its order, from `getTargets` of API version 3; absent without it. */
+    declared?: string[];
+}
+
+/**
+ * The active target set of the extension's active solution and, where API
+ * version 3 lists them, the target sets the solution declares (#141).
+ * Undefined when the extension gave no answer. Never throws.
+ */
+export async function activeTargetAnswer(source: SolutionCommands = VSCODE_SOLUTION_COMMANDS): Promise<ActiveTargetAnswer | undefined> {
+    const reply = await replyOf(GET_ACTIVE_TARGET_SET, source);
+    if (!reply.answered) {
+        return undefined;
+    }
+    const active = activeTargetSetOf(reply.value);
+    let declared: string[] | undefined;
+    try {
+        const getTargets = source.api ? v3Method(source.api(), 'getTargets') : undefined;
+        if (getTargets) {
+            const listed: unknown = await withTimeout('cmsis getTargets', source.timeoutMs ?? SOLUTION_QUERY_MS, () => Promise.resolve(getTargets()));
+            if (Array.isArray(listed)) {
+                declared = listed.filter((name): name is string => typeof name === 'string' && name.length > 0);
+            }
+        }
+    } catch (caught) {
+        logger.debug(`getTargets: no answer (${caught instanceof Error ? caught.message : String(caught)})`);
+    }
+    return { ...(active !== undefined ? { active } : {}), ...(declared !== undefined ? { declared } : {}) };
 }
 
 /**

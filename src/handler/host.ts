@@ -41,7 +41,8 @@ import { fileExists } from '../core/flashController';
 import { findGdbPortHolder, type GdbPortHolder, type PortStart } from '../core/gdbPortGuard';
 import { GdbPortReservations, type GdbPortReservation, type PendingGdbStart } from '../core/gdbPortReservations';
 import { SerialController, serialController } from '../core/serialController';
-import { activeCbuildRunFile, activeSolutionAnswer } from '../utils/solutionQueries';
+import { activeCbuildRunFile, activeSolutionAnswer, activeTargetAnswer } from '../utils/solutionQueries';
+import type { ActiveTargetAnswer } from '../utils/solutionQueries';
 import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
 import type { SolutionFileAnswer } from '../core/solutionAnswers';
 import type { SolutionExtensionHandle } from '../core/solutionApi';
@@ -97,6 +98,11 @@ export interface HandlerHost {
      * `get_session_status` names it (#124).
      */
     activeSolution(): Promise<SolutionFileAnswer | undefined>;
+    /**
+     * The active target set of that solution and, where CMSIS Solution lists them, the declared ones (#141), for
+     * `get_session_status`; undefined without an answer. Absent: the status names no target.
+     */
+    activeTarget?(): Promise<ActiveTargetAnswer | undefined>;
     /**
      * The csolution this window last published in the registry (`cmsis=` of
      * the window listing), which the window coordinator asks the extension
@@ -189,6 +195,7 @@ export const VSCODE_HOST: HandlerHost = {
     workspaceFolders: () => vscode.workspace.workspaceFolders ?? [],
     findFiles: (include, exclude, maxResults) => vscode.workspace.findFiles(include, exclude, maxResults),
     activeSolution: () => activeSolutionAnswer(),
+    activeTarget: () => activeTargetAnswer(),
     // The window's DebuggingHandler is given the coordinator's answer.
     knownSolutionFile: () => undefined,
     activeCbuildRunFile: () => activeCbuildRunFile(),

@@ -2510,6 +2510,40 @@ suite('DebuggingHandler', () => {
             SerialPortMock.binding.reset();
         });
 
+        test('session status names the active target set and the declared ones under the active solution (#141)', async () => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-status-target-'));
+            try {
+                const file = path.join(dir, 'App.csolution.yml');
+                fs.writeFileSync(file, 'solution: {target-types: [{type: STM32F407VGTx, target-set: [{set: console}, {set: file-io}]}, {type: FVP}]}\n');
+                const x = new ScriptedExecutor();
+                x.sessionStatus = status('no-session', { sessionName: null, sessionType: null, configurationName: null });
+                let solution: SolutionFileAnswer | undefined = { active: true, file };
+                let target: () => Promise<{ active?: string; declared?: string[] } | undefined> = async () => ({ active: 'STM32F407VGTx@console', declared: ['STM32F407VGTx@console', 'STM32F407VGTx@file-io', 'FVP'] });
+                const host: Partial<HandlerHost> = {
+                    workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'app', index: 0 }],
+                    activeSolution: async () => solution,
+                    activeTarget: () => target(),
+                };
+                const lines = async (): Promise<string[]> => (await textAnswer(handlerFor(x, host).handleGetSessionStatus())).split('\n');
+                const listed = await lines();
+                const at = listed.findIndex((line) => line.startsWith('Active solution: '));
+                assert.strictEqual(listed[at + 1], 'Active target: STM32F407VGTx@console (declared: STM32F407VGTx@console, STM32F407VGTx@file-io, FVP)', 'right under the solution');
+
+                // CMSIS Solution 1.72.0 names the active one only: the declared ones are the csolution file's.
+                target = async () => ({ active: 'STM32F407VGTx@file-io' });
+                assert.ok((await lines()).includes('Active target: STM32F407VGTx@file-io (declared: STM32F407VGTx@console, STM32F407VGTx@file-io, FVP)'));
+                target = async () => undefined;
+                assert.ok(!(await lines()).some((line) => line.startsWith('Active target:')), 'no answer, no line');
+                target = async () => { throw new Error('boom'); };
+                assert.ok((await lines()).some((line) => line.startsWith('Active solution: ')), 'the solution line does not depend on it');
+                target = async () => ({ active: 'FVP' });
+                solution = { active: false };
+                assert.ok(!(await lines()).some((line) => line.startsWith('Active target:')), 'no active solution, no target');
+            } finally {
+                fs.rmSync(dir, { recursive: true, force: true });
+            }
+        });
+
         test('session status names the solution the window has active, in every state, asked while the session is probed (#124)', async () => {
             const folder = vscode.Uri.file('/w/blinky');
             const file = path.join(folder.fsPath, 'Blinky.csolution.yml');

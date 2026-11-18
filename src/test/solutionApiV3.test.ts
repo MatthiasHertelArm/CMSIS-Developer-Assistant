@@ -35,7 +35,7 @@ import { querySolution, SolutionQuery } from '../core/solutionQuery';
 import { ErrorCode, errorDetail, ToolError, ToolReply } from '../core/toolResult';
 import { convertResult } from '../handler/cmsisAction';
 import { folderOfInstall } from '../handler/installPack';
-import { apiToolsEnvironment, askSolution, cachedApiToolsEnvironment, resetApiToolsEnvironment, solutionGetter, SolutionCommands } from '../utils/solutionQueries';
+import { activeTargetAnswer, apiToolsEnvironment, askSolution, cachedApiToolsEnvironment, resetApiToolsEnvironment, solutionGetter, SolutionCommands } from '../utils/solutionQueries';
 
 const CLOCK: Clock = {
     now: () => Date.now(),
@@ -238,6 +238,17 @@ suite('CMSIS Solution API version 3 (2.9.1)', () => {
             assert.strictEqual(await askSolution('cmsis-csolution.getCbuildRunFile', source), '/w/from-command.cbuild-run.yml');
             assert.strictEqual(await solutionGetter('cmsis-csolution.getSolutionFile', source), undefined);
             assert.deepStrictEqual(source.executed, ['cmsis-csolution.getCbuildRunFile', 'cmsis-csolution.getSolutionFile']);
+        });
+
+        test('the active target set and the declared ones (#141): version 3 lists them, 1.72.0 names the active one only', async () => {
+            const api = v3();
+            assert.deepStrictEqual(await activeTargetAnswer(commands(api)), { active: 'HP@debug', declared: ['HP@debug', 'HP@release', 'HE'] });
+            assert.deepStrictEqual(api.calls, ['getActiveTarget', 'getTargets']);
+            assert.deepStrictEqual(await activeTargetAnswer(commands(v2(), { 'cmsis-csolution.getActiveTargetSet': 'MPS3' })), { active: 'MPS3' });
+            assert.deepStrictEqual(await activeTargetAnswer(commands(v2(), { 'cmsis-csolution.getActiveTargetSet': '' })), {}, 'answered, and none is selected');
+            assert.strictEqual(await activeTargetAnswer(commands(v2())), undefined, 'no answer at all');
+            const slow = v3({ getTargets: () => never<string[]>() });
+            assert.deepStrictEqual(await activeTargetAnswer(commands(slow)), { active: 'HP@debug' }, 'a list that does not come leaves the active one');
         });
 
         test('a getter of version 3 that does not answer in time is no answer', async () => {

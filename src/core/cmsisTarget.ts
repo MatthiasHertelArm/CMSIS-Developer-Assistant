@@ -150,14 +150,19 @@ export function listTargetTypes(csolutionText: string): TargetTypeInfo[] {
     });
 }
 
-/** The choices to offer when a request does not resolve: `MPS3, HE@debug, HE@release`. */
-export function formatTargetChoices(types: TargetTypeInfo[]): string {
+/** Every target a csolution declares as `cmsis_action` takes it, in file order: `MPS3`, `HE@debug`, `HE@release`. */
+export function declaredTargetNames(types: readonly TargetTypeInfo[]): string[] {
     const names: string[] = [];
     for (const t of types) {
         if (t.sets.length === 0) { names.push(t.name); continue; }
         for (const s of t.sets) { names.push(formatTargetName(t.name, s)); }
     }
-    return names.join(', ');
+    return names;
+}
+
+/** The choices to offer when a request does not resolve: `MPS3, HE@debug, HE@release`. */
+export function formatTargetChoices(types: TargetTypeInfo[]): string {
+    return declaredTargetNames(types).join(', ');
 }
 
 export type TargetResolution =

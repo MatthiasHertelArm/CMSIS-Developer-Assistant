@@ -110,6 +110,17 @@ line, which is not the same as "none". The line is built by
 the router answers instead, and its listing names each window's solution
 (`cmsis=`).
 
+Under a solution the extension named just now, a second line names its
+active target set and the target sets it declares (#141), each in the
+spelling `cmsis_action` takes as `target`: an agent reads the selection and
+its choices without the Manage Solution view, and switches with
+`cmsis_action`, which verifies the switch. `HandlerHost.activeTarget`
+(`activeTargetAnswer()`) asks `getActiveTarget` and, where API version 3
+offers it, `getTargets`; for a CMSIS Solution that does not list them the
+handler reads the csolution file (`listTargetTypes()`). The question goes
+out with the one for the solution and shares its grace; the line is
+`targetStatusLine()`.
+
 ## Moving the target and waiting for the stop
 
 Steps, `continue_execution` and `pause_execution` go through
