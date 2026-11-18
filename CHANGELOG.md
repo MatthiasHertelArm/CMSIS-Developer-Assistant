@@ -4,7 +4,7 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.9.4] - Unreleased
 
 CMSIS Solution's API version 3 behind `cmsis_query` and `cmsis_action` (proposal 2.9.1), and its document inventory as a source of the documentation tools (proposal 2.9.2, stage 1). Both need a CMSIS Solution release after 1.72.0, today only its nightly build; with 1.72.0 everything works as in 2.9.0.
 
