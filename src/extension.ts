@@ -51,7 +51,7 @@ import { SERVER_VERSION } from './debuggingExecutor';
 import { registerPackDocsCommands } from './packDocsCommands';
 import { registerTargetDocsView } from './targetDocsView';
 import type { PackDocsHandlers } from './packDocsDispatch';
-import { createPackDocsHandlers, readPackDocsGates } from './packDocsHost';
+import { createPackDocsHandlers, readPackDocsGates, tellAboutLegacyUserDocs } from './packDocsHost';
 import { registerSerialHandle } from './serialStatus';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { logger } from './utils/logger';
@@ -319,6 +319,10 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
         void manager.refreshAgentRules().catch((failure: unknown) => {
             logger.error('Updating the tool rules in the agents\' rule files failed', failure);
         });
+        // Not awaited either: the retired user documents folder, said once.
+        if (active.packDocsEnabled) {
+            void tellAboutLegacyUserDocs(extensionContext);
+        }
     }
 
     extensionContext.subscriptions.push(

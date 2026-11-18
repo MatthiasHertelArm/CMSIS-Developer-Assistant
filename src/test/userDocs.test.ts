@@ -25,7 +25,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { migrationDone } from '../core/packDocs/legacyMigration';
 import { PageStore } from '../core/packDocs/pageStore';
-import { legacyParent, listLegacyUserDocs, resolveUserDocsDir } from '../core/packDocs/userDocs';
+import { countLegacyUserDocs, legacyUserDocsNotice, resolveUserDocsDir } from '../core/packDocs/userDocs';
 import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
 import { FakeExtractor, buildWorld } from './packDocsHandler.test';
@@ -64,24 +64,22 @@ function snapshot(root: string): string[] {
 }
 
 suite('the retired user documents folder and download store', () => {
-    test('the folder\'s layout: every PDF with its sub-folders and docs.json metadata; hidden folders skipped; the attributions', () => {
+    test('the folder is only counted: its PDFs up to three folders deep, hidden folders skipped; and the notice that it is no longer used', () => {
         const root = legacyTree();
-        const listed = listLegacyUserDocs(root).map((doc) => [doc.parts.join('/'), path.basename(doc.path), doc.title, doc.revision ?? ''].join(' | '));
-        assert.deepStrictEqual(listed.filter((line) => !line.startsWith('devices')).sort(), [
-            ' | everyone.pdf | everyone | ',
-            'Keil | vendor-wide.pdf | vendor-wide | ',
-            'Keil/STM32F7xx_DFP | nda-manual.pdf | NDA manual | Rev 1',
-            'boards/NUCLEO-F756ZG | schematic.pdf | schematic | ',
-            'cores/Cortex-M7 | trm-notes.pdf | trm-notes | ',
-        ]);
-        assert.deepStrictEqual(listLegacyUserDocs(path.join(root, 'missing')), []);
-        assert.deepStrictEqual(legacyParent(['Keil', 'STM32F7xx_DFP']), { pack: 'Keil::STM32F7xx_DFP' });
-        assert.deepStrictEqual(legacyParent(['devices', 'STM32F7*']), undefined);
+        const expected = process.platform !== 'win32' ? 6 : 5;
+        assert.strictEqual(countLegacyUserDocs(root), expected, 'docs.json and the hidden folder do not count');
+        assert.strictEqual(countLegacyUserDocs(path.join(root, 'missing')), 0);
+        assert.strictEqual(legacyUserDocsNotice(root, expected),
+            `The user documents folder ${root} (${expected} PDFs) is no longer used: the documentation tools do not read it. `
+            + 'Add the documents you still need to a target with Add Document in the Target Documents view or Import Document for Current Target, '
+            + 'then delete the folder.');
+        assert.match(legacyUserDocsNotice('/u', 1) ?? '', /^The user documents folder \/u \(1 PDF\) is no longer used/);
+        assert.strictEqual(legacyUserDocsNotice(root, 0), undefined, 'an empty or missing folder needs no word');
         assert.strictEqual(resolveUserDocsDir(''), path.join(os.homedir(), '.cmsis-pack-docs', 'user'));
         assert.strictEqual(resolveUserDocsDir('~/docs', '/home/me'), path.resolve('/home/me/docs'));
     });
 
-    test('the move: folder documents attributed, old downloads imported with their edition and deleted, the folder unchanged, once', async () => {
+    test('the move: old downloads imported with their edition and deleted, once; the user documents folder is neither read nor copied', async () => {
         const world = buildWorld();
         const root = legacyTree();
         const before = snapshot(root);
@@ -102,23 +100,20 @@ suite('the retired user documents folder and download store', () => {
         const report = migrationDone(world.host.storageDir);
         assert.ok(report, 'the marker is written');
         assert.strictEqual(report.downloads, 1);
-        assert.strictEqual(report.userDocuments, 5);
-        assert.strictEqual(report.left.length, process.platform !== 'win32' ? 1 : 0, 'the pattern folder is reported');
+        assert.strictEqual(report.userDocuments, undefined, 'nothing of the folder is moved');
+        assert.deepStrictEqual(report.left, []);
         assert.ok(!fs.existsSync(p.download) && !fs.existsSync(p.fetchRecord), 'the old download is gone');
         assert.deepStrictEqual(snapshot(root), before, 'the folder is unchanged');
         assert.match(listed, /arm\/ddi0553-latest · arch · Armv8-M Architecture Reference Manual · fetched B\.z, not indexed yet/);
-        assert.match(listed, /Documents added by the user \(the document service\):/);
-        assert.match(listed, /user\/stm32f7xx-dfp\/nda-manual · user \[manual\] · NDA manual · 1 kB \(added by the user\), not indexed yet/);
-        assert.match(listed, /user\/nucleo-f756zg\/schematic · user · schematic/);
-        assert.match(listed, /user\/cortex-m7\/trm-notes · user · trm-notes/);
-        assert.ok(!listed.includes('errata-prelim'), 'a pattern folder is not moved, and the folder is no longer read');
-        const search = textOf(await handler.handleSearchTargetDocs({ query: 'USART_CR1', doc: 'nda-manual' }));
-        assert.match(search, /#1 user\/stm32f7xx-dfp\/nda-manual \[Rev 1\] p\.1 §1 Secret/);
+        assert.ok(!listed.includes('Documents added by the user'), listed);
+        for (const name of ['nda-manual', 'NDA manual', 'user/nucleo-f756zg', 'trm-notes', 'vendor-wide', 'everyone', 'errata-prelim']) {
+            assert.ok(!listed.includes(name), `${name}: no document of the folder is listed`);
+        }
 
         // Once: a new handler (a new window) does not move again, and a document added to the folder later stays out.
         touch(path.join(root, 'later.pdf'));
         const again = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
         assert.ok(!textOf(await again.handleListTargetDocs({})).includes('later'));
-        assert.strictEqual(migrationDone(world.host.storageDir)?.userDocuments, 5);
+        assert.strictEqual(migrationDone(world.host.storageDir)?.downloads, 1);
     });
 });

@@ -16,18 +16,16 @@
 
 /**
  * The move from the retired document path to the document service, once per
- * machine (user decision of 2026-11-16):
+ * machine (user decision of 2026-11-16): the downloads `fetch_doc` kept in
+ * this extension's store (`arm/`, `web/`) become service documents under
+ * "all targets", as they were listed for every target before, with their
+ * edition; the old copy and its fetch record are then deleted. Their
+ * extracted text and index stay, and stay current (the copy keeps its
+ * modification time). HTML-only records are not downloads and stay.
  *
- * - **Downloads** `fetch_doc` kept in this extension's store (`arm/`, `web/`)
- *   become service documents under "all targets", as they were listed for
- *   every target before, with their edition; the old copy and its fetch
- *   record are then deleted. Their extracted text and index stay, and stay
- *   current (the copy keeps its modification time). HTML-only records are
- *   not downloads and stay.
- * - **The user documents folder** is copied into the service with the
- *   attribution its sub-folders gave (`userDocs.legacyParent`); a pattern
- *   folder cannot be attributed and is reported. The folder is never changed,
- *   and no longer read afterwards.
+ * The user documents folder is not part of the move (decision of
+ * 2026-11-17): it is neither read nor copied, and the user is told once
+ * that it is no longer used (`userDocs.legacyUserDocsNotice`).
  *
  * A marker file records that it ran and what it did; a failure of one
  * document is reported and costs no other.
@@ -40,14 +38,14 @@ import * as path from 'path';
 import type { DocumentService } from '../../docService/contract';
 import { PackDocsLog } from './host';
 import { PageStore } from './pageStore';
-import { legacyParent, listLegacyUserDocs } from './userDocs';
 
 /** What the move did. */
 export interface MigrationReport {
     version: 1;
     at: string;
     downloads: number;
-    userDocuments: number;
+    /** The documents an earlier 2.9.x build copied from the user documents folder; absent since that folder is no longer moved. */
+    userDocuments?: number;
     /** Documents not moved, with the reason. */
     left: string[];
 }
@@ -67,12 +65,11 @@ export function migrationDone(storageDir: string): MigrationReport | undefined {
 }
 
 /** Move the retired path's documents into `service`, once; undefined when it ran before. */
-export async function migrateLegacyDocuments(service: DocumentService, store: PageStore, storageDir: string, userRoot: string,
-    log: PackDocsLog): Promise<MigrationReport | undefined> {
+export async function migrateLegacyDocuments(service: DocumentService, store: PageStore, storageDir: string, log: PackDocsLog): Promise<MigrationReport | undefined> {
     if (migrationDone(storageDir)) {
         return undefined;
     }
-    const report: MigrationReport = { version: 1, at: new Date().toISOString(), downloads: 0, userDocuments: 0, left: [] };
+    const report: MigrationReport = { version: 1, at: new Date().toISOString(), downloads: 0, left: [] };
     for (const doc of store.listFetched()) {
         const file = store.paths(doc).download;
         if (!doc.url || doc.format !== 'pdf' || !fs.existsSync(file)) {
@@ -92,25 +89,10 @@ export async function migrateLegacyDocuments(service: DocumentService, store: Pa
             report.left.push(`${doc.id}: ${caught instanceof Error ? caught.message : String(caught)}`);
         }
     }
-    for (const doc of listLegacyUserDocs(userRoot)) {
-        const parent = legacyParent(doc.parts);
-        if (!parent) {
-            report.left.push(`${doc.path}: the folder ${doc.parts.join('/')} is a pattern; add the document again with Add Document`);
-            continue;
-        }
-        try {
-            await service.addDocument(parent, doc.path, {
-                title: doc.title, ...(doc.category ? { category: doc.category } : {}), ...(doc.revision ? { versionLabel: doc.revision } : {}),
-            });
-            report.userDocuments++;
-        } catch (caught) {
-            report.left.push(`${doc.path}: ${caught instanceof Error ? caught.message : String(caught)}`);
-        }
-    }
     fs.mkdirSync(storageDir, { recursive: true });
     fs.writeFileSync(migrationMarker(storageDir), `${JSON.stringify(report, null, 2)}\n`);
-    if (report.downloads || report.userDocuments || report.left.length) {
-        log.info(`documents moved to the document service: ${report.downloads} download(s), ${report.userDocuments} from ${userRoot}`
+    if (report.downloads || report.left.length) {
+        log.info(`documents moved to the document service: ${report.downloads} download(s)`
             + `${report.left.length ? `; not moved: ${report.left.join('; ')}` : ''}`);
     }
     return report;

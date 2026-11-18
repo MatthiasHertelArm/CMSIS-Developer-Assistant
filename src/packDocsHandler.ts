@@ -40,7 +40,6 @@ import { documentFailureText, serviceParentOf } from './core/packDocs/documentAp
 import { targetParents } from './core/packDocs/serviceDocs';
 import { targetCores, targetSolution } from './core/packDocs/targetDocs';
 import { migrateLegacyDocuments } from './core/packDocs/legacyMigration';
-import { resolveUserDocsDir } from './core/packDocs/userDocs';
 import { DocParent, DocumentFailure, DocumentInfo, DocumentService } from './docService/contract';
 import type { FetchRecord } from './core/packDocs/pageStore';
 import { inventoryErrorOf, REQUEST_PREFIX, requestErrorText, setInventoryError } from './core/packDocs/inventoryWriter';
@@ -1004,7 +1003,7 @@ export class PackDocsHandler {
 
     /** Move the retired document path's documents into the service, once per machine. Never throws. */
     private migrateOnce(service: DocumentService, log: PackDocsHost['log']): Promise<unknown> {
-        this.migration ??= migrateLegacyDocuments(service, this.store, this.host.storageDir, resolveUserDocsDir(this.host.settings().userDocsDir), log)
+        this.migration ??= migrateLegacyDocuments(service, this.store, this.host.storageDir, log)
             .catch((caught: unknown) => log.warn(`moving the documents to the document service failed: ${documentFailureText(caught)}`));
         return this.migration;
     }

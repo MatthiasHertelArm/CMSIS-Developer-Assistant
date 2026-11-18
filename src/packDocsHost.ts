@@ -28,7 +28,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { BuildInfoHost, BuildInfoSettings, defaultBuildInfoSettings } from './core/buildInfo/host';
 import { PackDocsHost, PackDocsSettings, defaultSettings } from './core/packDocs/host';
-import { defaultPackRoot, resolveUserDocsDir } from './core/packDocs';
+import { countLegacyUserDocs, defaultPackRoot, legacyUserDocsNotice, resolveUserDocsDir } from './core/packDocs';
 import { effectivePackRoot } from './core/packDocs/host';
 import { ActiveContextHint, formatPackId } from './core/packDocs/cbuildRun';
 import { namedPackFolders } from './core/packDocs/targetDocs';
@@ -86,6 +86,37 @@ export function readKnowledgeIndexPath(bundledIndex: string): string | undefined
 }
 
 /** Re-read on every call through `host.settings()`, so edits apply live. */
+/** globalState: the user was told that the retired user documents folder is no longer read. */
+const LEGACY_USER_DOCS_TOLD_KEY = 'cmsis-developer-assistant.packDocs.legacyUserDocsTold';
+/** The button of that notice that shows the folder in the system's file manager. */
+const SHOW_FOLDER = 'Show Folder';
+
+/**
+ * Tell the user once per machine that the retired user documents folder is no longer used, when it still holds
+ * PDFs (decision of 2026-11-17): nothing reads or moves it, so what the user still needs has to be added to a
+ * target again. Never rejects.
+ */
+export async function tellAboutLegacyUserDocs(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        if (context.globalState.get<boolean>(LEGACY_USER_DOCS_TOLD_KEY) === true) {
+            return;
+        }
+        const root = resolveUserDocsDir(readPackDocsSettings().userDocsDir);
+        const notice = legacyUserDocsNotice(root, countLegacyUserDocs(root));
+        if (notice === undefined) {
+            return;
+        }
+        await context.globalState.update(LEGACY_USER_DOCS_TOLD_KEY, true);
+        logger.info(notice);
+        const picked = await vscode.window.showInformationMessage(`CMSIS Developer Assistant: ${notice}`, SHOW_FOLDER);
+        if (picked === SHOW_FOLDER) {
+            await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(root));
+        }
+    } catch (caught) {
+        logger.debug('The notice on the retired user documents folder could not be shown', caught);
+    }
+}
+
 export function readPackDocsSettings(): PackDocsSettings {
     const c = vscode.workspace.getConfiguration(`${CONFIG}.packDocs`);
     return {

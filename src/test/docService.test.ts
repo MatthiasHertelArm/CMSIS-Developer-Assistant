@@ -32,7 +32,6 @@ import { targetParents } from '../core/packDocs/serviceDocs';
 import { defaultSettings, PackDocsHost } from '../core/packDocs/host';
 import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
-import { legacyParent } from '../core/packDocs/userDocs';
 import { buildWorld, FakeExtractor, World } from './packDocsHandler.test';
 
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
@@ -227,16 +226,6 @@ suite('document service: the seams', () => {
             { device: 'ST::STM32U585AIIx' }, { board: 'ST::B-U585I-IOT02A:C' }, { core: 'Cortex-M33' },
             { pack: 'Keil::STM32U5xx_DFP' }, { pack: 'Keil::B-U585I-IOT02A_BSP' }, { vendor: 'Keil' }, { all: true },
         ]);
-    });
-
-    test('the legacy folder\'s attributions: pack, vendor, device, board, core, all; a pattern has none', () => {
-        assert.deepStrictEqual(legacyParent([]), { all: true });
-        assert.deepStrictEqual(legacyParent(['Keil', 'STM32U5xx_DFP']), { pack: 'Keil::STM32U5xx_DFP' });
-        assert.deepStrictEqual(legacyParent(['Keil']), { vendor: 'Keil' });
-        assert.deepStrictEqual(legacyParent(['devices', 'STM32U585AIIx']), { device: 'STM32U585AIIx' });
-        assert.deepStrictEqual(legacyParent(['boards', 'B-U585I-IOT02A']), { board: 'B-U585I-IOT02A' });
-        assert.deepStrictEqual(legacyParent(['cores', 'Cortex-M33']), { core: 'Cortex-M33' });
-        assert.strictEqual(legacyParent(['devices', 'STM32U5*']), undefined);
     });
 });
 

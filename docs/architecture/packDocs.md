@@ -136,13 +136,17 @@ part of it: they stay in this extension.
   `src/packDocsHost.ts`.
 - **The retired path.** This extension's own download trees (`arm/`, `web/`)
   and the user documents folder (`~/.cmsis-pack-docs/user`) are retired.
-  `legacyMigration.ts` moves them once per machine, on the first
-  resolution with a service: downloads become documents for all targets with
-  their edition, then their old copies go; the folder's documents are copied
-  with their attribution (`userDocs.legacyParent`; pattern folders are
-  reported), the folder is never changed and no longer read. A marker in
-  the storage folder records the move. HTML-only Arm records stay with the
-  page store.
+  `legacyMigration.ts` moves the downloads once per machine, on the first
+  resolution with a service: they become documents for all targets with
+  their edition, then their old copies go. A marker in the storage folder
+  records the move. HTML-only Arm records stay with the page store. The
+  user documents folder is neither read nor moved: its sub-folder scheme
+  has attributions the service cannot hold (a pattern such as
+  `devices/STM32U5*`), and a silent copy would leave two places to look
+  after. When it still holds PDFs, activation says once that it is no
+  longer used (`tellAboutLegacyUserDocs` in `src/packDocsHost.ts`, the text
+  in `userDocs.ts`), so that the user adds what is still needed to a target
+  and deletes the rest.
 - **Storage.** The emulator owns a folder in the extension's global storage:
   `docs.yml` (the user's entries, and this machine's state of project
   entries) and `files/` (downloads, imports, copies of added files). Several
@@ -173,8 +177,7 @@ part of it: they stay in this extension.
   service (`fetchVia`) inside the same job, so progress, the wait, the
   failure count and the reply stay as they were; a failure becomes the
   service's request. CMSIS Solution's inventory (`~/.cmsis/docs.yml`), the
-  packs, the legacy user folder and the workspace folders stay read-only
-  sources.
+  packs and the workspace folders stay read-only sources.
 - **The view.** `src/targetDocsView.ts`, *Target Documents* in the Explorer:
   the target's documents by group with their states, a warning and a badge
   for what the agent asked for (G10), and Download, Import a File, Open the

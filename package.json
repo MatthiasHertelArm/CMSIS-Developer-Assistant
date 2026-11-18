@@ -391,7 +391,7 @@
         "cmsis-developer-assistant.packDocs.userDocsDir": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The retired user documents folder (empty: `~/.cmsis-pack-docs/user`). Its documents are copied once into the document service with their attribution (pattern folders such as `devices/STM32U5*` are reported, not copied); the folder is never changed and no longer read afterwards.",
+          "markdownDescription": "The retired user documents folder (empty: `~/.cmsis-pack-docs/user`). The documentation tools no longer read it, and nothing moves or changes it: when it still holds PDFs, the extension says so once. Add the documents you still need to a target with **Add Document** or **Import Document for Current Target**, then delete the folder.",
           "tags": [
             "experimental"
           ]

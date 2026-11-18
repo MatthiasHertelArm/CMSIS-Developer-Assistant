@@ -16,47 +16,18 @@
 
 /**
  * The retired user documents folder (`~/.cmsis-pack-docs/user`, setting
- * `packDocs.userDocsDir`), read once to copy its documents into the
- * document service (`src/docService/`), which keeps the documents the user
- * adds since 2.9.x. The folder attributed a document by sub-folder:
+ * `packDocs.userDocsDir`). Documents the user adds are kept by the document
+ * service (`src/docService/`) since 2.9.x, and this folder is neither read
+ * nor moved (decision of 2026-11-17): the extension only looks whether it
+ * still holds PDFs, and tells the user once that it is no longer used, so
+ * that they add what they still need to a target and delete the rest.
  *
- *   <root>/<Vendor>/<Pack>/*.pdf     the pack (any version)
- *   <root>/<Vendor>/*.pdf            the vendor
- *   <root>/devices/<name>/*.pdf      the device
- *   <root>/boards/<name>/*.pdf       the board
- *   <root>/cores/<core>/*.pdf        the core
- *   <root>/*.pdf                     every target
- *
- * with title, category and edition from a `docs.json` beside the PDFs. A
- * pattern folder (`devices/STM32U5*`) has no attribution in the service and
- * is reported, not copied. The folder is only read, never changed.
+ * Pure: no `vscode`.
  */
 
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { DocParent } from '../../docService/contract';
-import { BookCategory } from './pdscBooks';
-
-export interface UserDocMeta {
-    title?: string;
-    category?: BookCategory;
-    revision?: string;
-}
-
-export type UserDocsManifest = Record<string, UserDocMeta>;
-
-export const USER_DOCS_MANIFEST = 'docs.json';
-
-/** One PDF of the retired folder: where it is, its metadata, its folder below the root. */
-export interface LegacyUserDoc {
-    path: string;
-    title: string;
-    category?: BookCategory;
-    revision?: string;
-    /** The folders between the root and the file, e.g. `['devices', 'STM32U585AIIx']`. */
-    parts: string[];
-}
 
 const MAX_DEPTH = 3;
 const MAX_FILES = 500;
@@ -68,58 +39,38 @@ export function resolveUserDocsDir(setting: string | undefined, home: string = o
     return path.resolve(s.replace(/^~(?=$|[\\/])/, home));
 }
 
-export function readManifest(dir: string): UserDocsManifest {
-    try {
-        const m = JSON.parse(fs.readFileSync(path.join(dir, USER_DOCS_MANIFEST), 'utf-8')) as UserDocsManifest;
-        return m && typeof m === 'object' ? m : {};
-    } catch {
-        return {};
-    }
-}
-
-/** Every PDF of the retired folder, at most three folders deep; none when it does not exist. */
-export function listLegacyUserDocs(root: string): LegacyUserDoc[] {
-    const out: LegacyUserDoc[] = [];
+/** How many PDFs the retired folder holds, at most three folders deep and 500 in all; 0 when it does not exist. */
+export function countLegacyUserDocs(root: string): number {
+    let count = 0;
     const walk = (dir: string, depth: number): void => {
-        if (out.length >= MAX_FILES || depth > MAX_DEPTH) { return; }
+        if (count >= MAX_FILES || depth > MAX_DEPTH) { return; }
         let entries: fs.Dirent[];
         try {
             entries = fs.readdirSync(dir, { withFileTypes: true });
         } catch {
             return;
         }
-        const manifest = readManifest(dir);
-        for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-            const full = path.join(dir, e.name);
+        for (const e of entries) {
             if (e.isDirectory()) {
-                if (!e.name.startsWith('.')) { walk(full, depth + 1); }
-                continue;
+                if (!e.name.startsWith('.')) { walk(path.join(dir, e.name), depth + 1); }
+            } else if (e.isFile() && e.name.toLowerCase().endsWith('.pdf') && count < MAX_FILES) {
+                count++;
             }
-            if (!e.isFile() || !e.name.toLowerCase().endsWith('.pdf')) { continue; }
-            const meta = manifest[e.name] ?? {};
-            out.push({
-                path: full,
-                title: meta.title?.trim() || e.name.replace(/\.pdf$/i, ''),
-                ...(meta.category ? { category: meta.category } : {}),
-                ...(meta.revision ? { revision: meta.revision } : {}),
-                parts: path.relative(root, dir).split(path.sep).filter((part) => part.length > 0),
-            });
         }
     };
     walk(root, 0);
-    return out;
+    return count;
 }
 
-/** The service parent of a folder of the retired layout; undefined for a pattern, which the service cannot attribute. */
-export function legacyParent(parts: readonly string[]): DocParent | undefined {
-    const glob = (text: string): boolean => /[*?[\]]/.test(text);
-    if (parts.length === 0) { return { all: true }; }
-    const [first, second] = parts;
-    if (first === 'devices' || first === 'boards') {
-        if (!second || glob(second)) { return undefined; }
-        return first === 'devices' ? { device: second } : { board: second };
+/**
+ * What the user is told once about a retired folder that still holds
+ * `count` PDFs; undefined for an empty or missing one, which needs no word.
+ */
+export function legacyUserDocsNotice(root: string, count: number): string | undefined {
+    if (count <= 0) {
+        return undefined;
     }
-    if (first === 'cores') { return second ? { core: second } : undefined; }
-    if (glob(first) || (second !== undefined && glob(second))) { return undefined; }
-    return second ? { pack: `${first}::${second}` } : { vendor: first };
+    return `The user documents folder ${root} (${count} PDF${count === 1 ? '' : 's'}) is no longer used: the documentation tools do not read it. `
+        + 'Add the documents you still need to a target with Add Document in the Target Documents view or Import Document for Current Target, '
+        + 'then delete the folder.';
 }
