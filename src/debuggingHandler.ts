@@ -858,6 +858,8 @@ export class DebuggingHandler
                     + 'or proceed directly with inspection tools (get_variables_values, read_memory, …).');
         }
         let reservation: GdbPortReservation | undefined;
+        // VS Code answered that it took the start up.
+        let accepted = false;
         try {
             const chosen = args.configurationName ?? await this.chooseConfiguration(args);
             if (chosen && chosen !== SYNTHESISED_CONFIGURATION) {
@@ -870,6 +872,7 @@ export class DebuggingHandler
                 if (!(await this.dbg.startDebuggingByName(args.workingDirectory, chosen))) {
                     throw new Error(`Failed to start debug session with configuration '${chosen}'.`);
                 }
+                accepted = true;
                 await this.requireLiveStart();
                 reservation?.adopt();
                 const shown = await this.startedState(focus, began);
@@ -891,7 +894,13 @@ export class DebuggingHandler
             const forTest = args.testName ? ` for test '${args.testName}'` : '';
             return `Debug session started successfully for: ${args.fileFullPath}${using}${forTest}. ${shown}`;
         } catch (caught) {
-            if (!this.dbg.hasDebugSession()) {
+            // No session listed: VS Code refused the start or it threw, or, after VS Code accepted it, the session
+            // came and went within the wait. VS Code answers only after the adapter's launch response, so a slow GDB
+            // server start lies before its answer, not after it: nothing of this start can still take the port.
+            // A session that is listed but not ready keeps the reservation; its end releases it. A start that VS Code
+            // did not take up and whose port a newer start of this window took over says so whatever session is
+            // listed, which is then the newer start's: that frees nothing, it keeps the port from coming back to it.
+            if (!this.dbg.hasDebugSession() || (!accepted && reservation?.superseded)) {
                 reservation?.release();
             }
             // What the adapter and the GDB server said rides along as problem records (#48).

@@ -74,8 +74,10 @@ export function capturedResultOf(value: unknown): CapturedBuildResult | undefine
 /**
  * The terminal output of a build as the lines of a log: control sequences
  * removed, every line ending a plain LF, and each state of a line that a
- * bare CR redrew (ninja's progress) on a line of its own, without the
- * repeats. Ends with a line feed unless it is empty. Of an output longer
+ * bare CR redrew (ninja's progress) on a line of its own, without the states
+ * it redrew unchanged. A line the build printed twice, each ended by a line
+ * feed, stays twice: the count of a diagnostic is read from the log. Ends
+ * with a line feed unless it is empty. Of an output longer
  * than `RESULT_OUTPUT_MAX_CHARS` only the end is kept, from a line's start,
  * under a line that says so.
  */
@@ -97,10 +99,13 @@ export function cleanBuildOutput(output: string): string {
             }
             continue;
         }
+        // A repeat is a state a bare CR redrew unchanged; an equal line after a line feed was printed twice and stays.
+        let previous: string | undefined;
         for (const state of states) {
-            if (lines[lines.length - 1] !== state) {
+            if (state !== previous) {
                 lines.push(state);
             }
+            previous = state;
         }
     }
     while (lines.length > 0 && lines[lines.length - 1] === '') {
@@ -119,6 +124,26 @@ export function resultLogPath(target: string | undefined): string {
     // `build-diagnostic.log` is the diagnostic re-run's.
     const name = safe === 'diagnostic' ? 'diagnostic_' : safe;
     return `${RESULT_LOG_FOLDER}/${name.length > 0 ? `build-${name}` : 'build'}.log`;
+}
+
+/**
+ * Whether `file` is the captured log of `targetType`: of the target type
+ * itself (`build-<type>.log`) or of one of its target sets
+ * (`build-<type>@<set>.log`), in the folder of these logs. Undefined for a
+ * file that is no captured log of a named target, which may be anybody's: a
+ * log elsewhere, `build.log` of a build whose target was unknown, the
+ * diagnostic re-run's.
+ */
+export function isResultLogOf(file: string, targetType: string): boolean | undefined {
+    const normal = `/${file.replace(/\\/g, '/')}`;
+    const folder = `/${RESULT_LOG_FOLDER}/`;
+    const at = normal.lastIndexOf(folder);
+    const name = at < 0 ? '' : normal.slice(at + folder.length).toLowerCase();
+    if (!/^build-[^/]+\.log$/.test(name) || name === 'build-diagnostic.log') {
+        return undefined;
+    }
+    const nameOf = (target: string): string => resultLogPath(target).slice(RESULT_LOG_FOLDER.length + 1).toLowerCase();
+    return name === nameOf(targetType) || name.startsWith(nameOf(`${targetType}@`).slice(0, -'.log'.length));
 }
 
 /** The first line of that log: which task's output it is, and how cbuild ended. */

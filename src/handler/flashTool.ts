@@ -33,7 +33,12 @@
  * failures reject with a `ToolError`; a pyOCD run that was killed at the
  * budget answers with status `timeout` (#11). The budget may run to 600 s
  * (#12) and is counted from the call, so the file and pyOCD lookups come
- * out of it. Without a folder open and without a named file the refusal is
+ * out of it: when they leave less than `MIN_PROGRAM_MS`, nothing is
+ * programmed and the answer says so, also with status `timeout`. The call
+ * holds the probe from its guard on, lookups included, so a second `flash`
+ * is refused whenever it comes; a pyOCD that is starting when the wait ends
+ * is let finish its start under that mark, and no further one is tried.
+ * Without a folder open and without a named file the refusal is
  * `NO_WORKSPACE`.
  */
 
@@ -52,18 +57,21 @@ import { ToolError, ToolText } from '../core/toolResult';
 import { apiToolsEnvironment } from '../utils/solutionQueries';
 import { LONG_LIMIT_CAP_MS } from './fence';
 import type { HandlerHost } from './host';
-import { probeRefusal } from './jobText';
+import { formatDuration, probeRefusal } from './jobText';
 
 /** Programming budget and fence default without a `timeoutMs`. */
 const DEFAULT_FLASH_MS = 60_000;
 /** Kept back from the budget so the tool answers before its fence. */
 const FENCE_MARGIN_MS = 1_500;
+/** The least budget programming is started with: a pyOCD killed sooner than that would stop while it connects or erases. */
+const MIN_PROGRAM_MS = 1_000;
 /** The CMSIS Debugger extension, which bundles pyOCD under `tools/pyocd`. */
 const CMSIS_DEBUGGER_ID = 'Arm.vscode-cmsis-debugger';
 
 /** What the fence answers if the tool itself does not answer in time. */
-export const FLASH_FENCE_ADVICE = 'pyOCD may still be programming the target; flash answers PROBE_BUSY until it has ended — '
-    + 'do not start it again, and do not run pyOCD yourself.';
+export const FLASH_FENCE_ADVICE = 'The call may still be at work: it looks for pyOCD, whose first start can take a minute, or pyOCD is ending. '
+    + 'It starts no programming after its wait, and flash answers PROBE_BUSY until it has ended — call flash again then, and do not run '
+    + 'pyOCD yourself.';
 
 /** The file to program, or why there is none (with what to do about it, where that is not in the sentence). */
 type CbuildRunChoice = { file: string } | { problem: string; hint?: string } | { noWorkspace: true };
@@ -179,9 +187,16 @@ interface FoundPyocd extends PyocdCandidate {
     version: string;
 }
 
-/** The first pyOCD that answers `--version`, in lookup order; the ones that did not are reported. */
-async function findPyocd(cbuildRunFile: string, host: HandlerHost): Promise<{ found?: FoundPyocd; unusable: string[] }> {
+/**
+ * The first pyOCD that answers `--version`, in lookup order; the ones that
+ * did not are reported. Once `deadline` has passed no further candidate is
+ * started (`untried` counts them): the call can program nothing any more. A
+ * start that is under way then is let finish, so that the next call finds
+ * that pyOCD started.
+ */
+async function findPyocd(cbuildRunFile: string, host: HandlerHost, deadline: number): Promise<{ found?: FoundPyocd; unusable: string[]; untried: number }> {
     const environment = host.toolEnvironment();
+    const waits = environment.pyocdStartMs ?? { usual: PYOCD_PROBE_MS, first: PYOCD_FIRST_START_MS };
     const debuggerExtension = environment.extension(CMSIS_DEBUGGER_ID);
     const candidates = resolvePyocd({
         debuggerExtensionPath: debuggerExtension?.path,
@@ -192,20 +207,23 @@ async function findPyocd(cbuildRunFile: string, host: HandlerHost): Promise<{ fo
         pathEnv: environment.pathEnv,
     });
     const unusable: string[] = [];
-    for (const candidate of candidates) {
+    for (const [index, candidate] of candidates.entries()) {
+        if (host.now() >= deadline) {
+            return { unusable, untried: candidates.length - index };
+        }
         const started = Date.now();
-        let version = await probePyocd(candidate.bin, PYOCD_PROBE_MS);
-        if (!version && Date.now() - started >= PYOCD_PROBE_MS) {
+        let version = await probePyocd(candidate.bin, waits.usual);
+        if (!version && Date.now() - started >= waits.usual) {
             // The first start of a freshly installed pyOCD on macOS (Gatekeeper's check, the bundle unpacking) can take
             // longer than a usual answer: a probe that ran out of time gets one longer wait before it counts as unusable.
-            version = await probePyocd(candidate.bin, PYOCD_FIRST_START_MS);
+            version = await probePyocd(candidate.bin, waits.first);
         }
         if (version) {
-            return { found: { ...candidate, version }, unusable };
+            return { found: { ...candidate, version }, unusable, untried: 0 };
         }
         unusable.push(candidate.bin);
     }
-    return { unusable };
+    return { unusable, untried: 0 };
 }
 
 /**
@@ -331,6 +349,26 @@ export function flashTimeoutMs(timeoutMs: number | undefined): number {
     return typeof timeoutMs === 'number' && timeoutMs > 0 ? Math.min(timeoutMs, LONG_LIMIT_CAP_MS) : DEFAULT_FLASH_MS;
 }
 
+/** Programming under a live debug session wedges most probes: refused. */
+function refuseUnderSession(executor: IDebuggingExecutor): void {
+    if (executor.hasDebugSession()) {
+        throw new ToolError('PROBE_BUSY',
+            'Refusing to flash while a debug session is active — programming under a live session wedges most probes.',
+            'Call stop_debugging first, then flash, then cmsis_action attach or load_and_debug.');
+    }
+}
+
+/** The answer of a call whose lookups left no time to program: pyOCD was not started on the target. */
+function notStarted(waitMs: number, tookMs: number, found: boolean): ToolText {
+    return {
+        text: `Flash not started — nothing was programmed. Finding the cbuild-run file and pyOCD took ${formatDuration(tookMs)} of the `
+            + `${formatDuration(waitMs)} wait, ${found ? 'which leaves too little time to program' : 'and pyOCD had not answered by then'}. `
+            + 'The first start of a newly installed pyOCD can take a minute. Call flash again, with a larger timeoutMs if this happens '
+            + 'again; do not run pyOCD yourself.',
+        status: 'timeout',
+    };
+}
+
 /** The body of `flash`, run inside the handler's fence; `waitMs` counts from the call. */
 export async function runFlash(
     executor: IDebuggingExecutor,
@@ -338,38 +376,44 @@ export async function runFlash(
     request: { cbuildRunFile?: string; timeoutMs?: number },
     waitMs: number = flashTimeoutMs(request.timeoutMs),
 ): Promise<ToolText> {
-    const deadline = host.now() + waitMs;
-    if (executor.hasDebugSession()) {
-        throw new ToolError('PROBE_BUSY',
-            'Refusing to flash while a debug session is active — programming under a live session wedges most probes.',
-            'Call stop_debugging first, then flash, then cmsis_action attach or load_and_debug.');
-    }
+    const called = host.now();
+    const deadline = called + waitMs;
+    refuseUnderSession(executor);
     const tracker = host.cmsisJobs();
     const verdict = guardProbe('flash', tracker.probeOwners(), false);
     if (!verdict.allowed) {
         throw probeRefusal('flash', '', verdict, host.now());
     }
-    const choice = await chooseCbuildRun(request.cbuildRunFile, host);
-    if ('noWorkspace' in choice) {
-        // No folder and no file named: the same refusal as cmsis_action's, with the way to open a project.
-        throw noWorkspaceRefusal('flash');
-    }
-    if ('problem' in choice) {
-        throw new ToolError('INVALID_ARGUMENT', choice.problem, choice.hint);
-    }
-    const pyocd = await findPyocd(choice.file, host);
-    if (!pyocd.found) {
-        const tried = pyocd.unusable.length > 0 ? ` (found, but it did not run: ${pyocd.unusable.join(', ')})` : '';
-        throw new ToolError('TOOL_DISABLED',
-            `pyOCD not found: it ships with the CMSIS Debugger extension (${CMSIS_DEBUGGER_ID}), and neither the solution's `
-                + `.cmsis/tools-environment.yml nor PATH names another one${tried}.`,
-            'Install or enable the CMSIS Debugger extension, or use cmsis_action load, which flashes through the CMSIS Solution '
-                + 'extension. Do not install pyOCD yourself.');
-    }
-    const probe = probeSelection(choice.file, host);
+    // The probe is this call's from here on, before the first await: a second flash that comes while the file and
+    // pyOCD are looked up is refused like one that comes while pyOCD programs.
     const release = tracker.beginFlash();
     try {
-        const budgetMs = Math.max(deadline - host.now() - FENCE_MARGIN_MS, 1_000);
+        const choice = await chooseCbuildRun(request.cbuildRunFile, host);
+        if ('noWorkspace' in choice) {
+            // No folder and no file named: the same refusal as cmsis_action's, with the way to open a project.
+            throw noWorkspaceRefusal('flash');
+        }
+        if ('problem' in choice) {
+            throw new ToolError('INVALID_ARGUMENT', choice.problem, choice.hint);
+        }
+        const pyocd = await findPyocd(choice.file, host, deadline);
+        if (!pyocd.found && pyocd.untried === 0) {
+            const tried = pyocd.unusable.length > 0 ? ` (found, but it did not run: ${pyocd.unusable.join(', ')})` : '';
+            throw new ToolError('TOOL_DISABLED',
+                `pyOCD not found: it ships with the CMSIS Debugger extension (${CMSIS_DEBUGGER_ID}), and neither the solution's `
+                    + `.cmsis/tools-environment.yml nor PATH names another one${tried}.`,
+                'Install or enable the CMSIS Debugger extension, or use cmsis_action load, which flashes through the CMSIS Solution '
+                    + 'extension. Do not install pyOCD yourself.');
+        }
+        // The lookups came out of the wait. What is left may be nothing: the fence has answered by then, or is about
+        // to, and a pyOCD started now would be killed while it connects or erases.
+        const budgetMs = deadline - host.now() - FENCE_MARGIN_MS;
+        if (!pyocd.found || budgetMs < MIN_PROGRAM_MS) {
+            return notStarted(waitMs, host.now() - called, pyocd.found !== undefined);
+        }
+        // A session may have started while pyOCD was looked up.
+        refuseUnderSession(executor);
+        const probe = probeSelection(choice.file, host);
         const result = await flashWithPyocd(choice.file, budgetMs, { bin: pyocd.found.bin, probe });
         return describeFlash(result, budgetMs, `${pyocd.found.version} from ${pyocd.found.from}`, probe);
     } finally {

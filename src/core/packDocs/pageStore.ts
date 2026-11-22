@@ -169,6 +169,15 @@ function isSidecar(name: string): boolean {
     return name.endsWith('.pages.jsonl') || name.endsWith('.meta.json') || name.endsWith('.idx.json');
 }
 
+/** A folder as the file system spells it, links resolved; as given where it cannot be asked. */
+function realDir(dir: string): string {
+    try {
+        return fs.realpathSync.native(dir);
+    } catch {
+        return path.resolve(dir);
+    }
+}
+
 /** 12 hex characters of sha1 — enough to keep two workspace folders apart. */
 export function shortHash(text: string): string {
     return crypto.createHash('sha1').update(text).digest('hex').slice(0, 12);
@@ -211,6 +220,26 @@ export class PageStore {
     /** The storage directory and the registered roots, each once. */
     private allRoots(): string[] {
         return [this.storageDir, ...[...this.roots].filter((root) => root !== path.resolve(this.storageDir))];
+    }
+
+    /**
+     * Every file under the storage directory and the registered roots, each
+     * once: the handler registers the copy store and the folders of single
+     * copies inside it, and a root can be a link to another. A file is told
+     * by its place under the root as the file system spells that root; its
+     * path stays as the caller's root names it.
+     */
+    private *allFiles(): Generator<{ path: string; name: string; size: number }> {
+        const seen = new Set<string>();
+        for (const root of this.allRoots()) {
+            const real = realDir(root);
+            for (const file of this.walkFiles(root)) {
+                const key = path.join(real, path.relative(root, file.path));
+                if (seen.has(key)) { continue; }
+                seen.add(key);
+                yield file;
+            }
+        }
     }
 
     /**
@@ -331,59 +360,49 @@ export class PageStore {
      */
     listCached(): CachedDoc[] {
         const out: CachedDoc[] = [];
-        const walk = (dir: string, depth: number) => {
-            if (depth > 6) { return; }
-            let entries: fs.Dirent[];
+        for (const found of this.allFiles()) {
+            if (!found.name.endsWith('.meta.json')) { continue; }
+            const full = found.path;
+            const dir = path.dirname(full);
+            let meta: StoreMeta;
             try {
-                entries = fs.readdirSync(dir, { withFileTypes: true });
+                meta = JSON.parse(fs.readFileSync(full, 'utf-8')) as StoreMeta;
             } catch {
-                return;
+                continue;
             }
-            for (const e of entries) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) { walk(full, depth + 1); continue; }
-                if (!e.isFile() || !e.name.endsWith('.meta.json')) { continue; }
-                let meta: StoreMeta;
-                try {
-                    meta = JSON.parse(fs.readFileSync(full, 'utf-8')) as StoreMeta;
-                } catch {
-                    continue;
-                }
-                if (meta.version !== 1 && meta.version !== 2) { continue; }
-                const base = full.slice(0, -'.meta.json'.length);
-                let fetch: FetchRecord | undefined;
-                try {
-                    fetch = JSON.parse(fs.readFileSync(path.join(dir, 'fetch.json'), 'utf-8')) as FetchRecord;
-                } catch {
-                    fetch = undefined;
-                }
-                const pagesPath = `${base}.pages.jsonl`;
-                let storedBytes = 0;
-                for (const f of [pagesPath, `${base}.idx.json`, full]) {
-                    try { storedBytes += fs.statSync(f).size; } catch { /* partial */ }
-                }
-                out.push({
-                    id: meta.docId,
-                    title: meta.title ?? fetch?.title ?? path.basename(base),
-                    source: meta.source ?? (fetch ? 'web' : 'pack'),
-                    unit: meta.unit ?? 'page',
-                    ...(meta.revision ? { revision: meta.revision } : {}),
-                    pageCount: meta.pageCount,
-                    sizeBytes: meta.size,
-                    storedBytes,
-                    createdAt: meta.createdAt,
-                    extractor: meta.extractor,
-                    file: meta.file,
-                    fileExists: fs.existsSync(meta.file),
-                    dir,
-                    metaPath: full,
-                    pagesPath,
-                    indexPath: `${base}.idx.json`,
-                    ...(fetch ? { fetch } : {}),
-                });
+            if (meta.version !== 1 && meta.version !== 2) { continue; }
+            const base = full.slice(0, -'.meta.json'.length);
+            let fetch: FetchRecord | undefined;
+            try {
+                fetch = JSON.parse(fs.readFileSync(path.join(dir, 'fetch.json'), 'utf-8')) as FetchRecord;
+            } catch {
+                fetch = undefined;
             }
-        };
-        for (const root of this.allRoots()) { walk(root, 0); }
+            const pagesPath = `${base}.pages.jsonl`;
+            let storedBytes = 0;
+            for (const f of [pagesPath, `${base}.idx.json`, full]) {
+                try { storedBytes += fs.statSync(f).size; } catch { /* partial */ }
+            }
+            out.push({
+                id: meta.docId,
+                title: meta.title ?? fetch?.title ?? path.basename(base),
+                source: meta.source ?? (fetch ? 'web' : 'pack'),
+                unit: meta.unit ?? 'page',
+                ...(meta.revision ? { revision: meta.revision } : {}),
+                pageCount: meta.pageCount,
+                sizeBytes: meta.size,
+                storedBytes,
+                createdAt: meta.createdAt,
+                extractor: meta.extractor,
+                file: meta.file,
+                fileExists: fs.existsSync(meta.file),
+                dir,
+                metaPath: full,
+                pagesPath,
+                indexPath: `${base}.idx.json`,
+                ...(fetch ? { fetch } : {}),
+            });
+        }
         return out.sort((a, b) => a.id.localeCompare(b.id));
     }
 
@@ -446,7 +465,7 @@ export class PageStore {
      */
     storeUsage(): StoreUsage {
         const usage: StoreUsage = { extracted: { documents: 0, files: 0, bytes: 0 }, downloads: { documents: 0, files: 0, bytes: 0 } };
-        for (const f of this.allRoots().flatMap((root) => [...this.walkFiles(root)])) {
+        for (const f of this.allFiles()) {
             if (isSidecar(f.name)) {
                 usage.extracted.files++;
                 usage.extracted.bytes += f.size;
@@ -471,7 +490,8 @@ export class PageStore {
      */
     clearExtracted(): ClearResult {
         const result: ClearResult = { documents: 0, files: 0, bytes: 0 };
-        for (const f of this.allRoots().flatMap((root) => [...this.walkFiles(root)])) {
+        // Listed before the first removal: the walk must not run over folders that change under it.
+        for (const f of [...this.allFiles()]) {
             if (!isSidecar(f.name)) { continue; }
             try {
                 fs.unlinkSync(f.path);

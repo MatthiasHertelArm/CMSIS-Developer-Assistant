@@ -354,7 +354,14 @@ export const resolvers: DocResolver[] = [armResolver, directPdfResolver];
 
 export interface Downloaded { bytes: number; sha256: string; ms: number }
 
-/** Stream a PDF to `dest` (via `dest.part`), refusing non-PDF bodies and anything above `maxBytes`. */
+/**
+ * Stream a PDF to `dest`, refusing non-PDF bodies and anything above
+ * `maxBytes`. The bytes go to a partial file of this attempt alone
+ * (`<dest>.<pid>.<random>.part`), renamed over `dest` when it is whole: two
+ * downloads of one document at once, from two windows or two calls, neither
+ * write into each other's file nor remove it, and the copy is always one
+ * attempt's bytes.
+ */
 export async function downloadPdf(url: string, dest: string, ctx: ResolveContext): Promise<Downloaded> {
     const t0 = Date.now();
     const controller = new AbortController();
@@ -362,7 +369,7 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
     const stop = (): void => controller.abort();
     ctx.signal?.addEventListener('abort', stop, { once: true });
     if (ctx.signal?.aborted) { controller.abort(); }
-    const part = `${dest}.part`;
+    const part = `${dest}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.part`;
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const out = fs.createWriteStream(part);
     // Observed from the first byte: a stream error mid-download (full disk,
@@ -404,7 +411,7 @@ export async function downloadPdf(url: string, dest: string, ctx: ResolveContext
         return { bytes, sha256: hash.digest('hex'), ms };
     } catch (e) {
         controller.abort();
-        // The stream opens the .part file asynchronously. Destroy it and wait
+        // The stream opens its .part file asynchronously. Destroy it and wait
         // for 'close' before unlinking: an open that completes after the
         // unlink would leave the file behind (seen on a slow macOS runner).
         await new Promise<void>(resolve => {

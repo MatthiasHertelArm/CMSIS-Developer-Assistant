@@ -1284,6 +1284,81 @@ suite('build diagnosis (#15)', () => {
             assert.ok(!fs.existsSync(logOfTarget(w, 'Other')));
         });
 
+        test('a switch of the active target while the solution is still asked for does not rename the log', async () => {
+            const w = make();
+            const capture = capturing(w);
+            let active = 'MPS3@debug';
+            w.host.activeTarget = async () => active;
+            const answers: Array<(file: string | undefined) => void> = [];
+            w.host.solutionFile = () => new Promise<string | undefined>((resolve) => answers.push(resolve));
+            const job = w.tracker.begin('build', 'MPS3@debug');
+            w.tracker.issued(job.id);
+            const execution = w.tasks.start(w.tasks.execution(API_TASK));
+            // The user picks another target set before CMSIS Solution has named the solution.
+            active = 'Other';
+            await rounds(5);
+            w.host.solutionFile = async () => w.solution;
+            answers.forEach((answer) => answer(w.solution));
+            w.clock.advance(w.clock.now() + 3_000);
+            capture.settle(0, { exitCode: 0, output: output('build-warning') });
+            w.tasks.finish(execution, 0);
+            const done = await diagnosed(w, job.id);
+            assert.strictEqual(done.diagnosis?.logFile, logOfTarget(w, 'MPS3@debug'));
+            assert.ok(!fs.existsSync(logOfTarget(w, 'Other')));
+        });
+
+        test('a build whose place is known late leaves the log of a build started after it alone', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const answers: Array<(file: string | undefined) => void> = [];
+            w.host.solutionFile = () => new Promise<string | undefined>((resolve) => answers.push(resolve));
+            const older = captured(w, capture, 0, { exitCode: 0, output: output('build-warning') }, API_TASK);
+            await rounds(5);
+            assert.strictEqual(w.tracker.job(older.id)?.diagnosis?.state, 'pending', 'it waits for its place');
+            w.host.solutionFile = async () => w.solution;
+            const newer = await diagnosed(w, captured(w, capture, 0, { exitCode: 0, output: output('build-noop') }, API_TASK).id);
+            const logFile = logOfTarget(w, 'MPS3');
+            assert.strictEqual(newer.diagnosis?.logFile, logFile);
+            const log = fs.readFileSync(logFile, 'utf8');
+            answers.forEach((answer) => answer(w.solution));
+            const late = await diagnosed(w, older.id);
+            assert.strictEqual(late.diagnosis?.check, 'succeeded');
+            assert.ok((late.diagnosis?.warningCount ?? 0) > 0, 'its lines still come from its output');
+            assert.strictEqual(late.diagnosis?.logFile, undefined, 'it names no log: the file holds the newer build');
+            assert.strictEqual(fs.readFileSync(logFile, 'utf8'), log);
+        });
+
+        test('a result no job took is let go a minute after it settled, without another build starting; one its job takes leaves no timer', async () => {
+            const w = make();
+            const capture = capturing(w);
+            const job = w.tracker.begin('build', 'MPS3');
+            w.tracker.issued(job.id);
+            const own = w.tasks.start(w.tasks.execution(API_TASK));
+            // A second build with another label beside the job's own: it decides no job, so nobody takes its result.
+            const beside = w.tasks.start(w.tasks.execution(buildTask(w)));
+            w.clock.advance(w.clock.now() + 3_000);
+            capture.settle(capture.asked.indexOf(own), { exitCode: 0, output: output('build-noop') });
+            capture.settle(capture.asked.indexOf(beside), { exitCode: 0, output: output('build-warning') });
+            w.tasks.finish(beside, 0);
+            w.tasks.finish(own, 0);
+            await diagnosed(w, job.id);
+            await rounds(5);
+            assert.strictEqual(w.clock.pendingTimers(), 1, 'the timer of the result nobody took');
+            w.clock.advance(w.clock.now() + 59_000);
+            assert.strictEqual(w.clock.pendingTimers(), 1);
+            w.clock.advance(w.clock.now() + 1_000);
+            assert.strictEqual(w.clock.pendingTimers(), 0, 'let go, and no build started for it');
+            // A result still held when the diagnosis is detached is let go with its timer.
+            const again = w.tasks.start(w.tasks.execution(buildTask(w)));
+            await rounds(5);
+            const others = w.clock.pendingTimers();
+            capture.settle(capture.asked.indexOf(again), { exitCode: 0, output: output('build-noop') });
+            await rounds(5);
+            assert.strictEqual(w.clock.pendingTimers(), others + 1);
+            w.detach();
+            assert.strictEqual(w.clock.pendingTimers(), others);
+        });
+
         test('a clean that exited 0 is cleaned, and leaves the log of the build before it', async () => {
             const w = make();
             const capture = capturing(w);

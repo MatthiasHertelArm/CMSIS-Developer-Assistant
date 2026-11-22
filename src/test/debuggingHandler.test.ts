@@ -363,7 +363,7 @@ class HostedHandler extends DebuggingHandler {
         return {
             ...super.host(),
             gdbPortHolder: async () => undefined,
-            reserveGdbPort: (port) => ({ port, pending: false, adopt: () => undefined, release: () => undefined }),
+            reserveGdbPort: (port) => ({ port, pending: false, superseded: false, adopt: () => undefined, release: () => undefined }),
             pendingGdbStarts: () => [],
             debugTaskErrors: () => 'prompt',
             ...this.replaced,
@@ -5894,6 +5894,41 @@ suite('DebuggingHandler', () => {
                 }
             });
 
+            test('a failed start frees its port although an unrelated task or session was alive when it failed, once that one has ended', async () => {
+                for (const bystander of ['task', 'session'] as const) {
+                    writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
+                    const owner = reservationManager();
+                    const other = reservationManager();
+                    let load: FakeExecution | undefined;
+                    const w = portWorld(() => undefined, owner, () => {
+                        load = w.tasks.start(w.tasks.execution({ name: 'CMSIS Load', source: 'Workspace', definition: { type: 'shell' } }));
+                    }, { debugTaskErrors: () => 'abort' });
+                    await replyAnswer(w.handler.handleCmsisCommand({ action: 'load_and_debug', timeoutMs: 4_000 }), 'running');
+                    assert.ok(load);
+                    // What has nothing to do with this launch begins before its Load fails: a Run that serves no GDB port, a session of another kind.
+                    let run: FakeExecution | undefined;
+                    if (bystander === 'task') {
+                        run = w.tasks.start(w.tasks.execution({ name: 'CMSIS Run', source: 'Workspace', definition: { type: 'shell' } }));
+                    } else {
+                        w.x.session = true;
+                    }
+                    w.tasks.finish(load, 1);
+                    await delay(50);
+                    assertReserved(other, 3333);
+                    assert.deepStrictEqual(owner.pending().map((start) => start.ports), [[3333]], 'nothing is released under a live task or session');
+                    if (run) {
+                        w.tasks.finish(run, 0);
+                    } else {
+                        w.x.session = false;
+                    }
+                    // The window's port watch saw nothing on the port: it never took the reservation over.
+                    owner.observe([]);
+                    await delay(200);
+                    assert.deepStrictEqual(owner.pending(), [], bystander);
+                    assertAvailable(other, 3333);
+                }
+            });
+
             test('a completed single-task Load+Run releases its port, but successful pre-launch Load retains it for the pending session', async () => {
                 writeVscode('launch.json', { configurations: [{ ...PYOCD_LAUNCH, preLaunchTask: 'CMSIS Load' }] });
                 for (const action of ['load_and_run', 'load_and_debug'] as const) {
@@ -6039,6 +6074,30 @@ suite('DebuggingHandler', () => {
                     assertAvailable(other, 3333);
                 });
 
+                test('a start_debugging launch VS Code accepted keeps its port while its session is listed, and frees it once the session is gone', async () => {
+                    writeVscode('launch.json', { configurations: [PYOCD_LAUNCH] });
+                    for (const listed of [true, false]) {
+                        const owner = reservationManager();
+                        const other = reservationManager();
+                        const w = portWorld(() => undefined, owner);
+                        w.x.sessionStatus = status(listed ? 'initializing' : 'no-session');
+                        w.x.startDebuggingByName = async () => {
+                            w.x.session = listed;
+                            return true;
+                        };
+                        const failed = await refusalOf(w.handler.handleStartDebugging({ workingDirectory: dir, configurationName: PYOCD_LAUNCH.name }));
+                        assert.match(failed.message, /failed to become active within timeout period/);
+                        if (listed) {
+                            // The wait ran out on a session that is there: the port is its own until it ends.
+                            assertReserved(other, 3333);
+                            w.x.session = false;
+                            owner.observe([{ port: 3333, source: 'session', label: PYOCD_LAUNCH.name }]);
+                            owner.observe([]);
+                        }
+                        assertAvailable(other, 3333);
+                    }
+                });
+
                 test('a start_debugging launch keeps its port across stop_debugging until VS Code answers that it did not start', async () => {
                     writeVscode('launch.json', { configurations: [PYOCD_LAUNCH] });
                     const owner = reservationManager();
@@ -6063,6 +6122,43 @@ suite('DebuggingHandler', () => {
                     // VS Code's start answers false: the evidence the reservation waited for.
                     answer(false);
                     assert.match((await starting).message, /Failed to start debug session with configuration 'STLink@pyOCD \(launch\)'/);
+                    assertAvailable(other, 3333);
+                });
+
+                test('a start_debugging launch VS Code refuses after a newer start took its port over gets no port back, also while the newer start\'s session runs', async () => {
+                    writeVscode('launch.json', { configurations: [PYOCD_LAUNCH] });
+                    const owner = fastOwner();
+                    const other = reservationManager();
+                    const w = portWorld(() => undefined, owner);
+                    const answers: Array<(started: boolean) => void> = [];
+                    w.x.startDebuggingByName = async (folder, name) => {
+                        w.x.note('startDebuggingByName', folder, name);
+                        return new Promise<boolean>((settle) => answers.push(settle));
+                    };
+                    const start = (): Promise<ToolText> => w.handler.handleStartDebugging({ workingDirectory: dir, configurationName: PYOCD_LAUNCH.name });
+                    const first = refusalOf(start());
+                    while (answers.length < 1) {
+                        await delay(5);
+                    }
+                    // Older than the 10 s a start is given before the window's next one takes its port over, on the owner's clock.
+                    await delay(700);
+                    const second = start();
+                    while (answers.length < 2) {
+                        await delay(5);
+                    }
+                    // The newer start's session comes up; only then VS Code answers the older start that it did not happen.
+                    w.x.session = true;
+                    w.x.sessionStatus = status('running');
+                    answers[1](true);
+                    assert.match(await textAnswer(second), /Debug session started successfully/);
+                    answers[0](false);
+                    assert.match((await first).message, /Failed to start debug session with configuration 'STLink@pyOCD \(launch\)'/);
+                    assertReserved(other, 3333);
+                    // The session ends: the port does not go back to the start that reported its end.
+                    w.x.session = false;
+                    owner.observe([{ port: 3333, source: 'session', label: PYOCD_LAUNCH.name }]);
+                    owner.observe([]);
+                    assert.deepStrictEqual(owner.pending(), []);
                     assertAvailable(other, 3333);
                 });
 
@@ -6667,6 +6763,65 @@ suite('DebuggingHandler', () => {
                 assert.ok(gone.endsWith('\nCOM7 released at 10:42:07 by the user in VS Code, during programming. '
                     + 'Ask the user before you reopen it with serial_open.'), gone);
                 SerialPortMock.binding.reset();
+            });
+
+            /** A pyOCD whose `--version` takes `versionSeconds`; every `load` adds a line to loads.txt and takes `loadSeconds`. */
+            const slowPyocd = (versionSeconds: number, loadSeconds: number): { extensionPath: string; loads: () => number } => {
+                const extensionPath = path.join(dir, 'arm.vscode-cmsis-debugger-1.8.0-darwin-arm64');
+                const bin = path.join(extensionPath, 'tools', 'pyocd', 'pyocd');
+                const loadsFile = path.join(dir, 'loads.txt');
+                fs.mkdirSync(path.dirname(bin), { recursive: true });
+                fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then sleep ${versionSeconds}; echo 0.45.1; exit 0; fi\n`
+                    + `echo load >> "${loadsFile}"\nsleep ${loadSeconds}\necho "programmed 4096 bytes (16 pages) at 52.00 kB/s"\n`);
+                fs.chmodSync(bin, 0o755);
+                return { extensionPath, loads: () => (fs.existsSync(loadsFile) ? fs.readFileSync(loadsFile, 'utf8').trim().split('\n').length : 0) };
+            };
+
+            test('a second flash while the first one still looks for pyOCD is refused, and pyOCD loads once', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                const pyocd = slowPyocd(0.3, 0.2);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const handler = handlerFor(x, flashHost(pyocd.extensionPath));
+                const first = handler.handleFlash({ cbuildRunFile: cbuildRun });
+                const second = handler.handleFlash({ cbuildRunFile: cbuildRun });
+                await refusalOf(second, 'PROBE_BUSY');
+                assert.match(await textAnswer(first), /^✅ Flash succeeded — programmed 4096 bytes/);
+                assert.strictEqual(pyocd.loads(), 1);
+                assert.match(await textAnswer(handler.handleFlash({ cbuildRunFile: cbuildRun })), /^✅ Flash succeeded/, 'the probe is free again');
+            });
+
+            test('a pyOCD lookup that uses up the wait programs nothing, and the answer says so', async function () {
+                if (!shellScriptsRun) {
+                    this.skip();
+                }
+                this.timeout(15_000);
+                // pyOCD's first start: no answer within the usual wait, one within the longer wait, 1.9 s after the call.
+                const pyocd = slowPyocd(1.6, 0);
+                const x = new ScriptedExecutor();
+                x.session = false;
+                const base = flashHost(pyocd.extensionPath);
+                const tracker = new CmsisJobTracker(new FakeTasks(), { now: () => Date.now(), startTimer: (ms, fire) => { const timer = setTimeout(fire, ms); return () => clearTimeout(timer); } });
+                const handler = handlerFor(x, {
+                    ...base, cmsisJobs: () => tracker,
+                    toolEnvironment: () => ({ ...base.toolEnvironment!(), pyocdStartMs: { usual: 300, first: 10_000 } }),
+                });
+                // 3 s of wait, 1.5 s of it kept back for the answer: 1.9 s of lookup leave no time to program.
+                const answered = await handler.handleFlash({ cbuildRunFile: cbuildRun, timeoutMs: 3_000 });
+                assert.ok(typeof answered !== 'string' && answered.status === 'timeout', JSON.stringify(answered));
+                assert.match(answered.text, /^Flash not started — nothing was programmed\. Finding the cbuild-run file and pyOCD took \d s of the 3 s wait, which leaves too little time to program\. /);
+                assert.strictEqual(pyocd.loads(), 0);
+                // The fence answers first when the lookup outlasts the wait; nothing is programmed afterwards either, and the probe is let go.
+                const late = handler.handleFlash({ cbuildRunFile: cbuildRun, timeoutMs: 1_000 });
+                const reply = await late;
+                assert.ok(typeof reply !== 'string' && reply.status === 'timeout', JSON.stringify(reply));
+                await refusalOf(handler.handleFlash({ cbuildRunFile: cbuildRun }), 'PROBE_BUSY');
+                await delay(1_500);
+                assert.strictEqual(pyocd.loads(), 0, 'no pyocd load after the timeout reply');
+                assert.deepStrictEqual(tracker.probeOwners(), [], 'the probe is free once the lookup ended');
+                tracker.dispose();
             });
 
             test('a bundled pyOCD that does not run is reported, and tools-environment.yml is the next place looked', async function () {

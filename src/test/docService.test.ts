@@ -24,11 +24,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { dump, load } from 'js-yaml';
-import { DocumentFailure, DocumentService } from '../docService/contract';
+import { DocumentFailure, DocumentInfo, DocumentService } from '../docService/contract';
 import { DownloadEngine, EmulatedDocumentService, projectInventoryFile } from '../docService/emulator';
 import { documentEngine } from '../core/packDocs/documentEngine';
 import { solutionDocumentService } from '../core/packDocs/documentApi';
-import { targetParents } from '../core/packDocs/serviceDocs';
+import { shortHash } from '../core/packDocs/pageStore';
+import type { DocRef } from '../core/packDocs/pdscBooks';
+import { mergeServiceDocs, targetParents } from '../core/packDocs/serviceDocs';
 import { defaultSettings, PackDocsHost } from '../core/packDocs/host';
 import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
@@ -140,6 +142,45 @@ export function conformance(name: string, make: () => { service: DocumentService
             assert.ok(fs.existsSync(local), 'removing a project entry never deletes the project\'s file');
         });
 
+        test('an import never takes the file it is given: the copy itself, the copy through a linked folder, a file below its folder', async () => {
+            const { service, solution } = made;
+            await service.addDocument(DEVICE, RM, { title: 'Reference manual' });
+            const copy = (await service.downloadDocument(DEVICE, RM)).path!;
+            // The copy itself, picked in the import dialog.
+            const again = await service.importDocument(DEVICE, RM, copy);
+            assert.ok(fs.existsSync(copy) && again.path !== undefined && fs.readFileSync(again.path).equals(PDF), 'the copy imported as itself is still there');
+            // The same file through a link to its folder: another spelling of the same place.
+            const link = path.join(path.dirname(solution), 'linked-copies');
+            fs.symlinkSync(path.dirname(again.path), link, 'junction');
+            const linked = await service.importDocument(DEVICE, RM, path.join(link, path.basename(again.path)));
+            assert.ok(linked.path !== undefined && fs.readFileSync(linked.path).equals(PDF), 'reached through a link, it is still there');
+            // A newer edition the user put below the copy's folder.
+            const newer = Buffer.concat([PDF, Buffer.from('% revision 7\n')]);
+            const below = path.join(path.dirname(linked.path), 'by-hand', 'rm0456-rev7.pdf');
+            fs.mkdirSync(path.dirname(below), { recursive: true });
+            fs.writeFileSync(below, newer);
+            const imported = await service.importDocument(DEVICE, RM, below);
+            assert.ok(fs.existsSync(below) && fs.readFileSync(below).equals(newer), 'the selected file stays where it is');
+            assert.ok(imported.path !== undefined && fs.readFileSync(imported.path).equals(newer), 'and the document\'s copy has its bytes');
+            assert.strictEqual(imported.error, undefined);
+        });
+
+        test('a URL the user and the project both list: removing it for the project leaves the user\'s entry and copy, also when repeated', async () => {
+            const { service, solution } = made;
+            await service.addDocument(DEVICE, RM, { title: 'Mine' });
+            const mine = await service.downloadDocument(DEVICE, RM);
+            await service.addDocument(DEVICE, RM, { title: 'The project\'s', scope: 'project', solution });
+            const shared = await service.downloadDocument(DEVICE, RM, {}, solution);
+            assert.ok(mine.path && shared.path && shared.path !== mine.path, 'each entry has a copy of its own');
+            assert.ok(await service.removeDocument(DEVICE, RM, solution));
+            assert.ok(!fs.existsSync(shared.path), 'the project entry\'s copy goes');
+            assert.strictEqual(await service.removeDocument(DEVICE, RM, solution), false, 'nothing of the project is left to remove');
+            assert.deepStrictEqual((await service.getDocuments(DEVICE, solution)).map((doc) => [doc.scope, doc.title, doc.path]), [['user', 'Mine', mine.path]]);
+            assert.ok(fs.existsSync(mine.path), 'the user\'s copy stays');
+            assert.ok(await service.removeDocument(DEVICE, RM), 'without the csolution it is the user\'s that goes');
+            assert.ok(!fs.existsSync(mine.path));
+        });
+
         test('adding again updates title and category and keeps the copy (callers add before each download)', async () => {
             const { service } = made;
             await service.addDocument(DEVICE, RM, { title: 'First' });
@@ -226,6 +267,49 @@ suite('document service: the seams', () => {
             { device: 'ST::STM32U585AIIx' }, { board: 'ST::B-U585I-IOT02A:C' }, { core: 'Cortex-M33' },
             { pack: 'Keil::STM32U5xx_DFP' }, { pack: 'Keil::B-U585I-IOT02A_BSP' }, { vendor: 'Keil' }, { all: true },
         ]);
+    });
+
+    test('two local documents of one parent with the same file name are both listed, the first under the id it had', () => {
+        const core = { core: 'Cortex-M7' };
+        const local = (file: string, title: string, scope: 'user' | 'project' = 'user'): DocumentInfo =>
+            ({ name: file, title, parent: core, scope, location: 'local', path: file, format: 'pdf' });
+        const docs: DocRef[] = [];
+        assert.strictEqual(mergeServiceDocs(docs, [local('/a/datasheet.pdf', 'Sheet A'), local('/b/datasheet.pdf', 'Sheet B'), local('/a/datasheet.pdf', 'Sheet A')], 'the view'), 2);
+        assert.deepStrictEqual(docs.map((doc) => [doc.title, doc.path]), [['Sheet A', '/a/datasheet.pdf'], ['Sheet B', '/b/datasheet.pdf']]);
+        assert.strictEqual(docs[0].id, 'user/cortex-m7/datasheet');
+        assert.match(docs[1].id, /^user\/cortex-m7\/datasheet-[0-9a-f]{6}$/);
+        const other: DocRef[] = [];
+        mergeServiceDocs(other, [local('/c/other.pdf', 'Other'), local('/b/datasheet.pdf', 'Sheet B'), local('/a/datasheet.pdf', 'Sheet A')], 'the view');
+        assert.deepStrictEqual(other.map((doc) => doc.id), ['user/cortex-m7/other', 'user/cortex-m7/datasheet', `user/cortex-m7/datasheet-${shortHash('/a/datasheet.pdf').slice(0, 6)}`],
+            'the hash is of the document\'s own name, not of its place in the list');
+        assert.strictEqual(docs[1].id, `user/cortex-m7/datasheet-${shortHash('/b/datasheet.pdf').slice(0, 6)}`);
+        // Two project files outside the project have no path: the bare file name is no file to tell them by.
+        const outside = (name: string, title: string): DocumentInfo => ({ name, title, parent: core, scope: 'project', location: 'local' });
+        const missing: DocRef[] = [];
+        assert.strictEqual(mergeServiceDocs(missing, [outside('../a/spec.pdf', 'Spec A'), outside('../b/spec.pdf', 'Spec B')], 'the view'), 2);
+        assert.deepStrictEqual(missing.map((doc) => [doc.title, doc.service?.name, doc.missing]), [['Spec A', '../a/spec.pdf', true], ['Spec B', '../b/spec.pdf', true]]);
+    });
+
+    test('a URL with two entries keeps the one that has the copy; without a copy the first entry counts', () => {
+        const entry = (scope: 'user' | 'project', parent: DocumentInfo['parent'], copy?: string): DocumentInfo =>
+            ({ name: RM, title: `${scope} entry`, parent, scope, location: 'web', ...(copy ? { path: copy, format: 'pdf' as const } : {}) });
+        const serviceOf = (infos: DocumentInfo[]): [number, string | undefined, string | undefined] => {
+            const docs: DocRef[] = [];
+            const added = mergeServiceDocs(docs, infos, 'the view');
+            return [added, docs[0].service?.scope, docs[0].service?.copy];
+        };
+        const core = { core: 'Cortex-M7' };
+        assert.deepStrictEqual(serviceOf([entry('user', core, '/copies/rm0456.pdf'), entry('project', core)]), [1, 'user', '/copies/rm0456.pdf'],
+            'the project\'s reference does not take the user\'s copy away');
+        assert.deepStrictEqual(serviceOf([entry('user', DEVICE, '/copies/rm0456.pdf'), entry('user', { all: true })]), [1, 'user', '/copies/rm0456.pdf']);
+        assert.deepStrictEqual(serviceOf([entry('user', core), entry('project', core, '/copies/projects/1/rm0456.pdf')]), [1, 'project', '/copies/projects/1/rm0456.pdf'],
+            'only the later entry has the copy');
+        assert.deepStrictEqual(serviceOf([entry('user', core, '/copies/rm0456.pdf'), entry('project', core, '/copies/projects/1/rm0456.pdf')]), [1, 'user', '/copies/rm0456.pdf'],
+            'both have one: the first');
+        assert.deepStrictEqual(serviceOf([entry('user', core), entry('project', core)]), [1, 'user', undefined]);
+        const gone: DocumentInfo = { ...entry('user', core, '/copies/rm0456.pdf'), error: { kind: 'missing-file', detail: 'not there' } };
+        assert.deepStrictEqual(serviceOf([gone, entry('project', core, '/copies/projects/1/rm0456.pdf')]), [1, 'project', '/copies/projects/1/rm0456.pdf'],
+            'a copy that is gone is none');
     });
 });
 
@@ -355,6 +439,27 @@ suite('the emulator in CMSIS Solution\'s folder: docs.yml shared, docs.xtra.yml 
         assert.deepStrictEqual(read().docs.devices[0].docs!.map((doc) => doc.title), ['STM32U5 reference manual', 'Errata']);
     });
 
+    test('a download whose file another window moved to the copy\'s name first still resolves, without an error on the document', async () => {
+        const arm = 'https://developer.arm.com/documentation/ddi0553/latest';
+        const racing = new EmulatedDocumentService({ root, engine: {
+            async download(_url, destDir) {
+                const file = path.join(destDir, 'DDI0553B_z_armv8m_arm.pdf');
+                fs.writeFileSync(file, PDF);
+                // The other window ended the same download a moment earlier and gave the file the name both look for.
+                fs.renameSync(file, path.join(destDir, 'ddi0553-latest.pdf'));
+                return { path: file, bytes: PDF.length, sha256: 'x', filename: 'DDI0553B_z_armv8m_arm.pdf', resolver: 'arm.com' };
+            },
+        } });
+        try {
+            await racing.addDocument({ all: true }, arm, { title: 'Armv8-M Architecture Reference Manual' });
+            const done = await racing.downloadDocument({ all: true }, arm);
+            assert.deepStrictEqual([done.path, done.error], [path.join(root, 'docs', 'ddi0553-latest', 'ddi0553-latest.pdf'), undefined]);
+            assert.ok(fs.readFileSync(done.path!).equals(PDF));
+        } finally {
+            racing.dispose();
+        }
+    });
+
     test('an Arm document lies in CMSIS Solution\'s catalogue and folder; core, pack, vendor and all have lists and folders of their own', async () => {
         const arm = 'https://developer.arm.com/documentation/ddi0553/latest';
         await service.addDocument({ all: true }, arm, { title: 'Armv8-M Architecture Reference Manual' });
@@ -425,6 +530,128 @@ suite('the emulator in CMSIS Solution\'s folder: docs.yml shared, docs.xtra.yml 
         await assert.rejects(service.addDocument(DEVICE, RM), /is not a document inventory/);
         assert.strictEqual(fs.readFileSync(inventory, 'utf-8'), '- just: a list\n');
         assert.ok(!fs.existsSync(path.join(root, 'docs.xtra.yml')));
+    });
+});
+
+/** A project inventory with more than the service knows: commons, an item's pack, a list and a key of others, text that looks like a number. */
+const PROJECT_INVENTORY = [
+    'generator: by hand',
+    'docs:',
+    '  commons:',
+    '    - common: arm-docs',
+    '      docs:',
+    '        - name: https://developer.arm.com/documentation/ddi0553/latest',
+    '          id: ddi0553',
+    '  devices:',
+    `    - device: ${DEVICE.device}`,
+    '      pack: Keil::STM32U5xx_DFP@3.1.0',
+    '      docs:',
+    `        - name: ${RM}`,
+    '          title: STM32U5 reference manual',
+    '          revision: 0100',
+    '  boards:',
+    `    - board: ${BOARD.board}`,
+    '      pack: Keil::B-U585I-IOT02A_BSP@2.0.0',
+    '  sensors:',
+    '    - sensor: Bosch::BMI270',
+    '      docs:',
+    '        - name: docs/bmi270.pdf',
+    '',
+].join('\n');
+
+suite('the emulator and a project\'s .cmsis/docs.yml: changed in place, watched before it is there', () => {
+    let base: string;
+    let solution: string;
+    const windows: EmulatedDocumentService[] = [];
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+    /** A window's service on the shared root, with what its listener heard. */
+    const aWindow = (watch = true): { service: EmulatedDocumentService; heard: { count: number } } => {
+        const service = new EmulatedDocumentService({ root: path.join(base, 'home', '.cmsis'), engine: fakeEngine([]), watch });
+        const heard = { count: 0 };
+        service.onDidChangeDocuments(() => { heard.count++; });
+        windows.push(service);
+        return { service, heard };
+    };
+    /** Whether the listener hears of a change within 3 s of `act`. */
+    const hears = async (heard: { count: number }, act: () => unknown): Promise<boolean> => {
+        const before = heard.count;
+        await act();
+        for (let round = 0; round < 150 && heard.count === before; round++) {
+            await sleep(20);
+        }
+        return heard.count > before;
+    };
+    /** A new watcher is handed what happened just before it on some platforms: let that pass. */
+    const settle = (): Promise<void> => sleep(300);
+
+    setup(() => {
+        base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cda-project-docs-')));
+        solution = path.join(base, 'project', 'Blinky.csolution.yml');
+        fs.mkdirSync(path.dirname(solution), { recursive: true });
+        fs.writeFileSync(solution, 'solution:\n');
+    });
+    teardown(() => {
+        windows.splice(0).forEach((service) => service.dispose());
+        fs.rmSync(base, { recursive: true, force: true });
+    });
+
+    test('a write of the project file keeps what the service does not know: commons, an item\'s pack, lists and keys of others, a scalar as its text', async () => {
+        const { service } = aWindow(false);
+        const file = projectInventoryFile(solution);
+        const read = (): InventoryFile => load(fs.readFileSync(file, 'utf-8')) as InventoryFile;
+        const local = path.join(path.dirname(solution), 'docs', 'errata.pdf');
+        fs.mkdirSync(path.dirname(local), { recursive: true });
+        fs.writeFileSync(local, PDF);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, PROJECT_INVENTORY);
+        const before = read().docs;
+
+        await service.addDocument(DEVICE, local, { title: 'Errata', scope: 'project', solution });
+        const added = read().docs;
+        assert.deepStrictEqual(added.devices[0].docs!.pop(), { name: 'docs/errata.pdf', title: 'Errata' });
+        assert.deepStrictEqual(added, before, 'but for the new entry, docs: says what it said');
+        const text = fs.readFileSync(file, 'utf-8');
+        assert.match(text, /^generator: by hand$/m, 'a key beside docs: stays');
+        assert.match(text, /^ {10}revision: 0100$/m, 'a scalar stays the text it was');
+        assert.doesNotMatch(text, /^version:/m, 'a file that has no version gets none');
+
+        assert.ok(await service.removeDocument(DEVICE, 'docs/errata.pdf', solution));
+        assert.ok(await service.removeDocument(DEVICE, RM, solution));
+        const removed = read().docs;
+        assert.deepStrictEqual(removed.devices, [{ device: DEVICE.device, pack: 'Keil::STM32U5xx_DFP@3.1.0', docs: [] }],
+            'an item that carries more than its key stays when its last document goes');
+        assert.deepStrictEqual([removed.commons, removed.boards, removed.sensors], [before.commons, before.boards, before.sensors]);
+        assert.ok(fs.existsSync(local), 'the project\'s file is never deleted');
+    });
+
+    test('the first project document, added by another window into a .cmsis folder that was not there, is announced', async function () {
+        this.timeout(15_000);
+        const first = aWindow();
+        assert.deepStrictEqual(await first.service.getDocuments(DEVICE, solution), []);
+        assert.ok(!fs.existsSync(path.dirname(projectInventoryFile(solution))), 'the folder is not there when the first window reads');
+        const other = aWindow();
+        await settle();
+        assert.ok(await hears(first.heard, () => other.service.addDocument(DEVICE, RM, { scope: 'project', solution })), 'the first document');
+        assert.strictEqual((await first.service.getDocuments(DEVICE, solution)).length, 1);
+        await settle();
+        assert.ok(await hears(first.heard, () => other.service.addDocument(BOARD, WALL, { scope: 'project', solution })), 'the next one, from the folder itself');
+    });
+
+    test('a .cmsis folder that goes is announced, and so is the inventory written into it again', async function () {
+        if (process.platform === 'win32') {
+            // Not measured there: Windows reports the removal of a watched folder as an error of the watcher.
+            this.skip();
+        }
+        this.timeout(15_000);
+        const first = aWindow();
+        const other = aWindow();
+        await other.service.addDocument(DEVICE, RM, { scope: 'project', solution });
+        assert.strictEqual((await first.service.getDocuments(DEVICE, solution)).length, 1);
+        await settle();
+        assert.ok(await hears(first.heard, () => fs.rmSync(path.dirname(projectInventoryFile(solution)), { recursive: true, force: true })), 'the folder went');
+        assert.deepStrictEqual(await first.service.getDocuments(DEVICE, solution), []);
+        await settle();
+        assert.ok(await hears(first.heard, () => other.service.addDocument(DEVICE, RM, { scope: 'project', solution })), 'written again');
     });
 });
 

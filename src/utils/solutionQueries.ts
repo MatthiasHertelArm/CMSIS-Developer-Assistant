@@ -257,11 +257,19 @@ export function apiToolsEnvironment(source: SolutionCommands = VSCODE_SOLUTION_C
         } catch (caught) {
             logger.debug(`getToolsEnvironment: no answer (${caught instanceof Error ? caught.message : String(caught)})`);
             return undefined;
-        } finally {
-            toolsEnvironmentAsk = undefined;
         }
     })();
     toolsEnvironmentAsk = ask;
+    // Cleared here, after the assignment, and not in a `finally` of the ask:
+    // an ask that ends before its first await (inactive extension, no
+    // version 3) would clear the slot before it is filled, and every later
+    // call would get that settled promise. Only the ask that still holds the
+    // slot clears it; `ask` never rejects.
+    void ask.finally(() => {
+        if (toolsEnvironmentAsk === ask) {
+            toolsEnvironmentAsk = undefined;
+        }
+    });
     return ask;
 }
 
@@ -274,7 +282,7 @@ export function cachedApiToolsEnvironment(source: SolutionCommands = VSCODE_SOLU
     return lastToolsEnvironment;
 }
 
-/** Forget the cached environment (tests). */
+/** Forget the cached environment: after an activation that rewrote the file, and between tests. */
 export function resetApiToolsEnvironment(): void {
     lastToolsEnvironment = undefined;
     toolsEnvironmentAsk = undefined;

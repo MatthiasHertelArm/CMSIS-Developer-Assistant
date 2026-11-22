@@ -92,7 +92,11 @@ copy's folder) takes its index along. With the emulator every copy under
 workspace and project documents, HTML-only Arm documents and unwritable
 folders keep the store layout, and sidecars an earlier release left there
 move beside the copy on first use. The handler registers the service's
-folders (`PageStore.addRoot`) for the panel's listing and clear actions. The
+folders (`PageStore.addRoot`) for the panel's listing and clear actions:
+the folder of each copy a target lists and, with the emulator, the copy
+store that holds them all. Registered folders can therefore lie inside one
+another, or be a link to another; the store walks each file once
+(`PageStore.allFiles`), so a document is listed, counted and cleared once. The
 listing and `fetch_doc`'s failure name the view's actions (*Download
 Document*, *Import Document*). The host sets `PackDocsHost.inventoryFile`;
 the tests leave it unset unless they test the inventory.
@@ -188,17 +192,34 @@ part of it: they stay in this extension.
     between the read and the write or right after it; what remains of that
     race is accepted. A write drops comments in `docs.yml` and may change
     its quoting; CMSIS Solution rewrites the whole file on its saves too.
+    The watcher also waits for a folder that is not there yet (a project's
+    `.cmsis/` before its first document) through its parent, and announces
+    a folder that goes.
+  - Copies. An import copies the file it is given and never moves or
+    deletes it, wherever it lies: the service's own copy picked again, or a
+    file below the copy's folder, reached through a link or in another
+    spelling of the path, keeps the folder as it is (`copyInto` compares the
+    places as the file system spells them).
   Downloads go through `documentEngine.ts`: this extension's resolvers and
-  guarded downloader, failures classified (G8).
+  guarded downloader, failures classified (G8). A download runs outside the
+  lock, so a long one blocks no other window, and into a partial file of
+  its own attempt (`downloadPdf`): two windows that fetch the same document
+  each write their own file, and the one renamed last is the copy.
 - **Project documents** (G3) are entries in `<csolution folder>/.cmsis/docs.yml`,
   in the layout of CMSIS Solution's `~/.cmsis/docs.yml` (`devices`, `boards`,
   and `cores`, `packs`, `vendors`, `all`): paths relative to the csolution
   folder, or URLs, with title and category. Only what can be shared goes
   there; copies, errors and requests of project entries stay in the user's
   folder (`docs.xtra.yml`, `docs/projects/`). A path that leaves the project
-  is not read; a file of another layout is never written; unknown keys are
-  kept. Adding is for the user by default; the project scope is an
-  explicit choice.
+  is not read; a file of another layout is never written. The file is
+  changed in place, read with every scalar as text like the user's: what
+  the service does not know stays (`commons`, an item's `pack`, lists and
+  keys of others), an item that carries more than its key stays when its
+  last document goes, and only the comments are lost. Adding is for the
+  user by default; the project scope is an explicit choice, and so is its
+  removal: `removeDocument` with the csolution takes the project's entry
+  and this machine's copy and state of it, never an entry the user has
+  under the same name.
 - **Parents** match as CMSIS Solution keys them: a device or board without
   a vendor on one side matches by name, a board without a revision likewise
   (`sameParent`). `addDocument` is an upsert.
@@ -209,7 +230,13 @@ part of it: they stay in this extension.
 - **The consumer.** `PackDocsHandler.resolve` asks the service for the
   target's parents (`serviceDocs.targetParents`: device, board, cores,
   packs, vendors, all) and `collectTargetDocs` merges the answers
-  (`mergeServiceDocs`, ids as before). `fetch_doc` downloads through the
+  (`mergeServiceDocs`, ids as before). Several entries can name one
+  document (the user's and the project's entry of a URL, one on the device
+  and one on all targets): the first counts, most specific parent first and
+  the user's before the project's, unless only a later one has the copy, so
+  a reference never hides a copy. Two local documents of one parent with
+  the same file name are both listed, the second under the id with a hash
+  of its own name. `fetch_doc` downloads through the
   service (`fetchVia`) inside the same job, so progress, the wait, the
   failure count and the reply stay as they were; a failure becomes the
   service's request. CMSIS Solution's inventory (`~/.cmsis/docs.yml`), the
@@ -219,7 +246,14 @@ part of it: they stay in this extension.
   for what the agent asked for (G10), and Download, Import a File, Open the
   Vendor Page, Remove and Add Document (G11: file or URL, any parent, for the
   user or the project). *Import Document for Current Target* runs the same
-  Add flow.
+  Add flow. The view shows in a workspace with a csolution, in either
+  spelling CMSIS Solution lists (`followSolutions`: searched at activation
+  and again when such a file is created or deleted or a folder comes or
+  goes). It reads the target's documents while it is shown: when it becomes
+  visible, on the service's change event, after its own commands, and when
+  a task of CMSIS Solution's build type ends (`mayChangeTarget`), which is
+  the only sign of a target switch CMSIS Solution gives: it runs `cbuild
+  setup` after one.
 
 The proposed-API path written against the first sketch (stage 3) and its
 setting are gone: the contract replaced them.

@@ -20,9 +20,11 @@
  * a target has, the ids (derived from the name as the pdsc walk and
  * `fetch_doc` derive them, so no id changes when a document moves into the
  * service), and the merge (the same file, URL or Arm id gains the service's
- * knowledge; a document only the service has is added). Arm documents only
- * take the service's copy: which of them belong to a target stays
- * `armDocsFor`'s rule.
+ * knowledge; a document only the service has is added; of several entries
+ * for one document the one with the copy counts; two local documents of
+ * the same file name are both listed). Arm documents only take the
+ * service's copy: which of them belong to a target stays `armDocsFor`'s
+ * rule.
  *
  * Pure: no `vscode`.
  */
@@ -125,20 +127,41 @@ function samePath(a: string | undefined, b: string | undefined): boolean {
     return a !== undefined && b !== undefined && path.resolve(a) === path.resolve(b);
 }
 
+/** Whether the service has a copy of the document that is there. */
+function copyThere(info: DocumentInfo): boolean {
+    return info.path !== undefined && info.error?.kind !== 'missing-file';
+}
+
 /**
  * Fold the service's documents into `docs` (in place): a listed document
  * with the same Arm id, URL or file gains `service`; Arm documents are only
  * enriched; the rest is added. Returns how many were added.
+ *
+ * Several entries can name one document (the user's and the project's entry
+ * of a URL, an entry on the device and one on all targets). The first one
+ * counts, in the order given (the most specific parent first, the user's
+ * before the project's), unless only a later one has the copy: an entry
+ * without a copy never takes the place of one that has it.
+ *
+ * Two local documents of one parent can have the same file name. Both are
+ * listed: the first under the id of its name, the next under that id with a
+ * hash of its own name, which does not depend on the order of the list.
  */
 export function mergeServiceDocs(docs: DocRef[], infos: readonly DocumentInfo[], view: string): number {
     let added = 0;
+    /** The documents whose `service` is an entry with a copy. */
+    const withCopy = new Set<DocRef>();
     for (const info of infos) {
         const ref = serviceDocRef(info, view);
         const listed = docs.find((doc) => (ref.arm !== undefined && doc.arm?.docId === ref.arm.docId)
             || (ref.url !== undefined && doc.url === ref.url)
-            || (isUrl(info.name) ? false : samePath(doc.path, ref.path)));
+            // A local document without a path has only its file name here, which is no file to compare.
+            || (isUrl(info.name) || !info.path ? false : samePath(doc.path, ref.path)));
         if (listed) {
-            listed.service = ref.service;
+            if (listed.service === undefined || (!withCopy.has(listed) && copyThere(info))) {
+                listed.service = ref.service;
+                if (copyThere(info)) { withCopy.add(listed); }
+            }
             if (listed.arm && info.sourceTitle) { listed.title = info.sourceTitle; }
             if (ref.revision && !listed.revision) { listed.revision = ref.revision; }
             continue;
@@ -147,9 +170,13 @@ export function mergeServiceDocs(docs: DocRef[], infos: readonly DocumentInfo[],
         if (ref.arm !== undefined && !info.path) {
             continue;
         }
+        if (ref.source !== 'web' && docs.some((doc) => doc.id === ref.id)) {
+            ref.id = `${ref.id}-${shortHash(info.name).slice(0, 6)}`;
+        }
         if (!docs.some((doc) => doc.id === ref.id)) {
             docs.push(ref);
             added++;
+            if (copyThere(info)) { withCopy.add(ref); }
         }
     }
     return added;

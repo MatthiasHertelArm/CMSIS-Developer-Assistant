@@ -268,9 +268,9 @@ suite('webFetch download and fetchDocument', () => {
         const got = await downloadPdf('https://x/a.pdf', dest, ctx(fn));
         assert.strictEqual(got.bytes, PDF_BYTES.length);
         assert.strictEqual(got.sha256.length, 64);
-        assert.ok(fs.existsSync(dest) && !fs.existsSync(`${dest}.part`));
+        assert.deepStrictEqual(fs.readdirSync(dir), ['doc.pdf'], 'the partial file became the copy');
         await assert.rejects(downloadPdf('https://x/page', path.join(dir, 'b.pdf'), ctx(fn)), /not a PDF \(text\/html\)/);
-        assert.ok(!fs.existsSync(path.join(dir, 'b.pdf.part')), 'no leftover');
+        assert.deepStrictEqual(fs.readdirSync(dir), ['doc.pdf'], 'no leftover');
         await assert.rejects(downloadPdf('https://x/huge.pdf', path.join(dir, 'c.pdf'), ctx(fn, { maxBytes: 1000 })), /maxPdfMb/);
         await assert.rejects(downloadPdf('https://x/missing.pdf', path.join(dir, 'd.pdf'), ctx(fn)), /HTTP 404/);
     });
@@ -278,10 +278,52 @@ suite('webFetch download and fetchDocument', () => {
     test('a write-stream error rejects the download instead of crashing the host or hanging', async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-dl-err-'));
         const { fn } = fakeFetch({ 'https://x/a.pdf': pdf() });
-        // The .part path is a directory: the write stream fails asynchronously (EISDIR).
-        fs.mkdirSync(path.join(dir, 'e.pdf.part'));
-        await assert.rejects(downloadPdf('https://x/a.pdf', path.join(dir, 'e.pdf'), ctx(fn)), /download of .* failed: .*EISDIR/);
-        assert.ok(!fs.existsSync(path.join(dir, 'e.pdf')));
+        // The name of the copy is as long as a name may be: its partial file's name is longer, and the write stream
+        // fails when it opens the file, asynchronously.
+        const longest = `${'e'.repeat(251)}.pdf`;
+        await assert.rejects(downloadPdf('https://x/a.pdf', path.join(dir, longest), ctx(fn)), /download of .* failed: /);
+        assert.deepStrictEqual(fs.readdirSync(dir), []);
+    });
+
+    test('two downloads of one document at once: a partial file each, both resolve, the copy is whole', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-dl-two-'));
+        const dest = path.join(dir, 'doc.pdf');
+        const { fn } = fakeFetch({ 'https://x/a.pdf': pdf() });
+        const both = await Promise.all([downloadPdf('https://x/a.pdf', dest, ctx(fn)), downloadPdf('https://x/a.pdf', dest, ctx(fn))]);
+        assert.deepStrictEqual(both.map((got) => got.bytes), [PDF_BYTES.length, PDF_BYTES.length]);
+        assert.ok(fs.readFileSync(dest).equals(PDF_BYTES));
+        assert.deepStrictEqual(fs.readdirSync(dir), ['doc.pdf']);
+    });
+
+    test('a second download that starts half way and breaks leaves the first one whole', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-dl-late-'));
+        const dest = path.join(dir, 'doc.pdf');
+        const half = PDF_BYTES.length >> 1;
+        const feeds: ReadableStreamDefaultController<Uint8Array>[] = [];
+        const slow: Route = () => new Response(new ReadableStream<Uint8Array>({ start: (controller) => { feeds.push(controller); } }),
+            { status: 200, headers: { 'content-type': 'application/pdf' } });
+        const { fn } = fakeFetch({ 'https://x/slow.pdf': slow });
+        const until = async (reached: () => boolean, what: string): Promise<void> => {
+            for (let round = 0; round < 400 && !reached(); round++) {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+            assert.ok(reached(), what);
+        };
+        const first = downloadPdf('https://x/slow.pdf', dest, ctx(fn));
+        await until(() => feeds.length === 1, 'the first download reads');
+        feeds[0].enqueue(new Uint8Array(PDF_BYTES.subarray(0, half)));
+        await until(() => fs.readdirSync(dir).some((name) => fs.statSync(path.join(dir, name)).size === half), 'its first half is on disk');
+        const second = downloadPdf('https://x/slow.pdf', dest, ctx(fn));
+        await until(() => feeds.length === 2, 'the second download reads');
+        feeds[1].enqueue(new Uint8Array(PDF_BYTES.subarray(0, 16)));
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        feeds[1].error(new Error('connection reset'));
+        await assert.rejects(second, /download of .* failed: connection reset/);
+        feeds[0].enqueue(new Uint8Array(PDF_BYTES.subarray(half)));
+        feeds[0].close();
+        assert.strictEqual((await first).bytes, PDF_BYTES.length);
+        assert.ok(fs.readFileSync(dest).equals(PDF_BYTES), 'the copy is the served bytes, without a hole');
+        assert.deepStrictEqual(fs.readdirSync(dir), ['doc.pdf']);
     });
 
     test('fetchDocument caches the PDF and its provenance under the store id; annotate reads it back', async () => {

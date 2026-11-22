@@ -21,7 +21,7 @@ import * as path from 'path';
 import { DocRef } from '../core/packDocs/pdscBooks';
 import { PageStore } from '../core/packDocs/pageStore';
 import { PdfExtractor, PdfjsExtractor, PdftotextExtractor, itemsToPageText, selectExtractor, splitPages } from '../core/packDocs/pdfExtract';
-import { defaultSettings } from '../core/packDocs/host';
+import { defaultSettings, silentLog } from '../core/packDocs/host';
 
 const FIXTURES = path.join(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'packdocs');
 
@@ -249,6 +249,33 @@ suite('pageStore', () => {
         assert.strictEqual(store.clearExtracted().documents, 1);
         assert.ok(fs.existsSync(copy), 'the copy stays');
         assert.ok(!fs.existsSync(path.join(copyDir, 'Vendor_RM.meta.json')));
+    });
+
+    test('roots that lie inside one another, or link to one another, count each document once', async () => {
+        const dir = tmp();
+        const copies = path.join(dir, 'cmsis', 'docs');
+        const copyDir = path.join(copies, 'Vendor', 'Device', 'vendor-rm');
+        fs.mkdirSync(copyDir, { recursive: true });
+        const copy = path.join(copyDir, 'Vendor_RM.pdf');
+        fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), copy);
+        const warnings: string[] = [];
+        const store = new PageStore(path.join(dir, 'store'), { ...silentLog, warn: (message: string) => { warnings.push(message); } });
+        const doc: DocRef = { id: 'web/vendor/1234', title: 'Vendor RM', scope: 'user', source: 'web', url: 'https://vendor.example/rm.pdf', path: copy, cached: true, indexed: false,
+            service: { parent: { all: true }, name: 'https://vendor.example/rm.pdf', scope: 'user', copy, view: 'the Target Documents view' } };
+        await store.ensure(doc, new FakeExtractor(['1 Intro\nHello']));
+        const sidecars = ['meta.json', 'pages.jsonl', 'idx.json'].map((ext) => path.join(copyDir, `Vendor_RM.${ext}`));
+        const bytes = sidecars.reduce((sum, file) => sum + fs.statSync(file).size, 0);
+        // As the handler registers them: the folder of the copy for the target, the copy store for the panel.
+        store.addRoot(copyDir);
+        store.addRoot(copies);
+        const alias = path.join(dir, 'alias');
+        fs.symlinkSync(copies, alias, 'junction');
+        store.addRoot(alias);
+        assert.deepStrictEqual(store.listCached().map(e => e.id), ['web/vendor/1234']);
+        assert.deepStrictEqual(store.storeUsage().extracted, { documents: 1, files: 3, bytes });
+        assert.deepStrictEqual(store.clearExtracted(), { documents: 1, files: 3, bytes });
+        assert.deepStrictEqual(warnings, [], 'no file is removed twice');
+        assert.ok(fs.existsSync(copy), 'the copy stays');
     });
 
     test('an index in the storage directory moves next to the copy instead of being extracted again; project documents stay', async () => {

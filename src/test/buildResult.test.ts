@@ -18,7 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseBuildLog } from '../core/buildInfo/buildLog';
-import { capturedResultOf, cleanBuildOutput, RESULT_OUTPUT_CUT, RESULT_OUTPUT_MAX_CHARS, resultLogHeader, resultLogPath } from '../core/buildResult';
+import { capturedResultOf, cleanBuildOutput, isResultLogOf, RESULT_OUTPUT_CUT, RESULT_OUTPUT_MAX_CHARS, resultLogHeader, resultLogPath } from '../core/buildResult';
 
 /**
  * The result CMSIS Solution captures for a build task (#140), over output
@@ -57,6 +57,16 @@ suite('captured build result (#140)', () => {
         assert.strictEqual(lines.filter((line) => line.startsWith('[1/2] Building C object')).length, 1);
         assert.strictEqual(lines.filter((line) => line.startsWith('[2/2] Linking C executable')).length, 1, 'the line ninja drew twice is there once');
         assert.ok(!text.includes('\n\n\n'), 'the blank a CR-first line leaves is not kept');
+    });
+
+    test('a line the build printed twice stays twice; only a state a bare CR redrew unchanged is dropped', () => {
+        const warning = 'Warning: L6314W: No section matches pattern *(.bss.noinit).';
+        for (const eol of ['\n', '\r\n', '\r\r\n']) {
+            const text = cleanBuildOutput(`${warning}${eol}${warning}${eol}`);
+            assert.strictEqual(text, `${warning}\n${warning}\n`, JSON.stringify(eol));
+            assert.deepStrictEqual(parseBuildLog(text, 'b.log').diagnostics.map((d) => d.count), [2], JSON.stringify(eol));
+        }
+        assert.strictEqual(cleanBuildOutput('\r[1/2] x\x1b[K\r[1/2] x\x1b[K\r[2/2] y\x1b[K\r\r\ndone\r\n'), '[1/2] x\n[2/2] y\ndone\n');
     });
 
     test('a blank line stays one, and an empty output stays empty', () => {
@@ -142,5 +152,19 @@ suite('captured build result (#140)', () => {
         assert.strictEqual(resultLogPath('diagnostic'), 'out/cmsis-developer-assistant/build-diagnostic_.log');
         assert.strictEqual(resultLogHeader('cbuild --active "" --schema', 0),
             '[cmsis-developer-assistant] Output of \'cbuild --active "" --schema\' as CMSIS Solution captured it; cbuild exit code 0.\n');
+    });
+
+    test('whose log it is: the target type\'s and its target sets\', never another type\'s; any other file is anybody\'s', () => {
+        const at = (target: string | undefined): string => `/w/Blinky/${resultLogPath(target)}`;
+        assert.strictEqual(isResultLogOf(at('microbit-v2'), 'microbit-v2'), true);
+        assert.strictEqual(isResultLogOf(at('CYT4BF8CDS@file-io'), 'CYT4BF8CDS'), true, 'a target set of the type');
+        assert.strictEqual(isResultLogOf(resultLogPath('CYT4BF8CDS@file-io'), 'cyt4bf8cds'), true, 'a relative path, and the case a file system may fold');
+        assert.strictEqual(isResultLogOf(at('CYT4BF8CDS@file-io').replace(/\//g, '\\'), 'CYT4BF8CDS'), true, 'a Windows path');
+        assert.strictEqual(isResultLogOf(at('microbit-v2'), 'microbit'), false, 'a type whose name only starts the same');
+        assert.strictEqual(isResultLogOf(at('FVP@Debug'), 'NUCLEO-F756ZG'), false);
+        assert.strictEqual(isResultLogOf(at('diagnostic'), 'diagnostic'), true);
+        assert.strictEqual(isResultLogOf(at(undefined), 'FVP'), undefined, 'the log of a build whose target was unknown');
+        assert.strictEqual(isResultLogOf('/w/Blinky/out/cmsis-developer-assistant/build-diagnostic.log', 'FVP'), undefined, 'the diagnostic re-run\'s');
+        assert.strictEqual(isResultLogOf('/w/Blinky/out/build-FVP.log', 'NUCLEO-F756ZG'), undefined, 'a log elsewhere');
     });
 });

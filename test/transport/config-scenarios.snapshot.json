@@ -12172,6 +12172,10 @@
           "id": "cmsis-developer-assistant.targetDocs.add"
         },
         {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
           "ev": "getExtension",
           "id": "arm.cmsis-pack-docs"
         },
@@ -12505,6 +12509,14 @@
         {
           "ev": "getExtension",
           "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
+          ]
         },
         {
           "ev": "step",
@@ -13012,6 +13024,7 @@
             "command:cmsis-developer-assistant.targetDocs.remove",
             "command:cmsis-developer-assistant.targetDocs.dismiss",
             "command:cmsis-developer-assistant.targetDocs.add",
+            "event:workspace.onDidChangeWorkspaceFolders",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",
@@ -13259,6 +13272,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.targetDocs.add"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
           "ev": "getExtension",
@@ -13611,6 +13628,7 @@
             "command:cmsis-developer-assistant.targetDocs.remove",
             "command:cmsis-developer-assistant.targetDocs.dismiss",
             "command:cmsis-developer-assistant.targetDocs.add",
+            "event:workspace.onDidChangeWorkspaceFolders",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",
@@ -13835,6 +13853,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.targetDocs.add"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
           "ev": "getExtension",
@@ -14119,6 +14141,7 @@
             "command:cmsis-developer-assistant.targetDocs.remove",
             "command:cmsis-developer-assistant.targetDocs.dismiss",
             "command:cmsis-developer-assistant.targetDocs.add",
+            "event:workspace.onDidChangeWorkspaceFolders",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.resetPopupState",
@@ -14299,6 +14322,10 @@
           "id": "cmsis-developer-assistant.targetDocs.add"
         },
         {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
           "ev": "getExtension",
           "id": "arm.cmsis-pack-docs"
         },
@@ -14469,6 +14496,7 @@
             "command:cmsis-developer-assistant.targetDocs.remove",
             "command:cmsis-developer-assistant.targetDocs.dismiss",
             "command:cmsis-developer-assistant.targetDocs.add",
+            "event:workspace.onDidChangeWorkspaceFolders",
             "event:workspace.onDidChangeConfiguration",
             "command:cmsis-developer-assistant.configure",
             "command:cmsis-developer-assistant.resetPopupState",
@@ -14643,6 +14671,10 @@
         {
           "ev": "registerCommand",
           "id": "cmsis-developer-assistant.targetDocs.add"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
         },
         {
           "ev": "getExtension",
@@ -14992,6 +15024,7 @@
             "command:cmsis-developer-assistant.targetDocs.remove",
             "command:cmsis-developer-assistant.targetDocs.dismiss",
             "command:cmsis-developer-assistant.targetDocs.add",
+            "event:workspace.onDidChangeWorkspaceFolders",
             "event:debug.onDidStartDebugSession",
             "event:debug.onDidTerminateDebugSession",
             "event:debug.onDidChangeActiveDebugSession",

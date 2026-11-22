@@ -52,16 +52,19 @@
  *
  * A project's entries live in `<csolution folder>/.cmsis/docs.yml`, in the
  * same layout, and hold only what can be shared: names (paths relative to
- * the csolution folder, or URLs), titles, categories. Keys the service does
- * not know are kept when it writes. A path that leaves the project is not
- * read; a file of another layout is never written.
+ * the csolution folder, or URLs), titles, categories. The file is changed
+ * in place: what the service does not know (`commons`, an item's `pack`,
+ * lists and keys of others) stays when it writes, every scalar as the text
+ * it was; only its comments go. A path that leaves the project is not read;
+ * a file of another layout is never written.
  *
  * Several VS Code windows share the root: every change takes a lock file,
  * reads the inventory again, applies the change and writes a temporary file
  * renamed over the old one. CMSIS Solution takes no lock, so a change is
  * applied again, once, when `docs.yml` changed between the read and the
  * write or was overwritten right after it. The watcher reports changes by
- * other windows, by CMSIS Solution or by hand (G1a). Downloads go through an
+ * other windows, by CMSIS Solution or by hand (G1a), also the first
+ * inventory of a project whose `.cmsis/` folder was not there yet. Downloads go through an
  * injected engine, which brings the host's guards (private hosts, size cap)
  * and resolvers.
  */
@@ -138,8 +141,6 @@ interface Entry {
     mode?: string;
     /** The text this service put into the entry's `error` of `docs.yml`, to take back exactly that. */
     shown?: string;
-    /** Keys of a project entry the service does not know, kept when it writes. */
-    extra?: Record<string, unknown>;
 }
 
 /** This machine's state of one project entry. */
@@ -192,10 +193,21 @@ const FILE_NOT_EXISTS = 'File not exists';
 const COPY_FACTS = ['format', 'bytes', 'sha256', 'filename', 'version', 'versionLabel', 'alternatives', 'resolver', 'sourceTitle', 'downloadedAt'] as const;
 
 interface ProjectInventory {
-    version: string;
+    /** The documents the service reads from the file. */
     docs: Entry[];
-    /** Top-level keys besides `version` and `docs`, kept when it writes. */
-    rest: Record<string, unknown>;
+    /** The file as parsed, every scalar as text; changed in place and written back, so what the service does not know stays. */
+    main: Raw;
+    /** Whether the file was there; a new one gets the version of the contract. */
+    present: boolean;
+    /** Why the file is not a document inventory; such a file is never written. */
+    foreign?: string;
+}
+
+/** Where a project document lies in its file: the list that holds it, its own map, and the item of its parent (none for `all`). */
+interface ProjectPlace {
+    rows: unknown[];
+    raw: Raw;
+    owner?: { items: unknown[]; item: Raw; kind: string };
 }
 
 /** The lists of a project inventory: the YAML key, the parent kind, the entry's key. */
@@ -203,7 +215,8 @@ const PROJECT_LISTS: readonly { list: string; kind: 'device' | 'board' | 'core' 
     { list: 'devices', kind: 'device' }, { list: 'boards', kind: 'board' }, { list: 'cores', kind: 'core' },
     { list: 'packs', kind: 'pack' }, { list: 'vendors', kind: 'vendor' },
 ];
-const PROJECT_DOC_KEYS = new Set(['name', 'title', 'category']);
+const PROJECT_HEADER = '# Documents of this project, in the layout of ~/.cmsis/docs.yml: names relative to the csolution folder, or URLs.\n'
+    + '# Shared with the project; local copies, errors and requests stay on each machine.\n';
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 5_000;
@@ -346,6 +359,15 @@ function parentOfPlace(place: MainPlace): string | undefined {
     return `${place.kind}:${place.key}`;
 }
 
+/** A path as the file system spells it: links resolved, every name in the case and form it is stored in; as given where it cannot be asked. */
+function realPath(file: string): string {
+    try {
+        return fs.realpathSync.native(file);
+    } catch {
+        return path.resolve(file);
+    }
+}
+
 /** The emulated service. */
 export class EmulatedDocumentService implements DocumentService {
     readonly version = DOCUMENT_SERVICE_VERSION;
@@ -353,6 +375,8 @@ export class EmulatedDocumentService implements DocumentService {
     private readonly watchers = new Map<string, fs.FSWatcher>();
     /** Where each document read from `docs.yml` lies in it. */
     private readonly places = new WeakMap<Entry, MainPlace>();
+    /** Where each document read from a project's `docs.yml` lies in it. */
+    private readonly projectPlaces = new WeakMap<Entry, ProjectPlace>();
     private changeTimer: NodeJS.Timeout | undefined;
     private readonly now: () => Date;
 
@@ -499,48 +523,105 @@ export class EmulatedDocumentService implements DocumentService {
     }
 
     /** The project inventory of `solution`; a file of another layout is refused (`foreign`). */
-    private readProjectFile(solution: string): ProjectInventory & { foreign?: string } {
+    private readProject(solution: string): ProjectInventory {
         const file = projectInventoryFile(solution);
-        const data = this.readYaml(file);
-        const empty: ProjectInventory = { version: DOCUMENT_SERVICE_VERSION, docs: [], rest: {} };
-        if (data === undefined || data === null) {
-            return empty;
+        const text = this.readText(file);
+        const present = text !== undefined;
+        let data: unknown;
+        try {
+            // Every scalar as text, as in the user inventory: `title: 2024` is a title, `revision: 0100` stays `0100`.
+            data = present ? load(text, { schema: MAIN_SCHEMA }) : undefined;
+        } catch (caught) {
+            throw new Error(`${file} is not valid YAML (${caught instanceof Error ? caught.message.split('\n')[0] : String(caught)})`);
         }
-        const root = data as Record<string, unknown>;
-        const docs = root.docs as Record<string, unknown> | undefined;
-        if (typeof root !== 'object' || Array.isArray(root) || (docs !== undefined && (typeof docs !== 'object' || docs === null || Array.isArray(docs)))) {
-            return { ...empty, foreign: `${file} is not a document inventory (docs: must be a map of devices, boards, cores, packs, vendors, all)` };
+        if (data === undefined || data === null) {
+            return { docs: [], main: {}, present };
+        }
+        const main = data as Raw;
+        const docs = main.docs as Raw | undefined;
+        if (typeof main !== 'object' || Array.isArray(main) || (docs !== undefined && (typeof docs !== 'object' || docs === null || Array.isArray(docs)))) {
+            return { docs: [], main: {}, present, foreign: `${file} is not a document inventory (docs: must be a map of devices, boards, cores, packs, vendors, all)` };
         }
         const entries: Entry[] = [];
-        const take = (items: unknown, parent: string): void => {
-            for (const item of Array.isArray(items) ? items : []) {
-                const raw = item as Record<string, unknown> | null;
-                if (raw && typeof raw.name === 'string' && raw.name.trim()) {
-                    const extra = Object.fromEntries(Object.entries(raw).filter(([key]) => !PROJECT_DOC_KEYS.has(key)));
-                    entries.push({
-                        parent, name: raw.name.trim(),
-                        ...(typeof raw.title === 'string' ? { title: raw.title } : {}),
-                        ...(typeof raw.category === 'string' ? { category: raw.category } : {}),
-                        ...(Object.keys(extra).length ? { extra } : {}),
-                    });
+        const take = (rows: unknown, parent: string, owner?: ProjectPlace['owner']): void => {
+            for (const row of Array.isArray(rows) ? rows as unknown[] : []) {
+                const raw = typeof row === 'object' && row !== null && !Array.isArray(row) ? row as Raw : undefined;
+                const name = textOf(raw?.name)?.trim();
+                if (raw === undefined || !name) {
+                    continue;
                 }
+                const title = textOf(raw.title);
+                const category = textOf(raw.category);
+                const entry: Entry = { parent, name, ...(title ? { title } : {}), ...(category ? { category } : {}) };
+                this.projectPlaces.set(entry, { rows: rows as unknown[], raw, ...(owner ? { owner } : {}) });
+                entries.push(entry);
             }
         };
         for (const { list, kind } of PROJECT_LISTS) {
-            for (const owner of Array.isArray(docs?.[list]) ? docs![list] as unknown[] : []) {
-                const raw = owner as Record<string, unknown> | null;
-                if (raw && typeof raw[kind] === 'string') {
-                    take(raw.docs, `${kind}:${raw[kind] as string}`);
+            const items = docs?.[list];
+            for (const item of Array.isArray(items) ? items as unknown[] : []) {
+                const owner = typeof item === 'object' && item !== null && !Array.isArray(item) ? item as Raw : undefined;
+                const key = textOf(owner?.[kind]);
+                if (owner !== undefined && key !== undefined) {
+                    take(owner.docs, `${kind}:${key}`, { items: items as unknown[], item: owner, kind });
                 }
             }
         }
         take(docs?.all, 'all');
-        const rest = Object.fromEntries(Object.entries(root).filter(([key]) => key !== 'docs' && key !== 'version'));
-        return { version: DOCUMENT_SERVICE_VERSION, docs: entries, rest };
+        return { docs: entries, main, present };
     }
 
-    private readProject(solution: string): ProjectInventory {
-        return this.readProjectFile(solution);
+    /** The place of a new project document: under the item of its parent, made when the file has none; `all` is a list of its own. */
+    private projectPlaceFor(main: Raw, parent: string, name: string): ProjectPlace {
+        if (typeof main.docs !== 'object' || main.docs === null || Array.isArray(main.docs)) {
+            main.docs = {};
+        }
+        const docs = main.docs as Raw;
+        const raw: Raw = { name };
+        if (parent === 'all') {
+            if (!Array.isArray(docs.all)) {
+                docs.all = [];
+            }
+            const rows = docs.all as unknown[];
+            rows.push(raw);
+            return { rows, raw };
+        }
+        const at = parent.indexOf(':');
+        const kind = parent.slice(0, at);
+        const key = parent.slice(at + 1);
+        const list = PROJECT_LISTS.find((item) => item.kind === kind)?.list;
+        if (list === undefined) {
+            throw new Error(`unknown parent '${parent}'`);
+        }
+        if (!Array.isArray(docs[list])) {
+            docs[list] = [];
+        }
+        const items = docs[list] as unknown[];
+        let item = items.find((candidate) => typeof candidate === 'object' && candidate !== null && (candidate as Raw)[kind] === key) as Raw | undefined;
+        if (item === undefined) {
+            item = { [kind]: key, docs: [] };
+            items.push(item);
+        }
+        if (!Array.isArray(item.docs)) {
+            item.docs = [];
+        }
+        const rows = item.docs as unknown[];
+        rows.push(raw);
+        return { rows, raw, owner: { items, item, kind } };
+    }
+
+    /** Take a document out of a project's file; the item of its parent goes with its last one only when it carries nothing else. */
+    private withdrawProject(entry: Entry): void {
+        const place = this.projectPlaces.get(entry);
+        const at = place?.rows.indexOf(place.raw) ?? -1;
+        if (place === undefined || at < 0) {
+            return;
+        }
+        place.rows.splice(at, 1);
+        const owner = place.owner;
+        if (owner !== undefined && place.rows.length === 0 && Object.keys(owner.item).every((key) => key === owner.kind || key === 'docs')) {
+            owner.items.splice(owner.items.indexOf(owner.item), 1);
+        }
     }
 
     private readYaml(file: string): unknown {
@@ -562,10 +643,6 @@ export class EmulatedDocumentService implements DocumentService {
         const temporary = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
         fs.writeFileSync(temporary, text, 'utf-8');
         fs.renameSync(temporary, file);
-    }
-
-    private writeYaml(file: string, data: unknown, header: string): void {
-        this.writeText(file, `${header}\n${dump(data, { lineWidth: 160, noRefs: true })}`);
     }
 
     /** Run `change` under the lock of `file`'s folder; the caller reads inside it. */
@@ -780,48 +857,65 @@ export class EmulatedDocumentService implements DocumentService {
         if (path.resolve(file) === path.join(os.homedir(), '.cmsis', 'docs.yml') || path.resolve(file) === path.resolve(this.inventoryFile)) {
             throw new Error(`${file} is the user's inventory; a csolution in the home folder cannot keep project documents`);
         }
-        const foreign = this.readProjectFile(solution).foreign;
-        if (foreign) {
-            throw new Error(`${foreign}; it is not changed`);
+        if (inventory.foreign) {
+            throw new Error(`${inventory.foreign}; it is not changed`);
         }
-        const docs: Record<string, unknown> = {};
-        const row = (entry: Entry): Record<string, unknown> => ({ name: entry.name, ...(entry.title ? { title: entry.title } : {}),
-            ...(entry.category ? { category: entry.category } : {}), ...(entry.extra ?? {}) });
-        for (const { list, kind } of PROJECT_LISTS) {
-            const owners = new Map<string, Record<string, unknown>[]>();
-            for (const entry of inventory.docs.filter((e) => e.parent.startsWith(`${kind}:`))) {
-                const key = entry.parent.slice(kind.length + 1);
-                owners.set(key, [...(owners.get(key) ?? []), row(entry)]);
-            }
-            if (owners.size) {
-                docs[list] = [...owners].map(([key, rows]) => ({ [kind]: key, docs: rows }));
-            }
-        }
-        const all = inventory.docs.filter((e) => e.parent === 'all').map(row);
-        if (all.length) {
-            docs.all = all;
-        }
-        this.writeYaml(file, { version: DOCUMENT_SERVICE_VERSION, ...inventory.rest, docs },
-            '# Documents of this project, in the layout of ~/.cmsis/docs.yml: names relative to the csolution folder, or URLs.\n'
-            + '# Shared with the project; local copies, errors and requests stay on each machine.');
+        // The file as it was read under the lock, with the caller's change in it: nothing else is touched.
+        const main = inventory.present ? inventory.main : { version: DOCUMENT_SERVICE_VERSION, ...inventory.main };
+        this.writeText(file, PROJECT_HEADER + dump(main, { schema: MAIN_SCHEMA, lineWidth: -1, noRefs: true }));
     }
 
     // ── events ──
 
+    /**
+     * Watch the inventory files of `dir`. A folder that is not there yet (a
+     * project's `.cmsis/` before its first document) is awaited through its
+     * parent, so that the first inventory another window writes is announced
+     * too; a folder that goes is announced and awaited again. A watcher that
+     * failed is let go: the next read arms a new one.
+     */
     private watch(dir: string): void {
         if (this.options.watch !== true || this.watchers.has(dir)) {
             return;
         }
+        const letGo = (): void => {
+            this.watchers.get(dir)?.close();
+            this.watchers.delete(dir);
+        };
         try {
             const watcher = fs.watch(dir, (_event, file) => {
-                if (file && /(^|[/\\])docs(\.xtra)?\.yml$/.test(String(file))) {
+                if (!fs.existsSync(dir)) {
+                    // The folder went, and its inventory with it.
+                    letGo();
+                    this.changed();
+                    this.watch(dir);
+                } else if (file && /(^|[/\\])docs(\.xtra)?\.yml$/.test(String(file))) {
                     this.changed();
                 }
             });
-            watcher.on('error', () => undefined);
+            watcher.on('error', () => {
+                letGo();
+                this.changed();
+            });
+            this.watchers.set(dir, watcher);
+            return;
+        } catch {
+            // No such folder yet: its parent tells when it appears.
+        }
+        try {
+            const name = path.basename(dir);
+            const watcher = fs.watch(path.dirname(dir), (_event, file) => {
+                if ((!file || String(file) === name) && fs.existsSync(dir)) {
+                    letGo();
+                    this.watch(dir);
+                    // The first inventory may have been written before the new watcher was live.
+                    this.changed();
+                }
+            });
+            watcher.on('error', letGo);
             this.watchers.set(dir, watcher);
         } catch {
-            // A folder that cannot be watched: changes by others show at the next read.
+            // Neither can be watched: changes by others show at the next read, which tries again.
         }
     }
 
@@ -903,6 +997,8 @@ export class EmulatedDocumentService implements DocumentService {
     }
 
     async getDocuments(parent: DocParent, solution?: string): Promise<DocumentInfo[]> {
+        // A watcher that was let go is armed again by a read.
+        this.watch(this.options.root);
         const user = this.readUser();
         const found = user.docs.filter((entry) => sameParent(parentOf(entry.parent), parent)).map((entry) => this.info(entry, 'user'));
         if (solution) {
@@ -1000,19 +1096,27 @@ export class EmulatedDocumentService implements DocumentService {
         return arm ? `${arm[1]}-${arm[2]}`.toLowerCase() + (path.extname(file) || '.pdf') : webFileName(name);
     }
 
-    /** Copy `file` into `dir`, replacing what was there; `as` names the copy. */
+    /**
+     * Copy `file` into `dir`, replacing what was there; `as` names the copy.
+     * The file is copied, never moved or deleted, wherever it lies: one that
+     * lies in the folder already (the copy itself imported again, a file
+     * below it, either reached through a link or in another spelling of the
+     * folder) must not go with the folder, so the folder then stays as it is.
+     * The places are compared as the file system spells them.
+     */
     private copyInto(file: string, dir: string, as?: string): { path: string; bytes: number; sha256: string; filename: string } {
         const st = fs.statSync(file);
         if (!st.isFile()) {
             throw new DocumentFailure({ kind: 'missing-file', detail: `${file} is not a file` });
         }
         const dest = path.join(dir, as ?? path.basename(file));
-        // A file that already lies in the folder (the copy itself, imported again) must not go with the folder.
-        if (path.dirname(path.resolve(file)) !== path.resolve(dir)) {
+        const source = realPath(file);
+        const below = path.relative(realPath(dir), source);
+        if (below === '..' || below.startsWith(`..${path.sep}`) || path.isAbsolute(below)) {
             fs.rmSync(dir, { recursive: true, force: true });
-            fs.mkdirSync(dir, { recursive: true });
         }
-        if (path.resolve(dest) !== path.resolve(file)) {
+        fs.mkdirSync(dir, { recursive: true });
+        if (!fs.existsSync(dest) || realPath(dest) !== source) {
             fs.copyFileSync(file, dest);
             // The modification time travels with the copy, so an index built from the original stays current.
             fs.utimesSync(dest, st.atime, st.mtime);
@@ -1041,12 +1145,9 @@ export class EmulatedDocumentService implements DocumentService {
             await this.locked(projectInventoryFile(solution), () => {
                 const project = this.readProject(solution);
                 const existing = project.docs.find((entry) => same(entry, parent, name));
-                if (existing) {
-                    existing.title = meta.title ?? existing.title;
-                    existing.category = meta.category ?? existing.category;
-                } else {
-                    project.docs.push({ parent: key, name, ...(meta.title ? { title: meta.title } : {}), ...(meta.category ? { category: meta.category } : {}) });
-                }
+                const raw = (existing !== undefined ? this.projectPlaces.get(existing) : undefined)?.raw ?? this.projectPlaceFor(project.main, key, name).raw;
+                if (meta.title) { raw.title = meta.title; }
+                if (meta.category) { raw.category = meta.category; }
                 this.saveProject(solution, project);
             });
             return (await this.getDocuments(parent, solution)).find((doc) => doc.scope === 'project' && doc.name === name)!;
@@ -1107,7 +1208,14 @@ export class EmulatedDocumentService implements DocumentService {
             const wanted = project === undefined ? this.fileNameFor(parent, name, copy.path) : undefined;
             if (wanted !== undefined && wanted !== path.basename(copy.path)) {
                 const renamed = path.join(path.dirname(copy.path), wanted);
-                fs.renameSync(copy.path, renamed);
+                try {
+                    fs.renameSync(copy.path, renamed);
+                } catch (caught) {
+                    // Another window downloaded the same document and moved its file first: the copy is there.
+                    if ((caught as NodeJS.ErrnoException).code !== 'ENOENT' || !fs.existsSync(renamed)) {
+                        throw caught;
+                    }
+                }
                 copy = { ...copy, path: renamed, filename: copy.filename ?? path.basename(copy.path) };
             }
         } catch (caught) {
@@ -1154,18 +1262,22 @@ export class EmulatedDocumentService implements DocumentService {
         if (solution !== undefined && this.readProject(solution).docs.some((e) => same(e, parent, name))) {
             await this.locked(projectInventoryFile(solution), () => {
                 const project = this.readProject(solution);
-                project.docs = project.docs.filter((e) => !same(e, parent, name));
+                for (const entry of project.docs.filter((e) => same(e, parent, name))) {
+                    this.withdrawProject(entry);
+                }
                 this.saveProject(solution, project);
             });
             removed = true;
         }
-        const inProject = removed;
+        // With the csolution, the removal is the project's: its entry and this machine's copy and state of it. An entry the
+        // user has under the same name stays, also when the project lists the name no more (a Remove repeated on a stale row).
+        const forProject = solution !== undefined;
         // What to delete once the inventory is written: a folder that held only this copy, else the copy alone.
         const copies = new Map<string, boolean>();
         const dropped = await this.changeUser((user) => {
             const project = solution ? projectInventoryFile(solution) : undefined;
             const before = user.docs.length + user.orphans.length + user.projectState.length;
-            if (!inProject) {
+            if (!forProject) {
                 for (const entry of user.docs.filter((e) => same(e, parent, name))) {
                     if (entry.path !== undefined && this.managed(entry.path)) {
                         const folder = this.ownFolder(user, entry.name, entry.path);

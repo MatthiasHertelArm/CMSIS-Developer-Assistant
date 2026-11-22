@@ -30,6 +30,7 @@ import { BuildInfoHandler, parseAddress } from '../buildInfoHandler';
 import { parseCbuildRunOutputs, parseCbuildYml, resolveBuildContext } from '../core/buildInfo/artifacts';
 import { walkGlob } from '../core/buildInfo/glob';
 import { BuildInfoHost, BuildInfoLog, defaultBuildInfoSettings } from '../core/buildInfo/host';
+import { resultLogPath } from '../core/buildResult';
 import { ToolError, textOf } from '../core/toolResult';
 import { BUILDINFO_FIXTURES } from './buildInfoElf.test';
 import { SAMPLE_CBUILD_RUN } from './cbuildRun.test';
@@ -382,6 +383,33 @@ suite('BuildInfoHandler (end to end)', () => {
         const noLogs = new BuildInfoHandler({ ...world.host, settings: () => ({ ...defaultBuildInfoSettings, logGlobs: ['**/nothing/*.log'] }) }, { timeoutMs: 5000 });
         const none = textOf(await noLogs.handleGetBuildDiagnostics({ target: 'NUCLEO' }));
         assert.match(none, /^No build log found \(searched \*\*\/nothing\/\*\.log\)\. The CMSIS Solution extension runs cbuild in a terminal and keeps no log file\. cmsis_action build shows the error lines of a failed build itself: it re-runs cbuild with --log into out\/cmsis-developer-assistant\/build-diagnostic\.log, which this tool then reads\. Pass file: <path> for a log the user saved elsewhere\. Do not run cbuild yourself\.$/m);
+    });
+
+    test('get_build_diagnostics: the captured log of the target asked for, not the newer one of another target', async () => {
+        const nucleoLog = path.join(world.workspace, ...resultLogPath('NUCLEO-F756ZG@Debug').split('/'));
+        const fvpLog = path.join(world.workspace, ...resultLogPath('FVP').split('/'));
+        fs.mkdirSync(path.dirname(nucleoLog), { recursive: true });
+        try {
+            fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'build-ok.log'), nucleoLog);
+            fs.copyFileSync(path.join(BUILDINFO_FIXTURES, 'build-failed.log'), fvpLog);
+            // Both newer than out/build.log, and the other target's the newest of all.
+            const later = (seconds: number): Date => new Date(Date.now() + seconds * 1000);
+            fs.utimesSync(nucleoLog, later(60), later(60));
+            fs.utimesSync(fvpLog, later(120), later(120));
+            const nucleo = textOf(await handler.handleGetBuildDiagnostics({ target: 'NUCLEO' }));
+            assert.match(nucleo, /^Build: target NUCLEO-F756ZG, /m);
+            assert.match(nucleo, /^Build log: out\/cmsis-developer-assistant\/build-NUCLEO-F756ZG@Debug\.log /m);
+            assert.match(nucleo, /^Status: ok — Build summary: 1 succeeded, 0 failed/m);
+            assert.doesNotMatch(nucleo, /build-FVP\.log/, 'not even among the other logs');
+            const fvp = textOf(await handler.handleGetBuildDiagnostics({ target: 'FVP' }));
+            assert.match(fvp, /^Build log: out\/cmsis-developer-assistant\/build-FVP\.log /m);
+            assert.match(fvp, /^Status: FAILED — /m);
+            assert.doesNotMatch(fvp, /build-NUCLEO-F756ZG@Debug\.log/);
+            assert.match(textOf(await handler.handleListBuildArtifacts({ target: 'NUCLEO' })),
+                /^Newest build log: out\/cmsis-developer-assistant\/build-NUCLEO-F756ZG@Debug\.log · .* — ok, /m);
+        } finally {
+            fs.rmSync(path.dirname(nucleoLog), { recursive: true, force: true });
+        }
     });
 
     test('no build output yet, timeout fence, failure text', async () => {

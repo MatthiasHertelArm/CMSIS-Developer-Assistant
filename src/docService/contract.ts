@@ -155,12 +155,20 @@ export interface DocumentService {
     downloadDocument(parent: DocParent, name: string, options?: DownloadOptions, solution?: string): Promise<DocumentInfo>;
     /**
      * Give a document a copy from a file the user downloaded by hand; clears
-     * its error and request. `facts` are what is known of that copy (an Arm
-     * document's version and label, the source's title).
+     * its error and request. The file is copied, never moved or deleted,
+     * wherever it lies, the service's own copy of the document included.
+     * `facts` are what is known of that copy (an Arm document's version and
+     * label, the source's title).
      */
     importDocument(parent: DocParent, name: string, localPath: string, solution?: string,
         facts?: { version?: string; versionLabel?: string; sourceTitle?: string; resolver?: string; filename?: string }): Promise<DocumentInfo>;
-    /** Remove a document the user added, with the copy the service holds; documents of packs cannot be removed. */
+    /**
+     * Remove a document the user added, with the copy the service holds;
+     * documents of packs cannot be removed. With `solution` the removal is
+     * the project's: its entry, and this machine's copy and state of it. An
+     * entry the user has under the same name stays with its copy, also when
+     * the project does not list the name (the answer is then false).
+     */
     removeDocument(parent: DocParent, name: string, solution?: string): Promise<boolean>;
     /**
      * Record that the agent needs this document; the view shows it until a

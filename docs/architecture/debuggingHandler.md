@@ -196,7 +196,10 @@ executor; a CMSIS Debugger launch whose GDB server has a fixed local port
 reserves it atomically before checking for another window or listener
 (`reserveGdbPortForStart()`, see [GDB ports](windowRouting.md#gdb-ports)). A
 confirmed failed start releases the reservation; a session that is still
-starting keeps it beyond the tool's wait. Without a name it lets the user choose through
+starting keeps it beyond the tool's wait. No session listed when the wait
+ends means the start was refused or its session came and went: VS Code
+answers a start only after the adapter's launch response, so a slow GDB
+server lies before that answer. Without a name it lets the user choose through
 `promptForConfiguration()`, and the entry `Default Configuration` gets a
 configuration synthesized from the source file (see
 [debugConfigurationManager.md](debugConfigurationManager.md)). The picker
@@ -253,7 +256,11 @@ or a stop (#127). What the window does instead (`src/handler/pendingStarts.ts`):
   asking VS Code to cancel what it still prepares of a launch taken over, so
   that the old one does not come up beside the new one. The reservation still
   covers the earlier start: when the new start is over, the port goes back to
-  it. A start that something of the window may still take over, or one
+  it, as the reservation it was (its batch, its age, its handle), so its
+  other ports still end with it. An earlier start that reported its end
+  meanwhile gets nothing back: its `release()` after the take-over is kept
+  as evidence, and the port is free when the newer start is over. A start
+  that something of the window may still take over, or one
   younger than `TAKE_OVER_AFTER_MS` (10 s, a CMSIS job's wait for its task),
   is not taken over: the new start is refused, naming what it waits for.
 - `stop_debugging` without a session asks VS Code to cancel what it still
@@ -661,11 +668,16 @@ port there, or another program, before the command goes out. GDB would
 otherwise connect to that server and halt its target, while the session
 here looked fine ([windowRouting.md](windowRouting.md#gdb-ports)). Partial
 acquisitions roll back on refusal. Pending starts retain their reservations;
-confirmed command/task failures release them only when no session or
-launch-related task remains — a failed pre-launch Load only when
+confirmed command/task failures release them only when no session and no
+Load or Run task of the window is alive — a failed pre-launch Load only when
 `debug.onTaskErrors` makes VS Code end the launch, a job that settles as not
 started never — and the coordinator releases adopted batches when their
-session/task ends. A start that never got its session is named by the status
+session/task ends. A session or task that is alive may be the start's own
+or have nothing to do with it, which the window cannot tell; where the
+start's end is final (its job ended), `releaseFailedStart()` therefore looks
+again when that task has ended, or on a back-off for a session, for as long
+as the reservation is still pending. A command that is rejected late is not
+followed that way: its own task may still run and succeed. A start that never got its session is named by the status
 tools and taken over by the window's next start
 ([above](#a-start-that-never-got-its-session)).
 
@@ -740,7 +752,9 @@ the argument, else the one of the CMSIS Solution extension's active target
 when that file exists (`HandlerHost.activeCbuildRunFile`, the extension's
 `getCbuildRunFile`, asked only while the extension is active), else
 `cmsis.cbuildRunFile` from `launch.json`, else the only match under `out/` —
-refuses while a session or a CMSIS task holds the probe,
+refuses while a session or a CMSIS task holds the probe, marks the probe as
+its own before the first lookup (`beginFlash()`: a second `flash` is refused
+whenever it comes, also while the file and pyOCD are still looked up),
 and runs `pyocd load --no-wait --cbuild-run` through `src/core/flashController.ts`
 with the pyOCD the CMSIS tasks use: the CMSIS Debugger extension's bundled
 one, else the one the solution's `.cmsis/tools-environment.yml` names, else
@@ -760,6 +774,15 @@ does not hold the image as built. A refusal is `PROBE_BUSY`, a file that
 cannot be chosen `INVALID_ARGUMENT`, no runnable pyOCD `TOOL_DISABLED`, a
 failing run `TASK_FAILED`, and a run killed at its budget is answered with
 status `timeout`.
+
+The lookups come out of the call's wait, and the `--version` check of a
+pyOCD that starts for the first time can take a minute. Programming starts
+only with a budget left (`MIN_PROGRAM_MS` beyond the margin kept for the
+answer): otherwise the answer is "Flash not started — nothing was
+programmed", status `timeout`, and pyOCD never touches the target after the
+wait has run out. A pyOCD start that is under way when the wait ends is let
+finish under the probe mark, so that the next call finds it ready; no
+further candidate is tried then.
 
 ### The catalog and the solution: `cmsis_query`
 
@@ -1008,7 +1031,9 @@ tasks (#140). A CMSIS Solution with `getBuildResult` in its API version 3
 hands out cbuild's own exit code and everything the task wrote to its
 terminal for a task execution, whoever started the task. The runner asks for
 it when a build, rebuild or clean task starts (`noteResult`), notes the
-solution and the target set of that moment, and makes the diagnosis from it
+solution and the target set of that moment (`placeOf` asks for both in the
+same tick, so a target switch cannot come between the two answers), and
+makes the diagnosis from it
 when the job settles (`fromResult`): exit 0 is the success (`succeeded`),
 another code the failure, and no exit code at all — a build skipped as a
 duplicate of a queued one, or stopped — is `unverified`, never a success.
@@ -1018,7 +1043,15 @@ journal keeps. The output of a build or rebuild, its control sequences
 removed (`cleanBuildOutput` in `src/core/buildResult.ts`), is written to
 `out/cmsis-developer-assistant/build-<target set>.log` under the solution's
 folder, where `get_build_diagnostics` finds it; a clean leaves that file
-alone. No image is looked at and cbuild is never run a second time, which is
+alone. A line the build printed twice stays twice, since the count of a
+diagnostic is read from the log; only the states a bare CR redrew unchanged
+are dropped. A build never writes over the log of a build that started
+after it (a result or a place that came late): it then names no log, and
+its lines still come from its output. The solution's `out/` folder holds
+the logs of every target, so the build-artefact tools take the captured log
+of the target they resolved (`isResultLogOf`), never a newer one of another
+target. A result no job takes (a second build beside a job's own) is let
+go by a timer a minute after it settled. No image is looked at and cbuild is never run a second time, which is
 what interfered with CMSIS Solution's own setup task. The job itself still
 settles from the task's end event: the captured result settles with it. A
 result that is refused, has another shape or does not settle within 10 s

@@ -36,8 +36,10 @@
  * the status tools. The window's next start on such a port takes it over
  * (`acquire` with `takeOver`): the owner record stays, so no other window can
  * have the port in between. The taken-over reservation still covers the
- * earlier start, which may yet begin: when the new start is over, it falls
- * back to that start instead of freeing the port.
+ * earlier start, which may yet begin: when the new start is over, the port
+ * goes back to that start, as the reservation it was (its batch, its age,
+ * its handle), instead of being freed. An earlier start that has reported
+ * its end meanwhile gets nothing back: the port is then free.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -55,12 +57,19 @@ export interface GdbPortReservation {
     readonly port: number;
     /** True while it is held and no session or task of this window has taken its batch over. */
     readonly pending: boolean;
+    /**
+     * True while a newer start of this window holds the port (a take-over)
+     * and would hand it back to this one: `release` then frees nothing, it
+     * only keeps the port from coming back.
+     */
+    readonly superseded: boolean;
     /** A verified session/run owns this batch, even when a periodic port sample missed its start. */
     adopt(): void;
     /**
      * Evidence that this start is over: removes this reservation's unique
      * owner record, or, after a take-over, hands the port back to the earlier
-     * start it still covers. Idempotent; does nothing once taken over.
+     * start it still covers. Idempotent. Once taken over, the port stays with
+     * the newer start, which then does not hand it back to this one.
      */
     release(): void;
 }
@@ -83,12 +92,6 @@ export interface PendingGdbStart {
     ageMs: number;
 }
 
-/** A start of this window that a reservation still covers after a newer start took it over. */
-interface EarlierStart {
-    start: PortStart;
-    since: number;
-}
-
 interface ReservationOwner {
     pid: number;
     name: string;
@@ -105,8 +108,10 @@ interface HeldReservation extends GdbPortReservation {
     adopted: boolean;
     start: PortStart;
     since: number;
-    /** The earlier start of this window it took over, which may still begin. */
-    earlier?: EarlierStart;
+    /** The reservation of an earlier start of this window that it took over, which may still begin; it is not among the held ones meanwhile. */
+    earlier?: HeldReservation;
+    /** Its start reported its end (`release`): a reservation taken over is not handed the port back then. */
+    over: boolean;
 }
 
 /** What a reservation is for, as its owner record and the refusals name it: the launch configuration, or the CMSIS Run task. */
@@ -353,16 +358,17 @@ export class GdbPortReservations {
      * A new start of this window takes over its own pending reservation of
      * `previous.port`. The owner record stays on disk, so no other window can
      * have the port in between, and the earlier start stays covered, since
-     * it may still begin. The earlier start's handle no longer acts on it, and
+     * it may still begin: its reservation is kept, with the ones it had taken
+     * over itself, and gets the port back when the new start is over. Until
+     * then the earlier start's handle only records that its start ended, and
      * the new generation keeps an older port sample from adopting or
-     * releasing it.
+     * releasing the new reservation.
      */
     private takeOver(previous: HeldReservation, start: PortStart, group: string): GdbPortReservation {
         this.held.delete(previous);
-        const earlier = previous.earlier ?? { start: previous.start, since: previous.since };
-        logger.info(`GDB port ${previous.port}: '${labelOf(start)}' takes over this window's reservation for '${labelOf(earlier.start)}', `
+        logger.info(`GDB port ${previous.port}: '${labelOf(start)}' takes over this window's reservation for '${labelOf(previous.start)}', `
             + 'which has started no session or task');
-        return this.remember(previous.port, previous.directory, previous.ownerFile, group, start, earlier);
+        return this.remember(previous.port, previous.directory, previous.ownerFile, group, start, previous);
     }
 
     /** Remove a reservation's owner record: its start is gone, or the window shuts down. */
@@ -377,14 +383,25 @@ export class GdbPortReservations {
         }
     }
 
-    private remember(
-        port: number, directory: string, ownerFile: string, group: string, start: PortStart, earlier?: EarlierStart, since: number = this.now(),
-    ): GdbPortReservation {
+    private remember(port: number, directory: string, ownerFile: string, group: string, start: PortStart, earlier?: HeldReservation): GdbPortReservation {
         const held = this.held;
         const reservation: HeldReservation = {
-            port, directory, ownerFile, group, generation: ++this.generation, adopted: false, start, since, earlier,
+            port, directory, ownerFile, group, generation: ++this.generation, adopted: false, start, since: this.now(), earlier, over: false,
             get pending(): boolean {
                 return held.has(reservation) && !reservation.adopted;
+            },
+            get superseded(): boolean {
+                if (reservation.over) {
+                    return false;
+                }
+                for (const other of held) {
+                    for (let covered = other.earlier; covered !== undefined; covered = covered.earlier) {
+                        if (covered === reservation) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
             },
             adopt: () => {
                 if (!this.held.has(reservation)) {
@@ -399,16 +416,35 @@ export class GdbPortReservations {
                 }
             },
             release: () => {
+                reservation.over = true;
                 if (!this.held.has(reservation)) {
+                    // Taken over, or let go already: the evidence is kept, so that the newer start does not hand the port back.
                     return;
                 }
-                if (reservation.earlier) {
-                    // This start is over, not the earlier one it took over: that one keeps the port, as a pending start of its own.
-                    this.held.delete(reservation);
-                    this.remember(port, directory, ownerFile, randomUUID(), reservation.earlier.start, undefined, reservation.earlier.since);
+                // A batch ends together: its reservations that newer starts took over are over as well.
+                for (const other of this.held) {
+                    for (let covered = other.earlier; covered !== undefined; covered = covered.earlier) {
+                        if (covered.group === group) {
+                            covered.over = true;
+                        }
+                    }
+                }
+                let earlier = reservation.earlier;
+                while (earlier?.over) {
+                    earlier = earlier.earlier;
+                }
+                if (earlier === undefined) {
+                    this.drop(reservation);
                     return;
                 }
-                this.drop(reservation);
+                // This start is over, not the earlier one it took over, which has said nothing: that one gets the port back
+                // as the reservation it was, so its batch still ends together and its handle acts on the port again.
+                const back = earlier;
+                this.held.delete(reservation);
+                const mate = [...this.held].find((other) => other.group === back.group && other.adopted);
+                back.adopted = mate !== undefined;
+                back.generation = mate ? mate.generation : ++this.generation;
+                this.held.add(back);
             },
         };
         this.held.add(reservation);

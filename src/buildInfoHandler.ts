@@ -29,6 +29,7 @@ import {
     isInsideAny, looksLikeBuildLog, outputSectionAt, parseMapFile, readBuildLog, readElf, regionsFor, renderArtifacts, renderDiagnostics,
     renderLayout, renderLookup, renderNoBuild, renderNoLog, renderUsage, resolveBuildContext, sectionAt, symbolAt, topSymbols, uncoveredRanges, usageRegions,
 } from './core/buildInfo';
+import { isResultLogOf } from './core/buildResult';
 import type { ToolText } from './core/toolResult';
 import { runTool } from './core/toolRun';
 
@@ -293,7 +294,12 @@ export class BuildInfoHandler {
         return parsed;
     }
 
-    /** Candidate build logs, newest first; logs under the context's out/ folder come before workspace-wide ones. */
+    /**
+     * Candidate build logs, newest first; logs under the context's out/ folder
+     * come before workspace-wide ones. The out/ folder is the solution's, so
+     * it holds the captured logs of every target: those of another target
+     * than the context's are no candidates.
+     */
     private async findLogs(ctx: BuildContext | undefined, log: BuildInfoHost['log']): Promise<string[]> {
         const found = new Set<string>();
         for (const glob of this.host.settings().logGlobs) {
@@ -302,7 +308,8 @@ export class BuildInfoHandler {
             } catch (e) { log.warn(`findFiles(${glob}) failed: ${e}`); }
         }
         const outDir = ctx ? path.dirname(ctx.run.file) : undefined;
-        const entries = [...found].map(f => {
+        const targetType = ctx?.run.targetType;
+        const entries = [...found].filter(f => !targetType || isResultLogOf(f, targetType) !== false).map(f => {
             try {
                 const st = fs.statSync(f);
                 return { file: f, mtimeMs: st.mtimeMs, inOut: outDir ? f.startsWith(outDir + path.sep) : false };

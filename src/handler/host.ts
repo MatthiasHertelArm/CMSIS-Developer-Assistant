@@ -72,6 +72,8 @@ export interface ToolEnvironment {
     isFile?(file: string): boolean;
     /** The names in a folder; none when it cannot be read. */
     listDir?(folder: string): readonly string[];
+    /** How long `pyocd --version` may take, usually and on a first start after an install; 5 s and 60 s when absent. */
+    pyocdStartMs?: { usual: number; first: number };
 }
 
 export interface HandlerHost {

@@ -303,7 +303,8 @@ it looks:
   status tools), and that window's next start on the port takes it over
   (`acquire` with `takeOver`), with no moment in which another window could
   have it; the taken-over reservation still covers the earlier start and goes
-  back to it when the new start is over (see
+  back to it when the new start is over, unless that start reported its end
+  meanwhile (see
   [debuggingHandler.md](debuggingHandler.md#a-start-that-never-got-its-session)).
   For another window, a reload of the owning window frees the port. The
   owner record says whether a launch or a CMSIS Run reserved, so that another
@@ -618,8 +619,9 @@ releases the window's serial ports, giving that step at most two seconds.
   the holder, the refusal texts, this window's own pending start among them
 - `src/test/gdbPortReservations.test.ts`: one owner per port across
   windows, adoption and release, batches, stale observations, dead owners,
-  unsafe directories; the pending starts a window lists and takes over, and
-  the way back to the earlier start (#127)
+  unsafe directories; the pending starts a window lists and takes over, the
+  way back to the earlier start with its batch, and none for a start that
+  reported its end (#127)
 - `src/test/windowStatus.test.ts`: the item's text and tooltip in every state,
   the Select Target Window entries, and a tool name for every op
 - `src/test/atomicFile.test.ts` and `src/test/loopback.test.ts`: the writers'

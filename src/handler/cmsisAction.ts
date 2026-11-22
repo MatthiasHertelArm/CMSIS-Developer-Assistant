@@ -654,14 +654,46 @@ interface Issue {
  */
 const LAUNCH_ENDS_ON_TASK_ERRORS: ReadonlySet<string> = new Set(['abort', 'showErrors']);
 
-/** A confirmed terminal start/run with no live owner: release only the ports this call reserved. */
-function releaseFailedStart(issue: Issue): void {
-    const stillStarting = issue.tracker.liveExecutions().some((execution) => execution.kind === 'run' || execution.kind === 'load' || execution.kind === 'loadRun');
-    if (!issue.context.executor.hasDebugSession() && !stillStarting) {
-        for (const reservation of issue.portReservations ?? []) {
-            reservation.release();
+/** A failed start whose reservation waits for a session or task that may own it looks again after this long, then twice as long each time up to the maximum. */
+const RELEASE_LOOK_FIRST_MS = 250;
+const RELEASE_LOOK_MAX_MS = 5_000;
+
+/**
+ * A confirmed terminal start/run with no live owner: release only the ports
+ * this call reserved. A debug session or a Load or Run task that is alive
+ * may be the start's own, which takes the reservation over as soon as its
+ * port shows, so nothing is released under it.
+ *
+ * It may as well have nothing to do with the start, and then nobody would
+ * free the port. With `lookMs`, given where the start's end is final (its
+ * job ended), the release is tried again when that task has ended, or after
+ * `lookMs` for a session, as long as a reservation is still pending: one a
+ * session or task took over is released at its end by the window's port
+ * watch. A reservation a newer start of this window took over is told that
+ * this start is over, so that the port does not come back to it.
+ */
+function releaseFailedStart(issue: Issue, lookMs?: number): void {
+    const { executor, host } = issue.context;
+    const reservations = issue.portReservations ?? [];
+    if (lookMs !== undefined) {
+        for (const reservation of reservations) {
+            if (reservation.superseded) {
+                reservation.release();
+            }
         }
     }
+    const owners = issue.tracker.liveExecutions().filter((execution) => execution.kind === 'run' || execution.kind === 'load' || execution.kind === 'loadRun');
+    if (!executor.hasDebugSession() && owners.length === 0) {
+        for (const reservation of reservations) {
+            reservation.release();
+        }
+        return;
+    }
+    if (lookMs === undefined || !reservations.some((reservation) => reservation.pending)) {
+        return;
+    }
+    const waited: Promise<unknown> = owners.length > 0 ? issue.tracker.waitForEnd(owners.map((owner) => owner.execution), lookMs) : host.sleep(lookMs);
+    void waited.then(() => releaseFailedStart(issue, Math.min(lookMs * 2, RELEASE_LOOK_MAX_MS)), () => undefined);
 }
 
 /** A task can end after the tool's wait or before a port observation; release once its launch/run is terminal. */
@@ -684,7 +716,7 @@ function followStartJob(issue: Issue, job: Job): { dispose(): void } {
         if ((ended.state === 'failed' || ended.state === 'cancelled' || runGone) && !mayDebugAnyway) {
             // The tracker announces the result before removing the live
             // execution. Inspect it after the task-end event has completed.
-            queueMicrotask(() => releaseFailedStart(issue));
+            queueMicrotask(() => releaseFailedStart(issue, RELEASE_LOOK_FIRST_MS));
         }
     });
     return subscription;

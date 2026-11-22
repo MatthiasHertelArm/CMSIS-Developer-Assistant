@@ -279,11 +279,39 @@ suite('CMSIS Solution API version 3 (2.9.1)', () => {
         test('no answer: without version 3, an inactive extension, an empty text, a rejection, or none within the fence', async () => {
             assert.strictEqual(await apiToolsEnvironment(source(v2())), undefined);
             assert.strictEqual(await apiToolsEnvironment(source(v3(), false)), undefined);
-            assert.strictEqual(await apiToolsEnvironment(source(v3({ getToolsEnvironment: async () => '  ' }))), undefined);
-            assert.strictEqual(await apiToolsEnvironment(source(v3({ getToolsEnvironment: async () => { throw new Error('Arm Tools failed'); } }))), undefined);
+            let asks = 0;
+            assert.strictEqual(await apiToolsEnvironment(source(v3({ getToolsEnvironment: async () => { asks++; return '  '; } }))), undefined);
+            assert.strictEqual(await apiToolsEnvironment(source(v3({ getToolsEnvironment: async () => { asks++; throw new Error('Arm Tools failed'); } }))), undefined);
             const started = Date.now();
-            assert.strictEqual(await apiToolsEnvironment(source(v3({ getToolsEnvironment: () => never<string>() })), 100), undefined);
-            assert.ok(Date.now() - started < 1_000, 'the fence holds');
+            assert.strictEqual(await apiToolsEnvironment(source(v3({ getToolsEnvironment: () => { asks++; return never<string>(); } })), 100), undefined);
+            const waited = Date.now() - started;
+            assert.ok(waited >= 90 && waited < 1_000, `the fence holds (${waited} ms)`);
+            assert.strictEqual(asks, 3, 'each getter was asked: no earlier answer stood in for it');
+        });
+
+        test('an ask that ends before it waits does not stay as the answer: the next call asks again', async () => {
+            const early: Array<[string, () => SolutionCommands]> = [
+                ['an inactive extension', () => source(v3(), false)],
+                ['no version 3', () => source(v2())],
+                ['no API at all', () => source(undefined)],
+                ['an extension that cannot be asked', () => ({ ...source(v3()), extensionActive: () => { throw new Error('host gone'); } })],
+                ['an API that throws', () => ({ ...source(v3()), api: () => { throw new Error('no exports'); } })],
+            ];
+            for (const [label, make] of early) {
+                let asks = 0;
+                const api = v3({ getToolsEnvironment: async () => { asks++; return ENVIRONMENT_YAML; } });
+                assert.strictEqual(await apiToolsEnvironment(make()), undefined, label);
+                assert.strictEqual(await apiToolsEnvironment(source(api)), ENVIRONMENT_YAML, `${label}, then CMSIS Solution answers`);
+                assert.strictEqual(asks, 1, label);
+                resetApiToolsEnvironment();
+            }
+            let asks = 0;
+            const api = v3({ getToolsEnvironment: async () => { asks++; return ENVIRONMENT_YAML; } });
+            assert.strictEqual(cachedApiToolsEnvironment(source(api, false)), undefined, 'a synchronous read while the extension is inactive');
+            // A call in the same tick joins the ask the read started; the next one asks.
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            assert.strictEqual(await apiToolsEnvironment(source(api)), ENVIRONMENT_YAML);
+            assert.strictEqual(asks, 1);
         });
     });
 

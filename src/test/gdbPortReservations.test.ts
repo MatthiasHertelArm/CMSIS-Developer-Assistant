@@ -244,9 +244,7 @@ suite('GDB port reservations', () => {
         const beforeTakeOver = a.observationVersion();
         const next = a.acquire(3333, { ...START, configuration: 'Next launch' }, 'first', 'next', true);
         busy(() => b.acquire(3333, START, 'second'));
-        assert.strictEqual(earlier.pending, false, 'the earlier handle no longer acts on the port');
-        earlier.release();
-        busy(() => b.acquire(3333, START, 'second'));
+        assert.strictEqual(earlier.pending, false, 'the earlier handle no longer holds the port');
         assert.deepStrictEqual(a.pending().map((start) => [start.group, start.label, start.ports, start.since]), [
             ['earlier', 'Arm-FVP@GDB (launch)', [3334], 1_000_000],
             ['next', 'Next launch', [3333], 1_020_000],
@@ -256,11 +254,14 @@ suite('GDB port reservations', () => {
         a.observe([CLAIM], beforeTakeOver);
         assert.strictEqual(next.pending, true);
 
-        // The new start is over (its command failed): the port goes back to the earlier start, which may still begin.
+        // The new start is over (its command failed): the port goes back to the earlier start, which may still begin,
+        // as the reservation it was: one batch with its other port, its age, its handle.
         next.release();
         busy(() => b.acquire(3333, START, 'second'));
-        const back = a.pending().find((start) => start.ports.includes(3333));
-        assert.deepStrictEqual([back?.label, back?.since], ['Arm-FVP@GDB (launch)', 1_000_000]);
+        assert.deepStrictEqual(a.pending().map((start) => [start.group, start.label, start.ports, start.since]), [
+            ['earlier', 'Arm-FVP@GDB (launch)', [3333, 3334], 1_000_000],
+        ]);
+        assert.strictEqual(earlier.pending, true, 'the earlier handle acts on the port again');
 
         // Taken over once more; this one's session comes and goes, and the earlier start keeps the port all the same.
         now += 20_000;
@@ -275,6 +276,74 @@ suite('GDB port reservations', () => {
         a.dispose();
         b.acquire(3333, START, 'second').release();
         b.acquire(3334, START, 'second').release();
+        assert.deepStrictEqual(fs.readdirSync(directory), []);
+    });
+
+    test('a start taken over that reports its end does not get the port back', () => {
+        const a = manager();
+        const b = manager();
+        const first = { ...START, configuration: 'Launch A' };
+        const second = { ...START, configuration: 'Launch B' };
+        // The newer start fails after the earlier one did: both said they are over.
+        const earlier = a.acquire(3333, first, 'first', 'earlier');
+        assert.strictEqual(earlier.superseded, false);
+        const next = a.acquire(3333, second, 'first', 'next', true);
+        assert.deepStrictEqual([earlier.superseded, earlier.pending, next.superseded], [true, false, false], 'the port would come back to the earlier start');
+        earlier.release();
+        assert.strictEqual(earlier.superseded, false, 'not any more');
+        busy(() => b.acquire(3333, START, 'second'));
+        assert.deepStrictEqual(a.pending().map((start) => start.label), ['Launch B'], 'the newer start still holds it');
+        next.release();
+        assert.deepStrictEqual(a.pending(), []);
+        b.acquire(3333, START, 'second').release();
+
+        // The newer start's session comes and goes instead.
+        const failed = a.acquire(3333, first, 'first', 'earlier');
+        const served = a.acquire(3333, second, 'first', 'next', true);
+        failed.release();
+        served.adopt();
+        a.observe([CLAIM]);
+        a.observe([]);
+        assert.deepStrictEqual(a.pending(), []);
+        b.acquire(3333, START, 'second').release();
+
+        // A chain: the middle start reported its end, the oldest said nothing and gets the port back.
+        const oldest = a.acquire(3333, first, 'first', 'oldest');
+        const middle = a.acquire(3333, second, 'first', 'middle', true);
+        const newest = a.acquire(3333, { ...START, configuration: 'Launch C' }, 'first', 'newest', true);
+        middle.release();
+        newest.release();
+        assert.deepStrictEqual(a.pending().map((start) => [start.group, start.label]), [['oldest', 'Launch A']]);
+        oldest.release();
+        b.acquire(3333, START, 'second').release();
+        assert.deepStrictEqual(fs.readdirSync(directory), []);
+    });
+
+    test('a batch whose port was taken over still ends together, before and after the port went back to it', () => {
+        const a = manager();
+        const b = manager();
+        const first = { ...START, configuration: 'Launch A' };
+        const second = { ...START, configuration: 'Launch B' };
+        // One port of the batch is taken over; the newer start fails; the batch's session then serves that port and ends.
+        a.acquire(3333, first, 'first', 'batch');
+        a.acquire(3334, first, 'first', 'batch');
+        a.acquire(3333, second, 'first', 'next', true).release();
+        assert.deepStrictEqual(a.pending().map((start) => [start.group, start.ports]), [['batch', [3333, 3334]]], 'one launch, listed once');
+        a.adoptPort(3333);
+        a.observe([CLAIM]);
+        a.observe([]);
+        b.acquire(3333, START, 'second').release();
+        b.acquire(3334, START, 'second').release();
+
+        // The batch fails while the newer start holds one of its ports: releasing the port it still holds ends the other too.
+        const kept = a.acquire(3334, first, 'first', 'batch');
+        a.acquire(3333, first, 'first', 'batch');
+        const next = a.acquire(3333, second, 'first', 'next', true);
+        kept.release();
+        b.acquire(3334, START, 'second').release();
+        busy(() => b.acquire(3333, START, 'second'));
+        next.release();
+        b.acquire(3333, START, 'second').release();
         assert.deepStrictEqual(fs.readdirSync(directory), []);
     });
 

@@ -32,6 +32,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DocParent, DocScope, parentKey } from './docService/contract';
+import { LISTED_SOLUTION_GLOB } from './core/bootstrapState';
+import { BUILD_TASK_TYPE } from './core/cmsisTasks';
 import { docState, DocRef, isReadable } from './core/packDocs';
 import { textOf, errorText, toToolError } from './core/toolResult';
 import type { PackDocsHandlers } from './packDocsDispatch';
@@ -155,6 +157,55 @@ function parentItems(parents: readonly DocParent[]): (vscode.QuickPickItem & { p
     });
 }
 
+/** What the view asks of the workspace to know whether a csolution is there: `vscode.workspace` in the extension. */
+export interface SolutionSearch {
+    findFiles(include: string, exclude: string, maxResults: number): PromiseLike<readonly unknown[]>;
+    /** Absent in a host without file watchers: the search then runs for the folders that come and go only. */
+    createFileSystemWatcher?(glob: string, ignoreCreate: boolean, ignoreChange: boolean, ignoreDelete: boolean): {
+        onDidCreate(listener: () => void): { dispose(): void };
+        onDidDelete(listener: () => void): { dispose(): void };
+        dispose(): void;
+    };
+    onDidChangeWorkspaceFolders?(listener: () => void): { dispose(): void };
+}
+
+/**
+ * Tell `set` whether the workspace holds a csolution, in either spelling
+ * CMSIS Solution lists (`*.csolution.yml`, `*.csolution.yaml`): now, and
+ * again whenever one is created or deleted or a workspace folder comes or
+ * goes, so that a solution made after activation shows the view. Only the
+ * newest search answers. What is returned ends the watching.
+ */
+export function followSolutions(workspace: SolutionSearch, set: (present: boolean) => void): { dispose(): void }[] {
+    let newest = 0;
+    const look = (): void => {
+        const mine = ++newest;
+        workspace.findFiles(LISTED_SOLUTION_GLOB, '**/node_modules/**', 1).then(
+            (found) => { if (mine === newest) { set(found.length > 0); } },
+            (failure: unknown) => logger.debug('Target Documents: the search for a csolution failed', failure));
+    };
+    const watching: { dispose(): void }[] = [];
+    const files = workspace.createFileSystemWatcher?.(LISTED_SOLUTION_GLOB, false, true, false);
+    if (files) {
+        watching.push(files, files.onDidCreate(look), files.onDidDelete(look));
+    }
+    const folders = workspace.onDidChangeWorkspaceFolders?.(look);
+    if (folders) {
+        watching.push(folders);
+    }
+    look();
+    return watching;
+}
+
+/**
+ * Whether the end of `task` can mean another active target. CMSIS Solution
+ * has no event for a target switch, but it runs a task of its build type
+ * (`cbuild setup`) after a solution load, a target switch and a refresh.
+ */
+export function mayChangeTarget(task: { definition?: { type?: unknown } } | undefined): boolean {
+    return task?.definition?.type === BUILD_TASK_TYPE;
+}
+
 /** Register the view and its commands. */
 export function registerTargetDocsView(context: vscode.ExtensionContext, handlers: PackDocsHandlers): void {
     const provider = new TargetDocsProvider(handlers);
@@ -235,9 +286,19 @@ export function registerTargetDocsView(context: vscode.ExtensionContext, handler
 
         vscode.commands.registerCommand(`${COMMAND}.add`, () => addDocument(handlers).then(refresh)),
     );
-    // The view shows only in a workspace with a csolution.
-    void vscode.workspace.findFiles('**/*.csolution.yml', '**/node_modules/**', 1).then((found) =>
-        vscode.commands.executeCommand('setContext', 'cmsisDeveloperAssistant.hasSolution', found.length > 0), () => undefined);
+    // The view shows only in a workspace with a csolution, also one that is made later.
+    context.subscriptions.push(...followSolutions(vscode.workspace, (present) => {
+        void vscode.commands.executeCommand('setContext', 'cmsisDeveloperAssistant.hasSolution', present);
+    }));
+    // The shown view follows the active target: the documents are read again when a task that may have changed it ends.
+    const tasks = vscode.tasks as Partial<typeof vscode.tasks> | undefined;
+    if (tasks?.onDidEndTask) {
+        context.subscriptions.push(tasks.onDidEndTask((ended) => {
+            if (view.visible && mayChangeTarget(ended.execution.task)) {
+                void subscribe().then(refresh);
+            }
+        }));
+    }
     // Read the target only while the view is shown: activation does no document work for a hidden view.
     if (view.visible) {
         void subscribe().then(refresh);

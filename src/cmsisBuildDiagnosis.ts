@@ -111,8 +111,10 @@
  * is written, control sequences removed, to
  * `<solutionDir>/out/cmsis-developer-assistant/build-<target set>.log`,
  * which `get_build_diagnostics` reads; the solution and the target set are
- * noted when the task starts, since the active ones can change while it
- * runs. A result that is refused, has another shape or has not settled
+ * asked for together when the task starts, since the active ones can change
+ * while it runs, and a build never writes over the log of one that started
+ * after it. A result no job takes is let go a minute after it settled. A
+ * result that is refused, has another shape or has not settled
  * `RESULT_FENCE_MS` after the task ended leaves the build to the stages
  * above.
  *
@@ -251,7 +253,10 @@ const MAX_SETUP_RESTARTS = 3;
 const MAX_CLEAN_SNAPSHOTS = 8;
 /** At most this many started builds keep the result asked for them, waiting for their end. */
 const MAX_CAPTURED_RESULTS = 16;
-/** A result whose task ended this long ago and that no job took is let go: holding it keeps the output alive in CMSIS Solution. */
+/**
+ * A result whose task ended this long ago and that no job took is let go, by a timer of its own (no later build has
+ * to start for it): holding it keeps the output alive in CMSIS Solution.
+ */
 const UNCLAIMED_RESULT_MS = 60_000;
 /** What a build without an exit code in its captured result is told (#140). */
 const NO_EXIT_CODE = 'CMSIS Solution recorded no exit code of cbuild for it: the build was skipped as a duplicate of one already queued, or stopped.';
@@ -314,8 +319,8 @@ interface ResultPlace {
 interface CapturedEntry {
     result: Promise<{ value: unknown } | { refused: string }>;
     place: Promise<ResultPlace | undefined>;
-    /** When the result settled, which is when its task ended; unset while the task runs. */
-    settledAt?: number;
+    /** Cancels the timer that lets go of a settled result no job took; unset while the task runs. */
+    cancelExpiry?: () => void;
 }
 
 /** A re-run in progress, as `dispose` and the build-start watch stop it. */
@@ -572,12 +577,17 @@ function checked(check: BuildCheck, text: string, note?: string): JobDiagnosis {
 /** A diagnosis that found nothing to say: for a job whose captured result could not be used and that has no other check. */
 const NOTHING_FOUND: JobDiagnosis = Object.freeze({ state: 'done', source: 'none', errors: [], warnings: [], errorCount: 0, warningCount: 0, text: '' });
 
+/** The log of the target set of `place`, in its solution's folder. */
+function resultLogFile(place: ResultPlace): string {
+    return path.join(place.solutionDir, ...resultLogPath(place.target).split('/'));
+}
+
 /**
  * Write a build's captured output, already cleaned, where `get_build_diagnostics` finds it (#140); the file's
  * path, or undefined when it could not be written.
  */
 function writeResultLog(place: ResultPlace, taskName: string, exitCode: number, text: string): string | undefined {
-    const file = path.join(place.solutionDir, ...resultLogPath(place.target).split('/'));
+    const file = resultLogFile(place);
     try {
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, `${resultLogHeader(taskName, exitCode)}${text}`);
@@ -627,6 +637,8 @@ export class BuildDiagnosisRunner {
     private readonly buildSnapshots = new Map<number, ImageStamps>();
     /** The result CMSIS Solution captures for each build task that started, by execution key (#140). */
     private readonly captured = new Map<number, CapturedEntry>();
+    /** The execution key of the build whose captured output each log file holds: an older build never replaces a newer one's. */
+    private readonly logOwners = new Map<string, number>();
     /** Settles when the re-run that holds the log lets go of it; the next one waits for it (#135). */
     private logTurn: Promise<void> = Promise.resolve();
     /** Re-runs that asked for the log so far: one whose number is not the last was superseded by a newer one. */
@@ -655,11 +667,8 @@ export class BuildDiagnosisRunner {
      */
     onFinished(job: Job): void {
         const decided = job.executions.find((execution) => execution.key === job.decidedBy);
-        const entry = decided ? this.captured.get(decided.key) : undefined;
-        if (decided) {
-            // Holding the promise keeps the output alive in CMSIS Solution: let go of it here, used or not.
-            this.captured.delete(decided.key);
-        }
+        // Holding the promise keeps the output alive in CMSIS Solution: let go of it here, used or not.
+        const entry = decided ? this.release(decided.key) : undefined;
         if (!isBuildAction(job.action) || !decided || decided.exitCode === undefined) {
             return;
         }
@@ -749,7 +758,7 @@ export class BuildDiagnosisRunner {
         const place = await entry.place;
         const text = cleanBuildOutput(result.output);
         // A clean keeps the log of the build before it; so does a build whose place is not known.
-        const logFile = cleans || !place ? undefined : writeResultLog(place, decided.name, exitCode, text);
+        const logFile = cleans || !place ? undefined : this.writeLog(place, decided, exitCode, text);
         const summary = parseBuildLog(text, logFile ?? 'build output');
         const { errors, warnings } = messagesFromLog(summary);
         if (exitCode === 0) {
@@ -788,33 +797,66 @@ export class BuildDiagnosisRunner {
         );
         const place = this.placeOf(this.tracker.definitionOf(execution.key) ?? {}).catch(() => undefined);
         const entry: CapturedEntry = { result, place };
+        // A task that decided no job (a second build beside a job's own) leaves its result unclaimed: it is let
+        // go a while after it settled, whether or not another build starts.
         void result.then(() => {
-            entry.settledAt = this.host.clock.now();
-        });
-        // A task that decided no job (a second build beside a job's own) leaves its result unclaimed.
-        const now = this.host.clock.now();
-        for (const [key, old] of this.captured) {
-            if (old.settledAt !== undefined && now - old.settledAt > UNCLAIMED_RESULT_MS) {
-                this.captured.delete(key);
+            if (this.captured.get(execution.key) !== entry) {
+                return;
             }
-        }
+            entry.cancelExpiry = this.host.clock.startTimer(UNCLAIMED_RESULT_MS, () => {
+                if (this.captured.get(execution.key) === entry) {
+                    this.captured.delete(execution.key);
+                }
+            });
+        });
         this.captured.set(execution.key, entry);
-        for (const old of this.captured.keys()) {
+        for (const old of [...this.captured.keys()]) {
             if (this.captured.size <= MAX_CAPTURED_RESULTS) {
                 break;
             }
-            this.captured.delete(old);
+            this.release(old);
         }
+    }
+
+    /** Take the result held for an execution out of the map, with the timer that would have let go of it. */
+    private release(key: number): CapturedEntry | undefined {
+        const entry = this.captured.get(key);
+        entry?.cancelExpiry?.();
+        this.captured.delete(key);
+        return entry;
+    }
+
+    /**
+     * Write a build's captured output to its target set's log, unless a build that started later already wrote
+     * there: a result or a place that came late must not put an older build's output over a newer one's.
+     * Execution keys rise with each start. The file's path, or undefined when nothing was written.
+     */
+    private writeLog(place: ResultPlace, decided: JobExecution, exitCode: number, text: string): string | undefined {
+        const file = resultLogFile(place);
+        const owner = this.logOwners.get(file);
+        if (owner !== undefined && owner > decided.key) {
+            logger.info(`Build result: the output of '${decided.name}' is not written to ${file}, which holds the output of a build started after it`);
+            return undefined;
+        }
+        const written = writeResultLog(place, decided.name, exitCode, text);
+        if (written) {
+            this.logOwners.set(file, decided.key);
+        }
+        return written;
     }
 
     /** The solution's folder and the target set a starting build runs for: its definition's, else the active ones. */
     private async placeOf(definition: TaskDefinitionLike): Promise<ResultPlace | undefined> {
         const named = this.buildFiles(definition);
-        const solution = named?.solution ?? await this.solutionOf(definition, this.host.workingDirectory());
+        // Both are asked now, in the tick of the task's start: a target asked only after the solution answered
+        // would be the one of a switch that came in between.
+        const [solution, target] = await Promise.all([
+            named?.solution ?? this.solutionOf(definition, this.host.workingDirectory()),
+            named?.target ?? this.host.activeTarget(),
+        ]);
         if (!solution) {
             return undefined;
         }
-        const target = named?.target ?? await this.host.activeTarget();
         return { solution, solutionDir: path.dirname(solution), ...(target ? { target } : {}) };
     }
 
@@ -1017,7 +1059,10 @@ export class BuildDiagnosisRunner {
             rerun.stop('disposed');
         }
         this.cleanSnapshots.clear();
-        this.captured.clear();
+        for (const key of [...this.captured.keys()]) {
+            this.release(key);
+        }
+        this.logOwners.clear();
     }
 
     private async collect(decided: JobExecution, marks: RerunMarks): Promise<JobDiagnosis> {
