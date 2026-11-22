@@ -18,8 +18,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-    applyActiveSolution, applyTargetSelection, formatTargetChoices, listTargetTypes, parseTargetRef, resolveTargetSelection,
-    solutionDisplayName, targetMatches,
+    applyActiveSolution, formatTargetChoices, listTargetTypes, parseTargetRef, resolveTargetSelection,
+    targetMatches,
 } from '../core/cmsisTarget';
 
 const TWO_TARGETS = `
@@ -334,17 +334,6 @@ solution:
         assert.strictEqual(formatTargetChoices(types), 'HE, HP@debug, HP@release');
     });
 
-    test('solutionDisplayName mirrors the extension: relative, both extensions off, forward slashes', () => {
-        assert.strictEqual(solutionDisplayName('/ws', '/ws/Blinky.csolution.yml'), 'Blinky');
-        assert.strictEqual(solutionDisplayName('/ws', '/ws/RockPaperScissors/AppKit-E8_USB/SDS.csolution.yml'),
-            'RockPaperScissors/AppKit-E8_USB/SDS');
-        assert.strictEqual(solutionDisplayName('/ws', '/ws/v1.2/my.demo.csolution.yaml'), 'v1.2/my.demo');
-    });
-
-    test('solutionDisplayName of a solution in the second folder of a multi-root workspace goes up from the first', () => {
-        assert.strictEqual(solutionDisplayName('/ws/app', '/ws/fw/demo.csolution.yml'), '../fw/demo');
-    });
-
     test('applyActiveSolution names the csolution relative to .vscode with forward slashes, as the extension does, and keeps the rest (#145)', () => {
         const root = path.join(path.sep, 'repo');
         const solution = path.join(root, 'Infineon', 'T2G-B-H', 'App.csolution.yml');
@@ -355,58 +344,5 @@ solution:
         assert.match(updated, /"activeTarget": "HP"/);
         assert.match(updated, /"activeSolution": "\.\.\/Infineon\/T2G-B-H\/App\.csolution\.yml"/);
         assert.doesNotMatch(updated, /Old\.csolution/);
-    });
-
-    test('applyTargetSelection writes the key where the extension looks it up: the display name split at every dot', () => {
-        for (const name of ['demo', 'RockPaperScissors/AppKit-E8_USB/SDS', '../fw/demo', 'v1.2/my.demo', '../../a.b/c']) {
-            const json: unknown = JSON.parse(applyTargetSelection('', name, 'HP', 1));
-            assert.strictEqual(extensionGet(json, `targetSet.${name}.activeTargetType`), 'HP', name);
-            // getSelectedSet: the type's entry in the map at targetSet.<name>.
-            assert.strictEqual((extensionGet(json, `targetSet.${name}`) as Record<string, unknown> | undefined)?.HP, 1, name);
-        }
-        assert.deepStrictEqual(JSON.parse(applyTargetSelection('', '../fw/demo', 'HP', 1)),
-            { targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HP', HP: 1 } } } } });
-    });
-
-    test('applyTargetSelection updates the selection CMSIS Solution wrote for a solution in the second folder', () => {
-        const written = JSON.stringify({
-            targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HE' } } }, other: { activeTargetType: 'MPS3' } },
-            activeSolution: '../../fw/demo.csolution.yml',
-            activeTarget: 'HE',
-        }, null, 4);
-        assert.deepStrictEqual(JSON.parse(applyTargetSelection(written, '../fw/demo', 'HP', 0)), {
-            targetSet: { '': { '': { '/fw/demo': { activeTargetType: 'HP', HP: 0 } } }, other: { activeTargetType: 'MPS3' } },
-            activeSolution: '../../fw/demo.csolution.yml',
-            activeTarget: 'HE',
-        });
-    });
-
-    test('applyTargetSelection writes a name without dots as before, byte for byte', () => {
-        assert.strictEqual(applyTargetSelection('', 'demo', 'HP', 1),
-            '{\n    "targetSet": {\n        "demo": {\n            "activeTargetType": "HP",\n            "HP": 1\n        }\n    }\n}\n');
-    });
-
-    test('applyTargetSelection creates, updates and preserves cmsis.json content', () => {
-        const created = applyTargetSelection('', 'demo', 'HP', 1);
-        assert.deepStrictEqual(JSON.parse(created), { targetSet: { demo: { activeTargetType: 'HP', HP: 1 } } });
-        assert.ok(created.endsWith('\n'));
-
-        const existing = [
-            '{',
-            '    // keep me',
-            '    "force-update-rte": true,',
-            '    "targetSet": {',
-            '        "other/sol": { "activeTargetType": "MPS3" },',
-            '        "demo": { "activeTargetType": "HE", "HP": 1 }',
-            '    }',
-            '}',
-        ].join('\n');
-        const typeOnly = applyTargetSelection(existing, 'demo', 'HP', undefined);
-        assert.ok(typeOnly.includes('// keep me'), 'comments survive');
-        assert.ok(/"other\/sol": \{ "activeTargetType": "MPS3" \}/.test(typeOnly), 'other solutions untouched');
-        assert.ok(/"demo": \{ "activeTargetType": "HP", "HP": 1 \}/.test(typeOnly), 'a type-only request leaves the set index alone');
-
-        const withSet = applyTargetSelection(existing, 'demo', 'HP', 0);
-        assert.ok(/"demo": \{ "activeTargetType": "HP", "HP": 0 \}/.test(withSet));
     });
 });

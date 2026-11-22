@@ -2800,8 +2800,20 @@ suite('DebuggingHandler', () => {
             teardown(() => {
                 fs.rmSync(scratch, { recursive: true, force: true });
             });
+            /**
+             * CMSIS Solution's API version 3 as open_solution uses it. Its activateSolution does what the test's stand-in of
+             * the command of the same name does, so that each test scripts the extension in one place.
+             */
+            const API_OVER_STAND_INS = {
+                getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined,
+                activateSolution: (file: string) => vscode.commands.executeCommand('cmsis-csolution.activateSolution', file),
+            };
             const installed: Partial<HandlerHost> = {
                 toolEnvironment: () => ({ extension: () => ({ path: '/ext/csolution', version: '1.72.0' }), pathEnv: '', platform: process.platform }),
+                solutionExtension: () => ({
+                    isActive: true, version: '1.73.0', activate: async () => undefined,
+                    exports: { getApi: (version: number) => { if (version !== 3) { throw new Error('no'); } return API_OVER_STAND_INS; } },
+                }),
             };
             const asFolder = (fsPath: string): vscode.WorkspaceFolder => ({ uri: vscode.Uri.file(fsPath), name: path.basename(fsPath), index: 0 });
             const open = (handler: DebuggingHandler, given?: string): Promise<ToolText> =>
@@ -3760,17 +3772,21 @@ suite('DebuggingHandler', () => {
                 try {
                     const solution = path.join(solutionDir, 'demo.csolution.yml');
                     fs.writeFileSync(solution, ['solution:', '  target-types:', '    - type: HE', '    - type: HP', ''].join('\n'));
-                    const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(solutionDir), name: 'ws', index: 0 }] });
                     let active = 'HE';
+                    const v3 = {
+                        getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined,
+                        getTargets: async () => ['HE', 'HP'],
+                        // 1 s of real time is 20 s on the handler's clock.
+                        setActiveTarget: (name: string) => new Promise<void>((done) => setTimeout(() => {
+                            active = name;
+                            done();
+                        }, 1_000)),
+                    };
+                    const handle = { isActive: true, version: '1.73.0', exports: { getApi: (version: number) => { if (version !== 3) { throw new Error('no'); } return v3; } }, activate: async () => undefined };
+                    const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(solutionDir), name: 'ws', index: 0 }], solutionExtension: () => handle });
                     registrations = standIns({
                         'cmsis-csolution.getSolutionFile': () => solution,
                         'cmsis-csolution.getActiveTargetSet': () => active,
-                        'cmsis-csolution.deactivateSolution': () => undefined,
-                        // 1 s of real time is 20 s on the handler's clock.
-                        'cmsis-csolution.activateSolution': () => new Promise((done) => setTimeout(() => {
-                            active = 'HP';
-                            done(undefined);
-                        }, 1_000)),
                         'cmsis-csolution.build': runs(w.tasks, BUILD_TASK, 'never', true),
                     });
                     const text = await replyAnswer(w.handler.handleCmsisCommand({ action: 'build', target: 'HP', timeoutMs: 30_000 }), 'running');
@@ -3781,11 +3797,12 @@ suite('DebuggingHandler', () => {
                 }
             });
 
-            test('target switching accepts flow YAML and aliased target definitions and preserves target-set indexes', async () => {
+            test('target switching accepts flow YAML and aliased target definitions, and asks CMSIS Solution for the target by its name', async () => {
                 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-yaml-target-'));
                 try {
                     const solution = path.join(dir, 'demo.csolution.yml');
                     const selectionFile = path.join(dir, '.vscode', 'cmsis.json');
+                    const selection = '{"targetSet":{"demo":{"activeTargetType":"HE"}},"keep":42}\n';
                     fs.mkdirSync(path.dirname(selectionFile));
                     const variants = [
                         'solution: {target-types: [{type: HE}, {target-set: [{set: debug}, {set: release}], type: HP}]}\n',
@@ -3795,27 +3812,27 @@ suite('DebuggingHandler', () => {
                     for (const yaml of variants) {
                         again();
                         fs.writeFileSync(solution, yaml);
-                        fs.writeFileSync(selectionFile, '{"targetSet":{"demo":{"activeTargetType":"HE"}},"keep":42}\n');
-                        const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }] });
+                        fs.writeFileSync(selectionFile, selection);
                         let active = 'HE';
                         const issued: string[] = [];
+                        const v3 = {
+                            getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined,
+                            getTargets: async () => ['HE', 'HP@debug', 'HP@release'],
+                            setActiveTarget: async (name: string) => { issued.push(`set ${name}`); active = name; },
+                        };
+                        const handle = { isActive: true, version: '1.73.0', exports: { getApi: (version: number) => { if (version !== 3) { throw new Error('no'); } return v3; } }, activate: async () => undefined };
+                        const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }], solutionExtension: () => handle });
                         registrations = standIns({
                             'cmsis-csolution.getSolutionFile': () => solution,
                             'cmsis-csolution.getActiveTargetSet': () => active,
                             'cmsis-csolution.deactivateSolution': () => { issued.push('deactivate'); },
-                            'cmsis-csolution.activateSolution': () => {
-                                issued.push('activate');
-                                const settings = JSON.parse(fs.readFileSync(selectionFile, 'utf8')) as {
-                                    targetSet: { demo: { activeTargetType: string; HP: number } }; keep: number;
-                                };
-                                assert.deepStrictEqual(settings, { targetSet: { demo: { activeTargetType: 'HP', HP: 1 } }, keep: 42 });
-                                active = 'HP@release';
-                            },
+                            'cmsis-csolution.activateSolution': () => { issued.push('activate'); },
                             'cmsis-csolution.cmsisDetachDebugger': () => { issued.push('detach'); },
                         });
                         const text = await textAnswer(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }));
                         assert.match(text, /^CMSIS 'detach' on HP@release, switched from HE issued/);
-                        assert.deepStrictEqual(issued, ['deactivate', 'activate', 'detach']);
+                        assert.deepStrictEqual(issued, ['set HP@release', 'detach']);
+                        assert.strictEqual(fs.readFileSync(selectionFile, 'utf8'), selection, 'cmsis.json is CMSIS Solution\'s to write');
                         w.tracker.dispose();
                     }
                 } finally {
@@ -3912,53 +3929,52 @@ suite('DebuggingHandler', () => {
                 }
             });
 
-            test('a target switch of a solution in the second folder writes the first folder\'s cmsis.json, where CMSIS Solution reads it', async () => {
-                const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-roots-'));
+            test('a CMSIS Solution without API version 3 switches no target: refused with the update hint, and cmsis.json is not written', async () => {
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-old-target-'));
                 try {
-                    const first = path.join(root, 'app');
-                    const second = path.join(root, 'fw');
-                    fs.mkdirSync(first);
-                    fs.mkdirSync(second);
-                    const solution = path.join(second, 'demo.csolution.yml');
+                    const solution = path.join(dir, 'demo.csolution.yml');
                     fs.writeFileSync(solution, ['solution:', '  target-types:', '    - type: HE', '    - type: HP', '      target-set:',
                         '        - set: debug', '        - set: release', ''].join('\n'));
-                    const w = jobWorld(20, {
-                        workspaceFolders: () => [
-                            { uri: vscode.Uri.file(first), name: 'app', index: 0 },
-                            { uri: vscode.Uri.file(second), name: 'fw', index: 1 },
-                        ],
-                    });
-                    // CMSIS Solution 1.72.0 reads only <first folder>/.vscode/cmsis.json, files the solution there
-                    // as '../fw/demo' and looks that key up split at every '.'.
-                    const selection = (): Record<string, unknown> | undefined => {
-                        let node: unknown;
-                        try {
-                            node = JSON.parse(fs.readFileSync(path.join(first, '.vscode', 'cmsis.json'), 'utf8'));
-                        } catch {
-                            return undefined;
-                        }
-                        for (const key of 'targetSet.../fw/demo'.split('.')) {
-                            node = node !== null && typeof node === 'object' ? (node as Record<string, unknown>)[key] : undefined;
-                        }
-                        return node !== null && typeof node === 'object' ? node as Record<string, unknown> : undefined;
-                    };
-                    let active = 'HE';
-                    registrations = standIns({
+                    const issued: string[] = [];
+                    const commands = {
                         'cmsis-csolution.getSolutionFile': () => solution,
-                        'cmsis-csolution.getActiveTargetSet': () => active,
-                        'cmsis-csolution.deactivateSolution': () => undefined,
-                        'cmsis-csolution.activateSolution': () => {
-                            const picked = selection();
-                            active = picked?.activeTargetType === 'HP' ? `HP@${picked.HP === 1 ? 'release' : 'debug'}` : 'HE';
-                        },
-                        'cmsis-csolution.cmsisDetachDebugger': () => undefined,
-                    });
-                    const text = await textAnswer(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }));
-                    assert.match(text, /^CMSIS 'detach' on HP@release, switched from HE issued/);
-                    assert.deepStrictEqual(selection(), { activeTargetType: 'HP', HP: 1 });
-                    assert.ok(!fs.existsSync(path.join(second, '.vscode', 'cmsis.json')), 'CMSIS Solution reads no cmsis.json in the second folder');
+                        'cmsis-csolution.getActiveTargetSet': () => 'HE',
+                        'cmsis-csolution.deactivateSolution': () => { issued.push('deactivate'); },
+                        'cmsis-csolution.activateSolution': () => { issued.push('activate'); },
+                        'cmsis-csolution.cmsisDetachDebugger': () => { issued.push('detach'); },
+                    };
+                    // 1.72.0: version 2 only.
+                    const v2 = { getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined };
+                    const old = { isActive: true, version: '1.72.0', exports: { getApi: (version: number) => { if (version !== 2) { throw new Error('no'); } return v2; } }, activate: async () => undefined };
+                    const w = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }], solutionExtension: () => old });
+                    registrations = standIns(commands);
+                    const refused = await refusalOf(w.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }), 'TOOL_DISABLED');
+                    assert.match(refused.message, /the active target is 'HE', and the CMSIS Solution extension offers no getTargets \(API version 3\) to select 'HP@release'\. No selection was changed\./);
+                    assert.match(refused.hint ?? '', /^Ask the user to update the CMSIS Solution extension: this needs its API version 3, .* Until then: Switch it by hand in the CMSIS Solution panel/);
+                    assert.deepStrictEqual(issued, [], 'neither a re-activation nor the requested action');
+                    assert.ok(!fs.existsSync(path.join(dir, '.vscode', 'cmsis.json')), 'cmsis.json is not written for a switch');
+
+                    // The active target needs no switch, so the same extension still does it.
+                    again();
+                    registrations = standIns(commands);
+                    assert.match(await textAnswer(w.handler.handleCmsisCommand({ action: 'detach', target: 'HE' })), /^CMSIS 'detach' on HE issued/);
+                    assert.deepStrictEqual(issued, ['detach']);
+                    w.tracker.dispose();
+
+                    // Version 3 that does not list the target the csolution declares: it may still be loading; nothing is written.
+                    again();
+                    const selected: string[] = [];
+                    const v3 = { ...v2, getTargets: async () => ['HE'], setActiveTarget: async (name: string) => { selected.push(name); } };
+                    const loading = { isActive: true, version: '1.73.0', exports: { getApi: (version: number) => { if (version !== 3) { throw new Error('no'); } return v3; } }, activate: async () => undefined };
+                    const later = jobWorld(20, { workspaceFolders: () => [{ uri: vscode.Uri.file(dir), name: 'ws', index: 0 }], solutionExtension: () => loading });
+                    registrations = standIns(commands);
+                    const unlisted = await refusalOf(later.handler.handleCmsisCommand({ action: 'detach', target: 'HP@release' }), 'INTERNAL');
+                    assert.match(unlisted.message, /does not list 'HP@release' among its targets \(getTargets\), although .*demo\.csolution\.yml declares it: it may still be loading the solution\. No selection was changed\./);
+                    assert.match(unlisted.hint ?? '', /^Repeat the call in a few seconds\. Switch it by hand/);
+                    assert.deepStrictEqual(selected, []);
+                    later.tracker.dispose();
                 } finally {
-                    fs.rmSync(root, { recursive: true, force: true });
+                    fs.rmSync(dir, { recursive: true, force: true });
                 }
             });
 

@@ -46,7 +46,6 @@ import type { ActiveTargetAnswer } from '../utils/solutionQueries';
 import { PackInstallHost, VSCODE_PACK_INSTALL_HOST } from './installPack';
 import type { SolutionFileAnswer } from '../core/solutionAnswers';
 import type { SolutionExtensionHandle } from '../core/solutionApi';
-import type { CatalogFetch } from '../core/webCatalog';
 
 /** An installed extension, as the pyOCD lookup of `flash` needs it. */
 export interface InstalledExtension {
@@ -142,8 +141,6 @@ export interface HandlerHost {
     packInstall(): PackInstallHost;
     /** The CMSIS Solution extension, for its public API (`cmsis_query`, `create_solution`); undefined when it is not installed. */
     solutionExtension(): SolutionExtensionHandle | undefined;
-    /** `fetch` for Arm's web catalog: which pack each of two web examples alike comes from (`cmsis_query`, `webCatalog.ts`). */
-    webCatalogFetch: CatalogFetch;
     /**
      * Who holds a local GDB port that a launch or a CMSIS Run is about to use:
      * another window's session or CMSIS Run task, as its registry entry says,
@@ -257,7 +254,6 @@ export const VSCODE_HOST: HandlerHost = {
             activate: () => found.activate(),
         };
     },
-    webCatalogFetch: (url, init) => fetch(url, init),
     gdbPortHolder: (port) => findGdbPortHolder(port, []),
     reserveGdbPort: (port, start, group, takeOver) => {
         defaultPortReservations ??= new GdbPortReservations();

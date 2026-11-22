@@ -27,7 +27,8 @@ import {
     peekSolutionApi,
     requireV3Method,
     SolutionApi,
-    solutionApiVersion,
+    solutionApiTooOld,
+    solutionTooOldLine,
     SolutionExtensionHandle,
     v3Method,
 } from '../core/solutionApi';
@@ -162,37 +163,53 @@ function ask(api: SolutionApi, query: SolutionQuery, deadline = soon(), redact?:
 
 suite('CMSIS Solution API version 3 (2.9.1)', () => {
     suite('the seam', () => {
-        test('version 3 is asked first and kept; its methods are found by name', async () => {
+        test('version 3 is asked, and kept; its methods are found by name', async () => {
             const api = v3();
             const handle = installed({ 3: api, 2: v2() });
             const got = await acquireSolutionApi(handle, 'cmsis_query', CLOCK);
             assert.strictEqual(got, api);
             assert.strictEqual(await acquireSolutionApi(handle, 'cmsis_query', CLOCK), api);
             assert.deepStrictEqual(handle.asked, [3]);
-            assert.strictEqual(solutionApiVersion(got), 3);
             assert.ok(v3Method(got, 'getToolchains'));
             assert.strictEqual(v3Method(got, 'convertSolution'), undefined, 'a method the scripted version 3 lacks is undefined');
         });
 
-        test('1.72.0 has only version 2: asked after 3, and every version 3 method is absent', async () => {
-            const api = v2();
-            const handle = installed({ 2: api });
-            const got = await acquireSolutionApi(handle, 'cmsis_query', CLOCK);
-            assert.strictEqual(got, api);
-            assert.deepStrictEqual(handle.asked, [3, 2]);
-            assert.strictEqual(solutionApiVersion(got), 2);
-            assert.strictEqual(v3Method(got, 'getPacks'), undefined);
-            const refused = await refusalOf(Promise.resolve().then(() => requireV3Method(got, 'getPacks', 'cmsis_query {what:\'packs\'}')), 'TOOL_DISABLED');
-            assert.strictEqual(refused.message, 'cmsis_query {what:\'packs\'} not attempted: the CMSIS Solution extension offers no getPacks (API version 2).');
+        test('1.72.0 has only version 2: it is refused with the update hint, and version 2 is never asked', async () => {
+            const handle = installed({ 2: v2() });
+            const refused = await refusalOf(acquireSolutionApi(handle, 'cmsis_query {what:\'boards\'}', CLOCK), 'TOOL_DISABLED');
+            assert.strictEqual(refused.message,
+                'cmsis_query {what:\'boards\'} not attempted: the CMSIS Solution extension 1.72.1-86 offers no API version 3 (No API version 3 found).');
+            assert.match(refused.hint ?? '', /API version 3, which comes with a release after 1\.72\.0/);
+            assert.deepStrictEqual(handle.asked, [3]);
+            assert.strictEqual(peekSolutionApi(handle), undefined, 'the getters get no API object either');
+        });
+
+        test('a version 3 method the API lacks refuses that call only', async () => {
+            const got = await acquireSolutionApi(installed({ 3: v3() }), 'cmsis_query', CLOCK);
+            assert.ok(v3Method(got, 'getToolchains'));
+            const refused = await refusalOf(Promise.resolve().then(() => requireV3Method(got, 'convertSolution', 'CMSIS \'convert\'')), 'TOOL_DISABLED');
+            assert.strictEqual(refused.message, 'CMSIS \'convert\' not attempted: the CMSIS Solution extension offers no convertSolution (API version 3).');
             assert.match(refused.hint ?? '', /API version 3, which comes with a release after 1\.72\.0/);
         });
 
-        test('a version 3 without the methods of version 2 is not taken: version 2 is', async () => {
+        test('a version 3 without the catalog methods is refused: version 2 is not taken in its place', async () => {
             const partial = { getToolchains: async () => [] };
-            const api = v2();
-            const handle = installed({ 3: partial, 2: api });
-            assert.strictEqual(await acquireSolutionApi(handle, 'cmsis_query', CLOCK), api);
-            assert.deepStrictEqual(handle.asked, [3, 2]);
+            const handle = installed({ 3: partial, 2: v2() });
+            const refused = await refusalOf(acquireSolutionApi(handle, 'cmsis_query', CLOCK), 'TOOL_DISABLED');
+            assert.match(refused.message, /^cmsis_query not attempted: API version 3 of the CMSIS Solution extension 1\.72\.1-86 lacks getBoards, getDevices, getDraftProjects, createNewSolution\.$/);
+            assert.deepStrictEqual(handle.asked, [3]);
+        });
+
+        test('get_session_status says that an active CMSIS Solution without version 3 is too old; an absent or inactive one says nothing', () => {
+            const old = { ...installed({ 2: v2() }), version: '1.72.0' };
+            assert.strictEqual(solutionApiTooOld(old), true);
+            assert.strictEqual(solutionTooOldLine(old),
+                'CMSIS Solution 1.72.0 is too old for cmsis_query and for cmsis_action with a target, open_solution, create_solution, install_pack and convert: '
+                + 'it offers no API version 3, and these calls are refused until the user updates it (a release after 1.72.0). '
+                + 'Build, load, run and debug on the active target still work.');
+            assert.strictEqual(solutionTooOldLine(installed({ 3: v3() })), undefined);
+            assert.strictEqual(solutionTooOldLine(installed({ 2: v2() }, { active: false })), undefined, 'not active yet: its API is not known');
+            assert.strictEqual(solutionTooOldLine(undefined), undefined);
         });
 
         test('peek neither activates nor throws, and shares the memo', async () => {

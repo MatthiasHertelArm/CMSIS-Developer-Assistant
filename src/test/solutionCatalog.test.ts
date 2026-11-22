@@ -19,7 +19,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CatalogQuery, PackInstalled, queryCatalog, WebOrigins } from '../core/catalogQuery';
+import { CatalogQuery, PackInstalled, queryCatalog } from '../core/catalogQuery';
 import { packInstalledIn } from '../core/packInstall';
 import {
     acquireSolutionApi,
@@ -38,7 +38,6 @@ import {
     SolutionExtensionHandle,
 } from '../core/solutionApi';
 import { ErrorCode, JsonObject, ToolError, ToolReply, ToolText, errorDetail, isToolReply } from '../core/toolResult';
-import { CatalogBoardId, packOfOriginUrl, WEB_CATALOG_URL, webExampleOrigins } from '../core/webCatalog';
 import type { IDebuggingExecutor } from '../debuggingExecutor';
 import { DebuggingHandler } from '../debuggingHandler';
 import { createSolution, CreateRequest, SolutionActivator } from '../handler/createSolution';
@@ -155,7 +154,7 @@ class StubApi implements SolutionApiV2 {
     }
 }
 
-/** The extension as `getExtension` describes it, active, with `getApi(2)` answering `api`. */
+/** The extension as `getExtension` describes it, active, with `getApi(3)` answering `api`. */
 function installed(api: unknown, options: { active?: boolean; getApi?: (version: number) => unknown } = {}): SolutionExtensionHandle & { activations: number; asked: number } {
     const handle = {
         isActive: options.active ?? true,
@@ -168,7 +167,7 @@ function installed(api: unknown, options: { active?: boolean; getApi?: (version:
                 if (options.getApi) {
                     return options.getApi(version);
                 }
-                if (version !== 2) {
+                if (version !== 3) {
                     throw new Error(`No API version ${version} found`);
                 }
                 return api;
@@ -183,8 +182,8 @@ function installed(api: unknown, options: { active?: boolean; getApi?: (version:
     return handle;
 }
 
-async function query(api: SolutionApiV2, args: CatalogQuery, deadline = soon(), web?: WebOrigins, installed?: PackInstalled): Promise<ToolReply> {
-    return queryCatalog(api, args, CLOCK, deadline, web, installed);
+async function query(api: SolutionApiV2, args: CatalogQuery, deadline = soon(), installed?: PackInstalled): Promise<ToolReply> {
+    return queryCatalog(api, args, CLOCK, deadline, installed);
 }
 
 async function refusalOf(pending: Promise<unknown>, code: ErrorCode): Promise<ToolError> {
@@ -321,7 +320,7 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
                 asked.push(wanted);
                 return false;
             };
-            const missing = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, notInstalled);
+            const missing = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), notInstalled);
             assert.ok(missing.text.endsWith('\nThe board\'s pack Keil::STM32H735G-DK_BSP@1.1.0 is not installed; its own examples appear after '
                 + 'cmsis_action {action:\'install_pack\', pack:\'Keil::STM32H735G-DK_BSP@1.1.0\'}.\n'
                 + 'Create a project from one: cmsis_action {action:\'create_solution\', board:\'STMicroelectronics::STM32H735G-DK\', draft:\'<id>\', '
@@ -330,28 +329,28 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             assert.deepStrictEqual(asked, [BSP]);
 
             for (const answer of [true, undefined]) {
-                const quiet = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, () => answer);
+                const quiet = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), () => answer);
                 assert.ok(!quiet.text.includes('is not installed'), quiet.text);
                 assert.strictEqual((quiet.data as JsonObject).boardPackNotInstalled, undefined);
             }
-            const failing = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, () => Promise.reject(new Error('no root')));
+            const failing = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), () => Promise.reject(new Error('no root')));
             assert.ok(!failing.text.includes('is not installed'), failing.text);
 
             // An example from an installed copy of the pack, of any version, shows that it is installed: nothing is asked.
             api.drafts.set(StubApi.draftKey(H735.id), [WEB_BLINKY, draft('keil::stm32h735g-dk_bsp@1.0.0:cubemx', 'CubeMX', 'Template', 'Local',
                 pack('Keil', 'STM32H735G-DK_BSP', '1.0.0'))]);
             asked.length = 0;
-            const listed = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), undefined, notInstalled);
+            const listed = await query(api, { what: 'examples', board: 'STMicroelectronics::STM32H735G-DK' }, soon(), notInstalled);
             assert.ok(!listed.text.includes('is not installed'), listed.text);
             assert.deepStrictEqual(asked, []);
 
             // A board without a pack, and a device without a board, are not asked about.
             api.drafts.set(StubApi.draftKey(NUCLEO.id), []);
-            const packless = await query(api, { what: 'examples', board: 'STMicroelectronics::NUCLEO-H753ZI' }, soon(), undefined, notInstalled);
+            const packless = await query(api, { what: 'examples', board: 'STMicroelectronics::NUCLEO-H753ZI' }, soon(), notInstalled);
             assert.ok(!packless.text.includes('is not installed'), packless.text);
             const mcxn = api.devices[0];
             api.drafts.set(StubApi.draftKey(undefined, mcxn.id), []);
-            const byDevice = await query(api, { what: 'examples', device: 'MCXN947VDF' }, soon(), undefined, notInstalled);
+            const byDevice = await query(api, { what: 'examples', device: 'MCXN947VDF' }, soon(), notInstalled);
             assert.ok(!byDevice.text.includes('is not installed'), byDevice.text);
             assert.deepStrictEqual(asked, []);
         });
@@ -370,24 +369,20 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             }
         });
 
-        test('web examples alike are told apart by the pack each comes from, which only Arm\'s web catalog knows', async () => {
+        test('web examples alike are told apart by the pack CMSIS Solution names for each; without one they get a note', async () => {
             // The tester's XMC4700 Relax Kit: each demo twice, one per Oryx-Embedded Middleware release, same name and description.
             const relax: ApiBoard = { ...board('Infineon', 'XMC4700 Relax Kit', ['Infineon::XMC4700-F144x2048']), revision: 'V1' };
-            const demo = (id: string, name: string, what: string): ApiDraft => draft(id, name, 'Example', 'Web', undefined, 'uVision', `${what} demo (CycloneTCP and CMSIS-RTOS)`);
+            const newer = pack('Oryx-Embedded', 'Middleware', '2.6.6');
+            const older = pack('Oryx-Embedded', 'Middleware', '2.4.4');
+            const demo = (id: string, name: string, what: string, from?: ApiPackId): ApiDraft =>
+                draft(id, name, 'Example', 'Web', from, 'uVision', `${what} demo (CycloneTCP and CMSIS-RTOS)`);
             const api = new StubApi([relax]);
             api.drafts.set(StubApi.draftKey(relax.id), [
-                demo('1f407c32', 'mqtt_client_demo', 'MQTT Client'), demo('a30928ba', 'mqtt_client_demo', 'MQTT Client'),
-                demo('815ef6e6', 'snmp_agent_demo', 'SNMP Agent'), demo('5780de87', 'snmp_agent_demo', 'SNMP Agent'),
+                demo('1f407c32', 'mqtt_client_demo', 'MQTT Client', newer), demo('a30928ba', 'mqtt_client_demo', 'MQTT Client', older),
+                demo('815ef6e6', 'snmp_agent_demo', 'SNMP Agent', newer), demo('5780de87', 'snmp_agent_demo', 'SNMP Agent', older),
                 demo('83d5f7cd', 'RTX_Blinky', 'RTX Blinky'),
             ]);
-            const asked: Array<[CatalogBoardId, number]> = [];
-            const origins = new Map([['1f407c32', 'Oryx-Embedded::Middleware@2.6.6'], ['a30928ba', 'Oryx-Embedded::Middleware@2.4.4'],
-                ['815ef6e6', 'Oryx-Embedded::Middleware@2.6.6'], ['5780de87', 'Oryx-Embedded::Middleware@2.4.4'], ['83d5f7cd', 'Infineon::XMC4000_DFP@2.14.0']]);
-            const web: WebOrigins = async (target, ms) => {
-                asked.push([target, ms]);
-                return origins;
-            };
-            const reply = await query(api, { what: 'examples', board: 'Infineon::XMC4700 Relax Kit' }, soon(), web);
+            const reply = await query(api, { what: 'examples', board: 'Infineon::XMC4700 Relax Kit' });
             assert.strictEqual(reply.text, [
                 'Examples and templates for board \'Infineon::XMC4700 Relax Kit\': 5.',
                 '- 1f407c32 — mqtt_client_demo, Example, web from Oryx-Embedded::Middleware@2.6.6, µVision project, converted on creation: MQTT Client demo (CycloneTCP and CMSIS-RTOS)',
@@ -398,60 +393,18 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
                 'Create a project from one: cmsis_action {action:\'create_solution\', board:\'Infineon::XMC4700 Relax Kit\', draft:\'<id>\', '
                     + 'path:\'<new project folder>\'}.',
             ].join('\n'));
-            assert.deepStrictEqual(asked.map(([target]) => target), [{ vendor: 'Infineon', name: 'XMC4700 Relax Kit', revision: 'V1' }]);
-            assert.ok(asked[0][1] > 0 && asked[0][1] <= 5_000, `at most 5 s, within the call: ${asked[0][1]}`);
             assert.deepStrictEqual(((reply.data as JsonObject).entries as JsonObject[]).map((entry) => entry.pack),
                 ['Oryx-Embedded::Middleware@2.6.6', 'Oryx-Embedded::Middleware@2.4.4', 'Oryx-Embedded::Middleware@2.6.6', 'Oryx-Embedded::Middleware@2.4.4', undefined]);
 
-            // Without twins nothing is asked; a catalog that does not answer leaves a note on the twins it could not tell apart.
-            asked.length = 0;
-            await query(api, { what: 'examples', board: 'Infineon::XMC4700 Relax Kit', name: 'snmp|Blinky', limit: 2 }, soon(), web);
-            await query(api, { what: 'examples', board: 'Infineon::XMC4700 Relax Kit', name: 'Blinky' }, soon(), web);
-            assert.strictEqual(asked.length, 1, 'only the listing with the two snmp_agent_demo asks');
-            const silent = await query(api, { what: 'examples', board: 'Infineon::XMC4700 Relax Kit', name: 'snmp' }, soon(), async () => undefined);
-            assert.match(silent.text, /\n- 815ef6e6 — snmp_agent_demo, Example, web, µVision project/);
-            assert.match(silent.text, /\nsnmp_agent_demo: listed more than once by Arm's web catalog, one per pack release that ships the example; CMSIS Solution does not say which is which, and the web catalog did not tell within \d+(\.\d)? s\.\n/);
-        });
-
-        test('the web catalog lookup: the board by its CMSIS id, then the origin of its projects; any failure is nothing', async () => {
-            assert.strictEqual(packOfOriginUrl('https://pack-content.cmsis.io/packs/Oryx-Embedded.Middleware.2.6.6.pack'), 'Oryx-Embedded::Middleware@2.6.6');
-            assert.strictEqual(packOfOriginUrl('https://pack-content.cmsis.io/packs/Infineon.XMC4000_DFP.2.14.0-dev3.pack'), 'Infineon::XMC4000_DFP@2.14.0-dev3');
-            assert.strictEqual(packOfOriginUrl('https://github.com/acme/examples'), undefined);
-            assert.strictEqual(packOfOriginUrl(undefined), undefined);
-
-            const sent: Array<{ url: string; variables: Record<string, unknown> }> = [];
-            const answers: unknown[] = [
-                { data: { search_boards: { results: [{ id: 'infineon-xmc4700-relax-kit-v1-14afca4', example_projects_count: 3 }] } } },
-                { data: { search_projects: { results: [
-                    { id: '815ef6e6', origin: { type: 'cmsis_pack', url: 'https://pack-content.cmsis.io/packs/Oryx-Embedded.Middleware.2.6.6.pack' } },
-                    { id: '5780de87', origin: { type: 'cmsis_pack', url: 'https://pack-content.cmsis.io/packs/Oryx-Embedded.Middleware.2.4.4.pack' } },
-                    { id: 'elsewhere', origin: { type: 'github', url: 'https://github.com/acme/examples' } },
-                ] } } },
-            ];
-            const scripted = async (url: string, init: RequestInit): Promise<Response> => {
-                sent.push({ url, variables: (JSON.parse(String(init.body)) as { variables: Record<string, unknown> }).variables });
-                return new Response(JSON.stringify(answers.shift()), { status: 200, headers: { 'Content-Type': 'application/json' } });
-            };
-            const found = await webExampleOrigins(scripted, { vendor: 'Infineon', name: 'XMC4700 Relax Kit', revision: 'V1' }, 2_000, CLOCK);
-            assert.deepStrictEqual(found, new Map([['815ef6e6', 'Oryx-Embedded::Middleware@2.6.6'], ['5780de87', 'Oryx-Embedded::Middleware@2.4.4']]));
-            assert.deepStrictEqual(sent, [
-                { url: WEB_CATALOG_URL, variables: { name: 'XMC4700 Relax Kit', vendor: 'Infineon', revision: 'V1' } },
-                { url: WEB_CATALOG_URL, variables: { boardId: 'infineon-xmc4700-relax-kit-v1-14afca4', offset: 0, limit: 1000 } },
+            // Twins that CMSIS Solution names no pack for are listed as they are, with a note; Arm's web catalog is not asked.
+            api.drafts.set(StubApi.draftKey(relax.id), [
+                demo('815ef6e6', 'snmp_agent_demo', 'SNMP Agent'), demo('5780de87', 'snmp_agent_demo', 'SNMP Agent'), demo('83d5f7cd', 'RTX_Blinky', 'RTX Blinky'),
             ]);
-
-            const failing = async (): Promise<Response> => new Response('busy', { status: 503 });
-            assert.strictEqual(await webExampleOrigins(failing, { vendor: 'Infineon', name: 'XMC4700 Relax Kit' }, 2_000, CLOCK), undefined);
-            const unreachable = async (): Promise<Response> => {
-                throw new TypeError('fetch failed');
-            };
-            assert.strictEqual(await webExampleOrigins(unreachable, { vendor: 'Infineon', name: 'XMC4700 Relax Kit' }, 2_000, CLOCK), undefined);
-            let signal: AbortSignal | undefined;
-            const hanging = async (_url: string, init: RequestInit): Promise<Response> => {
-                signal = init.signal ?? undefined;
-                return never<Response>();
-            };
-            assert.strictEqual(await webExampleOrigins(hanging, { vendor: 'Infineon', name: 'XMC4700 Relax Kit' }, 30, CLOCK), undefined);
-            assert.strictEqual(signal?.aborted, true, 'the request still open at the deadline is aborted');
+            const unnamed = await query(api, { what: 'examples', board: 'Infineon::XMC4700 Relax Kit' });
+            assert.match(unnamed.text, /\n- 815ef6e6 — snmp_agent_demo, Example, web, µVision project/);
+            assert.match(unnamed.text, /\nsnmp_agent_demo: listed more than once by Arm's web catalog, one per pack release that ships the example; CMSIS Solution names no pack for them, so they cannot be told apart here\.\n/);
+            const single = await query(api, { what: 'examples', board: 'Infineon::XMC4700 Relax Kit', name: 'Blinky' });
+            assert.doesNotMatch(single.text, /listed more than once/);
         });
 
         test('Arm\'s web catalog unreachable is said so, in the text and in the data', async () => {
@@ -541,12 +494,12 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             assert.ok(refused.hint?.startsWith('Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack)'), refused.hint);
         });
 
-        test('an inactive extension is activated once, and getApi is asked once per extension (version 3, then 2)', async () => {
+        test('an inactive extension is activated once, and getApi is asked once per extension, for version 3 only', async () => {
             const api = catalogApi();
             const handle = installed(api, { active: false });
             assert.strictEqual(await acquireSolutionApi(handle, WHAT, CLOCK), api);
             assert.strictEqual(await acquireSolutionApi(handle, WHAT, CLOCK), api);
-            assert.deepStrictEqual([handle.activations, handle.asked], [1, 2]);
+            assert.deepStrictEqual([handle.activations, handle.asked], [1, 1]);
         });
 
         test('an activation that fails is TASK_FAILED, one that does not end TIMEOUT', async () => {
@@ -562,10 +515,22 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             const bare: SolutionExtensionHandle = { isActive: true, exports: {}, version: '1.40.0', activate: async () => ({}) };
             assert.strictEqual((await refusalOf(acquireSolutionApi(bare, WHAT, CLOCK), 'TOOL_DISABLED')).message,
                 `${WHAT} not attempted: the CMSIS Solution extension 1.40.0 offers no public API (no getApi).`);
-            const throwing = installed(undefined, { getApi: () => { throw new Error('No API version 2 found'); } });
-            const refused = await refusalOf(acquireSolutionApi(throwing, WHAT, CLOCK), 'TOOL_DISABLED');
-            assert.strictEqual(errorDetail(refused), `${WHAT} not attempted: the CMSIS Solution extension 1.72.0 offers no API version 2 (No API version 2 found).\n`
-                + 'Ask the user to update the CMSIS Solution extension: its API version 2 came with release 1.46.0.');
+            const asked: number[] = [];
+            const onlyTwo = installed(undefined, { getApi: (version) => {
+                asked.push(version);
+                if (version !== 2) {
+                    throw new Error(`No API version ${version} found`);
+                }
+                return catalogApi();
+            } });
+            const refused = await refusalOf(acquireSolutionApi(onlyTwo, WHAT, CLOCK), 'TOOL_DISABLED');
+            assert.strictEqual(errorDetail(refused), `${WHAT} not attempted: the CMSIS Solution extension 1.72.0 offers no API version 3 (No API version 3 found).\n`
+                + 'Ask the user to update the CMSIS Solution extension: this needs its API version 3, which comes with a release after 1.72.0 '
+                + '(today only its nightly build).');
+            assert.deepStrictEqual(asked, [3], 'version 2 is never asked: a CMSIS Solution that offers only that is too old');
+            const answersNothing = installed(undefined, { getApi: () => undefined });
+            assert.strictEqual((await refusalOf(acquireSolutionApi(answersNothing, WHAT, CLOCK), 'TOOL_DISABLED')).message,
+                `${WHAT} not attempted: the CMSIS Solution extension 1.72.0 offers no API version 3.`);
             const partial = installed({ getBoards: () => Promise.resolve([]), getDevices: () => Promise.resolve([]), getDraftProjects: () => Promise.resolve([]) });
             assert.match((await refusalOf(acquireSolutionApi(partial, WHAT, CLOCK), 'TOOL_DISABLED')).message, /lacks createNewSolution\.$/);
         });
@@ -812,7 +777,7 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             const second = await handler.handleCmsisQuery({ what: 'boards', name: 'frdm' });
             assert.ok(isToolReply(second) && second.status === 'ok', JSON.stringify(second));
             assert.strictEqual(second.text.split('\n')[1], '- NXP::FRDM-MCXN947 — device NXP::MCXN947VDF');
-            assert.deepStrictEqual([handle.asked, handle.activations], [2, 0], 'getApi asked for version 3, then 2, once');
+            assert.deepStrictEqual([handle.asked, handle.activations], [1, 0], 'getApi asked for version 3, once');
         });
 
         test('the fence of cmsis_query, when it wins, answers running too, with the catalog as the cause', async () => {

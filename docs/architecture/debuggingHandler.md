@@ -609,17 +609,17 @@ window's CMSIS job tracker (next section):
   (`src/handler/installPack.ts`, the pure parts in `src/core/packInstall.ts`).
   It exists so that a pack's knowledge units can be read before the project
   that needs the pack is written, without a `cpackget add` in the shell. It
-  calls `installPacks` of CMSIS Solution's API version 3 when it is there,
-  which answers per pack `installed` with the folder or `failed` with the
-  reason, and `approved: true` only after this extension's licence gate;
-  else the hidden `installPack` command, which answers only a folder or
-  nothing. So the call checks what it can first:
+  calls `installPacks` of CMSIS Solution's API version 3, which answers per
+  pack `installed` with the folder or `failed` with the reason, and
+  `approved: true` only after this extension's licence gate; an extension
+  without it is refused with the update hint, and the hidden `installPack`
+  command of 1.72.0 is not used. So the call checks what it can first:
   `Vendor::Name@version` with the version required, the extension installed,
-  and the command present once the extension is activated (a window without
-  a csolution has not activated it). The licence gate reads the `<license>`
+  and `installPacks` offered once the extension is activated (a window
+  without a csolution has not activated it). The licence gate reads the `<license>`
   of the pack's PDSC in the pack root's `.Web/` and asks the user in a modal
   before anything is installed; without that PDSC it installs and says that
-  the licence was not checked. After the command the folder is checked, a
+  the licence was not checked. After the install the folder is checked, a
   failure is journaled with a pointer to the "CMSIS Solution" output
   channel, and the result names the pack's knowledge units as a
   `knowledge_expand` call, which lists them although `knowledge_search`
@@ -721,21 +721,19 @@ lines while no session runs in a window without a folder. The steps from
 there are the `bootstrap` topic of the agent guide and the knowledge
 procedure `proc-cmsis-bootstrap`, read with `knowledge_get`.
 
-When `target` names a target-type or target-set that is not active, and
-CMSIS Solution's API version 3 declares that target (`getTargets()`, whose
-spelling is passed since `setActiveTarget()` is case-sensitive), the
-extension switches itself; otherwise the selection is written into
-`.vscode/cmsis.json` and the solution re-activated, the 1.72.0 way. Either
-way the switch is verified through the extension before anything runs:
-`setActiveTarget()` does not wait for the conversion. `convert` runs
+When `target` names a target-type or target-set that is not active, the
+extension switches itself: `getTargets()` of CMSIS Solution's API version 3
+gives the spelling, since `setActiveTarget()` is case-sensitive, and a type
+asked for alone takes the first target listed for it. An extension without
+these two methods switches nothing (`TOOL_DISABLED` with the update hint),
+and `.vscode/cmsis.json` is never written for a switch. The switch is
+verified through the extension before anything runs: `setActiveTarget()`
+does not wait for the conversion. `convert` runs
 `convertSolution()` of version 3 (no RTE update, no build) and is refused
-under a build in flight, whose cbuild converts too. The file is the one CMSIS Solution reads: that of the
-workspace's first folder, also for a solution in another folder of a
-multi-root workspace, keyed by the solution's path relative to that folder,
-a key the extension splits at every dot. The solution's `tasks.json` and
-`launch.json`, by contrast, are those of the folder that holds it. A switch
+under a build in flight, whose cbuild converts too. A switch
 is refused under a live debug session. `src/core/cmsisTarget.ts` reads the
-declared target-types and their sets from the csolution and edits the file.
+declared target-types and their sets from the csolution, for the refusal
+that lists them.
 It uses the full YAML parser `js-yaml`, so block and flow collections,
 quoted escapes, anchors, aliases and merge keys have the same meaning.
 Selection fields are checked without coercing YAML scalars or following
@@ -804,11 +802,14 @@ Three pure modules carry it. `src/core/solutionApi.ts` holds the part of the
 API this extension calls, as types of its own, and `acquireSolutionApi()`,
 the seam: the extension missing is the bootstrap refusal
 `CMSIS_NO_SOLUTION`, an inactive one is activated (`TIMEOUT` after 20 s,
-`TASK_FAILED` when it fails), version 3 is asked first and version 2 when 3
-throws or lacks a method of 2, and no `getApi`, neither version or a
-version 2 without a method is `TOOL_DISABLED`; one API object is kept per
-extension, since `getApi` makes a new one per call. The four methods of
-version 2 are required; every method of version 3 is optional and found by
+`TASK_FAILED` when it fails), only version 3 is asked, and no `getApi`, no
+version 3 or a version 3 without a catalog method is `TOOL_DISABLED` with
+the hint to update: a CMSIS Solution that offers version 2 only (1.72.0 and
+older) is too old for every call through this seam, and
+`get_session_status` says so in a line (`solutionTooOldLine()`). One API
+object is kept per extension, since `getApi` makes a new one per call. The
+four catalog methods version 3 keeps from version 2 are required; every
+method version 3 added is optional and found by
 name (`v3Method()`, `requireV3Method()` for the refusal with the update
 hint), never by the version number, so a partial or changed version 3 loses
 only what it lacks. `peekSolutionApi()` gives the getters the same object
@@ -868,15 +869,11 @@ Arm's web catalog keeps one example per pack release that ships it: the
 XMC4700 Relax Kit has `snmp_agent_demo` from Oryx-Embedded Middleware 2.6.6
 and from 2.4.4, same name, same description. The API passes on only id,
 name, description and format of a web example, so the two would be listed
-alike and the agent would have to ask the user for an id. When listed web
-examples share a name, `src/core/webCatalog.ts` asks the catalog itself for
-the one field that tells them apart, the example's origin pack, with the
-same two GraphQL queries CMSIS Solution makes (the board by its CMSIS id,
-then its projects), at most 5 s within the call and only for such a
-listing; the line then reads `web from Oryx-Embedded::Middleware@2.6.6`
-and `data.pack` carries it. When the catalog does not answer, a note says
-that CMSIS Solution does not tell the copies apart. The fetch comes from
-the host (`HandlerHost.webCatalogFetch`), so tests script it.
+alike and the agent would have to ask the user for an id. CMSIS Solution
+after 1.72.0 names the pack of a web example itself (its #641), so the line
+reads `web from Oryx-Embedded::Middleware@2.6.6` and `data.pack` carries
+it. Examples alike that it names no pack for get a note that they cannot
+be told apart; this extension no longer asks Arm's web catalog itself.
 
 Programming can make the probe's virtual COM port re-enumerate, which closes
 a serial port the window holds. So `flash` and the programming actions of
@@ -1296,7 +1293,7 @@ by #56.
 | `src/handler/targetText.ts` | register normalisation, register table, memory dump, cycle-counter text |
 | `src/handler/cmsisAction.ts` | `cmsis_action`: commands, probe guard, target switch, label pre-check and the Update Debug Tasks hand-off, jobs, session waits, verified `stop_run` and `stop_build`, `status`, `open_solution`, the dispatch of `install_pack` and `create_solution`, why no solution is active |
 | `src/handler/installPack.ts`, `src/core/packInstall.ts` | `install_pack`: the pack id, the licence gate, the install in flight, the folder check, the knowledge line; `PackInstallHost` |
-| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts`, `src/core/solutionQuery.ts`, `src/core/webCatalog.ts` | CMSIS Solution's API versions 3 and 2 as far as they are used, `acquireSolutionApi()`, `peekSolutionApi()`, `v3Method()`, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s catalog kinds, filters, caps, texts and data; the kinds of version 3 (`packs`, `toolchains`, `debuggers`, `environment`); the origin pack of web examples alike, from Arm's web catalog, asked only for those CMSIS Solution names no pack for |
+| `src/core/solutionApi.ts`, `src/core/catalogQuery.ts`, `src/core/solutionQuery.ts` | CMSIS Solution's API version 3 as far as it is used, `acquireSolutionApi()`, `peekSolutionApi()`, `v3Method()`, the line for an extension that is too old, the lookups by id, `catalogErrorsOf()`; `cmsis_query`'s catalog kinds, filters, caps, texts and data; the kinds version 3 added (`packs`, `toolchains`, `debuggers`, `environment`); the note for web examples alike that CMSIS Solution names no pack for |
 | `src/handler/createSolution.ts` | `cmsis_action create_solution`: the folder, the window check, the lookups, `createNewSolution`, the text of what follows |
 | `src/core/bootstrapState.ts`, `src/utils/solutionFiles.ts` | The refusals and status lines of a window that lacks a folder, the CMSIS extensions or a loaded solution, and the active-solution line of `get_session_status`; path comparison per platform and the CMSIS Solution extension's csolution search; the csolution files below a folder that is not open yet |
 | `src/core/solutionAnswers.ts`, `src/utils/solutionQueries.ts` | What the answers of the CMSIS Solution extension's getters mean (`getSolutionFile`, `getActiveTargetSet`, `getCbuildRunFile`, `getDfpPath`, `getBspPath`), for every caller; asking the hidden getters only while the extension is active, feature-detected, under a 3 s fence |
@@ -1348,9 +1345,8 @@ by #56.
 - `src/test/solutionApiV3.test.ts`: the version 3 seam, the getters through it, the kinds of version 3, the result of `installPacks`
 - `src/test/solutionCatalog.test.ts`: `cmsis_query` and `create_solution`
   against a stub of CMSIS Solution's API: filters, caps, sources, web
-  examples alike with their origin pack and the lookup behind it against a
-  scripted fetch, the web
+  examples alike with the pack CMSIS Solution names, the web
   catalog unreachable, the extension missing, inactive or without API
-  version 2, unknown ids, the window checks
+  version 3, unknown ids, the window checks
 - `test/transport/surface-snapshot.js`: every tool's reply without a session
 - `test/realboard/run.ts`: every tool against a real board, run by hand

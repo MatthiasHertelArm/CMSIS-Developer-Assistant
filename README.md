@@ -75,7 +75,8 @@ Other agents that support MCP may also work; the Agent Skills format adds the
 CMSIS Developer Assistant is free to use and works in combination with:
 
 - [CMSIS Solution](https://marketplace.visualstudio.com/items?itemName=Arm.cmsis-csolution) to
-  create, configure, and build CMSIS solutions.
+  create, configure, and build CMSIS solutions. A release after 1.72.0 is
+  needed for the catalog queries, the target switch and the pack install.
 - [CMSIS Debugger](https://marketplace.visualstudio.com/items?itemName=Arm.vscode-cmsis-debugger) to
   program and debug Arm Cortex-M targets.
 - An AI coding agent that supports MCP; the

@@ -96,11 +96,10 @@ import {
 } from './handler/cmsisAction';
 import { CATALOG_LOADING, CatalogQuery, queryCatalog } from './core/catalogQuery';
 import { answersSolutionKind, querySolution, type SolutionQuery } from './core/solutionQuery';
-import { acquireSolutionApi, settleWithin, type ApiPackId } from './core/solutionApi';
+import { acquireSolutionApi, settleWithin, solutionTooOldLine, type ApiPackId } from './core/solutionApi';
 import type { SolutionFileAnswer } from './core/solutionAnswers';
 import type { ActiveTargetAnswer } from './utils/solutionQueries';
 import { packInstalledIn } from './core/packInstall';
-import { webExampleOrigins } from './core/webCatalog';
 import { CapOutcome, failureText, fenced, fenceLimitMs, FenceOptions, LONG_LIMIT_CAP_MS } from './handler/fence';
 import { FLASH_FENCE_ADVICE, flashTimeoutMs, runFlash } from './handler/flashTool';
 import {
@@ -1150,7 +1149,9 @@ export class DebuggingHandler
      * (#46), one per start that reserved a GDB port and has no session or
      * task yet (#127), and one on its serial port (#49). Without a session,
      * also what the window lacks for CMSIS work: a folder, the CMSIS Solution
-     * or the CMSIS Debugger extension. The solution is asked for before the
+     * or the CMSIS Debugger extension. In every state, a line when the CMSIS
+     * Solution extension is too old for the calls that need its API version
+     * 3. The solution is asked for before the
      * session is probed and waited for at most `SOLUTION_GRACE_MS` after it.
      */
     async handleGetSessionStatus(): Answer {
@@ -1160,7 +1161,9 @@ export class DebuggingHandler
         const status = await this.dbg.getSessionStatus();
         const gaps = status.state === 'no-session' ? this.bootstrapLines() : [];
         const solution = await this.solutionLines(host, asked, askedTarget);
-        const extra = [...gaps, ...solution, ...this.cmsisTaskLines(), ...pendingStartLines(this.dbg, host), ...this.serialLines()];
+        const tooOld = solutionTooOldLine(host.solutionExtension());
+        const extra = [...gaps, ...(tooOld === undefined ? [] : [tooOld]), ...solution, ...this.cmsisTaskLines(),
+            ...pendingStartLines(this.dbg, host), ...this.serialLines()];
         return renderSessionStatus(status, this.dbg.getDiagnostics(), extra, this.sessionRequest(), this.onFvp());
     }
 
@@ -2241,8 +2244,7 @@ export class DebuggingHandler
                 const redact: RedactCallback | undefined = redactionEnabled() ? (name, value) => redactVariableValue(name, value) : undefined;
                 return querySolution(api, args as SolutionQuery, host, deadline, redact);
             }
-            return queryCatalog(api, args, host, deadline, (board, ms) => webExampleOrigins(host.webCatalogFetch, board, ms, host),
-                (pack) => this.packInstalled(pack));
+            return queryCatalog(api, args, host, deadline, (pack) => this.packInstalled(pack));
         }, { advice: QUERY_FENCE_ADVICE, capStatus: 'running' });
     }
 

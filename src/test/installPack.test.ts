@@ -29,12 +29,12 @@ import type { ProjectFactsResult } from '../core/knowledge/projectFacts';
 import { silentLog } from '../core/packDocs/host';
 import {
     checkLicence,
-    INSTALL_PACK_COMMAND,
     knowledgeLine,
     licenceQuestion,
     parsePackRequest,
 } from '../core/packInstall';
 import type { ProblemInput } from '../core/problemJournal';
+import { V3_UPDATE_HINT } from '../core/solutionApi';
 import { errorDetail, ErrorCode, JsonObject, textOf, ToolError, ToolText } from '../core/toolResult';
 import { VSCODE_HOST, type HandlerHost } from '../handler/host';
 import { PackInstallHost, runInstallPack } from '../handler/installPack';
@@ -80,13 +80,14 @@ function replyOf(answer: ToolText): { text: string; status: string; data: JsonOb
 
 /** The CMSIS Solution extension and VS Code as the install sees them, scripted. */
 class StandInInstaller implements PackInstallHost {
-    commands: string[] = [INSTALL_PACK_COMMAND];
+    /** Whether the extension's API version 3 offers installPacks. */
+    ready = true;
     readonly asked: Array<{ message: string; detail: string }> = [];
     readonly installs: string[] = [];
     readonly problems: ProblemInput[] = [];
     /** The user's answer to the licence question. */
     answer: () => Thenable<boolean> = async () => true;
-    /** What the command answers; by default it unpacks the pack as cpackget would and returns its folder. */
+    /** What the install answers; by default it unpacks the pack as cpackget would and returns its folder. */
     result: (vendor: string, name: string, version: string) => Thenable<unknown> = async (vendor, name, version) => {
         const folder = path.join(this.root, vendor, name, version);
         fs.mkdirSync(folder, { recursive: true });
@@ -96,8 +97,8 @@ class StandInInstaller implements PackInstallHost {
 
     constructor(readonly root: string) { }
 
-    async solutionCommands(): Promise<readonly string[]> {
-        return this.commands;
+    async installReady(): Promise<boolean> {
+        return this.ready;
     }
 
     installPack(vendor: string, name: string, version: string): Thenable<unknown> {
@@ -192,24 +193,24 @@ suite('cmsis_action install_pack', () => {
             assert.deepStrictEqual([installer.asked, installer.installs, installer.problems], [[], [], []]);
         });
 
-        test('without the CMSIS Solution extension, or with one that lacks the command, it is refused before anything is asked', async () => {
+        test('without the CMSIS Solution extension, or with one that lacks installPacks, it is refused before anything is asked', async () => {
             const installer = new StandInInstaller(root);
             const missing = await refusalOf(install(installer, 'Acme::Lic@1.0.0', 5_000, hostFor(installer, false)), 'CMSIS_NO_SOLUTION');
             assert.strictEqual(missing.message, 'CMSIS \'install_pack\' not attempted: the CMSIS Solution extension (Arm.cmsis-csolution) '
                 + 'is not installed in this VS Code, so there is no active solution.');
             assert.ok(missing.hint?.startsWith('Ask the user to install the Keil Studio Pack (Arm.keil-studio-pack)'), missing.hint);
 
-            installer.commands = ['cmsis-csolution.build'];
+            installer.ready = false;
             assert.strictEqual(errorDetail(await refusalOf(install(installer, 'Acme::Lic@1.0.0'), 'TOOL_DISABLED')),
-                'CMSIS \'install_pack\' not attempted: the CMSIS Solution extension 1.71.0 has no command cmsis-csolution.installPack; '
-                + 'CMSIS Solution 1.72.0 has it.\n'
-                + 'Ask the user to update the CMSIS Solution extension (Arm.cmsis-csolution) and to reload the window. Do not run cpackget yourself.');
+                'CMSIS \'install_pack\' not attempted: the CMSIS Solution extension 1.71.0 offers no installPacks (API version 3).\n'
+                + `${V3_UPDATE_HINT} Do not run cpackget yourself.`);
+            installer.ready = true;
 
-            installer.solutionCommands = () => Promise.reject(new Error('activation failed'));
+            installer.installReady = () => Promise.reject(new Error('activation failed'));
             assert.strictEqual(errorDetail(await refusalOf(install(installer, 'Acme::Lic@1.0.0'), 'TASK_FAILED')),
                 'CMSIS \'install_pack\' not attempted: the CMSIS Solution extension did not activate (activation failed).\n'
                 + 'Ask the user to reload the VS Code window, then call install_pack again; get_recent_problems shows what the extension reported.');
-            installer.solutionCommands = () => new Promise<readonly string[]>(() => undefined);
+            installer.installReady = () => new Promise<boolean>(() => undefined);
             assert.strictEqual((await refusalOf(install(installer, 'Acme::Lic@1.0.0', 1_700), 'TASK_FAILED')).message,
                 'CMSIS \'install_pack\' not attempted: the CMSIS Solution extension did not activate (no answer within 0.2 s).');
             assert.deepStrictEqual([installer.asked, installer.installs], [[], []]);
@@ -307,7 +308,7 @@ suite('cmsis_action install_pack', () => {
         });
     });
 
-    suite('after the command', () => {
+    suite('after the install', () => {
         test('the result names the knowledge units the pack ships', async () => {
             assert.deepStrictEqual(knowledgeLine(MINI_FOLDER, { vendor: 'Acme', name: 'Mini_BSP', version: '0.2.0' }), { line: MINI_EXPAND, units: 3 });
             assert.strictEqual(knowledgeLine(root, { vendor: 'Acme', name: 'Mini_BSP', version: '0.2.0' }), undefined);
@@ -360,12 +361,12 @@ suite('cmsis_action install_pack', () => {
             }
         });
 
-        test('no folder from the command is a failure with the pack id and the output channel, journaled', async () => {
+        test('no folder from the install is a failure with the pack id and the output channel, journaled', async () => {
             const installer = new StandInInstaller(root);
             installer.result = async () => undefined;
             const failed = await refusalOf(install(installer, 'Acme::Free@1.0.0'), 'TASK_FAILED');
             assert.strictEqual(errorDetail(failed), 'CMSIS \'install_pack\' failed: the CMSIS Solution extension did not install Acme::Free@1.0.0 '
-                + `(cmsis-csolution.installPack returned no folder).\n${OUTPUT_HINT}`);
+                + `(CMSIS Solution API installPacks returned no folder).\n${OUTPUT_HINT}`);
             assert.deepStrictEqual(installer.problems, [{ source: 'extension', origin: 'Arm.cmsis-csolution', severity: 'error', code: 'TASK_FAILED',
                 message: failed.message, hint: OUTPUT_HINT }]);
 
@@ -374,17 +375,17 @@ suite('cmsis_action install_pack', () => {
             installer.result = () => Promise.reject(new Error('cpackget not found'));
             assert.strictEqual((await refusalOf(install(installer, 'Acme::Free@1.0.0'), 'TASK_FAILED')).message,
                 'CMSIS \'install_pack\' failed: the CMSIS Solution extension did not install Acme::Free@1.0.0 '
-                + `(cmsis-csolution.installPack failed: cpackget not found). ${path.join(root, 'Acme', 'Free', '1.0.0')} exists, perhaps from an earlier install.`);
+                + `(CMSIS Solution API installPacks failed: cpackget not found). ${path.join(root, 'Acme', 'Free', '1.0.0')} exists, perhaps from an earlier install.`);
             assert.strictEqual(installer.problems.length, 2);
         });
 
-        test('a folder the command names but that is missing is a failure, journaled', async () => {
+        test('a folder the install names but that is missing is a failure, journaled', async () => {
             const installer = new StandInInstaller(root);
             const named = path.join(root, 'Acme', 'Free', '1.0.0');
             installer.result = async () => named;
             const failed = await refusalOf(install(installer, 'Acme::Free@1.0.0'), 'TASK_FAILED');
             assert.strictEqual(failed.message,
-                `CMSIS 'install_pack' failed: cmsis-csolution.installPack reported ${named} for Acme::Free@1.0.0, but that folder does not exist.`);
+                `CMSIS 'install_pack' failed: CMSIS Solution API installPacks reported ${named} for Acme::Free@1.0.0, but that folder does not exist.`);
             assert.ok(failed.hint?.startsWith('The CMSIS Solution extension answers so without running cpackget while the same install still waits '
                 + 'in its queue: call install_pack again in a moment.'), failed.hint);
             assert.strictEqual(installer.problems[0]?.message, failed.message);

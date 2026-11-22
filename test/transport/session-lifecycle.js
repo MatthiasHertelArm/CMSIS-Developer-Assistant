@@ -320,9 +320,10 @@ async function main() {
         lookupText.split('\n')[0]);
 
     // 4d. cmsis_action names the target it acts on, refuses an undeclared
-    //     target, and switches a declared one through cmsis.json + solution
-    //     re-activation — verified through getActiveTargetSet before it acts.
-    //     `detach` is the action under test because it runs no cbuild task.
+    //     target, and switches a declared one through setActiveTarget of
+    //     CMSIS Solution's API version 3 — verified through
+    //     getActiveTargetSet before it acts. `detach` is the action under
+    //     test because it runs no cbuild task.
     const solDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-target-'));
     const solutionFile = path.join(solDir, 'demo.csolution.yml');
     fs.writeFileSync(solutionFile, [
@@ -340,15 +341,23 @@ async function main() {
     stub.commandHandlers = {
         'cmsis-csolution.getSolutionFile': async () => solutionFile,
         'cmsis-csolution.getActiveTargetSet': async () => activeTarget,
-        'cmsis-csolution.deactivateSolution': async () => { commandLog.push('deactivate'); activeTarget = ''; },
-        'cmsis-csolution.activateSolution': async (p) => {
-            // The extension re-reads cmsis.json on activation; mimic that.
-            commandLog.push(`activate ${p}`);
-            const sel = JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')).targetSet?.demo;
-            activeTarget = sel?.activeTargetType === 'HP' ? (sel.HP === 1 ? 'HP@release' : 'HP@debug') : 'HE';
-        },
+        'cmsis-csolution.deactivateSolution': async () => { commandLog.push('deactivate'); },
+        'cmsis-csolution.activateSolution': async (p) => { commandLog.push(`activate ${p}`); },
         'cmsis-csolution.cmsisDetachDebugger': async () => undefined,
     };
+    // The CMSIS Solution extension with its API version 3: the switch is its setActiveTarget.
+    const apiLog = [];
+    const solutionApi = {
+        getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined,
+        getTargets: async () => ['HE', 'HP@debug', 'HP@release'],
+        setActiveTarget: async (name) => { apiLog.push(`set ${name}`); activeTarget = name; },
+    };
+    const solutionExtensionWith = (version, api) => ({
+        isActive: true, packageJSON: { version }, activate: async () => undefined,
+        exports: { getApi: (asked) => { if (asked !== (api === solutionApi ? 3 : 2)) { throw new Error(`No API version ${asked} found`); } return api; } },
+    });
+    const { getExtension } = stub.extensions;
+    stub.extensions.getExtension = (id) => (id === 'Arm.cmsis-csolution' ? solutionExtensionWith('1.73.0', solutionApi) : undefined);
     const cmsisAction = async (args, id) => {
         const r = await request(port, 'POST', { 'mcp-session-id': sid }, {
             jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'cmsis_action', arguments: args },
@@ -378,56 +387,39 @@ async function main() {
         /not attempted.*cannot supply a valid target selection.*No selection was changed/s.test(invalid)
             && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
         invalid.split('\n')[0]);
-    const switched =await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
-    const written = fs.existsSync(cmsisJsonPath) ? JSON.parse(fs.readFileSync(cmsisJsonPath, 'utf8')) : {};
-    check('cmsis_action switches a declared target via cmsis.json + re-activation and verifies it',
+    const switched = await cmsisAction({ action: 'detach', target: 'HP@release' }, 8);
+    check('cmsis_action switches a declared target through setActiveTarget and verifies it; cmsis.json is not written',
         /CMSIS 'detach' on HP@release, switched from HE issued/.test(switched)
-            && commandLog.join(',') === `deactivate,activate ${solutionFile}`
-            && written.targetSet?.demo?.activeTargetType === 'HP' && written.targetSet?.demo?.HP === 1,
-        `${switched.split('\n')[0]} | ${commandLog.join(',')} | ${JSON.stringify(written)}`);
+            && apiLog.join(',') === 'set HP@release' && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        `${switched.split('\n')[0]} | ${apiLog.join(',')} | ${commandLog.join(',')}`);
     const matching = await cmsisAction({ action: 'detach', target: 'HP' }, 9);
-    check('cmsis_action leaves a matching target alone', /CMSIS 'detach' on HP@release issued/.test(matching) && commandLog.length === 2,
+    check('cmsis_action leaves a matching target alone', /CMSIS 'detach' on HP@release issued/.test(matching) && apiLog.length === 1,
         matching.split('\n')[0]);
-    // An extension that ignores the written selection: the panel stays on HE.
+    // A type alone, for a type whose sets have names: the first target CMSIS Solution lists for it.
     activeTarget = 'HE';
-    stub.commandHandlers['cmsis-csolution.deactivateSolution'] = async () => { commandLog.push('deactivate'); };
-    stub.commandHandlers['cmsis-csolution.activateSolution'] = async (p) => { commandLog.push(`activate ${p}`); };
+    const byType = await cmsisAction({ action: 'detach', target: 'HP' }, 90);
+    check('cmsis_action selects the first listed target of a type asked for alone',
+        /CMSIS 'detach' on HP@debug, switched from HE issued/.test(byType) && apiLog.join(',') === 'set HP@release,set HP@debug',
+        `${byType.split('\n')[0]} | ${apiLog.join(',')}`);
+    // An extension that does not take the selection: the panel stays on HE.
+    activeTarget = 'HE';
+    solutionApi.setActiveTarget = async (name) => { apiLog.push(`set ${name}`); };
     const unverified = await cmsisAction({ action: 'detach', target: 'HP', timeoutMs: 20_000 }, 10);
     check('cmsis_action refuses when the switch cannot be verified',
-        /not attempted: wrote 'HP' to .*still reports 'HE'.*Manage Solution/s.test(unverified), unverified.split('\n')[0]);
-    // A multi-root workspace with the solution in its second folder: CMSIS
-    // Solution (1.72.0) reads only the first folder's cmsis.json, files the
-    // solution there as '../fw/demo' and looks that key up split at every '.'.
-    const rootsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cmsis-roots-'));
-    const firstDir = path.join(rootsDir, 'app');
-    const secondDir = path.join(rootsDir, 'fw');
-    fs.mkdirSync(firstDir);
-    fs.mkdirSync(secondDir);
-    const secondSolution = path.join(secondDir, 'demo.csolution.yml');
-    fs.copyFileSync(solutionFile, secondSolution);
-    const firstSelection = () => {
-        let node;
-        try {
-            node = JSON.parse(fs.readFileSync(path.join(firstDir, '.vscode', 'cmsis.json'), 'utf8'));
-        } catch {
-            return undefined;
-        }
-        for (const key of 'targetSet.../fw/demo'.split('.')) { node = node && typeof node === 'object' ? node[key] : undefined; }
-        return node;
-    };
+        /not attempted: selected 'HP@debug' through the CMSIS Solution API, but the CMSIS Solution extension still reports 'HE'.*Manage Solution/s.test(unverified),
+        unverified.split('\n')[0]);
+    // CMSIS Solution 1.72.0 offers API version 2 only: no switch, the update hint, and nothing written.
     activeTarget = 'HE';
-    stub.workspace.workspaceFolders = [{ uri: { fsPath: firstDir } }, { uri: { fsPath: secondDir } }];
-    stub.commandHandlers['cmsis-csolution.getSolutionFile'] = async () => secondSolution;
-    stub.commandHandlers['cmsis-csolution.activateSolution'] = async () => {
-        const sel = firstSelection();
-        activeTarget = sel?.activeTargetType === 'HP' ? (sel.HP === 1 ? 'HP@release' : 'HP@debug') : 'HE';
-    };
-    const multiRoot = await cmsisAction({ action: 'detach', target: 'HP@release' }, 11);
-    check('cmsis_action switches a solution in the second folder through the first folder\'s cmsis.json',
-        /CMSIS 'detach' on HP@release, switched from HE issued/.test(multiRoot)
-            && !fs.existsSync(path.join(secondDir, '.vscode', 'cmsis.json')),
-        `${multiRoot.split('\n')[0]} | ${JSON.stringify(firstSelection() ?? null)}`);
-    fs.rmSync(rootsDir, { recursive: true, force: true });
+    const { getTargets: _getTargets, setActiveTarget: _setActiveTarget, ...versionTwo } = solutionApi;
+    stub.extensions.getExtension = (id) => (id === 'Arm.cmsis-csolution' ? solutionExtensionWith('1.72.0', versionTwo) : undefined);
+    const tooOld = await cmsisAction({ action: 'detach', target: 'HP@release' }, 11);
+    check('cmsis_action switches no target without API version 3: refused with the update hint, cmsis.json not written',
+        /not attempted: the active target is 'HE', and the CMSIS Solution extension offers no getTargets \(API version 3\) to select 'HP@release'.*update the CMSIS Solution extension.*Manage Solution/s.test(tooOld)
+            && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
+        tooOld.split('\n')[0]);
+    const stillActs = await cmsisAction({ action: 'detach', target: 'HE' }, 12);
+    check('cmsis_action without a switch still acts on such an extension', /CMSIS 'detach' on HE issued/.test(stillActs), stillActs.split('\n')[0]);
+    stub.extensions.getExtension = getExtension;
     stub.commandHandlers = {};
     stub.workspace.workspaceFolders = [];
     fs.rmSync(solDir, { recursive: true, force: true });
@@ -491,7 +483,7 @@ async function main() {
         jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'get_session_status', arguments: {} },
     });
     const statusText = parseSse(status.body)?.result?.content?.[0]?.text ?? '';
-    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 19 calls/m.test(statusText),
+    check('get_session_status carries the tool stats', /^Tool stats \(this session\): 21 calls/m.test(statusText),
         statusText.split('\n').filter((l) => l.startsWith('Tool stats')).join(' | ') || statusText.slice(0, 120));
     check('server aggregate sees every session sample', server.getMetrics().totals().calls >= 7,
         `${server.getMetrics().totals().calls} calls`);

@@ -120,13 +120,11 @@ import {
 import { idxFileName, IdxMessages, idxMessages, readToolsEnvironment, ToolsEnvironment } from '../core/buildFailure';
 import {
     applyActiveSolution,
-    applyTargetSelection,
     formatTargetChoices,
     formatTargetName,
     listTargetTypes,
     parseTargetRef,
     resolveTargetSelection,
-    solutionDisplayName,
     TargetRef,
     targetMatches,
 } from '../core/cmsisTarget';
@@ -146,7 +144,7 @@ import { currentCallContext } from '../core/callContext';
 import { failedResponseMessage } from '../core/problemFeed';
 import type { ProblemJournal } from '../core/problemJournal';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
-import { peekSolutionApi, requireV3Method, v3Method, type ApiConvertResult, type SolutionApi } from '../core/solutionApi';
+import { acquireSolutionApi, peekSolutionApi, requireV3Method, V3_UPDATE_HINT, v3Method, type ApiConvertResult, type SolutionApi } from '../core/solutionApi';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import {
     activeLaunchConfigurations,
@@ -383,30 +381,23 @@ function selectionFolder(solutionPath: string, host: HandlerHost): string {
 }
 
 /**
- * The folder whose `.vscode/cmsis.json` CMSIS Solution reads the active target
- * from: the workspace's first folder, whichever folder holds the solution
- * (1.72.0 `CmsisSettingsJsonFile`); not `selectionFolder` when the solution
- * lies in another folder of a multi-root workspace.
- */
-function targetSettingsFolder(solutionPath: string, host: HandlerHost): string {
-    const first = host.workspaceFolders()[0];
-    return first ? first.uri.fsPath : path.dirname(solutionPath);
-}
-
-/**
  * The spelling of `name` among the targets API version 3 declares
  * (`getTargets`, case-sensitive in `setActiveTarget`): the exact one, else
- * the one that differs only in case. Undefined when the API has no
- * `getTargets`, does not answer in time, or lists no such target: then the
- * switch goes through cmsis.json.
+ * the one that differs only in case. A request for a type alone
+ * (`typeOnly`) whose target sets all have names takes the first target the
+ * API lists for that type. Undefined when the API does not answer in time
+ * or lists no such target.
  */
-async function apiTargetSpelling(getTargets: () => PromiseLike<string[]>, name: string): Promise<string | undefined> {
+async function apiTargetSpelling(getTargets: () => PromiseLike<string[]>, name: string, typeOnly: boolean): Promise<string | undefined> {
     try {
         const targets = await withTimeout('cmsis getTargets', QUERY_MS, () => Promise.resolve(getTargets()));
         if (!Array.isArray(targets)) {
             return undefined;
         }
-        return targets.find((target) => target === name) ?? targets.find((target) => target.toLowerCase() === name.toLowerCase());
+        const lower = name.toLowerCase();
+        const typeOf = (target: string): string => target.split('@')[0];
+        return targets.find((target) => target === name) ?? targets.find((target) => target.toLowerCase() === lower)
+            ?? (typeOnly ? targets.find((target) => typeOf(target) === name) ?? targets.find((target) => typeOf(target).toLowerCase() === lower) : undefined);
     } catch {
         return undefined;
     }
@@ -414,10 +405,10 @@ async function apiTargetSpelling(getTargets: () => PromiseLike<string[]>, name: 
 
 /**
  * Make `wanted` the extension's active target and poll until the extension
- * reports it. With API version 3 (`getTargets`, `setActiveTarget`), and a
- * target it declares, the extension switches itself; otherwise the
- * selection is written into cmsis.json and the solution re-activated, the
- * 1.72.0 way. Each failure says where it stopped and how to do it by hand.
+ * reports it. The switch is CMSIS Solution's own, through `getTargets` and
+ * `setActiveTarget` of its API version 3; an extension without them is
+ * refused with the update hint, and `.vscode/cmsis.json` is never written
+ * for a switch. Each failure says where it stopped and how to do it by hand.
  */
 async function switchActiveTarget(
     solutionPath: string | undefined,
@@ -466,57 +457,40 @@ async function switchActiveTarget(
     const api = peekSolutionApi(host.solutionExtension());
     const getTargets = v3Method(api, 'getTargets');
     const setActiveTarget = v3Method(api, 'setActiveTarget');
-    const spelling = getTargets && setActiveTarget ? await apiTargetSpelling(getTargets, resolution.name) : undefined;
-    if (setActiveTarget !== undefined && spelling !== undefined) {
-        try {
-            await withTimeout('cmsis setActiveTarget', ACTIVATION_MS, () => Promise.resolve(setActiveTarget(spelling)));
-        } catch (caught) {
-            if (caught instanceof HardwareTimeoutError) {
-                // The selection is saved before the refresh it waits for: the poll tells whether it took.
-                return verifySwitch(wanted, `asked CMSIS Solution to select '${spelling}' (its refresh still running after ${ACTIVATION_MS / 1000} s)`, host);
-            }
-            return {
-                switched: false,
-                code: 'INTERNAL',
-                reason: `the CMSIS Solution extension refused to select '${spelling}' (setActiveTarget: ${failureText(caught)}). Active target: '${was}'.`,
-                hint: SWITCH_BY_HAND,
-            };
+    if (getTargets === undefined || setActiveTarget === undefined) {
+        return {
+            switched: false,
+            code: 'TOOL_DISABLED',
+            reason: `the active target is '${was}', and the CMSIS Solution extension offers no ${getTargets === undefined ? 'getTargets' : 'setActiveTarget'} `
+                + `(API version 3) to select '${resolution.name}'. No selection was changed.`,
+            hint: `${V3_UPDATE_HINT} Until then: ${SWITCH_BY_HAND}`,
+        };
+    }
+    const spelling = await apiTargetSpelling(getTargets, resolution.name, resolution.set === undefined);
+    if (spelling === undefined) {
+        return {
+            switched: false,
+            code: 'INTERNAL',
+            reason: `the active target is '${was}', and the CMSIS Solution extension does not list '${resolution.name}' among its targets (getTargets), `
+                + `although ${solutionPath} declares it: it may still be loading the solution. No selection was changed.`,
+            hint: `Repeat the call in a few seconds. ${SWITCH_BY_HAND}`,
+        };
+    }
+    try {
+        await withTimeout('cmsis setActiveTarget', ACTIVATION_MS, () => Promise.resolve(setActiveTarget(spelling)));
+    } catch (caught) {
+        if (caught instanceof HardwareTimeoutError) {
+            // The selection is saved before the refresh it waits for: the poll tells whether it took.
+            return verifySwitch(wanted, `asked CMSIS Solution to select '${spelling}' (its refresh still running after ${ACTIVATION_MS / 1000} s)`, host);
         }
-        return verifySwitch(wanted, `selected '${spelling}' through the CMSIS Solution API`, host);
-    }
-
-    const folder = targetSettingsFolder(solutionPath, host);
-    const selectionFile = path.join(folder, '.vscode', 'cmsis.json');
-    try {
-        fs.mkdirSync(path.dirname(selectionFile), { recursive: true });
-        const previous = fs.existsSync(selectionFile) ? fs.readFileSync(selectionFile, 'utf8') : '';
-        const updated = applyTargetSelection(previous, solutionDisplayName(folder, solutionPath), resolution.type, resolution.setIndex);
-        fs.writeFileSync(selectionFile, updated, 'utf8');
-    } catch (caught) {
         return {
             switched: false,
             code: 'INTERNAL',
-            reason: `could not write ${selectionFile} to select '${resolution.name}' (${failureText(caught)}).`,
+            reason: `the CMSIS Solution extension refused to select '${spelling}' (setActiveTarget: ${failureText(caught)}). Active target: '${was}'.`,
             hint: SWITCH_BY_HAND,
         };
     }
-
-    try {
-        await withTimeout('cmsis deactivateSolution', ACTIVATION_MS,
-            () => Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.deactivateSolution')));
-        await withTimeout('cmsis activateSolution', ACTIVATION_MS,
-            () => Promise.resolve(vscode.commands.executeCommand('cmsis-csolution.activateSolution', solutionPath)));
-    } catch (caught) {
-        return {
-            switched: false,
-            code: 'INTERNAL',
-            reason: `wrote '${resolution.name}' to ${selectionFile} but re-activating the solution so the extension picks it up failed `
-                + `(${failureText(caught)}).`,
-            hint: SWITCH_BY_HAND,
-        };
-    }
-
-    return verifySwitch(wanted, `wrote '${resolution.name}' to ${selectionFile} and re-activated the solution`, host);
+    return verifySwitch(wanted, `selected '${spelling}' through the CMSIS Solution API`, host);
 }
 
 /**
@@ -1827,11 +1801,11 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
                 'Call stop_debugging first, then repeat this call.');
         }
         wanted = listed;
-        const activate = v3Method(peekSolutionApi(host.solutionExtension()), 'activateSolution');
+        // The activation is CMSIS Solution's own (API version 3); an extension without it is refused with the update hint.
+        const activate = requireV3Method(await acquireSolutionApi(host.solutionExtension(), 'CMSIS \'open_solution\'', host),
+            'activateSolution', 'CMSIS \'open_solution\'');
         try {
-            await withTimeout('cmsis activateSolution', ACTIVATION_MS, () => Promise.resolve(activate !== undefined
-                ? activate(wanted)
-                : vscode.commands.executeCommand('cmsis-csolution.activateSolution', wanted)));
+            await withTimeout('cmsis activateSolution', ACTIVATION_MS, () => Promise.resolve(activate(wanted)));
         } catch (caught) {
             if (caught instanceof HardwareTimeoutError) {
                 throw new ToolError('TASK_FAILED',

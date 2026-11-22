@@ -35,9 +35,11 @@
  * that is not part of the API, when it is there.
  *
  * `acquireSolutionApi` is the seam: it activates the extension when it is
- * installed but inactive, asks for version 3 and falls back to version 2,
- * and turns every way of not getting either into a typed refusal. The four
- * methods of version 2 are required; every method of version 3 is optional
+ * installed but inactive, asks for version 3, and turns every way of not
+ * getting it into a typed refusal: a CMSIS Solution that offers version 2
+ * only (1.72.0 and older) is too old for every call that comes through
+ * here. The four methods version 3 keeps from version 2 are required;
+ * every method that version 3 added is optional
  * and detected by its name (`v3Method`), never by the version number, so a
  * partial or changed version 3 loses only what it lacks. `peekSolutionApi`
  * is the same object for the getters that must neither activate the
@@ -268,16 +270,13 @@ export interface Clock {
     startTimer(ms: number, fire: () => void): () => void;
 }
 
-/** The API version this extension asks for first. */
+/** The API version this extension asks for, and the only one it uses. */
 export const SOLUTION_API_VERSION = 3;
-/** The version it falls back to: the catalog and the creation, since CMSIS Solution 1.46.0. */
-export const SOLUTION_API_FALLBACK = 2;
 /** How long an inactive CMSIS Solution extension may take to activate. */
 export const ACTIVATION_MS = 20_000;
 
 const API_METHODS: readonly (keyof SolutionApiV2)[] = ['getBoards', 'getDevices', 'getDraftProjects', 'createNewSolution'];
-const UPDATE_HINT = 'Ask the user to update the CMSIS Solution extension: its API version 2 came with release 1.46.0.';
-/** The refusal hint for a method of version 3 the extension does not offer. */
+/** The refusal hint for an extension without API version 3, or without a method of it. */
 export const V3_UPDATE_HINT = 'Ask the user to update the CMSIS Solution extension: this needs its API version 3, '
     + 'which comes with a release after 1.72.0 (today only its nightly build).';
 
@@ -286,8 +285,6 @@ const WEB_FAILURE = /web service could not be reached/i;
 
 /** The API object of each exports object: `getApi` makes a new one per call and keeps it until the extension ends. */
 const acquired = new WeakMap<object, SolutionApi>();
-/** The version each acquired API object answered to. */
-const versions = new WeakMap<object, number>();
 
 /** A caught value's message. */
 function messageOf(caught: unknown): string {
@@ -329,12 +326,12 @@ function versionText(handle: SolutionExtensionHandle): string {
 }
 
 /**
- * CMSIS Solution's API, version 3 when it offers it, else 2. `what` names
- * the call in the refusals:
+ * CMSIS Solution's API, version 3. `what` names the call in the refusals:
  * the extension not installed (`CMSIS_NO_SOLUTION`), an activation that
  * fails (`TASK_FAILED`) or takes longer than `activationMs` (`TIMEOUT`),
- * and an extension without `getApi`, without version 3 or 2, or with a
- * version 2 that lacks a method (`TOOL_DISABLED`).
+ * and an extension without `getApi`, without version 3, or with a version
+ * 3 that lacks one of the catalog methods (`TOOL_DISABLED`, with the hint
+ * to update the extension).
  */
 export async function acquireSolutionApi(
     handle: SolutionExtensionHandle | undefined,
@@ -365,7 +362,7 @@ export async function acquireSolutionApi(
     const surface = exported as { getApi?: unknown } | null | undefined;
     if (typeof surface?.getApi !== 'function') {
         throw new ToolError('TOOL_DISABLED',
-            `${what} not attempted: the CMSIS Solution extension${versionText(handle)} offers no public API (no getApi).`, UPDATE_HINT);
+            `${what} not attempted: the CMSIS Solution extension${versionText(handle)} offers no public API (no getApi).`, V3_UPDATE_HINT);
     }
     const known = acquired.get(surface);
     if (known !== undefined) {
@@ -375,41 +372,36 @@ export async function acquireSolutionApi(
 }
 
 /**
- * `getApi(3)`, else `getApi(2)`, from an exports object; memoised. Version 3
- * is taken only when it answers with the four methods of version 2 (it
- * extends version 2); otherwise, or when it throws, version 2 is asked.
+ * `getApi(3)` from an exports object; memoised. An extension that throws
+ * for version 3, answers no object, or answers one without the four catalog
+ * methods is refused: version 2 is never asked.
  */
 function acquireFrom(surface: { getApi?: unknown }, what: string, handle: SolutionExtensionHandle): SolutionApi {
     const getApi = surface.getApi as (version: number) => unknown;
     let api: unknown;
-    let version = SOLUTION_API_VERSION;
+    let why = '';
     try {
         api = getApi.call(surface, SOLUTION_API_VERSION);
-    } catch {
+    } catch (caught) {
         api = undefined;
+        why = ` (${messageOf(caught)})`;
     }
-    if (missingMethods(api).length > 0) {
-        version = SOLUTION_API_FALLBACK;
-        try {
-            api = getApi.call(surface, SOLUTION_API_FALLBACK);
-        } catch (caught) {
-            throw new ToolError('TOOL_DISABLED',
-                `${what} not attempted: the CMSIS Solution extension${versionText(handle)} offers no API version ${SOLUTION_API_FALLBACK} (${messageOf(caught)}).`,
-                UPDATE_HINT);
-        }
+    if (api === undefined || api === null || typeof api !== 'object') {
+        throw new ToolError('TOOL_DISABLED',
+            `${what} not attempted: the CMSIS Solution extension${versionText(handle)} offers no API version ${SOLUTION_API_VERSION}${why}.`,
+            V3_UPDATE_HINT);
     }
     const missing = missingMethods(api);
     if (missing.length > 0) {
         throw new ToolError('TOOL_DISABLED',
-            `${what} not attempted: API version ${SOLUTION_API_FALLBACK} of the CMSIS Solution extension${versionText(handle)} lacks ${missing.join(', ')}.`,
-            UPDATE_HINT);
+            `${what} not attempted: API version ${SOLUTION_API_VERSION} of the CMSIS Solution extension${versionText(handle)} lacks ${missing.join(', ')}.`,
+            V3_UPDATE_HINT);
     }
     acquired.set(surface, api as SolutionApi);
-    versions.set(api as object, version);
     return api as SolutionApi;
 }
 
-/** The methods of version 2 that `api` lacks. */
+/** The catalog methods, which version 3 keeps from version 2, that `api` lacks. */
 function missingMethods(api: unknown): string[] {
     const methods = (api ?? {}) as Record<string, unknown>;
     return API_METHODS.filter((method) => typeof methods[method] !== 'function');
@@ -418,7 +410,7 @@ function missingMethods(api: unknown): string[] {
 /**
  * The API object of an active CMSIS Solution extension, for the getters that
  * must neither activate it nor throw: undefined when the extension is absent
- * or inactive, offers no `getApi`, or neither version. Shares the memo of
+ * or inactive, offers no `getApi`, or no version 3. Shares the memo of
  * `acquireSolutionApi`.
  */
 export function peekSolutionApi(handle: SolutionExtensionHandle | undefined): SolutionApi | undefined {
@@ -436,14 +428,32 @@ export function peekSolutionApi(handle: SolutionExtensionHandle | undefined): So
     }
 }
 
-/** The version an acquired API object answered to: 3 or 2; undefined for an object this module did not acquire. */
-export function solutionApiVersion(api: object | undefined): number | undefined {
-    return api === undefined ? undefined : versions.get(api);
+/**
+ * Whether an installed and active CMSIS Solution extension is too old for
+ * this extension: it offers no API version 3. False for an extension that
+ * is absent or not active yet, which says nothing about its API.
+ */
+export function solutionApiTooOld(handle: SolutionExtensionHandle | undefined): boolean {
+    return handle !== undefined && handle.isActive && peekSolutionApi(handle) === undefined;
 }
 
 /**
- * A method of version 3, bound to its API object; undefined when the API
- * does not offer it (a version 2, or a version 3 without that method).
+ * The line `get_session_status` adds for a CMSIS Solution extension that is
+ * too old (`solutionApiTooOld`), so that an agent learns it before the first
+ * refusal; undefined otherwise.
+ */
+export function solutionTooOldLine(handle: SolutionExtensionHandle | undefined): string | undefined {
+    if (handle === undefined || !solutionApiTooOld(handle)) {
+        return undefined;
+    }
+    return `CMSIS Solution${versionText(handle)} is too old for cmsis_query and for cmsis_action with a target, open_solution, create_solution, `
+        + `install_pack and convert: it offers no API version ${SOLUTION_API_VERSION}, and these calls are refused until the user updates it `
+        + '(a release after 1.72.0). Build, load, run and debug on the active target still work.';
+}
+
+/**
+ * A method of version 3, bound to its API object; undefined when there is
+ * no API object or it does not offer that method.
  */
 export function v3Method<K extends keyof SolutionApiV3Methods>(api: SolutionApi | undefined, name: K): SolutionApiV3Methods[K] | undefined {
     const method = (api as Record<string, unknown> | undefined)?.[name];
@@ -458,7 +468,7 @@ export function requireV3Method<K extends keyof SolutionApiV3Methods>(api: Solut
     const method = v3Method(api, name);
     if (method === undefined) {
         throw new ToolError('TOOL_DISABLED',
-            `${what} not attempted: the CMSIS Solution extension offers no ${name} (API version ${solutionApiVersion(api) ?? SOLUTION_API_FALLBACK}).`,
+            `${what} not attempted: the CMSIS Solution extension offers no ${name} (API version ${SOLUTION_API_VERSION}).`,
             V3_UPDATE_HINT);
     }
     return method;

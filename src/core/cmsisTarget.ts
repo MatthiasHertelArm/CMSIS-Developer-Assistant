@@ -17,25 +17,14 @@
 /**
  * Pure helpers behind the `target` input of `cmsis_action`: parsing a
  * `type` / `type@set` reference, matching it against what the CMSIS Solution
- * extension reports as active (`cmsis-csolution.getActiveTargetSet`, same
- * format), listing the target-types a csolution declares, and editing the
- * extension's `.vscode/cmsis.json` selection so a re-activated solution comes
- * up on the requested target, and naming the solution a folder opens with.
+ * extension reports as active (`getActiveTargetSet`, same format), listing
+ * the target-types a csolution declares, and naming the solution a folder
+ * opens with in its `.vscode/cmsis.json`.
  *
- * The cmsis.json layout mirrors what the CMSIS Solution extension (1.72.0,
- * `CmsisSettingsJsonFile`) reads and writes itself:
- *
- *   { "targetSet": { "<solutionDisplayName>": {
- *         "activeTargetType": "<type>",
- *         "<type>": <index into that type's target-set list>   // optional
- *   } } }
- *
- * in the `.vscode/cmsis.json` of the workspace's first folder, whichever
- * folder holds the solution. `<solutionDisplayName>` is the csolution path
- * relative to that folder with both extensions stripped, forward slashes.
- * The extension looks the key up as a dotted path, split at every `.`, so
- * a name with dots nests: `../fw/app`, the name of a solution in a second
- * folder, is `targetSet` → `""` → `""` → `"/fw/app"`.
+ * The target itself is switched through CMSIS Solution's API
+ * (`setActiveTarget`), never by editing cmsis.json. The one thing written
+ * there is `activeSolution`, for a folder that is about to open: no
+ * extension runs in that window yet that could be asked (#145).
  *
  * No `vscode` import here so the logic is unit-testable outside the host.
  */
@@ -190,35 +179,6 @@ export function resolveTargetSelection(types: TargetTypeInfo[], wanted: TargetRe
     return { ok: true, type: type.name, set: wanted.set, setIndex: index, name: formatTargetName(type.name, wanted.set) };
 }
 
-/** The key the extension files a solution under in cmsis.json; `workspaceFolder` is the workspace's first folder. */
-export function solutionDisplayName(workspaceFolder: string, solutionPath: string): string {
-    const relative = path.relative(workspaceFolder, solutionPath);
-    const stripped = relative.replace(/\.[^./\\]+$/, '').replace(/\.[^./\\]+$/, '');
-    return stripped.split(path.sep).join('/').replace(/\\/g, '/');
-}
-
-/**
- * Return cmsis.json text with the solution's active target-type set (and the
- * set index when one was named), under the key path the extension reads:
- * `displayName` split at every `.`. Existing content — other solutions, other
- * keys, comments — is preserved; formatting follows the extension (4 spaces).
- */
-export function applyTargetSelection(
-    cmsisJsonText: string,
-    displayName: string,
-    type: string,
-    setIndex: number | undefined,
-): string {
-    const formattingOptions = { insertSpaces: true, tabSize: 4, eol: '\n' };
-    const selection = ['targetSet', ...displayName.split('.')];
-    let text = cmsisJsonText.trim() ? cmsisJsonText : '{}';
-    text = applyEdits(text, modify(text, [...selection, 'activeTargetType'], type, { formattingOptions }));
-    if (setIndex !== undefined) {
-        text = applyEdits(text, modify(text, [...selection, type], setIndex, { formattingOptions }));
-    }
-    return text.endsWith('\n') ? text : `${text}\n`;
-}
-
 /**
  * Return cmsis.json text that names `solutionPath` as the active solution
  * of the folder `workspaceFolder`: `activeSolution`, the csolution path
@@ -226,7 +186,8 @@ export function applyTargetSelection(
  * writes it itself (1.72.0 `setActiveSolution`). The extension reads it when
  * the folder opens and remembers no other solution for it, which is how
  * `open_solution` gets a csolution below the opened folder activated (#145).
- * Existing content is preserved, as in `applyTargetSelection`.
+ * Existing content — other keys, comments — is preserved; formatting
+ * follows the extension (4 spaces).
  */
 export function applyActiveSolution(cmsisJsonText: string, workspaceFolder: string, solutionPath: string): string {
     const formattingOptions = { insertSpaces: true, tabSize: 4, eol: '\n' };

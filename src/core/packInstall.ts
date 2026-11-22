@@ -40,10 +40,8 @@ import { KnowledgeIndex } from './knowledge/store';
 import { firstChild, parseXml } from './packDocs/xmlLite';
 import { ToolError } from './toolResult';
 
-/** The command of the CMSIS Solution extension that installs a pack (hidden from the palette). */
-export const INSTALL_PACK_COMMAND = 'cmsis-csolution.installPack';
-/** The first CMSIS Solution release known to have that command. */
-export const INSTALL_PACK_SINCE = '1.72.0';
+/** How the texts name the install: `installPacks` of the CMSIS Solution extension's API version 3. */
+export const INSTALL_PACKS_API = 'CMSIS Solution API installPacks';
 /** Where the CMSIS Solution extension writes cpackget's output. */
 export const SOLUTION_OUTPUT_CHANNEL = 'CMSIS Solution';
 
@@ -220,10 +218,10 @@ export function installFailure(pack: PackRequest, cause: string, leftover: strin
         INSTALL_FAILURE_HINT);
 }
 
-/** The failure of an install the command reported done, while its folder is missing. */
+/** The failure of an install the API reported done, while its folder is missing. */
 export function missingFolderFailure(pack: PackRequest, folder: string): ToolError {
     return new ToolError('TASK_FAILED',
-        `CMSIS 'install_pack' failed: ${INSTALL_PACK_COMMAND} reported ${folder} for ${formatPackRequest(pack)}, but that folder does not exist.`,
+        `CMSIS 'install_pack' failed: ${INSTALL_PACKS_API} reported ${folder} for ${formatPackRequest(pack)}, but that folder does not exist.`,
         'The CMSIS Solution extension answers so without running cpackget while the same install still waits in its queue: '
             + `call install_pack again in a moment. ${INSTALL_FAILURE_HINT}`);
 }

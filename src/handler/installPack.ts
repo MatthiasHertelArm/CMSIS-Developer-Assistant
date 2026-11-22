@@ -20,19 +20,18 @@
  * project that needs it exists. Like `open_solution` it needs no active
  * solution.
  *
- * With API version 3 the install is `installPacks({packs, approved})`, which
- * answers per pack `installed` with the folder or `failed` with the reason.
- * Without it, the command `cmsis-csolution.installPack(vendor, name,
- * version)`, hidden from the palette: it runs `cpackget add -a` in the
- * extension's tool queue and answers the pack's folder, or nothing, with the
- * reason only in its output channel. Either way `approved` is this
- * extension's to give: the licence question below comes first. So the call checks first what it can name: the pack
- * id, the extension, its command (after activating the extension, which a
- * window without a csolution has not done), and the licence. A pack whose
+ * The install is `installPacks({packs, approved})` of the extension's API
+ * version 3, which answers per pack `installed` with the folder or `failed`
+ * with the reason. An extension without it is refused with the update
+ * hint; the hidden command of 1.72.0 is not used. `approved` is this
+ * extension's to give: the licence question below comes first. So the call
+ * checks first what it can name: the pack id, the extension, its
+ * `installPacks` (after activating the extension, which a window without a
+ * csolution has not done), and the licence. A pack whose
  * PDSC in the pack root's `.Web/` declares one is installed only after the
  * user chose Install in a modal; without a PDSC there the result says that
  * the licence was not checked. A pack whose folder is there already is not
- * installed again. After the command the folder is checked, and the result
+ * installed again. After the install the folder is checked, and the result
  * names the knowledge units the pack ships.
  *
  * One install of a pack runs at a time in a window, question included: a
@@ -52,8 +51,7 @@ import { missingSolutionExtensionRefusal, SOLUTION_EXTENSION_ID } from '../core/
 import {
     checkLicence,
     formatPackRequest,
-    INSTALL_PACK_COMMAND,
-    INSTALL_PACK_SINCE,
+    INSTALL_PACKS_API,
     installFailure,
     knowledgeLine,
     LicenceCheck,
@@ -65,7 +63,7 @@ import {
     parsePackRequest,
 } from '../core/packInstall';
 import { problemJournal, type ProblemInput } from '../core/problemJournal';
-import { peekSolutionApi, v3Method } from '../core/solutionApi';
+import { peekSolutionApi, V3_UPDATE_HINT, v3Method } from '../core/solutionApi';
 import { JsonObject, ToolError, ToolText } from '../core/toolResult';
 import { logger } from '../utils/logger';
 import { HardwareTimeoutError, withTimeout } from '../utils/timeout';
@@ -76,16 +74,13 @@ import { formatDuration } from './jobText';
 
 /** What `install_pack` needs from VS Code and the CMSIS Solution extension. */
 export interface PackInstallHost {
-    /** Activate the CMSIS Solution extension unless it is active, then list VS Code's commands (`getCommands(true)`). */
-    solutionCommands(): Promise<readonly string[]>;
+    /** Activate the CMSIS Solution extension unless it is active; whether its API version 3 offers `installPacks`. */
+    installReady(): Promise<boolean>;
     /**
-     * Install the pack: `installPacks` of API version 3, else the command
-     * `cmsis-csolution.installPack(vendor, name, version)`. Answers the pack's
-     * folder, or undefined; rejects with the reason when there is one.
+     * Install the pack through `installPacks` of API version 3. Answers the
+     * pack's folder, or undefined; rejects with the reason when there is one.
      */
     installPack(vendor: string, name: string, version: string): Thenable<unknown>;
-    /** What `installPack` calls, for the texts; the command when absent. */
-    installer?(): string;
     /** The pack root: the CMSIS Solution extension's, else `$CMSIS_PACK_ROOT` or the platform default. */
     packRoot(): Promise<string>;
     /** The licence question as a modal with Install and Cancel; true for Install. */
@@ -98,23 +93,21 @@ const INSTALL_BUTTON = 'Install';
 
 /** The real thing: the CMSIS Solution extension, VS Code's modal, the window's journal. */
 export const VSCODE_PACK_INSTALL_HOST: PackInstallHost = {
-    solutionCommands: async () => {
-        // A window without a csolution has not activated the extension, and its commands are registered only then.
+    installReady: async () => {
+        // A window without a csolution has not activated the extension, and its API answers only then.
         const extension = vscode.extensions.getExtension(SOLUTION_EXTENSION_ID);
         if (extension !== undefined && !extension.isActive) {
             await extension.activate();
         }
-        return vscode.commands.getCommands(true);
+        return v3Method(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)), 'installPacks') !== undefined;
     },
     installPack: async (vendor, name, version) => {
         const installPacks = v3Method(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)), 'installPacks');
         if (installPacks === undefined) {
-            return vscode.commands.executeCommand<unknown>(INSTALL_PACK_COMMAND, vendor, name, version);
+            throw new Error('the CMSIS Solution extension offers no installPacks');
         }
         return folderOfInstall(await installPacks({ packs: [`${vendor}::${name}@${version}`], approved: true }));
     },
-    installer: () => (v3Method(peekSolutionApi(vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)), 'installPacks') !== undefined
-        ? INSTALL_PACKS_API : INSTALL_PACK_COMMAND),
     packRoot: () => effectiveToolchainPackRoot(),
     confirmLicence: async (message, detail) =>
         (await vscode.window.showWarningMessage(message, { modal: true, detail }, INSTALL_BUTTON)) === INSTALL_BUTTON,
@@ -124,8 +117,6 @@ export const VSCODE_PACK_INSTALL_HOST: PackInstallHost = {
 };
 
 const WHAT = 'CMSIS \'install_pack\'';
-/** How the texts name the install through API version 3. */
-const INSTALL_PACKS_API = 'CMSIS Solution API installPacks';
 
 /**
  * The folder of the one pack an `installPacks` answer reports: its `path`
@@ -203,11 +194,11 @@ function installedResult(pack: PackRequest, folder: string, head: string, licenc
     return { text: lines.join('\n'), status: 'ok', data };
 }
 
-/** Run the command and check what it left; a failure is journaled. */
+/** Run the install and check what it left; a failure is journaled. */
 async function install(installer: PackInstallHost, pack: PackRequest, expected: string, licence: LicenceCheck): Promise<ToolText> {
     const id = formatPackRequest(pack);
     const leftover = (): string | undefined => (isDirectory(expected) ? expected : undefined);
-    const via = installer.installer?.() ?? INSTALL_PACK_COMMAND;
+    const via = INSTALL_PACKS_API;
     logger.info(`install_pack: ${via} ${id}`);
     let answer: unknown;
     try {
@@ -215,7 +206,7 @@ async function install(installer: PackInstallHost, pack: PackRequest, expected: 
     } catch (caught) {
         throw reported(installer, installFailure(pack, `${via} failed: ${failureText(caught)}`, leftover()));
     }
-    if ((typeof answer !== 'string' || answer.trim().length === 0) && via !== INSTALL_PACK_COMMAND && holdsPack(expected, pack)) {
+    if ((typeof answer !== 'string' || answer.trim().length === 0) && holdsPack(expected, pack)) {
         answer = expected;
     }
     if (typeof answer !== 'string' || answer.trim().length === 0) {
@@ -228,7 +219,7 @@ async function install(installer: PackInstallHost, pack: PackRequest, expected: 
     return installedResult(pack, folder, `${id} installed in ${folder}.`, licence);
 }
 
-/** Start the install of `pack`: the licence question when the PDSC declares one, then the command. */
+/** Start the install of `pack`: the licence question when the PDSC declares one, then the install. */
 function startFlight(host: HandlerHost, installer: PackInstallHost, pack: PackRequest, folder: string, licence: LicenceCheck): Flight {
     const id = formatPackRequest(pack);
     const key = id.toLowerCase();
@@ -326,20 +317,19 @@ export async function runInstallPack(host: HandlerHost, given: unknown, deadline
         return installedResult(pack, folder, `${id} is already installed in ${folder}; nothing was installed.`, undefined);
     }
 
-    let commands: readonly string[];
+    let ready: boolean;
     const budgetMs = Math.max(1, Math.min(ACTIVATION_MS, deadline - DEADLINE_MARGIN_MS - host.now()));
     try {
-        commands = await withTimeout('CMSIS Solution activation', budgetMs, () => installer.solutionCommands());
+        ready = await withTimeout('CMSIS Solution activation', budgetMs, () => installer.installReady());
     } catch (caught) {
         const why = caught instanceof HardwareTimeoutError ? `no answer within ${formatDuration(budgetMs)}` : failureText(caught);
         throw new ToolError('TASK_FAILED', `${WHAT} not attempted: the CMSIS Solution extension did not activate (${why}).`,
             'Ask the user to reload the VS Code window, then call install_pack again; get_recent_problems shows what the extension reported.');
     }
-    if (!commands.includes(INSTALL_PACK_COMMAND)) {
+    if (!ready) {
         throw new ToolError('TOOL_DISABLED',
-            `${WHAT} not attempted: the CMSIS Solution extension${extension.version ? ` ${extension.version}` : ''} has no command `
-                + `${INSTALL_PACK_COMMAND}; CMSIS Solution ${INSTALL_PACK_SINCE} has it.`,
-            `Ask the user to update the CMSIS Solution extension (${SOLUTION_EXTENSION_ID}) and to reload the window. Do not run cpackget yourself.`);
+            `${WHAT} not attempted: the CMSIS Solution extension${extension.version ? ` ${extension.version}` : ''} offers no installPacks (API version 3).`,
+            `${V3_UPDATE_HINT} Do not run cpackget yourself.`);
     }
     // Another call for the same pack may have started its flight while this one waited for the extension.
     const started = flights.get(id.toLowerCase());
