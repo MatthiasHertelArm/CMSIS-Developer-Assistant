@@ -20,12 +20,14 @@ import {
     INTERNAL_OPS,
     PACKDOCS_OPS,
     SERIAL_OPS,
+    SOURCE_OPS,
     forwardTimeoutMs,
     isInternalOp,
     isKnownOp,
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
+    isSourceOp,
     targetHintOf,
     workerFenceMs,
 } from '../core/opTable';
@@ -62,8 +64,28 @@ suite('Op table', () => {
         assert.strictEqual(PACKDOCS_OPS.length, 10);
     });
 
+    test('the two source ops ride the documentation dispatch and are neither documentation nor slow', () => {
+        assert.deepStrictEqual([...SOURCE_OPS], ['handleSourceFind', 'handleSourceGet']);
+        for (const op of SOURCE_OPS) {
+            assert.ok(isKnownOp(op) && isPackDocsOp(op) && isSourceOp(op), `${op} is routable with the documentation ops`);
+            assert.ok(!isPackDocsDocOp(op) && !isSerialOp(op), `${op} belongs to no other group`);
+            assert.strictEqual(forwardTimeoutMs(op, {}, TOOL_MS), TOOL_MS + 15_000, 'no ten-minute floor');
+        }
+        assert.strictEqual(isSourceOp('handleLookupSymbol'), false);
+        assert.deepStrictEqual(targetHintOf({ fileFullPath: '/a/main.c', line: 3, name: 'x' }), { source: 'path', path: '/a/main.c' });
+    });
+
+    test('only an absolute path names a window: one relative to a solution, or under the pack root, does not', () => {
+        assert.strictEqual(targetHintOf({ fileFullPath: 'Blinky/main.c', line: 3 }), undefined);
+        assert.strictEqual(targetHintOf({ fileFullPath: '${CMSIS_PACK_ROOT}/ARM/CMSIS/6.0.0/core.h' }), undefined);
+        assert.deepStrictEqual(targetHintOf({ fileFullPath: 'C:\\work\\main.c' }), { source: 'path', path: 'C:\\work\\main.c' });
+        assert.deepStrictEqual(targetHintOf({ fileFullPath: 'c:/work/main.c' }), { source: 'path', path: 'c:/work/main.c' });
+        assert.deepStrictEqual(targetHintOf({ fileFullPath: '\\\\server\\share\\main.c' }), { source: 'path', path: '\\\\server\\share\\main.c' });
+        assert.deepStrictEqual(targetHintOf({ fileFullPath: 'src/main.c', workingDirectory: '/b' }), { source: 'path', path: '/b' });
+    });
+
     test('each name belongs to exactly one group', () => {
-        const everyName: string[] = [...DEBUG_OPS, ...SERIAL_OPS, ...PACKDOCS_OPS];
+        const everyName: string[] = [...DEBUG_OPS, ...SERIAL_OPS, ...PACKDOCS_OPS, ...SOURCE_OPS];
         const repeated = everyName.filter((name, index) => everyName.indexOf(name) !== index);
         assert.deepStrictEqual(repeated, []);
     });

@@ -4,6 +4,17 @@ All notable changes to CMSIS Developer Assistant will be documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.9.5] - Unreleased
+
+Source browsing (proposal 2.9.5): two experimental tools that answer where a C or C++ symbol is defined, used and called, from the clangd the editor runs. They are off by default.
+
+### Added
+- **`source_find` and `source_get`: where a symbol is declared, defined, used and called (experimental; setting `sourceBrowsing.enabled`, off by default).** `source_find` takes a name, or a use site (`fileFullPath`, `line` and a name, which a macro or a local variable needs), or a file. It answers with a card: the kind, the signature or type, the size, the documentation comment, for a macro its definition and expansion, where the symbol is declared and defined, its id, and what `source_get` returns for it, with counts. A file alone answers with its outline. `source_get` takes the id, or a name that is unique, and returns the `definition` as source text, the `references`, the `callers` or `callees` up to three levels deep, the `supertypes`, `subtypes` or `implementations`; every entry is `file:line` with the source line. Both ask the clangd the editor runs, through the clangd extension of the Keil Studio Pack: the answers come from the index IntelliSense uses, built for the context CMSIS Solution set up, and no second clangd runs. The tools install and configure nothing. Without the clangd extension, a clangd language server or a compile database, a call is refused with what is missing and whose step it is; a missing language server is named, never downloaded. A macro, which clangd's index does not have by name, is found from a use in the context's translation units. A file that changed on disk after it was indexed is read again before the answer. The first line of every answer names the context the index covers and how far the index is. Off, the tools are in no tool list and the instructions do not name them; on, they add 1 746 bytes to `tools/list` and one sentence to the instructions.
+- **`test/transport/source-clangd.js`** asks the source tools' questions of a clangd of the machine over a small C and C++ project it writes. Its answers depend on that clangd, so it is a local check like `test:surface`; without a clangd it says so and passes.
+
+### Changed
+- **A `fileFullPath` that is not absolute no longer picks a window.** With several windows, a path sends a call to the window that owns the file. A path relative to a solution folder, as the source tools take it, cannot say which window that is, so such a call now follows the session like a call without a path, and its answer no longer ends with a note that the path lies outside every open workspace.
+
 ## [2.9.4] - Unreleased
 
 CMSIS Solution's API version 3 behind `cmsis_query` and `cmsis_action` (proposal 2.9.1), and its document inventory as a source of the documentation tools (proposal 2.9.2, stage 1). Both need a CMSIS Solution release after 1.72.0, today only its nightly build; with 1.72.0 or older, `cmsis_query` and `cmsis_action` are refused with the hint to update the extension, while `flash`, the debugging tools and the documentation and build-artefact tools work as in 2.9.0.

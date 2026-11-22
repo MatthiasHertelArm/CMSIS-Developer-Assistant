@@ -48,6 +48,7 @@ import { projectFacts } from './core/knowledge/projectFacts';
 import { setKnownMessageLookup } from './core/knowledge/knownMessageLookup';
 import { KnowledgeHandler, KnowledgeHost } from './knowledgeHandler';
 import { PackDocsHandlers } from './packDocsDispatch';
+import { createSourceBrowseHandler } from './sourceBrowseHost';
 import { SERVER_VERSION } from './debuggingExecutor';
 import { logger } from './utils/logger';
 
@@ -313,5 +314,5 @@ export function createPackDocsHandlers(context: vscode.ExtensionContext, timeout
                 `set ${CONFIG}.packDocs.extractor to pdfjs (bundled), or install poppler / set ${CONFIG}.packDocs.pdftotextPath.`);
         }
     });
-    return { docs, build, knowledge };
+    return { docs, build, knowledge, source: createSourceBrowseHandler(() => effectivePackRoot(host), buildHost, timeoutInSeconds) };
 }

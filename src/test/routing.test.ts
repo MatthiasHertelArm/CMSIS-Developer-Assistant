@@ -25,7 +25,7 @@ import type { IDebuggingHandler } from '../debuggingHandler';
 import type { PackDocsHandlers } from '../packDocsDispatch';
 import { RoutingDebuggingHandler, RoutingOptions } from '../routingDebuggingHandler';
 import { runInCallContext } from '../core/callContext';
-import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, KNOWLEDGE_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS } from '../core/opTable';
+import { CONTROL_ENVELOPE_HEADER, DEBUG_OPS, KNOWLEDGE_OPS, PACKDOCS_BUILD_OPS, PACKDOCS_DOC_OPS, SOURCE_OPS } from '../core/opTable';
 import { newErrorsNote, newErrorsStatusLine } from '../core/problemFeed';
 import { ProblemJournal } from '../core/problemJournal';
 import { ErrorCode, JsonObject, ToolError, ToolText, errorDetail, textOf, toToolError } from '../core/toolResult';
@@ -40,7 +40,7 @@ const JSON_TYPE: http.OutgoingHttpHeaders = { 'Content-Type': 'application/json'
 /** A reply header that marks the typed envelope (#11). */
 const TYPED_JSON: http.OutgoingHttpHeaders = { ...JSON_TYPE, [CONTROL_ENVELOPE_HEADER]: '2' };
 
-type Role = 'debug' | 'docs' | 'build' | 'knowledge';
+type Role = 'debug' | 'docs' | 'build' | 'knowledge' | 'source';
 
 /** Every fake handler answers with who it is, its role, the op and the args it got. */
 function echo(label: string, role: Role, op: string, args: unknown): string {
@@ -58,6 +58,7 @@ function echoingPackDocs(label: string): PackDocsHandlers {
         docs: echoing(label, 'docs', PACKDOCS_DOC_OPS),
         build: echoing(label, 'build', PACKDOCS_BUILD_OPS),
         knowledge: echoing(label, 'knowledge', KNOWLEDGE_OPS),
+        source: echoing(label, 'source', SOURCE_OPS),
     };
 }
 
@@ -884,6 +885,25 @@ suite('Multi-window routing', () => {
                 echo('beta', 'docs', 'handleListTargetDocs', { target: 'HE' }));
             assert.strictEqual(await router.packDocsOp('handleGetMemoryUsage', { top: 5 }),
                 echo('beta', 'build', 'handleGetMemoryUsage', { top: 5 }));
+        });
+
+        test('source ops run in the session\'s window like the build-artefact ops, and in the window that owns a named file', async () => {
+            await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const router = newRouter();
+            router.selectDebugWindow({ workspaceFolder: folder('beta') });
+            assert.strictEqual(await router.packDocsOp('handleSourceFind', { name: 'main' }), echo('beta', 'source', 'handleSourceFind', { name: 'main' }));
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', { symbol: 'main', what: 'callers' }),
+                echo('beta', 'source', 'handleSourceGet', { symbol: 'main', what: 'callers' }));
+            const inAlpha = { fileFullPath: path.join(folder('alpha'), 'src', 'main.c'), line: 3 };
+            assert.strictEqual(await newRouter().packDocsOp('handleSourceFind', inAlpha), echo('alpha', 'source', 'handleSourceFind', inAlpha));
+        });
+
+        test('a window of a version without the source tools refuses their ops and says why', async () => {
+            const older: PackDocsHandlers = { ...echoingPackDocs('old'), source: undefined };
+            await openWindow('old', { workspaceFolders: [folder('old')] }, older);
+            const message = await refusedWith(newRouter().packDocsOp('handleSourceFind', { name: 'main' }), /the source-browsing handler is not available in this window/);
+            assert.match(message, /ask the user to update it or to reload the window/);
         });
 
         test('a window without documentation handlers refuses their ops', async () => {

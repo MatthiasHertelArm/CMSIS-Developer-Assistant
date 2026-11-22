@@ -31,6 +31,8 @@
 export interface InstructionOptions {
     packDocsEnabled?: boolean;
     buildInfoEnabled?: boolean;
+    /** The source tools are experimental: they are named only when they are on. */
+    sourceBrowsingEnabled?: boolean;
 }
 
 /** What the tools are for. The problem kinds named here are what make an agent reach for them. */
@@ -139,6 +141,17 @@ const KNOWLEDGE_ON =
     'before acting. Units marked draft are not reviewed: say so when you rely on one.';
 
 /**
+ * Experimental, and said only while the group is on: off, the tools are not
+ * in the list and an instruction that names them would mislead.
+ */
+const SOURCE_BROWSING_ON =
+    'The source tools (source_find, source_get; experimental) answer where a C or C++ symbol is declared, defined, used and ' +
+    'called, from clangd\'s index of the active context, the same index the editor uses. Use them instead of searching the ' +
+    'workspace and the pack folders for a name: source_find says what a symbol is and gives its id, source_get returns its ' +
+    'definition, references, callers or callees. A macro or a local variable is found from a place that uses it ' +
+    '(fileFullPath and line); a symbol of an assembler file is lookup_symbol\'s.';
+
+/**
  * The line the first `get_session_status` of a session adds after the status,
  * before the call statistics: by then the instructions may lie far back in
  * the conversation, or have been compacted away.
@@ -147,9 +160,10 @@ export const TOOL_RULES_REMINDER =
     'Tool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions).';
 
 /**
- * The instructions without the tool rules. The tails follow the two options
+ * The instructions without the tool rules. The tails follow the options
  * alone, not whether the session has a documentation dispatch; a group that
- * is off is named with the setting that enables it.
+ * is off is named with the setting that enables it, except the experimental
+ * source tools, which are named only while they are on.
  */
 export function composeInstructions(options: Readonly<InstructionOptions>): string {
     const parts = [KNOWLEDGE_FIRST, PURPOSE, SKILL_FIRST, CORE_SKILLS_ONLY, WITHOUT_SKILLS, TIMEOUT_OVERRIDE, READING_RESULTS, CURRENT_SOLUTION,
@@ -157,6 +171,9 @@ export function composeInstructions(options: Readonly<InstructionOptions>): stri
     parts.push(options.packDocsEnabled === true ? DOCUMENTATION_ON : DOCUMENTATION_OFF);
     parts.push(options.buildInfoEnabled === true ? BUILD_ARTEFACTS_ON : BUILD_ARTEFACTS_OFF);
     parts.push(KNOWLEDGE_ON);
+    if (options.sourceBrowsingEnabled === true) {
+        parts.push(SOURCE_BROWSING_ON);
+    }
     return parts.join(' ');
 }
 

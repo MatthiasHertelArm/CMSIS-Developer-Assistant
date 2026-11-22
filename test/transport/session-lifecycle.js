@@ -878,6 +878,66 @@ async function main() {
         ksearch?.result?.isError === true && /^\[TOOL_DISABLED\]/.test(ksearchText) && /knowledge\.indexPath/.test(ksearchText), ksearchText.split('\n')[0]);
     await request(kport, 'DELETE', { 'mcp-session-id': ksid });
     await withKnowledge.stop();
+
+    // 11. The experimental source-browsing tools: off unless their gate is on,
+    //     so in none of the lists above; with the gate two tools more, under a
+    //     byte cap of their own, and named in the instructions only then.
+    //     Without a compile database for clangd they say what is missing.
+    const { SourceBrowseHandler } = require(path.join(OUT, 'sourceBrowseHandler.js'));
+    const sourceHost = {
+        workspaceFolders: () => [docsDir], packRoot: async () => undefined, clangdExtension: () => undefined,
+        clangdSettings: () => ({ enable: true, path: 'clangd', arguments: [] }), variable: () => undefined,
+        openDocument: async () => { throw new Error('no editor'); }, readText: async () => undefined, log: silentLog,
+        clock: { now: () => Date.now(), startTimer: (ms, fire) => { const handle = setTimeout(fire, ms); return () => clearTimeout(handle); } },
+    };
+    const sourceDispatch = localPackDocsDispatch({
+        docs: new PackDocsHandler(docsHost, { timeoutMs: 30_000 }),
+        build: new BuildInfoHandler(buildHost, { timeoutMs: 30_000 }),
+        source: new SourceBrowseHandler(sourceHost, { timeoutMs: 30_000 }),
+    });
+    const withSource = new DebugMCPServer(0, 30, undefined, () => ({ debug, serial: localSerialDispatch, packDocs: sourceDispatch }),
+        { packDocsEnabled: true, buildInfoEnabled: true, sourceBrowsingEnabled: true });
+    await withSource.initialize();
+    await withSource.start();
+    const sport = withSource.getActualPort();
+    const sinit = await request(sport, 'POST', {}, {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'transport-check', version: '1.0.0' } },
+    });
+    const ssid = sinit.headers['mcp-session-id'];
+    const sinstructions = parseSse(sinit.body)?.result?.instructions ?? '';
+    check('the server instructions name the source tools only while their gate is on',
+        /source_find/.test(sinstructions) && !/source_find/.test(instructions) && !/source_find/.test(finstructions));
+    await request(sport, 'POST', { 'mcp-session-id': ssid }, { jsonrpc: '2.0', method: 'notifications/initialized' });
+    const slist = await request(sport, 'POST', { 'mcp-session-id': ssid }, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    const stools = parseSse(slist.body)?.result?.tools ?? [];
+    const SOURCE_TOOLS = ['source_find', 'source_get'];
+    check('the source gate adds exactly the two source tools to the list with every other group on',
+        SOURCE_TOOLS.every((n) => stools.some((t) => t.name === n)) && stools.length === ftools.length + SOURCE_TOOLS.length, `${stools.length} tools`);
+    check('without the gate no list has them', SOURCE_TOOLS.every((n) => !names.includes(n) && !fnames.has(n) && !ktools.some((t) => t.name === n)));
+    // What the two tools add to every turn of a session that has them: the cap of the knowledge trio.
+    const SOURCE_TOOLS_BUDGET_BYTES = 2_000;
+    const sourceBytes = Buffer.byteLength(JSON.stringify(stools)) - ftoolsBytes;
+    check(`the source tools add at most ${SOURCE_TOOLS_BUDGET_BYTES} bytes to tools/list`,
+        sourceBytes > 0 && sourceBytes <= SOURCE_TOOLS_BUDGET_BYTES, `${sourceBytes} bytes`);
+    // The list with every group and the experimental one on: the budget above plus that cap.
+    const TOOLS_LIST_WITH_SOURCE_BUDGET_BYTES = TOOLS_LIST_ALL_BUDGET_BYTES + SOURCE_TOOLS_BUDGET_BYTES;
+    check(`tools/list with the source tools on as well stays under the ${TOOLS_LIST_WITH_SOURCE_BUDGET_BYTES} byte budget`,
+        Buffer.byteLength(JSON.stringify(stools)) <= TOOLS_LIST_WITH_SOURCE_BUDGET_BYTES, `${Buffer.byteLength(JSON.stringify(stools))} bytes`);
+    const sfind = parseSse((await request(sport, 'POST', { 'mcp-session-id': ssid }, {
+        jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'source_find', arguments: { name: 'main' } },
+    })).body);
+    const sfindText = sfind?.result?.content?.[0]?.text ?? '';
+    check('source_find without a compile database for clangd fails with TOOL_DISABLED and names the next step',
+        sfind?.result?.isError === true && /^\[TOOL_DISABLED\]/.test(sfindText) && /compile database/.test(sfindText) && /cmsis_action \{action:'convert'\}/.test(sfindText),
+        sfindText.split('\n')[0]);
+    const sget = parseSse((await request(sport, 'POST', { 'mcp-session-id': ssid }, {
+        jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'source_get', arguments: { symbol: 'main', what: 'users' } },
+    })).body);
+    check('source_get refuses a relation that is none of its seven before it reaches the handler',
+        sget?.result?.isError === true || !!sget?.error, JSON.stringify(sget?.result?.content?.[0]?.text ?? sget?.error?.message ?? '').slice(0, 160));
+    await request(sport, 'DELETE', { 'mcp-session-id': ssid });
+    await withSource.stop();
     fs.rmSync(docsDir, { recursive: true, force: true });
 
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}`);

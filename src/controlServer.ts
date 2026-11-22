@@ -89,6 +89,7 @@ import {
     isPackDocsDocOp,
     isPackDocsOp,
     isSerialOp,
+    isSourceOp,
     mayWaitForUser,
     workerFenceMs,
 } from './core/opTable';
@@ -618,6 +619,13 @@ export class ControlServer {
                 throw new ToolError('TOOL_DISABLED', `Control op ${op}: the knowledge handler is not available in this window`);
             }
             return this.packDocs.knowledge;
+        }
+        if (isSourceOp(op)) {
+            if (this.packDocs.source === undefined) {
+                throw new ToolError('TOOL_DISABLED', `Control op ${op}: the source-browsing handler is not available in this window`,
+                    'The window runs a version of the extension without the source tools: ask the user to update it or to reload the window.');
+            }
+            return this.packDocs.source;
         }
         return isPackDocsDocOp(op) ? this.packDocs.docs : this.packDocs.build;
     }

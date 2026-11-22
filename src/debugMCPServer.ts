@@ -102,6 +102,8 @@ export interface DebugMCPServerOptions {
     packDocsEnabled?: boolean;
     /** The five build-artefact tools, for sessions that have a pack-docs dispatch. */
     buildInfoEnabled?: boolean;
+    /** The two source-browsing tools (experimental), for sessions that have a pack-docs dispatch; off unless true. */
+    sourceBrowsingEnabled?: boolean;
     /** Append each tool-call sample to this file as one JSON line. */
     telemetry?: { jsonlPath?: string };
     /** When sessions nobody uses end; the defaults suit the extension. */

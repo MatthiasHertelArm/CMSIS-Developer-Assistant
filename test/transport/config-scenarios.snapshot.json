@@ -12006,6 +12006,11 @@
             ]
           },
           {
+            "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+            "type": "boolean",
+            "default": false
+          },
+          {
             "key": "cmsis-developer-assistant.knowledge.indexPath",
             "type": "string",
             "default": ""
@@ -12192,6 +12197,7 @@
                 "serialEnabled": true,
                 "packDocsEnabled": true,
                 "buildInfoEnabled": true,
+                "sourceBrowsingEnabled": false,
                 "telemetry": {
                   "jsonlPath": "<undefined>"
                 }
@@ -12971,6 +12977,10 @@
               "fallback": 3001
             },
             {
+              "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.telemetry.jsonlPath",
               "fallback": ""
             },
@@ -13297,6 +13307,7 @@
                 "serialEnabled": false,
                 "packDocsEnabled": true,
                 "buildInfoEnabled": true,
+                "sourceBrowsingEnabled": false,
                 "telemetry": {
                   "jsonlPath": "<w>/ws/rel/t.jsonl"
                 }
@@ -13572,6 +13583,10 @@
             {
               "key": "cmsis-developer-assistant.serverPort",
               "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.telemetry.jsonlPath",
@@ -13873,6 +13888,7 @@
                 "serialEnabled": true,
                 "packDocsEnabled": true,
                 "buildInfoEnabled": true,
+                "sourceBrowsingEnabled": false,
                 "telemetry": {
                   "jsonlPath": "<undefined>"
                 }
@@ -14084,6 +14100,10 @@
             {
               "key": "cmsis-developer-assistant.serverPort",
               "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.telemetry.jsonlPath",
@@ -14436,6 +14456,10 @@
               "fallback": 3001
             },
             {
+              "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+              "fallback": false
+            },
+            {
               "key": "cmsis-developer-assistant.telemetry.jsonlPath",
               "fallback": ""
             },
@@ -14685,6 +14709,7 @@
                 "serialEnabled": true,
                 "packDocsEnabled": true,
                 "buildInfoEnabled": true,
+                "sourceBrowsingEnabled": false,
                 "telemetry": {
                   "jsonlPath": "<undefined>"
                 }
@@ -14971,6 +14996,10 @@
             {
               "key": "cmsis-developer-assistant.serverPort",
               "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.telemetry.jsonlPath",
@@ -15267,6 +15296,7 @@
                 "serialEnabled": true,
                 "packDocsEnabled": true,
                 "buildInfoEnabled": true,
+                "sourceBrowsingEnabled": false,
                 "telemetry": {
                   "jsonlPath": "<undefined>"
                 }
@@ -15537,6 +15567,10 @@
             {
               "key": "cmsis-developer-assistant.serverPort",
               "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.telemetry.jsonlPath",
@@ -15834,6 +15868,7 @@
                 "serialEnabled": true,
                 "packDocsEnabled": true,
                 "buildInfoEnabled": true,
+                "sourceBrowsingEnabled": false,
                 "telemetry": {
                   "jsonlPath": "<w>/telemetry/t.jsonl"
                 }
@@ -16110,6 +16145,10 @@
             {
               "key": "cmsis-developer-assistant.serverPort",
               "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.sourceBrowsing.enabled",
+              "fallback": false
             },
             {
               "key": "cmsis-developer-assistant.telemetry.jsonlPath",

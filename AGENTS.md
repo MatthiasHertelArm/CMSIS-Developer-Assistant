@@ -19,7 +19,8 @@ extension also ships a knowledge index of the CMSIS procedures and reads it
 through the knowledge tools, installs one Agent Skill (`cmsis-help`, the entry
 point and health check), writes its tool rules into the agents' rule files
 when the user confirms it, and offers tools over the target's documentation
-and build artefacts.
+and build artefacts. An experimental pair of tools, off by default, answers
+where a symbol is defined, used and called, from the clangd the editor runs.
 
 The project started as a fork of microsoft/DebugMCP. The code that still
 came from there has since been replaced by independently written code
@@ -61,6 +62,7 @@ simply forwards to itself.
 | `AgentConfigurationManager` | `src/utils/agentConfigurationManager.ts`, `src/core/agentRules.ts`, `src/utils/agentRuleFiles.ts` | Registers the server in AI agents' configuration files, installs the `cmsis-help` skill (and removes, marker-guarded, the skills earlier releases installed), and writes the tool rules into the agents' rule files the user confirms | [docs/architecture/agentConfigurationManager.md](docs/architecture/agentConfigurationManager.md) |
 | `PackDocsHandler` / `BuildInfoHandler` | `src/packDocsHandler.ts`, `src/buildInfoHandler.ts`, `src/core/packDocs/`, `src/core/buildInfo/`, `src/docService/` (the document service: contract and emulator, isolated), `src/targetDocsView.ts` | Documentation tools (pack PDFs, Arm documents, user and workspace documents, core SVDs) and build-artefact tools (ELF, map file, build log); both on by default and routed like every other op | [docs/architecture/packDocs.md](docs/architecture/packDocs.md) |
 | `KnowledgeHandler` | `src/knowledgeHandler.ts`, `src/knowledgeTools.ts`, `src/core/knowledge/`, `src/knowledgePanel.ts`, `src/knowledgePanelPage.ts` | Experimental knowledge tools over the knowledge index — the core index the extension ships (`resources/knowledge/core.db`), the `.knowledge/knowledge.db` of the installed packs, a workspace folder's `.cmsis/knowledge.db`: search by summaries scoped to the active target, the whole unit, one hop in the graph; always on, routed with the documentation ops. The knowledge browser, a read-only panel over the same index | [docs/architecture/knowledge.md](docs/architecture/knowledge.md) |
+| `SourceBrowseHandler` | `src/sourceBrowseHandler.ts`, `src/sourceBrowseTools.ts`, `src/sourceBrowseHost.ts`, `src/core/sourceBrowse/` | Experimental source-browsing tools, off unless `sourceBrowsing.enabled`: `source_find` (what a C or C++ symbol is, where it is declared and defined, what can be asked about it) and `source_get` (its definition, references, callers, callees, type hierarchy), asked of the editor's clangd through the clangd extension's language client. Nothing is installed or configured: a missing clangd or compile database is a refusal that says so | [docs/architecture/sourceBrowsing.md](docs/architecture/sourceBrowsing.md) |
 | `skills/` | `skills/cmsis-help/`, `skills/catalog.json` | The one installed skill and its generated installer catalog. Knowledge procedure sources, assets and routing definitions are authored in `cmsis-knowledge-base/sources/cda-procedures`; the extension consumes their pinned index | [skills/README.md](skills/README.md) |
 
 Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts`,
@@ -132,7 +134,10 @@ scripted `gdbtarget` sessions), `test/transport/config-scenarios.js` (agent
 configuration files, launch configurations, activation) and
 `test/transport/executor-cases.js` (the executor alone). The first two take
 `--update` for an intended change. `test/transport/packaged-vsix.js <vsix>`
-checks a built package.
+checks a built package. `test/transport/source-clangd.js` asks the source
+tools' questions of a clangd of the machine (from the `PATH`, or `CLANGD`)
+over a small project it writes; its answers depend on that clangd, so it is a
+local check, and without a clangd it says so and passes.
 
 ## Settings
 
@@ -150,6 +155,7 @@ checks a built package.
 | `cmsis-developer-assistant.agentRules.install` | `"ask"` | `ask`: step 2 of the setup offers to add the tool rules to the agents' rule files, each change shown as a diff and written only when confirmed, and activation offers to update the blocks it wrote when the rules change; `never`: no rule file is touched. Scope `application` |
 | `cmsis-developer-assistant.packDocs.enabled` | `true` | Offer the five documentation tools; off drops them from the tool list. PDF text comes from the bundled pdf.js, or from `pdftotext` when `packDocs.extractor` says so; `packDocs.*` also set the size limit, unlisted pack PDFs, the workspace and user document folders, whether a failed `fetch_doc` is written into CMSIS Solution's `~/.cmsis/docs.yml` (`packDocs.inventoryRequests`, off), and who keeps the documents (`packDocs.documentService`: `auto` = CMSIS Solution's service or the emulator, `emulated`; the emulator keeps them in CMSIS Solution's folder `~/.cmsis/`: `docs.yml`, `docs.xtra.yml` for what that file has no field for, copies and their search index under `docs/`); `packDocs.userDocsDir` names the retired user folder, which is no longer read: a notice says so once when it still holds PDFs |
 | `cmsis-developer-assistant.buildInfo.enabled` | `true` | Offer the five build-artefact tools; off drops them from the tool list; `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` tune them |
+| `cmsis-developer-assistant.sourceBrowsing.enabled` | `false` | Offer the two source-browsing tools (experimental, and therefore off by default); they answer from the editor's clangd and install or configure nothing |
 | `cmsis-developer-assistant.knowledge.indexPath` | (empty) | The knowledge index the knowledge tools read, always on. Empty uses the core index the extension ships (`resources/knowledge/core.db`); a path replaces it, for testing a rebuilt index. Packs and the workspace add their own indexes. Read on every call. |
 | `cmsis-developer-assistant.knowledge.includeIncomplete` | `false` | Include placeholder knowledge units in searches. Off leaves them out; failed-build hints never name them. Read on every call. |
 
@@ -157,8 +163,8 @@ checks a built package.
 every failed build and `serial.idleCloseSeconds` at each `serial_open`. The
 port, the timeouts, the tool-group switches and the telemetry file are read
 at activation; after a change the window has to be reloaded, and the
-extension offers to do it when the port, `packDocs.enabled` or
-`buildInfo.enabled` changes.
+extension offers to do it when the port, `packDocs.enabled`,
+`buildInfo.enabled` or `sourceBrowsing.enabled` changes.
 
 ## Documents served to agents
 

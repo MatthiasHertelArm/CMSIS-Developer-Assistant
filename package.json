@@ -2,7 +2,7 @@
   "name": "cmsis-developer-assistant",
   "displayName": "CMSIS Developer Assistant",
   "description": "Enable AI coding agents to develop and debug CMSIS projects with AI skills and MCP tools.",
-  "version": "2.9.4",
+  "version": "2.9.5",
   "publisher": "arm",
   "license": "Apache-2.0 OR MIT",
   "homepage": "https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant",
@@ -426,6 +426,14 @@
             "**/build*.log"
           ],
           "markdownDescription": "Workspace globs searched for build logs by `get_build_diagnostics` (newest first). After a failed build, `cmsis_action build` writes one into `out/cmsis-developer-assistant/build-diagnostic.log`.",
+          "tags": [
+            "experimental"
+          ]
+        },
+        "cmsis-developer-assistant.sourceBrowsing.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "**Experimental**, and therefore off by default: the tools, their arguments and their output may change between releases. Offer the source-browsing tools to AI agents: `source_find` says what a C or C++ symbol is, where it is declared and defined, and what can be asked about it; `source_get` returns its definition, references, callers, callees, supertypes, subtypes or implementations. Both answer from the clangd the editor runs, through the clangd extension of the Keil Studio Pack, for the context CMSIS Solution set up (`cmsis-csolution.generateClangSetup`); nothing is downloaded or configured by these tools, and a missing clangd is reported in the tool's answer. Read once at activation: changing it needs a window reload.",
           "tags": [
             "experimental"
           ]

@@ -79,6 +79,9 @@ const ARGS = {
     // Errors only: the journal is shared by the shapes of this process, and the
     // warnings of the failed serial_open calls fold together or not by timing (10 s).
     get_recent_problems: { minSeverity: 'error' },
+    // Without a compile database for clangd, both answer with what is missing.
+    source_find: { name: 'main' },
+    source_get: { symbol: 'main', what: 'references' },
 };
 
 function request(port, method, sid, body) {
@@ -200,6 +203,7 @@ async function main() {
     const { ControlServer } = require(path.join(OUT, 'controlServer.js'));
     const { PackDocsHandler } = require(path.join(OUT, 'packDocsHandler.js'));
     const { BuildInfoHandler } = require(path.join(OUT, 'buildInfoHandler.js'));
+    const { SourceBrowseHandler } = require(path.join(OUT, 'sourceBrowseHandler.js'));
     const { localPackDocsDispatch } = require(path.join(OUT, 'packDocsDispatch.js'));
     const { defaultSettings, silentLog } = require(path.join(OUT, 'core', 'packDocs', 'host.js'));
     const { defaultBuildInfoSettings } = require(path.join(OUT, 'core', 'buildInfo', 'host.js'));
@@ -212,9 +216,17 @@ async function main() {
         workspaceFolders: () => [tmp], findCbuildRunFiles: async () => [],
     };
     const buildHost = { workspaceFolders: () => [tmp], findFiles: async () => [], settings: () => defaultBuildInfoSettings, log: silentLog };
+    // A window without the clangd extension and without a compile database.
+    const sourceHost = {
+        workspaceFolders: () => [tmp], packRoot: async () => undefined, clangdExtension: () => undefined,
+        clangdSettings: () => ({ enable: true, path: 'clangd', arguments: [] }), variable: () => undefined,
+        openDocument: async () => { throw new Error('no editor'); }, readText: async () => undefined, log: silentLog,
+        clock: { now: () => Date.now(), startTimer: (ms, fire) => { const handle = setTimeout(fire, ms); return () => clearTimeout(handle); } },
+    };
     const packDocs = localPackDocsDispatch({
         docs: new PackDocsHandler(docsHost, { timeoutMs: 30_000 }),
         build: new BuildInfoHandler(buildHost, { timeoutMs: 30_000 }),
+        source: new SourceBrowseHandler(sourceHost, { timeoutMs: 30_000 }),
     });
 
     const shapes = [];
@@ -223,7 +235,7 @@ async function main() {
     const debug = new DebuggingHandler(new DebuggingExecutor(), new ConfigurationManager(), 30);
     shapes.push(await capture('all-groups', new DebugMCPServer(0, 30, undefined,
         () => ({ debug, serial: localSerialDispatch, packDocs }),
-        { packDocsEnabled: true, buildInfoEnabled: true }), ctx, { callTools: true }));
+        { packDocsEnabled: true, buildInfoEnabled: true, sourceBrowsingEnabled: true }), ctx, { callTools: true }));
     // Routed shapes use a private registry directory and a liveness check that
     // accepts only the fake pids below, so no call can ever reach a real
     // VS Code window on this machine.

@@ -37,6 +37,7 @@ import type { SerialHandler } from '../serialHandler';
 import type { PackDocsHandler } from '../packDocsHandler';
 import type { BuildInfoHandler } from '../buildInfoHandler';
 import type { KnowledgeHandler } from '../knowledgeHandler';
+import type { SourceBrowseHandler } from '../sourceBrowseHandler';
 
 /**
  * Body caps on the control channel — a runaway stop, not a budget. Tool
@@ -136,11 +137,17 @@ export const KNOWLEDGE_OPS = [
     'handleKnowledgeExpand',
 ] as const;
 
+/** Ops served by the source-browsing handler (`SourceBrowseHandler`); experimental, off unless switched on. */
+export const SOURCE_OPS = [
+    'handleSourceFind',
+    'handleSourceGet',
+] as const;
+
 /** Both pack-docs groups: one dispatch, one routing path, two enable gates. */
 export const PACKDOCS_OPS = [...PACKDOCS_DOC_OPS, ...PACKDOCS_BUILD_OPS] as const;
 
-/** Everything the pack-docs dispatch carries: the two groups above and the knowledge ops. */
-const PACKDOCS_DISPATCH_OPS = [...PACKDOCS_OPS, ...KNOWLEDGE_OPS] as const;
+/** Everything the pack-docs dispatch carries: the two groups above, the knowledge ops and the source ops. */
+const PACKDOCS_DISPATCH_OPS = [...PACKDOCS_OPS, ...KNOWLEDGE_OPS, ...SOURCE_OPS] as const;
 
 /**
  * Ops between windows that are no tools: the control server answers them
@@ -161,7 +168,8 @@ export type SerialOpName = typeof SERIAL_OPS[number];
 export type PackDocsDocOpName = typeof PACKDOCS_DOC_OPS[number];
 export type PackDocsBuildOpName = typeof PACKDOCS_BUILD_OPS[number];
 export type KnowledgeOpName = typeof KNOWLEDGE_OPS[number];
-export type PackDocsOpName = PackDocsDocOpName | PackDocsBuildOpName | KnowledgeOpName;
+export type SourceOpName = typeof SOURCE_OPS[number];
+export type PackDocsOpName = PackDocsDocOpName | PackDocsBuildOpName | KnowledgeOpName | SourceOpName;
 export type OpName = DebugOpName | SerialOpName | PackDocsOpName;
 export type InternalOpName = typeof INTERNAL_OPS[number];
 
@@ -170,6 +178,7 @@ const SERIAL_OP_SET: ReadonlySet<string> = new Set(SERIAL_OPS);
 const PACKDOCS_DOC_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_DOC_OPS);
 const PACKDOCS_OP_SET: ReadonlySet<string> = new Set(PACKDOCS_DISPATCH_OPS);
 const KNOWLEDGE_OP_SET: ReadonlySet<string> = new Set(KNOWLEDGE_OPS);
+const SOURCE_OP_SET: ReadonlySet<string> = new Set(SOURCE_OPS);
 const INTERNAL_OP_SET: ReadonlySet<string> = new Set(INTERNAL_OPS);
 
 /** True when `op` is a name the control server is willing to dispatch. */
@@ -190,7 +199,12 @@ export function isKnowledgeOp(op: string): op is KnowledgeOpName {
     return KNOWLEDGE_OP_SET.has(op);
 }
 
-/** True for the documentation ops (else build artefacts or knowledge). */
+/** True for a source-browsing op, which the pack-docs dispatch carries too. */
+export function isSourceOp(op: string): op is SourceOpName {
+    return SOURCE_OP_SET.has(op);
+}
+
+/** True for the documentation ops (else build artefacts, knowledge or source browsing). */
 export function isPackDocsDocOp(op: string): op is PackDocsDocOpName {
     return PACKDOCS_DOC_OP_SET.has(op);
 }
@@ -338,7 +352,8 @@ function filled(value: unknown): string | undefined {
 
 /**
  * The strongest routing signal an op's arguments carry, if any: `window`,
- * then `fileFullPath`, then `workingDirectory`; empty strings say nothing.
+ * then `fileFullPath`, then `workingDirectory`; empty strings and paths that
+ * are not absolute say nothing.
  *
  * Only the source-oriented ops carry a path, and only a routed session's
  * tools that start or own something carry `window`. Everything else
@@ -354,11 +369,21 @@ export function targetHintOf(args: unknown): TargetHint | undefined {
     }
     for (const key of ['fileFullPath', 'workingDirectory']) {
         const value = given[key];
-        if (typeof value === 'string' && value.length > 0) {
+        if (typeof value === 'string' && value.length > 0 && isAbsolutePath(value)) {
             return { source: 'path', path: value };
         }
     }
     return undefined;
+}
+
+/**
+ * True for an absolute path of either platform: `/x`, `C:\x`, `C:/x`,
+ * `\\server\share`. A path relative to a solution folder, or under
+ * `${CMSIS_PACK_ROOT}`, as the source tools take it, names no window: only
+ * the window it is resolved in knows where it lies.
+ */
+function isAbsolutePath(value: string): boolean {
+    return /^(?:[A-Za-z]:[\\/]|[\\/])/.test(value);
 }
 
 // --- Compile-time exhaustiveness -----------------------------------------
@@ -388,14 +413,18 @@ type _MissingPackDocsBuildOps = Exclude<_HandleKeys<BuildInfoHandler>, PackDocsB
 type _ExtraPackDocsBuildOps = Exclude<PackDocsBuildOpName, _HandleKeys<BuildInfoHandler>>;
 type _MissingKnowledgeOps = Exclude<_HandleKeys<KnowledgeHandler>, KnowledgeOpName>;
 type _ExtraKnowledgeOps = Exclude<KnowledgeOpName, _HandleKeys<KnowledgeHandler>>;
+type _MissingSourceOps = Exclude<_HandleKeys<SourceBrowseHandler>, SourceOpName>;
+type _ExtraSourceOps = Exclude<SourceOpName, _HandleKeys<SourceBrowseHandler>>;
 
 const _debugOpsAreExhaustive: [_MissingDebugOps, _ExtraDebugOps] extends [never, never] ? true : never = true;
 const _serialOpsAreExhaustive: [_MissingSerialOps, _ExtraSerialOps] extends [never, never] ? true : never = true;
 const _packDocsDocOpsAreExhaustive: [_MissingPackDocsDocOps, _ExtraPackDocsDocOps] extends [never, never] ? true : never = true;
 const _packDocsBuildOpsAreExhaustive: [_MissingPackDocsBuildOps, _ExtraPackDocsBuildOps] extends [never, never] ? true : never = true;
 const _knowledgeOpsAreExhaustive: [_MissingKnowledgeOps, _ExtraKnowledgeOps] extends [never, never] ? true : never = true;
+const _sourceOpsAreExhaustive: [_MissingSourceOps, _ExtraSourceOps] extends [never, never] ? true : never = true;
 void _debugOpsAreExhaustive;
 void _serialOpsAreExhaustive;
 void _packDocsDocOpsAreExhaustive;
 void _packDocsBuildOpsAreExhaustive;
 void _knowledgeOpsAreExhaustive;
+void _sourceOpsAreExhaustive;

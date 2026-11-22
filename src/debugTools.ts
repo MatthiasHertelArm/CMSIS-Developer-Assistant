@@ -58,6 +58,7 @@ import type { DebugMCPServerOptions, SessionHandlers } from './debugMCPServer';
 import { registerBuildInfoTools } from './buildInfoTools';
 import { registerKnowledgeTools } from './knowledgeTools';
 import { registerPackDocsTools } from './packDocsTools';
+import { registerSourceBrowseTools } from './sourceBrowseTools';
 import { actionTimeoutMs } from './handler/cmsisAction';
 import { logger } from './utils/logger';
 
@@ -796,6 +797,10 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
     }
     if (packDocs !== undefined) {
         registerKnowledgeTools(mcp, packDocs);
+    }
+    // Experimental, and so off unless the user switched it on.
+    if (packDocs !== undefined && options.sourceBrowsingEnabled === true) {
+        registerSourceBrowseTools(mcp, packDocs);
     }
 
     // CMSIS Solution actions and programming.

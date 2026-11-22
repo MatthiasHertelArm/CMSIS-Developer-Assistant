@@ -55,6 +55,7 @@ import type { PackDocsHandlers } from './packDocsDispatch';
 import { createPackDocsHandlers, readPackDocsGates, tellAboutLegacyUserDocs } from './packDocsHost';
 import { registerSerialHandle } from './serialStatus';
 import { tellWhenSolutionTooOld, windowSolutionNoticeHost } from './solutionNotice';
+import { readSourceBrowsingGate } from './sourceBrowseHost';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { logger } from './utils/logger';
 import { notifyError, notifyWarning } from './utils/notify';
@@ -73,6 +74,7 @@ const SETUP_DELAY_MS = 2000;
 const RELOAD_BUTTON = 'Reload Window';
 const PORT_RELOAD_NOTICE = `${PRODUCT}: the server port setting changed. Reload the window to restart the MCP server on the new port.`;
 const GATES_RELOAD_NOTICE = `${PRODUCT}: the documentation / build-artefact tool setting changed. Reload the window so the next agent connection sees the new tool list.`;
+const SOURCE_RELOAD_NOTICE = `${PRODUCT}: the source-browsing tool setting changed. Reload the window so the next agent connection sees the new tool list.`;
 const DUPLICATE_PACK_DOCS_NOTICE = `${PRODUCT}: the experimental "CMSIS Pack Docs" extension is also installed. `
     + 'Its tools are now built into this extension (settings cmsis-developer-assistant.packDocs.enabled / buildInfo.enabled); '
     + 'uninstall it so agents do not see the same tool names twice.';
@@ -91,6 +93,7 @@ interface ActivationSettings {
     serialEnabled: boolean;
     packDocsEnabled: boolean;
     buildInfoEnabled: boolean;
+    sourceBrowsingEnabled: boolean;
 }
 
 /**
@@ -127,6 +130,7 @@ function readActivationSettings(): ActivationSettings {
         serialEnabled: settings.get<boolean>('serial.enabled', true),
         packDocsEnabled: gates.packDocsEnabled,
         buildInfoEnabled: gates.buildInfoEnabled,
+        sourceBrowsingEnabled: readSourceBrowsingGate(),
     };
 }
 
@@ -142,6 +146,9 @@ function logActivationSettings(active: ActivationSettings): void {
         logger.info('Serial tools are switched off (serial.enabled)');
     }
     logger.info(`Documentation tools ${active.packDocsEnabled ? 'on' : 'off'}, build-artefact tools ${active.buildInfoEnabled ? 'on' : 'off'}`);
+    if (active.sourceBrowsingEnabled) {
+        logger.info('Source-browsing tools are switched on (sourceBrowsing.enabled, experimental)');
+    }
 }
 
 /** The standalone "CMSIS Pack Docs" extension would offer the same tool names a second time. */
@@ -173,6 +180,7 @@ async function startCoordinator(
                 serialEnabled: active.serialEnabled,
                 packDocsEnabled: active.packDocsEnabled,
                 buildInfoEnabled: active.buildInfoEnabled,
+                sourceBrowsingEnabled: active.sourceBrowsingEnabled,
                 telemetry: { jsonlPath: active.telemetryJsonlPath },
             },
             packDocs,
@@ -217,10 +225,12 @@ async function onSettingsChanged(
     }
     const portChanged = touches('serverPort');
     const gateChanged = touches('packDocs.enabled') || touches('buildInfo.enabled');
-    if (!portChanged && !gateChanged) {
+    const sourceChanged = touches('sourceBrowsing.enabled');
+    if (!portChanged && !gateChanged && !sourceChanged) {
         return;
     }
-    const answer = await vscode.window.showInformationMessage(portChanged ? PORT_RELOAD_NOTICE : GATES_RELOAD_NOTICE, RELOAD_BUTTON);
+    const notice = portChanged ? PORT_RELOAD_NOTICE : gateChanged ? GATES_RELOAD_NOTICE : SOURCE_RELOAD_NOTICE;
+    const answer = await vscode.window.showInformationMessage(notice, RELOAD_BUTTON);
     if (answer === RELOAD_BUTTON) {
         await vscode.commands.executeCommand('workbench.action.reloadWindow');
     }

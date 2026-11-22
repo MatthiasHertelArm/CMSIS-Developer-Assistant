@@ -199,6 +199,22 @@ The CMSIS procedures, rules, concepts and the causes and fixes of tool messages,
 | `knowledge_get` | The full unit of an id, never clipped, and the files it ships (templates, scripts). |
 | `knowledge_expand` | One hop from a unit or entity: what it requires, refines, constrains, produces, consumes, references or applies to. |
 
+### Source browsing (experimental, off by default — `cmsis-developer-assistant.sourceBrowsing.enabled`)
+
+Where a C or C++ symbol is declared, defined, used and called, asked of the clangd that the editor runs for the solution: the same index that IntelliSense uses, built with the compile commands of the context CMSIS Solution set up. An agent uses these instead of searching the workspace and the pack folders for a name.
+
+| Tool | Description |
+|------|-------------|
+| `source_find` | What a symbol is: kind, signature or type, size, documentation comment, for a macro its definition and expansion; where it is declared and defined; its id; and what `source_get` returns for it, with counts. Takes a name; or a file and a line (with a name) for a symbol used there, which a macro or a local variable needs; or a file alone for its outline. |
+| `source_get` | One answer about a symbol, by its id or a unique name: `definition` (the source text), `references`, `callers`, `callees` (with `depth` up to 3), `supertypes`, `subtypes` or `implementations`. Every entry is `file:line` with the source line. |
+
+What it needs is what IntelliSense needs, and none of it is installed or configured by these tools:
+
+- the clangd extension, which the Keil Studio Pack installs, with a clangd language server. The clangd extension finds one on the `PATH` or offers to download it (_clangd: Download language server_);
+- a loaded solution, so that CMSIS Solution has written the compile database and pointed clangd at it (`cmsis-csolution.generateClangSetup`, on by default). No build is needed.
+
+When one of these is missing, the tool's answer says which and whose step it is. Limits: clangd serves one project of a solution at a time, the one CMSIS Solution set up for it, and the first line of every answer names it; symbols of assembler files are not indexed (`lookup_symbol` reads them from the image); clangd's own error list is not offered, the compiler's is in `get_build_diagnostics`.
+
 ### Session health
 
 | Tool | Description |
@@ -296,6 +312,7 @@ The rules go between `<!-- cmsis-developer-assistant:rules:begin -->` and `<!-- 
 | `cmsis-developer-assistant.serial.idleCloseSeconds` | `300` | Release a serial port an agent opened after this many seconds without a serial tool call, so the Serial Monitor or a terminal can have it again; bytes from the board do not count as use. `0` turns the idle release off. Window scope, read at each `serial_open`. |
 | `cmsis-developer-assistant.packDocs.enabled` | `true` | **Experimental.** Offer the five documentation tools to agents; off drops them from the tool list every agent turn carries; window reload. `packDocs.extractor` (`auto` = the bundled pdf.js; `pdftotext` for poppler's `-layout` text), `packDocs.pdftotextPath`, `packDocs.maxPdfMb` (150), `packDocs.includeUnlisted` (true), `packDocs.workspaceDocDirs` (`.agent-artifacts/docs`, `docs`), `packDocs.userDocsDir` (the retired user documents folder, no longer read: where the one-time notice looks for leftover PDFs), `packDocs.documentService` (`auto`: CMSIS Solution's document service when it offers one, else the one built into this extension; `emulated`) and `packDocs.inventoryRequests` (false: also write the agent's failed requests into CMSIS Solution's `~/.cmsis/docs.yml`) tune them and apply live. |
 | `cmsis-developer-assistant.buildInfo.enabled` | `true` | **Experimental.** Offer the five build-artefact tools to agents; off drops them from the tool list every agent turn carries; window reload. `buildInfo.maxSymbols` (20) and `buildInfo.logGlobs` (`**/out/**/*.log`, `**/build*.log`) tune them. |
+| `cmsis-developer-assistant.sourceBrowsing.enabled` | `false` | **Experimental**, and therefore off by default. Offer the two source-browsing tools, `source_find` and `source_get`, which answer from the clangd the editor runs; nothing is installed or configured by them. Needs a window reload. |
 | `cmsis-developer-assistant.knowledge.indexPath` | `""` | Replace the bundled core index with a knowledge database, for testing a rebuilt index. Empty uses `resources/knowledge/core.db`; accepts an absolute path, a path starting with `~`, or one relative to the first workspace folder. Read on every call; pack and workspace indexes are still added. |
 | `cmsis-developer-assistant.knowledge.includeIncomplete` | `false` | Also return knowledge units whose text is still a placeholder, such as an error message without a recorded cause. Off omits them from `knowledge_search`; a build result never recommends an incomplete unit. Read on every call. |
 | `cmsis-developer-assistant.telemetry.jsonlPath` | `""` | Append one JSON line per MCP tool call — name, bytes in/out, duration, outcome; never arguments or results — to this file for offline analysis. Off when empty; `get_session_status` and the `cmsis-developer-assistant://stats` resource always show the in-memory statistics. |
