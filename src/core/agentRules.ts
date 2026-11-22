@@ -33,8 +33,6 @@ import { RULES_BLOCK } from './toolContract';
 
 /** The setting that decides whether the setup offers the rule files at all. */
 export const AGENT_RULES_SETTING = 'agentRules.install';
-/** Its values: the setup asks (default), or never touches a rule file. */
-export type AgentRulesInstall = 'ask' | 'never';
 
 /** globalState: the rule files this extension wrote the rules into (`RuleFileRecord[]`). */
 export const RULE_FILES_STATE_KEY = 'cmsis-developer-assistant.agentRules.files';

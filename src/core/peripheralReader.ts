@@ -26,7 +26,7 @@
 import * as vscode from 'vscode';
 import {
     loadSvd, findPeripheral, findRegister, listPeripheralNames,
-    decodeFields, SvdPeripheral, SvdRegister, SvdDevice
+    decodeFields, SvdPeripheral, SvdRegister
 } from './svdParser.js';
 import { matchName } from './svdLookup.js';
 import { bytesFromMiMemoryReply, CMSIS_DEBUGGER_TYPE, miReadMemoryCommand } from './gdbDialect.js';
@@ -38,13 +38,6 @@ import { customRequestWithTimeout, HardwareTimeoutError } from '../utils/timeout
  * executor passes the configured value (capped by the call's `timeoutMs`).
  */
 const DEFAULT_DAP_TIMEOUT_MS = 10000;
-
-export interface PeripheralRegisterInfo {
-    name: string;
-    address: string;
-    value: string;
-    fields?: { name: string; value: string; bits: string }[];
-}
 
 /**
  * Read peripheral registers by parsing the SVD file and using

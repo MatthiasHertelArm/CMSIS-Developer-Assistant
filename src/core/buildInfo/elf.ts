@@ -396,10 +396,6 @@ export function segmentFlags(flags: number): string {
     return `${flags & PF_R ? 'R' : '-'}${flags & PF_W ? 'W' : '-'}${flags & PF_X ? 'X' : '-'}`;
 }
 
-export function sectionFlags(flags: number): string {
-    return `${flags & SHF_ALLOC ? 'A' : ''}${flags & SHF_WRITE ? 'W' : ''}${flags & SHF_EXECINSTR ? 'X' : ''}` || '-';
-}
-
 /**
  * The symbol that contains `address`, preferring sized FUNC/OBJECT symbols;
  * else the nearest preceding one within `maxGap` bytes (a fault PC in a

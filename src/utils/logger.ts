@@ -53,9 +53,6 @@ const STACK_HEADING = 'Captured stack: ';
 /** `vscode.LogLevel.Debug`, as a number, so no enum is read where the API is stubbed. */
 const CHANNEL_LEVEL_DEBUG = 2;
 
-/** How much of PATH `logEnvironment` shows. */
-const PATH_PREVIEW_CHARS = 200;
-
 /**
  * The text appended after "message: " for a truthy detail. An `Error` gives
  * its message and, when present, its stack; anything else is pretty JSON,
@@ -76,11 +73,6 @@ function renderDetail(detail: unknown): string {
     }
     // Functions and symbols serialise to undefined; say so literally.
     return `${json}`;
-}
-
-/** An environment variable's value, or the word `undefined` when unset or empty. */
-function envValue(name: string): string {
-    return process.env[name] || 'undefined';
 }
 
 export class Logger {
@@ -164,17 +156,6 @@ export class Logger {
             this.info(`${label}: ${value}`);
         }
         this.info('==== End of extension host details ====');
-    }
-
-    /** The home and profile variables and the start of PATH, between two banners. */
-    logEnvironment(): void {
-        this.info('==== Selected environment variables ====');
-        for (const name of ['HOME', 'USERPROFILE', 'APPDATA']) {
-            this.info(`${name}: ${envValue(name)}`);
-        }
-        // The ellipsis is appended whether or not anything was cut.
-        this.info(`PATH: ${envValue('PATH').slice(0, PATH_PREVIEW_CHARS)}...`);
-        this.info('==== End of selected environment variables ====');
     }
 
     /** Whether the channel's own level lets debug entries through; true where it has none (a stub). */

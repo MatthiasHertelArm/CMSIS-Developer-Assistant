@@ -2041,25 +2041,8 @@ function debugConfigScenarios() {
             },
         },
         {
-            id: 'launch/folder-members', seed: files,
-            run: async (h) => {
-                const dcm = make();
-                const folder = (dir) => ({ uri: fileUri(h.path(dir)), name: dir, index: 0 });
-                const out = [];
-                for (const dir of ['launch-plain', 'launch-jsonc', 'launch-null', 'launch-invalid', 'no-launch']) {
-                    out.push(await attempt(`getAvailableConfigurations(${dir})`, () => dcm.getAvailableConfigurations(folder(dir))));
-                    out.push(await attempt(`hasLaunchJson(${dir})`, () => dcm.hasLaunchJson(folder(dir))));
-                }
-                out.push(await attempt('validateWorkspace({uri: /x})', () => dcm.validateWorkspace({ uri: fileUri('/x'), name: 'x', index: 0 })));
-                out.push(await attempt('validateWorkspace({uri: ""})', () => dcm.validateWorkspace({ uri: fileUri(''), name: 'x', index: 0 })));
-                out.push(await attempt('validateWorkspace(undefined)', () => dcm.validateWorkspace(undefined)));
-                out.push(await attempt('validateWorkspace(null)', () => dcm.validateWorkspace(null)));
-                out.push(await attempt('validateWorkspace({})', () => dcm.validateWorkspace({})));
-                out.push(await attempt('validateWorkspace({uri: {}})', () => dcm.validateWorkspace({ uri: {} })));
-                out.push(await attempt('DebugConfigurationManager.getAutoLaunchConfigName()', () => DCM.DebugConfigurationManager.getAutoLaunchConfigName()));
-                out.push(await attempt('exports', () => Object.keys(DCM).sort()));
-                return out;
-            },
+            id: 'launch/exports',
+            run: async () => [await attempt('exports', () => Object.keys(DCM).sort())],
         },
         {
             id: 'launch/without-uri-joinpath', about: 'the transport stub has no Uri.joinPath (surface snapshot pins the TypeError)',
@@ -2070,12 +2053,9 @@ function debugConfigScenarios() {
                 try {
                     const dcm = make();
                     S.ui.pick = () => 0;
-                    const folder = { uri: fileUri(h.path('launch-plain')), name: 'launch-plain', index: 0 };
                     return [
                         await attempt('promptForConfiguration(launch-plain)', () => dcm.promptForConfiguration(h.path('launch-plain'))),
                         await attempt('getDebugConfig(launch-plain, src/main.c, "A")', () => dcm.getDebugConfig(h.path('launch-plain'), h.path('src/main.c'), 'A')),
-                        await attempt('getAvailableConfigurations(launch-plain)', () => dcm.getAvailableConfigurations(folder)),
-                        await attempt('hasLaunchJson(launch-plain)', () => dcm.hasLaunchJson(folder)),
                     ];
                 } finally {
                     api.Uri.joinPath = saved;

@@ -233,11 +233,6 @@ export function loadPdsc(pdscPath: string, id: PackId, log: PackDocsLog = silent
     return info;
 }
 
-export function clearPdscCache(): void {
-    pdscCache.clear();
-    declaredCache.clear();
-}
-
 export function slug(text: string): string {
     return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'doc';
 }

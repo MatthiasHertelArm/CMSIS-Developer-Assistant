@@ -49,10 +49,6 @@ export function regionOf(address: number, regions: readonly MemoryRegion[] = def
     return regions.find((r) => addr >= r.start && addr <= r.end);
 }
 
-export function formatAddress(address: number): string {
-    return `0x${(address >>> 0).toString(16).padStart(8, '0').toUpperCase()}`;
-}
-
 /**
  * The System Control Space (SysTick, NVIC, SCB with the fault status
  * registers, MPU, debug registers) and, on Armv8-M with the Security

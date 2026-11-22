@@ -71,8 +71,3 @@ export function documentFailureText(caught: unknown): string {
     }
     return caught instanceof Error ? caught.message : String(caught);
 }
-
-/** Whether a failure needs the user (a login wall, an HTML page where a PDF was expected). */
-export function needsUser(failure: string): boolean {
-    return /login-required|not-pdf|\b(401|403)\b|not a pdf|text\/html|login|forbidden|unauthori[sz]ed/i.test(failure);
-}

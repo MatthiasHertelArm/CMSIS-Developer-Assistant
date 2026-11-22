@@ -26,7 +26,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     BuildContext, BuildInfoHost, ElfInfo, ImageArtifacts, MapFile, MemoryRegion, SymbolHit, computeRegionUsage, findRegion, hex, inputSectionAt,
-    isInsideAny, looksLikeBuildLog, outputSectionAt, parseMapFile, prefixedLog, readBuildLog, readElf, regionsFor, renderArtifacts, renderDiagnostics,
+    isInsideAny, looksLikeBuildLog, outputSectionAt, parseMapFile, readBuildLog, readElf, regionsFor, renderArtifacts, renderDiagnostics,
     renderLayout, renderLookup, renderNoBuild, renderNoLog, renderUsage, resolveBuildContext, sectionAt, symbolAt, topSymbols, uncoveredRanges, usageRegions,
 } from './core/buildInfo';
 import type { ToolText } from './core/toolResult';

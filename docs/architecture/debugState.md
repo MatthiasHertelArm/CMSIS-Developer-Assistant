@@ -32,9 +32,7 @@ continue, a pause or a `wait_for_stop`.
 | `breakpoints` | One string per source breakpoint: `<file>:<line>` and its modifiers |
 
 The `update*` methods set related fields together and copy arrays;
-`reset()` restores the initial values and `clone()` copies the arrays too.
-`hasValidContext()`, `hasLocationInfo()` and `hasFrameName()` answer the
-questions callers ask most.
+`reset()` restores the initial values.
 
 ## Two renderings
 

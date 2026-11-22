@@ -141,24 +141,6 @@ export class DebugState {
         Object.assign(this, initialFields());
     }
 
-    /** Session active and both DAP ids known (0 is a valid id). */
-    hasValidContext(): boolean {
-        if (!this.sessionActive) {
-            return false;
-        }
-        return [this.frameId, this.threadId].every(id => id !== null);
-    }
-
-    /** File and line are both known; the session flag is not consulted. */
-    hasLocationInfo(): boolean {
-        return ![this.fileName, this.currentLine].includes(null);
-    }
-
-    /** A frame name is known; the empty string counts. */
-    hasFrameName(): boolean {
-        return typeof this.frameName === 'string';
-    }
-
     updateContext(frame: number, thread: number): void {
         this.frameId = frame;
         this.threadId = thread;
@@ -187,15 +169,6 @@ export class DebugState {
 
     updateBreakpoints(list: string[]): void {
         this.breakpoints = list.slice();
-    }
-
-    /** Field-for-field copy with its own arrays (frame objects shared). */
-    clone(): DebugState {
-        const twin = Object.assign(new DebugState(), this);
-        twin.nextLines = this.nextLines.slice();
-        twin.stackTrace = this.stackTrace.slice();
-        twin.breakpoints = this.breakpoints.slice();
-        return twin;
     }
 
     /** Full form: every field, every frame, every breakpoint. */

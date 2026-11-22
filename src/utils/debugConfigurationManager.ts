@@ -263,11 +263,6 @@ export interface IDebugConfigurationManager {
 
 export class DebugConfigurationManager implements IDebugConfigurationManager {
 
-    /** The sentinel configuration name. */
-    static getAutoLaunchConfigName(): string {
-        return AUTO_CONFIG_NAME;
-    }
-
     /**
      * The configuration to start for `sourceFile`: the `launch.json` entry
      * called `launchName` (renamed for the session), or a synthesized one
@@ -331,39 +326,6 @@ export class DebugConfigurationManager implements IDebugConfigurationManager {
     /** The debug type for a source file, from its extension; unknown or none means Python. */
     detectLanguageFromFilePath(sourceFile: string): string {
         return DEBUG_TYPES.get(path.extname(sourceFile).toLowerCase()) ?? FALLBACK_TYPE;
-    }
-
-    /**
-     * True when the folder has a file-system path. A missing folder or URI is
-     * returned as it is (`undefined`, `null`) rather than as `false`.
-     */
-    validateWorkspace(folder: vscode.WorkspaceFolder): boolean {
-        try {
-            return (folder && folder.uri && typeof folder.uri.fsPath === 'string' && folder.uri.fsPath.length > 0) as boolean;
-        } catch (failure) {
-            logger.warn('Could not validate the workspace folder', failure);
-            return false;
-        }
-    }
-
-    /** The entry names of the folder's `launch.json`, in file order; `[]` when there are none or it cannot be read. */
-    async getAvailableConfigurations(folder: vscode.WorkspaceFolder): Promise<string[]> {
-        try {
-            const entries = await launchEntries(launchFileIn(folder.uri));
-            return entries.map((entry) => entry.name || NO_NAME);
-        } catch (failure) {
-            logger.warn('Could not list the launch configurations', failure);
-            return [];
-        }
-    }
-
-    async hasLaunchJson(folder: vscode.WorkspaceFolder): Promise<boolean> {
-        try {
-            await vscode.workspace.openTextDocument(launchFileIn(folder.uri));
-            return true;
-        } catch {
-            return false;
-        }
     }
 
     /** The named entry of `<workDir>/.vscode/launch.json`, renamed; `undefined` when there is none to use. */

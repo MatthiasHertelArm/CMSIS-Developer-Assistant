@@ -81,9 +81,7 @@ API, so the transport tests construct it under a minimal `vscode` stub.
 ## Where to look
 
 - `DebugConfigurationManager`: `getDebugConfig()`, `promptForConfiguration()`,
-  `detectLanguageFromFilePath()`, `getAvailableConfigurations()`,
-  `hasLaunchJson()`, `validateWorkspace()`, the static
-  `getAutoLaunchConfigName()`; `PickerCancelled`
+  `detectLanguageFromFilePath()`; `PickerCancelled`
 - Module functions: `launchEntries()`, `pickUnlessCancelled()`,
   `plainLaunch()`, `singleTestLaunch()`, `unittestTarget()`
 - Caller: `handleStartDebugging()` in `src/debuggingHandler.ts`

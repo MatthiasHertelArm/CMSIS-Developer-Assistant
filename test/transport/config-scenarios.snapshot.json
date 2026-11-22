@@ -11697,85 +11697,9 @@
       ]
     },
     {
-      "id": "launch/folder-members",
+      "id": "launch/exports",
       "events": [],
       "result": [
-        {
-          "call": "getAvailableConfigurations(launch-plain)",
-          "result": [
-            "A",
-            "(no name)",
-            "B",
-            "(no name)"
-          ]
-        },
-        {
-          "call": "hasLaunchJson(launch-plain)",
-          "result": true
-        },
-        {
-          "call": "getAvailableConfigurations(launch-jsonc)",
-          "result": [
-            "CMSIS Debugger: pyOCD",
-            "Second"
-          ]
-        },
-        {
-          "call": "hasLaunchJson(launch-jsonc)",
-          "result": true
-        },
-        {
-          "call": "getAvailableConfigurations(launch-null)",
-          "result": []
-        },
-        {
-          "call": "hasLaunchJson(launch-null)",
-          "result": true
-        },
-        {
-          "call": "getAvailableConfigurations(launch-invalid)",
-          "result": []
-        },
-        {
-          "call": "hasLaunchJson(launch-invalid)",
-          "result": true
-        },
-        {
-          "call": "getAvailableConfigurations(no-launch)",
-          "result": []
-        },
-        {
-          "call": "hasLaunchJson(no-launch)",
-          "result": false
-        },
-        {
-          "call": "validateWorkspace({uri: /x})",
-          "result": true
-        },
-        {
-          "call": "validateWorkspace({uri: \"\"})",
-          "result": false
-        },
-        {
-          "call": "validateWorkspace(undefined)",
-          "result": "<undefined>"
-        },
-        {
-          "call": "validateWorkspace(null)",
-          "result": null
-        },
-        {
-          "call": "validateWorkspace({})",
-          "result": "<undefined>"
-        },
-        {
-          "call": "validateWorkspace({uri: {}})",
-          "result": false
-        },
-        {
-          "call": "DebugConfigurationManager.getAutoLaunchConfigName()",
-          "result": "Default Configuration"
-        },
         {
           "call": "exports",
           "result": [
@@ -11785,25 +11709,9 @@
         }
       ],
       "globalState": {},
-      "files": {
-        "launch-buffer/.vscode/launch.json": "<unchanged seed>",
-        "launch-empty/.vscode/launch.json": "<unchanged seed>",
-        "launch-empty-list/.vscode/launch.json": "<unchanged seed>",
-        "launch-invalid/.vscode/launch.json": "<unchanged seed>",
-        "launch-jsonc/.vscode/launch.json": "<unchanged seed>",
-        "launch-no-configurations/.vscode/launch.json": "<unchanged seed>",
-        "launch-not-array/.vscode/launch.json": "<unchanged seed>",
-        "launch-null/.vscode/launch.json": "<unchanged seed>",
-        "launch-plain/.vscode/launch.json": "<unchanged seed>",
-        "src/Test_upper.PY": "<unchanged seed>",
-        "src/main.py": "<unchanged seed>",
-        "src/test_comment.py": "<unchanged seed>",
-        "src/test_plain.py": "<unchanged seed>",
-        "src/test_x.py": "<unchanged seed>"
-      },
+      "files": {},
       "emptyDirs": [
-        "home",
-        "no-launch"
+        "home"
       ]
     },
     {
@@ -11825,14 +11733,6 @@
             "cwd": "<w>/src",
             "console": "integratedTerminal"
           }
-        },
-        {
-          "call": "getAvailableConfigurations(launch-plain)",
-          "result": []
-        },
-        {
-          "call": "hasLaunchJson(launch-plain)",
-          "result": false
         }
       ],
       "globalState": {},

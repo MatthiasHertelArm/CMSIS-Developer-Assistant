@@ -312,11 +312,6 @@ export interface CmsisActionContext {
     readonly journal: ProblemJournal;
 }
 
-/** Whether the action runs a CMSIS task (build, rebuild, clean, load, erase, run, load_and_run). */
-export function isTaskAction(action: string): boolean {
-    return TASK_ACTIONS.has(action);
-}
-
 /** The wait of a call: `timeoutMs` when positive (at most 600 s), else the action's default. */
 export function actionTimeoutMs(action: string, timeoutMs: number | undefined): number {
     if (typeof timeoutMs === 'number' && timeoutMs > 0) {
