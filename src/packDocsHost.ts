@@ -219,11 +219,16 @@ export const EMULATED_DOCUMENTS_VIEW = 'the Target Documents view';
 
 let emulated: EmulatedDocumentService | undefined;
 
-/** This window's emulated document service, created on first use; its store is in the extension's global storage. */
+/**
+ * This window's emulated document service, created on first use. Its root is
+ * `~/.cmsis/`, the folder of CMSIS Solution's document manager: one
+ * inventory (`docs.yml`) and one folder of copies (`docs/`) for the user,
+ * the CMSIS view and the agent, with or without CMSIS Solution installed.
+ */
 export function emulatedDocumentService(context: vscode.ExtensionContext): EmulatedDocumentService {
     if (emulated === undefined) {
         const service = new EmulatedDocumentService({
-            root: path.join(context.globalStorageUri.fsPath, 'docservice'),
+            root: path.join(os.homedir(), '.cmsis'),
             watch: true,
             engine: documentEngine({
                 fetchFn: (url, init) => fetch(url, init),

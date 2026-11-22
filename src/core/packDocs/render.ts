@@ -45,7 +45,8 @@ function fromSolutionCopy(d: DocRef): boolean {
 }
 
 export function docState(d: DocRef): string {
-    const view = d.service && d.source !== 'web' ? (d.service.scope === 'project' ? ' (project document)' : ' (added by the user)')
+    // The document service and CMSIS Solution's inventory are one file with the emulator: what the service says of a document counts.
+    const view = d.service ? (d.source === 'web' ? '' : d.service.scope === 'project' ? ' (project document)' : ' (added by the user)')
         : d.inventory?.user ? ' (added in the CMSIS view)' : fromSolutionCopy(d) && d.source === 'web' ? ' (CMSIS Solution\'s copy)' : '';
     if (d.source === 'web' && !d.cached) {
         if (d.format === 'html') { return 'web — HTML on arm.com, not fetchable in this version'; }

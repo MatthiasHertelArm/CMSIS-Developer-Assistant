@@ -23,7 +23,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { load } from 'js-yaml';
+import { dump, load } from 'js-yaml';
 import { DocumentFailure, DocumentService } from '../docService/contract';
 import { DownloadEngine, EmulatedDocumentService, projectInventoryFile } from '../docService/emulator';
 import { documentEngine } from '../core/packDocs/documentEngine';
@@ -229,6 +229,205 @@ suite('document service: the seams', () => {
     });
 });
 
+/** `docs.yml` as CMSIS Solution writes it: its catalogue, a device with a pack's web book and a pack file. */
+const SOLUTION_INVENTORY = [
+    'docs:',
+    '  commons:',
+    '    - common: arm-docs',
+    '      docs:',
+    '        - name: https://developer.arm.com/documentation/ddi0553/latest',
+    '          title: Armv8-M Architecture Reference Manual',
+    '          category: arch',
+    '          id: ddi0553',
+    '          version: latest',
+    '          format: pdf',
+    '          metadataUrl: https://documentation-service.arm.com/documentation/ddi0553/latest',
+    '        - name: https://developer.arm.com/documentation/100806/0100',
+    '          title: CoreSight SoC-600 Technical Reference Manual',
+    '          id: 100806',
+    '          version: 0100',
+    '          format: pdf',
+    '  devices:',
+    '    - device: STMicroelectronics::STM32U585AIIx',
+    '      pack: Keil::STM32U5xx_DFP@3.1.0',
+    '      docs:',
+    `        - name: ${RM}`,
+    '          title: STM32U5 reference manual',
+    '          category: manual',
+    '        - name: /packs/Keil/STM32U5xx_DFP/3.1.0/Documents/errata.pdf',
+    '          title: Errata',
+    '          path: /packs/Keil/STM32U5xx_DFP/3.1.0/Documents/errata.pdf',
+    '',
+].join('\n');
+
+interface InventoryFile {
+    docs: Record<string, { docs?: Record<string, unknown>[]; [key: string]: unknown }[]>;
+}
+
+suite('the emulator in CMSIS Solution\'s folder: docs.yml shared, docs.xtra.yml beside it, copies in docs/', () => {
+    let root: string;
+    let service: EmulatedDocumentService;
+    let inventory: string;
+    const read = (): InventoryFile => load(fs.readFileSync(inventory, 'utf-8')) as InventoryFile;
+    const state = (): { docs: Record<string, unknown>[] } => load(fs.readFileSync(path.join(root, 'docs.xtra.yml'), 'utf-8')) as { docs: Record<string, unknown>[] };
+    const local = (name: string): string => {
+        const file = path.join(root, '..', `${path.basename(root)}-files`, name);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, PDF);
+        return file;
+    };
+
+    setup(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'cda-dot-cmsis-'));
+        inventory = path.join(root, 'docs.yml');
+        fs.writeFileSync(inventory, SOLUTION_INVENTORY);
+        service = new EmulatedDocumentService({ root, engine: fakeEngine([]) });
+    });
+    teardown(() => {
+        service.dispose();
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(`${root}-files`, { recursive: true, force: true });
+    });
+
+    test('a pack\'s book nobody fetched is CMSIS Solution\'s; a fetch keeps its entry, puts the copy where CMSIS Solution looks, the facts beside docs.yml', async () => {
+        assert.deepStrictEqual(await service.getDocuments(DEVICE), [], 'neither the web book nor the pack file is the service\'s');
+        const added = await service.addDocument(DEVICE, RM, { title: 'STM32U5 reference manual' });
+        assert.deepStrictEqual([added.scope, added.path, added.category], ['user', undefined, 'manual']);
+        assert.strictEqual(fs.readFileSync(inventory, 'utf-8'), SOLUTION_INVENTORY, 'taking a book up changes no byte of docs.yml');
+        const done = await service.downloadDocument(DEVICE, RM);
+        const copy = path.join(root, 'docs', 'STMicroelectronics', 'STM32U585AIIx', 'rm0456', 'rm0456.pdf');
+        assert.deepStrictEqual([done.path, done.versionLabel, done.bytes], [copy, 'Rev 6', PDF.length]);
+        const [device] = read().docs.devices;
+        assert.deepStrictEqual(device.docs![0], { name: RM, title: 'STM32U5 reference manual', category: 'manual', path: copy },
+            'only the fields CMSIS Solution knows; no mode, so the book stays the pack\'s');
+        assert.deepStrictEqual([device.pack, device.docs![1].title, device.docs!.length], ['Keil::STM32U5xx_DFP@3.1.0', 'Errata', 2]);
+        const text = fs.readFileSync(inventory, 'utf-8');
+        assert.match(text, /^ {10}version: 0100$/m, 'a scalar stays the text it was');
+        assert.match(text, /metadataUrl: https:\/\/documentation-service\.arm\.com\/documentation\/ddi0553\/latest/);
+        assert.deepStrictEqual(state().docs.map((row) => [row.parent, row.name, row.path, row.bytes, row.versionLabel]),
+            [['device:STMicroelectronics::STM32U585AIIx', RM, copy, PDF.length, 'Rev 6']]);
+    });
+
+    test('CMSIS Solution renews a device\'s entries for a new pack version: the copy and its facts come back, and docs.yml gets its path again', async () => {
+        await service.addDocument(DEVICE, RM);
+        const { path: copy } = await service.downloadDocument(DEVICE, RM);
+        fs.writeFileSync(inventory, SOLUTION_INVENTORY.replace('@3.1.0', '@3.2.0'));
+        const [kept] = await service.getDocuments(DEVICE);
+        assert.deepStrictEqual([kept.path, kept.versionLabel, kept.error], [copy, 'Rev 6', undefined]);
+        await service.addDocument(DEVICE, RM, { category: 'reference' });
+        assert.deepStrictEqual(read().docs.devices[0].docs![0], { name: RM, title: 'STM32U5 reference manual', category: 'reference', path: copy });
+    });
+
+    test('a request shows as the entry\'s error; a copy made in the CMSIS view answers it', async () => {
+        const board = (): Record<string, unknown> => read().docs.boards[0].docs![0];
+        await service.addDocument(BOARD, WALL, { title: 'Schematic' });
+        await assert.rejects(service.downloadDocument(BOARD, WALL));
+        assert.deepStrictEqual([board().error, (await service.getDocuments(BOARD))[0].error?.kind], [undefined, 'login-required'],
+            'a failure alone is no badge in the CMSIS view: it is kept beside docs.yml');
+        await service.requestDocument(BOARD, WALL, { by: 'agent', reason: 'Requested by the agent: J3 pinout\n(login at www.vendor.com)' });
+        assert.deepStrictEqual(board(), { name: WALL, mode: 'user', title: 'Schematic', error: 'Requested by the agent: J3 pinout (login at www.vendor.com)' },
+            'a document the service adds is a user document, and the request one line');
+        assert.deepStrictEqual((await service.getRequests()).map((doc) => [doc.name, doc.error?.kind]), [[WALL, 'login-required']]);
+        // The user downloads it by hand and uses Import Document in the CMSIS view: a path, and the error gone.
+        const imported = path.join(root, 'docs', 'STMicroelectronics', 'B-U585I-IOT02A', 'schematic', 'schematic.pdf');
+        fs.mkdirSync(path.dirname(imported), { recursive: true });
+        fs.writeFileSync(imported, PDF);
+        const changed = read();
+        changed.docs.boards[0].docs![0] = { name: WALL, mode: 'user', title: 'Schematic', path: imported };
+        fs.writeFileSync(inventory, dump(changed));
+        const [answered] = await service.getDocuments(BOARD);
+        assert.deepStrictEqual([answered.path, answered.requested, answered.error], [imported, undefined, undefined]);
+        assert.deepStrictEqual(await service.getRequests(), []);
+    });
+
+    test('a document added in the CMSIS view is the service\'s: listed, and removed with its folder', async () => {
+        const copy = path.join(root, 'docs', 'STMicroelectronics', 'STM32U585AIIx', 'bmi270', 'bmi270.pdf');
+        fs.mkdirSync(path.dirname(copy), { recursive: true });
+        fs.writeFileSync(copy, PDF);
+        fs.writeFileSync(path.join(path.dirname(copy), 'bmi270.idx.json'), '{}');
+        const changed = read();
+        changed.docs.devices[0].docs!.push({ name: '/home/me/Downloads/bmi270.pdf', title: 'bmi270.pdf', path: copy, mode: 'user' });
+        fs.writeFileSync(inventory, dump(changed));
+        const [listed] = await service.getDocuments(DEVICE);
+        assert.deepStrictEqual([listed.name, listed.location, listed.path, listed.scope], ['/home/me/Downloads/bmi270.pdf', 'local', copy, 'user']);
+        assert.ok(await service.removeDocument(DEVICE, listed.name));
+        assert.ok(!fs.existsSync(path.dirname(copy)), 'the folder goes, with the index beside the copy');
+        assert.deepStrictEqual(read().docs.devices[0].docs!.map((doc) => doc.title), ['STM32U5 reference manual', 'Errata']);
+    });
+
+    test('an Arm document lies in CMSIS Solution\'s catalogue and folder; core, pack, vendor and all have lists and folders of their own', async () => {
+        const arm = 'https://developer.arm.com/documentation/ddi0553/latest';
+        await service.addDocument({ all: true }, arm, { title: 'Armv8-M Architecture Reference Manual' });
+        const manual = await service.importDocument({ all: true }, arm, local('DDI0553B_y_armv8m_arm.pdf'), undefined, { versionLabel: 'B.y' });
+        const armCopy = path.join(root, 'docs', 'ddi0553-latest', 'ddi0553-latest.pdf');
+        assert.deepStrictEqual([manual.path, manual.versionLabel, manual.filename], [armCopy, 'B.y', 'DDI0553B_y_armv8m_arm.pdf']);
+        assert.deepStrictEqual(read().docs.commons[0].docs![0], { name: arm, title: 'Armv8-M Architecture Reference Manual', category: 'arch', id: 'ddi0553',
+            version: 'latest', format: 'pdf', metadataUrl: 'https://documentation-service.arm.com/documentation/ddi0553/latest', path: armCopy });
+
+        const everywhere = await service.addDocument({ all: true }, local('bmi270.pdf'), { title: 'BMI270' });
+        const core = await service.addDocument({ core: 'Cortex-M33' }, local('mpu.pdf'));
+        await service.addDocument({ pack: 'Keil::STM32U5xx_DFP' }, RM, { title: 'RM' });
+        const pack = await service.downloadDocument({ pack: 'Keil::STM32U5xx_DFP' }, RM);
+        const vendor = await service.addDocument({ vendor: 'Keil' }, local('notes.pdf'));
+        assert.deepStrictEqual([everywhere.path, core.path, pack.path, vendor.path].map((file) => path.relative(path.join(root, 'docs'), file!).split(path.sep).join('/')),
+            ['all/bmi270/bmi270.pdf', 'cores/Cortex-M33/mpu/mpu.pdf', 'packs/Keil/STM32U5xx_DFP/rm0456/rm0456.pdf', 'vendors/Keil/notes/notes.pdf']);
+        const file = read().docs;
+        assert.deepStrictEqual(file.commons.map((common) => common.common), ['arm-docs', 'all']);
+        assert.deepStrictEqual([file.cores[0].core, file.packs[0].pack, file.vendors[0].vendor], ['Cortex-M33', 'Keil::STM32U5xx_DFP', 'Keil']);
+        assert.deepStrictEqual(file.commons[1].docs![0], { name: everywhere.name, mode: 'user', title: 'BMI270', path: everywhere.path });
+        assert.strictEqual((await service.getDocuments({ all: true })).length, 2, 'the Arm document it has a copy of, and the user\'s; not the rest of the catalogue');
+
+        // Removing an Arm document removes the copy; the catalogue entry is CMSIS Solution's and stays.
+        assert.ok(await service.removeDocument({ all: true }, arm));
+        assert.ok(!fs.existsSync(path.dirname(armCopy)));
+        assert.deepStrictEqual(read().docs.commons[0].docs![0].path, undefined);
+        assert.strictEqual(read().docs.commons[0].docs!.length, 2);
+        assert.ok(await service.removeDocument({ core: 'Cortex-M33' }, core.name));
+        assert.strictEqual(read().docs.cores.length, 0, 'an item the service made goes with its last document');
+    });
+
+    test('two documents of one device that end in the same file name get a folder each', async () => {
+        const first = 'https://a.example.com/files/datasheet.pdf';
+        const second = 'https://b.example.com/other/datasheet.pdf';
+        await service.addDocument(DEVICE, first);
+        await service.addDocument(DEVICE, second);
+        const one = await service.downloadDocument(DEVICE, first);
+        const two = await service.downloadDocument(DEVICE, second);
+        assert.strictEqual(path.relative(path.join(root, 'docs'), one.path!).split(path.sep).join('/'), 'STMicroelectronics/STM32U585AIIx/datasheet/datasheet.pdf');
+        assert.match(path.relative(path.join(root, 'docs'), two.path!).split(path.sep).join('/'), /^STMicroelectronics\/STM32U585AIIx\/datasheet-[0-9a-f]{8}\/datasheet\.pdf$/);
+        assert.ok(fs.existsSync(one.path!) && fs.existsSync(two.path!));
+        assert.strictEqual((await service.downloadDocument(DEVICE, second)).path, two.path, 'a second download goes into the same folder');
+    });
+
+    test('CMSIS Solution writes docs.yml between the read and the write: the change is applied to what it wrote', async () => {
+        await service.addDocument(DEVICE, RM);
+        service.dispose();
+        let written = false;
+        const theirs = SOLUTION_INVENTORY + ['  boards:', '    - board: STMicroelectronics::B-U585I-IOT02A:C', '      pack: Keil::B-U585I-IOT02A_BSP@2.0.0', ''].join('\n');
+        service = new EmulatedDocumentService({
+            root, engine: fakeEngine([]), now: () => {
+                if (!written) {
+                    written = true;
+                    fs.writeFileSync(inventory, theirs);
+                }
+                return new Date(0);
+            },
+        });
+        const done = await service.downloadDocument(DEVICE, RM);
+        const file = read().docs;
+        assert.ok(written);
+        assert.deepStrictEqual([file.boards[0].board, file.devices[0].docs![0].path], ['STMicroelectronics::B-U585I-IOT02A:C', done.path]);
+    });
+
+    test('a file that is not an inventory is refused and left as it is', async () => {
+        fs.writeFileSync(inventory, '- just: a list\n');
+        await assert.rejects(service.getDocuments(DEVICE), /is not a document inventory/);
+        await assert.rejects(service.addDocument(DEVICE, RM), /is not a document inventory/);
+        assert.strictEqual(fs.readFileSync(inventory, 'utf-8'), '- just: a list\n');
+        assert.ok(!fs.existsSync(path.join(root, 'docs.xtra.yml')));
+    });
+});
+
 suite('the documentation tools through the emulated document service (2.9.2)', () => {
     let world: World;
     let service: EmulatedDocumentService;
@@ -284,6 +483,39 @@ suite('the documentation tools through the emulated document service (2.9.2)', (
         wall = false;
         assert.match(textOf(await handler.handleFetchDoc({ doc: id })), /^Fetched /);
         assert.deepStrictEqual(await service.getRequests(), []);
+    });
+
+    test('one inventory for the CMSIS view and the agent: its book is fetched into its folder and indexed beside the copy; its user document is listed once', async () => {
+        const dotCmsis = path.join(world.root, 'docservice');
+        const url = 'https://www.st.com/resource/en/datasheet/stm32f756bg.pdf';
+        const added = path.join(dotCmsis, 'docs', 'STMicroelectronics', 'STM32F756ZGTx', 'bmi270', 'bmi270.pdf');
+        fs.mkdirSync(path.dirname(added), { recursive: true });
+        fs.copyFileSync(path.join(world.workspace, 'docs', 'board-um.pdf'), added);
+        const inventory = path.join(dotCmsis, 'docs.yml');
+        fs.writeFileSync(inventory, ['docs:', '  devices:', '    - device: STMicroelectronics::STM32F756ZGTx', '      pack: Keil::STM32F7xx_DFP@3.0.0', '      docs:',
+            `        - name: ${url}`, '          title: STM32F756 Data Sheet', '          category: datasheet',
+            '        - name: /home/me/Downloads/bmi270.pdf', '          title: BMI270', `          path: ${added}`, '          mode: user', ''].join('\n'));
+        const fetchFn = async (target: string): Promise<Response> => (target === url
+            ? new Response(PDF, { status: 200, headers: { 'content-type': 'application/pdf' } }) : world.host.fetchFn!(target));
+        service.dispose();
+        service = new EmulatedDocumentService({ root: dotCmsis,
+            engine: documentEngine({ fetchFn, userAgent: 'test', log: world.host.log, timeoutMs: 30_000, maxBytes: 50 * 1024 * 1024 }) });
+        const handler = new PackDocsHandler({ ...host, inventoryFile: inventory }, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['1 Data\nVDD']) });
+        const listed = textOf(await handler.handleListTargetDocs({}));
+        assert.deepStrictEqual(listed.split('\n').filter((line) => line.includes('BMI270')).map((line) => line.trim().replace(/\d+ kB/, 'n kB')),
+            ['user/stm32f756zgtx/bmi270 · user · BMI270 · n kB (added by the user), not indexed yet']);
+        const id = (await handler.inspectTarget({})).docs.find((doc) => doc.url === url)!.id;
+        const fetched = textOf(await handler.handleFetchDoc({ doc: id }));
+        assert.match(fetched, /^Fetched .*; kept by the document service \(the Target Documents view\)/s);
+        const copy = path.join(dotCmsis, 'docs', 'STMicroelectronics', 'STM32F756ZGTx', 'stm32f756bg', 'stm32f756bg.pdf');
+        assert.deepStrictEqual(['.pdf', '.pages.jsonl', '.meta.json', '.idx.json'].map((ext) => fs.existsSync(copy.replace(/\.pdf$/, ext))), [true, true, true, true],
+            'the copy where CMSIS Solution looks for it, the extracted text and the index beside it');
+        const [book] = (load(fs.readFileSync(inventory, 'utf-8')) as { docs: { devices: { docs: Record<string, unknown>[] }[] } }).docs.devices[0].docs;
+        assert.deepStrictEqual(book, { name: url, title: 'STM32F756 Data Sheet', category: 'datasheet', path: copy });
+        const after = textOf(await handler.handleListTargetDocs({})).split('\n').filter((line) => line.includes('STM32F756 Data Sheet'));
+        assert.strictEqual(after.length, 1, after.join('\n'));
+        assert.match(after[0], /· indexed, 1 p$/);
+        assert.ok(!fs.existsSync(path.join(world.host.storageDir, 'web')), 'nothing of it in the extension\'s own store');
     });
 
     test('documents the user added for a core and for the project are listed and searched with the target\'s', async () => {

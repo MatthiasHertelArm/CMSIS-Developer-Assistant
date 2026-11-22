@@ -357,11 +357,11 @@
             "emulated"
           ],
           "enumDescriptions": [
-            "CMSIS Solution's document service when it offers one, else the one built into this extension (a prototype of what CMSIS Solution should provide).",
+            "CMSIS Solution's document service when it offers one, else the one built into this extension (a prototype of what CMSIS Solution should provide), which shares CMSIS Solution's folder ~/.cmsis/.",
             "Always the document service built into this extension."
           ],
           "default": "auto",
-          "description": "Who keeps the target's documents, their downloads, the documents you add (for you or the project, in .cmsis/docs.yml) and the agent's requests. The search index always stays in this extension.",
+          "description": "Who keeps the target's documents, their downloads, the documents you add (for you or the project, in .cmsis/docs.yml) and the agent's requests. The built-in service keeps them where CMSIS Solution does: the inventory ~/.cmsis/docs.yml and the copies under ~/.cmsis/docs/. The search index is always this extension's: beside each of those copies, and in its own storage for the PDFs of packs and workspaces.",
           "tags": [
             "experimental"
           ]

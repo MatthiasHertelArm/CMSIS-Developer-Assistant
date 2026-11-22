@@ -985,13 +985,14 @@ export class PackDocsHandler {
     public documentStore(): { view: string; inventory?: string; dir?: string } | undefined {
         const chosen = this.host.documentService?.();
         if (!chosen) { return undefined; }
-        const inventory = (chosen.service as { inventoryFile?: unknown }).inventoryFile;
+        const { inventoryFile: inventory, copiesDir } = chosen.service as { inventoryFile?: unknown; copiesDir?: unknown };
         if (typeof inventory !== 'string') {
             return { view: chosen.view };
         }
-        // The emulator keeps its copies, and their extracted text, under its own folder.
-        this.store.addRoot(path.dirname(inventory));
-        return { view: chosen.view, inventory, dir: path.dirname(inventory) };
+        // The emulator keeps its copies, and their extracted text, in the folder beside its inventory (~/.cmsis/docs).
+        const dir = typeof copiesDir === 'string' ? copiesDir : path.dirname(inventory);
+        this.store.addRoot(dir);
+        return { view: chosen.view, inventory, dir };
     }
 
     /** The folders of the service's copies, where their extracted text sits (`PageStore` extracts them in place). */

@@ -36,6 +36,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { BuildInfoHandler } from './buildInfoHandler';
 import { CachedDoc, PackDocsLog, TargetArgs, buildChapterIndex, docState } from './core/packDocs';
@@ -182,12 +183,15 @@ export class PackDocsPanel {
                     return;
                 }
                 case 'store.list': {
+                    // First: it names the service's folder to the store, whose listing then includes the text beside the copies.
+                    const documents = this.docs.documentStore();
                     const entries = this.entries();
                     const fetched = this.docs.getStore().listFetched().filter(f => !entries.some(e => e.id === f.id));
                     this.post({
                         type: 'store.list',
                         storageDir: this.docs.getStore().dir,
-                        documents: this.docs.documentStore(),
+                        homeDir: os.homedir(),
+                        documents,
                         // Downloads the retired path left in the index folder (arm/, web/); none after the move.
                         oldDownloads: this.docs.getStore().storeUsage().downloads.documents,
                         entries: entries.map(e => ({ ...e, fetch: undefined, hasFetch: !!e.fetch })),
@@ -659,16 +663,24 @@ export function packDocsPanelHtml(nonce: string): string {
     setCount('nStore', entries.length);
     const only = !!(vscode.getState() || {}).onlyTarget && targetIds.size;
     const shown = only ? entries.filter(e => targetIds.has(e.id)) : entries;
-    const parts = String(msg.storageDir).split('/');
-    const shortDir = parts.length > 3 ? '…/' + parts.slice(-2).join('/') : msg.storageDir;
+    // A folder as the user knows it: under the home folder with ~, else its last two parts.
+    const folderName = (dir) => {
+      const text = String(dir), home = String(msg.homeDir || '');
+      if (home && (text.startsWith(home + '/') || text.startsWith(home + '\\\\'))) { return '~' + text.slice(home.length); }
+      const parts = text.split('/');
+      return parts.length > 3 ? '…/' + parts.slice(-2).join('/') : text;
+    };
+    const shortDir = (() => { const parts = String(msg.storageDir).split('/'); return parts.length > 3 ? '…/' + parts.slice(-2).join('/') : msg.storageDir; })();
     const docs = msg.documents;
-    const docsDir = docs && docs.dir ? String(docs.dir).split('/') : [];
     const docsLine = !docs ? '<div class="muted">Documents: the document service is off (setting packDocs.documentService).</div>'
       : '<div class="muted">Documents (PDFs you add and fetch_doc downloads) are kept by the document service' +
-        (docs.dir ? ' in <a data-open="' + esc(docs.dir) + '" class="mono" title="' + esc(docs.dir) + '">' + esc(docsDir.length > 3 ? '…/' + docsDir.slice(-2).join('/') : docs.dir) + '</a> (<a data-open="' + esc(docs.inventory) + '" class="mono">docs.yml</a>)' : ' of CMSIS Solution') +
+        (docs.dir ? ' in <a data-open="' + esc(docs.dir) + '" class="mono" title="' + esc(docs.dir) + '">' + esc(folderName(docs.dir)) + '</a> (<a data-open="' + esc(docs.inventory) + '" class="mono">docs.yml</a>)' : ' of CMSIS Solution') +
         ' · <a id="manageDocs">manage them in ' + esc(docs.view) + '</a></div>';
+    const where = docs && docs.dir
+      ? '— the search index: beside each document in <a data-open="' + esc(docs.dir) + '" class="mono" title="' + esc(docs.dir) + '">' + esc(folderName(docs.dir)) + '</a>; for PDFs of packs and workspaces in'
+      : '— the search index, in';
     let h = '<div style="padding:6px 8px">' +
-      '<div><b>' + entries.length + ' extracted</b>' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetched but not extracted' : '') + ' <span class="muted">— the search index, in</span> <a data-open="' + esc(msg.storageDir) + '" class="mono" title="' + esc(msg.storageDir) + '">' + esc(shortDir) + '</a></div>' +
+      '<div><b>' + entries.length + ' extracted</b>' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetched but not extracted' : '') + ' <span class="muted">' + where + '</span> <a data-open="' + esc(msg.storageDir) + '" class="mono" title="' + esc(msg.storageDir) + '">' + esc(shortDir) + '</a></div>' +
       docsLine +
       '<div class="toolbar" style="margin:4px 0 0"><a id="refresh">refresh</a> · <a id="clearExtracted" title="Remove the extracted text and search indexes of every document; the documents stay. Asks first.">clear extracted text…</a>' +
       (msg.oldDownloads ? ' · <a id="clearDownloads" title="Remove the PDFs the retired download path left in the index folder (arm/, web/), with their fetch records and extraction. Asks first.">delete old downloads (' + msg.oldDownloads + ')…</a>' : '') + '</div>' +

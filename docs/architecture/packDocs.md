@@ -84,15 +84,15 @@ selection lacks the ADI, CoreSight and NPU documents.
 
 `PageStore.annotate` reads a web document from CMSIS Solution's copy when
 this extension has not downloaded it, so `fetch_doc` indexes it without a
-download; sidecars stay in the page store, keyed by id, never beside
-CMSIS Solution's inventory copy, which the view's *Remove Document* deletes
-with its folder. A copy the document service keeps for the user is
-different: `PageStore.paths` puts its sidecars next to it (extraction in
-place), so replacing or removing the copy takes its index along; project
-documents and unwritable folders keep the store layout, and sidecars an
-earlier release left there move beside the copy on first use. The handler
-registers the service's folders (`PageStore.addRoot`) for the panel's
-listing and clear actions. The
+download. A copy the document service keeps for the user has its sidecars
+next to it: `PageStore.paths` extracts in place, so replacing or removing
+the copy (also *Remove Document* in the CMSIS view, which deletes the
+copy's folder) takes its index along. With the emulator every copy under
+`~/.cmsis/docs/` is such a copy, whoever downloaded it. Pack PDFs,
+workspace and project documents, HTML-only Arm documents and unwritable
+folders keep the store layout, and sidecars an earlier release left there
+move beside the copy on first use. The handler registers the service's
+folders (`PageStore.addRoot`) for the panel's listing and clear actions. The
 listing and `fetch_doc`'s failure name the view's actions (*Download
 Document*, *Import Document*). The host sets `PackDocsHost.inventoryFile`;
 the tests leave it unset unless they test the inventory.
@@ -111,7 +111,9 @@ and the user's, so the edit is minimal and checked: the entry is found by
 the parsed values of its parent key and `name`, the edited text must parse
 to the old data with that one field changed, the file is compared again
 right before a temporary file is renamed over it. The view redraws on its
-next own write (no watcher yet, gap G1a).
+next own write (no watcher yet, gap G1a). With the emulator the document
+service writes the same line into `error` itself (below), whatever the
+setting says, so the setting adds nothing there.
 
 ### The document service (`src/docService/`)
 
@@ -147,21 +149,55 @@ part of it: they stay in this extension.
   longer used (`tellAboutLegacyUserDocs` in `src/packDocsHost.ts`, the text
   in `userDocs.ts`), so that the user adds what is still needed to a target
   and deletes the rest.
-- **Storage.** The emulator owns a folder in the extension's global storage:
-  `docs.yml` (the user's entries, and this machine's state of project
-  entries) and `files/` (downloads, imports, copies of added files). Several
-  windows share it: a lock file, a fresh read and a temporary file renamed
-  over the old one per change, and a watcher for changes by other windows
-  (G1a). Downloads go through `documentEngine.ts`: this extension's
-  resolvers and guarded downloader, failures classified (G8).
+- **Storage: `~/.cmsis/`, shared with CMSIS Solution.** The emulator keeps
+  no store of its own: its root is the folder of CMSIS Solution's document
+  manager, so the user, the CMSIS view and the agent have one inventory and
+  one folder of copies, with or without CMSIS Solution installed. What that
+  folder has a place for goes there, in CMSIS Solution's form; the rest goes
+  beside it:
+  - `docs.yml`, in CMSIS Solution's layout. The emulator writes only the
+    fields CMSIS Solution knows (`name`, `title`, `category`, `path`,
+    `mode: user`, and `error` as one line while the agent's request is
+    open, which the CMSIS view shows as its badge) and keeps everything
+    else as read (every scalar as text). A document it adds is a user
+    document, because CMSIS Solution drops every other entry of a device or
+    board when it renews them for a new pack version; a pack's book it
+    fetches keeps its entry. For G2 it adds the lists `cores`, `packs` and
+    `vendors`, and the common `all` for documents of every target; an Arm
+    document lies in CMSIS Solution's common `arm-docs`. The CMSIS view
+    does not show those lists until G2.
+  - `docs.xtra.yml`, the emulator's own: what `docs.yml` has no field for
+    (the facts of a copy, the typed failure, the request, this machine's
+    state of project entries). `error` and `version` mean something else in
+    `docs.yml`, and CMSIS Solution rewrites an Arm entry's fields at every
+    start, so this state cannot live there. It also outlives the renewal of
+    a device's entries and gives a copy back its `path`.
+  - `docs/`, the copies, where CMSIS Solution puts them:
+    `<Vendor>/<Name>/<document>/<file>` for a device or board,
+    `<id>-<version>/<id>-<version>.pdf` for an Arm document; `cores/`,
+    `packs/`, `vendors/`, `all/` and `projects/` for what it has no place
+    for. A second document of the same name gets a folder of its own.
+  - Which documents are the service's: of `docs.yml`, those the user added,
+    those with state, and those with a copy under `docs/`. A pack's book
+    nobody fetched, and a pack's own PDF, stay CMSIS Solution's and reach
+    the tools through `inventory.ts` as before.
+  - Writers. Several windows share the folder: a lock file, a fresh read and
+    a temporary file renamed over the old one per change, and a watcher for
+    changes by other windows and by CMSIS Solution (G1a). CMSIS Solution
+    takes no lock: a change is applied once more when `docs.yml` changed
+    between the read and the write or right after it; what remains of that
+    race is accepted. A write drops comments in `docs.yml` and may change
+    its quoting; CMSIS Solution rewrites the whole file on its saves too.
+  Downloads go through `documentEngine.ts`: this extension's resolvers and
+  guarded downloader, failures classified (G8).
 - **Project documents** (G3) are entries in `<csolution folder>/.cmsis/docs.yml`,
   in the layout of CMSIS Solution's `~/.cmsis/docs.yml` (`devices`, `boards`,
   and `cores`, `packs`, `vendors`, `all`): paths relative to the csolution
   folder, or URLs, with title and category. Only what can be shared goes
-  there; copies, errors and requests of project entries stay in the user
-  store. A path that leaves the project is not read; a file of another
-  layout, and CMSIS Solution's own inventory, are never written; unknown
-  keys are kept. Adding is for the user by default; the project scope is an
+  there; copies, errors and requests of project entries stay in the user's
+  folder (`docs.xtra.yml`, `docs/projects/`). A path that leaves the project
+  is not read; a file of another layout is never written; unknown keys are
+  kept. Adding is for the user by default; the project scope is an
   explicit choice.
 - **Parents** match as CMSIS Solution keys them: a device or board without
   a vendor on one side matches by name, a board without a revision likewise
