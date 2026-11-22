@@ -31,6 +31,14 @@ All three are previews of the 2.10.0 cycle (odd minor version, pre-release VSIX)
 | 2.9.2 | [The target's documents through the CMSIS Solution document inventory](2.9.2-documentation-inventory.md) | stage 1 M + S, stage 2 S, stage 3 L | 2.9.1; the document manager (stage 1), a redraw on external changes (stage 2), V3 document methods (stage 3) | 6, decided 2026-11-17 (1, 3, 5 differ from the recommendations); ships in release 2.9.4 |
 | 2.9.3 | [Build results and output through `getBuildResult` of API V3](2.9.3-managed-build.md) | S + L + M + S + S | 2.9.1 phase 1; a CMSIS Solution build with vscode-cmsis-solution PR #720 (open on 2026-11-18; its CI build `1.72.1-115-b0807bd` is the test baseline until it is merged and in a nightly) | 7, decided 2026-11-18 for #720 (1 differs from the recommendation: builds start through V3 `build()`, not the commands); ships in release 2.9.4 |
 
+## Release 2.9.5: source browsing
+
+Decided 2026-11-22: the preview after 2.9.4 carries the proposal below, and it lives on the branch `release/2.9.5`, which is kept on top of `release/2.9.4` until both are merged. With it comes a rule: an experimental feature is off by default, and what is on by default is not called experimental, so the documentation, build-artefact and knowledge groups lose the label. Phases 0 to 4 are implemented on the branch (2026-11-23); the checks on Windows and Linux and with a multi-project solution are open.
+
+| Proposal (file number) | Title | Size | Depends on | Decisions |
+|---|---|---|---|---|
+| 2.9.5 | [Source browsing from clangd's index: `source_find` and `source_get`](2.9.5-source-browsing.md) | S + M + M + S + S; an own clangd process L, on a decision | at run time the clangd extension with a clangd executable, and the clangd setup CMSIS Solution generates | 7; 1 to 4, 6 and 7 decided 2026-11-22 as recommended (2 with the rule above), 5 (clangd's diagnostics) decided 2026-11-23 as recommended: not offered |
+
 ## Reading the historical record
 
 The original release plan, measurements and dated status notes follow unchanged in substance. Old Current state sections and unchecked decisions describe their recorded baseline, not today's code. Removed skill/source references that were broken now point to the verified 2.3.10 commit they discussed. For current instructions use the [agent guide](../agent-resources/debug_instructions.md), [user guide](../user-guide.md) and [architecture](../architecture/debugMCPServer.md).
