@@ -95,4 +95,19 @@ suite('peripheralReader readPeripheralViaMemory', () => {
         assert.ok(text.startsWith('RCC.CR @ 0x40023800 = 0x03000083\n'), text);
         assert.deepStrictEqual(requests, [['readMemory', { memoryReference: '0x40023800', count: 4 }]]);
     });
+
+    test('a session without an SVD reads nothing and says how to name one, or to read by address', async () => {
+        // No svdFile, no cbuild-run file and no cwd in the launch configuration, and the test host has no folder open.
+        let requests = 0;
+        const bare = {
+            name: 'no description', type: 'gdbtarget', configuration: {},
+            customRequest: async () => { requests++; throw new Error('the target must not be read'); },
+        } as unknown as vscode.DebugSession;
+        const text = await readPeripheralViaMemory(bare, 'RCC', 'CR', null, 1_000);
+        assert.ok(text.startsWith('No SVD file found for the current debug session.\n'), text);
+        assert.match(text, /Add "svdFile": "\/path\/to\/device\.svd" to your launch\.json configuration/);
+        assert.match(text, /Use read_memory with the register address/);
+        assert.match(text, /Use evaluate_expression: "\*\(unsigned int\*\)0x40020000"/);
+        assert.strictEqual(requests, 0);
+    });
 });

@@ -21,7 +21,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { defaultBuildInfoSettings } from '../core/buildInfo/host';
+import { BuildInfoHost, defaultBuildInfoSettings } from '../core/buildInfo/host';
 import { discoverIndexes } from '../core/knowledge/packIndexes';
 import { projectFacts } from '../core/knowledge/projectFacts';
 import { formatPackId } from '../core/packDocs/cbuildRun';
@@ -217,5 +217,77 @@ suite('The target from the CMSIS Solution extension (getCbuildRunFile, getDfpPat
         // Without the extension there is nothing beyond the pack root.
         assert.deepStrictEqual(await namedPackFolders(world.host), []);
         assert.deepStrictEqual(await namedPackFolders(asking(world.host, extension({ [GET_DFP_PATH]: () => devDfp }, { active: false }))), []);
+    });
+});
+
+/**
+ * What a knowledge search knows about the project without being told. The
+ * documentation and build-artefact cores resolve it; `projectFacts` puts
+ * their answers together and never throws.
+ */
+suite('The project facts of a knowledge search (device, board, packs, cores, compiler, components)', () => {
+    let world: World;
+    let blinky: string;
+    /** The build-artefact host of the world, finding these cbuild-run files. */
+    const buildOf = (files: string[]): BuildInfoHost =>
+        ({ workspaceFolders: () => [world.workspace], findFiles: async () => files, settings: () => defaultBuildInfoSettings, log: world.host.log });
+
+    suiteSetup(async () => {
+        world = buildWorld();
+        [blinky] = await world.host.findCbuildRunFiles();
+    });
+
+    test('the device, the board with its vendor, their packs and the cores of the device pack; the compiler once there is a build', async () => {
+        const target = { device: 'STM32F756ZGTx', board: 'STMicroelectronics::NUCLEO-F756ZG', packs: ['Keil::STM32F7xx_DFP', 'Keil::NUCLEO-F756ZG_BSP'], cores: ['Cortex-M7'] };
+        assert.deepStrictEqual(await projectFacts(world.host, buildOf([])), { facts: target }, 'no cbuild-run for the build tools: no compiler, no components');
+        // The cbuild-run names the compiler; it lists no image, so there is no cbuild.yml to read components from.
+        assert.deepStrictEqual(await projectFacts(world.host, buildOf([blinky])), { facts: { ...target, compiler: 'AC6', components: [] } });
+    });
+
+    test('the components and the other packs come from the cbuild.yml next to the image, and the compiler too when the cbuild-run names none', async () => {
+        const run = path.join(world.workspace, 'Facts+STM32F756ZGTx.cbuild-run.yml');
+        const outDir = path.join(world.workspace, 'out', 'Facts', 'STM32F756ZGTx', 'Debug');
+        fs.mkdirSync(outDir, { recursive: true });
+        fs.writeFileSync(run, SAMPLE_CBUILD_RUN.replace('  compiler: AC6\n', '').replace(/  board: .*\n  board-pack: .*\n/, '')
+            + '  output:\n    - file: out/Facts/STM32F756ZGTx/Debug/Facts.axf\n      type: elf\n');
+        fs.writeFileSync(path.join(outDir, 'Facts.Debug+STM32F756ZGTx.cbuild.yml'), [
+            'build:', '  generated-by: csolution version 2.9.0', '  context: Facts.Debug+STM32F756ZGTx', '  compiler: GCC', '  device: STMicroelectronics::STM32F756ZGTx',
+            '  packs:', '    - pack: ARM::CMSIS@6.1.0', '      path: ${CMSIS_PACK_ROOT}/ARM/CMSIS/6.1.0', '    - pack: Keil::STM32F7xx_DFP@3.0.0',
+            '  components:', '    - component: ARM::CMSIS:CORE@6.1.0', '      condition: ARMv6_7_8-M Device', '    - component: "Keil::Device:Startup@1.2.0"', '',
+        ].join('\n'));
+        const result = await projectFacts({ ...world.host, findCbuildRunFiles: async () => [run] }, buildOf([run]));
+        assert.deepStrictEqual(result, {
+            facts: {
+                device: 'STM32F756ZGTx', packs: ['Keil::STM32F7xx_DFP', 'ARM::CMSIS'], cores: ['Cortex-M7'], compiler: 'GCC',
+                components: ['ARM::CMSIS:CORE@6.1.0', 'Keil::Device:Startup@1.2.0'],
+            },
+        }, 'no board in this cbuild-run; the device pack is named once, without its version');
+    });
+
+    test('what is missing is said in one line, and the search runs without it', async () => {
+        assert.deepStrictEqual(await projectFacts({ ...world.host, workspaceFolders: () => [] }, buildOf([])), { note: 'no folder is open' });
+
+        // Two contexts with different devices: the first line of the refusal, without the list under it.
+        const other = path.join(world.workspace, 'other', 'Other+HP.cbuild-run.yml');
+        fs.mkdirSync(path.dirname(other), { recursive: true });
+        fs.writeFileSync(other, SAMPLE_CBUILD_RUN.replace('target-type: STM32F756ZGTx', 'target-type: HP')
+            .replace('device: STMicroelectronics::STM32F756ZGTx', 'device: STMicroelectronics::STM32F746NGHx'));
+        const ambiguous = { ...world.host, findCbuildRunFiles: async () => [blinky, other] };
+        const refusal = await resolveTarget(ambiguous, {});
+        assert.ok('error' in refusal && refusal.error.includes('\n'), 'the refusal itself lists the contexts');
+        assert.deepStrictEqual(await projectFacts(ambiguous, buildOf([])), { note: '2 cbuild-run contexts with different targets — pass target to pick one:' });
+
+        // The device pack is not under the pack root: the facts stay, without the cores, and the note says why.
+        const emptyRoot = path.join(world.root, 'empty-root');
+        const unknownCore = await projectFacts({ ...world.host, packRoot: emptyRoot }, buildOf([]));
+        assert.deepStrictEqual(unknownCore.facts, { device: 'STM32F756ZGTx', board: 'STMicroelectronics::NUCLEO-F756ZG', packs: ['Keil::STM32F7xx_DFP', 'Keil::NUCLEO-F756ZG_BSP'] });
+        assert.strictEqual(unknownCore.note, `the core of STM32F756ZGTx is not known (pack Keil::STM32F7xx_DFP@3.0.0 is not installed under ${emptyRoot})`);
+    });
+
+    test('a host that fails costs the facts, not the search', async () => {
+        const logged = world.lines.length;
+        const failing = { ...world.host, workspaceFolders: (): string[] => { throw new Error('the folders are gone'); } };
+        assert.deepStrictEqual(await projectFacts(failing, buildOf([])), { note: 'the project could not be read' });
+        assert.deepStrictEqual(world.lines.slice(logged), ['D knowledge: no project facts: the folders are gone']);
     });
 });

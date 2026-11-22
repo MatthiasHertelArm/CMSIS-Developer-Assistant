@@ -15,7 +15,7 @@
  */
 
 import * as assert from 'assert';
-import { panelCommand } from '../packDocsPanel';
+import { packDocsPanelHtml, panelCommand } from '../packDocsPanel';
 
 /**
  * The Pack Docs webview may ask the extension to run a VS Code command; only
@@ -38,6 +38,43 @@ suite('Pack Docs panel commands', () => {
         ];
         for (const requested of refused) {
             assert.strictEqual(panelCommand(requested), undefined, String(requested));
+        }
+    });
+});
+
+/**
+ * The page is one template string, so the compiler never reads its script: a
+ * backslash the template swallows or a brace that is missing shows only when
+ * the panel opens. Here the page is rendered and its script compiled, not run.
+ */
+suite('Pack Docs panel page', () => {
+    const NONCE = 'n0nce42';
+    const page = packDocsPanelHtml(NONCE);
+    const scripts = [...page.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+
+    test('the page admits one script, by its nonce, and nothing from elsewhere', () => {
+        assert.ok(page.startsWith('<!DOCTYPE html>'), page.slice(0, 40));
+        assert.ok(page.includes(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${NONCE}';">`));
+        assert.strictEqual(page.match(/<script/g)?.length, 1);
+        assert.strictEqual(scripts.length, 1, 'the one script is closed');
+        assert.strictEqual(scripts[0][1], ` nonce="${NONCE}"`);
+        const markup = page.replace(scripts[0][0], '');
+        assert.ok(!/<[^>]*\son[a-z]+\s*=/i.test(markup), 'an inline handler would be refused by the policy');
+        assert.ok(!/\bsrc\s*=/i.test(markup), 'the policy loads nothing: no image, frame or script by address');
+        assert.notStrictEqual(packDocsPanelHtml('other'), page, 'the nonce is the caller\'s');
+    });
+
+    test('the script of the page is JavaScript as it arrives in the webview', () => {
+        const script = scripts[0][2];
+        assert.doesNotThrow(() => new Function('acquireVsCodeApi', 'document', 'window', script));
+        assert.ok(script.includes('acquireVsCodeApi()') && script.includes("vscode.postMessage({ type: 'tools.list' })"), 'it talks to the panel, and asks for the tools');
+    });
+
+    test('every command the script posts is one the panel runs', () => {
+        const posted = [...scripts[0][2].matchAll(/command:\s*'([^']+)'/g)].map((found) => found[1]);
+        assert.deepStrictEqual([...new Set(posted)].sort(), ['cmsis-developer-assistant.importUserDoc', 'cmsisDeveloperAssistant.targetDocuments.focus']);
+        for (const id of posted) {
+            assert.strictEqual(panelCommand(id), id);
         }
     });
 });

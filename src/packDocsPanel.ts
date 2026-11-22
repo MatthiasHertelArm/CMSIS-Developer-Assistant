@@ -312,8 +312,18 @@ export class PackDocsPanel {
 
     private html(): string {
         const nonce = Array.from({ length: 24 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
-        const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
-        return `<!DOCTYPE html>
+        return packDocsPanelHtml(nonce);
+    }
+}
+
+/**
+ * The panel's page: its styles, its markup and one script, which the content
+ * security policy admits by `nonce`. The script is part of this template, so
+ * the compiler does not read it; `src/test/packDocsPanel.test.ts` does.
+ */
+export function packDocsPanelHtml(nonce: string): string {
+    const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -757,5 +767,4 @@ export class PackDocsPanel {
 </script>
 </body>
 </html>`;
-    }
 }

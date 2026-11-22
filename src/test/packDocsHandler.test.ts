@@ -32,6 +32,7 @@ import { textOf } from '../core/toolResult';
 import { PackDocsHandler } from '../packDocsHandler';
 import { SAMPLE_CBUILD_RUN } from './cbuildRun.test';
 import { ARM_ROUTES, fakeFetch, json, pdf } from './webFetch.test';
+import { parentKey } from '../docService/contract';
 import { EmulatedDocumentService } from '../docService/emulator';
 import { documentEngine } from '../core/packDocs/documentEngine';
 
@@ -489,5 +490,221 @@ suite('PackDocsHandler (end to end, through the document service)', () => {
         assert.ok(!fs.existsSync(path.join(world.root, 'store-tiny')) || !fs.readdirSync(path.join(world.root, 'store-tiny'), { recursive: true }).some(f => String(f).endsWith('.pages.jsonl')), 'nothing was extracted');
         const doc = { id: 'x', title: 'x', scope: 'unlisted', source: 'pack', path: path.join(world.packRoot, 'Keil', 'STM32F7xx_DFP', '3.0.0', 'Documentation', 'test-rm.pdf'), sizeBytes: 5_000_000, cached: false, indexed: false } as const;
         await assert.rejects(() => tiny.indexDocument({ ...doc }), /exceeds maxPdfMb 0\.0001/);
+    });
+});
+
+/** An extractor whose tool is not installed. */
+class MissingExtractor implements PdfExtractor {
+    readonly name = 'missing';
+    async available() { return { ok: false, detail: 'pdftotext is not installed' }; }
+    async extract(): Promise<never> { throw new Error('extract was called without the tool'); }
+}
+
+/** An extractor that is there and reads no PDF. */
+class FailingExtractor implements PdfExtractor {
+    readonly name = 'failing';
+    async available() { return { ok: true, detail: 'failing' }; }
+    async extract(): Promise<never> { throw new Error('the PDF is damaged'); }
+}
+
+/**
+ * What the Pack Docs panel, the Target Documents view and the commands ask
+ * the handler for, beside the tools: the contexts, one peripheral of a
+ * register map, the index of a whole target, and the document service.
+ */
+suite('PackDocsHandler for the panel, the Target Documents view and the commands', () => {
+    let world: World;
+    let handler: PackDocsHandler;
+    const options = (w: World) => ({ timeoutMs: 30_000, workspaceRoot: () => w.workspace, extractor: new FakeExtractor(['RCC clock control', 'USART1 baud rate']) });
+
+    suiteSetup(() => {
+        world = buildWorld();
+        handler = new PackDocsHandler(world.host, options(world));
+    });
+    suiteTeardown(() => handler.dispose());
+
+    test('the cbuild-run contexts of the workspace are listed; a file that cannot be read is logged and left out', async () => {
+        const [blinky] = await world.host.findCbuildRunFiles();
+        const gone = path.join(world.workspace, 'gone+X.cbuild-run.yml');
+        const listing = new PackDocsHandler({ ...world.host, findCbuildRunFiles: async () => [gone, blinky] }, options(world));
+        const contexts = await listing.listContexts();
+        assert.deepStrictEqual(contexts.map((c) => [c.file, c.targetType, c.device?.name, c.board?.name]), [[blinky, 'STM32F756ZGTx', 'STM32F756ZGTx', 'NUCLEO-F756ZG']]);
+        assert.ok(world.lines.some((line) => line.startsWith(`W cannot read ${gone}: `)), world.lines.filter((line) => line.startsWith('W ')).join('\n'));
+        assert.deepStrictEqual(await new PackDocsHandler({ ...world.host, findCbuildRunFiles: async () => [] }, options(world)).listContexts(), []);
+    });
+
+    test('one peripheral is read from the device SVD, and from the core\'s description when the device has none on disk', async () => {
+        const rcc = await handler.inspectPeripheral({}, 'rcc');
+        assert.ok(!('error' in rcc), JSON.stringify(rcc));
+        assert.strictEqual(rcc.peripheral.name, 'RCC');
+        assert.strictEqual(rcc.peripheral.baseAddress, 0x40023800);
+        assert.strictEqual(rcc.group, 'RCC');
+        assert.deepStrictEqual(rcc.registers.slice(0, 3).map((r) => r.name), ['AHB1ENR', 'APB1ENR', 'APB2ENR']);
+        assert.deepStrictEqual(await handler.inspectPeripheral({}, 'NOPE'), { error: 'no peripheral NOPE' });
+        const noTarget = await handler.inspectPeripheral({ target: 'nonexistent' }, 'RCC');
+        assert.ok('error' in noTarget && noTarget.error.startsWith('No cbuild-run context matches target \'nonexistent\''), JSON.stringify(noTarget));
+
+        // The STM32F756VG takes the subfamily's SVD, which this pack root does not hold: the Cortex-M7 map the extension ships stands in.
+        const sibling = { pack: 'Keil::STM32F7xx_DFP', device: 'STM32F756VGTx' };
+        const scb = await handler.inspectPeripheral(sibling, 'SCB');
+        assert.ok(!('error' in scb), JSON.stringify(scb));
+        assert.strictEqual(scb.peripheral.baseAddress, 0xE000ED00);
+        assert.deepStrictEqual(scb.registers.slice(0, 3).map((r) => r.name), ['CPUID', 'ICSR', 'VTOR']);
+        // Without the shipped maps and without ARM::CMSIS in the pack root, the reason is the missing file.
+        const bare = new PackDocsHandler({ ...world.host, assetsDir: undefined }, options(world));
+        assert.deepStrictEqual(await bare.inspectPeripheral(sibling, 'SCB'), { error: 'device SVD CMSIS/SVD/STM32F756.svd is not on disk' });
+    });
+
+    test('one core peripheral is read from the map of the target\'s core', async () => {
+        const scb = await handler.inspectCorePeripheral({}, 'scb');
+        assert.ok(!('error' in scb), JSON.stringify(scb));
+        assert.strictEqual(scb.peripheral.name, 'SCB');
+        assert.strictEqual(scb.group, 'System');
+        assert.ok(scb.registers.some((r) => r.name === 'CFSR') && scb.registers.length > 20, scb.registers.map((r) => r.name).join());
+        // The device SVD is not asked: RCC is a peripheral of the device, not of the core.
+        assert.deepStrictEqual(await handler.inspectCorePeripheral({}, 'RCC'), { error: 'no core peripheral RCC' });
+        const noTarget = await handler.inspectCorePeripheral({ target: 'nonexistent' }, 'SCB');
+        assert.ok('error' in noTarget && /No cbuild-run context matches target 'nonexistent'/.test(noTarget.error), JSON.stringify(noTarget));
+        const bare = new PackDocsHandler({ ...world.host, assetsDir: undefined }, options(world));
+        assert.deepStrictEqual(await bare.inspectCorePeripheral({}, 'SCB'),
+            { error: 'no core peripherals for this target (unknown core, and the ARM::CMSIS pack is not installed)' });
+    });
+
+    test('an NPU the device pack declares is read from the driver header of the installed ARM::ethos-u-core-driver', async () => {
+        const noNpu = 'no NPU driver header for this target (no NPU declared, or the ARM::ethos-u-core-driver pack is not installed)';
+        assert.deepStrictEqual(await handler.inspectNpuPeripheral({}, 'Ethos-U55'), { error: noNpu }, 'the plain world declares none');
+        assert.strictEqual((await handler.inspectTarget({})).npu, undefined);
+        const noTarget = await handler.inspectNpuPeripheral({ target: 'nonexistent' }, 'Ethos-U55');
+        assert.ok('error' in noTarget && /No cbuild-run context matches target 'nonexistent'/.test(noTarget.error), JSON.stringify(noTarget));
+
+        // A world of its own: the device has an Ethos-U55.
+        const npuWorld = buildWorld();
+        const pdsc = path.join(npuWorld.packRoot, 'Keil', 'STM32F7xx_DFP', '3.0.0', 'Keil.STM32F7xx_DFP.pdsc');
+        const declared = fs.readFileSync(pdsc, 'utf-8').replace('<device Dname="STM32F756ZG">', '<device Dname="STM32F756ZG">\n          <feature type="NPU" n="Ethos-U55"/>');
+        assert.ok(declared.includes('type="NPU"'));
+        fs.writeFileSync(pdsc, declared);
+        const withNpu = new PackDocsHandler(npuWorld.host, options(npuWorld));
+
+        // Declared, the driver pack not installed: the panel shows where the header would come from.
+        const missing = await withNpu.inspectTarget({});
+        assert.deepStrictEqual(missing.npus, ['Ethos-U55']);
+        assert.match(missing.processors ?? '', /Cortex-M7.* · NPU Ethos-U55$/);
+        assert.ok(missing.npu && !missing.npu.exists && missing.npu.rel === 'ethosu55_interface.h' && missing.npu.peripherals.length === 0, JSON.stringify(missing.npu));
+        assert.strictEqual(missing.npu.pack, 'ARM::ethos-u-core-driver (not installed)');
+        assert.deepStrictEqual(await withNpu.inspectNpuPeripheral({}, 'Ethos-U55'), { error: noNpu });
+
+        const driver = path.join(npuWorld.packRoot, 'ARM', 'ethos-u-core-driver', '1.1.0', 'src');
+        fs.mkdirSync(driver, { recursive: true });
+        fs.copyFileSync(path.join(FIXTURES, 'ethosu_test_interface.h'), path.join(driver, 'ethosu55_interface.h'));
+        const found = await withNpu.inspectTarget({});
+        assert.ok(found.npu?.exists, JSON.stringify(found.npu));
+        assert.strictEqual(found.npu.pack, 'ARM::ethos-u-core-driver@1.1.0');
+        assert.strictEqual(found.npu.coreName, 'Ethos-U55');
+        assert.strictEqual(found.npu.error, undefined);
+        // The base address is not in the header, and this device's SVD names no NPU.
+        assert.deepStrictEqual(found.npu.peripherals, [{ name: 'Ethos-U55', group: 'NPU', baseAddress: 0, registers: 6, interrupts: 0 }]);
+        const npu = await withNpu.inspectNpuPeripheral({}, 'ethos-u55');
+        assert.ok(!('error' in npu), JSON.stringify(npu));
+        assert.strictEqual(npu.group, 'NPU');
+        assert.deepStrictEqual(npu.registers.map((r) => r.name), ['ID', 'STATUS', 'CMD', 'QBASE', 'BASEP_BASE', 'PMCR']);
+        assert.deepStrictEqual(await withNpu.inspectNpuPeripheral({}, 'Ethos-U85'), { error: 'no NPU Ethos-U85; the target has Ethos-U55' });
+        withNpu.dispose();
+    });
+
+    test('Index Target Documents extracts every local document once, names each to the progress, and says why it cannot', async () => {
+        const reported: string[] = [];
+        const first = await handler.indexTarget({}, (message) => reported.push(message));
+        const counts = /^Target: device STMicroelectronics::STM32F756ZGTx, [^\n]*\nIndexed (\d+), already cached (\d+), failed (\d+) of (\d+) documents\.$/.exec(first);
+        assert.ok(counts, first);
+        const [indexed, cached, failed, total] = counts.slice(1).map(Number);
+        assert.ok(total >= 4, 'the pack\'s manual, the unlisted PDF and the two workspace documents at least');
+        assert.deepStrictEqual([indexed, cached, failed], [total, 0, 0]);
+        assert.strictEqual(reported.length, total);
+        assert.strictEqual(reported[0], `stm32f7xx-dfp/test-rm (1/${total})`);
+        assert.match(reported[total - 1], new RegExp(` \\(${total}/${total}\\)$`));
+        const kept = handler.getStore().listCached();
+        assert.deepStrictEqual(kept.map((doc) => doc.id).sort(), reported.map((message) => message.replace(/ \(.*$/, '')).sort());
+        assert.ok(kept.every((doc) => doc.extractor === 'fake' && doc.pageCount === 2), JSON.stringify(kept));
+
+        const second = await handler.indexTarget({});
+        assert.ok(second.endsWith(`\nIndexed 0, already cached ${total}, failed 0 of ${total} documents.`), second);
+
+        // The panel's Clear Extracted Text: the store is emptied, the handler forgets what it derived, and everything is extracted anew.
+        assert.strictEqual(handler.getStore().clearExtracted().documents, total);
+        handler.dropCaches();
+        assert.deepStrictEqual(handler.getStore().listCached(), []);
+        const third = await handler.indexTarget({});
+        assert.ok(third.endsWith(`\nIndexed ${total}, already cached 0, failed 0 of ${total} documents.`), third);
+
+        assert.match(await handler.indexTarget({ target: 'nonexistent' }), /^No cbuild-run context matches target 'nonexistent'/);
+        const elsewhere = { ...world.host, storageDir: path.join(world.root, 'store-of-its-own') };
+        const noTool = new PackDocsHandler(elsewhere, { ...options(world), extractor: new MissingExtractor() });
+        assert.strictEqual(await noTool.indexTarget({}), 'Cannot extract: pdftotext is not installed');
+        const damaged = new PackDocsHandler(elsewhere, { ...options(world), extractor: new FailingExtractor() });
+        const logged = world.lines.length;
+        const none = await damaged.indexTarget({});
+        assert.ok(none.endsWith(`\nIndexed 0, already cached 0, failed ${total} of ${total} documents.`), none);
+        assert.ok(world.lines.slice(logged).some((line) => line.startsWith('E indexing stm32f7xx-dfp/test-rm failed') && line.includes('the PDF is damaged')),
+            world.lines.slice(logged).join('\n'));
+    });
+
+    test('the view gets the document service with the target\'s parents, most specific first, and where the documents are kept', async () => {
+        const chosen = world.host.documentService?.();
+        assert.ok(chosen, 'the world runs the document service');
+        const { service, view } = chosen;
+        const context = await handler.serviceContext();
+        assert.ok(context);
+        assert.strictEqual(context.service, service);
+        assert.strictEqual(context.view, view);
+        assert.deepStrictEqual(context.parents.map(parentKey), [
+            'device:STMicroelectronics::STM32F756ZGTx', 'board:STMicroelectronics::NUCLEO-F756ZG:Rev.B', 'core:Cortex-M7',
+            'pack:Keil::STM32F7xx_DFP', 'pack:Keil::NUCLEO-F756ZG_BSP', 'vendor:Keil', 'all',
+        ]);
+        assert.strictEqual(path.basename(context.solution ?? ''), 'TFLiteRT_HelloWorld.csolution.yml', 'the csolution the cbuild-run names');
+        assert.strictEqual(await new PackDocsHandler({ ...world.host, findCbuildRunFiles: async () => [] }, options(world)).serviceContext(), undefined,
+            'no target, no context');
+
+        // The emulated service says where its inventory is, and its copies when they have a folder of their own; the handler passes that on.
+        const kept = service as { inventoryFile?: string; copiesDir?: string };
+        assert.ok(typeof kept.inventoryFile === 'string', 'the emulator of the test world');
+        assert.deepStrictEqual(handler.documentStore(), { view, inventory: kept.inventoryFile, dir: kept.copiesDir ?? path.dirname(kept.inventoryFile) });
+        // A service that names no file of its own (CMSIS Solution's) is known by its view alone.
+        const foreign = { ...world.host, documentService: () => ({ service: {} as typeof service, view: 'the CMSIS view' }) };
+        assert.deepStrictEqual(new PackDocsHandler(foreign, options(world)).documentStore(), { view: 'the CMSIS view' });
+    });
+
+    test('a document is named to the service by its parent and name; a web document it does not list yet is added as a reference first', async () => {
+        const service = world.host.documentService?.()?.service;
+        assert.ok(service, 'the world runs the document service');
+        const before = (await handler.inspectTarget({})).docs;
+        const byId = (docs: typeof before, id: string) => docs.find((doc) => doc.id === id)!;
+        const sheet = byId(before, 'stm32f7xx-dfp/stm32f756bg');
+        const guide = byId(before, 'arm/dui0646-latest');
+        assert.ok(sheet.url && !sheet.service && guide.url && guide.arm && !guide.service, 'the service lists neither yet');
+        const device = { device: 'STMicroelectronics::STM32F756ZGTx' };
+
+        // A book of the device pack goes to the device, an Arm document to every target.
+        assert.deepStrictEqual(await handler.serviceEntry(sheet), { parent: device, name: sheet.url });
+        assert.deepStrictEqual(await handler.serviceEntry(guide), { parent: { all: true }, name: guide.url });
+        assert.ok((await service.getDocuments(device)).some((info) => info.name === sheet.url), 'the reference is in the service now');
+        // Once listed, the entry is the service's own, and nothing is added a second time.
+        const after = (await handler.inspectTarget({})).docs;
+        const listed = byId(after, 'stm32f7xx-dfp/stm32f756bg');
+        assert.ok(listed.service, JSON.stringify(listed));
+        const count = (await service.getDocuments(device)).length;
+        assert.deepStrictEqual(await handler.serviceEntry(listed), { parent: listed.service.parent, name: listed.service.name });
+        assert.strictEqual((await service.getDocuments(device)).length, count);
+        // A file of the pack has no address the service could fetch.
+        assert.strictEqual(await handler.serviceEntry(byId(after, 'stm32f7xx-dfp/test-rm')), undefined);
+    });
+
+    test('without a document service there is no context, no entry and no place of its own', async () => {
+        const off = buildWorld({ service: false });
+        const plain = new PackDocsHandler(off.host, options(off));
+        const sheet = (await plain.inspectTarget({})).docs.find((doc) => doc.id === 'stm32f7xx-dfp/stm32f756bg')!;
+        assert.strictEqual(await plain.serviceContext(), undefined);
+        assert.strictEqual(await plain.serviceEntry(sheet), undefined);
+        assert.strictEqual(plain.documentStore(), undefined);
+        plain.dispose();
     });
 });

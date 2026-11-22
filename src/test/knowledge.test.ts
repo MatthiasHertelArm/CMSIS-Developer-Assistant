@@ -510,6 +510,52 @@ suite('knowledge tools', () => {
             all.dispose();
         });
 
+        test('the browser reads the open index and searches it whole: every match, the incomplete ones too, in the project or outside it', async () => {
+            const reader = await handler.browseIndex();
+            assert.strictEqual(reader.file, file);
+            assert.strictEqual(reader.unitCount(), index.unitCount());
+            assert.strictEqual(handler.indexFile(), file);
+
+            const inProject = await handler.browseSearch('stack sizing pattern', true);
+            assert.deepStrictEqual(inProject.ids, ['fx-generic'], 'the Cortex-M55 unit is not for this project');
+            assert.strictEqual(inProject.context, 'STM32U585AIIx, Cortex-M33, GCC');
+            assert.strictEqual(inProject.note, undefined);
+            assert.ok(inProject.matched >= 1, String(inProject.matched));
+            const everywhere = await handler.browseSearch('stack sizing pattern', false);
+            assert.ok(everywhere.ids.includes('fx-m55') && !everywhere.ids.includes('fx-generic'), everywhere.ids.join());
+            assert.strictEqual(everywhere.context, undefined);
+            assert.strictEqual(everywhere.note, undefined, 'no project was asked for');
+
+            const message = await handler.browseSearch("board mounted device 'XYZ123' not found", false);
+            assert.strictEqual(message.ids[0], 'ts-csolution-board-mounted-device');
+            assert.deepStrictEqual(message.exact, ['ts-csolution-board-mounted-device']);
+            // knowledge_search leaves this unit out and counts it; the browser lists it.
+            const incomplete = await handler.browseSearch('no installed board was found', false);
+            assert.ok(incomplete.ids.includes('ts-csolution-no-board'), incomplete.ids.join());
+
+            const others = [
+                handlerFor({ indexPath: file, facts: { device: 'MYNEWCHIP', compiler: 'AC6' } }),
+                handlerFor({ indexPath: file, note: 'no folder is open' }),
+                handlerFor({ indexPath: file }),
+                handlerFor({}),
+            ];
+            try {
+                const unknownCore = await others[0].browseSearch('stack sizing pattern', true);
+                assert.deepStrictEqual(unknownCore.unverified, ['fx-m55'], JSON.stringify(unknownCore));
+                assert.strictEqual(unknownCore.context, 'MYNEWCHIP, AC6');
+                const noFolder = await others[1].browseSearch('stack sizing pattern', true);
+                assert.strictEqual(noFolder.note, 'no folder is open');
+                assert.strictEqual(noFolder.context, undefined);
+                assert.deepStrictEqual(noFolder.ids, everywhere.ids, 'without a project nothing is filtered');
+                assert.strictEqual((await others[2].browseSearch('stack sizing pattern', true)).note, 'no active project');
+                assert.strictEqual(others[3].indexFile(), undefined);
+                await refusedAs('TOOL_DISABLED', others[3].browseIndex(), /No knowledge index is set/);
+                await refusedAs('TOOL_DISABLED', others[3].browseSearch('stack', false), /No knowledge index is set/);
+            } finally {
+                others.forEach((each) => each.dispose());
+            }
+        });
+
         test('knowledge_get returns the whole body, however long', async () => {
             const reply = await handler.handleKnowledgeGet({ id: 'proc-long' });
             const text = textOf(reply);
@@ -856,6 +902,79 @@ suite('knowledge tools', () => {
             } finally {
                 set.close();
             }
+        });
+
+        test('what the browser and the id lookup read from a set is what its indexes hold together; a view owns no file', () => {
+            const pack = new KnowledgeIndex(packFile);
+            const set = new KnowledgeSet([{ label: 'base', file }, { label: 'MyVendor::MYCHIP_DFP@1.2.0', file: packFile }]);
+            try {
+                assert.strictEqual(set.file, file, 'the base file names the set');
+                assert.deepStrictEqual(index.sources(), [{ label: 'base', file, units: index.unitCount() }]);
+                assert.strictEqual(index.fileOf('fx-generic'), file);
+                assert.strictEqual(index.fileOf('pk-errata-dma'), undefined);
+                assert.strictEqual(set.fileOf('fx-generic'), file);
+                assert.strictEqual(set.fileOf('pk-errata-dma'), packFile);
+                assert.strictEqual(set.fileOf('no-such-unit'), undefined);
+                assert.deepStrictEqual(set.scopesOf('no-such-unit'), []);
+
+                const units = set.units().map((unit) => unit.id);
+                assert.deepStrictEqual(units, [...index.units(), ...pack.units()].map((unit) => unit.id), 'the base first, each index in its own order');
+                assert.strictEqual(units.length, set.unitCount());
+                assert.ok(units.includes('pk-errata-dma') && units.includes('fx-generic'), units.join());
+                // The base wins a clash: the same file a second time adds no unit to the list.
+                const twice = new KnowledgeSet([{ label: 'base', file }, { label: 'again', file }]);
+                try {
+                    assert.strictEqual(twice.units().length, index.unitCount());
+                } finally {
+                    twice.close();
+                }
+
+                const troubleshooting = set.unitIdsWithPrefix('ts-', 20);
+                assert.strictEqual(troubleshooting.length, index.unitIdsWithPrefix('ts-', 20).length + 1);
+                assert.ok(troubleshooting.includes('ts-pack-boot') && troubleshooting.includes('ts-packchk-m302'), troubleshooting.join());
+                assert.deepStrictEqual(troubleshooting, [...troubleshooting].sort(), 'in id order across the indexes');
+                assert.deepStrictEqual(set.unitIdsWithPrefix('ts-', 2), ['ts-csolution-board-mounted-device', 'ts-csolution-no-board'], 'the limit holds for the set');
+
+                const startup = set.componentIds('Device:Startup').sort();
+                assert.deepStrictEqual(startup, ['component:Infineon::Device:Startup', 'component:Keil::Device:Startup']);
+                assert.deepStrictEqual(pack.componentIds('Device:Startup'), [], 'both come from the base');
+
+                const edges = (reader: { relationCounts(): { relation: string; count: number }[] }, relation: string): number =>
+                    reader.relationCounts().find((entry) => entry.relation === relation)?.count ?? 0;
+                for (const relation of ['applies_to', 'refines', 'has_core']) {
+                    assert.ok(edges(pack, relation) > 0, relation);
+                    assert.strictEqual(edges(set, relation), edges(index, relation) + edges(pack, relation), relation);
+                }
+                const counts = set.relationCounts().map((entry) => entry.count);
+                assert.deepStrictEqual(counts, [...counts].sort((a, b) => b - a), 'the largest first');
+                assert.deepStrictEqual([...set.assetCounts()], [...index.assetCounts(), ...pack.assetCounts()]);
+                assert.strictEqual(set.assetCounts().get('proc-long'), 1);
+
+                assert.deepStrictEqual(index.howToCoverage([]), new Map());
+                assert.deepStrictEqual(set.howToCoverage(['hard', 'fault']), new Map([['proc-debug-live', 2]]), 'the pack has no procedure that names them');
+
+                const view = set.forContext(undefined);
+                assert.notStrictEqual(view, set);
+                assert.strictEqual(view.file, file);
+                view.close();
+                assert.strictEqual(set.node('pk-errata-dma')?.title, 'MYCHIP DMA errata', 'closing a view closes no file');
+            } finally {
+                set.close();
+                pack.close();
+            }
+        });
+
+        test('no file at all, and a database without the tables of an index, are typed failures', () => {
+            assert.throws(() => new KnowledgeSet([]), (failure: unknown) =>
+                failure instanceof ToolError && failure.code === 'TOOL_DISABLED' && /No knowledge index is set/.test(failure.message));
+            const partial = path.join(dir, 'partial.db');
+            const db = new DatabaseSync(partial);
+            db.exec('CREATE TABLE nodes(id TEXT PRIMARY KEY)');
+            db.close();
+            const notAnIndex = (failure: unknown): boolean => failure instanceof ToolError && failure.code === 'INVALID_ARGUMENT'
+                && failure.message.includes(`${partial} is not a knowledge index: it has no edges, nodes_fts table`);
+            assert.throws(() => new KnowledgeIndex(partial), notAnIndex);
+            assert.throws(() => new KnowledgeSet([{ label: 'base', file }, { label: 'Some::Pack@1.0.0', file: partial }]), notAnIndex);
         });
 
         test('the handler opens the packs of the pack root and the workspace with the base, and reopens when one appears', async () => {

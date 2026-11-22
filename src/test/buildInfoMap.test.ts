@@ -76,6 +76,24 @@ Symbol                                            File
 main                                              CMakeFiles/Group_App.dir/home/dev/proj/src/main.c.obj
 `;
 
+/** Output sections a linker script names itself: none of the names says what the section holds. */
+const GNU_USER_SECTIONS = `Linker script and memory map
+
+.ddr            0x70000000       0x40 load address 0x10002000
+ .ddr           0x70000000       0x40 table.o
+
+ethos_cache_buf 0x62000000      0x180
+ *(ethos_cache_buf)
+ .bss.cache     0x62000000      0x100 npu.o
+ .rodata.lut    0x62000100       0x40 npu.o
+ ethos_cache_buf
+                0x62000140       0x40 npu.o
+
+.scratch        0x64000000       0x20
+ .scratch       0x64000000       0x20 misc.o
+OUTPUT(user.elf elf32-littlearm)
+`;
+
 suite('buildInfo/mapFile', () => {
     test('detects formats', () => {
         assert.strictEqual(detectMapFormat(read('blink-gcc.elf.map')), 'gnu');
@@ -164,6 +182,28 @@ suite('buildInfo/mapFile', () => {
         assert.deepStrictEqual(m.objectTotals[0], { object: 'main.c.obj', library: undefined, code: 64, roData: 16, rwData: 32, ziData: 256, rom: 112, ram: 288 });
         assert.strictEqual(m.sections.length, 4);
         assert.strictEqual(usageRegions([], m).source, 'none');
+    });
+
+    test('GNU ld: a section the linker script names itself is data when it is loaded elsewhere, else what most of its inputs are', () => {
+        const m = parseMapFile(GNU_USER_SECTIONS, 'user.elf.map');
+        assert.strictEqual(m.format, 'gnu');
+        for (const name of ['.ddr', 'ethos_cache_buf', '.scratch']) {
+            assert.strictEqual(classifySectionName(name), 'other', `${name}: the name alone tells nothing`);
+        }
+        const section = (name: string) => m.sections.find(s => s.name === name)!;
+        // A load address of its own: initialised data, and its input with it.
+        assert.strictEqual(section('.ddr').class, 'data');
+        assert.deepStrictEqual(section('.ddr').inputs.map(i => i.class), ['data']);
+        // No load address: 256 bytes of .bss against 64 of .rodata; the input named like the section follows the majority.
+        assert.strictEqual(section('ethos_cache_buf').class, 'bss');
+        assert.deepStrictEqual(section('ethos_cache_buf').inputs.map(i => `${i.name}:${i.class}`), ['.bss.cache:bss', '.rodata.lut:rodata', 'ethos_cache_buf:bss']);
+        // Nothing to go by: it stays unclassified and counts for no object.
+        assert.strictEqual(section('.scratch').class, 'other');
+        assert.deepStrictEqual(section('.scratch').inputs.map(i => i.class), ['other']);
+        const totals = (object: string) => m.objectTotals.find(o => o.object === object);
+        assert.deepStrictEqual(totals('table.o'), { object: 'table.o', library: undefined, code: 0, roData: 0, rwData: 64, ziData: 0, rom: 64, ram: 64 });
+        assert.deepStrictEqual(totals('npu.o'), { object: 'npu.o', library: undefined, code: 0, roData: 64, rwData: 0, ziData: 320, rom: 64, ram: 320 });
+        assert.strictEqual(totals('misc.o'), undefined);
     });
 
     test('armlink: regions, execution regions, component sizes, totals, symbols (blink-ac6.axf.map)', () => {

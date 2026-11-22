@@ -28,7 +28,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, SHT_NOBITS, SHT_PROGBITS, SHT_STRTAB, SHT_SYMTAB, hex, isMappingSymbol, readElf, sectionAt, symbolAt } from '../core/buildInfo/elf';
+import {
+    PT_LOAD, SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, SHT_NOBITS, SHT_PROGBITS, SHT_STRTAB, SHT_SYMTAB, hex, isMappingSymbol, loadRanges, parseCpuName, readElf, sectionAt, symbolAt,
+} from '../core/buildInfo/elf';
 import { computeRegionUsage, occupiedRanges, topSymbols, uncoveredRanges } from '../core/buildInfo/usage';
 
 export const BUILDINFO_FIXTURES = path.join(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'buildinfo');
@@ -216,6 +218,85 @@ suite('buildInfo/elf', () => {
     test('mapping symbols', () => {
         for (const s of ['$t', '$d', '$a', '$t.3', '$d.realdata', '$x']) { assert.ok(isMappingSymbol(s), s); }
         for (const s of ['$Sub$$main', 'main', '$$Super', '__stack$']) { assert.ok(!isMappingSymbol(s), s); }
+    });
+
+    test('an image without allocated sections is measured by its segments: where it runs, and where it is stored when that differs', () => {
+        const file = path.join(dir, 'stripped.elf');
+        fs.writeFileSync(file, buildElf32({
+            sections: [], symbols: [],
+            segments: [
+                { vaddr: 0x08000000, paddr: 0x08000000, filesz: 0x140, memsz: 0x140, flags: 5 },
+                { vaddr: 0x20000000, paddr: 0x08000140, filesz: 0x10, memsz: 0x210, flags: 6 },
+            ],
+        }));
+        const e = readElf(file);
+        assert.ok(!e.sections.some(s => s.flags & SHF_ALLOC), 'only the symbol and string tables are left');
+        assert.deepStrictEqual(loadRanges(e.segments), [
+            { start: 0x08000000, end: 0x08000140, kind: 'run', flags: 5 },
+            { start: 0x20000000, end: 0x20000210, kind: 'run', flags: 6 },
+            { start: 0x08000140, end: 0x08000150, kind: 'load', flags: 6 },   // the .data initialisers in flash
+        ]);
+        // As with the section headers of the synthetic image: flash holds code and initialisers, RAM the data and its zeroes.
+        assert.deepStrictEqual(occupiedRanges(e), [{ start: 0x08000000, end: 0x08000150 }, { start: 0x20000000, end: 0x20000210 }]);
+        // Only PT_LOAD counts, a segment without memory has no run range, and one stored where it runs has no load range.
+        const plain = { offset: 0, align: 4, flags: 4 };
+        assert.deepStrictEqual(loadRanges([
+            { ...plain, type: 0x70000001, vaddr: 0x08000100, paddr: 0x08000100, filesz: 8, memsz: 8 },
+            { ...plain, type: PT_LOAD, vaddr: 0x30000000, paddr: 0x08001000, filesz: 0x20, memsz: 0 },
+            { ...plain, type: PT_LOAD, vaddr: 0x20000000, paddr: 0x08002000, filesz: 0, memsz: 0x400 },
+        ]), [
+            { start: 0x08001000, end: 0x08001020, kind: 'load', flags: 4 },
+            { start: 0x20000000, end: 0x20000400, kind: 'run', flags: 4 },
+        ]);
+    });
+
+    test('Tag_CPU_name is found behind the attributes and subsections that precede it, and a malformed section yields none', () => {
+        const ntbs = (text: string): Buffer => Buffer.from(`${text}\0`);
+        /** A sub-subsection: its tag (1 = Tag_File), its size including these five bytes, then the attributes. */
+        const scoped = (attributes: Buffer, tag = 1): Buffer => {
+            const head = Buffer.alloc(5);
+            head[0] = tag;
+            head.writeUInt32LE(5 + attributes.length, 1);
+            return Buffer.concat([head, attributes]);
+        };
+        /** A vendor subsection: its length including these four bytes, the vendor name, then its sub-subsections. */
+        const subsection = (vendor: string, ...parts: Buffer[]): Buffer => {
+            const body = Buffer.concat([ntbs(vendor), ...parts]);
+            const length = Buffer.alloc(4);
+            length.writeUInt32LE(4 + body.length);
+            return Buffer.concat([length, body]);
+        };
+        const section = (...subsections: Buffer[]): Buffer => Buffer.concat([Buffer.from('A'), ...subsections]);
+        const cpuName = (name: string): Buffer => Buffer.concat([Buffer.from([5]), ntbs(name)]);
+
+        // The control: the name alone, built with the same helpers as every case below.
+        assert.strictEqual(parseCpuName(section(subsection('aeabi', scoped(cpuName('Cortex-M7'))))), 'Cortex-M7');
+        const before: Record<string, Buffer> = {
+            'Tag_CPU_raw_name and Tag_conformance (strings)': Buffer.concat([Buffer.from([4]), ntbs('raw'), Buffer.from([67]), ntbs('2.09')]),
+            'Tag_compatibility (a number, then a string)': Buffer.concat([Buffer.from([32, 1]), ntbs('vendor')]),
+            'Tag_compatibility with a two-byte number': Buffer.concat([Buffer.from([32, 0x81, 0x01]), ntbs('vendor')]),
+            'Tag_also_compatible_with (a tag and value as a string)': Buffer.from([65, 6, 13, 0]),
+            'Tag_CPU_arch and Tag_THUMB_ISA_use (numbers)': Buffer.from([6, 13, 9, 2]),
+            'a number of two bytes': Buffer.from([6, 0x81, 0x01]),
+            'a tag of two bytes': Buffer.from([0x80, 0x01, 3]),
+        };
+        for (const [what, attributes] of Object.entries(before)) {
+            assert.strictEqual(parseCpuName(section(subsection('aeabi', scoped(Buffer.concat([attributes, cpuName('Cortex-M55')]))))), 'Cortex-M55', what);
+        }
+        assert.strictEqual(parseCpuName(section(subsection('aeabi', scoped(cpuName('per-section'), 2), scoped(cpuName('Cortex-M33'))))), 'Cortex-M33',
+            'attributes of one section (Tag_Section) are not the file\'s');
+        assert.strictEqual(parseCpuName(section(subsection('gnu', scoped(cpuName('not-arm'))), subsection('aeabi', scoped(cpuName('Cortex-M85'))))), 'Cortex-M85',
+            'another vendor\'s subsection is passed over');
+
+        assert.strictEqual(parseCpuName(section(subsection('aeabi', scoped(Buffer.from([6, 13]))))), undefined, 'aeabi without a name');
+        assert.strictEqual(parseCpuName(section(subsection('gnu', scoped(cpuName('not-arm'))))), undefined, 'no aeabi subsection');
+        assert.strictEqual(parseCpuName(Buffer.concat([Buffer.from('A'), Buffer.alloc(4), ntbs('gnu'), subsection('aeabi', scoped(cpuName('unreachable')))])), undefined,
+            'a subsection of length 0 ends the search instead of repeating it');
+        assert.strictEqual(parseCpuName(Buffer.concat([Buffer.from('B'), subsection('aeabi', scoped(cpuName('Cortex-M7')))])), undefined, 'not format version A');
+        assert.strictEqual(parseCpuName(Buffer.from('A')), undefined, 'too short');
+        // The subsection claims 100 bytes, the buffer ends inside its first sub-subsection header.
+        const cut = Buffer.concat([Buffer.from('A'), Buffer.from([100, 0, 0, 0]), ntbs('aeabi'), Buffer.from([1, 9])]);
+        assert.strictEqual(parseCpuName(cut), undefined, 'a section cut short is not worth failing the read');
     });
 
     test('real GCC image: blink-gcc.elf', () => {
