@@ -51,7 +51,7 @@ One configuration with exactly these options; everything else stays at the `@vsc
 |---|---|
 | `files` | `out/src/test/**/*.test.js` (the tsc output; `pretest` compiles first) |
 | `launchArgs` | on macOS (`process.platform === 'darwin'`) exactly `['--user-data-dir=/tmp/cmsis-vscode-test']`, a short fixed profile path; elsewhere `[]` |
-| `mocha` | `{ timeout: 20000 }`. The end-to-end suites build pack/build fixtures in `suiteSetup`, which exceeds mocha's 2 s default on Windows runners |
+| `mocha` | `{ timeout: 20000, require: ['./out/src/test/revealLog.js'] }`. The end-to-end suites build pack/build fixtures in `suiteSetup`, which exceeds mocha's 2 s default on Windows runners. The required module (`src/test/revealLog.ts`, resolved against the config file's directory) exports `mochaGlobalSetup`, which the test-cli calls inside VS Code before it loads a suite: it reveals the "CMSIS Developer Assistant" log channel in the Output view without taking the focus, so the test window shows the log while the suites run |
 | `coverage` | `{ reporter: ['lcov', 'text'], output: './coverage' }` |
 
 The defaults are relied on:

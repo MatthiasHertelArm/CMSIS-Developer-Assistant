@@ -17,7 +17,8 @@
 // The integration-test run behind `npm test` (@vscode/test-cli finds this file
 // by its name). The suites are the tsc output that `pretest` compiles; they
 // run in the stable VS Code against the extension in this directory, whose
-// entry point is the bundle in dist/. Everything not set here keeps the
+// entry point is the bundle in dist/. Before the first suite the window's
+// Output view opens on the extension's log. Everything not set here keeps the
 // test-cli default (tdd interface, no workspace).
 
 import { defineConfig } from '@vscode/test-cli';
@@ -37,10 +38,17 @@ const profileArgs = [
 /** The end-to-end suites build pack and build fixtures in `suiteSetup`, beyond mocha's 2 s default on Windows runners. */
 const perTestLimitMs = 20_000;
 
+/**
+ * Loaded inside VS Code before the suites (`src/test/revealLog.ts`, compiled):
+ * its `mochaGlobalSetup` reveals the "CMSIS Developer Assistant" channel in the
+ * Output view. The path is resolved against this file's directory.
+ */
+const revealLog = './out/src/test/revealLog.js';
+
 const testRun = {
     files: compiledSuites,
     launchArgs: profileArgs,
-    mocha: { timeout: perTestLimitMs },
+    mocha: { timeout: perTestLimitMs, require: [revealLog] },
     coverage: { reporter: ['lcov', 'text'], output: './coverage' },
 };
 

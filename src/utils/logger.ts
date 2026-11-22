@@ -164,9 +164,9 @@ export class Logger {
         return typeof level !== 'number' || level <= CHANNEL_LEVEL_DEBUG;
     }
 
-    /** Reveal the channel in the Output view, taking focus. */
-    show(): void {
-        this.channel.show();
+    /** Reveal the channel in the Output view; it takes the focus unless `preserveFocus` is true. */
+    show(preserveFocus?: boolean): void {
+        this.channel.show(preserveFocus);
     }
 
     private write(level: LogLevel, message: string, detail: unknown): void {
