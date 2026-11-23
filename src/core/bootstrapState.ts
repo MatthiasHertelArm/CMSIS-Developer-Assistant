@@ -88,7 +88,7 @@ export function noSolutionRefusal(
     serverVersion: string,
 ): ToolError {
     const message = `${what} not attempted: the CMSIS Solution extension reports no active solution in this VS Code window `
-        + `(cmsis-csolution.getSolutionFile → ${queried}).`;
+        + `(getSolutionFile → ${queried}).`;
     if (solutionFiles !== undefined && solutionFiles.length === 0) {
         const where = folderNames.length > 0 ? ` (${folderNames.join(', ')})` : '';
         return new ToolError('CMSIS_NO_SOLUTION', message,

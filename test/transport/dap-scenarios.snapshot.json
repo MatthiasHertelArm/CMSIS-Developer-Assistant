@@ -31,7 +31,7 @@
           "args": {},
           "text": "=== Debug Session Info ===\n  Session name: CMSIS Debugger: pyOCD\n  Debug type: gdbtarget\n  Program: <tmp>/project/out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf\n  GDB: arm-none-eabi-gdb\n  Server: pyocd\n  Port: 3333\n  cbuild-run: <tmp>/project/out/Blinky+NUCLEO-F401RE.cbuild-run.yml\n  CMSIS target: NUCLEO-F401RE",
           "traffic": [
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getActiveTarget"
           ]
         }
       ]
@@ -2799,7 +2799,7 @@
           "args": {},
           "text": "=== Debug Session Info ===\n  Session name: CMSIS Debugger: pyOCD\n  Debug type: gdbtarget\n  Program: <tmp>/project/out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf\n  GDB: arm-none-eabi-gdb\n  Server: pyocd\n  Port: 3333\n  cbuild-run: <tmp>/project/out/Blinky+NUCLEO-F401RE.cbuild-run.yml\n  CMSIS target: NUCLEO-F401RE",
           "traffic": [
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getActiveTarget"
           ]
         },
         {
@@ -2850,13 +2850,13 @@
           },
           "text": "✅ CMSIS 'build' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml' exited 0 after <n>s, job b-1). The firmware is built — use cmsis_action load or load_and_debug to flash it.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.build",
             "task: start \"cbuild Blinky.csolution.yml\"",
             "task: end \"cbuild Blinky.csolution.yml\" exitCode=0",
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getSolutionFile",
+            "api: getActiveTarget"
           ]
         },
         {
@@ -2867,12 +2867,12 @@
           "isError": true,
           "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild Blinky.csolution.yml' exited with code 2 after <n>s (job b-2).\nNo error lines: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run.\ncmsis_action build re-runs cbuild with --log itself when it can.\nget_recent_problems lists what the Problems panel shows; otherwise ask the user for the errors in the cbuild terminal — do not run cbuild yourself. Fix them, then cmsis_action build again. This is a terminal result — do not wait for an output file.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.build",
             "task: start \"cbuild Blinky.csolution.yml\"",
             "task: end \"cbuild Blinky.csolution.yml\" exitCode=2",
-            "command: cmsis-csolution.getSolutionFile"
+            "api: getSolutionFile"
           ]
         },
         {
@@ -2882,13 +2882,13 @@
           },
           "text": "⚠️ CMSIS 'build' on NUCLEO-F401RE: task 'cbuild Blinky.csolution.yml' exited 0 after <n>s (job b-3), but that does not confirm the build. The image out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf is missing, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. It could not be checked: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run. Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself.\n\nNote: 1 new error in this window since you last looked — get_recent_problems {sinceSeq: <seq>}",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.build",
             "task: start \"cbuild Blinky.csolution.yml\"",
             "task: end \"cbuild Blinky.csolution.yml\" exitCode=0",
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getSolutionFile",
+            "api: getActiveTarget"
           ]
         }
       ]
@@ -2904,13 +2904,13 @@
           },
           "text": "✅ CMSIS 'rebuild' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE' exited 0 after <n>s, job rb-4). The firmware is rebuilt from scratch — use cmsis_action load or load_and_debug to flash it.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.rebuild",
             "task: start \"cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE\"",
             "task: end \"cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE\" exitCode=0",
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getSolutionFile",
+            "api: getActiveTarget"
           ]
         },
         {
@@ -2920,8 +2920,8 @@
           },
           "text": "✅ CMSIS 'clean' succeeded on NUCLEO-F401RE (task 'cbuild Blinky.csolution.yml --clean --target all' exited 0 after <n>s, job c-5). Removed: out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf. It covers the whole solution (CMSIS Solution: \"Clean All 'out' and 'tmp' Directories\"), not only this target: cmsis_action build before load or flash.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.clean",
             "task: start \"cbuild Blinky.csolution.yml --clean --target all\"",
             "task: end \"cbuild Blinky.csolution.yml --clean --target all\" exitCode=0"
@@ -2934,8 +2934,8 @@
           },
           "text": "CMSIS 'stop_build' on NUCLEO-F401RE: nothing to stop — no build is running in this window.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getSolutionFile",
+            "api: getActiveTarget"
           ]
         }
       ]
@@ -2951,8 +2951,8 @@
           },
           "text": "CMSIS 'attach' completed on NUCLEO-F401RE — debug session survived the connect (t+<n>s: 1 thread(s), t+<n>s: 1 thread(s) — target threads present). State: {\n  \"sessionActive\": true,\n  \"configurationName\": \"CMSIS Debugger: pyOCD (attach)\",\n  \"stackTrace\": [],\n  \"breakpoints\": [],\n  \"fileFullPath\": null,\n  \"fileName\": null,\n  \"currentLine\": null,\n  \"currentLineContent\": null,\n  \"nextLines\": [],\n  \"frameId\": null,\n  \"threadId\": null,\n  \"frameName\": null\n}",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.cmsisAttachDebugger",
             "event: output [console] \"In the Debug Console view you can interact directly with GDB.\"",
             "event: stopped {\"reason\":\"breakpoint\",\"threadId\":1,\"allThreadsStopped\":true}",
@@ -2969,7 +2969,7 @@
           "args": {},
           "text": "=== Debug Session Info ===\n  Session name: CMSIS Debugger: pyOCD (attach)\n  Debug type: gdbtarget\n  Program: <tmp>/project/out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf\n  GDB: arm-none-eabi-gdb\n  Server: pyocd\n  Port: 3333\n  cbuild-run: <tmp>/project/out/Blinky+NUCLEO-F401RE.cbuild-run.yml\n  CMSIS target: NUCLEO-F401RE",
           "traffic": [
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getActiveTarget"
           ]
         },
         {
@@ -3111,8 +3111,8 @@
           "isError": true,
           "text": "[TASK_FAILED] CMSIS 'attach' on NUCLEO-F401RE started a debug session but it did NOT survive the initial connect — it ended before it came up.\nFor 'attach' this almost always means no GDB server is listening on the configured port: start the GDB server first, or use 'load_and_debug' (which launches one). No CMSIS Run task is alive in this window — cmsis_action run starts the GDB server without programming (the pyOCD task resets the target first); load_and_run programs first. Confirm with get_session_status / check_target_connection.\nRecent problems:\n  #<seq> warning dap error response to 'attach': could not connect: Operation timed out.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.cmsisAttachDebugger",
             "dap: threads {} -> empty success (adapter not ready)",
             "adapter: response attach -> error: \"could not connect: Operation timed out.\""
@@ -3137,8 +3137,8 @@
           },
           "text": "✅ CMSIS 'load_and_run' on NUCLEO-F401RE: 'CMSIS Load' exited 0 after <n>s, then 'CMSIS Run' ended by itself with exit code 0 after <n>s — the run completed, and nothing hosts a GDB server now (job r-6). An exit code is no test result: check the application's own result line in the output below.\nOutput of 'CMSIS Run' (5 lines):\ntelnetterminal0: Listening for serial connection on port 5000\nHello World\nTest_result: PASS\n\nInfo: Simulation is stopping. Reason: EOT received.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "command: cmsis-csolution.cmsisLoadAndRun",
             "task: start \"CMSIS Load\"",
             "task: end \"CMSIS Load\" exitCode=0",
@@ -3165,20 +3165,49 @@
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nCMSIS Solution 1.72.0 is too old for cmsis_query and for cmsis_action with a target, open_solution, create_solution, install_pack and convert: it offers no API version 3, and these calls are refused until the user updates it (a release after 1.72.0). Build, load, run and debug on the active target still work.\nActive solution: <tmp>/project/Blinky.csolution.yml (workspace folder <tmp>/project)\nActive target: NUCLEO-F401RE (declared: NUCLEO-F401RE)\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nActive solution: <tmp>/project/Blinky.csolution.yml (workspace folder <tmp>/project)\nActive target: NUCLEO-F401RE (declared: NUCLEO-F401RE)\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getSolutionFile",
+            "api: getActiveTarget"
           ]
         },
         {
           "tool": "get_session_status",
           "args": {},
-          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nCMSIS Solution 1.72.0 is too old for cmsis_query and for cmsis_action with a target, open_solution, create_solution, install_pack and convert: it offers no API version 3, and these calls are refused until the user updates it (a release after 1.72.0). Build, load, run and debug on the active target still work.\nActive solution: none in this VS Code window\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nActive solution: none in this VS Code window\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool stats (this session): <trailer>",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet"
+            "api: getSolutionFile",
+            "api: getActiveTarget"
           ]
+        }
+      ]
+    },
+    {
+      "name": "status-solution-too-old",
+      "description": "No session, CMSIS Solution 1.72.0 active, which offers API version 2 only: get_session_status says that the extension is too old and names no solution, cmsis_action build is refused with the hint to update, and no hidden command of the extension is run; cmsis_action status still answers.",
+      "calls": [
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nCMSIS Solution 1.72.0 is too old: it offers no API version 3, so cmsis_query and cmsis_action are refused until the user updates it (a release after 1.72.0); only cmsis_action status, and open_solution for a folder that is not open yet, still answer. flash and the debugging, documentation and build-artefact tools work as before.\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": []
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "build"
+          },
+          "isError": true,
+          "text": "[TOOL_DISABLED] CMSIS 'build' not attempted: the CMSIS Solution extension 1.72.0 offers no API version 3, so its active solution and target cannot be read.\nAsk the user to update the CMSIS Solution extension: this needs its API version 3, which comes with a release after 1.72.0 (today only its nightly build).",
+          "traffic": []
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "status"
+          },
+          "text": "No CMSIS job in flight in this window. Last results: load_and_run on NUCLEO-F401RE ✅ ended by itself, exit 0 <n>s ago (job r-6, 'CMSIS Run'); clean on NUCLEO-F401RE ✅ <n>s ago (job c-5, 'cbuild Blinky.csolution.yml --clean --target all'); rebuild on NUCLEO-F401RE ✅ <n>s ago (job rb-4, 'cbuild Blinky.csolution.yml --target all --rebuild --active NUCLEO-F401RE'); build on NUCLEO-F401RE ⚠️ exit 0, not confirmed <n>s ago (job b-3, 'cbuild Blinky.csolution.yml').\nBuild job b-3 exited 0, but that does not confirm it: The image out/Blinky/NUCLEO-F401RE/Debug/Blinky.elf is missing, and CMSIS Solution reports exit 0 for a failed build too, so this build may have failed. It could not be checked: .cmsis/tools-environment.yml is missing (CMSIS Solution 1.70.1 and later write it), so cbuild was not re-run. Before you load this image, ask the user whether the build in the cbuild terminal succeeded — do not run cbuild yourself.\nNo CMSIS task is running in this window.\nOutput of 'CMSIS Run' (5 lines):\ntelnetterminal0: Listening for serial connection on port 5000\nHello World\nTest_result: PASS\n\nInfo: Simulation is stopping. Reason: EOT received.",
+          "traffic": []
         }
       ]
     },
@@ -3193,12 +3222,12 @@
           },
           "text": "✅ CMSIS 'build' succeeded on NUCLEO-F401RE (task 'cbuild --active \"\" --schema --packs' exited 0 after <n>s, cbuild's own exit code, job b-7). The firmware is built — use cmsis_action load or load_and_debug to flash it.\n5 warnings in its output:\n  warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown\n  warning: argument unused during compilation: '-MD' [-Wunused-command-line-argument]\n  warning: argument unused during compilation: '-MT …' [-Wunused-command-line-argument]\n  warning: argument unused during compilation: '-MF …' [-Wunused-command-line-argument]\n  warning A1950W: The legacy armasm assembler is deprecated. Consider using the armclang integrated assembler instead.\nFull output: out/cmsis-developer-assistant/build-NUCLEO-F401RE.log (get_build_diagnostics reads it).",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "api: build({\"clean\":false,\"rebuild\":false,\"packs\":true})",
             "getBuildResult: \"cbuild --active \\\"\\\" --schema --packs\"",
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "task: start \"cbuild --active \\\"\\\" --schema --packs\"",
             "task: end \"cbuild --active \\\"\\\" --schema --packs\" exitCode=0"
           ]
@@ -3211,12 +3240,12 @@
           "isError": true,
           "text": "[TASK_FAILED] ❌ CMSIS 'build' FAILED on NUCLEO-F401RE — task 'cbuild --active \"\" --schema --packs' exited with code 1 after <n>s (job b-8).\n3 errors in the build's own output (cbuild exit 1), 1 warning:\n  …/work/Blinky/Blinky.c:43:19 error: expected parameter declarator\n  …/work/Blinky/Blinky.c:43:19 error: expected ')'\n  …/work/Blinky/Blinky.c:43:36 error: expected function body after function declarator\n  ninja FAILED: …/work/Blinky/Blinky.o\n  ninja FAILED: …/src/Blinky.Debug+microbit-v2-stamp/Blinky.Debug+microbit-v2-build\n  warning csolution: file '/work/Blinky/RTE/Device/nRF52833_xxAA/arm_startup_nrf52833.s.base' not found; base version unknown\nFull log: out/cmsis-developer-assistant/build-NUCLEO-F401RE.log (get_build_diagnostics reads it).\nFix the first error, then cmsis_action build again. This is a terminal result — do not wait for an output file.",
           "traffic": [
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "api: build({\"clean\":false,\"rebuild\":false,\"packs\":true})",
             "getBuildResult: \"cbuild --active \\\"\\\" --schema --packs\"",
-            "command: cmsis-csolution.getSolutionFile",
-            "command: cmsis-csolution.getActiveTargetSet",
+            "api: getSolutionFile",
+            "api: getActiveTarget",
             "task: start \"cbuild --active \\\"\\\" --schema --packs\"",
             "task: end \"cbuild --active \\\"\\\" --schema --packs\" exitCode=1"
           ]

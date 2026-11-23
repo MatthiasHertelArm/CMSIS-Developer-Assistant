@@ -15,9 +15,10 @@
  */
 
 /**
- * What the answers of the CMSIS Solution extension's getter commands mean.
- * The commands are string resolvers for `${command:…}` variables, so "none"
- * comes back as a value, not as an error: `""` or `undefined` when no
+ * What the answers of the CMSIS Solution extension's getters mean. They are
+ * methods of its API version 3 and answer as the hidden commands of the
+ * same names did in 1.72.0, which were string resolvers for `${command:…}`
+ * variables, so "none" comes back as a value, not as an error: `""` or `undefined` when no
  * solution is loaded, the sentinel `"<not found>"` from `getDfpPath` and
  * `getBspPath` when the active target names no such pack. Every caller that
  * asks one of them interprets the answer here; how long it waits and what it
@@ -25,7 +26,7 @@
  *
  * Read from CMSIS Solution 1.72.0 (`dist/extension.js`):
  * - `getSolutionFile`: the path of the active csolution, or undefined;
- * - `getActiveTargetSet`: `<target-type>@<set>`, `<target-type>`, or `""`;
+ * - `getActiveTarget` (the command was `getActiveTargetSet`): `<target-type>@<set>`, `<target-type>`, or `""`;
  * - `getCbuildRunFile`: `cbuildRunYml.fileName` of the loaded solution, the
  *   `cbuild-run:` entry of the `<solution>.cbuild-idx.yml` beside the
  *   csolution, `path.resolve`d against that file's folder (so absolute, in
@@ -66,7 +67,7 @@ function nonEmpty(value: unknown): string | undefined {
 }
 
 /**
- * An answer of `cmsis-csolution.getSolutionFile`: a path, or an object that
+ * An answer of `getSolutionFile`: a path, or an object that
  * names one (`solutionFile`, `fsPath`, `uri.fsPath`, `path`, `uri.path`, in
  * that order). `""`, `undefined`, `null` and `false` mean no solution; any
  * other answer means one is loaded, with its path unknown when none is named.
@@ -89,7 +90,7 @@ export function solutionAnswerOf(answer: unknown): SolutionFileAnswer {
 }
 
 /**
- * The csolution file in an answer of `cmsis-csolution.getSolutionFile`.
+ * The csolution file in an answer of `getSolutionFile`.
  * Undefined for `""` (no solution loaded) and for an answer that names no path.
  */
 export function solutionFileOf(answer: unknown): string | undefined {
@@ -102,7 +103,7 @@ export function solutionNameOf(answer: unknown): string | undefined {
     return file ? nonEmpty(path.basename(file).replace(/\.csolution\.ya?ml$/i, '')) : undefined;
 }
 
-/** An answer of `cmsis-csolution.getActiveTargetSet`, trimmed; undefined when empty or not a string. */
+/** An answer of `getActiveTarget`, trimmed; undefined when empty or not a string. */
 export function activeTargetSetOf(answer: unknown): string | undefined {
     return nonEmpty(answer);
 }

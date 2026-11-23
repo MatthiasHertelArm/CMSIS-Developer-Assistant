@@ -159,14 +159,14 @@ async function findFiles(glob: string, max: number): Promise<string[]> {
 /**
  * What the CMSIS Solution panel has active — csolution name and target-type —
  * so a workspace with several solutions resolves without `target`. Asks the
- * CMSIS Solution extension (`getSolutionFile`, `getActiveTargetSet`); absent
+ * CMSIS Solution extension (`getSolutionFile`, `getActiveTarget`); absent
  * extension, no solution or a slow answer all yield undefined, never throw.
  */
 async function activeContext(): Promise<ActiveContextHint | undefined> {
     try {
         const [file, set] = await Promise.all([
-            withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(solutionGetter('cmsis-csolution.getSolutionFile'))),
-            withTimeout('cmsis getActiveTargetSet', 3_000, Promise.resolve(solutionGetter('cmsis-csolution.getActiveTargetSet'))),
+            withTimeout('cmsis getSolutionFile', 3_000, Promise.resolve(solutionGetter('getSolutionFile'))),
+            withTimeout('cmsis getActiveTarget', 3_000, Promise.resolve(solutionGetter('getActiveTarget'))),
         ]);
         const solution = solutionNameOf(file);
         const targetType = targetTypeOf(set);

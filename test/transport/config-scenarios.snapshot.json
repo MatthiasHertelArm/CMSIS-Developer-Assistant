@@ -12103,11 +12103,6 @@
           "id": "Arm.cmsis-csolution"
         },
         {
-          "ev": "executeCommand",
-          "id": "cmsis-csolution.getPackRootPath",
-          "args": []
-        },
-        {
           "ev": "call",
           "fn": "registerPackDocsCommands",
           "args": [
@@ -13205,11 +13200,6 @@
           "id": "Arm.cmsis-csolution"
         },
         {
-          "ev": "executeCommand",
-          "id": "cmsis-csolution.getPackRootPath",
-          "args": []
-        },
-        {
           "ev": "call",
           "fn": "registerPackDocsCommands",
           "args": [
@@ -13786,11 +13776,6 @@
           "id": "Arm.cmsis-csolution"
         },
         {
-          "ev": "executeCommand",
-          "id": "cmsis-csolution.getPackRootPath",
-          "args": []
-        },
-        {
           "ev": "call",
           "fn": "registerPackDocsCommands",
           "args": [
@@ -14253,11 +14238,6 @@
           "id": "Arm.cmsis-csolution"
         },
         {
-          "ev": "executeCommand",
-          "id": "cmsis-csolution.getPackRootPath",
-          "args": []
-        },
-        {
           "ev": "call",
           "fn": "registerPackDocsCommands",
           "args": [
@@ -14602,11 +14582,6 @@
         {
           "ev": "getExtension",
           "id": "Arm.cmsis-csolution"
-        },
-        {
-          "ev": "executeCommand",
-          "id": "cmsis-csolution.getPackRootPath",
-          "args": []
         },
         {
           "ev": "call",

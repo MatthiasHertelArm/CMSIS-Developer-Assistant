@@ -813,13 +813,14 @@ method version 3 added is optional and found by
 name (`v3Method()`, `requireV3Method()` for the refusal with the update
 hint), never by the version number, so a partial or changed version 3 loses
 only what it lacks. `peekSolutionApi()` gives the getters the same object
-without activating the extension and without throwing. The getters that
-used to run hidden commands (`getSolutionFile`, `getActiveTargetSet`,
-`getCbuildRunFile`, `getDfpPath`, `getBspPath`, `getPackRootPath`) take the
-version 3 method of the same meaning first (`solutionGetter()`,
-`askSolution()` in `src/utils/solutionQueries.ts`) and the command
-otherwise; version 3 delegates to the same commands today, so the answers
-do not change, only the dependency on hidden command ids. The API also It also finds a board, device or
+without activating the extension and without throwing. The getters of the
+active solution (`getSolutionFile`, `getActiveTarget`, `getCbuildRunFile`,
+`getDfpPath`, `getBspPath`, `getPackRootPath`) are methods of version 3
+(`solutionGetter()`, `askSolution()` in `src/utils/solutionQueries.ts`).
+CMSIS Solution 1.72.0 had hidden commands of the same meaning; they are no
+longer run, so on such a host the getters give no answer and an action of
+`cmsis_action` is refused with the update hint instead of "no active
+solution" (`whyNoSolution()`, `solutionTooOldRefusal()`). The API also
 finds a board, device or draft by id, case-insensitively, with near ids
 when none matches.
 `src/core/catalogQuery.ts` applies the filters itself, as case-insensitive

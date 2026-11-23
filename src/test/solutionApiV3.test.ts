@@ -19,6 +19,7 @@
 // kinds (packs, toolchains, debuggers, environment) against a scripted version 3, shaped as the
 // nightly 1.72.1-86 answers; the install result of installPacks; the getters through the API.
 
+import * as vscode from 'vscode';
 import * as assert from 'assert';
 import {
     acquireSolutionApi,
@@ -36,7 +37,7 @@ import { querySolution, SolutionQuery } from '../core/solutionQuery';
 import { ErrorCode, errorDetail, ToolError, ToolReply } from '../core/toolResult';
 import { convertResult } from '../handler/cmsisAction';
 import { folderOfInstall } from '../handler/installPack';
-import { activeTargetAnswer, apiToolsEnvironment, askSolution, cachedApiToolsEnvironment, resetApiToolsEnvironment, solutionGetter, SolutionCommands } from '../utils/solutionQueries';
+import { activeTargetAnswer, apiToolsEnvironment, askSolution, cachedApiToolsEnvironment, resetApiToolsEnvironment, solutionGetter, SolutionSource } from '../utils/solutionQueries';
 
 const CLOCK: Clock = {
     now: () => Date.now(),
@@ -204,9 +205,9 @@ suite('CMSIS Solution API version 3 (2.9.1)', () => {
             const old = { ...installed({ 2: v2() }), version: '1.72.0' };
             assert.strictEqual(solutionApiTooOld(old), true);
             assert.strictEqual(solutionTooOldLine(old),
-                'CMSIS Solution 1.72.0 is too old for cmsis_query and for cmsis_action with a target, open_solution, create_solution, install_pack and convert: '
-                + 'it offers no API version 3, and these calls are refused until the user updates it (a release after 1.72.0). '
-                + 'Build, load, run and debug on the active target still work.');
+                'CMSIS Solution 1.72.0 is too old: it offers no API version 3, so cmsis_query and cmsis_action are refused until the user updates it '
+                + '(a release after 1.72.0); only cmsis_action status, and open_solution for a folder that is not open yet, still answer. '
+                + 'flash and the debugging, documentation and build-artefact tools work as before.');
             assert.strictEqual(solutionTooOldLine(installed({ 3: v3() })), undefined);
             assert.strictEqual(solutionTooOldLine(installed({ 2: v2() }, { active: false })), undefined, 'not active yet: its API is not known');
             assert.strictEqual(solutionTooOldLine(undefined), undefined);
@@ -229,54 +230,55 @@ suite('CMSIS Solution API version 3 (2.9.1)', () => {
     });
 
     suite('the getters through the API', () => {
-        function commands(api: SolutionApi | undefined, answers: Record<string, unknown> = {}): SolutionCommands & { executed: string[] } {
-            const executed: string[] = [];
-            return {
-                executed,
-                extensionActive: () => true,
-                commands: async () => Object.keys(answers),
-                execute: async (command) => { executed.push(command); return answers[command]; },
-                api: () => api,
-                timeoutMs: 200,
-            };
+        /** A source whose API is `api`; undefined is a CMSIS Solution that offers no API version 3, as `peekSolutionApi` answers for 1.72.0. */
+        function asking(api: SolutionApi | undefined): SolutionSource {
+            return { extensionActive: () => true, api: () => api, timeoutMs: 200 };
         }
 
-        test('askSolution takes the getter of version 3 and runs no command', async () => {
+        test('askSolution and solutionGetter take the getter of version 3', async () => {
             const api = v3();
-            const source = commands(api, { 'cmsis-csolution.getCbuildRunFile': '/w/from-command.cbuild-run.yml' });
-            assert.strictEqual(await askSolution('cmsis-csolution.getCbuildRunFile', source), '/w/out/Blinky+HP.cbuild-run.yml');
-            assert.strictEqual(await askSolution('cmsis-csolution.getActiveTargetSet', source), 'HP@debug');
-            assert.deepStrictEqual(source.executed, []);
-            assert.deepStrictEqual(api.calls, ['getCbuildRunFile', 'getActiveTarget']);
+            assert.strictEqual(await askSolution('getCbuildRunFile', asking(api)), '/w/out/Blinky+HP.cbuild-run.yml');
+            assert.strictEqual(await askSolution('getActiveTarget', asking(api)), 'HP@debug');
+            assert.strictEqual(await solutionGetter('getCbuildRunFile', asking(api)), '/w/out/Blinky+HP.cbuild-run.yml');
+            assert.deepStrictEqual(api.calls, ['getCbuildRunFile', 'getActiveTarget', 'getCbuildRunFile']);
         });
 
-        test('without version 3 the hidden command answers, as with 1.72.0', async () => {
-            const source = commands(v2(), { 'cmsis-csolution.getCbuildRunFile': '/w/from-command.cbuild-run.yml' });
-            assert.strictEqual(await askSolution('cmsis-csolution.getCbuildRunFile', source), '/w/from-command.cbuild-run.yml');
-            assert.strictEqual(await solutionGetter('cmsis-csolution.getSolutionFile', source), undefined);
-            assert.deepStrictEqual(source.executed, ['cmsis-csolution.getCbuildRunFile', 'cmsis-csolution.getSolutionFile']);
+        test('without version 3 there is no answer: the hidden commands of 1.72.0 are not asked', async () => {
+            const ran: string[] = [];
+            const hidden = ['cmsis-csolution.getCbuildRunFile', 'cmsis-csolution.getSolutionFile', 'cmsis-csolution.getActiveTargetSet']
+                .map((id) => vscode.commands.registerCommand(id, () => { ran.push(id); return '/w/from-command'; }));
+            try {
+                // What peekSolutionApi answers for an extension with version 2 only, and an API object without the getters.
+                for (const source of [asking(undefined), asking(v2())]) {
+                    assert.strictEqual(await askSolution('getCbuildRunFile', source), undefined);
+                    assert.strictEqual(await solutionGetter('getSolutionFile', source), undefined);
+                    assert.strictEqual(await activeTargetAnswer(source), undefined, 'no answer at all');
+                }
+                assert.deepStrictEqual(ran, []);
+            } finally {
+                hidden.forEach((command) => command.dispose());
+            }
         });
 
-        test('the active target set and the declared ones (#141): version 3 lists them, 1.72.0 names the active one only', async () => {
+        test('the active target set and the declared ones (#141)', async () => {
             const api = v3();
-            assert.deepStrictEqual(await activeTargetAnswer(commands(api)), { active: 'HP@debug', declared: ['HP@debug', 'HP@release', 'HE'] });
+            assert.deepStrictEqual(await activeTargetAnswer(asking(api)), { active: 'HP@debug', declared: ['HP@debug', 'HP@release', 'HE'] });
             assert.deepStrictEqual(api.calls, ['getActiveTarget', 'getTargets']);
-            assert.deepStrictEqual(await activeTargetAnswer(commands(v2(), { 'cmsis-csolution.getActiveTargetSet': 'MPS3' })), { active: 'MPS3' });
-            assert.deepStrictEqual(await activeTargetAnswer(commands(v2(), { 'cmsis-csolution.getActiveTargetSet': '' })), {}, 'answered, and none is selected');
-            assert.strictEqual(await activeTargetAnswer(commands(v2())), undefined, 'no answer at all');
+            assert.deepStrictEqual(await activeTargetAnswer(asking(v3({ getActiveTarget: async () => '' }))), { declared: ['HP@debug', 'HP@release', 'HE'] },
+                'answered, and none is selected');
             const slow = v3({ getTargets: () => never<string[]>() });
-            assert.deepStrictEqual(await activeTargetAnswer(commands(slow)), { active: 'HP@debug' }, 'a list that does not come leaves the active one');
+            assert.deepStrictEqual(await activeTargetAnswer(asking(slow)), { active: 'HP@debug' }, 'a list that does not come leaves the active one');
         });
 
         test('a getter of version 3 that does not answer in time is no answer', async () => {
             const api = v3({ getCbuildRunFile: () => never<string>() });
-            assert.strictEqual(await askSolution('cmsis-csolution.getCbuildRunFile', commands(api)), undefined);
+            assert.strictEqual(await askSolution('getCbuildRunFile', asking(api)), undefined);
         });
     });
 
     suite('the tools environment for a solution without the file (phase 4.3)', () => {
-        function source(api: SolutionApi | undefined, active = true): SolutionCommands {
-            return { extensionActive: () => active, commands: async () => [], execute: async () => undefined, api: () => api };
+        function source(api: SolutionApi | undefined, active = true): SolutionSource {
+            return { extensionActive: () => active, api: () => api };
         }
         teardown(() => resetApiToolsEnvironment());
 
@@ -307,7 +309,7 @@ suite('CMSIS Solution API version 3 (2.9.1)', () => {
         });
 
         test('an ask that ends before it waits does not stay as the answer: the next call asks again', async () => {
-            const early: Array<[string, () => SolutionCommands]> = [
+            const early: Array<[string, () => SolutionSource]> = [
                 ['an inactive extension', () => source(v3(), false)],
                 ['no version 3', () => source(v2())],
                 ['no API at all', () => source(undefined)],

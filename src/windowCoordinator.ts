@@ -145,13 +145,13 @@ const SOLUTION_QUERY_MS = 3_000;
 
 /**
  * Ask the CMSIS Solution extension for its active solution, but only while it
- * is active: running its command would activate it in every window.
+ * is active, through the getter of its API version 3.
  */
 function querySolutionFile(): Thenable<unknown> | undefined {
     if (!vscode.extensions.getExtension(SOLUTION_EXTENSION_ID)?.isActive) {
         return undefined;
     }
-    return solutionGetter('cmsis-csolution.getSolutionFile');
+    return solutionGetter('getSolutionFile');
 }
 
 async function defaultSerialTeardown(): Promise<void> {

@@ -15,16 +15,15 @@
  */
 
 /**
- * The pack root the CMSIS Solution extension resolves
- * (`cmsis-csolution.getPackRootPath`: `$CMSIS_PACK_ROOT` or its OS default),
+ * The pack root the CMSIS Solution extension resolves (`getPackRootPath`
+ * of its API version 3: `$CMSIS_PACK_ROOT` or its OS default),
  * shared by the documentation tools and the SVD lookup so both look where
  * the panel installs packs.
  *
  * The answer is asked for once per window and memoised: every target
  * resolution and every SVD lookup consults it, and without the memo each
- * one paid an `executeCommand` round trip (an unregistered command rejects
- * at once; a registered one that never settles — the extension still
- * activating — costs the 3 s fence). A path answer is kept until an
+ * one paid a round trip to the extension (a getter that never settles — the
+ * extension still activating — costs the 3 s fence). A path answer is kept until an
  * extension or settings change invalidates it; "no answer" is retried after
  * a minute so a csolution extension that activates later is picked up.
  */
@@ -35,7 +34,7 @@ import { solutionGetter } from './solutionQueries';
 import { withTimeout } from './timeout';
 import { logger } from './logger';
 
-const COMMAND = 'cmsis-csolution.getPackRootPath';
+const GETTER = 'getPackRootPath';
 const ASK_TIMEOUT_MS = 3_000;
 /** How long "the extension did not answer" is believed before asking again. */
 export const NEGATIVE_TTL_MS = 60_000;
@@ -46,8 +45,8 @@ let outcomeLogged = false;
 /** One ask; undefined when the extension is absent, slow, or answers with something other than a path. Never throws. */
 async function ask(): Promise<string | undefined> {
     try {
-        const answer = await withTimeout(`cmsis ${COMMAND}`, ASK_TIMEOUT_MS,
-            Promise.resolve(solutionGetter(COMMAND)));
+        const answer = await withTimeout(`cmsis ${GETTER}`, ASK_TIMEOUT_MS,
+            Promise.resolve(solutionGetter(GETTER)));
         return typeof answer === 'string' && answer.trim() ? answer.trim() : undefined;
     } catch {
         return undefined;
@@ -72,7 +71,7 @@ export function toolchainPackRoot(): Promise<string | undefined> {
         if (!outcomeLogged) {
             outcomeLogged = true;
             logger.info(answer
-                ? `Pack root ${answer} (${COMMAND})`
+                ? `Pack root ${answer} (${GETTER} of CMSIS Solution)`
                 : `Pack root ${defaultPackRoot()} (${process.env.CMSIS_PACK_ROOT ? 'CMSIS_PACK_ROOT' : 'platform default'}; ` +
                     'the CMSIS Solution extension is not active or did not answer)');
         }

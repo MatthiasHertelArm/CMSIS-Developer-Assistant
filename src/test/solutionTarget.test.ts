@@ -28,22 +28,31 @@ import { formatPackId } from '../core/packDocs/cbuildRun';
 import { PackDocsHost } from '../core/packDocs/host';
 import { holdsPack } from '../core/packDocs/pdscBooks';
 import { collectTargetDocs, locatePack, namedPackFolders, resolveSvd, resolveTarget, TargetResolution } from '../core/packDocs/targetDocs';
-import { activeCbuildRunFile, activePackFolders, GET_BSP_PATH, GET_CBUILD_RUN_FILE, GET_DFP_PATH, SolutionCommands } from '../utils/solutionQueries';
+import type { SolutionApi } from '../core/solutionApi';
+import { activeCbuildRunFile, activePackFolders, SolutionSource } from '../utils/solutionQueries';
 import { buildWorld, World } from './packDocsHandler.test';
 import { SAMPLE_CBUILD_RUN } from './cbuildRun.test';
 
-/** A CMSIS Solution extension behind the real query layer: active, with the commands it answers. */
-function extension(answers: Record<string, () => unknown>, options: { active?: boolean; registered?: string[] } = {}): SolutionCommands {
+/** The getters of CMSIS Solution's API version 3 that these tests script. */
+const GET_BSP_PATH = 'getBspPath';
+const GET_CBUILD_RUN_FILE = 'getCbuildRunFile';
+const GET_DFP_PATH = 'getDfpPath';
+
+/** A CMSIS Solution extension behind the real query layer: active, with the getters its API version 3 answers. */
+function extension(answers: Record<string, () => unknown>, options: { active?: boolean; registered?: string[] } = {}): SolutionSource {
+    const api: Record<string, () => Promise<unknown>> = {};
+    for (const name of options.registered ?? Object.keys(answers)) {
+        api[name] = async () => answers[name]?.();
+    }
     return {
         extensionActive: () => options.active ?? true,
-        commands: async () => options.registered ?? Object.keys(answers),
-        execute: async (command) => answers[command]?.(),
+        api: () => api as unknown as SolutionApi,
         timeoutMs: 50,
     };
 }
 
 /** The pack-docs host asking `source` the way the extension's host does. */
-function asking(host: PackDocsHost, source: SolutionCommands): PackDocsHost {
+function asking(host: PackDocsHost, source: SolutionSource): PackDocsHost {
     return { ...host, activeCbuildRunFile: () => activeCbuildRunFile(source), activePackFolders: () => activePackFolders(source) };
 }
 
@@ -112,10 +121,10 @@ suite('The target from the CMSIS Solution extension (getCbuildRunFile, getDfpPat
         assert.strictEqual(scanned, 0, 'no workspace scan');
     });
 
-    test('the scan stays the fallback: inactive extension, missing command, "", timeout, failure, a missing or bare file', async () => {
-        const fallbacks: Record<string, SolutionCommands> = {
+    test('the scan stays the fallback: inactive extension, missing getter, "", timeout, failure, a missing or bare file', async () => {
+        const fallbacks: Record<string, SolutionSource> = {
             'inactive extension': extension({ [GET_CBUILD_RUN_FILE]: () => other }, { active: false }),
-            'missing command': extension({ [GET_CBUILD_RUN_FILE]: () => other }, { registered: ['cmsis-csolution.getSolutionFile'] }),
+            'missing getter': extension({ [GET_CBUILD_RUN_FILE]: () => other }, { registered: ['getSolutionFile'] }),
             '""': extension({ [GET_CBUILD_RUN_FILE]: () => '' }),
             'timeout': extension({ [GET_CBUILD_RUN_FILE]: () => new Promise(() => { /* never answers */ }) }),
             'failure': extension({ [GET_CBUILD_RUN_FILE]: () => { throw new Error('no solution loaded'); } }),

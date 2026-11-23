@@ -15,7 +15,7 @@
  */
 
 // What the CMSIS Solution extension's getter answers mean, and when they are not asked:
-// an inactive extension, a missing command, an empty answer, a timeout, "<not found>".
+// an inactive extension, a missing getter, an empty answer, a timeout, "<not found>".
 
 import * as vscode from 'vscode';
 import * as assert from 'assert';
@@ -30,32 +30,41 @@ import {
     solutionNameOf,
     targetTypeOf,
 } from '../core/solutionAnswers';
+import type { SolutionApi } from '../core/solutionApi';
 import {
     activeCbuildRunFile,
     activePackFolders,
     activeSolutionAnswer,
     askSolution,
-    GET_BSP_PATH,
-    GET_CBUILD_RUN_FILE,
-    GET_DFP_PATH,
-    GET_SOLUTION_FILE,
-    SolutionCommands,
+    SolutionSource,
 } from '../utils/solutionQueries';
+
+/** The getters of CMSIS Solution's API version 3 that these tests script. */
+const GET_BSP_PATH = 'getBspPath';
+const GET_CBUILD_RUN_FILE = 'getCbuildRunFile';
+const GET_DFP_PATH = 'getDfpPath';
+const GET_SOLUTION_FILE = 'getSolutionFile';
 
 const RUN_FILE = path.resolve('/w/Blinky+HW.cbuild-run.yml');
 
-/** A CMSIS Solution extension that answers from `answers`; `asked` records what ran. */
+/**
+ * A CMSIS Solution extension whose API version 3 answers from `answers`; `asked` records the getters that ran.
+ * `registered` names the getters the API offers, when they are not those of `answers`.
+ */
 function stubCommands(answers: Record<string, () => unknown>, options: { active?: boolean; registered?: string[]; timeoutMs?: number } = {}): {
-    source: SolutionCommands; asked: string[];
+    source: SolutionSource; asked: string[];
 } {
     const asked: string[] = [];
-    const source: SolutionCommands = {
+    const api: Record<string, () => Promise<unknown>> = {};
+    for (const name of options.registered ?? Object.keys(answers)) {
+        api[name] = async () => {
+            asked.push(name);
+            return answers[name]?.();
+        };
+    }
+    const source: SolutionSource = {
         extensionActive: () => options.active ?? true,
-        commands: async () => options.registered ?? Object.keys(answers),
-        execute: async (command) => {
-            asked.push(command);
-            return answers[command]?.();
-        },
+        api: () => api as unknown as SolutionApi,
         timeoutMs: options.timeoutMs,
     };
     return { source, asked };
@@ -118,7 +127,7 @@ suite('CMSIS Solution answers', () => {
         assert.deepStrictEqual(packFolderCandidates('../X', []), []);
     });
 
-    test('the getters are asked while the extension is active and has the command', async () => {
+    test('the getters are asked while the extension is active and its API has them', async () => {
         const { source, asked } = stubCommands({
             [GET_CBUILD_RUN_FILE]: () => RUN_FILE,
             [GET_DFP_PATH]: () => '/packs/Keil/STM32F7xx_DFP/3.0.0',
@@ -129,24 +138,24 @@ suite('CMSIS Solution answers', () => {
         assert.deepStrictEqual(asked.sort(), [GET_BSP_PATH, GET_CBUILD_RUN_FILE, GET_DFP_PATH]);
     });
 
-    test('an inactive extension is not asked: running its command would activate it', async () => {
+    test('an inactive extension is not asked: it has no solution loaded', async () => {
         const { source, asked } = stubCommands({ [GET_CBUILD_RUN_FILE]: () => RUN_FILE, [GET_DFP_PATH]: () => '/p' }, { active: false });
         assert.strictEqual(await activeCbuildRunFile(source), undefined);
         assert.deepStrictEqual(await activePackFolders(source), {});
         assert.deepStrictEqual(asked, []);
-        const throwing: SolutionCommands = { ...source, extensionActive: () => { throw new Error('no extension API'); } };
+        const throwing: SolutionSource = { ...source, extensionActive: () => { throw new Error('no extension API'); } };
         assert.strictEqual(await activeCbuildRunFile(throwing), undefined);
         assert.deepStrictEqual(await activePackFolders(throwing), {});
     });
 
-    test('a CMSIS Solution version without the command is not asked', async () => {
-        const { source, asked } = stubCommands({ [GET_CBUILD_RUN_FILE]: () => RUN_FILE }, { registered: ['cmsis-csolution.getSolutionFile'] });
+    test('a CMSIS Solution version without the getter is not asked', async () => {
+        const { source, asked } = stubCommands({ [GET_CBUILD_RUN_FILE]: () => RUN_FILE }, { registered: ['getSolutionFile'] });
         assert.strictEqual(await activeCbuildRunFile(source), undefined);
         assert.deepStrictEqual(await activePackFolders(source), {});
-        assert.deepStrictEqual(asked, [], 'feature detection, not a rejected executeCommand');
+        assert.deepStrictEqual(asked, [], 'found by name, not by a call that fails');
     });
 
-    test('"", "<not found>", a failing command and a timeout are no answer', async () => {
+    test('"", "<not found>", a failing getter and a timeout are no answer', async () => {
         const empty = stubCommands({ [GET_CBUILD_RUN_FILE]: () => '', [GET_DFP_PATH]: () => '<not found>', [GET_BSP_PATH]: () => '' });
         assert.strictEqual(await activeCbuildRunFile(empty.source), undefined);
         assert.deepStrictEqual(await activePackFolders(empty.source), {});
@@ -162,15 +171,17 @@ suite('CMSIS Solution answers', () => {
         const started = Date.now();
         assert.strictEqual(await activeCbuildRunFile(slow.source), undefined);
         assert.deepStrictEqual(await activePackFolders(slow.source), { bsp: '/bsp' }, 'the answer that came is kept');
-        assert.ok(Date.now() - started < 2_000, 'the fence, not the command, ends the wait');
+        assert.ok(Date.now() - started < 2_000, 'the fence, not the getter, ends the wait');
 
-        const slowList: SolutionCommands = { ...empty.source, commands: () => new Promise(() => { /* never answers */ }), timeoutMs: 50 };
-        assert.strictEqual(await askSolution(GET_CBUILD_RUN_FILE, slowList), undefined, 'the command lookup is inside the fence');
+        const unreadable: SolutionSource = { ...empty.source, api: () => { throw new Error('the extension is gone'); } };
+        assert.strictEqual(await askSolution(GET_CBUILD_RUN_FILE, unreadable), undefined, 'an API that cannot be read is no answer');
+        const withoutApi: SolutionSource = { ...empty.source, api: () => undefined };
+        assert.strictEqual(await askSolution(GET_CBUILD_RUN_FILE, withoutApi), undefined, 'CMSIS Solution 1.72.0: no API version 3, no answer');
     });
 
-    test('in this VS Code, without the CMSIS Solution extension, a stand-in command is never run', async () => {
+    test('in this VS Code, without the CMSIS Solution extension, a stand-in of the hidden command of 1.72.0 is never run', async () => {
         let ran = 0;
-        const stand = vscode.commands.registerCommand(GET_CBUILD_RUN_FILE, () => { ran++; return RUN_FILE; });
+        const stand = vscode.commands.registerCommand('cmsis-csolution.getCbuildRunFile', () => { ran++; return RUN_FILE; });
         try {
             assert.strictEqual(await activeCbuildRunFile(), undefined);
             assert.strictEqual(ran, 0);

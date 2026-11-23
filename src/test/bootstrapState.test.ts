@@ -65,7 +65,7 @@ suite('Bootstrap state', () => {
         assert.match(unknown.hint ?? '', /serverVersion=2\.5\.9/);
         for (const refusal of [none, several, unknown]) {
             assert.strictEqual(refusal.code, 'CMSIS_NO_SOLUTION');
-            assert.match(refusal.message, /reports no active solution in this VS Code window \(cmsis-csolution\.getSolutionFile → none\)\.$/);
+            assert.match(refusal.message, /reports no active solution in this VS Code window \(getSolutionFile → none\)\.$/);
         }
     });
 

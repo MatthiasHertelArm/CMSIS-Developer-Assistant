@@ -450,9 +450,21 @@ export function solutionTooOldLine(handle: SolutionExtensionHandle | undefined):
     if (handle === undefined || !solutionApiTooOld(handle)) {
         return undefined;
     }
-    return `CMSIS Solution${versionText(handle)} is too old for cmsis_query and for cmsis_action with a target, open_solution, create_solution, `
-        + `install_pack and convert: it offers no API version ${SOLUTION_API_VERSION}, and these calls are refused until the user updates it `
-        + '(a release after 1.72.0). Build, load, run and debug on the active target still work.';
+    return `CMSIS Solution${versionText(handle)} is too old: it offers no API version ${SOLUTION_API_VERSION}, so cmsis_query and cmsis_action are refused `
+        + 'until the user updates it (a release after 1.72.0); only cmsis_action status, and open_solution for a folder that is not open yet, '
+        + 'still answer. flash and the debugging, documentation and build-artefact tools work as before.';
+}
+
+/**
+ * The refusal of a call that needs the extension's active solution, for a
+ * CMSIS Solution that is too old (`solutionApiTooOld`): its getters are
+ * part of API version 3. `what` names the call.
+ */
+export function solutionTooOldRefusal(what: string, handle: SolutionExtensionHandle): ToolError {
+    return new ToolError('TOOL_DISABLED',
+        `${what} not attempted: the CMSIS Solution extension${versionText(handle)} offers no API version ${SOLUTION_API_VERSION}, `
+            + 'so its active solution and target cannot be read.',
+        V3_UPDATE_HINT);
 }
 
 /**

@@ -28,7 +28,8 @@ import { PickerCancelled, type IDebugConfigurationManager } from '../utils/debug
 import { REDACTION_NOTICE } from '../utils/secretRedaction';
 import { FRAME_FOCUS_WAIT_MS, type StopWaitResult } from '../utils/sessionStateTracker';
 import { HardwareTimeoutError } from '../utils/timeout';
-import { activeCbuildRunFile, GET_CBUILD_RUN_FILE, type SolutionCommands } from '../utils/solutionQueries';
+import type { SolutionApi } from '../core/solutionApi';
+import { activeCbuildRunFile, type SolutionSource } from '../utils/solutionQueries';
 import { LOCKUP_NOTE, wedgeHint } from '../core/probeWedge';
 import { renderResetOutcome, ResetOutcomeView } from '../core/resetAssist';
 import { ErrorCode, ToolError, ToolText, errorDetail, isToolReply, textOf } from '../core/toolResult';
@@ -46,6 +47,7 @@ import { runInCallContext } from '../core/callContext';
 import { attachRunOutput } from '../runOutputCapture';
 import { FakeExecution, FakeShell, FakeTasks, FixtureTask, ManualClock, workspaceTasks } from './cmsisTaskFixtures';
 import { MockSerial, mockSerial } from './serialFixtures';
+import { standInsFor } from './solutionStandIns';
 
 /**
  * The debugging handler against a scripted executor. The handler's host is
@@ -445,9 +447,12 @@ function frames(count: number): StackFrame[] {
     return Array.from({ length: count }, (_, level) => ({ name: `fn${level}`, source: `/w/f${level}.c`, line: level + 1, frameId: 1000 + level }));
 }
 
-/** Register stand-ins for CMSIS Solution commands; dispose the result afterwards. */
+/**
+ * Stand-ins for the CMSIS Solution extension, by the ids of its commands: the actions are registered as commands, the
+ * getters (`cmsis-csolution.getSolutionFile`, ...) are served as its API version 3. Dispose the result afterwards.
+ */
 function standIns(handlers: Record<string, (...args: unknown[]) => unknown>): vscode.Disposable {
-    return vscode.Disposable.from(...Object.entries(handlers).map(([id, run]) => vscode.commands.registerCommand(id, run)));
+    return standInsFor(handlers);
 }
 
 suite('DebuggingHandler', () => {
@@ -2629,7 +2634,7 @@ suite('DebuggingHandler', () => {
         test('device info adds the active CMSIS target', async () => {
             const x = new ScriptedExecutor();
             let answer: () => unknown = () => 'HP@debug';
-            const registration = vscode.commands.registerCommand('cmsis-csolution.getActiveTargetSet', () => answer());
+            const registration = standIns({ 'cmsis-csolution.getActiveTargetSet': () => answer() });
             try {
                 assert.strictEqual(await textAnswer(handlerFor(x).handleGetDeviceInfo()),
                     '=== Debug Session Info ===\n  Session name: S\n  CMSIS target: HP@debug');
@@ -2777,8 +2782,8 @@ suite('DebuggingHandler', () => {
 
             // The extension, a folder, and no csolution file in it.
             const noFile = await refusedBy({ ...opened, ...installed, findFiles: async () => [] }, 'CMSIS_NO_SOLUTION');
-            assert.ok(noFile.message.startsWith('CMSIS \'stop_run\' not attempted: the CMSIS Solution extension reports no active solution '
-                + 'in this VS Code window (cmsis-csolution.getSolutionFile → query failed: '), noFile.message);
+            assert.strictEqual(noFile.message, 'CMSIS \'stop_run\' not attempted: the CMSIS Solution extension reports no active solution '
+                + 'in this VS Code window (getSolutionFile → none).');
             assert.ok(noFile.hint?.startsWith('The open folder (w) contains no *.csolution.yml. Create the solution first'), noFile.hint);
 
             // A csolution file that the extension has not loaded.
@@ -2786,6 +2791,21 @@ suite('DebuggingHandler', () => {
             const notLoaded = await refusedBy({ ...opened, ...installed, findFiles: async () => [vscode.Uri.file(file)] }, 'CMSIS_NO_SOLUTION');
             assert.strictEqual(notLoaded.hint, `A solution file exists: ${vscode.Uri.file(file).fsPath}. The extension may still be loading it, or failed to load it. `
                 + `cmsis_action {action:'open_solution', path:'${vscode.Uri.file(file).fsPath}'} activates it; get_recent_problems shows what the extension reported.`);
+
+            // CMSIS Solution 1.72.0: version 2 only, so its getters cannot be asked. The refusal says that, not "no solution".
+            const old = { isActive: true, version: '1.72.0', activate: async () => undefined, exports: { getApi: (version: number) => {
+                if (version !== 2) { throw new Error(`No API version ${version} found`); }
+                return { getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined };
+            } } };
+            const tooOld = await refusedBy({ ...opened, ...installed, findFiles: async () => [vscode.Uri.file(file)], solutionExtension: () => old }, 'TOOL_DISABLED');
+            assert.strictEqual(errorDetail(tooOld), 'CMSIS \'stop_run\' not attempted: the CMSIS Solution extension 1.72.0 offers no API version 3, '
+                + 'so its active solution and target cannot be read.\n'
+                + 'Ask the user to update the CMSIS Solution extension: this needs its API version 3, which comes with a release after 1.72.0 '
+                + '(today only its nightly build).');
+            for (const action of ['build', 'load', 'run', 'detach', 'stop_build', 'refresh', 'activate_environment'] as const) {
+                const refused = await refusalOf(handlerFor(x, { ...opened, ...installed, solutionExtension: () => old }).handleCmsisCommand({ action }), 'TOOL_DISABLED');
+                assert.match(refused.message, new RegExp(`^CMSIS '${action}' not attempted: the CMSIS Solution extension 1\\.72\\.0 offers no API version 3`), action);
+            }
 
             // The search failed: the general fixes, with the server version.
             const unknown = await refusedBy({ ...opened, ...installed, findFiles: () => Promise.reject(new Error('no search')) }, 'CMSIS_NO_SOLUTION');
@@ -4405,10 +4425,9 @@ suite('DebuggingHandler', () => {
                     fs.mkdirSync(path.join(dir, 'out'));
                     cbuildRun('CMSIS-DAP@pyOCD', path.join(dir, 'out', relative));
                     let answer = relative;
-                    const extension: SolutionCommands = {
+                    const extension: SolutionSource = {
                         extensionActive: () => true,
-                        commands: async () => [GET_CBUILD_RUN_FILE],
-                        execute: async () => answer,
+                        api: () => ({ getCbuildRunFile: async () => answer }) as unknown as SolutionApi,
                     };
                     const w = tasksWorld({
                         activeCbuildRunFile: () => activeCbuildRunFile(extension),
@@ -4421,7 +4440,7 @@ suite('DebuggingHandler', () => {
                     let updates = 0;
                     solutionOn('HE', {
                         'cmsis-csolution.getSolutionFile': () => solution,
-                        [GET_CBUILD_RUN_FILE]: () => {
+                        'cmsis-csolution.getCbuildRunFile': () => {
                             asked++;
                             return answer;
                         },

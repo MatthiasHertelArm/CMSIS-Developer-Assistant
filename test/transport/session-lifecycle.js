@@ -338,17 +338,21 @@ async function main() {
     let activeTarget = 'HE';
     const commandLog = [];
     stub.workspace.workspaceFolders = [{ uri: { fsPath: solDir } }];
+    // The hidden commands of CMSIS Solution 1.72.0 that answered these questions: none of them may run any more.
+    const hidden = (id) => async () => { commandLog.push(`hidden ${id}`); return undefined; };
     stub.commandHandlers = {
-        'cmsis-csolution.getSolutionFile': async () => solutionFile,
-        'cmsis-csolution.getActiveTargetSet': async () => activeTarget,
+        'cmsis-csolution.getSolutionFile': hidden('getSolutionFile'),
+        'cmsis-csolution.getActiveTargetSet': hidden('getActiveTargetSet'),
         'cmsis-csolution.deactivateSolution': async () => { commandLog.push('deactivate'); },
         'cmsis-csolution.activateSolution': async (p) => { commandLog.push(`activate ${p}`); },
         'cmsis-csolution.cmsisDetachDebugger': async () => undefined,
     };
-    // The CMSIS Solution extension with its API version 3: the switch is its setActiveTarget.
+    // The CMSIS Solution extension with its API version 3: its getters name the solution and the target, the switch is its setActiveTarget.
     const apiLog = [];
     const solutionApi = {
         getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined,
+        getSolutionFile: async () => solutionFile,
+        getActiveTarget: async () => activeTarget,
         getTargets: async () => ['HE', 'HP@debug', 'HP@release'],
         setActiveTarget: async (name) => { apiLog.push(`set ${name}`); activeTarget = name; },
     };
@@ -408,17 +412,19 @@ async function main() {
     check('cmsis_action refuses when the switch cannot be verified',
         /not attempted: selected 'HP@debug' through the CMSIS Solution API, but the CMSIS Solution extension still reports 'HE'.*Manage Solution/s.test(unverified),
         unverified.split('\n')[0]);
-    // CMSIS Solution 1.72.0 offers API version 2 only: no switch, the update hint, and nothing written.
+    // CMSIS Solution 1.72.0 offers API version 2 only: its solution and target cannot be read, so every action is refused
+    // with the update hint. The hidden commands it had for that are not run, and nothing is written.
     activeTarget = 'HE';
-    const { getTargets: _getTargets, setActiveTarget: _setActiveTarget, ...versionTwo } = solutionApi;
+    const versionTwo = { getBoards: solutionApi.getBoards, getDevices: solutionApi.getDevices, getDraftProjects: solutionApi.getDraftProjects,
+        createNewSolution: solutionApi.createNewSolution };
     stub.extensions.getExtension = (id) => (id === 'Arm.cmsis-csolution' ? solutionExtensionWith('1.72.0', versionTwo) : undefined);
     const tooOld = await cmsisAction({ action: 'detach', target: 'HP@release' }, 11);
-    check('cmsis_action switches no target without API version 3: refused with the update hint, cmsis.json not written',
-        /not attempted: the active target is 'HE', and the CMSIS Solution extension offers no getTargets \(API version 3\) to select 'HP@release'.*update the CMSIS Solution extension.*Manage Solution/s.test(tooOld)
+    check('cmsis_action is refused on a CMSIS Solution without API version 3, with the update hint; no hidden command runs, cmsis.json is not written',
+        /not attempted: the CMSIS Solution extension 1\.72\.0 offers no API version 3, so its active solution and target cannot be read\..*update the CMSIS Solution extension/s.test(tooOld)
             && commandLog.length === 0 && !fs.existsSync(cmsisJsonPath),
-        tooOld.split('\n')[0]);
-    const stillActs = await cmsisAction({ action: 'detach', target: 'HE' }, 12);
-    check('cmsis_action without a switch still acts on such an extension', /CMSIS 'detach' on HE issued/.test(stillActs), stillActs.split('\n')[0]);
+        `${tooOld.split('\n')[0]} | ${commandLog.join(',')}`);
+    const stillAnswers = await cmsisAction({ action: 'status' }, 12);
+    check('cmsis_action status still answers on such an extension', stillAnswers.length > 0 && !/TOOL_DISABLED/.test(stillAnswers), stillAnswers.split('\n')[0]);
     stub.extensions.getExtension = getExtension;
     stub.commandHandlers = {};
     stub.workspace.workspaceFolders = [];
@@ -545,9 +551,16 @@ async function main() {
     const problemSolution = path.join(problemDir, 'demo.csolution.yml');
     fs.writeFileSync(problemSolution, 'solution:\n  target-types:\n    - type: HE\n  projects:\n    - project: app.cproject.yml\n');
     stub.workspace.workspaceFolders = [{ uri: { fsPath: problemDir } }];
+    const problemApi = {
+        getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined,
+        getSolutionFile: async () => problemSolution,
+        getActiveTarget: async () => 'HE',
+    };
+    const problemExports = { getApi: (asked) => { if (asked !== 3) { throw new Error(`No API version ${asked} found`); } return problemApi; } };
+    const extensionsBefore = stub.extensions.getExtension;
+    stub.extensions.getExtension = (id) => (id === 'Arm.cmsis-csolution'
+        ? { isActive: true, packageJSON: { version: '1.73.0' }, activate: async () => undefined, exports: problemExports } : undefined);
     stub.commandHandlers = {
-        'cmsis-csolution.getSolutionFile': async () => problemSolution,
-        'cmsis-csolution.getActiveTargetSet': async () => 'HE',
         // The GDB server reports a problem while the command runs, then the command fails.
         'cmsis-csolution.cmsisDetachDebugger': async () => {
             problemJournal().append({
@@ -565,6 +578,7 @@ async function main() {
             && String(attached[0].toolCallId).startsWith(`${sid.slice(0, 8)}-`)
             && /\nRecent problems:\n {2}#\d+ error gdb-server \[DAP_POWER_UP_FAILED\] Failed to power up DAP → Check the power\.$/.test(detachedText),
         `${JSON.stringify(attached)} | ${detachedText.split('\n').slice(-2).join(' | ')}`);
+    stub.extensions.getExtension = extensionsBefore;
     stub.commandHandlers = {};
     stub.workspace.workspaceFolders = [];
     fs.rmSync(problemDir, { recursive: true, force: true });

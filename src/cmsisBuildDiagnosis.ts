@@ -172,7 +172,7 @@ import { activeTargetSetOf, solutionFileOf } from './core/solutionAnswers';
 import { peekSolutionApi, settleWithin, v3Method } from './core/solutionApi';
 import { formatDuration } from './handler/jobText';
 import { logger } from './utils/logger';
-import { apiToolsEnvironment, solutionGetter } from './utils/solutionQueries';
+import { apiToolsEnvironment, solutionGetter, type SolutionGetter } from './utils/solutionQueries';
 import { withTimeout } from './utils/timeout';
 import { effectiveToolchainPackRoot } from './utils/toolchainPackRoot';
 
@@ -1443,9 +1443,9 @@ export function attachBuildDiagnosis(tracker: CmsisJobTracker, host: DiagnosisHo
 // ── The real host ───────────────────────────────────────────────────────────
 
 /** A CMSIS Solution query's answer, read by `interpret`; undefined when it fails or is slow. Never throws. */
-async function askFor(command: string, interpret: (answer: unknown) => string | undefined): Promise<string | undefined> {
+async function askFor(getter: SolutionGetter, interpret: (answer: unknown) => string | undefined): Promise<string | undefined> {
     try {
-        return interpret(await withTimeout(command, QUERY_MS, () => Promise.resolve(solutionGetter(command))));
+        return interpret(await withTimeout(`cmsis ${getter}`, QUERY_MS, () => Promise.resolve(solutionGetter(getter))));
     } catch {
         return undefined;
     }
@@ -1481,8 +1481,8 @@ function killProcessTree(child: DiagnosticChild, platform: NodeJS.Platform): voi
 export function vscodeDiagnosisHost(clock: TrackerClock): DiagnosisHost {
     return {
         rerunEnabled: () => vscode.workspace.getConfiguration('cmsis-developer-assistant').get<boolean>('build.diagnosticRerun', true) !== false,
-        solutionFile: () => askFor('cmsis-csolution.getSolutionFile', solutionFileOf),
-        activeTarget: () => askFor('cmsis-csolution.getActiveTargetSet', activeTargetSetOf),
+        solutionFile: () => askFor('getSolutionFile', solutionFileOf),
+        activeTarget: () => askFor('getActiveTarget', activeTargetSetOf),
         outputDirectorySetting: () => {
             const value: unknown = vscode.workspace.getConfiguration('cmsis-csolution').get<unknown>('outputDirectory');
             return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;

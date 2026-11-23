@@ -144,7 +144,10 @@ import { currentCallContext } from '../core/callContext';
 import { failedResponseMessage } from '../core/problemFeed';
 import type { ProblemJournal } from '../core/problemJournal';
 import { activeTargetSetOf, solutionAnswerOf } from '../core/solutionAnswers';
-import { acquireSolutionApi, peekSolutionApi, requireV3Method, V3_UPDATE_HINT, v3Method, type ApiConvertResult, type SolutionApi } from '../core/solutionApi';
+import {
+    acquireSolutionApi, peekSolutionApi, requireV3Method, solutionApiTooOld, solutionTooOldRefusal, V3_UPDATE_HINT, v3Method,
+    type ApiConvertResult, type SolutionApi,
+} from '../core/solutionApi';
 import { ErrorCode, ToolError, ToolText } from '../core/toolResult';
 import {
     activeLaunchConfigurations,
@@ -338,11 +341,11 @@ interface SolutionAnswer {
     description: string;
 }
 
-/** `cmsis-csolution.getSolutionFile`, interpreted. Never throws. */
+/** `getSolutionFile` of CMSIS Solution's API, interpreted. Never throws. */
 async function activeSolution(): Promise<SolutionAnswer> {
     try {
         const answer: unknown = await withTimeout('cmsis getSolutionFile', QUERY_MS,
-            () => Promise.resolve(solutionGetter('cmsis-csolution.getSolutionFile')));
+            () => Promise.resolve(solutionGetter('getSolutionFile')));
         const { active, file } = solutionAnswerOf(answer);
         if (!active) {
             return { active: false, description: 'none' };
@@ -353,11 +356,11 @@ async function activeSolution(): Promise<SolutionAnswer> {
     }
 }
 
-/** `cmsis-csolution.getActiveTargetSet`, trimmed; undefined when empty or unavailable. Never throws. */
+/** `getActiveTarget` of CMSIS Solution's API, trimmed; undefined when empty or unavailable. Never throws. */
 export async function activeTargetName(): Promise<string | undefined> {
     try {
         const answer: unknown = await withTimeout('cmsis getActiveTargetSet', QUERY_MS,
-            () => Promise.resolve(solutionGetter('cmsis-csolution.getActiveTargetSet')));
+            () => Promise.resolve(solutionGetter('getActiveTarget')));
         return activeTargetSetOf(answer);
     } catch {
         return undefined;
@@ -1632,8 +1635,9 @@ async function solutionAsListed(file: string, host: HandlerHost): Promise<string
 
 /**
  * Why the window has no active solution, as the refusal an action answers
- * with: no folder open, the CMSIS Solution extension not installed, no
- * csolution in the workspace, or one that the extension has not loaded.
+ * with: no folder open, the CMSIS Solution extension not installed or too
+ * old to be asked (its getters are part of API version 3), no csolution in
+ * the workspace, or one that the extension has not loaded.
  */
 async function whyNoSolution(what: string, queried: string, host: HandlerHost, serverVersion: string): Promise<ToolError> {
     const folders = host.workspaceFolders();
@@ -1642,6 +1646,10 @@ async function whyNoSolution(what: string, queried: string, host: HandlerHost, s
     }
     if (!host.toolEnvironment().extension(SOLUTION_EXTENSION_ID)) {
         return missingSolutionExtensionRefusal(what);
+    }
+    const extension = host.solutionExtension();
+    if (extension !== undefined && solutionApiTooOld(extension)) {
+        return solutionTooOldRefusal(what, extension);
     }
     return noSolutionRefusal(what, queried, await workspaceSolutionFiles(host), folders.map((folder) => folder.name), serverVersion);
 }

@@ -91,11 +91,15 @@
 // and an empty breakpoint model, the breakpoints the session tracker saw VS
 // Code adopt from an adapter included. No extension is installed unless a
 // scenario names some (`extensions`, by id): then VS Code reports them, and
-// lists the scenario's commands as registered. Module-level state in the code under test
+// lists the scenario's commands as registered. What the CMSIS Solution
+// extension knows about its active solution comes from the getters of its API
+// version 3: a scenario answers them (`getters`, by name, over the defaults),
+// they are logged as `api: <getter>`, and a scenario with `noSolutionApi`
+// is a CMSIS Solution without that API, as 1.72.0. Module-level state in the code under test
 // (the window's problem journal, whose record numbers count on across
 // scenarios and are masked in the replies, the pack-root answer, the parsed
 // SVD cache) persists across scenarios as it does across sessions in one
-// extension host; `cmsis-csolution.getPackRootPath` is answered but not
+// extension host; `getPackRootPath` is answered but not
 // logged, because it is asked once per process and would otherwise tie the
 // log of one scenario to the order they run in.
 //
@@ -172,18 +176,23 @@ let current = null;
 /** The repository's root: the captured build output of `src/test/fixtures/buildresult` is read from there. */
 const REPO = path.resolve(__dirname, '..', '..');
 
+/** The four catalog methods, by which the extension recognises CMSIS Solution's API. */
+const CATALOG_API = {
+    getBoards: async () => [],
+    getDevices: async () => [],
+    getDraftProjects: async () => [],
+    createNewSolution: async () => undefined,
+};
+
 /**
- * CMSIS Solution's API version 3 as far as a build needs it (#140): the four
- * methods of version 2, by which the extension recognises the API,
+ * CMSIS Solution's API version 3 as far as a build needs it (#140): the
+ * catalog methods,
  * `getBuildResult`, which answers what the running scenario captured, and
  * `build`, which starts the scenario's build task as the API does: with a
  * name and a definition that show neither the solution nor the target set.
  */
 const CAPTURING_API = {
-    getBoards: async () => [],
-    getDevices: async () => [],
-    getDraftProjects: async () => [],
-    createNewSolution: async () => undefined,
+    ...CATALOG_API,
     getBuildResult: async (execution) => {
         current?.record(`getBuildResult: ${JSON.stringify(execution?.task?.name)}`);
         return current?.capturedResult;
@@ -251,17 +260,33 @@ stub.workspace.openTextDocument = async (uri) => {
     return { uri, lineCount: lines.length, lineAt: (i) => ({ text: lines[i] }), getText: () => text };
 };
 
-// Asked once per process and cached by the code under test — see the header.
-const UNLOGGED_COMMANDS = new Set(['cmsis-csolution.getPackRootPath']);
-
 stub.commands.executeCommand = async (command, ...args) => {
     if (!current) { return undefined; }
-    if (!UNLOGGED_COMMANDS.has(command)) {
-        current.record(`command: ${command}${args.length ? ` ${JSON.stringify(args)}` : ''}`);
-    }
+    current.record(`command: ${command}${args.length ? ` ${JSON.stringify(args)}` : ''}`);
     const handler = current.commands[command];
     return handler ? handler(current, ...args) : undefined;
 };
+
+// Asked once per process and cached by the code under test — see the header.
+const UNLOGGED_GETTERS = new Set(['getPackRootPath']);
+
+/**
+ * The getters of CMSIS Solution's API version 3 as the running scenario
+ * answers them, each logged when it is asked. Undefined between scenarios
+ * and for a scenario whose CMSIS Solution has no API version 3.
+ */
+function solutionGettersApi() {
+    if (!current || current.def.noSolutionApi) { return undefined; }
+    const sc = current;
+    const api = {};
+    for (const name of Object.keys(sc.getters)) {
+        api[name] = async () => {
+            if (!UNLOGGED_GETTERS.has(name)) { sc.record(`api: ${name}`); }
+            return sc.getters[name](sc);
+        };
+    }
+    return api;
+}
 
 // ── The scripted target ────────────────────────────────────────────────────
 
@@ -1093,10 +1118,10 @@ function sessionConfig(env, kind) {
     }
 }
 
-const DEFAULT_COMMANDS = {
-    'cmsis-csolution.getSolutionFile': (sc) => path.join(sc.env.project, 'Blinky.csolution.yml'),
-    'cmsis-csolution.getActiveTargetSet': () => 'NUCLEO-F401RE',
-    'cmsis-csolution.getPackRootPath': (sc) => sc.env.packRoot,
+const DEFAULT_GETTERS = {
+    getSolutionFile: (sc) => path.join(sc.env.project, 'Blinky.csolution.yml'),
+    getActiveTarget: () => 'NUCLEO-F401RE',
+    getPackRootPath: (sc) => sc.env.packRoot,
 };
 
 class ScenarioContext {
@@ -1107,7 +1132,8 @@ class ScenarioContext {
         this.log = [];
         this.targets = [];
         this.sessionCount = 0;
-        this.commands = { ...DEFAULT_COMMANDS, ...(def.commands ?? {}) };
+        this.commands = { ...(def.commands ?? {}) };
+        this.getters = { ...DEFAULT_GETTERS, ...(def.getters ?? {}) };
     }
 
     record(line) { this.log.push(line); }
@@ -2008,12 +2034,32 @@ const SCENARIOS = [
         description: 'No session, the CMSIS Solution extension active (#124): get_session_status names the csolution it has active and the '
             + 'workspace folder that holds it, then, once the extension answers "", that none is active.',
         extensions: {
-            'Arm.cmsis-csolution': { id: 'Arm.cmsis-csolution', isActive: true, exports: undefined, extensionPath: '/ext/cmsis-csolution',
-                packageJSON: { version: '1.72.0' } },
+            'Arm.cmsis-csolution': { id: 'Arm.cmsis-csolution', isActive: true, extensionPath: '/ext/cmsis-csolution',
+                packageJSON: { version: '1.73.0' }, exports: { getApi: (version) => (version === 3 ? CATALOG_API : undefined) } },
         },
         calls: [
             { tool: 'get_session_status' },
-            { tool: 'get_session_status', before: (sc) => { sc.commands['cmsis-csolution.getSolutionFile'] = () => ''; } },
+            { tool: 'get_session_status', before: (sc) => { sc.getters.getSolutionFile = () => ''; } },
+        ],
+    },
+    {
+        name: 'status-solution-too-old',
+        description: 'No session, CMSIS Solution 1.72.0 active, which offers API version 2 only: get_session_status says that the extension '
+            + 'is too old and names no solution, cmsis_action build is refused with the hint to update, and no hidden command of the '
+            + 'extension is run; cmsis_action status still answers.',
+        noSolutionApi: true,
+        extensions: {
+            'Arm.cmsis-csolution': { id: 'Arm.cmsis-csolution', isActive: true, extensionPath: '/ext/cmsis-csolution',
+                packageJSON: { version: '1.72.0' }, exports: { getApi: (version) => { if (version !== 2) { throw new Error(`No API version ${version} found`); } return CATALOG_API; } } },
+        },
+        commands: {
+            'cmsis-csolution.getSolutionFile': (sc) => path.join(sc.env.project, 'Blinky.csolution.yml'),
+            'cmsis-csolution.getActiveTargetSet': () => 'NUCLEO-F401RE',
+        },
+        calls: [
+            { tool: 'get_session_status' },
+            { tool: 'cmsis_action', args: { action: 'build' } },
+            { tool: 'cmsis_action', args: { action: 'status' } },
         ],
     },
     {
@@ -2397,6 +2443,8 @@ async function main() {
 
     const { DebugMCPServer } = require(path.join(OUT, 'debugMCPServer.js'));
     ({ linesMissingFromStructured } = require(path.join(OUT, 'core', 'measuredMcpServer.js')));
+    // The getters of CMSIS Solution's API version 3 come from the running scenario, with or without an installed extension.
+    require(path.join(OUT, 'utils', 'solutionQueries.js')).VSCODE_SOLUTION_SOURCE.api = solutionGettersApi;
     const { registerSessionStateTracker } = require(path.join(OUT, 'utils', 'sessionStateTracker.js'));
     // What activate() does first: the DAP stopped/continued tracker.
     registerSessionStateTracker({ subscriptions: [] });
