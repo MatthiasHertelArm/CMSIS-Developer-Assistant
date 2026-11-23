@@ -114,7 +114,7 @@ const BUILD_ARTEFACTS_OFF =
     'running nm or size or grepping the map file yourself.';
 
 /**
- * Experimental. What a skill's description did by itself — load the
+ * What a skill's description did by itself — load the
  * procedure when its task comes up — has to be said in words when the
  * procedures are knowledge units: look the procedure up before the work.
  * It stands first, ahead of the purpose and everything else.
@@ -132,7 +132,7 @@ const KNOWLEDGE_FIRST =
  */
 export const KNOWLEDGE_REMINDER = 'Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.';
 
-/** Experimental; the tool rules name a procedure from knowledge_get next to a CMSIS skill. */
+/** The tool rules name a procedure from knowledge_get next to a CMSIS skill. */
 const KNOWLEDGE_ON =
     'The knowledge tools (knowledge_search, knowledge_get, knowledge_expand) hold how-to knowledge: procedures, rules, the ' +
     'causes and fixes of csolution, packchk and svdconv messages, and the documentation the installed packs carry as knowledge ' +

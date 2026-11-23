@@ -15,7 +15,7 @@
  */
 
 /**
- * The MCP tool surface of the experimental knowledge tools. Descriptions are
+ * The MCP tool surface of the knowledge tools. Descriptions are
  * short: `tools/list` rides along on every turn. The project context is
  * resolved by the window, so the tools take no device, compiler or path.
  */

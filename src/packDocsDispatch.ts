@@ -36,7 +36,7 @@ import type { SourceBrowseHandler } from './sourceBrowseHandler';
 export interface PackDocsHandlers {
     docs: PackDocsHandler;
     build: BuildInfoHandler;
-    /** The experimental knowledge tools; absent where a window is built without them (tests). */
+    /** The knowledge tools; absent where a window is built without them (tests). */
     knowledge?: KnowledgeHandler;
     /** The experimental source-browsing tools; absent where a window is built without them (tests). */
     source?: SourceBrowseHandler;

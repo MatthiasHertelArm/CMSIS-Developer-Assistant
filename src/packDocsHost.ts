@@ -18,7 +18,7 @@
  * The VS Code side of the documentation and build-artefact tools: settings
  * under `cmsis-developer-assistant.packDocs.*` / `.buildInfo.*`, the host
  * objects the pure cores see (`PackDocsHost`, `BuildInfoHost`), and the two
- * handlers every window owns, with the experimental knowledge handler
+ * handlers every window owns, with the knowledge handler
  * (`knowledge.*`) beside them. Nothing under `core/packDocs` or
  * `core/buildInfo` imports `vscode`; this file is where that ends.
  */

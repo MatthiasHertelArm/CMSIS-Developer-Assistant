@@ -130,7 +130,7 @@ export const PACKDOCS_BUILD_OPS = [
     'handleGetBuildDiagnostics',
 ] as const;
 
-/** Ops served by the knowledge handler (`KnowledgeHandler`); experimental. */
+/** Ops served by the knowledge handler (`KnowledgeHandler`); always on. */
 export const KNOWLEDGE_OPS = [
     'handleKnowledgeSearch',
     'handleKnowledgeGet',

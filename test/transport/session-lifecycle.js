@@ -834,7 +834,7 @@ async function main() {
     await request(fport, 'DELETE', { 'mcp-session-id': fsid });
     await full.stop();
 
-    // 10. The experimental knowledge tools: in neither list above, and three
+    // 10. The knowledge tools: in neither list above, and three
     //     tools more through their own gate. Without an index they fail with
     //     the setting to fill in.
     const { KnowledgeHandler } = require(path.join(OUT, 'knowledgeHandler.js'));

@@ -1,4 +1,4 @@
-# Knowledge tools (`knowledge`, experimental)
+# Knowledge tools (`knowledge`)
 
 Three tools over a knowledge index: how-to knowledge next to the *what* of
 the documentation tools. Procedures, rules, concepts, and the causes and
