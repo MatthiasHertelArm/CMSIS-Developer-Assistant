@@ -17,10 +17,15 @@
 // CMSIS Solution's API version 3 behind cmsis_query and cmsis_action (2.9.1): the seam asks for
 // version 3 and falls back to 2; every method of version 3 is detected by name; the new query
 // kinds (packs, toolchains, debuggers, environment) against a scripted version 3, shaped as the
-// nightly 1.72.1-86 answers; the install result of installPacks; the getters through the API.
+// nightly 1.72.1-86 answers; the install result of installPacks; the getters through the API;
+// the warning a window shows at activation for a CMSIS Solution without version 3, and the
+// manifest's dependency on the extension.
 
 import * as vscode from 'vscode';
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import { SOLUTION_EXTENSION_ID } from '../core/bootstrapState';
 import {
     acquireSolutionApi,
     ApiPackQuery,
@@ -30,6 +35,7 @@ import {
     SolutionApi,
     solutionApiTooOld,
     solutionTooOldLine,
+    solutionTooOldNotice,
     SolutionExtensionHandle,
     v3Method,
 } from '../core/solutionApi';
@@ -37,6 +43,14 @@ import { querySolution, SolutionQuery } from '../core/solutionQuery';
 import { ErrorCode, errorDetail, ToolError, ToolReply } from '../core/toolResult';
 import { convertResult } from '../handler/cmsisAction';
 import { folderOfInstall } from '../handler/installPack';
+import {
+    DO_NOT_SHOW_AGAIN,
+    SHOW_SOLUTION_EXTENSION,
+    SILENCED_VERSION_KEY,
+    SolutionNoticeHost,
+    tellWhenSolutionTooOld,
+    windowSolutionNoticeHost,
+} from '../solutionNotice';
 import { activeTargetAnswer, apiToolsEnvironment, askSolution, cachedApiToolsEnvironment, resetApiToolsEnvironment, solutionGetter, SolutionSource } from '../utils/solutionQueries';
 
 const CLOCK: Clock = {
@@ -162,7 +176,131 @@ function ask(api: SolutionApi, query: SolutionQuery, deadline = soon(), redact?:
     return querySolution(api, query, CLOCK, deadline, redact);
 }
 
+/** What a window was shown and asked by the notice of a CMSIS Solution that is too old. */
+interface NoticeWindow {
+    host: SolutionNoticeHost;
+    warnings: { message: string; buttons: string[] }[];
+    opened: string[];
+    silenced: string | undefined;
+}
+
+/** A window for that notice: the extension it has, the button its user picks, the version the notice is silenced for. */
+function noticeWindow(extension: SolutionExtensionHandle | undefined, answer?: string, silenced?: string): NoticeWindow {
+    const seen: NoticeWindow = {
+        warnings: [],
+        opened: [],
+        silenced,
+        host: {
+            solutionExtension: () => extension,
+            warn: (message, ...buttons) => {
+                seen.warnings.push({ message, buttons });
+                return Promise.resolve(answer);
+            },
+            showExtension: (id) => {
+                seen.opened.push(id);
+                return Promise.resolve();
+            },
+            silencedVersion: () => seen.silenced,
+            silence: (version) => {
+                seen.silenced = version;
+                return Promise.resolve();
+            },
+        },
+    };
+    return seen;
+}
+
+const TOO_OLD_NOTICE = 'CMSIS Developer Assistant: the CMSIS Solution extension 1.72.0 is too old. Build, load, run and target selection by an agent '
+    + '(cmsis_action, cmsis_query) need its API version 3, which a release after 1.72.0 brings; update CMSIS Solution to use them.';
+
 suite('CMSIS Solution API version 3 (2.9.1)', () => {
+    suite('the notice of a CMSIS Solution that is too old (2.9.4)', () => {
+        const old = (version = '1.72.0'): SolutionExtensionHandle => ({ ...installed({ 2: v2() }), version });
+        /** The same extension with a manifest that names no version. */
+        const unversioned = (): SolutionExtensionHandle => ({ ...installed({ 2: v2() }), version: undefined });
+
+        test('an active CMSIS Solution without version 3 is reported, with both buttons; an absent, inactive or current one is not', async () => {
+            const window = noticeWindow(old());
+            assert.strictEqual(await tellWhenSolutionTooOld(window.host), true);
+            assert.deepStrictEqual(window.warnings, [{ message: TOO_OLD_NOTICE, buttons: [SHOW_SOLUTION_EXTENSION, DO_NOT_SHOW_AGAIN] }]);
+            assert.deepStrictEqual([window.opened, window.silenced], [[], undefined], 'a warning the user closes changes nothing');
+
+            for (const [what, extension] of [
+                ['not installed', undefined],
+                ['not active yet: its API is not known', { ...installed({ 2: v2() }, { active: false }), version: '1.72.0' }],
+                ['version 3', { ...installed({ 3: v3() }), version: '1.73.0' }],
+            ] as const) {
+                const quiet = noticeWindow(extension);
+                assert.strictEqual(solutionTooOldNotice(extension), undefined, what);
+                assert.strictEqual(await tellWhenSolutionTooOld(quiet.host), false, what);
+                assert.deepStrictEqual(quiet.warnings, [], what);
+            }
+            assert.match(solutionTooOldNotice(unversioned()) ?? '', /^the CMSIS Solution extension is too old\. /, 'a manifest without a version');
+        });
+
+        test('Show CMSIS Solution opens the page of the extension, by its id', async () => {
+            const window = noticeWindow(old(), SHOW_SOLUTION_EXTENSION);
+            assert.strictEqual(await tellWhenSolutionTooOld(window.host), true);
+            assert.deepStrictEqual(window.opened, [SOLUTION_EXTENSION_ID]);
+            assert.strictEqual(window.silenced, undefined);
+        });
+
+        test('Don\'t Show Again silences the notice for that version only', async () => {
+            const window = noticeWindow(old(), DO_NOT_SHOW_AGAIN);
+            assert.strictEqual(await tellWhenSolutionTooOld(window.host), true);
+            assert.deepStrictEqual([window.opened, window.silenced], [[], '1.72.0']);
+            assert.strictEqual(await tellWhenSolutionTooOld(window.host), false, 'the same version again');
+            assert.strictEqual(window.warnings.length, 1);
+
+            const other = noticeWindow(old('1.71.2'), undefined, '1.72.0');
+            assert.strictEqual(await tellWhenSolutionTooOld(other.host), true, 'another version that is too old');
+            assert.match(other.warnings[0].message, /the CMSIS Solution extension 1\.71\.2 is too old/);
+
+            const unnamed = noticeWindow(unversioned(), DO_NOT_SHOW_AGAIN);
+            assert.strictEqual(await tellWhenSolutionTooOld(unnamed.host), true);
+            assert.strictEqual(unnamed.silenced, 'unknown');
+            assert.strictEqual(await tellWhenSolutionTooOld(unnamed.host), false);
+        });
+
+        test('a window that cannot show the warning, open the page or keep the answer does not make the call reject', async () => {
+            const broken = (part: Partial<SolutionNoticeHost>, answer?: string): SolutionNoticeHost => ({ ...noticeWindow(old(), answer).host, ...part });
+            const refuse = (): Promise<never> => Promise.reject(new Error('not in this window'));
+            assert.strictEqual(await tellWhenSolutionTooOld(broken({ warn: refuse })), false);
+            assert.strictEqual(await tellWhenSolutionTooOld(broken({ showExtension: refuse }, SHOW_SOLUTION_EXTENSION)), false);
+            assert.strictEqual(await tellWhenSolutionTooOld(broken({ silence: refuse }, DO_NOT_SHOW_AGAIN)), false);
+            assert.strictEqual(await tellWhenSolutionTooOld(broken({ solutionExtension: () => { throw new Error('no extensions'); } })), false);
+        });
+
+        test('the window\'s own host keeps the silenced version in the global state; this VS Code has no CMSIS Solution', async () => {
+            const kept = new Map<string, unknown>();
+            const context = {
+                globalState: {
+                    get: (key: string): unknown => kept.get(key),
+                    update: (key: string, value: unknown): Promise<void> => {
+                        kept.set(key, value);
+                        return Promise.resolve();
+                    },
+                },
+            } as unknown as vscode.ExtensionContext;
+            const host = windowSolutionNoticeHost(context);
+            assert.strictEqual(host.silencedVersion(), undefined);
+            await host.silence('1.72.0');
+            assert.deepStrictEqual([...kept], [[SILENCED_VERSION_KEY, '1.72.0']]);
+            assert.strictEqual(host.silencedVersion(), '1.72.0');
+            assert.strictEqual(host.solutionExtension(), undefined);
+            assert.strictEqual(await tellWhenSolutionTooOld(host), false);
+        });
+
+        test('the manifest names CMSIS Solution as its one extension dependency, and the test run does not install it', () => {
+            // out/src/test -> repository root
+            const repoRoot = path.resolve(__dirname, '../../..');
+            const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as { extensionDependencies?: unknown };
+            assert.deepStrictEqual(manifest.extensionDependencies, [SOLUTION_EXTENSION_ID]);
+            // With the real extension in the test host its commands exist twice and its API answers in place of the stand-ins.
+            assert.match(fs.readFileSync(path.join(repoRoot, '.vscode-test.mjs'), 'utf8'), /^ {4}skipExtensionDependencies: true,$/m);
+        });
+    });
+
     suite('the seam', () => {
         test('version 3 is asked, and kept; its methods are found by name', async () => {
             const api = v3();

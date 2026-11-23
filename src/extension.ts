@@ -23,7 +23,8 @@
  * context for the Serial Monitor bridge (its `getApi` requires one), the agent and skill
  * manager, the documentation handlers and their commands, this window's
  * `WindowCoordinator` (the MCP router or a worker), the MCP server definition
- * for in-editor Copilot, agent-configuration migration, the update of the tool
+ * for in-editor Copilot, the notice of a CMSIS Solution extension that is too
+ * old (`src/solutionNotice.ts`), agent-configuration migration, the update of the tool
  * rules recorded in agents' rule files, the settings listener, the agent
  * commands, Select Target Window, the serial port's status-bar item and
  * Release Serial Port (#49), and the first-run setup two seconds later.
@@ -53,6 +54,7 @@ import { registerTargetDocsView } from './targetDocsView';
 import type { PackDocsHandlers } from './packDocsDispatch';
 import { createPackDocsHandlers, readPackDocsGates, tellAboutLegacyUserDocs } from './packDocsHost';
 import { registerSerialHandle } from './serialStatus';
+import { tellWhenSolutionTooOld, windowSolutionNoticeHost } from './solutionNotice';
 import { AgentConfigurationManager } from './utils/agentConfigurationManager';
 import { logger } from './utils/logger';
 import { notifyError, notifyWarning } from './utils/notify';
@@ -305,6 +307,8 @@ export async function activate(extensionContext: vscode.ExtensionContext): Promi
         // servers once, at its own activation, and never retries (Kimi Code's VS Code extension) must
         // find the port bound. The skill install alone took 0.7–1.7 s in the field, and that lost the race.
         await startCoordinator(extensionContext, active, packDocs, manager);
+        // Not awaited: the warning of a CMSIS Solution without API version 3 waits for the user's answer.
+        void tellWhenSolutionTooOld(windowSolutionNoticeHost(extensionContext));
         try {
             await manager.syncSkills('activation');
         } catch (failure) {

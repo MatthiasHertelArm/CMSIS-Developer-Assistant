@@ -11768,6 +11768,9 @@
           "onStartupFinished",
           "onDebug"
         ],
+        "extensionDependencies": [
+          "Arm.cmsis-csolution"
+        ],
         "mcpServerDefinitionProviders": [
           {
             "id": "cmsis-developer-assistant",
@@ -12284,6 +12287,10 @@
         {
           "ev": "registerMcpServerDefinitionProvider",
           "id": "cmsis-developer-assistant"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
         },
         {
           "ev": "call",
@@ -13371,6 +13378,10 @@
           "id": "cmsis-developer-assistant"
         },
         {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
           "ev": "call",
           "fn": "manager.syncSkills",
           "args": [
@@ -13893,6 +13904,10 @@
         {
           "ev": "error",
           "message": "CMSIS Developer Assistant could not start its MCP server: Error: injected coordinator start failure"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
         },
         {
           "ev": "call",
@@ -14502,6 +14517,1155 @@
       }
     },
     {
+      "id": "extension/activate-solution-too-old",
+      "about": "an active CMSIS Solution without API version 3 (1.72.0): the warning once the coordinator runs; Show CMSIS Solution opens its page",
+      "events": [
+        {
+          "ev": "step",
+          "name": "activate"
+        },
+        {
+          "ev": "call",
+          "fn": "readPackDocsGates",
+          "args": [],
+          "returned": "<object>"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.copyRecentProblems"
+        },
+        {
+          "ev": "call",
+          "fn": "registerSessionStateTracker",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "registerDebugAdapterTrackerFactory",
+          "type": "*"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
+          "ev": "call",
+          "fn": "registerToolchainPackRootInvalidation",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "subscribe",
+          "event": "extensions.onDidChange"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeConfiguration"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "call",
+          "fn": "new AgentConfigurationManager",
+          "args": [
+            "<context>",
+            60,
+            "<port>"
+          ]
+        },
+        {
+          "ev": "call",
+          "fn": "createPackDocsHandlers",
+          "args": [
+            "<context>",
+            60
+          ],
+          "returned": "<object>"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "call",
+          "fn": "registerPackDocsCommands",
+          "args": [
+            "<context>",
+            "<handlers returned by createPackDocsHandlers>"
+          ]
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.listTargetDocs"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.indexTargetDocs"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openPackDocsPanel"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
+          "ev": "createTreeView",
+          "id": "cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "subscribe",
+          "event": "treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.refresh"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.download"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.import"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.openSource"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.remove"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.dismiss"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.add"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "getExtension",
+          "id": "arm.cmsis-pack-docs"
+        },
+        {
+          "ev": "call",
+          "fn": "new WindowCoordinator",
+          "args": [
+            {
+              "port": "<port>",
+              "timeoutInSeconds": 60,
+              "hardwareTimeouts": {
+                "dapRequestMs": 10000,
+                "memoryReadMs": 30000
+              },
+              "serverOptions": {
+                "serialEnabled": true,
+                "packDocsEnabled": true,
+                "buildInfoEnabled": true,
+                "telemetry": {
+                  "jsonlPath": "<undefined>"
+                }
+              },
+              "packDocs": "<handlers returned by createPackDocsHandlers>"
+            }
+          ]
+        },
+        {
+          "ev": "call",
+          "fn": "coordinator.start",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
+          ]
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidStartDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "createStatusBarItem",
+          "id": "cmsis-developer-assistant.window",
+          "alignment": 2,
+          "priority": 100
+        },
+        {
+          "ev": "statusBarItem.show",
+          "id": "cmsis-developer-assistant.window",
+          "name": "CMSIS Developer Assistant",
+          "command": "cmsis-developer-assistant.selectTargetWindow",
+          "text": "$(cda-robot) R"
+        },
+        {
+          "ev": "settled",
+          "fn": "coordinator.start",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.updatePort",
+          "args": [
+            "<port>"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: MCP server listening at http://localhost:<port>"
+        },
+        {
+          "ev": "registerMcpServerDefinitionProvider",
+          "id": "cmsis-developer-assistant"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "warning",
+          "message": "CMSIS Developer Assistant: the CMSIS Solution extension 1.72.0 is too old. Build, load, run and target selection by an agent (cmsis_action, cmsis_query) need its API version 3, which a release after 1.72.0 brings; update CMSIS Solution to use them.",
+          "items": [
+            "Show CMSIS Solution",
+            "Don't Show Again"
+          ],
+          "answer": "Show CMSIS Solution"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.syncSkills",
+          "args": [
+            "activation"
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "extension.open",
+          "args": [
+            "Arm.cmsis-csolution"
+          ]
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.syncSkills",
+          "value": "<object>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.migrateExistingConfigurations",
+          "args": []
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.migrateExistingConfigurations",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.refreshAgentRules",
+          "args": []
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeConfiguration"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.configure"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.resetPopupState"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectTargetWindow"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.releaseSerialPort"
+        },
+        {
+          "ev": "setTimeout",
+          "ms": 2000
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "step",
+          "name": "deactivate"
+        },
+        {
+          "ev": "call",
+          "fn": "coordinator.dispose",
+          "args": []
+        },
+        {
+          "ev": "statusBarItem.dispose",
+          "id": "cmsis-developer-assistant.window"
+        },
+        {
+          "ev": "settled",
+          "fn": "coordinator.dispose",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "step",
+          "name": "deactivate again"
+        }
+      ],
+      "result": {
+        "activation": {
+          "resolved": "<undefined>",
+          "settingsRead": [
+            {
+              "key": "cmsis-developer-assistant.buildInfo.enabled",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
+              "fallback": 10000
+            },
+            {
+              "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
+              "fallback": 30000
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.documentService",
+              "fallback": "auto"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.enabled",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.extractor",
+              "fallback": "auto"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
+              "fallback": 150
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
+              "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.userDocsDir",
+              "fallback": ""
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.workspaceDocDirs",
+              "fallback": [
+                ".agent-artifacts/docs",
+                "docs"
+              ]
+            },
+            {
+              "key": "cmsis-developer-assistant.serial.enabled",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.serverPort",
+              "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.telemetry.jsonlPath",
+              "fallback": ""
+            },
+            {
+              "key": "cmsis-developer-assistant.timeoutInSeconds",
+              "fallback": 60
+            }
+          ],
+          "commands": [
+            "cmsis-developer-assistant.copyRecentProblems",
+            "cmsis-developer-assistant.listTargetDocs",
+            "cmsis-developer-assistant.indexTargetDocs",
+            "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.openKnowledgePanel",
+            "cmsis-developer-assistant.targetDocs.refresh",
+            "cmsis-developer-assistant.targetDocs.download",
+            "cmsis-developer-assistant.targetDocs.import",
+            "cmsis-developer-assistant.targetDocs.openSource",
+            "cmsis-developer-assistant.targetDocs.remove",
+            "cmsis-developer-assistant.targetDocs.dismiss",
+            "cmsis-developer-assistant.targetDocs.add",
+            "cmsis-developer-assistant.configure",
+            "cmsis-developer-assistant.resetPopupState",
+            "cmsis-developer-assistant.selectTargetWindow",
+            "cmsis-developer-assistant.releaseSerialPort"
+          ],
+          "registeredButNotContributed": [],
+          "contributedButNotRegistered": [],
+          "subscriptions": [
+            "<Object>",
+            "<Object>",
+            "command:cmsis-developer-assistant.copyRecentProblems",
+            "debugAdapterTrackerFactory:*",
+            "event:debug.onDidTerminateDebugSession",
+            "<Object>",
+            "event:extensions.onDidChange",
+            "event:workspace.onDidChangeConfiguration",
+            "event:debug.onDidTerminateDebugSession",
+            "<Object>",
+            "command:cmsis-developer-assistant.listTargetDocs",
+            "command:cmsis-developer-assistant.indexTargetDocs",
+            "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.openPackDocsPanel",
+            "command:cmsis-developer-assistant.openKnowledgePanel",
+            "<Object>",
+            "<Object>",
+            "event:treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments",
+            "command:cmsis-developer-assistant.targetDocs.refresh",
+            "command:cmsis-developer-assistant.targetDocs.download",
+            "command:cmsis-developer-assistant.targetDocs.import",
+            "command:cmsis-developer-assistant.targetDocs.openSource",
+            "command:cmsis-developer-assistant.targetDocs.remove",
+            "command:cmsis-developer-assistant.targetDocs.dismiss",
+            "command:cmsis-developer-assistant.targetDocs.add",
+            "event:workspace.onDidChangeWorkspaceFolders",
+            "event:debug.onDidStartDebugSession",
+            "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
+            "event:workspace.onDidChangeWorkspaceFolders",
+            "<Object>",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
+            "mcpServerDefinitionProvider:cmsis-developer-assistant",
+            "event:workspace.onDidChangeConfiguration",
+            "command:cmsis-developer-assistant.configure",
+            "command:cmsis-developer-assistant.resetPopupState",
+            "command:cmsis-developer-assistant.selectTargetWindow",
+            "<SerialStatus>",
+            "command:cmsis-developer-assistant.releaseSerialPort"
+          ],
+          "mcpServerDefinitionProviders": [
+            {
+              "id": "cmsis-developer-assistant",
+              "provideMcpServerDefinitions": "function",
+              "resolveMcpServerDefinition": "undefined",
+              "onDidChangeMcpServerDefinitions": "undefined",
+              "definitions": [
+                {
+                  "class": "McpHttpServerDefinition",
+                  "label": "CMSIS Developer Assistant",
+                  "uri": "http://localhost:<port>/mcp",
+                  "headers": "<undefined>",
+                  "version": "<SERVER_VERSION>"
+                }
+              ],
+              "secondCallEqual": true,
+              "sameUriObjectAcrossCalls": true
+            }
+          ],
+          "timers": [
+            2000
+          ],
+          "tmpdir": {
+            "cmsis-developer-assistant-registry/window-<pid>.json": {
+              "_note": "Internal to the CMSIS Developer Assistant. Agents: use the MCP tools list_debug_windows and select_debug_window.",
+              "controlPort": "<port>",
+              "controlToken": "<token>",
+              "workspaceFolders": [],
+              "name": "(no workspace)",
+              "hasActiveSession": false,
+              "role": "router",
+              "version": "<SERVER_VERSION>",
+              "pid": "<pid>",
+              "updatedAt": "<time>"
+            }
+          }
+        },
+        "deactivation": {
+          "resolved": "<undefined>",
+          "tmpdir": {},
+          "routerPortFreeAgain": true,
+          "second": {
+            "resolved": "<undefined>"
+          }
+        }
+      },
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v5": true
+      },
+      "files": {
+        "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
+        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>"
+      }
+    },
+    {
+      "id": "extension/activate-solution-too-old-silenced",
+      "about": "the same extension with the notice silenced for its version: no warning",
+      "events": [
+        {
+          "ev": "step",
+          "name": "activate"
+        },
+        {
+          "ev": "call",
+          "fn": "readPackDocsGates",
+          "args": [],
+          "returned": "<object>"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.copyRecentProblems"
+        },
+        {
+          "ev": "call",
+          "fn": "registerSessionStateTracker",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "registerDebugAdapterTrackerFactory",
+          "type": "*"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
+          "ev": "call",
+          "fn": "registerToolchainPackRootInvalidation",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "subscribe",
+          "event": "extensions.onDidChange"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeConfiguration"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "call",
+          "fn": "new AgentConfigurationManager",
+          "args": [
+            "<context>",
+            60,
+            "<port>"
+          ]
+        },
+        {
+          "ev": "call",
+          "fn": "createPackDocsHandlers",
+          "args": [
+            "<context>",
+            60
+          ],
+          "returned": "<object>"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "call",
+          "fn": "registerPackDocsCommands",
+          "args": [
+            "<context>",
+            "<handlers returned by createPackDocsHandlers>"
+          ]
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.listTargetDocs"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.indexTargetDocs"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.importUserDoc"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openPackDocsPanel"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.openKnowledgePanel"
+        },
+        {
+          "ev": "createTreeView",
+          "id": "cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "subscribe",
+          "event": "treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.refresh"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.download"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.import"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.openSource"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.remove"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.dismiss"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.targetDocs.add"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "getExtension",
+          "id": "arm.cmsis-pack-docs"
+        },
+        {
+          "ev": "call",
+          "fn": "new WindowCoordinator",
+          "args": [
+            {
+              "port": "<port>",
+              "timeoutInSeconds": 60,
+              "hardwareTimeouts": {
+                "dapRequestMs": 10000,
+                "memoryReadMs": 30000
+              },
+              "serverOptions": {
+                "serialEnabled": true,
+                "packDocsEnabled": true,
+                "buildInfoEnabled": true,
+                "telemetry": {
+                  "jsonlPath": "<undefined>"
+                }
+              },
+              "packDocs": "<handlers returned by createPackDocsHandlers>"
+            }
+          ]
+        },
+        {
+          "ev": "call",
+          "fn": "coordinator.start",
+          "args": [
+            "<context>"
+          ]
+        },
+        {
+          "ev": "executeCommand",
+          "id": "setContext",
+          "args": [
+            "cmsisDeveloperAssistant.hasSolution",
+            false
+          ]
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidStartDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidTerminateDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "debug.onDidChangeActiveDebugSession"
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeWorkspaceFolders"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidStartTaskProcess"
+        },
+        {
+          "ev": "subscribe",
+          "event": "tasks.onDidEndTaskProcess"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "createStatusBarItem",
+          "id": "cmsis-developer-assistant.window",
+          "alignment": 2,
+          "priority": 100
+        },
+        {
+          "ev": "statusBarItem.show",
+          "id": "cmsis-developer-assistant.window",
+          "name": "CMSIS Developer Assistant",
+          "command": "cmsis-developer-assistant.selectTargetWindow",
+          "text": "$(cda-robot) R"
+        },
+        {
+          "ev": "settled",
+          "fn": "coordinator.start",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.updatePort",
+          "args": [
+            "<port>"
+          ]
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: MCP server listening at http://localhost:<port>"
+        },
+        {
+          "ev": "registerMcpServerDefinitionProvider",
+          "id": "cmsis-developer-assistant"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.syncSkills",
+          "args": [
+            "activation"
+          ]
+        },
+        {
+          "ev": "skillSync",
+          "call": 1,
+          "install": [
+            "<w>/home/.agents/skills"
+          ],
+          "sweepOnly": [
+            "<w>/home/.copilot/skills"
+          ],
+          "explicit": [
+            "fx-broken",
+            "fx-help"
+          ],
+          "implied": []
+        },
+        {
+          "ev": "skillSyncDone",
+          "call": 1,
+          "report": {
+            "installed": [
+              "<w>/home/.agents/skills/fx-help"
+            ],
+            "removed": [],
+            "skippedForeign": [],
+            "failed": [
+              "<w>/home/.agents/skills/fx-broken: bundled skill missing at <ext>/skills/cmsis-skills/fx-broken"
+            ]
+          }
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.syncSkills",
+          "value": "<object>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.migrateExistingConfigurations",
+          "args": []
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.migrateExistingConfigurations",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "call",
+          "fn": "manager.refreshAgentRules",
+          "args": []
+        },
+        {
+          "ev": "subscribe",
+          "event": "workspace.onDidChangeConfiguration"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.configure"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.resetPopupState"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.selectTargetWindow"
+        },
+        {
+          "ev": "registerCommand",
+          "id": "cmsis-developer-assistant.releaseSerialPort"
+        },
+        {
+          "ev": "setTimeout",
+          "ms": 2000
+        },
+        {
+          "ev": "settled",
+          "fn": "manager.refreshAgentRules",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "step",
+          "name": "deactivate"
+        },
+        {
+          "ev": "call",
+          "fn": "coordinator.dispose",
+          "args": []
+        },
+        {
+          "ev": "statusBarItem.dispose",
+          "id": "cmsis-developer-assistant.window"
+        },
+        {
+          "ev": "settled",
+          "fn": "coordinator.dispose",
+          "value": "<undefined>"
+        },
+        {
+          "ev": "step",
+          "name": "deactivate again"
+        }
+      ],
+      "result": {
+        "activation": {
+          "resolved": "<undefined>",
+          "settingsRead": [
+            {
+              "key": "cmsis-developer-assistant.buildInfo.enabled",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.dapRequestTimeoutMs",
+              "fallback": 10000
+            },
+            {
+              "key": "cmsis-developer-assistant.memoryReadTimeoutMs",
+              "fallback": 30000
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.documentService",
+              "fallback": "auto"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.enabled",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.extractor",
+              "fallback": "auto"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.includeUnlisted",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.inventoryRequests",
+              "fallback": false
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.maxPdfMb",
+              "fallback": 150
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.pdftotextPath",
+              "fallback": "pdftotext"
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.userDocsDir",
+              "fallback": ""
+            },
+            {
+              "key": "cmsis-developer-assistant.packDocs.workspaceDocDirs",
+              "fallback": [
+                ".agent-artifacts/docs",
+                "docs"
+              ]
+            },
+            {
+              "key": "cmsis-developer-assistant.serial.enabled",
+              "fallback": true
+            },
+            {
+              "key": "cmsis-developer-assistant.serverPort",
+              "fallback": 3001
+            },
+            {
+              "key": "cmsis-developer-assistant.telemetry.jsonlPath",
+              "fallback": ""
+            },
+            {
+              "key": "cmsis-developer-assistant.timeoutInSeconds",
+              "fallback": 60
+            }
+          ],
+          "commands": [
+            "cmsis-developer-assistant.copyRecentProblems",
+            "cmsis-developer-assistant.listTargetDocs",
+            "cmsis-developer-assistant.indexTargetDocs",
+            "cmsis-developer-assistant.importUserDoc",
+            "cmsis-developer-assistant.openPackDocsPanel",
+            "cmsis-developer-assistant.openKnowledgePanel",
+            "cmsis-developer-assistant.targetDocs.refresh",
+            "cmsis-developer-assistant.targetDocs.download",
+            "cmsis-developer-assistant.targetDocs.import",
+            "cmsis-developer-assistant.targetDocs.openSource",
+            "cmsis-developer-assistant.targetDocs.remove",
+            "cmsis-developer-assistant.targetDocs.dismiss",
+            "cmsis-developer-assistant.targetDocs.add",
+            "cmsis-developer-assistant.configure",
+            "cmsis-developer-assistant.resetPopupState",
+            "cmsis-developer-assistant.selectTargetWindow",
+            "cmsis-developer-assistant.releaseSerialPort"
+          ],
+          "registeredButNotContributed": [],
+          "contributedButNotRegistered": [],
+          "subscriptions": [
+            "<Object>",
+            "<Object>",
+            "command:cmsis-developer-assistant.copyRecentProblems",
+            "debugAdapterTrackerFactory:*",
+            "event:debug.onDidTerminateDebugSession",
+            "<Object>",
+            "event:extensions.onDidChange",
+            "event:workspace.onDidChangeConfiguration",
+            "event:debug.onDidTerminateDebugSession",
+            "<Object>",
+            "command:cmsis-developer-assistant.listTargetDocs",
+            "command:cmsis-developer-assistant.indexTargetDocs",
+            "command:cmsis-developer-assistant.importUserDoc",
+            "command:cmsis-developer-assistant.openPackDocsPanel",
+            "command:cmsis-developer-assistant.openKnowledgePanel",
+            "<Object>",
+            "<Object>",
+            "event:treeView.onDidChangeVisibility:cmsisDeveloperAssistant.targetDocuments",
+            "command:cmsis-developer-assistant.targetDocs.refresh",
+            "command:cmsis-developer-assistant.targetDocs.download",
+            "command:cmsis-developer-assistant.targetDocs.import",
+            "command:cmsis-developer-assistant.targetDocs.openSource",
+            "command:cmsis-developer-assistant.targetDocs.remove",
+            "command:cmsis-developer-assistant.targetDocs.dismiss",
+            "command:cmsis-developer-assistant.targetDocs.add",
+            "event:workspace.onDidChangeWorkspaceFolders",
+            "event:debug.onDidStartDebugSession",
+            "event:debug.onDidTerminateDebugSession",
+            "event:debug.onDidChangeActiveDebugSession",
+            "event:workspace.onDidChangeWorkspaceFolders",
+            "<Object>",
+            "event:tasks.onDidStartTaskProcess",
+            "event:tasks.onDidEndTaskProcess",
+            "mcpServerDefinitionProvider:cmsis-developer-assistant",
+            "event:workspace.onDidChangeConfiguration",
+            "command:cmsis-developer-assistant.configure",
+            "command:cmsis-developer-assistant.resetPopupState",
+            "command:cmsis-developer-assistant.selectTargetWindow",
+            "<SerialStatus>",
+            "command:cmsis-developer-assistant.releaseSerialPort"
+          ],
+          "mcpServerDefinitionProviders": [
+            {
+              "id": "cmsis-developer-assistant",
+              "provideMcpServerDefinitions": "function",
+              "resolveMcpServerDefinition": "undefined",
+              "onDidChangeMcpServerDefinitions": "undefined",
+              "definitions": [
+                {
+                  "class": "McpHttpServerDefinition",
+                  "label": "CMSIS Developer Assistant",
+                  "uri": "http://localhost:<port>/mcp",
+                  "headers": "<undefined>",
+                  "version": "<SERVER_VERSION>"
+                }
+              ],
+              "secondCallEqual": true,
+              "sameUriObjectAcrossCalls": true
+            }
+          ],
+          "timers": [
+            2000
+          ],
+          "tmpdir": {
+            "cmsis-developer-assistant-registry/window-<pid>.json": {
+              "_note": "Internal to the CMSIS Developer Assistant. Agents: use the MCP tools list_debug_windows and select_debug_window.",
+              "controlPort": "<port>",
+              "controlToken": "<token>",
+              "workspaceFolders": [],
+              "name": "(no workspace)",
+              "hasActiveSession": false,
+              "role": "router",
+              "version": "<SERVER_VERSION>",
+              "pid": "<pid>",
+              "updatedAt": "<time>"
+            }
+          }
+        },
+        "deactivation": {
+          "resolved": "<undefined>",
+          "tmpdir": {},
+          "routerPortFreeAgain": true,
+          "second": {
+            "resolved": "<undefined>"
+          }
+        }
+      },
+      "globalState": {
+        "cmsis-developer-assistant.popupShown.v5": true,
+        "cmsis-developer-assistant.solutionTooOld.silencedVersion": "1.72.0"
+      },
+      "files": {
+        "home/.agents/skills/fx-help/.cmsis-developer-assistant.json": "<marker> {\"name\":\"fx-help\",\"source\":\"bundled\",\"sha\":\"0.0.0-fixture\",\"extensionVersion\":\"0.0.0-fixture\",\"installedAt\":\"<time>\",\"hidden\":false}",
+        "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>"
+      }
+    },
+    {
       "id": "extension/activate-absolute-telemetry",
       "about": "absolute telemetry path (trimmed) and the timer with the popup already answered, no agents",
       "events": [
@@ -14757,6 +15921,10 @@
         {
           "ev": "registerMcpServerDefinitionProvider",
           "id": "cmsis-developer-assistant"
+        },
+        {
+          "ev": "getExtension",
+          "id": "Arm.cmsis-csolution"
         },
         {
           "ev": "call",

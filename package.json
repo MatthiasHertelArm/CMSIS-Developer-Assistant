@@ -45,7 +45,9 @@
     "AI",
     "Programming Languages"
   ],
-  "extensionDependencies": [],
+  "extensionDependencies": [
+    "Arm.cmsis-csolution"
+  ],
   "extensionPack": [],
   "repository": {
     "type": "git",

@@ -172,6 +172,30 @@ export interface HandlerHost {
 
 let defaultPortReservations: GdbPortReservations | undefined;
 
+/**
+ * The CMSIS Solution extension of this VS Code, as the API seam takes it
+ * (`src/core/solutionApi.ts`); undefined when it is not installed. Whether
+ * it is active and what it exports are read at each use: activation changes
+ * both.
+ */
+export function installedSolutionExtension(): SolutionExtensionHandle | undefined {
+    const found = vscode.extensions.getExtension(SOLUTION_EXTENSION_ID);
+    if (!found) {
+        return undefined;
+    }
+    const version: unknown = (found.packageJSON as { version?: unknown } | undefined)?.version;
+    return {
+        get isActive(): boolean {
+            return found.isActive;
+        },
+        get exports(): unknown {
+            return found.exports;
+        },
+        version: typeof version === 'string' ? version : undefined,
+        activate: () => found.activate(),
+    };
+}
+
 /** The key under `terminal.integrated.env` per platform. */
 const TERMINAL_ENV_KEY: Partial<Record<NodeJS.Platform, string>> = { win32: 'windows', darwin: 'osx', linux: 'linux' };
 
@@ -236,24 +260,7 @@ export const VSCODE_HOST: HandlerHost = {
     },
     openFolder:(folder, newWindow) => vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: newWindow }),
     packInstall: () => VSCODE_PACK_INSTALL_HOST,
-    solutionExtension: () => {
-        const found = vscode.extensions.getExtension(SOLUTION_EXTENSION_ID);
-        if (!found) {
-            return undefined;
-        }
-        const version: unknown = (found.packageJSON as { version?: unknown } | undefined)?.version;
-        // Read at each use: activation changes both.
-        return {
-            get isActive(): boolean {
-                return found.isActive;
-            },
-            get exports(): unknown {
-                return found.exports;
-            },
-            version: typeof version === 'string' ? version : undefined,
-            activate: () => found.activate(),
-        };
-    },
+    solutionExtension: () => installedSolutionExtension(),
     gdbPortHolder: (port) => findGdbPortHolder(port, []),
     reserveGdbPort: (port, start, group, takeOver) => {
         defaultPortReservations ??= new GdbPortReservations();

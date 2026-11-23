@@ -806,7 +806,11 @@ the seam: the extension missing is the bootstrap refusal
 version 3 or a version 3 without a catalog method is `TOOL_DISABLED` with
 the hint to update: a CMSIS Solution that offers version 2 only (1.72.0 and
 older) is too old for every call through this seam, and
-`get_session_status` says so in a line (`solutionTooOldLine()`). One API
+`get_session_status` says so in a line (`solutionTooOldLine()`). The user
+learns it from a warning each window shows at activation
+(`solutionTooOldNotice()`, shown by `src/solutionNotice.ts`): the manifest
+names CMSIS Solution as an extension dependency, which brings the extension
+but cannot ask for a version of it. One API
 object is kept per extension, since `getApi` makes a new one per call. The
 four catalog methods version 3 keeps from version 2 are required; every
 method version 3 added is optional and found by

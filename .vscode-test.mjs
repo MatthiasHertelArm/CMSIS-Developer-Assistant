@@ -18,8 +18,12 @@
 // by its name). The suites are the tsc output that `pretest` compiles; they
 // run in the stable VS Code against the extension in this directory, whose
 // entry point is the bundle in dist/. Before the first suite the window's
-// Output view opens on the extension's log. Everything not set here keeps the
-// test-cli default (tdd interface, no workspace).
+// Output view opens on the extension's log. VS Code does not activate the
+// extension in this run: its dependency, CMSIS Solution, is left out (see
+// `skipExtensionDependencies` below), and the suites call the modules
+// directly; test/transport/config-scenarios.js is the check of activation.
+// Everything not set here keeps the test-cli default (tdd interface, no
+// workspace).
 
 import { defineConfig } from '@vscode/test-cli';
 
@@ -48,6 +52,10 @@ const revealLog = './out/src/test/revealLog.js';
 const testRun = {
     files: compiledSuites,
     launchArgs: profileArgs,
+    // The manifest names CMSIS Solution as an extension dependency, and the test CLI would install it
+    // (with the extensions of its extension pack) from the Marketplace into .vscode-test/extensions. The
+    // suites serve their own stand-ins of it and expect a VS Code without it, so it stays out.
+    skipExtensionDependencies: true,
     mocha: { timeout: perTestLimitMs, require: [revealLog] },
     coverage: { reporter: ['lcov', 'text'], output: './coverage' },
 };

@@ -36,7 +36,7 @@ Download the `cmsis-developer-assistant-<platform>-<version>.vsix` for your host
 code --install-extension cmsis-developer-assistant-<platform>-<version>.vsix
 ```
 
-Reload the VS Code window afterwards. To build the extension from source, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+Reload the VS Code window afterwards. VS Code installs the Arm CMSIS Solution extension together with the assistant, which names it as an extension dependency; for that the Marketplace (or Open VSX, in an editor that uses it) has to be reachable, unless CMSIS Solution is installed already. To build the extension from source, see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ### Connecting an AI agent
 
@@ -52,7 +52,7 @@ For other agents, the extension shows a two-step setup on first activation: step
 
 You do not need an open project to begin. In a VS Code window without a folder the extension is active, the MCP server answers, and an agent can take it from there. Ask it, for example: _"I have an STM32H735G-DK on my desk. Create a Blinky project for it in ~/Projects and stop at `main`."_ The agent then follows the `cmsis-bootstrap` procedure of the knowledge index (`proc-cmsis-bootstrap`; `/cmsis-help` and `knowledge_search` lead to it):
 
-1. **Extensions.** The agent checks that the CMSIS Solution and CMSIS Debugger extensions are installed and asks you to install the [Keil Studio Pack](https://marketplace.visualstudio.com/items?itemName=Arm.keil-studio-pack) when they are not.
+1. **Extensions.** The agent checks that the CMSIS Solution and CMSIS Debugger extensions are installed and asks you to install the [Keil Studio Pack](https://marketplace.visualstudio.com/items?itemName=Arm.keil-studio-pack) when they are not. CMSIS Solution comes with the assistant; the CMSIS Debugger does not.
 2. **Questions.** It asks for the board, the folder, and, where you have a preference, the compiler and the debug probe.
 3. **Tools.** It writes a `vcpkg-configuration.json` into the new folder. The Arm Tools Environment Manager fetches the tools it names when the folder opens; its download and licence prompts are yours to answer.
 4. **Project.** It resolves the board to its packs and creates the solution from an example of the board's pack, a template of the pack, or a minimal project, and builds it once. This step is the `start-cmsis-project` procedure (`proc-start-cmsis-project`): a minimal project (CMSIS CORE, the DFP's startup component, a bare `main`) that every device with a DFP can have, with Arm Compiler 6 unless you prefer another compiler, or an example or template of the board's pack when the tools can list them. The agent needs no shell for it.
@@ -479,7 +479,7 @@ Claude Desktop only supports stdio MCP servers and is connected through `mcp-rem
 
 - **Visual Studio Code** 1.109.0 or newer.
 - **Arm CMSIS Debugger** extension for Cortex-M targets, together with a debug probe supported by pyOCD (CMSIS-DAP, ST-Link) or a SEGGER® J-LINK® with the J-Link software installed. The **Arm CMSIS Solution** extension generates the debug configuration.
-- **Arm CMSIS Solution** with its API version 3, which a release after 1.72.0 brings, for `cmsis_query` and `cmsis_action`: the extension reads the active solution and target, builds, switches the target and installs packs through that API. With 1.72.0 or older both tools are refused with the hint to update the extension (only `cmsis_action status`, and `open_solution` for a folder that is not open yet, still answer), and `get_session_status` says in a line that it is too old. `flash`, the debugging tools and the documentation and build-artefact tools work with 1.72.0.
+- **Arm CMSIS Solution**, which VS Code installs with the assistant and starts before it, in every window: the assistant names it as an extension dependency and does not start in a VS Code where CMSIS Solution is uninstalled, disabled or fails to start. A dependency cannot ask for a version, and the assistant needs API version 3 of CMSIS Solution, which a release after 1.72.0 brings, for `cmsis_query` and `cmsis_action`: the extension reads the active solution and target, builds, switches the target and installs packs through that API. With 1.72.0 or older both tools are refused with the hint to update the extension (only `cmsis_action status`, and `open_solution` for a folder that is not open yet, still answer), `get_session_status` says in a line that it is too old, and each window says so at start-up in a warning: **Show CMSIS Solution** opens its page in the Extensions view, **Don't Show Again** silences the warning for that version of CMSIS Solution. `flash`, the debugging tools and the documentation and build-artefact tools work with 1.72.0.
 - **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, or Kimi Code.
 - **pyOCD** for the `flash` tool comes with the Arm CMSIS Debugger (`tools/pyocd`); `flash` otherwise takes the one the solution's `.cmsis/tools-environment.yml` or the `PATH` names. `cmsis_action load` programs the device through the CMSIS Solution extension instead.
 - **Node.js** with `npx` only for Claude Desktop (stdio bridge).

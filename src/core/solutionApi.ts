@@ -456,6 +456,21 @@ export function solutionTooOldLine(handle: SolutionExtensionHandle | undefined):
 }
 
 /**
+ * What the window tells its user at activation when the CMSIS Solution
+ * extension is too old (`solutionApiTooOld`), after the product's name;
+ * undefined otherwise. In the user's words: the tool names only say where an
+ * agent meets the refusal.
+ */
+export function solutionTooOldNotice(handle: SolutionExtensionHandle | undefined): string | undefined {
+    if (handle === undefined || !solutionApiTooOld(handle)) {
+        return undefined;
+    }
+    return `the CMSIS Solution extension${versionText(handle)} is too old. Build, load, run and target selection by an agent `
+        + `(cmsis_action, cmsis_query) need its API version ${SOLUTION_API_VERSION}, which a release after 1.72.0 brings; `
+        + 'update CMSIS Solution to use them.';
+}
+
+/**
  * The refusal of a call that needs the extension's active solution, for a
  * CMSIS Solution that is too old (`solutionApiTooOld`): its getters are
  * part of API version 3. `what` names the call.

@@ -2192,6 +2192,7 @@ function packageContributions() {
     return {
         main: pkg.main,
         activationEvents: pkg.activationEvents,
+        extensionDependencies: pkg.extensionDependencies,
         mcpServerDefinitionProviders: c.mcpServerDefinitionProviders,
         commands: (c.commands ?? []).map((cmd) => ({ command: cmd.command, title: cmd.title, category: cmd.category })),
         commandPalette: c.menus?.commandPalette ?? [],
@@ -2220,6 +2221,23 @@ function fakeSerialMonitor() {
         activate: async () => extension.exports,
     };
     return { extension, requests };
+}
+
+/** CMSIS Solution 1.72.0, active: its `getApi` knows version 2 and throws for any other, as the release does. */
+function oldSolutionExtension() {
+    const extension = {
+        id: 'Arm.cmsis-csolution',
+        isActive: true,
+        packageJSON: { version: '1.72.0' },
+        exports: {
+            getApi(asked) {
+                if (asked !== 2) { throw new Error(`No API version ${asked} found`); }
+                return { getBoards: async () => [], getDevices: async () => [], getDraftProjects: async () => [], createNewSolution: async () => undefined };
+            },
+        },
+        activate: async () => extension.exports,
+    };
+    return extension;
 }
 
 /**
@@ -2355,6 +2373,41 @@ function extensionScenarios() {
                 await configChange(['cmsis-developer-assistant.agentRules.install']);
                 await fireTimer();
                 out.deactivation = await deactivateRecorded(ext);
+                return out;
+            },
+        },
+        {
+            id: 'extension/activate-solution-too-old', about: 'an active CMSIS Solution without API version 3 (1.72.0): the warning once the coordinator runs; Show CMSIS Solution opens its page',
+            state: { [POPUP_KEY]: true },
+            ui: {
+                extension: (id) => (id === 'Arm.cmsis-csolution' ? oldSolutionExtension() : undefined),
+                message: (ev) => (/CMSIS Solution extension 1\.72\.0 is too old/.test(ev.message) ? ev.items.indexOf('Show CMSIS Solution') : undefined),
+            },
+            run: async (h) => {
+                clearTmp();
+                const port = await freePort();
+                PORTS.add(port);
+                S.settings.global.set(SETTING('serverPort'), port);
+                const { ext, m } = loadExtension();
+                const out = { activation: await activateRecorded(h, ext, m) };
+                out.deactivation = await deactivateRecorded(ext, port);
+                return out;
+            },
+        },
+        {
+            id: 'extension/activate-solution-too-old-silenced', about: 'the same extension with the notice silenced for its version: no warning',
+            state: { [POPUP_KEY]: true, 'cmsis-developer-assistant.solutionTooOld.silencedVersion': '1.72.0' },
+            ui: {
+                extension: (id) => (id === 'Arm.cmsis-csolution' ? oldSolutionExtension() : undefined),
+            },
+            run: async (h) => {
+                clearTmp();
+                const port = await freePort();
+                PORTS.add(port);
+                S.settings.global.set(SETTING('serverPort'), port);
+                const { ext, m } = loadExtension();
+                const out = { activation: await activateRecorded(h, ext, m) };
+                out.deactivation = await deactivateRecorded(ext, port);
                 return out;
             },
         },

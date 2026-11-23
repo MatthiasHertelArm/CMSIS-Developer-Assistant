@@ -68,6 +68,8 @@ Smaller parts: `src/serialHandler.ts` with `src/core/serialController.ts`,
 `serial_*` tools and when a held port is released;
 [docs/architecture/serial.md](docs/architecture/serial.md));
 `src/utils/sessionStateTracker.ts` (which session is active, stop events);
+`src/solutionNotice.ts` (the warning at activation for a CMSIS Solution
+without API version 3);
 `src/cmsisJobTracker.ts` (the window's CMSIS tasks, the `cmsis_action` jobs
 and what holds the probe); `src/runOutputCapture.ts` with
 `src/core/runOutput.ts` (what the CMSIS Run task printed, as VS Code reports
@@ -89,6 +91,15 @@ the agent guide), where most modules do not import `vscode` at all.
   workspace with a `*.csolution.yml`. It binds the MCP endpoint before it
   installs the skill or migrates agent files: Kimi Code's VS Code extension
   connects once, at its own activation, and never retries.
+- **Extension dependency:** the manifest names CMSIS Solution
+  (`Arm.cmsis-csolution`) in `extensionDependencies`. VS Code installs it
+  with the extension and activates it first, in every window, so
+  `activate()` starts when CMSIS Solution's has resolved (0.06 to 0.1 s
+  later in a window that has started before, 2.6 s at the first start after
+  CMSIS Solution was installed; 1.72.0 on macOS, 2026-11-23) and not at all
+  where CMSIS Solution is missing, disabled or fails to activate. A manifest
+  cannot ask for a version: `src/solutionNotice.ts` warns at activation when
+  the extension offers no API version 3.
 - **MCP endpoint:** `http://localhost:{serverPort}/mcp` (port 3001 by
   default), Streamable HTTP, bound to 127.0.0.1. The legacy `/sse` route
   answers 410.
@@ -106,7 +117,7 @@ the agent guide), where most modules do not import `vscode` at all.
 | `npm run package` | `build`, then a platform-specific VSIX (`scripts/package.ts`) |
 | `npm run lint` | ESLint over `src/` |
 | `npm run lint:md` | markdownlint over the repository's Markdown with `.github/markdownlint.jsonc` (`docs/architecture/`, `CHANGELOG.md` and build folders are skipped) |
-| `npm test` | Compile and lint first (`pretest`), then run `src/test/*.test.ts` inside VS Code with `vscode-test`, coverage into `coverage/`. The test window opens its Output view on the extension's log (`src/test/revealLog.ts`) |
+| `npm test` | Compile and lint first (`pretest`), then run `src/test/*.test.ts` inside VS Code with `vscode-test`, coverage into `coverage/`. The test window opens its Output view on the extension's log (`src/test/revealLog.ts`). The run does not install the manifest's extension dependency (`skipExtensionDependencies` in `.vscode-test.mjs`): the suites serve stand-ins of CMSIS Solution and expect a VS Code without it. VS Code therefore does not activate the extension in this run, the suites call the modules directly, and `config-scenarios.js` is the check of `activate()` |
 | `npm run test:transport` | Compile, then `test/transport/session-lifecycle.js` and `test/transport/two-window-routing.js` over real sockets |
 | `npm run test:surface` | Compile, then compare everything an agent can see without hardware — the initialize result, `tools/list`, the resources and each tool's reply without a session — with `test/transport/surface.snapshot.json`. Pass `-- --update` only for an intended change. The snapshot depends on the host, so this is a local check, not a CI job |
 | `npm run provenance:check` | Per file, the lines shared with microsoft/DebugMCP (clones it once, so it needs network the first time). With `-- --gate` it fails when a gated file — any path DebugMCP ever had, or any file added since the rewrite began, unless it still carries the Microsoft line or is on the script's exemption list — contains more than five lines found anywhere in DebugMCP's history. `-- --lines <file>` prints DebugMCP text; do not use it while writing independent code |
