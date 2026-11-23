@@ -502,6 +502,33 @@ suite('CMSIS Solution catalog: cmsis_query and create_solution', () => {
             assert.deepStrictEqual([handle.activations, handle.asked], [1, 1]);
         });
 
+        test('the exports of an inactive extension are read only after its activation: VS Code throws for them before', async () => {
+            const api = catalogApi();
+            let active = false;
+            let activations = 0;
+            const handle: SolutionExtensionHandle = {
+                get isActive(): boolean {
+                    return active;
+                },
+                // As VS Code does for an extension that is not active.
+                get exports(): unknown {
+                    if (!active) {
+                        throw new Error('Extension \'Arm.cmsis-csolution\' is not known or not activated');
+                    }
+                    return { getApi: () => api };
+                },
+                version: '1.72.1',
+                // Resolves without a value, so that the exports are what the seam reads afterwards.
+                activate: async (): Promise<unknown> => {
+                    activations++;
+                    active = true;
+                    return undefined;
+                },
+            };
+            assert.strictEqual(await acquireSolutionApi(handle, WHAT, CLOCK), api);
+            assert.strictEqual(activations, 1);
+        });
+
         test('an activation that fails is TASK_FAILED, one that does not end TIMEOUT', async () => {
             const failing = { ...installed(catalogApi(), { active: false }), activate: () => Promise.reject(new Error('cmsis-toolbox missing')) };
             const failed = await refusalOf(acquireSolutionApi(failing, WHAT, CLOCK), 'TASK_FAILED');

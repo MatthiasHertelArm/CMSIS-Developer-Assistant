@@ -257,6 +257,7 @@ export type SolutionApi = SolutionApiV2 & Partial<SolutionApiV3Methods>;
 /** The CMSIS Solution extension as `vscode.extensions.getExtension` describes it. */
 export interface SolutionExtensionHandle {
     readonly isActive: boolean;
+    /** To be read only while `isActive`: VS Code throws for the exports of an extension that is not active. */
     readonly exports: unknown;
     readonly version?: string;
     /** Activates the extension; resolves with its exports. */
@@ -342,8 +343,11 @@ export async function acquireSolutionApi(
     if (handle === undefined) {
         throw missingSolutionExtensionRefusal(what);
     }
-    let exported: unknown = handle.exports;
-    if (!handle.isActive) {
+    // VS Code throws for the exports of an extension that is not active: they are read only once it is.
+    let exported: unknown;
+    if (handle.isActive) {
+        exported = handle.exports;
+    } else {
         let activated: { value: unknown } | undefined;
         try {
             activated = await settleWithin(handle.activate(), activationMs, clock);
