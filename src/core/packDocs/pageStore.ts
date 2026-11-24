@@ -15,23 +15,41 @@
  */
 
 /**
- * On-disk cache of extracted pages and their index:
+ * On-disk cache of extracted pages and their index, three sidecars per
+ * document:
  *
- *   <storageDir>/<vendor>/<pack>/<version>/<file slug>.pages.jsonl   {p, heading, text} per line
- *   <storageDir>/<vendor>/<pack>/<version>/<file slug>.meta.json     size, mtime, sha256, page count …
- *   <storageDir>/<vendor>/<pack>/<version>/<file slug>.idx.json      DocIndex
- *   <storageDir>/workspace/<folder hash>/<file slug>.*               workspace PDFs
- *   <storageDir>/user/<folder hash>/<file slug>.*                    user documents (NDA manuals etc.)
+ *   <file name>.pages.jsonl   {p, heading, text} per line
+ *   <file name>.meta.json     the file, its size, mtime, sha256, page count …
+ *   <file name>.idx.json      DocIndex
+ *
+ * With an index root, which the extension sets to CMSIS Solution's document
+ * folder (`~/.cmsis/docs`), they lie there:
+ *
+ *   <copy folder>/                    beside the copy of a document kept in that folder, or
+ *                                     kept by the document service for the user: they go when
+ *                                     the copy is replaced or removed
+ *   <index root>/<Vendor>/<Name>/<base>/ …   in the folder CMSIS Solution names for the document
+ *                                     (`indexDir.ts`), for a file that lies elsewhere: a PDF
+ *                                     of a pack, a file of a project
+ *
+ * Two files of one name would share such a folder: the one that comes
+ * second, while the first is still there, gets `<base>-<hash of its path>`.
+ * In the index root the store creates folders, writes and removes its three
+ * sidecars and removes a folder it emptied; it never removes anything else
+ * there. The roots the service keeps copies under are registered (`addRoot`)
+ * so the listing and the clear operations find their sidecars too.
+ *
+ * The storage directory, the extension's own, holds the layout of earlier
+ * releases. It is what a store without an index root uses (the tests), and
+ * the fallback for a folder that cannot be written; sidecars found there
+ * move to the document's place on first use. It also holds what the retired
+ * download path left (`arm/`, `web/`), until the move to the document
+ * service takes it (`legacyMigration.ts`).
+ *
+ *   <storageDir>/<vendor>/<pack>/<version>/<file slug>.*   pack PDFs
+ *   <storageDir>/workspace/<folder hash>/<file slug>.*     workspace PDFs
+ *   <storageDir>/user/<folder hash>/<file slug>.*          user documents
  *   <storageDir>/web/<id path>/doc.{pdf,pages.jsonl,meta.json,idx.json} + fetch.json   fetched web documents
- *   <copy folder>/<file slug>.*                                      a document the document service keeps
- *
- * A document the document service keeps (a user document or a download,
- * not a project document) is extracted in place: its sidecars sit next to
- * the service's copy, so they go when the service replaces or removes the
- * copy. A folder that cannot be written falls back to the layout above, and
- * sidecars found there are moved next to the copy on first use. The roots
- * the service keeps copies under are registered (`addRoot`) so the listing
- * and the clear operations find these sidecars too.
  *
  * A document is re-extracted when its size or mtime changed. Concurrent
  * requests for the same document share one extraction. The store never
@@ -45,6 +63,7 @@ import { lookupArmDoc, parseArmDocId } from './armDocs';
 import { DocIndex, INDEX_VERSION, buildIndex } from './bm25Index';
 import { detectHeading } from './headings';
 import { PackDocsLog, silentLog } from './host';
+import { indexDirOf } from './indexDir';
 import { DocRef, DocSource, slug } from './pdscBooks';
 import { PdfExtractor } from './pdfExtract';
 
@@ -105,7 +124,11 @@ export interface CachedDoc {
     fetch?: FetchRecord;
 }
 
-/** Provenance of a fetched web document (`fetch.json` next to the download). */
+/**
+ * Provenance of a web document the retired path fetched (`fetch.json` next
+ * to the download). Nothing writes one any more; `html` marked a document
+ * found to be HTML only, which the document service records now.
+ */
 export interface FetchRecord {
     version: 1;
     docId: string;
@@ -178,6 +201,40 @@ function realDir(dir: string): string {
     }
 }
 
+/** Whether two paths name one file: the same text, or the same file as the file system spells it (a link, another case). */
+function sameFile(a: string, b: string): boolean {
+    if (path.resolve(a) === path.resolve(b)) {
+        return true;
+    }
+    try {
+        return fs.realpathSync.native(a) === fs.realpathSync.native(b);
+    } catch {
+        return false;
+    }
+}
+
+/** Whether `file` lies below `dir`. */
+function inside(dir: string, file: string): boolean {
+    const relative = path.relative(path.resolve(dir), path.resolve(file));
+    return relative.length > 0 && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+/** Whether `dir` can be written, or made: the nearest folder that exists decides. */
+function canHold(dir: string): boolean {
+    for (let at = path.resolve(dir); ;) {
+        try {
+            fs.accessSync(at, fs.constants.W_OK);
+            return fs.statSync(at).isDirectory();
+        } catch (caught) {
+            const up = path.dirname(at);
+            if ((caught as NodeJS.ErrnoException).code !== 'ENOENT' || up === at) {
+                return false;
+            }
+            at = up;
+        }
+    }
+}
+
 /** 12 hex characters of sha1 — enough to keep two workspace folders apart. */
 export function shortHash(text: string): string {
     return crypto.createHash('sha1').update(text).digest('hex').slice(0, 12);
@@ -207,19 +264,29 @@ export class PageStore {
     /** Folders outside the storage directory that hold sidecars next to the document service's copies. */
     private readonly roots = new Set<string>();
 
-    constructor(private readonly storageDir: string, private readonly log: PackDocsLog = silentLog) { }
+    /**
+     * `storageDir`: the extension's own store. `indexRoot`: CMSIS Solution's
+     * document folder, where the index of every document goes that has a
+     * place there; without it everything lies in the storage directory.
+     */
+    constructor(private readonly storageDir: string, private readonly log: PackDocsLog = silentLog, private readonly indexRoot?: string) { }
 
     /** The storage directory (for diagnostics). */
     get dir(): string { return this.storageDir; }
+
+    /** The index root, when the store has one (for diagnostics). */
+    get indexDir(): string | undefined { return this.indexRoot; }
 
     /** Register a folder the document service keeps its copies under, for the listing and the clear operations. */
     addRoot(dir: string): void {
         this.roots.add(path.resolve(dir));
     }
 
-    /** The storage directory and the registered roots, each once. */
+    /** The storage directory, the index root and the registered roots, each once. */
     private allRoots(): string[] {
-        return [this.storageDir, ...[...this.roots].filter((root) => root !== path.resolve(this.storageDir))];
+        const roots = new Set([path.resolve(this.storageDir), ...(this.indexRoot !== undefined ? [path.resolve(this.indexRoot)] : []), ...this.roots]);
+        roots.delete(path.resolve(this.storageDir));
+        return [this.storageDir, ...roots];
     }
 
     /**
@@ -243,13 +310,17 @@ export class PageStore {
     }
 
     /**
-     * The sidecars of `doc` next to its document-service copy, when there is
-     * one this extension may write beside: a PDF the service keeps for the
-     * user (a project document lives in the project and stays out of it).
+     * The sidecars of `doc` next to its file, when this extension may write
+     * beside it: a PDF the document service keeps for the user, or any PDF
+     * inside the index root (a copy CMSIS Solution or the service keeps
+     * there, also a project document's). A project's own file lives in the
+     * project and stays out of it.
      */
     private inPlace(doc: DocRef): { dir: string; fileSlug: string } | undefined {
-        const copy = doc.service?.copy;
-        if (!copy || doc.service?.scope === 'project' || path.extname(copy).toLowerCase() !== '.pdf') {
+        const kept = doc.service?.copy !== undefined && doc.service.scope !== 'project' ? doc.service.copy : undefined;
+        const local = doc.path !== undefined && this.indexRoot !== undefined && inside(this.indexRoot, doc.path) ? doc.path : undefined;
+        const copy = kept ?? local;
+        if (!copy || path.extname(copy).toLowerCase() !== '.pdf') {
             return undefined;
         }
         const dir = path.dirname(copy);
@@ -261,29 +332,62 @@ export class PageStore {
         return { dir, fileSlug: path.basename(copy).replace(/\.pdf$/i, '') };
     }
 
+    /**
+     * The sidecars of `doc` in the folder CMSIS Solution names for it in the
+     * index root, for a PDF that lies elsewhere. Another file of the same
+     * name that is still there keeps the folder; this one gets a folder of
+     * its own.
+     */
+    private inIndexRoot(doc: DocRef): { dir: string; fileSlug: string } | undefined {
+        if (this.indexRoot === undefined || !doc.path || path.extname(doc.path).toLowerCase() !== '.pdf') {
+            return undefined;
+        }
+        const dir = indexDirOf(doc, this.indexRoot);
+        if (dir === undefined || !canHold(dir)) {
+            return undefined;
+        }
+        const fileSlug = path.basename(doc.path).replace(/\.pdf$/i, '');
+        const own = `${dir}-${shortHash(path.resolve(doc.path)).slice(0, 8)}`;
+        if (fs.existsSync(path.join(own, `${fileSlug}.meta.json`))) {
+            return { dir: own, fileSlug };
+        }
+        let owner: unknown;
+        try {
+            owner = (JSON.parse(fs.readFileSync(path.join(dir, `${fileSlug}.meta.json`), 'utf-8')) as { file?: unknown }).file;
+        } catch {
+            owner = undefined;
+        }
+        const taken = typeof owner === 'string' && !sameFile(owner, doc.path) && fs.existsSync(owner);
+        return { dir: taken ? own : dir, fileSlug };
+    }
+
     paths(doc: DocRef): Paths {
         const legacy = this.legacyPaths(doc);
-        const place = this.inPlace(doc);
+        const place = this.inPlace(doc) ?? this.inIndexRoot(doc);
         if (!place) {
             return legacy;
         }
-        const inPlace: Paths = {
+        const placed: Paths = {
             ...legacy,
             dir: place.dir,
             pages: path.join(place.dir, `${place.fileSlug}.pages.jsonl`),
             meta: path.join(place.dir, `${place.fileSlug}.meta.json`),
             index: path.join(place.dir, `${place.fileSlug}.idx.json`),
         };
-        this.adoptLegacy(doc, legacy, inPlace);
-        return inPlace;
+        return this.adoptLegacy(doc, legacy, placed) ? placed : legacy;
     }
 
-    /** Move sidecars an earlier release wrote into the storage directory next to the copy, once; a failure leaves them. */
-    private adoptLegacy(doc: DocRef, from: Paths, to: Paths): void {
+    /**
+     * Move sidecars the storage directory holds (an earlier release's, or
+     * those of a place that could not be written) to the document's place,
+     * once. False when they could not be moved: they stay, and stay in use.
+     */
+    private adoptLegacy(doc: DocRef, from: Paths, to: Paths): boolean {
         if (fs.existsSync(to.meta) || !fs.existsSync(from.meta)) {
-            return;
+            return true;
         }
         try {
+            fs.mkdirSync(to.dir, { recursive: true });
             for (const key of ['pages', 'index', 'meta'] as const) {
                 if (!fs.existsSync(from[key])) { continue; }
                 try {
@@ -299,9 +403,11 @@ export class PageStore {
                 fs.writeFileSync(to.meta, JSON.stringify({ ...meta, file: doc.path }, null, 2));
             }
             this.pruneEmptyDirs(this.storageDir);
-            this.log.info(`${doc.id}: extracted text moved next to the document service's copy in ${to.dir}`);
+            this.log.info(`${doc.id}: extracted text moved to ${to.dir}`);
+            return true;
         } catch (caught) {
             this.log.debug(`${doc.id}: extracted text stays in ${from.dir} (${caught instanceof Error ? caught.message : String(caught)})`);
+            return false;
         }
     }
 
@@ -347,7 +453,8 @@ export class PageStore {
         if (!fs.existsSync(p.pages) || !fs.existsSync(p.index)) { return false; }
         try {
             const st = fs.statSync(doc.path);
-            return st.size === meta.size && Math.floor(st.mtimeMs) === Math.floor(meta.mtimeMs);
+            // The file it was extracted from: a folder in the index root is named by the file's name, not by its place.
+            return st.size === meta.size && Math.floor(st.mtimeMs) === Math.floor(meta.mtimeMs) && typeof meta.file === 'string' && sameFile(meta.file, doc.path);
         } catch {
             return false;
         }
@@ -416,9 +523,10 @@ export class PageStore {
     }
 
     /**
-     * Every web document that was fetched (or found to be HTML) — read from
-     * the `fetch.json` records under `arm/` and `web/`, so fetched documents
-     * outlive the session and join whatever target is current.
+     * Every web document the retired path fetched (or found to be HTML) —
+     * read from the `fetch.json` records under `arm/` and `web/`: what the
+     * move to the document service has to take, and what joins the current
+     * target for as long as it could not be moved.
      */
     listFetched(): DocRef[] {
         const out: DocRef[] = [];
@@ -490,6 +598,7 @@ export class PageStore {
      */
     clearExtracted(): ClearResult {
         const result: ClearResult = { documents: 0, files: 0, bytes: 0 };
+        const emptied = new Set<string>();
         // Listed before the first removal: the walk must not run over folders that change under it.
         for (const f of [...this.allFiles()]) {
             if (!isSidecar(f.name)) { continue; }
@@ -498,9 +607,14 @@ export class PageStore {
                 result.files++;
                 result.bytes += f.size;
                 if (f.name.endsWith('.meta.json')) { result.documents++; }
+                if (this.indexRoot !== undefined && inside(this.indexRoot, path.dirname(f.path))) { emptied.add(path.dirname(f.path)); }
             } catch (e) {
                 this.log.warn(`page store: could not remove ${f.path}: ${e instanceof Error ? e.message : String(e)}`);
             }
+        }
+        // In the index root only the folder a sidecar lay in goes, and only when nothing is left in it: the rest is not this store's.
+        for (const dir of emptied) {
+            try { fs.rmdirSync(dir); } catch { /* a copy or another file is still there */ }
         }
         this.pruneEmptyDirs(this.storageDir);
         this.pageCache.clear();
@@ -583,11 +697,12 @@ export class PageStore {
         }
     }
 
-    /** Delete a web document's download and its fetch record; its extracted text and index stay. */
+    /** Delete a web document's download and its fetch record; its extracted text and index stay. A folder left empty goes. */
     removeDownload(doc: DocRef): void {
         const p = this.paths(doc);
         fs.rmSync(p.download, { force: true });
         fs.rmSync(p.fetchRecord, { force: true });
+        this.pruneEmptyDirs(this.storageDir);
     }
 
     /**
@@ -616,7 +731,6 @@ export class PageStore {
             } else {
                 doc.cached = false;
                 doc.indexed = false;
-                if (record?.kind === 'html') { doc.format = 'html'; }
                 return doc;
             }
         }
@@ -679,7 +793,7 @@ export class PageStore {
      */
     ensureFromPages(doc: DocRef, pages: PageRecord[], info: PagesInfo, log: PackDocsLog = this.log): LoadedDoc {
         if (!doc.path) { throw new Error(`${doc.id} has no file to key the cache on`); }
-        const p = this.paths(doc);
+        let p = this.paths(doc);
         const st = fs.statSync(doc.path);
         const t0 = Date.now();
         const index = buildIndex(doc.id, pages);
@@ -703,10 +817,23 @@ export class PageStore {
             ...(doc.arm ? { arm: { ...doc.arm } } : {}),
             ...(doc.url ? { sourceUrl: doc.url } : {}),
         };
-        fs.mkdirSync(p.dir, { recursive: true });
-        fs.writeFileSync(p.pages, pages.map(r => JSON.stringify(r)).join('\n') + '\n');
-        fs.writeFileSync(p.index, JSON.stringify(index));
-        fs.writeFileSync(p.meta, JSON.stringify(newMeta, null, 2));
+        const write = (to: Paths): void => {
+            fs.mkdirSync(to.dir, { recursive: true });
+            fs.writeFileSync(to.pages, pages.map(r => JSON.stringify(r)).join('\n') + '\n');
+            fs.writeFileSync(to.index, JSON.stringify(index));
+            // Last: a document counts as extracted by its metadata.
+            fs.writeFileSync(to.meta, JSON.stringify(newMeta, null, 2));
+        };
+        try {
+            write(p);
+        } catch (caught) {
+            // The document's place cannot be written after all: the storage directory takes the index, and paths() finds it there.
+            const own = this.legacyPaths(doc);
+            if (own.meta === p.meta) { throw caught; }
+            log.info(`${doc.id}: the index goes to ${own.dir}, ${p.dir} cannot be written (${caught instanceof Error ? caught.message : String(caught)})`);
+            write(own);
+            p = own;
+        }
         const tokens = Object.keys(index.postings).length;
         log.info(`${doc.id}: ${pages.length} ${newMeta.unit}s, ${tokens} distinct tokens — extract ${info.extractMs} ms, index ${indexMs} ms, write ${Date.now() - t1} ms → ${p.dir}`);
         this.remember(this.pageCache, doc.id, pages);

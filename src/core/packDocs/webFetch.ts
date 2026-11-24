@@ -15,8 +15,9 @@
  */
 
 /**
- * Fetching web documents into the store — only ever on an explicit
- * `fetch_doc` call.
+ * Resolving and downloading web documents — only ever on an explicit
+ * `fetch_doc` call. The document service keeps what is downloaded; this
+ * module only says what a URL is and brings its PDF.
  *
  * arm.com: `developer.arm.com/documentation/<id>` is a JavaScript-only page,
  * which is what defeats agents; the service behind it is open. The
@@ -36,7 +37,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ArmDocRef, armDocApiUrl, parseArmDocUrl } from './armDocs';
 import { PackDocsLog } from './host';
-import { FetchRecord, PageStore } from './pageStore';
+import type { FetchRecord } from './pageStore';
 import { DocRef } from './pdscBooks';
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
@@ -435,11 +436,12 @@ export type FetchOutcome =
     | { ok: false; error: string; resolved?: ResolvedDoc; resolver?: string };
 
 /**
- * Resolve and download one web document into the store. On success the
- * DocRef points at the cached file (`path`, `cached`, `revision`, `format`)
- * and `fetch.json` records the provenance; the caller indexes it.
+ * Resolve one web document: whether it is a PDF or published as HTML only,
+ * its title and its edition, all taken into the DocRef. Nothing is
+ * downloaded and nothing is kept: the document service downloads
+ * (`documentEngine.ts`) and records what it found.
  */
-export async function fetchDocument(doc: DocRef, store: PageStore, ctx: ResolveContext): Promise<FetchOutcome> {
+export async function resolveDocument(doc: DocRef, ctx: ResolveContext): Promise<{ ok: true; resolved: ResolvedDoc; resolver: string } | Extract<FetchOutcome, { ok: false }>> {
     if (doc.source !== 'web') { return { ok: false, error: `${doc.id} is not a web document` }; }
     const resolver = resolvers.find(r => r.matches(doc));
     if (!resolver) { return { ok: false, error: `${doc.id}: no way to fetch ${doc.url ?? 'a document without URL'}` }; }
@@ -450,48 +452,10 @@ export async function fetchDocument(doc: DocRef, store: PageStore, ctx: ResolveC
     if (resolved.versionLabel) { doc.revision = resolved.versionLabel; }
     doc.format = resolved.kind;
     if (doc.arm && resolved.version) { doc.arm = { ...doc.arm, resolvedVersion: resolved.version, versionLabel: resolved.versionLabel }; }
+    return { ok: true, resolved, resolver: resolver.name };
+}
 
-    const p = store.paths(doc);
-    if (resolved.kind === 'html') {
-        // Remember the outcome so the listing can say "HTML" without asking again.
-        fs.mkdirSync(p.dir, { recursive: true });
-        const record: FetchRecord = {
-            version: 1, docId: doc.id, sourceUrl: doc.url ?? '', resolver: resolver.name, kind: 'html', title: doc.title,
-            ...(resolved.version ? { resolvedVersion: resolved.version } : {}),
-            ...(resolved.versionLabel ? { versionLabel: resolved.versionLabel } : {}),
-            ...(resolved.contentFormat ? { contentFormat: resolved.contentFormat } : {}),
-            downloadUrl: resolved.docJsonUrl ?? '', bytes: 0, sha256: '', fetchedAt: new Date().toISOString(), userAgent: ctx.userAgent,
-        };
-        fs.writeFileSync(p.fetchRecord, JSON.stringify(record, null, 2));
-        return { ok: false, resolved, resolver: resolver.name, error: `${doc.id} is published as HTML on arm.com (${resolved.contentFormat ?? 'HTML'}); this version fetches PDFs only` };
-    }
-    let downloaded: Downloaded;
-    try {
-        downloaded = await downloadPdf(resolved.downloadUrl!, p.download, ctx);
-    } catch (e) {
-        return { ok: false, resolved, resolver: resolver.name, error: e instanceof Error ? e.message : String(e) };
-    }
-    const record: FetchRecord = {
-        version: 1,
-        docId: doc.id,
-        sourceUrl: doc.url ?? '',
-        resolver: resolver.name,
-        kind: 'pdf',
-        title: doc.title,
-        ...(resolved.version ? { resolvedVersion: resolved.version } : {}),
-        ...(resolved.versionLabel ? { versionLabel: resolved.versionLabel } : {}),
-        ...(resolved.contentFormat ? { contentFormat: resolved.contentFormat } : {}),
-        ...(resolved.filename ? { filename: resolved.filename } : {}),
-        downloadUrl: resolved.downloadUrl!,
-        bytes: downloaded.bytes,
-        sha256: downloaded.sha256,
-        fetchedAt: new Date().toISOString(),
-        userAgent: ctx.userAgent,
-    };
-    fs.writeFileSync(p.fetchRecord, JSON.stringify(record, null, 2));
-    doc.path = p.download;
-    doc.cached = true;
-    doc.indexed = false;
-    doc.sizeBytes = downloaded.bytes;
-    return { ok: true, record, resolved, resolver: resolver.name };
+/** What `fetch_doc` answers for a document that is published as HTML only. */
+export function htmlOnlyOutcome(doc: DocRef, resolved: ResolvedDoc, resolver: string): Extract<FetchOutcome, { ok: false }> {
+    return { ok: false, resolved, resolver, error: `${doc.id} is published as HTML on arm.com (${resolved.contentFormat ?? 'HTML'}); this version fetches PDFs only` };
 }

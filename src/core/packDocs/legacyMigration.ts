@@ -15,20 +15,24 @@
  */
 
 /**
- * The move from the retired document path to the document service, once per
- * machine (user decision of 2026-11-16): the downloads `fetch_doc` kept in
- * this extension's store (`arm/`, `web/`) become service documents under
- * "all targets", as they were listed for every target before, with their
+ * The move from the retired document path to the document service (user
+ * decision of 2026-11-16): the downloads `fetch_doc` kept in this
+ * extension's store (`arm/`, `web/`) become service documents under "all
+ * targets", as they were listed for every target before, with their
  * edition; the old copy and its fetch record are then deleted. Their
- * extracted text and index stay, and stay current (the copy keeps its
- * modification time). HTML-only records are not downloads and stay.
+ * extracted text and index stay current (the copy keeps its modification
+ * time) and follow the copy on first use.
+ *
+ * The move keeps no record of itself: it runs when a window first resolves a
+ * target, and finds nothing once the store holds no download. A document
+ * that could not be moved stays where it is, usable from there, and is tried
+ * again by the next window. What the store kept beside the downloads goes:
+ * the records of documents found to be HTML only, which the document
+ * service keeps on its entries now, and the marker file of earlier builds.
  *
  * The user documents folder is not part of the move (decision of
  * 2026-11-17): it is neither read nor copied, and the user is told once
  * that it is no longer used (`userDocs.legacyUserDocsNotice`).
- *
- * A marker file records that it ran and what it did; a failure of one
- * document is reported and costs no other.
  *
  * Pure: no `vscode`.
  */
@@ -39,38 +43,31 @@ import type { DocumentService } from '../../docService/contract';
 import { PackDocsLog } from './host';
 import { PageStore } from './pageStore';
 
-/** What the move did. */
+/** What one run of the move did. */
 export interface MigrationReport {
-    version: 1;
-    at: string;
+    /** Downloads that became documents of the service. */
     downloads: number;
-    /** The documents an earlier 2.9.x build copied from the user documents folder; absent since that folder is no longer moved. */
-    userDocuments?: number;
+    /** Records of HTML-only documents and marker files removed. */
+    dropped: number;
     /** Documents not moved, with the reason. */
     left: string[];
 }
 
-/** The marker of the move in this extension's storage folder. */
-export function migrationMarker(storageDir: string): string {
+/** The marker earlier builds wrote into the storage folder after their one move. */
+function oldMarker(storageDir: string): string {
     return path.join(storageDir, 'docservice-migration.json');
 }
 
-/** The report of an earlier move; undefined when it has not run. */
-export function migrationDone(storageDir: string): MigrationReport | undefined {
-    try {
-        return JSON.parse(fs.readFileSync(migrationMarker(storageDir), 'utf-8')) as MigrationReport;
-    } catch {
-        return undefined;
-    }
-}
-
-/** Move the retired path's documents into `service`, once; undefined when it ran before. */
-export async function migrateLegacyDocuments(service: DocumentService, store: PageStore, storageDir: string, log: PackDocsLog): Promise<MigrationReport | undefined> {
-    if (migrationDone(storageDir)) {
-        return undefined;
-    }
-    const report: MigrationReport = { version: 1, at: new Date().toISOString(), downloads: 0, left: [] };
+/** Move what the retired path left in `store` into `service`. A failure of one document is reported and costs no other. */
+export async function migrateLegacyDocuments(service: DocumentService, store: PageStore, log: PackDocsLog): Promise<MigrationReport> {
+    const report: MigrationReport = { downloads: 0, dropped: 0, left: [] };
     for (const doc of store.listFetched()) {
+        if (doc.format === 'html') {
+            // A fact, not a document: the service records it on the entry at the next fetch_doc.
+            store.removeDownload(doc);
+            report.dropped++;
+            continue;
+        }
         const file = store.paths(doc).download;
         if (!doc.url || doc.format !== 'pdf' || !fs.existsSync(file)) {
             continue;
@@ -89,8 +86,10 @@ export async function migrateLegacyDocuments(service: DocumentService, store: Pa
             report.left.push(`${doc.id}: ${caught instanceof Error ? caught.message : String(caught)}`);
         }
     }
-    fs.mkdirSync(storageDir, { recursive: true });
-    fs.writeFileSync(migrationMarker(storageDir), `${JSON.stringify(report, null, 2)}\n`);
+    if (fs.existsSync(oldMarker(store.dir))) {
+        fs.rmSync(oldMarker(store.dir), { force: true });
+        report.dropped++;
+    }
     if (report.downloads || report.left.length) {
         log.info(`documents moved to the document service: ${report.downloads} download(s)`
             + `${report.left.length ? `; not moved: ${report.left.join('; ')}` : ''}`);

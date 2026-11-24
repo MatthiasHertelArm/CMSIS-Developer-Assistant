@@ -190,9 +190,10 @@ export class PackDocsPanel {
                     this.post({
                         type: 'store.list',
                         storageDir: this.docs.getStore().dir,
+                        indexDir: this.docs.getStore().indexDir,
                         homeDir: os.homedir(),
                         documents,
-                        // Downloads the retired path left in the index folder (arm/, web/); none after the move.
+                        // Downloads the retired path left in the extension's own store (arm/, web/); none after the move.
                         oldDownloads: this.docs.getStore().storeUsage().downloads.documents,
                         entries: entries.map(e => ({ ...e, fetch: undefined, hasFetch: !!e.fetch })),
                         fetchedOnly: fetched.map(f => ({ id: f.id, title: f.title, url: f.url, format: f.format, revision: f.revision })),
@@ -212,7 +213,7 @@ export class PackDocsPanel {
                     const question = what === 'downloads'
                         ? `Delete the ${u.documents} old download(s) — ${u.files} files, ${mb(u.bytes)} under ${store.dir} (arm/, web/)?\n\n` +
                             'The retired download path left them there; the document service keeps the documents now. Their PDFs, fetch records and extracted text are removed.'
-                        : `Clear the extracted text and search indexes of ${u.documents} document(s) — ${u.files} files, ${mb(u.bytes)} under ${store.dir}?\n\n` +
+                        : `Clear the extracted text and search indexes of ${u.documents} document(s) — ${u.files} files, ${mb(u.bytes)} under ${store.indexDir ? `${store.indexDir} and ${store.dir}` : store.dir}?\n\n` +
                             'Downloaded PDFs and fetch records are kept. Every document is extracted and indexed again on its next use.';
                     const confirm = what === 'downloads' ? 'Delete Downloads' : 'Clear Extracted Text';
                     const choice = await vscode.window.showWarningMessage(question, { modal: true }, confirm);
@@ -676,14 +677,16 @@ export function packDocsPanelHtml(nonce: string): string {
       : '<div class="muted">Documents (PDFs you add and fetch_doc downloads) are kept by the document service' +
         (docs.dir ? ' in <a data-open="' + esc(docs.dir) + '" class="mono" title="' + esc(docs.dir) + '">' + esc(folderName(docs.dir)) + '</a> (<a data-open="' + esc(docs.inventory) + '" class="mono">docs.yml</a>)' : ' of CMSIS Solution') +
         ' · <a id="manageDocs">manage them in ' + esc(docs.view) + '</a></div>';
-    const where = docs && docs.dir
-      ? '— the search index: beside each document in <a data-open="' + esc(docs.dir) + '" class="mono" title="' + esc(docs.dir) + '">' + esc(folderName(docs.dir)) + '</a>; for PDFs of packs and workspaces in'
-      : '— the search index, in';
+    const where = msg.indexDir
+      ? '— the search index, in <a data-open="' + esc(msg.indexDir) + '" class="mono" title="' + esc(msg.indexDir) + '">' + esc(folderName(msg.indexDir)) + '</a>: beside each copy there, and for a PDF of a pack or a project in the folder of its name; what cannot be written there, in'
+      : docs && docs.dir
+        ? '— the search index: beside each document in <a data-open="' + esc(docs.dir) + '" class="mono" title="' + esc(docs.dir) + '">' + esc(folderName(docs.dir)) + '</a>; for PDFs of packs and workspaces in'
+        : '— the search index, in';
     let h = '<div style="padding:6px 8px">' +
       '<div><b>' + entries.length + ' extracted</b>' + (msg.fetchedOnly.length ? ', ' + msg.fetchedOnly.length + ' fetched but not extracted' : '') + ' <span class="muted">' + where + '</span> <a data-open="' + esc(msg.storageDir) + '" class="mono" title="' + esc(msg.storageDir) + '">' + esc(shortDir) + '</a></div>' +
       docsLine +
       '<div class="toolbar" style="margin:4px 0 0"><a id="refresh">refresh</a> · <a id="clearExtracted" title="Remove the extracted text and search indexes of every document; the documents stay. Asks first.">clear extracted text…</a>' +
-      (msg.oldDownloads ? ' · <a id="clearDownloads" title="Remove the PDFs the retired download path left in the index folder (arm/, web/), with their fetch records and extraction. Asks first.">delete old downloads (' + msg.oldDownloads + ')…</a>' : '') + '</div>' +
+      (msg.oldDownloads ? ' · <a id="clearDownloads" title="Remove the PDFs the retired download path left in the extension\\'s own store (arm/, web/), with their fetch records and extraction. Asks first.">delete old downloads (' + msg.oldDownloads + ')…</a>' : '') + '</div>' +
       '<label><input type="checkbox" id="onlyTarget"' + (only ? ' checked' : '') + '> only this target\\'s documents (' + targetIds.size + ')</label></div>';
     h += '<table><tr><th>id</th><th>src</th><th>pages</th><th>size</th><th>extracted</th></tr>';
     for (const e of shown) {

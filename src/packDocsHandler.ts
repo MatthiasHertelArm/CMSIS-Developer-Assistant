@@ -26,10 +26,10 @@ import { expandQuery } from './core/packDocs/queryExpansion';
 import {
     ALL_ASPECTS, Aspect, CbuildRunInfo, Chapter, DocRef, FetchOutcome, LoadedDoc, PackDocsHost, PageStore, PdfExtractor, ResolveContext,
     SvdPeripheral, SvdRegister, TargetArgs, TargetDocs, TargetResolution, armDocId, armDocUrl, buildChapterIndex, buildDossier,
-    catalogueVersion, collectTargetDocs, describeProcessors, describeResolution, fetchDocument, findPeripheral, formatPackId, groupOf,
+    catalogueVersion, collectTargetDocs, describeProcessors, describeResolution, findPeripheral, formatPackId, groupOf, htmlOnlyOutcome,
     isReadable, loadSvd, lookupArmDoc, parseArmDocId, parseArmDocUrl, parseCbuildRun, parsePageRange, prefixedLog, registersOf,
     renderDocList, renderDossier, renderDossierMiss, renderDownloadRunning, renderFetch, renderFetchFailure, renderPages, renderSearch, resolveSvd,
-    resolveTarget, searchLoaded, selectExtractor, shortHash, slug, sortDocs, loadCoreHeader, resolveCoreHeader, SvdSummary,
+    resolveDocument, resolveTarget, searchLoaded, selectExtractor, shortHash, slug, sortDocs, loadCoreHeader, resolveCoreHeader, SvdSummary,
     loadCoreSvd, resolveCoreSvd,
     loadNpuHeader, npuBaseFromSvd, resolveNpuHeader,
     SvdRef, coreFromSvdCpu,
@@ -179,12 +179,12 @@ export class PackDocsHandler {
     private readonly inventoryWrites = new Map<string, string>();
     /** The device and board of the last resolved target, as inventory keys. */
     private lastTarget: { device?: string; board?: string; solution?: string } = {};
-    /** The once-per-machine move of the retired document path into the service; shared by concurrent calls. */
+    /** This window's move of what the retired document path left into the service; shared by concurrent calls. */
     private migration: Promise<unknown> | undefined;
     private callCounter = 0;
 
     constructor(private readonly host: PackDocsHost, private readonly options: PackDocsHandlerOptions) {
-        this.store = new PageStore(host.storageDir, host.log);
+        this.store = new PageStore(host.storageDir, host.log, host.indexDir);
         this.extractor = options.extractor ?? selectExtractor(host.settings());
     }
 
@@ -1002,9 +1002,9 @@ export class PackDocsHandler {
         }
     }
 
-    /** Move the retired document path's documents into the service, once per machine. Never throws. */
+    /** Move the retired document path's documents into the service, once per window. Never throws. */
     private migrateOnce(service: DocumentService, log: PackDocsHost['log']): Promise<unknown> {
-        this.migration ??= migrateLegacyDocuments(service, this.store, this.host.storageDir, log)
+        this.migration ??= migrateLegacyDocuments(service, this.store, log)
             .catch((caught: unknown) => log.warn(`moving the documents to the document service failed: ${documentFailureText(caught)}`));
         return this.migration;
     }
@@ -1075,8 +1075,20 @@ export class PackDocsHandler {
             const failure = caught instanceof DocumentFailure && caught.error.detail && kind !== 'login-required' && kind !== 'not-pdf'
                 ? caught.error.detail : documentFailureText(caught);
             if (kind === 'html') {
-                // Arm's HTML-only documents stay this extension's (the service handles PDFs): the store records the format and the edition.
-                return fetchDocument(doc, this.store, ctx);
+                // The service has recorded that the document is HTML only (the failure on its entry): the listing reads it from
+                // there. The reply names the document and its edition, which the entry takes too.
+                const found = await resolveDocument(doc, ctx);
+                if (!found.ok || found.resolved.kind !== 'html') {
+                    return { ok: false, error: failure };
+                }
+                if (doc.service?.scope !== 'project') {
+                    try {
+                        await service.addDocument(parent, name, { title: doc.title, ...(found.resolved.versionLabel ? { versionLabel: found.resolved.versionLabel } : {}) });
+                    } catch (noted) {
+                        this.host.log.debug(`fetch_doc: the edition of ${doc.id} was not recorded (${documentFailureText(noted)})`);
+                    }
+                }
+                return htmlOnlyOutcome(doc, found.resolved, found.resolver);
             }
             // Only what the user can resolve becomes a request: not an HTML-only document, a cancel, a limit or a blocked host.
             if (!['login-required', 'not-pdf', 'http', 'network', 'unknown'].includes(kind)) {

@@ -192,10 +192,12 @@ export function makePackDocsHost(context: vscode.ExtensionContext): PackDocsHost
     return {
         get packRoot() { return packRoot; },
         packRootFromToolchain,
-        // Page text, metadata and indexes live in this extension's global
-        // storage; a user coming from the standalone CMSIS Pack Docs
-        // extension re-extracts once.
+        // Page text, metadata and indexes live in CMSIS Solution's document
+        // folder, beside each copy or in the folder it names for a document
+        // (PageStore). This extension's global storage holds what an earlier
+        // release left, until its first use, and what cannot be written there.
         storageDir: path.join(context.globalStorageUri.fsPath, 'packdocs'),
+        indexDir: path.join(os.homedir(), '.cmsis', 'docs'),
         inventoryFile: path.join(os.homedir(), '.cmsis', 'docs.yml'),
         documentService: () => documentServiceOf(context),
         assetsDir: path.join(context.extensionPath, 'assets'),
@@ -300,7 +302,7 @@ export function createPackDocsHandlers(context: vscode.ExtensionContext, timeout
 
     const s = readPackDocsSettings();
     logger.info(`Pack docs: default pack root ${host.packRoot}${process.env.CMSIS_PACK_ROOT ? ' (CMSIS_PACK_ROOT)' : ' (platform default)'}, ` +
-        `page store ${host.storageDir}, extractor ${s.extractor} (${s.pdftotextPath}), maxPdfMb ${s.maxPdfMb}, ` +
+        `index in ${host.indexDir ?? host.storageDir}${host.indexDir ? ` (fallback ${host.storageDir})` : ''}, extractor ${s.extractor} (${s.pdftotextPath}), maxPdfMb ${s.maxPdfMb}, ` +
         `workspaceDocDirs ${s.workspaceDocDirs.join(', ')}, userDocsDir ${resolveUserDocsDir(s.userDocsDir)}`);
     void host.packRootFromToolchain?.();
     void docs.getExtractor().available().then((a) => {

@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
-// The retired user documents folder (~/.cmsis-pack-docs/user): read once and moved into the document
-// service with the attribution of its sub-folders, together with the downloads of the retired
-// fetch_doc store; the folder is never changed, the old downloads are deleted after the move, the
-// move runs once, and the moved documents keep their edition and index.
+// The retired user documents folder (~/.cmsis-pack-docs/user) is counted for a notice and never read
+// or changed. The downloads of the retired fetch_doc store move into the document service: the old
+// downloads are deleted after the move, the moved documents keep their edition and index, and the
+// move leaves no record of itself (it finds nothing once the old store holds no download).
 
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { migrationDone } from '../core/packDocs/legacyMigration';
 import { PageStore } from '../core/packDocs/pageStore';
 import { countLegacyUserDocs, legacyUserDocsNotice, resolveUserDocsDir } from '../core/packDocs/userDocs';
 import { textOf } from '../core/toolResult';
@@ -79,7 +78,7 @@ suite('the retired user documents folder and download store', () => {
         assert.strictEqual(resolveUserDocsDir('~/docs', '/home/me'), path.resolve('/home/me/docs'));
     });
 
-    test('the move: old downloads imported with their edition and deleted, once; the user documents folder is neither read nor copied', async () => {
+    test('the move: old downloads imported with their edition and deleted, the other records of the old store dropped; the user documents folder is neither read nor copied', async () => {
         const world = buildWorld();
         const root = legacyTree();
         const before = snapshot(root);
@@ -92,17 +91,23 @@ suite('the retired user documents folder and download store', () => {
         fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), p.download);
         fs.writeFileSync(p.fetchRecord, JSON.stringify({ version: 1, docId: old.id, sourceUrl: old.url, resolver: 'arm.com', kind: 'pdf', title: old.title,
             resolvedVersion: 'bz', versionLabel: 'B.z', downloadUrl: 'x', bytes: 1, sha256: 'x', fetchedAt: 'now', userAgent: 'test' }));
+        // What else the retired store kept: the record of a document found to be HTML only, and the marker of an earlier build's move.
+        const htmlOnly = path.join(world.host.storageDir, 'arm', 'ddi0000-latest');
+        fs.mkdirSync(htmlOnly, { recursive: true });
+        fs.writeFileSync(path.join(htmlOnly, 'fetch.json'), JSON.stringify({ version: 1, docId: 'arm/ddi0000-latest', sourceUrl: 'https://developer.arm.com/documentation/ddi0000/latest',
+            resolver: 'arm.com', kind: 'html', title: 'Example', downloadUrl: '', bytes: 0, sha256: '', fetchedAt: 'now', userAgent: 'test' }));
+        const marker = path.join(world.host.storageDir, 'docservice-migration.json');
+        fs.writeFileSync(marker, '{"version":1,"at":"then","downloads":0,"left":[]}\n');
 
         const host = { ...world.host, settings: () => ({ ...world.host.settings(), userDocsDir: root }) };
         const handler = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace,
             extractor: new FakeExtractor(['1 Secret\nUSART_CR1 UE bit', '2 More']) });
         const listed = textOf(await handler.handleListTargetDocs({}));
-        const report = migrationDone(world.host.storageDir);
-        assert.ok(report, 'the marker is written');
-        assert.strictEqual(report.downloads, 1);
-        assert.strictEqual(report.userDocuments, undefined, 'nothing of the folder is moved');
-        assert.deepStrictEqual(report.left, []);
         assert.ok(!fs.existsSync(p.download) && !fs.existsSync(p.fetchRecord), 'the old download is gone');
+        assert.ok(!fs.existsSync(htmlOnly), 'the record of the HTML-only document is gone, with its folder');
+        assert.ok(!fs.existsSync(marker), 'the marker of an earlier build is gone, and none is written');
+        assert.deepStrictEqual(store.listFetched(), [], 'the old store holds no download: the next window finds nothing to move');
+        assert.ok(!listed.includes('ddi0000'), 'a dropped record is no document');
         assert.deepStrictEqual(snapshot(root), before, 'the folder is unchanged');
         assert.match(listed, /arm\/ddi0553-latest · arch · Armv8-M Architecture Reference Manual · fetched B\.z, not indexed yet/);
         assert.ok(!listed.includes('Documents added by the user'), listed);
@@ -110,10 +115,12 @@ suite('the retired user documents folder and download store', () => {
             assert.ok(!listed.includes(name), `${name}: no document of the folder is listed`);
         }
 
-        // Once: a new handler (a new window) does not move again, and a document added to the folder later stays out.
+        // A new handler (a new window) finds the document with the service, and a document added to the folder later stays out.
         touch(path.join(root, 'later.pdf'));
         const again = new PackDocsHandler(host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) });
-        assert.ok(!textOf(await again.handleListTargetDocs({})).includes('later'));
-        assert.strictEqual(migrationDone(world.host.storageDir)?.downloads, 1);
+        const relisted = textOf(await again.handleListTargetDocs({}));
+        assert.ok(!relisted.includes('later'));
+        assert.match(relisted, /arm\/ddi0553-latest · arch · Armv8-M Architecture Reference Manual · fetched B\.z, not indexed yet/);
+        assert.deepStrictEqual(fs.readdirSync(world.host.storageDir).filter((name) => name === 'docservice-migration.json'), []);
     });
 });

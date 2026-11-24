@@ -305,6 +305,174 @@ suite('pageStore', () => {
         assert.ok(!fs.existsSync(path.join(path.dirname(projectFile), 'notes.meta.json')), 'nothing written into the project');
     });
 
+    /** A pack's book of the device `Vendor::Device`, as `collectTargetDocs` hands it to the store. */
+    function bookOf(file: string): DocRef {
+        return { ...docFor(file), listedFor: { device: 'Vendor::Device' } };
+    }
+
+    /** A copy of the fixture PDF at `file`. */
+    function fixtureAt(file: string): string {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.copyFileSync(path.join(FIXTURES, 'test-rm.pdf'), file);
+        return file;
+    }
+
+    test('with an index root a pack\'s book is indexed in the folder CMSIS Solution names for it, and listed from there', async () => {
+        const dir = tmp();
+        const file = fixtureAt(path.join(dir, 'packs', 'V', 'P', '1.0.0', 'Documents', 'Test_RM.pdf'));
+        const docs = path.join(dir, 'cmsis', 'docs');
+        const store = new PageStore(path.join(dir, 'store'), silentLog, docs);
+        const fake = new FakeExtractor(['1 Intro\nHello']);
+        await store.ensure(bookOf(file), fake);
+        const home = path.join(docs, 'Vendor', 'Device', 'Test_RM');
+        assert.strictEqual(store.paths(bookOf(file)).dir, home);
+        assert.deepStrictEqual(fs.readdirSync(home).sort(), ['Test_RM.idx.json', 'Test_RM.meta.json', 'Test_RM.pages.jsonl']);
+        assert.ok(!fs.existsSync(path.join(dir, 'store')), 'nothing in the storage directory');
+        assert.deepStrictEqual(fs.readdirSync(path.dirname(file)), ['Test_RM.pdf'], 'nothing written into the pack');
+        assert.deepStrictEqual(store.listCached().map((e) => e.dir), [home], 'the index root is walked without being registered');
+
+        const again = new PageStore(path.join(dir, 'store'), silentLog, docs);
+        await again.ensure(bookOf(file), fake);
+        assert.strictEqual(fake.calls, 1, 'cache hit');
+        // A PDF no book names belongs to its pack; a store without an index root keeps the earlier layout.
+        assert.strictEqual(again.paths({ ...docFor(file), scope: 'unlisted' }).dir, path.join(docs, 'packs', 'V', 'P', 'Test_RM'));
+        assert.strictEqual(new PageStore(path.join(dir, 'store')).paths(bookOf(file)).dir, path.join(dir, 'store', 'v', 'p', '1.0.0'));
+    });
+
+    test('an index of the earlier layout moves into the index root on first use instead of being extracted again', async () => {
+        const dir = tmp();
+        const file = fixtureAt(path.join(dir, 'packs', 'Test_RM.pdf'));
+        const fake = new FakeExtractor(['1 Intro\nHello']);
+        await new PageStore(path.join(dir, 'store')).ensure(bookOf(file), fake);
+        assert.ok(fs.existsSync(path.join(dir, 'store', 'v', 'p', '1.0.0', 'test-rm.meta.json')), 'written where it was before');
+
+        const docs = path.join(dir, 'cmsis', 'docs');
+        const store = new PageStore(path.join(dir, 'store'), silentLog, docs);
+        assert.ok(store.load(bookOf(file)), 'still current after the move');
+        assert.strictEqual(fake.calls, 1, 'not extracted again');
+        assert.ok(fs.existsSync(path.join(docs, 'Vendor', 'Device', 'Test_RM', 'Test_RM.meta.json')));
+        assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'store')), [], 'the emptied folders are pruned');
+    });
+
+    test('two files of one name: the second gets a folder of its own, and an index is never taken for another file\'s', async () => {
+        const dir = tmp();
+        const first = fixtureAt(path.join(dir, 'packs', '1.0.0', 'Guide.pdf'));
+        const second = fixtureAt(path.join(dir, 'packs', '2.0.0', 'Guide.pdf'));
+        // The same size and time, as two pack versions with an unchanged PDF have.
+        const { atime, mtime } = fs.statSync(first);
+        fs.utimesSync(second, atime, mtime);
+        const docs = path.join(dir, 'cmsis', 'docs');
+        const store = new PageStore(path.join(dir, 'store'), silentLog, docs);
+        const fake = new FakeExtractor(['1 Intro\nHello']);
+        const home = path.join(docs, 'Vendor', 'Device', 'Guide');
+
+        await store.ensure(bookOf(first), fake);
+        assert.strictEqual(store.isCurrent(bookOf(second)), false, 'the index of the first is not the second\'s');
+        await store.ensure(bookOf(second), fake);
+        assert.strictEqual(fake.calls, 2);
+        assert.strictEqual(store.paths(bookOf(first)).dir, home);
+        assert.match(store.paths(bookOf(second)).dir, /[\\/]Guide-[0-9a-f]{8}$/);
+        await store.ensure(bookOf(first), fake);
+        await store.ensure(bookOf(second), fake);
+        assert.strictEqual(fake.calls, 2, 'both stay current: neither takes the other\'s place');
+
+        // The first is uninstalled: the second keeps its folder, and a third file may take the first's.
+        fs.rmSync(first);
+        assert.match(store.paths(bookOf(second)).dir, /[\\/]Guide-[0-9a-f]{8}$/);
+        const third = fixtureAt(path.join(dir, 'packs', '3.0.0', 'Guide.pdf'));
+        fs.utimesSync(third, atime, mtime);
+        assert.strictEqual(store.paths(bookOf(third)).dir, home);
+        assert.strictEqual(store.isCurrent(bookOf(third)), false, 'same name, size and time, but another file');
+        await store.ensure(bookOf(third), fake);
+        assert.strictEqual(fake.calls, 3);
+        assert.strictEqual(store.readMeta(bookOf(third))?.file, third);
+    });
+
+    test('in the index root: a copy has its index beside it whoever keeps it, a project\'s file has a folder under projects/', async () => {
+        const dir = tmp();
+        const docs = path.join(dir, 'cmsis', 'docs');
+        const store = new PageStore(path.join(dir, 'store'), silentLog, docs);
+        const fake = new FakeExtractor(['1 Intro\nHello']);
+
+        // A copy CMSIS Solution downloaded: the inventory names it, no document service does.
+        const copy = fixtureAt(path.join(docs, 'Vendor', 'Device', 'rm0456', 'rm0456.pdf'));
+        const web: DocRef = { id: 'web/vendor/1234', title: 'RM', scope: 'device', source: 'web', url: 'https://vendor.example/rm0456.pdf', path: copy, cached: true, indexed: false };
+        await store.ensure(web, fake);
+        assert.ok(fs.existsSync(path.join(path.dirname(copy), 'rm0456.meta.json')));
+
+        // The copy of a project's document on this machine lies in the index root too.
+        const projectCopy = fixtureAt(path.join(docs, 'projects', '0123456789abcdef', 'um.pdf'));
+        const fetched: DocRef = { id: 'web/vendor/5678', title: 'UM', scope: 'project', source: 'web', url: 'https://vendor.example/um.pdf', path: projectCopy, cached: true, indexed: false,
+            service: { parent: { all: true }, name: 'https://vendor.example/um.pdf', scope: 'project', copy: projectCopy, view: 'v' } };
+        await store.ensure(fetched, fake);
+        assert.ok(fs.existsSync(path.join(path.dirname(projectCopy), 'um.meta.json')));
+
+        // A file of the project itself, listed by the project or dropped into its docs folder.
+        const own = fixtureAt(path.join(dir, 'project', 'docs', 'notes.pdf'));
+        const listed: DocRef = { id: 'project/x/notes', title: 'Notes', scope: 'project', source: 'workspace', path: own, cached: false, indexed: false,
+            service: { parent: { all: true }, name: 'docs/notes.pdf', scope: 'project', copy: own, view: 'v' } };
+        await store.ensure(listed, fake);
+        const home = store.paths(listed).dir;
+        assert.match(path.relative(docs, home).split(path.sep).join('/'), /^projects\/[0-9a-f]{12}\/notes$/);
+        assert.ok(fs.existsSync(path.join(home, 'notes.meta.json')));
+        assert.deepStrictEqual(fs.readdirSync(path.dirname(own)), ['notes.pdf'], 'nothing written into the project');
+        assert.ok(!fs.existsSync(path.join(dir, 'store')), 'nothing in the storage directory');
+        assert.strictEqual(store.listCached().length, 3);
+    });
+
+    test('clearing the index root removes the sidecars and a folder they leave empty, and nothing else', async () => {
+        const dir = tmp();
+        const docs = path.join(dir, 'cmsis', 'docs');
+        const store = new PageStore(path.join(dir, 'store'), silentLog, docs);
+        const fake = new FakeExtractor(['1 Intro\nHello']);
+        const file = fixtureAt(path.join(dir, 'packs', 'Test_RM.pdf'));
+        await store.ensure(bookOf(file), fake);
+        const copy = fixtureAt(path.join(docs, 'Vendor', 'Device', 'rm0456', 'rm0456.pdf'));
+        await store.ensure({ id: 'web/vendor/1234', title: 'RM', scope: 'device', source: 'web', url: 'https://vendor.example/rm0456.pdf', path: copy, cached: true, indexed: false }, fake);
+        // What is not the store's: a folder CMSIS Solution has just made, and a file beside a sidecar.
+        const pending = path.join(docs, 'Vendor', 'Device', 'pending');
+        fs.mkdirSync(pending);
+        const note = path.join(docs, 'Vendor', 'Device', 'Test_RM', 'note.txt');
+
+        assert.deepStrictEqual([store.clearExtracted().documents, fs.existsSync(path.join(docs, 'Vendor', 'Device', 'Test_RM'))], [2, false], 'the folder the index left empty goes');
+        assert.ok(fs.existsSync(copy) && fs.existsSync(pending), 'the copy and the empty folder of another stay');
+        assert.deepStrictEqual(fs.readdirSync(path.dirname(copy)), ['rm0456.pdf']);
+
+        await store.ensure(bookOf(file), fake);
+        fs.writeFileSync(note, 'kept');
+        assert.strictEqual(store.clearExtracted().documents, 1);
+        assert.deepStrictEqual(fs.readdirSync(path.dirname(note)), ['note.txt'], 'a folder that holds something else stays');
+        assert.deepStrictEqual(store.clearDownloads(), { documents: 0, files: 0, bytes: 0 }, 'the downloads of the retired path are the storage directory\'s only');
+        assert.ok(fs.existsSync(copy));
+    });
+
+    test('an index root that cannot be written leaves the index in the storage directory, where it stays in use', async () => {
+        const dir = tmp();
+        const docs = path.join(dir, 'cmsis', 'docs');
+        const file = fixtureAt(path.join(dir, 'packs', 'Test_RM.pdf'));
+        const fake = new FakeExtractor(['1 Intro\nHello']);
+        const legacy = path.join(dir, 'store', 'v', 'p', '1.0.0');
+
+        // A file where the hardware's folder would be: nothing can be made below it.
+        fs.mkdirSync(path.join(docs, 'Vendor'), { recursive: true });
+        fs.writeFileSync(path.join(docs, 'Vendor', 'Device'), 'not a folder');
+        const store = new PageStore(path.join(dir, 'store'), silentLog, docs);
+        assert.strictEqual(store.paths(bookOf(file)).dir, legacy);
+        await store.ensure(bookOf(file), fake);
+        assert.ok(fs.existsSync(path.join(legacy, 'test-rm.meta.json')));
+
+        // The folder is there, but a sidecar's name is taken by a folder: found only when writing.
+        const other = fixtureAt(path.join(dir, 'packs', 'Other_RM.pdf'));
+        const blocked = path.join(docs, 'Vendor', 'Board', 'Other_RM');
+        fs.mkdirSync(path.join(blocked, 'Other_RM.pages.jsonl'), { recursive: true });
+        const onBoard: DocRef = { ...docFor(other), scope: 'board', listedFor: { board: 'Vendor::Board:Rev.A' } };
+        assert.strictEqual(store.paths(onBoard).dir, blocked);
+        await store.ensure(onBoard, fake);
+        assert.strictEqual(store.paths(onBoard).dir, legacy, 'the storage directory took it');
+        await new PageStore(path.join(dir, 'store'), silentLog, docs).ensure(onBoard, fake);
+        assert.strictEqual(fake.calls, 2, 'and it is found there: not extracted again');
+    });
+
     test('concurrent ensure calls share one extraction', async () => {
         const dir = tmp();
         const file = path.join(dir, 'test-rm.pdf');

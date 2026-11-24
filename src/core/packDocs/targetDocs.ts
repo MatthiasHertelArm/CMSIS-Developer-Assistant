@@ -45,7 +45,7 @@ import {
 import { parseCbuildRunOutputs } from '../buildInfo/artifacts';
 import { ActivePackFolders, packFolderCandidates } from '../solutionAnswers';
 import { mergeInventory, readInventory } from './inventory';
-import { mergeServiceDocs } from './serviceDocs';
+import { hardwareParents, mergeServiceDocs } from './serviceDocs';
 import type { DocumentInfo } from '../../docService/contract';
 import { collectWorkspaceDocs } from './workspaceDocs';
 
@@ -503,6 +503,15 @@ export function collectTargetDocs(host: PackDocsHost, res: TargetResolution): Ta
     let serviceAdded = 0;
     if (res.serviceDocs) {
         serviceAdded = mergeServiceDocs(docs, res.serviceDocs.infos, res.serviceDocs.view);
+    }
+
+    // A pack's book belongs to the device or board it is listed for; its index lies in that hardware's folder (indexDir.ts).
+    const hardware = hardwareParents({ device: res.solutionNames?.device ?? res.device, board: res.solutionNames?.board ?? res.board });
+    for (const doc of docs) {
+        const listedFor = doc.scope === 'board' ? hardware.board : hardware.device;
+        if (doc.source === 'pack' && doc.scope !== 'unlisted' && listedFor) {
+            doc.listedFor = listedFor;
+        }
     }
 
     const ws = collectWorkspaceDocs(host);

@@ -44,6 +44,13 @@ function keyOf(name: QualifiedName | undefined, withRevision: boolean): string |
     return `${name.vendor ? `${name.vendor}::` : ''}${name.name}${withRevision && name.revision ? `:${name.revision}` : ''}`;
 }
 
+/** The device and the board of a target as parents, keyed as CMSIS Solution keys them. */
+export function hardwareParents(target: { device?: QualifiedName; board?: QualifiedName }): { device?: DocParent; board?: DocParent } {
+    const device = keyOf(target.device, false);
+    const board = keyOf(target.board, true);
+    return { ...(device ? { device: { device } } : {}), ...(board ? { board: { board } } : {}) };
+}
+
 /** The parents a target's documents can hang off, most specific first. */
 export function targetParents(target: { device?: QualifiedName; board?: QualifiedName; devicePack?: PackId; boardPack?: PackId; cores?: string[] }): DocParent[] {
     const parents: DocParent[] = [];
@@ -97,6 +104,7 @@ export function serviceDocRef(info: DocumentInfo, view: string): DocRef {
             url: info.name,
             ...(arm ? { arm } : {}),
             ...(info.versionLabel ? { revision: info.versionLabel } : {}),
+            ...(htmlOnly(info) ? { format: 'html' as const } : {}),
             cached: false,
             indexed: false,
             service,
@@ -132,6 +140,11 @@ function copyThere(info: DocumentInfo): boolean {
     return info.path !== undefined && info.error?.kind !== 'missing-file';
 }
 
+/** Whether the service found the document published as HTML only: the failure of its last download says so until a copy exists. */
+function htmlOnly(info: DocumentInfo): boolean {
+    return info.error?.kind === 'html' && info.path === undefined;
+}
+
 /**
  * Fold the service's documents into `docs` (in place): a listed document
  * with the same Arm id, URL or file gains `service`; Arm documents are only
@@ -160,14 +173,17 @@ export function mergeServiceDocs(docs: DocRef[], infos: readonly DocumentInfo[],
         if (listed) {
             if (listed.service === undefined || (!withCopy.has(listed) && copyThere(info))) {
                 listed.service = ref.service;
+                // What the entry that counts knows of the format: HTML only, or nothing.
+                if (ref.format === 'html') { listed.format = 'html'; } else if (listed.format === 'html') { delete listed.format; }
                 if (copyThere(info)) { withCopy.add(listed); }
             }
             if (listed.arm && info.sourceTitle) { listed.title = info.sourceTitle; }
             if (ref.revision && !listed.revision) { listed.revision = ref.revision; }
             continue;
         }
-        // An Arm document belongs to a target by armDocsFor's rule; one the target does not list joins only when it was fetched.
-        if (ref.arm !== undefined && !info.path) {
+        // An Arm document belongs to a target by armDocsFor's rule; one the target does not list joins only when it was
+        // fetched, or found to be HTML only, so that the listing says so instead of the agent asking again.
+        if (ref.arm !== undefined && !info.path && !htmlOnly(info)) {
             continue;
         }
         if (ref.source !== 'web' && docs.some((doc) => doc.id === ref.id)) {

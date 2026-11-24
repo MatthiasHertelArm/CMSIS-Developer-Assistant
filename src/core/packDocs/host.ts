@@ -77,8 +77,20 @@ export interface PackDocsHost {
      * `TargetResolution.packRoot`, which consumers read instead of this.
      */
     packRoot: string;
-    /** Where page text, metadata and indexes are cached (globalStorage/packdocs). */
+    /**
+     * The extension's own store (globalStorage/packdocs): the fallback for
+     * the page text, metadata and index of a document whose place in
+     * `indexDir` cannot be written, and what earlier releases left there
+     * until it is moved.
+     */
     storageDir: string;
+    /**
+     * CMSIS Solution's document folder (`~/.cmsis/docs`): the page text,
+     * metadata and index of a document go there, beside its copy or into the
+     * folder CMSIS Solution names for it. Absent (tests): everything lies in
+     * `storageDir`.
+     */
+    indexDir?: string;
     /**
      * CMSIS Solution's document inventory (`~/.cmsis/docs.yml`), read as a
      * source of the target's documents; absent: not read (tests).

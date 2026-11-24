@@ -6,6 +6,13 @@ external document manager, are in
 [Pack Docs: external document-storage management](pack-docs-storage.md); the
 tool group as a whole is described in [packDocs.md](../architecture/packDocs.md).
 
+> Superseded for the derived data: since 2.9.4 the extracted text and the
+> search index lie in CMSIS Solution's document folder `~/.cmsis/docs/`,
+> beside a document's copy or in the folder of its name, and
+> `<globalStorageUri>/packdocs/` is only the fallback. See *Storage* in
+> [packDocs.md](../architecture/packDocs.md#storage). The map below shows
+> the layout before that.
+
 Pack Docs keeps two kinds of data: the **originals** (the PDFs) and the
 **derived data** (extracted page text and a search index). Originals come
 from four places; all derived data lives in one cache,

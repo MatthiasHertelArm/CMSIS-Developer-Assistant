@@ -17,7 +17,7 @@
 /**
  * The arm.com resolver against trimmed copies of real documentation-service
  * responses (fixtures/packdocs/arm), the direct-PDF resolver, the download
- * guard rails, and fetchDocument end to end — all through an injected fetch.
+ * guard rails, and resolveDocument — all through an injected fetch.
  */
 
 import * as assert from 'assert';
@@ -28,7 +28,7 @@ import { armDocApiUrl, armDocId, armDocUrl, parseArmDocId, parseArmDocUrl } from
 import { silentLog } from '../core/packDocs/host';
 import { PageStore } from '../core/packDocs/pageStore';
 import { DocRef } from '../core/packDocs/pdscBooks';
-import { FetchFn, ResolveContext, armResolver, blockedHostReason, directPdfResolver, downloadPdf, fetchDocument, singlePdfExtension } from '../core/packDocs/webFetch';
+import { FetchFn, ResolveContext, armResolver, blockedHostReason, directPdfResolver, downloadPdf, htmlOnlyOutcome, resolveDocument, singlePdfExtension } from '../core/packDocs/webFetch';
 
 const FIXTURES = path.join(__dirname, '..', '..', '..', 'src', 'test', 'fixtures', 'packdocs');
 const ARM = path.join(FIXTURES, 'arm');
@@ -258,7 +258,7 @@ suite('webFetch private-address guard', () => {
     });
 });
 
-suite('webFetch download and fetchDocument', () => {
+suite('webFetch download and resolveDocument', () => {
     test('downloadPdf streams to a .part file, hashes, and refuses non-PDF or oversize bodies', async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-dl-'));
         const html: Route = () => new Response('<html>no</html>', { status: 200, headers: { 'content-type': 'text/html' } });
@@ -326,40 +326,33 @@ suite('webFetch download and fetchDocument', () => {
         assert.deepStrictEqual(fs.readdirSync(dir), ['doc.pdf']);
     });
 
-    test('fetchDocument caches the PDF and its provenance under the store id; annotate reads it back', async () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'packdocs-fetch-'));
-        const store = new PageStore(dir);
-        const { fn } = fakeFetch(ARM_ROUTES);
+    test('resolveDocument says what a web document is and takes its title and edition into the DocRef; nothing is downloaded or kept', async () => {
+        const { fn, calls } = fakeFetch(ARM_ROUTES);
         const doc = armDoc('ddi0553');
-        const out = await fetchDocument(doc, store, ctx(fn));
+        const out = await resolveDocument(doc, ctx(fn));
         assert.ok(out.ok, JSON.stringify(out));
         assert.strictEqual(out.resolver, 'arm.com');
-        assert.strictEqual(doc.path, path.join(dir, 'arm', 'ddi0553-latest', 'doc.pdf'));
-        assert.strictEqual(doc.cached, true);
+        assert.strictEqual(out.resolved.kind, 'pdf');
+        assert.strictEqual(out.resolved.downloadUrl, 'https://documentation-service.arm.com/static/699eb70d77ad5021756604d8');
+        assert.strictEqual(out.resolved.filename, 'DDI0553B_z_armv8m_arm.pdf');
         assert.strictEqual(doc.revision, 'B.z');
         assert.strictEqual(doc.format, 'pdf');
         assert.strictEqual(doc.title, 'Armv8-M Architecture Reference Manual');
         assert.deepStrictEqual(doc.arm, { docId: 'ddi0553', version: 'latest', resolvedVersion: 'bz', versionLabel: 'B.z' });
-        const record = JSON.parse(fs.readFileSync(path.join(dir, 'arm', 'ddi0553-latest', 'fetch.json'), 'utf-8'));
-        assert.strictEqual(record.downloadUrl, 'https://documentation-service.arm.com/static/699eb70d77ad5021756604d8');
-        assert.strictEqual(record.filename, 'DDI0553B_z_armv8m_arm.pdf');
-        assert.strictEqual(record.bytes, PDF_BYTES.length);
-
-        const fresh = store.annotate(armDoc('ddi0553'));
-        assert.strictEqual(fresh.cached, true);
-        assert.strictEqual(fresh.indexed, false, 'not extracted yet');
-        assert.strictEqual(fresh.revision, 'B.z');
-        assert.strictEqual(fresh.path, doc.path);
-        assert.strictEqual(fresh.title, 'Armv8-M Architecture Reference Manual');
+        assert.strictEqual(doc.path, undefined, 'no file: the document service downloads');
+        assert.strictEqual(doc.cached, false);
+        assert.ok(calls.every((call) => !call.url.includes('/static/')), 'the PDF itself was not asked for');
 
         const html = armDoc('ddi0000');
-        const h = await fetchDocument(html, store, ctx(fn));
-        assert.ok(!h.ok && /published as HTML on arm\.com \(HTMLPDF\)/.test(h.error));
+        const h = await resolveDocument(html, ctx(fn));
+        assert.ok(h.ok && h.resolved.kind === 'html', JSON.stringify(h));
         assert.strictEqual(html.format, 'html');
         assert.strictEqual(html.revision, 'r1p2');
-        assert.strictEqual(store.annotate(armDoc('ddi0000')).format, 'html', 'the outcome is remembered');
+        const answer = htmlOnlyOutcome(html, h.resolved, h.resolver);
+        assert.strictEqual(answer.error, 'arm/ddi0000-latest is published as HTML on arm.com (HTMLPDF); this version fetches PDFs only');
+        assert.strictEqual(answer.resolved, h.resolved, 'the reply names the document and its edition from it');
 
         const local: DocRef = { id: 'p/x', title: 'x', scope: 'device', source: 'pack', path: '/x.pdf', cached: false, indexed: false };
-        assert.ok(!(await fetchDocument(local, store, ctx(fn))).ok);
+        assert.deepStrictEqual(await resolveDocument(local, ctx(fn)), { ok: false, error: 'p/x is not a web document' });
     });
 });

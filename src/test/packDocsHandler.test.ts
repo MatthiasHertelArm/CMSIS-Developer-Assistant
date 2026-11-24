@@ -365,6 +365,13 @@ suite('PackDocsHandler (end to end, through the document service)', () => {
         assert.match(errata, /Note: this edition is an errata document; other editions: b \(r0p0\) — fetch_doc \{ doc: 'arm\/ddi0439-b' \}/);
         const html = textOf(await h.handleFetchDoc({ doc: 'ddi0000' }));
         assert.match(html, /^Could not fetch arm\/ddi0000-latest: arm\/ddi0000-latest is published as HTML on arm\.com \(HTMLPDF\); this version fetches PDFs only\.\nDocument: Example HTML-only Document, edition r1p2, version f\.\nURL: https:\/\/developer\.arm\.com\/documentation\/ddi0000\/latest\nAlternative: download the PDF yourself into \.agent-artifacts\/docs/);
+        // What was found is the document service's to keep: the listing reads it from there, in this window and in the next,
+        // with the title arm.com gave, and the extension's own store holds no record of it.
+        for (const window of [h, new PackDocsHandler(world.host, { timeoutMs: 30_000, workspaceRoot: () => world.workspace, extractor: new FakeExtractor(['x']) })]) {
+            assert.match(textOf(await window.handleListTargetDocs({})), /\n  arm\/ddi0000-latest · [^\n]*Example HTML-only Document · web — HTML on arm\.com, not fetchable in this version\n/);
+        }
+        assert.match(textOf(await h.handleReadDocPages({ doc: 'arm/ddi0000-latest', pages: '1' })), /^arm\/ddi0000-latest is published as HTML on arm\.com and cannot be read in this version/);
+        assert.ok(!fs.existsSync(path.join(world.host.storageDir, 'arm', 'ddi0000-latest')), 'no fetch record in the extension\'s own store');
         const dead = textOf(await h.handleFetchDoc({ url: 'https://developer.arm.com/documentation/??' }));
         assert.match(dead, /^Could not fetch web\/developer-arm-com\/[0-9a-f]{12}: .*HTTP 404/);
         assert.ok(world.fetchCalls.length >= 6, 'requests were made');
@@ -646,6 +653,24 @@ suite('PackDocsHandler for the panel, the Target Documents view and the commands
         assert.ok(none.endsWith(`\nIndexed 0, already cached 0, failed ${total} of ${total} documents.`), none);
         assert.ok(world.lines.slice(logged).some((line) => line.startsWith('E indexing stm32f7xx-dfp/test-rm failed') && line.includes('the PDF is damaged')),
             world.lines.slice(logged).join('\n'));
+    });
+
+    test('with the host\'s index folder every index lies there: a book in its device\'s folder, the rest in its pack\'s or its project\'s', async () => {
+        const docs = path.join(world.root, 'cmsis-docs');
+        const own = path.join(world.root, 'store-beside-the-index');
+        const indexing = new PackDocsHandler({ ...world.host, storageDir: own, indexDir: docs }, options(world));
+        const text = await indexing.indexTarget({});
+        assert.match(text, /\nIndexed (\d+), already cached 0, failed 0 of \1 documents\.$/);
+        const kept = indexing.getStore().listCached();
+        const folderOf = (id: string): string => path.relative(docs, kept.find((doc) => doc.id === id)?.dir ?? '').split(path.sep).join('/');
+        assert.strictEqual(folderOf('stm32f7xx-dfp/test-rm'), 'STMicroelectronics/STM32F756ZGTx/test-rm');
+        assert.strictEqual(folderOf('stm32f7xx-dfp/unlisted-errata'), 'packs/Keil/STM32F7xx_DFP/unlisted-errata');
+        assert.match(folderOf('workspace/board-um'), /^projects\/[0-9a-f]{12}\/board-um$/);
+        assert.match(folderOf('workspace/vendor-rm'), /^projects\/[0-9a-f]{12}\/vendor-rm$/);
+        assert.ok(kept.length >= 4 && kept.every((doc) => !path.relative(docs, doc.dir).startsWith('..')), JSON.stringify(kept.map((doc) => doc.dir)));
+        assert.ok(!fs.existsSync(own), 'nothing in the extension\'s own store');
+        assert.ok((await indexing.indexTarget({})).endsWith(`\nIndexed 0, already cached ${kept.length}, failed 0 of ${kept.length} documents.`));
+        indexing.dispose();
     });
 
     test('the view gets the document service with the target\'s parents, most specific first, and where the documents are kept', async () => {

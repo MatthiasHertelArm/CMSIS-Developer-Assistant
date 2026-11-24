@@ -92,6 +92,12 @@ export interface DocRef {
     /** Why this window's last `fetch_doc` of it failed, until one succeeds. */
     fetchFailure?: string;
     /**
+     * A pack's book: the device or board of the target it is listed for, as
+     * CMSIS Solution keys them. It names the folder of the book's index in
+     * CMSIS Solution's document folder (`indexDir.ts`).
+     */
+    listedFor?: DocParent;
+    /**
      * What the document service (2.9.2) knows of it: its parent and name
      * there, the scope, the copy, an open request, the last failure, and the
      * view where the user resolves it.

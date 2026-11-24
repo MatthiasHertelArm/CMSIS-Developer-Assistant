@@ -6,6 +6,11 @@ introduce an extension API. For the current calls into other extensions,
 see [Cross-extension calls](extension-calls.md); for a one-page map of the
 storage, see [Pack Docs storage at a glance](pack-docs-storage-overview.md).
 
+> Superseded for the place of the derived data: since 2.9.4 the extracted
+> text and the search index lie in CMSIS Solution's document folder
+> `~/.cmsis/docs/`, and `<globalStorageUri>/packdocs/` is only the fallback.
+> See *Storage* in [packDocs.md](../architecture/packDocs.md#storage).
+
 ## The boundary today
 
 Pack Docs has no external storage-provider API. Its
