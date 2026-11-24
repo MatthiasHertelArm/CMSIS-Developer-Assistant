@@ -67,6 +67,22 @@ suite('coreSvd', () => {
         }
     });
 
+    test('CPUID names the part number of every shipped core, and each implementer code (#148)', () => {
+        const field = (summary: SvdSummary, name: string): string =>
+            registersOf(summary, findPeripheral(summary, 'SCB')!).find(r => r.name === 'CPUID')!.fields.find(f => f.name === name)?.description ?? '';
+        for (const [core, { summary }] of summaries) {
+            const partno = field(summary, 'PARTNO');
+            // Every core of the index, on every core's file: the generator gives all files the same text.
+            for (const named of summaries.keys()) {
+                // A part number, or "or" for a second core with the same one, then the whole name: Cortex-M3 is not found in Cortex-M33.
+                const entry = new RegExp(`(0x[0-9A-F]{3}|or) ${named.replace(/[+]/g, '\\+')}(?=[,. ])`);
+                assert.match(partno, entry, `${core}: SCB.CPUID.PARTNO names no part number for ${named}`);
+            }
+            assert.match(partno, /Implementer 0x63: .*0xD24 Cortex-M52/, `${core}: Cortex-M52 reports implementer 0x63`);
+            assert.strictEqual(field(summary, 'IMPLEMENTER'), 'Implementer code: 0x41 = Arm, 0x63 = Arm China.', core);
+        }
+    });
+
     test('the fault registers carry descriptions on every core with configurable faults', () => {
         for (const [core, { summary, arch }] of summaries) {
             if (arch.startsWith('ARMv6') || arch.includes('Baseline')) { continue; }

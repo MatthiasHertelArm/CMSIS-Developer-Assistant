@@ -1,7 +1,7 @@
 {
   "generator": "gen_core_svd.py 1.0.0",
   "cmsis": "6.3.0 (CMSIS-Core 6.1)",
-  "generated": "2026-08-28",
+  "generated": "2026-11-24",
   "cores": {
     "Cortex-M0": {
       "file": "Cortex_M0.svd",
