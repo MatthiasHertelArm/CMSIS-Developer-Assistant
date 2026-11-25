@@ -1347,7 +1347,7 @@
               "timeoutMs": {
                 "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
-                "minimum": 1000,
+                "minimum": 3000,
                 "maximum": 600000
               }
             }
@@ -2885,7 +2885,7 @@
               "timeoutMs": {
                 "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
-                "minimum": 1000,
+                "minimum": 3000,
                 "maximum": 600000
               }
             }
@@ -5047,7 +5047,7 @@
               "timeoutMs": {
                 "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
-                "minimum": 1000,
+                "minimum": 3000,
                 "maximum": 600000
               }
             }
@@ -7067,7 +7067,7 @@
               "timeoutMs": {
                 "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
-                "minimum": 1000,
+                "minimum": 3000,
                 "maximum": 600000
               },
               "window": {
@@ -9195,7 +9195,7 @@
               "timeoutMs": {
                 "description": "Wait in ms, default 60000, max 600000.",
                 "type": "integer",
-                "minimum": 1000,
+                "minimum": 3000,
                 "maximum": 600000
               },
               "window": {

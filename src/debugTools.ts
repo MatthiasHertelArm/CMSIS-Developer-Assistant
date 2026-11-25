@@ -43,6 +43,7 @@ import { z } from 'zod';
 import type { IDebuggingHandler } from '.';
 import { QUERY_KINDS } from './core/catalogQuery';
 import { TEXT_ONLY_CLIENTS, dropsInstructions } from './core/clientHosting';
+import { FLASH_MIN_WAIT_MS } from './core/flashController';
 import { TOPIC_NAMES, sliceTopic } from './core/instructionTopics';
 import { MeasuredMcpServer, toCallToolResult } from './core/measuredMcpServer';
 import { WINDOW_ARGUMENT } from './core/opTable';
@@ -842,7 +843,8 @@ function registerTools(mcp: McpServer, handlers: SessionHandlers, parts: Session
         inputSchema: {
             cbuildRunFile: z.string().optional()
                 .describe('Path to the .cbuild-run.yml to program. Omit to auto-resolve from launch.json / out/.'),
-            timeoutMs: z.number().int().min(1_000).max(600_000).optional().describe(LONG_TIMEOUT_DESC),
+            // A shorter wait leaves no time to program after the lookups and the answer's margin.
+            timeoutMs: z.number().int().min(FLASH_MIN_WAIT_MS).max(600_000).optional().describe(LONG_TIMEOUT_DESC),
         },
         annotations: ALTERS_TARGET,
     }, (args) => debug.handleFlash(args).then(reply));

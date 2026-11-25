@@ -778,7 +778,8 @@ pyOCD that starts for the first time can take a minute. Programming starts
 only with a budget left (`MIN_PROGRAM_MS` beyond the margin kept for the
 answer): otherwise the answer is "Flash not started — nothing was
 programmed", status `timeout`, and pyOCD never touches the target after the
-wait has run out. A pyOCD start that is under way when the wait ends is let
+wait has run out. The tool's schema therefore takes no `timeoutMs` under
+`FLASH_MIN_WAIT_MS` (3 s): a shorter wait could never program. A pyOCD start that is under way when the wait ends is let
 finish under the probe mark, so that the next call finds it ready; no
 further candidate is tried then.
 

@@ -62,9 +62,12 @@ import { formatDuration, probeRefusal } from './jobText';
 /** Programming budget and fence default without a `timeoutMs`. */
 const DEFAULT_FLASH_MS = 60_000;
 /** Kept back from the budget so the tool answers before its fence. */
-const FENCE_MARGIN_MS = 1_500;
-/** The least budget programming is started with: a pyOCD killed sooner than that would stop while it connects or erases. */
-const MIN_PROGRAM_MS = 1_000;
+export const FENCE_MARGIN_MS = 1_500;
+/**
+ * The least budget programming is started with: a pyOCD killed sooner than that would stop while it connects or
+ * erases. With the margin above it is why the tool takes no `timeoutMs` under `FLASH_MIN_WAIT_MS`.
+ */
+export const MIN_PROGRAM_MS = 1_000;
 /** The CMSIS Debugger extension, which bundles pyOCD under `tools/pyocd`. */
 const CMSIS_DEBUGGER_ID = 'Arm.vscode-cmsis-debugger';
 
