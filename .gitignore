@@ -10,6 +10,9 @@ dist/
 # Test runs: VS Code downloads, coverage, the real-board driver's local config and reports
 /.vscode-test/
 /coverage/
+# Mutation testing (stryker.config.mjs): the sandbox copy of the checkout and the reports, the incremental file among them
+/.stryker-tmp/
+/reports/
 test/realboard/realboard.config.json
 test/realboard/realboard.report.*.json
 

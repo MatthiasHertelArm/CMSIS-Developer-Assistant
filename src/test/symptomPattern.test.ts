@@ -113,7 +113,11 @@ suite('bounded symptom patterns', () => {
         assert.strictEqual(pattern.test('a'.repeat(2_000) + '!'), false);
     });
 
-    test('overlapping quantifiers cannot stall a match; the stress test itself has an enforceable worker deadline', async () => {
+    test('overlapping quantifiers cannot stall a match; the stress test itself has an enforceable worker deadline', async function () {
+        if ('__stryker__' in globalThis) {
+            // Under Stryker's instrumentation the code is slower, and the 2 s deadline below says nothing about a mutant.
+            this.skip();
+        }
         const worker = new Worker(`
             const { parentPort, workerData } = require('node:worker_threads');
             const { compileSymptomPattern, SymptomMatchBudget } = require(workerData);
