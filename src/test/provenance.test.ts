@@ -30,8 +30,8 @@ const DERIVED_FILES = [
 ];
 
 const MARKER = ['Copyright (c)', 'Microsoft', 'Corporation'].join(' ');
-// .claude holds local agent worktrees (full checkouts of other revisions).
-const SKIP_DIRS = new Set(['.git', '.claude', 'node_modules', 'out', 'dist', 'coverage', '.vscode-test', 'cmsis-skills', '.work']);
+// .claude holds local agent worktrees (full checkouts of other revisions); .stryker-tmp the copy of the checkout a mutation run leaves behind when it is stopped.
+const SKIP_DIRS = new Set(['.git', '.claude', 'node_modules', 'out', 'dist', 'coverage', '.vscode-test', 'cmsis-skills', '.work', '.stryker-tmp']);
 // Code and licence files. Prose may quote the line (docs about this very rule).
 const TEXT_FILE = /\.(ts|js|mjs|cjs|json|jsonc)$|^(NOTICE|LICENSE[-\w]*)$/;
 

@@ -44,6 +44,10 @@ node_modules/**
 !node_modules/ms/**
 coverage/**
 .qlty/**
+# Mutation testing (stryker.config.mjs): its configuration, sandbox and reports never ship.
+stryker.config.mjs
+.stryker-tmp/**
+reports/**
 # Local agent settings of a working copy (git ignores them only through a user's global ignore file).
 .claude/**
 .github/**
