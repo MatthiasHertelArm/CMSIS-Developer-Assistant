@@ -101,6 +101,7 @@ const UFSR_BITS: ReadonlyArray<[number, string, string]> = [
     [0, 'UNDEFINSTR', 'UNDEFINSTR: Undefined instruction'],
 ];
 const DFSR_BITS: ReadonlyArray<[number, string, string]> = [
+    [5, 'PMU', 'PMU: PMU counter overflow debug event (Armv8.1-M)'],
     [4, 'EXTERNAL', 'EXTERNAL: External debug request'],
     [3, 'VCATCH', 'VCATCH: Vector catch'],
     [2, 'DWTTRAP', 'DWTTRAP: DWT match'],
