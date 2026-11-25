@@ -186,7 +186,8 @@ suite('buildInfo/buildLog', () => {
 
     test('looksLikeBuildLog and shortPath', () => {
         assert.ok(looksLikeBuildLog(path.join(BUILDINFO_FIXTURES, 'build-ok.log')));
-        const tmp = path.join(BUILDINFO_FIXTURES, '..', '..', '..', '..', 'out', 'not-a-build.log.tmp');
+        // One file per process: Stryker's workers run this suite side by side in one sandbox.
+        const tmp = path.join(BUILDINFO_FIXTURES, '..', '..', '..', '..', 'out', `not-a-build.${process.pid}.log.tmp`);
         fs.mkdirSync(path.dirname(tmp), { recursive: true });
         fs.writeFileSync(tmp, 'serial capture 12:00:01 temperature 21.5\n');
         try { assert.ok(!looksLikeBuildLog(tmp)); } finally { fs.unlinkSync(tmp); }

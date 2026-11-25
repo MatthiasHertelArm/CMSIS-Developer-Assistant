@@ -79,6 +79,41 @@ the Electron harness will not start:
   --require test/transport/vscode-stub.js out/src/test/*.test.js
 ```
 
+Six suites need more of VS Code than the stub offers (`Disposable.from`,
+`LogLevel`, `Uri.joinPath`) and fail in this run; `npm test` runs them.
+
+### Mutation testing
+
+Mutation testing judges the tests themselves. Stryker (`stryker.config.mjs`)
+copies the checkout into `.stryker-tmp/`, changes the code of `src/core/` one
+small step at a time (`===` into `!==`, a string into `""`, a branch dropped),
+compiles the copy and runs the headless unit tests against each change. A
+change no test fails on has survived and marks behaviour no test pins down.
+The report is `reports/mutation/mutation.html`, with `mutation.json` beside it
+for a script or an agent; both folders are git-ignored.
+Run it for the module you are working on, with Node 22; the whole of
+`src/core/` has about 31 000 mutants (31 299 in 112 files on 2026-11-25), about
+five hours at the rate of one module:
+
+```sh
+npm run test:mutation -- --mutate src/core/faultDecoder.ts
+```
+
+A second run tests only the mutants whose code or tests changed
+(`reports/stryker-incremental.json`); `-- --force` tests all of them again.
+Property-based tests use `fast-check` inside the mocha suites
+(`src/test/faultDecoder.test.ts` is the first); keep their seed fixed, so that
+a mutation run judges the same values every time, and take their expected
+values from the manual or the proposal, never from the module under test. The
+six suites above are left out through `mochaOptions.ignore` in the config, and
+so is the document service's suite: a mutant in a module-level table is tested
+with every suite, and its watcher test fails under the load of the parallel
+workers, which would count as a kill. A test that fails for a reason of its
+own kills mutants by mistake, so a suite that is to judge mutants must pass in
+parallel with itself, and a test with a wall-clock limit skips itself when
+`__stryker__` is in `globalThis`, as the stress test of
+`symptomPattern.test.ts` does: the instrumented code is slower.
+
 `test/transport/packaged-vsix.js` is the one that catches packaging mistakes:
 a missing entry in the `.vscodeignore` serialport allow-list fails **only** in
 the built extension, never in the workspace, so it unpacks the VSIX and proves

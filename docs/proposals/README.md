@@ -39,6 +39,14 @@ Decided 2026-11-22: the preview after 2.9.4 carries the proposal below, and it l
 |---|---|---|---|---|
 | 2.9.5 | [Source browsing from clangd's index: `source_find` and `source_get`](2.9.5-source-browsing.md) | S + M + M + S + S; an own clangd process L, on a decision | at run time the clangd extension with a clangd executable, and the clangd setup CMSIS Solution generates | 7; 1 to 4, 6 and 7 decided 2026-11-22 as recommended (2 with the rule above), 5 (clangd's diagnostics) decided 2026-11-23 as recommended: not offered |
 
+## Test quality: the pipeline for code that agents write
+
+Proposed 2026-11-25, after Stryker (`npm run test:mutation`, `stryker.config.mjs`) came into the repository the same day, and decided that day. Implemented: decision 7 (the stress test steps aside under instrumentation) with the set-up, and pilot 1 of step 3 (`faultDecoder.ts`, 99.5 %); the first step, the lint gate, is small.
+
+| Proposal (file) | Title | Size | Depends on | Decisions |
+|---|---|---|---|---|
+| test-quality-pipeline | [Test quality: the type system, tests from the specification, properties and the mutation score](test-quality-pipeline.md) | S + S + M + M + S | the Stryker set-up of 2026-11-25; a baseline run over `src/core/` before a threshold | 7, decided 2026-11-25 (3 differs from the recommendation: the mutation run stays local, no CI job) |
+
 ## Reading the historical record
 
 The original release plan, measurements and dated status notes follow unchanged in substance. Old Current state sections and unchecked decisions describe their recorded baseline, not today's code. Removed skill/source references that were broken now point to the verified 2.3.10 commit they discussed. For current instructions use the [agent guide](../agent-resources/debug_instructions.md), [user guide](../user-guide.md) and [architecture](../architecture/debugMCPServer.md).
