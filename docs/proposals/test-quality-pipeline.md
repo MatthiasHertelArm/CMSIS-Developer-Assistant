@@ -81,8 +81,9 @@ runs a watcher test of the document service failed under the load of the
 workers and killed 33 mutants by mistake; its suite is left out, and two
 other tests were made safe for parallel workers. A suite that is to judge
 mutants must pass in parallel with itself. The whole of `src/core/` has
-29 509 mutants (dry run of 2026-11-25); at the rate of `faultDecoder.ts` that
-is about five hours with 15 workers, and the run has not been made. With
+31 299 mutants in 112 files (dry run of 2026-11-25 on the 2.9.5 line; 29 509
+in 103 files at `dfe7887`); at the rate of `faultDecoder.ts` that is about
+five hours with 15 workers, and the run has not been made. With
 everything instrumented the code is slower, and the stress test of
 `symptomPattern.test.ts` ("overlapping quantifiers cannot stall a match")
 passed its 2 s worker deadline; it now skips itself under instrumentation
@@ -246,6 +247,11 @@ The set-up of 2026-11-25 is the base.
   without it.
 - Cost: not measured. The manuals were seven register pages of two
   documents, read through the documentation tools.
+- Proven again on the 2.9.5 line after the rebase onto `26db439`
+  (2026-11-25): the same six suites fail headlessly, the full-scope dry run
+  passes with 1 553 tests, `faultDecoder.ts` 99.5 % and `symptomPattern.ts`
+  87.9 % as before; the gate of the 2.9.5 line passed on the branch (1 883
+  unit tests, every oracle identical).
 
 ## Order
 

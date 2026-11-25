@@ -29,7 +29,7 @@
 // (`Disposable.from`, `LogLevel`, `Uri.joinPath`) and are left out, so the
 // mutated files are those of src/core/, which those six do not cover alone;
 // one more suite is left out because it fails under load (see `ignore`).
-// A full run over src/core/ (29 509 mutants, measured 2026-11-25) takes
+// A full run over src/core/ (31 299 mutants in 112 files on 2026-11-25) takes
 // hours; narrow it with `--mutate`:
 //
 //   npm run test:mutation -- --mutate src/core/faultDecoder.ts
@@ -69,7 +69,7 @@ const config = {
         ],
         // A test with a wall-clock limit skips itself when `__stryker__` is
         // in globalThis, as the stress test of symptomPattern.test.ts does:
-        // with all of src/core/ instrumented (29 509 mutants) the code is
+        // with all of src/core/ instrumented (over 30 000 mutants) the code is
         // slower, and a deadline it misses says nothing about a mutant.
     },
 

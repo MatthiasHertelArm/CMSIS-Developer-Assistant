@@ -92,7 +92,8 @@ change no test fails on has survived and marks behaviour no test pins down.
 The report is `reports/mutation/mutation.html`, with `mutation.json` beside it
 for a script or an agent; both folders are git-ignored.
 Run it for the module you are working on, with Node 22; the whole of
-`src/core/` has 29 509 mutants, about five hours at the rate of one module:
+`src/core/` has about 31 000 mutants (31 299 in 112 files on 2026-11-25), about
+five hours at the rate of one module:
 
 ```sh
 npm run test:mutation -- --mutate src/core/faultDecoder.ts
