@@ -1,6 +1,6 @@
 # TPIP Report for CMSIS Developer Assistant
 
-Generated for release: 2.9.4
+Generated for release: 2.9.5
 
 | *Package* | *Version* | *Repository* | *License* |
 | --- | --- | --- | --- |
@@ -18,7 +18,7 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 
 | Source | Repository | Licence | What was taken | Units |
 | --- | --- | --- | --- | --- |
-| CMSIS-Developer-Assistant | [Open-CMSIS-Pack/CMSIS-Developer-Assistant](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 60 |
+| CMSIS-Developer-Assistant | [Open-CMSIS-Pack/CMSIS-Developer-Assistant](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 65 |
 | cmsis-skills | [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 213 |
 | devtools | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | tool messages (the message tables of packchk, svdconv, csolution); causes and fixes in own words | 421 |
 | cmsis-toolbox | [Open-CMSIS-Pack/cmsis-toolbox](https://github.com/Open-CMSIS-Pack/cmsis-toolbox) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-toolbox/blob/HEAD/LICENSE) | documentation | 264 |
@@ -82,7 +82,7 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 | arm-software-readmes (CMSIS-RTOS2_Validation) | [ARM-software/CMSIS-RTOS2_Validation](https://github.com/ARM-software/CMSIS-RTOS2_Validation) | [Apache-2.0](https://github.com/ARM-software/CMSIS-RTOS2_Validation/blob/HEAD/LICENSE) | documentation | 9 |
 | arm-software-readmes (Cortex_DFP) | [ARM-software/Cortex_DFP](https://github.com/ARM-software/Cortex_DFP) | [Apache-2.0](https://github.com/ARM-software/Cortex_DFP/blob/HEAD/LICENSE) | documentation | 4 |
 | littlefs | [littlefs-project/littlefs](https://github.com/littlefs-project/littlefs) | [BSD-3-Clause](https://github.com/littlefs-project/littlefs/blob/HEAD/LICENSE.md) | documentation | 24 |
-| mbedtls-kb | [Mbed-TLS/mbedtls-docs](https://github.com/Mbed-TLS/mbedtls-docs) | [Apache-2.0](https://github.com/Mbed-TLS/mbedtls-docs/blob/HEAD/LICENSE) | documentation | 331 |
+| mbedtls-kb | [Mbed-TLS/mbedtls-docs](https://github.com/Mbed-TLS/mbedtls-docs) | [Apache-2.0](https://github.com/Mbed-TLS/mbedtls-docs/blob/HEAD/LICENSE) | documentation | 319 |
 | zephyr-boards | [zephyrproject-rtos/zephyr](https://github.com/zephyrproject-rtos/zephyr) | [Apache-2.0](https://github.com/zephyrproject-rtos/zephyr/blob/HEAD/LICENSE) | documentation | 132 |
 | devtools-docs | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | documentation | 83 |
 | issues of CMSIS-RTX | [ARM-software/CMSIS-RTX](https://github.com/ARM-software/CMSIS-RTX/issues) | own summaries | issue digests in own words, each linked to its thread | 6 |
