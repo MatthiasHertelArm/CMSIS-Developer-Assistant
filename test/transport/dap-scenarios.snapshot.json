@@ -3183,6 +3183,45 @@
       ]
     },
     {
+      "name": "open-solution-stray-drop-in",
+      "description": "No session, the CMSIS Solution extension active, the active csolution in a subfolder of the workspace folder and a .vscode.d/tasks.json at the folder root, which the extension never reads (#147): open_solution of that csolution, already active, ends with the file, the folder it belongs in and how the merge runs again; once a csolution lies at the root too (the root drop-in is then that one's) the note is gone; get_session_status then names the root csolution again.",
+      "calls": [
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "open_solution",
+            "path": "<tmp>/project/Sensor/Sensor.csolution.yml"
+          },
+          "text": "<tmp>/project/Sensor is open in this VS Code window. Active solution: <tmp>/project/Sensor/Sensor.csolution.yml, target NUCLEO-F401RE. Next: cmsis_action build, then load_and_debug.\n<tmp>/project/.vscode.d/tasks.json is not read: CMSIS Solution merges .vscode.d drop-ins from the active csolution's own folder only, so it belongs in <tmp>/project/Sensor/.vscode.d. Move it there; then cmsis_action refresh (or the command Update Debug Tasks and Launch Configurations) merges the drop-in, provided the target set names a debugger.",
+          "traffic": [
+            "api: getSolutionFile",
+            "api: getActiveTarget"
+          ]
+        },
+        {
+          "tool": "cmsis_action",
+          "args": {
+            "action": "open_solution",
+            "path": "<tmp>/project/Sensor/Sensor.csolution.yml"
+          },
+          "text": "<tmp>/project/Sensor is open in this VS Code window. Active solution: <tmp>/project/Sensor/Sensor.csolution.yml, target NUCLEO-F401RE. Next: cmsis_action build, then load_and_debug.",
+          "traffic": [
+            "api: getSolutionFile",
+            "api: getActiveTarget"
+          ]
+        },
+        {
+          "tool": "get_session_status",
+          "args": {},
+          "text": "State: no-session\nDAP responsive: false\nDiagnostics: serverVersion=<version>, liveSessionsInThisWindow=0, vscodeActiveDebugSession=undefined\nActive solution: <tmp>/project/Blinky.csolution.yml (workspace folder <tmp>/project)\nActive target: NUCLEO-F401RE (declared: NUCLEO-F401RE)\nCMSIS tasks: last load_and_run ✅ ended by itself, exit 0 <n>s ago; last clean ✅ <n>s ago; last rebuild ✅ <n>s ago; last build ⚠️ exit 0, not confirmed <n>s ago\nHint: no debug session is running in the VS Code window this call was routed to. Start one with cmsis_action load_and_debug (CMSIS targets) or start_debugging. If a session IS running and you expected to reach it, it is in a different window: call list_debug_windows to see which windows are registered and which one holds the session, then select_debug_window to pin it for this session. If you just reinstalled the extension, reload the window so the new build is active.\n\nTool rules: board, build, serial and documentation work goes through these tools, not the shell (see the server instructions). Procedures for CMSIS tasks come from knowledge_search and knowledge_get: look one up before you start.\n\nTool stats (this session): <trailer>",
+          "traffic": [
+            "api: getSolutionFile",
+            "api: getActiveTarget"
+          ]
+        }
+      ]
+    },
+    {
       "name": "status-solution-too-old",
       "description": "No session, CMSIS Solution 1.72.0 active, which offers API version 2 only: get_session_status says that the extension is too old and names no solution, cmsis_action build is refused with the hint to update, and no hidden command of the extension is run; cmsis_action status still answers.",
       "calls": [
