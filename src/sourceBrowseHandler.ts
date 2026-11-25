@@ -136,10 +136,16 @@ function messageOf(caught: unknown): string {
     return caught instanceof Error ? caught.message : String(caught);
 }
 
-/** A path with its symbolic links resolved; the path itself when it does not exist. */
+/**
+ * A path with its symbolic links resolved; the path itself when it does not exist.
+ * Not `realpathSync.native`: on Windows that also turns a short name (`RUNNER~1`)
+ * into the long one, so a file clangd names in the spelling of the compile database
+ * would no longer lie inside the folder, and a URI built from it would name a
+ * document clangd does not know.
+ */
 function canonical(file: string): string {
     try {
-        return fs.realpathSync.native(file);
+        return fs.realpathSync(file);
     } catch {
         return file;
     }

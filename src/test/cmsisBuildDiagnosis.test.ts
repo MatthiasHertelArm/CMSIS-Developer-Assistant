@@ -419,7 +419,8 @@ suite('build diagnosis (#15)', () => {
             '    - name: CMSIS-Toolbox', `      directory: ${bin}`, ''].join('\n');
         failBuild(w);
         await until(() => w.children.length === 1, 'cbuild was spawned from the API\'s environment');
-        assert.strictEqual(path.dirname(w.children[0].command), path.join(w.dir, 'toolbox', 'bin'));
+        // The environment names the directory with forward slashes, as CMSIS Solution writes it on Windows too.
+        assert.strictEqual(path.normalize(path.dirname(w.children[0].command)), path.join(w.dir, 'toolbox', 'bin'));
         w.children[0].finish(1, '');
     });
 

@@ -1,6 +1,6 @@
 # TPIP Report for CMSIS Developer Assistant
 
-Generated for release: 2.9.0
+Generated for release: 2.9.4
 
 | *Package* | *Version* | *Repository* | *License* |
 | --- | --- | --- | --- |
@@ -18,9 +18,9 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 
 | Source | Repository | Licence | What was taken | Units |
 | --- | --- | --- | --- | --- |
-| CMSIS-Developer-Assistant | [Open-CMSIS-Pack/CMSIS-Developer-Assistant](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 45 |
+| CMSIS-Developer-Assistant | [Open-CMSIS-Pack/CMSIS-Developer-Assistant](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 60 |
 | cmsis-skills | [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 213 |
-| devtools | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | tool messages (the message tables of packchk, svdconv, csolution); causes and fixes in own words | 404 |
+| devtools | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | tool messages (the message tables of packchk, svdconv, csolution); causes and fixes in own words | 421 |
 | cmsis-toolbox | [Open-CMSIS-Pack/cmsis-toolbox](https://github.com/Open-CMSIS-Pack/cmsis-toolbox) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-toolbox/blob/HEAD/LICENSE) | documentation | 264 |
 | pack-spec | [Open-CMSIS-Pack/Open-CMSIS-Pack-Spec](https://github.com/Open-CMSIS-Pack/Open-CMSIS-Pack-Spec) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/Open-CMSIS-Pack-Spec/blob/HEAD/LICENSE) | documentation | 210 |
 | svd-spec | [Open-CMSIS-Pack/svd-spec](https://github.com/Open-CMSIS-Pack/svd-spec) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/svd-spec/blob/HEAD/LICENSE) | documentation | 27 |
