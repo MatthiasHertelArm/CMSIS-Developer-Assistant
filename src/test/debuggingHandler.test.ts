@@ -40,7 +40,9 @@ import { cancelPendingLaunches, pendingStartLines, pendingStartsNote, startsToTa
 import type { SolutionFileAnswer } from '../core/solutionAnswers';
 import { isAddressLiteral, sideEffectOf } from '../handler/targetText';
 import type { GdbPortHolder } from '../core/gdbPortGuard';
+import { FLASH_MIN_WAIT_MS } from '../core/flashController';
 import { GdbPortReservations } from '../core/gdbPortReservations';
+import { FENCE_MARGIN_MS, MIN_PROGRAM_MS } from '../handler/flashTool';
 import { CmsisJobTracker } from '../cmsisJobTracker';
 import type { JobDiagnosis } from '../core/cmsisTasks';
 import { runInCallContext } from '../core/callContext';
@@ -6811,6 +6813,14 @@ suite('DebuggingHandler', () => {
                 fs.chmodSync(bin, 0o755);
                 return { extensionPath, loads: () => (fs.existsSync(loadsFile) ? fs.readFileSync(loadsFile, 'utf8').trim().split('\n').length : 0) };
             };
+
+            test('the least wait the tool takes leaves a budget to program with, and the tool\'s schema names it', () => {
+                assert.ok(FLASH_MIN_WAIT_MS >= FENCE_MARGIN_MS + MIN_PROGRAM_MS, 'a wait the schema accepts can program');
+                assert.ok(FLASH_MIN_WAIT_MS - (FENCE_MARGIN_MS + MIN_PROGRAM_MS) <= 1_000, 'and it is not held higher than that needs');
+                const registration = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src', 'debugTools.ts'), 'utf8');
+                const flash = registration.slice(registration.indexOf('mcp.registerTool(\'flash\''));
+                assert.match(flash.slice(0, flash.indexOf('annotations:')), /timeoutMs: z\.number\(\)\.int\(\)\.min\(FLASH_MIN_WAIT_MS\)\.max\(600_000\)/);
+            });
 
             test('a second flash while the first one still looks for pyOCD is refused, and pyOCD loads once', async function () {
                 if (!shellScriptsRun) {
