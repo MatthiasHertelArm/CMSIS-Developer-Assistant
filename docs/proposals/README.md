@@ -41,7 +41,7 @@ Decided 2026-11-22: the preview after 2.9.4 carries the proposal below, and it l
 
 ## Test quality: the pipeline for code that agents write
 
-Proposed 2026-11-25, after Stryker (`npm run test:mutation`, `stryker.config.mjs`) came into the repository the same day, and decided that day. Of its steps only decision 7 (the stress test steps aside under instrumentation) is implemented, with the set-up; the first step, the lint gate, is small.
+Proposed 2026-11-25, after Stryker (`npm run test:mutation`, `stryker.config.mjs`) came into the repository the same day, and decided that day. Implemented: decision 7 (the stress test steps aside under instrumentation) with the set-up, and pilot 1 of step 3 (`faultDecoder.ts`, 99.5 %); the first step, the lint gate, is small.
 
 | Proposal (file) | Title | Size | Depends on | Decisions |
 |---|---|---|---|---|

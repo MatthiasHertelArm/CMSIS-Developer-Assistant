@@ -80,7 +80,7 @@ suite('Fault decoder', () => {
  * The decoder against the architecture, and pins of what agents read.
  *
  * The bit model below was transcribed by hand on 2026-11-25 from the Armv8-M Architecture Reference
- * Manual DDI0553B.z (CFSR p.1477, MMFSR p.1740-1741, BFSR p.1467-1469, UFSR p.1897-1898, HFSR p.1671,
+ * Manual DDI0553B.z (CFSR p.1477, MMFSR p.1740-1741, BFSR p.1467-1469, UFSR p.1897-1899, HFSR p.1671-1672,
  * DFSR p.1529-1530) and the Armv7-M Architecture Reference Manual DDI0403E.e (CFSR and MMFSR p.609-610,
  * MMFAR p.613, DFSR p.699), both read through the documentation tools. It covers the five status
  * registers the decoder reads and nothing else of the architecture's fault model; a bit it does not
@@ -239,17 +239,18 @@ suite('Fault decoder: the architecture\'s bits (fast-check)', () => {
         }
     });
 
-    // The three gaps the first mutation run showed (2026-11-25), as examples beside the properties above.
+    // The three gaps the first mutation run showed (2026-11-25), as examples beside the properties above;
+    // their wording and layout are the module's conventions, so they are pins.
     const regs = (over: Partial<FaultRegisters> = {}): FaultRegisters =>
         ({ CFSR: 0, HFSR: 0, DFSR: 0, MMFAR: 0, BFAR: 0, AFSR: 0, ...over });
 
-    test('MMARVALID carries the MMFAR as eight hex digits, under MMFSR, bit 7', () => {
+    test('regression pin: MMARVALID carries the MMFAR as eight hex digits, under MMFSR, bit 7', () => {
         assert.deepStrictEqual(decodeFault(regs({ CFSR: 0x82, MMFAR: 0x20000010 })).flags,
             [{ reg: 'MMFSR', name: 'MMARVALID', bit: 7, text: 'MMARVALID: Faulting address = 0x20000010' },
              { reg: 'MMFSR', name: 'DACCVIOL', bit: 1, text: 'DACCVIOL: Data access violation' }]);
     });
 
-    test('the no-fault line needs both CFSR and HFSR zero', () => {
+    test('regression pin: the no-fault line needs both CFSR and HFSR zero', () => {
         const line = /No fault flags set/;
         assert.match(decodeFaultRegisters(regs()), line);
         assert.doesNotMatch(decodeFaultRegisters(regs({ HFSR: 0x2 })), line);
@@ -257,7 +258,7 @@ suite('Fault decoder: the architecture\'s bits (fast-check)', () => {
         assert.doesNotMatch(decodeFaultRegisters(regs({ CFSR: 0x1, HFSR: 0x2 })), line);
     });
 
-    test('the MMFSR and DFSR sections list their flags', () => {
+    test('regression pin: the MMFSR and DFSR sections list their flags', () => {
         const text = decodeFaultRegisters(regs({ CFSR: 0x3, DFSR: 0x3 }));
         assert.match(text, /MMFSR = 0x03\n  DACCVIOL: Data access violation\n  IACCVIOL: Instruction access violation\n/);
         assert.match(text, /DFSR  = 0x00000003\n  BKPT: Breakpoint instruction\n  HALTED: Halt request\n/);

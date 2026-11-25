@@ -4,9 +4,9 @@ Proposed 2026-11-25, against `release/2.9.4` at `dfe7887` with the Stryker
 set-up of the same day (`stryker.config.mjs`, the script `test:mutation`, two
 test fixes, on a branch of its own). It plans the pipeline the four findings
 below ask for. Decided 2026-11-25: 1A, 2A, 3C, 4A, 5A, 6A, 7A; decision 3
-differs from the recommendation, the mutation run stays local. Of the steps
-only decision 7 is implemented, with the set-up. Sizes as in the other
-proposals: S under a day, M a few days, L a week or more.
+differs from the recommendation, the mutation run stays local. Implemented:
+decision 7, with the set-up, and pilot 1 of step 3 (see Pilot 1). Sizes as
+in the other proposals: S under a day, M a few days, L a week or more.
 
 ## Problem
 
@@ -221,7 +221,7 @@ The set-up of 2026-11-25 is the base.
 
 - The bit model of the five status registers was transcribed by hand from
   the Armv8-M manual DDI0553B.z (CFSR p.1477, MMFSR p.1740-1741, BFSR
-  p.1467-1469, UFSR p.1897-1898, HFSR p.1671, DFSR p.1529-1530) and the
+  p.1467-1469, UFSR p.1897-1899, HFSR p.1671-1672, DFSR p.1529-1530) and the
   Armv7-M manual DDI0403E.e (p.609-610, p.613, p.699), both read through the
   documentation tools; the Armv7-M manual was fetched into the document
   service that day. CMSIS Core 6.3.0 gives the `MMARVALID` spelling the
@@ -230,20 +230,22 @@ The set-up of 2026-11-25 is the base.
   bit 5, the PMU counter overflow debug event of Armv8.1-M, was not decoded;
   fast-check's counterexample was `{DFSR: 32}`. The test stayed red, as step 2
   asks, until the row was added in a commit of its own with a changelog line.
-- Scores, `--mutate src/core/faultDecoder.ts`: 73 % before (146 of 200
-  killed); 89.7 % with the properties and three examples (182 of 203, the
-  three new mutants are the PMU row); 99.5 % with the text pin (202 of 203),
-  twice identical. The specification bought 36 of the 57 survivors: the flag
-  names, the table rows, the MMARVALID flag, the no-fault condition and the
-  report sections. The pin bought the 20 description texts, which have no
-  outside source and are pinned by a test that says so.
+- Scores, `--mutate src/core/faultDecoder.ts`, measured on the final code
+  (203 mutants, the PMU row included) with the tests selected by name: the
+  suite as it was, 72.4 % (147 killed, 56 survived); with the three properties
+  from the manuals added, 83.3 % (169 killed), so the specification bought 22
+  of the 56; with the pins as well (the class precedence, BFAR first, the
+  report layout, the three examples, the line of every bit), 99.5 % (202
+  killed), the same in three runs. Before any of it, at `dfe7887`, the module
+  had 200 mutants and 73 %.
 - The one survivor is equivalent: the default `exclude = []` of `has()` is
   used only by callers that pass no list, so `["Stryker was here"]` excludes
   nothing that exists. It is reported here, not silenced in the source.
 - Side result: `symptomPattern.ts` with its suite back in the run (decision
   7) scores 87.9 % (426 of 506 killed, 19 timeouts, 61 survived), from 58.5 %
   without it.
-- Cost: about half a day, a quarter of it the manuals.
+- Cost: not measured. The manuals were seven register pages of two
+  documents, read through the documentation tools.
 
 ## Order
 
