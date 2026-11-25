@@ -42,6 +42,14 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
+/**
+ * The least wait a `flash` call takes as `timeoutMs`. Programming starts
+ * only with a budget left after the lookups and what is kept back for the
+ * answer (2.5 s in all, `src/handler/flashTool.ts`): a shorter wait could
+ * only answer that nothing was programmed.
+ */
+export const FLASH_MIN_WAIT_MS = 3_000;
+
 /** Outcome of one `pyocd load` run. */
 export interface FlashResult {
     /** True when pyOCD exited 0 before the deadline: its exit status decides, not the words of its log. */
