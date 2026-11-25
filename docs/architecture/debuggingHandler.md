@@ -593,6 +593,15 @@ window's CMSIS job tracker (next section):
   the reply says to repeat the call in the new window then, which activates
   through `activateHere()`. A folder path is opened as given.
   `create_solution` activates through `placeOf()` alone, without the root.
+  A `.vscode.d/` at the root of the workspace folder that holds the
+  csolution in a subfolder is never read by the extension, which merges
+  `.vscode.d/tasks.json` and `.vscode.d/launch.json` from the csolution's
+  own folder only, and nothing reports that (#147): `open_solution`,
+  `build`, `rebuild`, `refresh` and `convert` end with one sentence on such
+  a file (`strayDropInNote()` in `src/core/bootstrapState.ts`, given the
+  csolution and the folder that owns it; `dropInNote()`, `nestedNote()` for
+  the root a new window opens), unless a csolution lies at that root too,
+  whose drop-in it then is.
   A window without any folder opens it in itself
   (`openHere()`) when the client runs outside the window — the tool passes
   the client's `initialize` name, `src/core/clientHosting.ts` knows the

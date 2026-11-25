@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// What an empty window lacks, as the refusals and status lines say it; the active-solution line; path comparison, the CMSIS Solution extension's csolution search, the csolution walk and the project root of open_solution.
+// What an empty window lacks, as the refusals and status lines say it; the active-solution line; path comparison, the CMSIS Solution extension's csolution search, the csolution walk, the project root of open_solution and the note on a .vscode.d drop-in CMSIS Solution does not read.
 
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -32,6 +32,7 @@ import {
     projectRootOf,
     samePath,
     solutionStatusLine,
+    strayDropInNote,
     targetStatusLine,
 } from '../core/bootstrapState';
 import type { SolutionFileAnswer } from '../core/solutionAnswers';
@@ -227,5 +228,52 @@ suite('Bootstrap state', () => {
             }
             assert.strictEqual(findSolutionFiles(root).length, 10);
         });
+    });
+});
+
+suite('Stray drop-in note (#147)', () => {
+    const probeOf = (files: readonly string[], entries: Readonly<Record<string, readonly string[]>> = {}) => ({
+        exists: (file: string) => files.includes(file),
+        entries: (folder: string) => entries[folder] ?? [],
+    });
+    const folder = '/ws/repo';
+    const nested = '/ws/repo/Sensor/Sensor.csolution.yml';
+
+    test('names the root drop-in file the extension does not read, the folder it belongs in and how the merge runs again', () => {
+        const note = strayDropInNote(nested, folder, probeOf(['/ws/repo/.vscode.d/tasks.json']), 'linux');
+        assert.ok(note !== undefined);
+        assert.ok(note.startsWith('/ws/repo/.vscode.d/tasks.json is not read:'), note);
+        assert.ok(note.includes('it belongs in /ws/repo/Sensor/.vscode.d.'), note);
+        assert.ok(note.includes('cmsis_action refresh'), note);
+        assert.ok(note.includes('Update Debug Tasks and Launch Configurations'), note);
+    });
+
+    test('names both files when both lie there', () => {
+        const note = strayDropInNote(nested, folder, probeOf(['/ws/repo/.vscode.d/tasks.json', '/ws/repo/.vscode.d/launch.json']), 'linux');
+        assert.ok(note?.startsWith('/ws/repo/.vscode.d/tasks.json and /ws/repo/.vscode.d/launch.json are not read:'), note);
+        assert.ok(note?.includes('they belong in /ws/repo/Sensor/.vscode.d.'), note);
+    });
+
+    test('says nothing without a drop-in file at the root: a bare .vscode.d folder or other files in it do not count', () => {
+        assert.strictEqual(strayDropInNote(nested, folder, probeOf([]), 'linux'), undefined);
+        assert.strictEqual(strayDropInNote(nested, folder, probeOf(['/ws/repo/.vscode.d', '/ws/repo/.vscode.d/settings.json']), 'linux'), undefined);
+    });
+
+    test('says nothing for a csolution in the folder itself or outside it', () => {
+        const files = ['/ws/repo/.vscode.d/tasks.json'];
+        assert.strictEqual(strayDropInNote('/ws/repo/Blinky.csolution.yml', folder, probeOf(files), 'linux'), undefined);
+        assert.strictEqual(strayDropInNote('/ws/other/Blinky.csolution.yml', folder, probeOf(files), 'linux'), undefined);
+    });
+
+    test('says nothing while a csolution lies at the root too: the root drop-in is that one\'s', () => {
+        const probe = probeOf(['/ws/repo/.vscode.d/tasks.json'], { '/ws/repo': ['.vscode.d', 'Blinky.csolution.yml', 'Sensor'] });
+        assert.strictEqual(strayDropInNote(nested, folder, probe, 'linux'), undefined);
+    });
+
+    test('compares Windows paths as Windows does', () => {
+        const probe = probeOf(['C:\\ws\\repo\\.vscode.d\\tasks.json']);
+        const note = strayDropInNote('c:\\WS\\repo\\Sensor\\Sensor.csolution.yml', 'C:\\ws\\repo', probe, 'win32');
+        assert.ok(note?.includes('c:\\WS\\repo\\Sensor\\.vscode.d.'), note);
+        assert.strictEqual(strayDropInNote('C:\\ws\\repo\\Blinky.csolution.yml', 'c:\\WS\\repo', probe, 'win32'), undefined);
     });
 });

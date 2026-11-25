@@ -129,6 +129,7 @@ import {
     targetMatches,
 } from '../core/cmsisTarget';
 import {
+    DropInProbe,
     isSolutionFile,
     liesInside,
     LISTED_SOLUTION_GLOB,
@@ -139,6 +140,7 @@ import {
     projectRootOf,
     samePath,
     SOLUTION_EXTENSION_ID,
+    strayDropInNote,
 } from '../core/bootstrapState';
 import { currentCallContext } from '../core/callContext';
 import { failedResponseMessage } from '../core/problemFeed';
@@ -1717,6 +1719,46 @@ function entryExists(file: string): boolean {
     }
 }
 
+/** `strayDropInNote` on the file system. */
+const DROP_IN_PROBE: DropInProbe = {
+    exists: entryExists,
+    entries: (folder) => {
+        try {
+            return fs.readdirSync(folder);
+        } catch {
+            return [];
+        }
+    },
+};
+
+/**
+ * The note on a `.vscode.d/` at the root of the workspace folder that holds
+ * the active csolution deeper down, which CMSIS Solution does not read
+ * (#147); nothing without a workspace folder that holds the csolution.
+ */
+function dropInNote(solutionPath: string | undefined): string | undefined {
+    if (solutionPath === undefined) {
+        return undefined;
+    }
+    const owner = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(solutionPath));
+    return owner ? strayDropInNote(solutionPath, owner.uri.fsPath, DROP_IN_PROBE) : undefined;
+}
+
+/**
+ * `result` with `note` on a line of its own after its text, when the result
+ * is final (a string, or status `ok`); a running or timed-out result, and
+ * one without a note, as it is.
+ */
+function withNote(result: ToolText, note: string | undefined): ToolText {
+    if (note === undefined) {
+        return result;
+    }
+    if (typeof result === 'string') {
+        return `${result}\n${note}`;
+    }
+    return result.status === 'ok' ? { ...result, text: `${result.text}\n${note}` } : result;
+}
+
 /**
  * The place to open for a csolution no open folder holds: its project root
  * (#145), where a `vcpkg-configuration.json` at the repository root lies
@@ -1756,7 +1798,8 @@ function rememberActiveSolution(place: SolutionPlace): boolean {
 
 /**
  * What the reply adds for a csolution below the opened folder: that the
- * extension was told to activate it, and how to make sure it did; nothing
+ * extension was told to activate it, and how to make sure it did, and a
+ * `.vscode.d/` at that root the extension will not read (#147); nothing
  * for a csolution directly in the folder.
  */
 function nestedNote(place: SolutionPlace, remembered: boolean): string {
@@ -1764,11 +1807,13 @@ function nestedNote(place: SolutionPlace, remembered: boolean): string {
         return '';
     }
     const repeat = `cmsis_action {action:'open_solution', path:'${place.named}'}`;
+    const dropIn = strayDropInNote(place.named, place.folder, DROP_IN_PROBE);
+    const stray = dropIn === undefined ? '' : ` ${dropIn}`;
     return remembered
         ? ` ${place.folder} is the project root that holds it; .vscode/cmsis.json there names it as the active solution. `
-            + `If get_session_status then shows another active solution, ${repeat} in that window activates it.`
+            + `If get_session_status then shows another active solution, ${repeat} in that window activates it.${stray}`
         : ` ${place.folder} is the project root that holds it; the solution could not be named in its .vscode/cmsis.json, `
-            + `so once the window is there, ${repeat} activates it.`;
+            + `so once the window is there, ${repeat} activates it.${stray}`;
 }
 
 /**
@@ -1851,11 +1896,11 @@ async function activateHere(context: CmsisActionContext, place: SolutionPlace, d
     // The path as the extension reports it, whichever spelling the caller used.
     const solution = current.solutionPath ?? wanted;
     const target = await activeTargetName();
-    return {
+    return withNote({
         text: `${here} Active solution: ${solution}${target ? `, target ${target}` : ''}. Next: cmsis_action build, then load_and_debug.`,
         status: 'ok',
         data: { opened: place.folder, newWindow: false, solution },
-    };
+    }, dropInNote(solution));
 }
 
 /** How long after the reply a window without a folder waits before it opens the folder in itself, so the reply gets out first. */
@@ -2038,7 +2083,7 @@ export async function runCmsisAction(
     }
     const tag = active ? ` on ${active}${switchedFrom !== undefined ? `, switched from ${switchedFrom}` : ''}` : '';
     if (action === 'convert') {
-        return convertSolution(host, tag, deadline);
+        return withNote(await convertSolution(host, tag, deadline), dropInNote(solution.solutionPath));
     }
 
     const command = ACTION_COMMANDS.get(action);
@@ -2113,7 +2158,7 @@ export async function runCmsisAction(
             if (!solution.solutionPath) {
                 throw new ToolError('INTERNAL', `CMSIS 'refresh'${tag} not attempted: the CMSIS Solution extension names no solution file.`);
             }
-            return refreshSolution(issue, solution.solutionPath);
+            return withNote(await refreshSolution(issue, solution.solutionPath), dropInNote(solution.solutionPath));
         case 'activate_environment':
             if (!solution.solutionPath) {
                 throw new ToolError('INTERNAL', `CMSIS 'activate_environment'${tag} not attempted: the CMSIS Solution extension names no solution file.`);
@@ -2138,8 +2183,11 @@ export async function runCmsisAction(
                 ? await reserveRunPorts(issue, action, selectionFolder(solution.solutionPath, host)) : { reservations: [], note: '' };
             return runJob({ ...issue, portReservations: ports.reservations }, action, labels, prefaceWith(ports.note, preface));
         }
-        default:
-            return runJob(issue, action as JobAction, labels, preface);
+        default: {
+            const result = await runJob(issue, action as JobAction, labels, preface);
+            // After a build the agent looks for the tasks next: a root drop-in CMSIS Solution does not read is said now (#147).
+            return action === 'build' || action === 'rebuild' ? withNote(result, dropInNote(solution.solutionPath)) : result;
+        }
     }
 }
 

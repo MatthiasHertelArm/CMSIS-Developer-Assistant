@@ -2043,6 +2043,43 @@ const SCENARIOS = [
         ],
     },
     {
+        name: 'open-solution-stray-drop-in',
+        description: 'No session, the CMSIS Solution extension active, the active csolution in a subfolder of the workspace folder and a '
+            + '.vscode.d/tasks.json at the folder root, which the extension never reads (#147): open_solution of that csolution, already '
+            + 'active, ends with the file, the folder it belongs in and how the merge runs again; once a csolution lies at the root too '
+            + '(the root drop-in is then that one\'s) the note is gone; get_session_status then names the root csolution again.',
+        extensions: {
+            'Arm.cmsis-csolution': { id: 'Arm.cmsis-csolution', isActive: true, extensionPath: '/ext/cmsis-csolution',
+                packageJSON: { version: '1.74.0' }, exports: { getApi: (version) => (version === 3 ? CATALOG_API : undefined) } },
+        },
+        getters: { getSolutionFile: (sc) => path.join(sc.env.project, 'Sensor', 'Sensor.csolution.yml') },
+        calls: [
+            {
+                tool: 'cmsis_action', args: { action: 'open_solution', path: '@Sensor/Sensor.csolution.yml' },
+                before: (sc) => {
+                    fs.renameSync(path.join(sc.env.project, 'Blinky.csolution.yml'), path.join(sc.env.project, 'Blinky.csolution.yml.aside'));
+                    fs.mkdirSync(path.join(sc.env.project, 'Sensor'), { recursive: true });
+                    fs.writeFileSync(path.join(sc.env.project, 'Sensor', 'Sensor.csolution.yml'), 'solution:\n  target-types:\n    - type: NUCLEO-F401RE\n');
+                    fs.mkdirSync(path.join(sc.env.project, '.vscode.d'), { recursive: true });
+                    fs.writeFileSync(path.join(sc.env.project, '.vscode.d', 'tasks.json'),
+                        '{ "tasks": [ { "label": "Vendor: program the debug stubs", "type": "shell", "command": "true" } ] }\n');
+                },
+            },
+            {
+                tool: 'cmsis_action', args: { action: 'open_solution', path: '@Sensor/Sensor.csolution.yml' },
+                before: (sc) => { fs.renameSync(path.join(sc.env.project, 'Blinky.csolution.yml.aside'), path.join(sc.env.project, 'Blinky.csolution.yml')); },
+            },
+            {
+                tool: 'get_session_status',
+                before: (sc) => {
+                    fs.rmSync(path.join(sc.env.project, '.vscode.d'), { recursive: true, force: true });
+                    fs.rmSync(path.join(sc.env.project, 'Sensor'), { recursive: true, force: true });
+                    sc.getters.getSolutionFile = DEFAULT_GETTERS.getSolutionFile;
+                },
+            },
+        ],
+    },
+    {
         name: 'status-solution-too-old',
         description: 'No session, CMSIS Solution 1.72.0 active, which offers API version 2 only: get_session_status says that the extension '
             + 'is too old and names no solution, cmsis_action build is refused with the hint to update, and no hidden command of the '

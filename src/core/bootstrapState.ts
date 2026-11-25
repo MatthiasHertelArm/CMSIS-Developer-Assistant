@@ -27,9 +27,11 @@
  * that `open_solution` can run the same one. So is the line on the solution
  * the window has active, which `get_session_status` carries in every state:
  * the answer to which project "the current solution" is (#124). And the project
- * root `open_solution` opens for a csolution (#145).
+ * root `open_solution` opens for a csolution (#145), and the note on a
+ * `.vscode.d/` drop-in the extension does not read (#147).
  *
- * Pure: no `vscode`, no file access (the root walk is handed its file test).
+ * Pure: no `vscode`, no file access (the root walk and the drop-in check are
+ * handed their file tests).
  */
 
 import * as path from 'path';
@@ -291,4 +293,47 @@ export function projectRootOf(
             return dir;
         }
     }
+}
+
+/** The files CMSIS Solution reads from a solution's `.vscode.d/` drop-in folder (1.74.0 `updateTasksJson`, `updateLaunchJson`). */
+export const DROP_IN_FILES: readonly string[] = ['tasks.json', 'launch.json'];
+
+/** What `strayDropInNote` asks of the file system. */
+export interface DropInProbe {
+    /** Whether a file or folder exists. */
+    exists(file: string): boolean;
+    /** The names of the entries directly in a folder; empty when it cannot be read. */
+    entries(folder: string): readonly string[];
+}
+
+/**
+ * One sentence on a `.vscode.d/` drop-in the CMSIS Solution extension does
+ * not read (#147): it merges `.vscode.d/tasks.json` and `.vscode.d/launch.json`
+ * from the active csolution's own folder only, so a drop-in at the root of
+ * the workspace folder that holds a deeper csolution is never read, and
+ * nothing reports that. Undefined when the csolution lies in `folder` itself
+ * or outside it, when the root has neither file, and when a csolution lies at
+ * the root too (the root's drop-in is then that one's).
+ */
+export function strayDropInNote(
+    solutionFile: string,
+    folder: string,
+    probe: DropInProbe,
+    platform: NodeJS.Platform = process.platform,
+): string | undefined {
+    const paths = pathsOf(platform);
+    const own = paths.dirname(solutionFile);
+    if (samePath(own, folder, platform) || !liesInside(own, folder, platform)) {
+        return undefined;
+    }
+    const rootDropIn = paths.join(folder, '.vscode.d');
+    const files = DROP_IN_FILES.filter((file) => probe.exists(paths.join(rootDropIn, file)));
+    if (files.length === 0 || probe.entries(folder).some((entry) => isSolutionFile(entry))) {
+        return undefined;
+    }
+    const named = files.map((file) => paths.join(rootDropIn, file)).join(' and ');
+    const one = files.length === 1;
+    return `${named} ${one ? 'is' : 'are'} not read: CMSIS Solution merges .vscode.d drop-ins from the active csolution's own folder only, `
+        + `so ${one ? 'it belongs' : 'they belong'} in ${paths.join(own, '.vscode.d')}. Move ${one ? 'it' : 'them'} there; then cmsis_action refresh `
+        + '(or the command Update Debug Tasks and Launch Configurations) merges the drop-in, provided the target set names a debugger.';
 }
