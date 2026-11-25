@@ -99,7 +99,11 @@ npm run test:mutation -- --mutate src/core/faultDecoder.ts
 ```
 
 A second run tests only the mutants whose code or tests changed
-(`reports/stryker-incremental.json`); `-- --force` tests all of them again. The
+(`reports/stryker-incremental.json`); `-- --force` tests all of them again.
+Property-based tests use `fast-check` inside the mocha suites
+(`src/test/faultDecoder.test.ts` is the first); keep their seed fixed, so that
+a mutation run judges the same values every time, and take their expected
+values from the manual or the proposal, never from the module under test. The
 six suites above are left out through `mochaOptions.ignore` in the config, and
 so is the document service's suite: a mutant in a module-level table is tested
 with every suite, and its watcher test fails under the load of the parallel

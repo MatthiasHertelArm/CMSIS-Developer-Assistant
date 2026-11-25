@@ -214,6 +214,8 @@ served topic to at most 7 000 bytes, and a few phrases.
   its native binary, and shipped in `node_modules` (see
   `docs/packaging-esbuild.md`)
 - `pdfjs-dist`: PDF text for the documentation tools, on a worker thread
+- `fast-check` (dev): property-based tests inside the mocha suites, with a
+  fixed seed so that a mutation run judges the same values every time
 
 ## Writing code
 

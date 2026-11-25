@@ -217,6 +217,34 @@ The set-up of 2026-11-25 is the base.
   `assert.*` and `fc.property` lines of a diff with the names of their tests,
   so the review reads the assertions and not the scaffolding.
 
+## Pilot 1, done 2026-11-25: `faultDecoder.ts`
+
+- The bit model of the five status registers was transcribed by hand from
+  the Armv8-M manual DDI0553B.z (CFSR p.1477, MMFSR p.1740-1741, BFSR
+  p.1467-1469, UFSR p.1897-1898, HFSR p.1671, DFSR p.1529-1530) and the
+  Armv7-M manual DDI0403E.e (p.609-610, p.613, p.699), both read through the
+  documentation tools; the Armv7-M manual was fetched into the document
+  service that day. CMSIS Core 6.3.0 gives the `MMARVALID` spelling the
+  decoder keeps, where Armv8-M says `MMFARVALID`.
+- The first property found a gap in the code, not in the tests: `DFSR.PMU`,
+  bit 5, the PMU counter overflow debug event of Armv8.1-M, was not decoded;
+  fast-check's counterexample was `{DFSR: 32}`. The test stayed red, as step 2
+  asks, until the row was added in a commit of its own with a changelog line.
+- Scores, `--mutate src/core/faultDecoder.ts`: 73 % before (146 of 200
+  killed); 89.7 % with the properties and three examples (182 of 203, the
+  three new mutants are the PMU row); 99.5 % with the text pin (202 of 203),
+  twice identical. The specification bought 36 of the 57 survivors: the flag
+  names, the table rows, the MMARVALID flag, the no-fault condition and the
+  report sections. The pin bought the 20 description texts, which have no
+  outside source and are pinned by a test that says so.
+- The one survivor is equivalent: the default `exclude = []` of `has()` is
+  used only by callers that pass no list, so `["Stryker was here"]` excludes
+  nothing that exists. It is reported here, not silenced in the source.
+- Side result: `symptomPattern.ts` with its suite back in the run (decision
+  7) scores 87.9 % (426 of 506 killed, 19 timeouts, 61 survived), from 58.5 %
+  without it.
+- Cost: about half a day, a quarter of it the manuals.
+
 ## Order
 
 1. Step 1, the lint gate with `no-explicit-any` (S); the type-aware rules and
@@ -256,13 +284,9 @@ The set-up of 2026-11-25 is the base.
 ## Tests and acceptance
 
 - A planted `any` in `src/` turns `npm run lint` and the CI lint job red.
-- `faultDecoder.ts`: the property of pilot 1 kills the 16 static survivors in
-  bit names and table rows, 81 % from 73 today. The 23 description texts have
-  no source outside the module; they are either pinned by a test that calls
-  itself a regression pin (step 2 allows that when the test says so) or taken
-  out of the score with a `// Stryker disable` comment, and the 15 other
-  survivors are judged one by one. With the texts settled and those 15
-  killed the module reaches at least 90 %.
+- `faultDecoder.ts` reaches at least 90 % with the properties of pilot 1 and
+  a decision on the 23 description texts. Done 2026-11-25: 99.5 %, the texts
+  pinned by a test that says so, see Pilot 1.
 - Two runs of `test:mutation` over the same file give the same survivors, as
   they do today.
 - The baseline table of step 4 is in this proposal, with the date of the run.
