@@ -244,6 +244,16 @@ suite('Source browsing: the handler', () => {
         assert.match(gone, /The id nothing@src\/led\.c:5:13 no longer names a place where 'nothing' stands\.\nNo symbol named 'nothing'/);
     });
 
+    test('an id answers only where its name stands as a whole name, not where a longer name begins with it', async () => {
+        // The id of a function `led` at the place where `led_on` stands now, as after a rename of the function.
+        const stale = 'led@src/led.c:10:6';
+        const text = await get({ symbol: stale, what: 'definition' });
+        assert.ok(!text.includes('led_on: defined'), 'the symbol that stands there now is another one');
+        assert.match(text, /The id led@src\/led\.c:10:6 no longer names a place where 'led' stands\.\nNo symbol named 'led'/);
+        // The same place under its own name still answers.
+        assert.match(await get({ symbol: 'led_on@src/led.c:10:6', what: 'definition' }), /led_on: defined at src\/led\.c:10-15/);
+    });
+
     test('a long answer ends within the budget and says what it left out', async () => {
         const file = server.file('src/main.c');
         fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('    blink_all();\n', '    blink_all();\n'.repeat(40)));

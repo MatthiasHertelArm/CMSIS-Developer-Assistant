@@ -91,9 +91,11 @@ tells clangd, and no editor appears.
   the index is.
 - **An id is a place.** `name@path:line:column` is where the name stands, so
   the window keeps no table of ids and an id survives a reload. The name is
-  in it so that it is found again nearby when the file changed. Paths are
-  shown relative to the solution folder and under `${CMSIS_PACK_ROOT}`, as
-  `cbuild-run.yml` writes them.
+  in it so that it is found again nearby when the file changed, and so that
+  the place answers only while the name stands there as a whole name: after
+  a rename of `foo` to `foobar` the id of `foo` does not answer for
+  `foobar`. Paths are shown relative to the solution folder and under
+  `${CMSIS_PACK_ROOT}`, as `cbuild-run.yml` writes them.
 - **`source_find` says what `source_get` returns.** A card lists the relations
   that exist for the symbol's kind, with their counts where a count costs
   milliseconds. Every list entry is `file:line` with the source line, and an

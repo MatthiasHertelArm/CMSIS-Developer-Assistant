@@ -50,7 +50,7 @@ import {
     DEFAULT_MAX_CHARS, IndexState, LineReader, RelationCounts, fitBudget, renderCandidates, renderCard, renderDefinition,
     renderHierarchy, renderImplementations, renderIndexState, renderNotFound, renderOutline, renderReferences,
 } from './core/sourceBrowse/render';
-import { PACK_ROOT_VARIABLE, PathRoots, displayPath, findNear, parseSymbolId, positionOf, resolvePath, unqualified } from './core/sourceBrowse/symbolId';
+import { PACK_ROOT_VARIABLE, PathRoots, displayPath, findNear, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from './core/sourceBrowse/symbolId';
 import {
     Lookup, RankedHits, ResolvedSymbol, describeAt, outlineOf, placeInFile, placeOfHit, placeOfUseSite, rankHits, searchUseSites,
 } from './core/sourceBrowse/symbolQuery';
@@ -503,8 +503,9 @@ export class SourceBrowseHandler {
             const lines = (await lookup.document(file)).text.split(/\r?\n/);
             const stated = positionOf(id);
             const word = unqualified(id.name);
-            // The id is the place of the name; when the file changed since, the name is looked for nearby.
-            const position = lines[stated.line]?.startsWith(word, stated.character) ? stated : findNear(lines, stated.line, word, 30);
+            // The id is the place of the name, which has to stand there as a whole name: a longer name that begins
+            // with it is another symbol. When the file changed since, the name is looked for nearby.
+            const position = occurrences(lines[stated.line] ?? '', word).includes(stated.character) ? stated : findNear(lines, stated.line, word, 30);
             if (position !== undefined) {
                 const symbol = await describeAt(lookup, { file, position });
                 if (symbol !== undefined) {
