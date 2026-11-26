@@ -102,10 +102,36 @@ export async function definitionExtent(lookup: Lookup, place: FilePlace): Promis
     return symbolAtName(await outlineOf(lookup, place.file), place.position)?.range;
 }
 
-/** Every reference to the symbol at `at`, its declaration and definition included. */
+/**
+ * Places, each once, in their order. clangd answers a place twice for a
+ * document that is open under another spelling of its path (through a
+ * symbolic link): from the document, and from the index under the real path.
+ */
+export function distinctPlaces(places: readonly FilePlace[]): FilePlace[] {
+    const seen = new Set<string>();
+    return places.filter((place) => {
+        const key = `${place.file}:${place.position.line}:${place.position.character}`;
+        return seen.has(key) ? false : Boolean(seen.add(key));
+    });
+}
+
+/**
+ * Every reference to the symbol at `at`, its declaration and definition included.
+ *
+ * For the document asked at, clangd answers from the document itself and
+ * leaves the index out, which it tells by the path. A document the editor
+ * has open under another spelling of its path (through a symbolic link) is
+ * therefore answered twice: under its own path from its text, and under the
+ * real path from the index, which holds the saved file. Where both are
+ * there, the document's own places count, as clangd means it.
+ */
 export async function referencesOf(lookup: Lookup, at: FilePlace): Promise<References> {
-    const answer = await lookup.at<Location[] | null>('textDocument/references', at, { context: { includeDeclaration: true } });
-    const places = (answer ?? []).map((location) => lookup.place(location));
+    const answer = (await lookup.at<Location[] | null>('textDocument/references', at, { context: { includeDeclaration: true } })) ?? [];
+    const asked = fileOfUri((await lookup.document(at.file)).uri);
+    const file = lookup.canonical(at.file);
+    const own = answer.some((location) => fileOfUri(location.uri) === asked);
+    const kept = own ? answer.filter((location) => fileOfUri(location.uri) === asked || lookup.place(location).file !== file) : answer;
+    const places = distinctPlaces(kept.map((location) => lookup.place(location)));
     return { places, files: new Set(places.map((place) => place.file)).size };
 }
 
@@ -208,5 +234,5 @@ export function typeHierarchy(lookup: Lookup, at: FilePlace, direction: TypeDire
 
 /** Where the virtual function or the type at `at` is implemented. */
 export async function implementationsOf(lookup: Lookup, at: FilePlace): Promise<FilePlace[]> {
-    return locationsOf(await lookup.at<unknown>('textDocument/implementation', at)).map((location) => lookup.place(location));
+    return distinctPlaces(locationsOf(await lookup.at<unknown>('textDocument/implementation', at)).map((location) => lookup.place(location)));
 }

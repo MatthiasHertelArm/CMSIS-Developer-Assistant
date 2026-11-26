@@ -39,6 +39,7 @@ import type { PackDocsLog } from './core/packDocs/host';
 import { settleWithin } from './core/solutionApi';
 import { LanguageClientLike, acquireClangdClient, isRunning } from './core/sourceBrowse/clangdApi';
 import { CompileDatabase, compileCommandsDirOf, contextNameOf, indexCoverage, readCompileDatabase, substituteVariables } from './core/sourceBrowse/context';
+import { canonicalPath } from './core/sourceBrowse/filePaths';
 import type { SourceBrowseHost } from './core/sourceBrowse/host';
 import { isCallable, isRecord } from './core/sourceBrowse/hoverText';
 import { LspError, OpenedDocument, ServerInfo, SourceIndex } from './core/sourceBrowse/protocol';
@@ -134,21 +135,6 @@ function bounded(value: unknown, fallback: number, least: number, most: number):
 /** A caught value's message. */
 function messageOf(caught: unknown): string {
     return caught instanceof Error ? caught.message : String(caught);
-}
-
-/**
- * A path with its symbolic links resolved; the path itself when it does not exist.
- * Not `realpathSync.native`: on Windows that also turns a short name (`RUNNER~1`)
- * into the long one, so a file clangd names in the spelling of the compile database
- * would no longer lie inside the folder, and a URI built from it would name a
- * document clangd does not know.
- */
-function canonical(file: string): string {
-    try {
-        return fs.realpathSync(file);
-    } catch {
-        return file;
-    }
 }
 
 /** The language client of the clangd extension as a `SourceIndex`. */
@@ -287,7 +273,7 @@ export class SourceBrowseHandler {
             throw new ToolError('INVALID_ARGUMENT', `fileFullPath '${given}' is not a file${file !== undefined && file !== given ? ` (${file})` : ''}.`,
                 `Pass an absolute path, a path relative to the solution folder, or ${PACK_ROOT_VARIABLE}/… as the replies write it.`);
         }
-        return canonical(file);
+        return canonicalPath(file);
     }
 
     /** The folder clangd reads its compile database from, as far as the window's settings and folders say. */
@@ -342,18 +328,18 @@ export class SourceBrowseHandler {
         if (folders.length === 0) {
             throw noWorkspaceRefusal(what);
         }
-        const solution = canonical(folders[0]);
+        const solution = canonicalPath(folders[0]);
         const packRoot = await this.host.packRoot().catch(() => undefined);
-        const roots: PathRoots = { solution, packRoot: packRoot === undefined ? undefined : canonical(packRoot) };
+        const roots: PathRoots = { solution, packRoot: packRoot === undefined ? undefined : canonicalPath(packRoot) };
         const folder = this.databaseFolder(what, folders[0]);
         const database = this.databaseOf(what, folder, roots);
         const settings = this.host.clangdSettings();
         const client = await acquireClangdClient(this.host.clangdExtension(), settings, what, this.host.clock, deadline);
         const index = new ClientIndex(client, this.host);
-        const lookup = new Lookup(index, this.host.clock, deadline, (file) => this.host.readText(file), canonical);
+        const lookup = new Lookup(index, this.host.clock, deadline, (file) => this.host.readText(file), canonicalPath);
 
         const sources = database.units.filter((unit) => SOURCE_UNIT.test(unit));
-        const own = sources.filter((unit) => canonical(unit).startsWith(solution + path.sep));
+        const own = sources.filter((unit) => canonicalPath(unit).startsWith(solution + path.sep));
         const units = [...own, ...sources.filter((unit) => !own.includes(unit))];
         const youngSince = await this.prime(lookup, client, folder, units, log);
         let coverage = indexCoverage(database);
@@ -361,10 +347,10 @@ export class SourceBrowseHandler {
             await this.refresh(lookup, coverage.stale, log);
             coverage = indexCoverage(database);
         }
-        const state: IndexState = { context: contextNameOf(folder), folder: canonical(folder), coverage, server: index.server.version };
+        const state: IndexState = { context: contextNameOf(folder), folder: canonicalPath(folder), coverage, server: index.server.version };
         const images = await this.host.activeImageFolders?.().catch(() => undefined);
-        if (images !== undefined && images.length > 0 && !images.some((image) => canonical(image) === state.folder)) {
-            state.otherThanActive = images.map(canonical);
+        if (images !== undefined && images.length > 0 && !images.some((image) => canonicalPath(image) === state.folder)) {
+            state.otherThanActive = images.map(canonicalPath);
         }
         const building = coverage === undefined || coverage.indexed < coverage.total;
         const young = this.host.clock.now() - youngSince < YOUNG_MS;
@@ -499,7 +485,7 @@ export class SourceBrowseHandler {
             return this.byName(session, given, limit);
         }
         if (fs.existsSync(id.file)) {
-            const file = canonical(id.file);
+            const file = canonicalPath(id.file);
             const lines = (await lookup.document(file)).text.split(/\r?\n/);
             const stated = positionOf(id);
             const word = unqualified(id.name);

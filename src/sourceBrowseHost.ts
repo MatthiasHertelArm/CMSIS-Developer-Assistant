@@ -32,6 +32,7 @@ import type { BuildInfoHost } from './core/buildInfo/host';
 import { resolveBuildContext } from './core/buildInfo/artifacts';
 import { silentLog } from './core/packDocs/host';
 import { CLANGD_EXTENSION_ID, ClangdExtensionHandle } from './core/sourceBrowse/clangdApi';
+import { openDocumentIndex } from './core/sourceBrowse/filePaths';
 import type { SourceBrowseHost } from './core/sourceBrowse/host';
 import { SourceBrowseHandler } from './sourceBrowseHandler';
 import { logger } from './utils/logger';
@@ -105,6 +106,18 @@ function clangdExtension(): ClangdExtensionHandle | undefined {
  */
 export function makeSourceBrowseHost(packRoot: () => Promise<string | undefined>, build: BuildInfoHost): SourceBrowseHost {
     let images: { at: number; folders: string[] | undefined } | undefined;
+    /** Canonical paths of files and open documents, kept between calls. */
+    const knownPaths = new Map<string, string>();
+    /**
+     * The document the editor has open for `file`, under whatever spelling of
+     * its path: the one the user sees and edits, and the one the language
+     * client has told clangd about.
+     */
+    const openDocumentOf = (file: string): vscode.TextDocument | undefined => {
+        const documents = vscode.workspace.textDocuments.filter((document) => document.uri.scheme === 'file');
+        const index = openDocumentIndex(file, documents.map((document) => document.uri.fsPath), knownPaths);
+        return index < 0 ? undefined : documents[index];
+    };
     return {
         workspaceFolders: () => vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
         packRoot,
@@ -119,11 +132,13 @@ export function makeSourceBrowseHost(packRoot: () => Promise<string | undefined>
         },
         variable: clangdVariable,
         openDocument: async (file) => {
-            const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+            // The editor's own document of the file when it has one: opening the path as clangd spells it would be a
+            // second document of the same file for VS Code and for clangd, without the editor's unsaved text.
+            const document = openDocumentOf(file) ?? await vscode.workspace.openTextDocument(vscode.Uri.file(file));
             return { uri: document.uri.toString(), languageId: document.languageId, text: document.getText() };
         },
         readText: async (file) => {
-            const open = vscode.workspace.textDocuments.find((document) => document.uri.scheme === 'file' && document.uri.fsPath === file);
+            const open = openDocumentOf(file);
             if (open !== undefined) {
                 return open.getText();
             }

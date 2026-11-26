@@ -26,8 +26,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { compileCommandsDirOf, contextNameOf, indexCoverage, readCompileDatabase, substituteVariables } from '../core/sourceBrowse/context';
+import { canonicalPath, openDocumentIndex } from '../core/sourceBrowse/filePaths';
 import { hoverText, isCallable, isOverridable, isRecord, parseHover } from '../core/sourceBrowse/hoverText';
 import { DocumentSymbol, LspError, Position, SourceIndex, SymbolInformation, contains, isUnknownDocument, kindName, lastLineOf, locationsOf } from '../core/sourceBrowse/protocol';
+import { distinctPlaces, referencesOf } from '../core/sourceBrowse/relations';
 import { fitBudget, renderIndexState } from '../core/sourceBrowse/render';
 import { displayPath, findNear, formatSymbolId, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from '../core/sourceBrowse/symbolId';
 import { Lookup, enclosingSymbol, fileOfUri, isNamed, isQualified, isSymbolNamed, placeInFile, rankHits, searchUseSites, symbolAtName } from '../core/sourceBrowse/symbolQuery';
@@ -229,6 +231,34 @@ suite('Source browsing: the compile database and its index', () => {
         assert.deepStrictEqual([coverage?.indexed, coverage?.total, coverage?.stale], [3, 3, []]);
     });
 
+    test('the editor\'s document of a file is found under another spelling of its path', function () {
+        const real = path.join(folder, 'real');
+        const link = path.join(folder, 'link');
+        fs.mkdirSync(real);
+        fs.writeFileSync(path.join(real, 'main.c'), '');
+        fs.writeFileSync(path.join(real, 'other.c'), '');
+        try {
+            fs.symlinkSync(real, link, 'dir');
+        } catch {
+            // Windows refuses a symbolic link to an account without the right to make one.
+            this.skip();
+        }
+        const file = path.join(real, 'main.c');
+        const linked = path.join(link, 'main.c');
+        assert.strictEqual(canonicalPath(linked), file);
+        assert.strictEqual(canonicalPath(path.join(folder, 'gone.c')), path.join(folder, 'gone.c'), 'a path that does not exist is itself');
+        const known = new Map<string, string>();
+        assert.strictEqual(openDocumentIndex(file, [path.join(link, 'other.c'), linked], known), 1, 'the document opened through the link');
+        assert.strictEqual(openDocumentIndex(linked, [file], known), 0, 'and the other way round');
+        assert.strictEqual(openDocumentIndex(file, [linked, file], known), 1, 'the document of the very path comes first');
+        assert.strictEqual(openDocumentIndex(file, [path.join(link, 'other.c')], known), -1);
+        assert.strictEqual(openDocumentIndex(file, [], known), -1);
+        assert.ok(known.has(linked), 'canonical paths are kept for the next call');
+        // VS Code writes the drive letter of a Windows path in lower case; clangd and the compile database do not.
+        assert.strictEqual(openDocumentIndex('C:\\work\\Main.c', ['c:\\work\\main.c'], new Map(), 'win32'), 0);
+        assert.strictEqual(openDocumentIndex('/work/Main.c', ['/work/main.c'], new Map(), 'linux'), -1, 'where case counts, it counts');
+    });
+
     test('the first lines say what the index covers and where the paths start', () => {
         const coverage = { indexed: 12, total: 12, missing: [], stale: [] };
         assert.strictEqual(renderIndexState({ context: 'Blinky.Debug+MPS3', folder: path.join(SOLUTION, 'out'), coverage, server: 'Apple clangd version 21.0.0 (clang-2100)' }, ROOTS),
@@ -391,6 +421,40 @@ suite('Source browsing: answers of the server', () => {
         assert.deepStrictEqual(await place([], 'area'), name(1, 'area').start, 'a plain name is the first place, and nothing is asked about it');
         await assert.rejects(place([], 'Triangle::area'), /'Triangle::area' does not stand in shape\.cpp: where 'area' stands there, it is the name of another scope\./);
         await assert.rejects(place([], 'Square::edge'), /'edge' does not stand in shape\.cpp\./);
+    });
+
+    test('a place clangd answers twice, under two spellings of a path, is one reference', async () => {
+        const range = (line: number): { start: Position; end: Position } => ({ start: { line, character: 5 }, end: { line, character: 11 } });
+        const at = (uri: string, ...lines: number[]): Array<{ uri: string; range: { start: Position; end: Position } }> => lines.map((line) => ({ uri, range: range(line) }));
+        const clock = { now: (): number => 0, startTimer: (): (() => void) => () => undefined };
+        const real = (file: string): string => file.replace(/^\/link\//, '/real/');
+        /** The references of the symbol at /real/led.c:3, asked of a server that has the document under `opened` and gives `answer`. */
+        const references = async (opened: string, answer: unknown): Promise<string[]> => {
+            const index: SourceIndex = {
+                generation: {},
+                server: { callHierarchy: false, typeHierarchy: false },
+                open: () => Promise.resolve({ uri: opened, languageId: 'c', text: '' }),
+                request: <T>(): Promise<T> => Promise.resolve(answer as T),
+            };
+            const found = await referencesOf(new Lookup(index, clock, 60_000, () => Promise.resolve(undefined), real), { file: '/real/led.c', position: range(3).start });
+            assert.strictEqual(found.files, new Set(found.places.map((place) => place.file)).size);
+            return found.places.map((place) => `${place.file}:${place.position.line}`);
+        };
+        // Not on Windows, where a file URI without a drive letter is no path.
+        if (process.platform !== 'win32') {
+            // The editor has the file through a link, with two unsaved lines above: clangd answers from the document
+            // (lines 5 and 11) and from the index of the saved file under the real path (lines 3 and 9), and from
+            // the document once more under the real path.
+            const twice = [...at('file:///link/led.c', 5, 11), ...at('file:///real/led.c', 5, 11, 3, 9), ...at('file:///real/main.c', 5)];
+            assert.deepStrictEqual(await references('file:///link/led.c', twice), ['/real/led.c:5', '/real/led.c:11', '/real/main.c:5'], 'the document\'s own places count');
+            // The document under the path clangd uses: nothing to choose, each place once.
+            assert.deepStrictEqual(await references('file:///real/led.c', [...at('file:///real/led.c', 3, 9, 3), ...at('file:///real/main.c', 5)]),
+                ['/real/led.c:3', '/real/led.c:9', '/real/main.c:5']);
+            // An answer that names the document under no spelling the tools know is kept as it is, each place once.
+            assert.deepStrictEqual(await references('file:///elsewhere/led.c', [...at('file:///link/led.c', 3), ...at('file:///real/led.c', 3, 9)]), ['/real/led.c:3', '/real/led.c:9']);
+        }
+        const a = { file: 'a.c', position: { line: 1, character: 2 } };
+        assert.deepStrictEqual(distinctPlaces([a, { ...a }, { file: 'a.c', position: { line: 1, character: 3 } }, a]), [a, { file: 'a.c', position: { line: 1, character: 3 } }]);
     });
 
     test('a definition answer is read in every form the protocol allows', () => {

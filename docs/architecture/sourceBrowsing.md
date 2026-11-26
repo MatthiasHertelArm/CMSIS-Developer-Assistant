@@ -106,6 +106,16 @@ tells clangd, and no editor appears.
   a rename of `foo` to `foobar` the id of `foo` does not answer for
   `foobar`. Paths are shown relative to the solution folder and under
   `${CMSIS_PACK_ROOT}`, as `cbuild-run.yml` writes them.
+- **One file is one document, whatever its path is spelled like.** clangd and
+  the roots name a file by its real path. The editor names a document by the
+  path it was opened with: through a symbolic link when the workspace folder
+  is one, and on Windows with the drive letter in lower case. The window
+  looks for the editor's document of a file under every spelling
+  (`openDocumentIndex`) before it opens one: that document has the text the
+  user sees, unsaved changes included, and clangd knows it already. For a
+  document asked at under a linked path clangd lists references twice, from
+  the document and from the index of the saved file; the document's own
+  count, and every place is listed once.
 - **`source_find` says what `source_get` returns.** A card lists the relations
   that exist for the symbol's kind, with their counts where a count costs
   milliseconds. Every list entry is `file:line` with the source line, and an
@@ -127,6 +137,10 @@ tells clangd, and no editor appears.
   (CMake rewrites `/private/tmp` on macOS), clangd does not answer by name
   for symbols that exist in one source file only; the search for a use site
   covers them.
+- A document with unsaved changes that the editor has open through a
+  symbolic link: where a call asks about another file, clangd lists the
+  references in that document from its text and from the index of the saved
+  file, both under the real path, and the tools cannot tell them apart.
 - A variable in a setting of the clangd extension that is a command
   (`${command:…}`) is not resolved.
 
@@ -142,6 +156,7 @@ tells clangd, and no editor appears.
 | Name, use site and id to a position; what clangd says there | `src/core/sourceBrowse/symbolQuery.ts`, `symbolId.ts`, `hoverText.ts` |
 | References, call and type hierarchies with their limits | `src/core/sourceBrowse/relations.ts` |
 | The compile database, the context's name, the shards | `src/core/sourceBrowse/context.ts` |
+| The spellings of a path: the canonical one, the editor's document of a file | `src/core/sourceBrowse/filePaths.ts` |
 | The texts | `src/core/sourceBrowse/render.ts` |
 | Tests against a scripted clangd | `src/test/sourceBrowse*.test.ts`, `src/test/sourceBrowseScript.ts` |
 | The same questions against a real clangd (local, not CI) | `test/transport/source-clangd.js` |

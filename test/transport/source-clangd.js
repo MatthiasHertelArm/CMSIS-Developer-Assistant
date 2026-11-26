@@ -22,7 +22,8 @@
 // the unit tests script, this checks against the real server: the index by
 // name, a macro found from a use, the outline, the definition text,
 // references, callers and callees, the type hierarchy, an id passed back, a
-// file changed on disk, and the refusals.
+// file changed on disk, a document the editor has open through a symbolic
+// link with unsaved text, and the refusals.
 //
 // The answers depend on the clangd of the machine, so this is a local check
 // like test:surface, not a CI job. Without a clangd it says so and passes.
@@ -39,6 +40,7 @@ const { pathToFileURL } = require('url');
 const OUT = path.resolve(__dirname, '..', '..', 'out', 'src');
 const { SourceBrowseHandler } = require(path.join(OUT, 'sourceBrowseHandler.js'));
 const { silentLog } = require(path.join(OUT, 'core', 'packDocs', 'host.js'));
+const { openDocumentIndex } = require(path.join(OUT, 'core', 'sourceBrowse', 'filePaths.js'));
 
 let failures = 0;
 let passes = 0;
@@ -265,6 +267,15 @@ class StdioClient {
         return { uri, languageId: /\.(cpp|hpp)$/.test(file) ? 'cpp' : 'c', text };
     }
 
+    /** What a language client has done for a document the editor holds with text of its own, unsaved. */
+    openWith(file, text) {
+        const uri = pathToFileURL(file).href;
+        const languageId = /\.(cpp|hpp)$/.test(file) ? 'cpp' : 'c';
+        this.versions.set(uri, { version: 1, text });
+        this.notify('textDocument/didOpen', { textDocument: { uri, languageId, version: 1, text } });
+        return { uri, languageId, text };
+    }
+
     async stop() {
         await Promise.race([this.sendRequest('shutdown', null), sleep(2000)]).catch(() => undefined);
         this.notify('exit');
@@ -392,6 +403,42 @@ async function main() {
     fs.appendFileSync(path.join(root, 'src', 'main.c'), '\nvoid one_more(void)\n{\n    led_on(0U);\n}\n');
     const after = await get({ symbol: 'led_on', what: 'references' });
     check('a unit newer than its index is read again before the answer', /4 references to led_on in 3 files/.test(after) && /led_on\(0U\);/.test(after), after);
+
+    console.log('a document the editor has open under another spelling of its path');
+    // The editor has src/led.c open through a symbolic link, with two unsaved lines at its top; a clangd of its own,
+    // as after a reload of the window, knows the file only as that document. The host finds it as the window does.
+    const linked = path.join(root, 'linked');
+    let hasLink = true;
+    try { fs.symlinkSync(path.join(root, 'src'), linked, 'dir'); } catch { hasLink = false; }
+    if (!hasLink) {
+        console.log('  (skipped: this account cannot make a symbolic link)');
+    } else {
+        const editorClient = new StdioClient(clangd, [`--compile-commands-dir=${out}`, '--log=error'], root);
+        await editorClient.start(root);
+        const unsaved = `/* unsaved */\n/* unsaved */\n${fs.readFileSync(path.join(root, 'src', 'led.c'), 'utf8')}`;
+        const editor = [{ path: path.join(linked, 'led.c'), ...editorClient.openWith(path.join(linked, 'led.c'), unsaved) }];
+        const known = new Map();
+        const documentOf = (file) => editor[openDocumentIndex(file, editor.map((document) => document.path), known)];
+        const inEditor = new SourceBrowseHandler({
+            ...host,
+            clangdExtension: () => ({ isActive: true, version: 'stdio', exports: { getApi: () => ({ languageClient: editorClient }) }, activate: async () => undefined }),
+            openDocument: async (file) => {
+                const document = documentOf(file);
+                return document ? { uri: document.uri, languageId: document.languageId, text: document.text } : editorClient.open(file);
+            },
+            readText: async (file) => documentOf(file)?.text ?? host.readText(file),
+        }, { timeoutMs: 30_000 });
+        const moved = text(await inEditor.handleSourceFind({ fileFullPath: 'src/led.c', line: 7, name: 'record' }));
+        check('a symbol is where the editor\'s unsaved text has it, two lines further down', /record: function/.test(moved) && /defined {4}src\/led\.c:7/.test(moved), moved);
+        const movedText = text(await inEditor.handleSourceGet({ symbol: 'record@src/led.c:7:13', what: 'definition' }));
+        check('its definition is quoted from that text, under the line numbers clangd gives', /record: defined at src\/led\.c:7-10 \(4 lines\)/.test(movedText)
+            && /7 {2}static void record\(unsigned int index\)/.test(movedText), movedText);
+        const movedReferences = text(await inEditor.handleSourceGet({ symbol: 'record@src/led.c:7:13', what: 'references' }));
+        // clangd answers from the document (lines 7 and 15) and, under the real path, from the index of the saved file (5 and 13).
+        check('its references are the ones of that text, each once, without the ones of the saved file', /2 references to record in 1 file/.test(movedReferences)
+            && /\n\s+7 {2}static void record\(unsigned int index\) {3}\(definition\)\n\s+15 {2}record\(index\);$/.test(movedReferences), movedReferences);
+        await editorClient.stop();
+    }
 
     console.log('refusals');
     const refusal = async (change) => {
