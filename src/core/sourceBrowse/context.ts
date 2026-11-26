@@ -137,17 +137,48 @@ export interface IndexCoverage {
     indexed: number;
     /** Units clangd indexes: the C and C++ files of the database. */
     total: number;
-    /** Units of the database without a shard, at most ten. */
+    /** Units of the database without a shard, at most ten; of several units of one file name, the ones changed last. */
     missing: string[];
     /** Units whose file is newer than its shard, at most ten. */
     stale: string[];
 }
 
+/** The time a file was last written; undefined when it cannot be read. */
+function writtenAt(file: string): number | undefined {
+    try {
+        return fs.statSync(file).mtimeMs;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * The units of one file name against the shards of that name. A shard's name
+ * has the file's name and a hash of its path, which clangd computes
+ * differently from version to version, so which shard belongs to which unit
+ * is not known. What can be said: no more units are indexed than there are
+ * shards, and when every unit can be paired with a shard that is not older,
+ * none is stale. Otherwise each unit newer than the oldest shard may be the
+ * changed one. With one unit of the name this is: the unit is newer than its
+ * shard.
+ */
+function coverageOfName(units: readonly string[], shards: readonly number[]): { indexed: number; missing: string[]; stale: string[] } {
+    // A unit that is gone cannot be newer than its shard.
+    const changed = units.map((unit) => ({ unit, at: writtenAt(unit) ?? 0 })).sort((a, b) => a.at - b.at);
+    const indexed = Math.min(changed.length, shards.length);
+    // The newest shards count: an older one of the name can be left from a file that is no unit any more.
+    const written = [...shards].sort((a, b) => a - b).slice(shards.length - indexed);
+    const paired = changed.slice(0, indexed);
+    const stale = paired.some((entry, index) => entry.at > written[index]) ? paired.filter((entry) => entry.at > written[0]) : [];
+    return { indexed, missing: changed.slice(indexed).map((entry) => entry.unit), stale: stale.map((entry) => entry.unit) };
+}
+
 /**
  * The coverage of `database` by the shards under its folder. A shard is
- * found by the file's name, so two units of the same name in different
- * folders count as one: the figure is a hint, not a proof. Undefined when
- * clangd has written no index there yet.
+ * found by the file's name, and units of one name in different folders are
+ * counted against the shards of that name (`coverageOfName`): the figure is
+ * a hint, not a proof, but it never says more units are indexed than there
+ * are shards. Undefined when clangd has written no index there yet.
  */
 export function indexCoverage(database: CompileDatabase): IndexCoverage | undefined {
     const folder = path.join(database.dir, '.cache', 'clangd', 'index');
@@ -157,42 +188,38 @@ export function indexCoverage(database: CompileDatabase): IndexCoverage | undefi
     } catch {
         return undefined;
     }
-    const newest = new Map<string, number>();
+    /** When the shards of each file name were written. */
+    const shards = new Map<string, number[]>();
     for (const name of names) {
         const shard = SHARD_NAME.exec(name);
         if (!shard) {
             continue;
         }
-        let written = 0;
-        try {
-            written = fs.statSync(path.join(folder, name)).mtimeMs;
-        } catch {
-            // Removed since the listing: counts as present, of unknown age.
-        }
-        newest.set(shard[1], Math.max(newest.get(shard[1]) ?? 0, written));
+        // Removed since the listing: counts as present, of unknown age.
+        const written = writtenAt(path.join(folder, name)) ?? 0;
+        shards.set(shard[1], [...(shards.get(shard[1]) ?? []), written]);
     }
     const units = database.units.filter((unit) => INDEXED_UNIT.test(unit));
-    const missing: string[] = [];
-    const stale: string[] = [];
-    let indexed = 0;
+    /** The units of each file name. */
+    const named = new Map<string, string[]>();
     for (const unit of units) {
-        const written = newest.get(path.basename(unit));
-        if (written === undefined) {
-            if (missing.length < 10) {
-                missing.push(unit);
-            }
-            continue;
-        }
-        indexed++;
-        let changed = 0;
-        try {
-            changed = fs.statSync(unit).mtimeMs;
-        } catch {
-            // A unit that is gone cannot be newer than its shard.
-        }
-        if (changed > written && stale.length < 10) {
-            stale.push(unit);
-        }
+        const name = path.basename(unit);
+        named.set(name, [...(named.get(name) ?? []), unit]);
     }
-    return { indexed, total: units.length, missing, stale };
+    const missing = new Set<string>();
+    const stale = new Set<string>();
+    let indexed = 0;
+    for (const [name, group] of named) {
+        const covered = coverageOfName(group, shards.get(name) ?? []);
+        indexed += covered.indexed;
+        covered.missing.forEach((unit) => missing.add(unit));
+        covered.stale.forEach((unit) => stale.add(unit));
+    }
+    // Both lists in the order of the database.
+    return {
+        indexed,
+        total: units.length,
+        missing: units.filter((unit) => missing.has(unit)).slice(0, 10),
+        stale: units.filter((unit) => stale.has(unit)).slice(0, 10),
+    };
 }

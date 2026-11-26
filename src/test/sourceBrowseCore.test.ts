@@ -181,6 +181,54 @@ suite('Source browsing: the compile database and its index', () => {
         assert.deepStrictEqual(coverage?.stale, [units[1]]);
     });
 
+    test('units of one file name count only as far as there are shards of that name', () => {
+        const [app, boot, util] = [path.join(folder, 'app', 'main.c'), path.join(folder, 'boot', 'main.c'), path.join(folder, 'util.c')];
+        const base = Date.now() - 100_000;
+        /** Sets the modification time of a file to `seconds` after the base. */
+        const at = (file: string, seconds: number): void => {
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            if (!fs.existsSync(file)) {
+                fs.writeFileSync(file, '');
+            }
+            const time = new Date(base + seconds * 1_000);
+            fs.utimesSync(file, time, time);
+        };
+        const shards = path.join(folder, '.cache', 'clangd', 'index');
+        const shard = (name: string): string => path.join(shards, name);
+        const database = { dir: folder, file: path.join(folder, 'compile_commands.json'), units: [app, boot, util] };
+        at(app, 10);
+        at(boot, 1);
+        at(util, 1);
+        at(shard('util.c.00000000000000A1.idx'), 5);
+        at(shard('main.c.00000000000000B1.idx'), 5);
+
+        let coverage = indexCoverage(database);
+        assert.deepStrictEqual([coverage?.indexed, coverage?.total], [2, 3], 'one shard named main.c is one indexed unit, not two');
+        assert.deepStrictEqual(coverage?.missing, [app], 'of the two, the one changed last is taken as the one without a shard');
+        assert.deepStrictEqual(coverage?.stale, []);
+
+        at(shard('main.c.00000000000000B2.idx'), 20);
+        coverage = indexCoverage(database);
+        assert.deepStrictEqual([coverage?.indexed, coverage?.missing], [3, []]);
+        assert.deepStrictEqual(coverage?.stale, [], 'each unit can be older than a shard of its name');
+
+        // Which shard is whose cannot be told from its name: when not every unit can be older than one, each unit
+        // that is newer than the oldest shard may be the changed one.
+        at(boot, 6);
+        at(app, 21);
+        assert.deepStrictEqual(indexCoverage(database)?.stale, [app, boot]);
+        at(shard('main.c.00000000000000B1.idx'), 19);
+        assert.deepStrictEqual(indexCoverage(database)?.stale, [app], 'the one unit that is newer than the oldest shard');
+        at(shard('main.c.00000000000000B2.idx'), 31);
+        assert.deepStrictEqual(indexCoverage(database)?.stale, []);
+
+        // A shard left from a file that is no unit any more does not count for one, and its age does not matter.
+        at(shard('main.c.00000000000000B0.idx'), 2);
+        at(shard('util.c.00000000000000A0.idx'), 0);
+        coverage = indexCoverage(database);
+        assert.deepStrictEqual([coverage?.indexed, coverage?.total, coverage?.stale], [3, 3, []]);
+    });
+
     test('the first lines say what the index covers and where the paths start', () => {
         const coverage = { indexed: 12, total: 12, missing: [], stale: [] };
         assert.strictEqual(renderIndexState({ context: 'Blinky.Debug+MPS3', folder: path.join(SOLUTION, 'out'), coverage, server: 'Apple clangd version 21.0.0 (clang-2100)' }, ROOTS),

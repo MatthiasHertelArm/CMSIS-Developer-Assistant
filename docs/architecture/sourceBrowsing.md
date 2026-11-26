@@ -88,7 +88,10 @@ tells clangd, and no editor appears.
   clangd belong to the clangd extension's status bar. The shards under
   `<compile database>/.cache/clangd/index` say which units are indexed and
   which are older than their file; the first line of every reply says how far
-  the index is.
+  the index is. A shard carries the file's name and a hash of its path that
+  differs between clangd versions, so units of one file name are counted
+  against the shards of that name: two `main.c` and one shard are one indexed
+  unit, and the longer wait for an index that is still being built stays on.
 - **An id is a place.** `name@path:line:column` is where the name stands, so
   the window keeps no table of ids and an id survives a reload. The name is
   in it so that it is found again nearby when the file changed, and so that
