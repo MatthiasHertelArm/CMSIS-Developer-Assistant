@@ -95,12 +95,12 @@ export function formatSymbolId(id: SymbolId, roots: PathRoots): string {
 }
 
 /**
- * An id as `formatSymbolId` writes it. The name ends at the first `@`, since
- * no C or C++ name contains one; line and column are the last two numbers,
- * so a drive letter in the path does no harm. Undefined for a text that is
- * no id, or whose path cannot be resolved.
+ * The parts of a text of the shape `name@path:line:column`, the path as it
+ * is written. The name ends at the first `@`, since no C or C++ name
+ * contains one; line and column are the last two numbers, so a drive letter
+ * in the path does no harm. Undefined for a text of another shape.
  */
-export function parseSymbolId(text: string, roots: PathRoots): SymbolId | undefined {
+function idParts(text: string): { name: string; path: string; line: number; column: number } | undefined {
     const trimmed = text.trim();
     const at = trimmed.indexOf('@');
     if (at <= 0) {
@@ -110,13 +110,28 @@ export function parseSymbolId(text: string, roots: PathRoots): SymbolId | undefi
     if (!place) {
         return undefined;
     }
-    const file = resolvePath(place[1], roots);
     const line = Number(place[2]);
     const column = Number(place[3]);
-    if (file === undefined || line < 1 || column < 1) {
-        return undefined;
-    }
-    return { name: trimmed.slice(0, at), file, line, column };
+    return line < 1 || column < 1 ? undefined : { name: trimmed.slice(0, at), path: place[1], line, column };
+}
+
+/**
+ * True for a text that has the shape of an id, whatever its path. The router
+ * tells an id from a name with it: an id is a place in the project of the
+ * window that wrote it, and the router has no roots to resolve its path with.
+ */
+export function isSymbolId(text: unknown): boolean {
+    return typeof text === 'string' && idParts(text) !== undefined;
+}
+
+/**
+ * An id as `formatSymbolId` writes it. Undefined for a text that is no id
+ * (`idParts`), or whose path cannot be resolved.
+ */
+export function parseSymbolId(text: string, roots: PathRoots): SymbolId | undefined {
+    const parts = idParts(text);
+    const file = parts === undefined ? undefined : resolvePath(parts.path, roots);
+    return parts === undefined || file === undefined ? undefined : { name: parts.name, file, line: parts.line, column: parts.column };
 }
 
 /** The zero-based position of an id on the wire. */

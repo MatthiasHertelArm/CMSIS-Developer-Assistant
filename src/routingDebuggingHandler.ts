@@ -90,11 +90,13 @@ import {
     WINDOW_ARGUMENT,
     forwardTimeoutMs,
     isKnowledgeOp,
+    isSourceOp,
     targetHintOf,
 } from './core/opTable';
 import { liesInside, samePath } from './core/bootstrapState';
 import { ProblemNotices, SESSION_STATUS_OP } from './core/problemFeed';
 import type { JournalCounters } from './core/problemJournal';
+import { isSymbolId } from './core/sourceBrowse/symbolId';
 import {
     JsonObject,
     ToolError,
@@ -160,6 +162,8 @@ const BREAKPOINT_OPS: ReadonlySet<string> = new Set(['handleAddBreakpoint', 'han
 const TIE_STATUS_BUDGET_MS = 5_000;
 /** The knowledge op whose reply says which window's project context the search used. */
 const KNOWLEDGE_SEARCH_OP = 'handleKnowledgeSearch';
+/** `source_get`, whose `symbol` can be an id: a place in the project of the window that wrote it. */
+const SOURCE_GET_OP = 'handleSourceGet';
 /** How long, and how often, the router looks for the window `open_solution` opened. */
 const OPENED_WINDOW_WAIT_MS = 30_000;
 const OPENED_WINDOW_POLL_MS = 500;
@@ -380,6 +384,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
     private pinnedFolders: readonly string[] = [];
     /** Said once, on the next answer: the pin moved to the reloaded window. */
     private pinNote: string | undefined;
+    /** The window that answered this session's last source call, with its folders to find it again after a reload. */
+    private sourceWindow: { pid: number; folders: readonly string[] } | undefined;
     /** `setAt` of the default target this session last saw; a new one drops `target`. */
     private defaultSetAt: number | undefined;
     /** What this session has seen of each window's problem journal (#48), by pid. */
@@ -553,6 +559,8 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
             resolved = target;
         } else if (BREAKPOINT_OPS.has(op) && hint?.source === 'path' && this.pinnedPid !== undefined) {
             resolved = this.resolveForBreakpoint(hint);
+        } else if (op === SOURCE_GET_OP && hint === undefined && isSymbolId((given as { symbol?: unknown }).symbol)) {
+            resolved = this.resolveForSymbolId() ?? this.resolveTarget(hint);
         } else {
             resolved = this.resolveTarget(hint);
         }
@@ -579,6 +587,10 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         if (noticed instanceof ToolError) {
             throw noticed;
         }
+        if (isSourceOp(op)) {
+            // The ids of this answer are places in this window's project: a later source_get with one comes back here.
+            this.sourceWindow = { pid: entry.pid, folders: foldersOf(entry) };
+        }
         const answered = this.withPinNote(resolved.note === undefined ? noticed : withLine(noticed, resolved.note));
         if (op === KNOWLEDGE_SEARCH_OP) {
             return withKnowledgeWindow(answered, entry, reason, this.registry.list().length);
@@ -594,6 +606,38 @@ export class RoutingDebuggingHandler implements IDebuggingHandler {
         }
         this.pinNote = undefined;
         return withLine(answer, note);
+    }
+
+    /**
+     * The window of a `source_get` whose symbol is an id. An id is a place,
+     * `name@path:line:column` with the path relative to the solution folder of
+     * the window that wrote it, so it names no window: sent to the session's
+     * window it would be read in another project. It goes to the window that
+     * answered this session's last source call, found again by its pid, or
+     * after a reload as the one window with its folders. The session's target
+     * stays where it is, and the answer says when that is another window.
+     * Undefined when no source call was answered yet or that window is gone:
+     * the call then follows the session.
+     */
+    private resolveForSymbolId(): Resolved | undefined {
+        const last = this.sourceWindow;
+        if (last === undefined) {
+            return undefined;
+        }
+        const known = this.registry.findByPid(last.pid);
+        const successors = known === undefined ? this.registry.list().filter((w) => hasFolders(w, last.folders)) : [];
+        const entry = known ?? (successors.length === 1 ? successors[0] : undefined);
+        if (entry === undefined) {
+            this.sourceWindow = undefined;
+            return undefined;
+        }
+        const pinned = this.pinnedPid === undefined ? undefined : this.registry.findByPid(this.pinnedPid) ?? this.followPin();
+        const usual = this.pinnedPid === undefined ? this.target?.pid : pinned?.pid;
+        if (usual === undefined || usual === entry.pid) {
+            return { entry, reason: 'source-id' };
+        }
+        return { entry, reason: 'source-id', note: `Ran in ${windowLabel(entry)}, the window that answered this session's last source call: `
+            + 'an id is a place in that window\'s project.' };
     }
 
     /**

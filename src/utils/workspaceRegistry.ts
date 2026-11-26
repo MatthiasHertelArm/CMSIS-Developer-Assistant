@@ -114,10 +114,13 @@ export type HeartbeatPatch = Partial<Pick<WindowRegistration, 'busy' | 'lagMs'>>
 /**
  * Why the router picked a window, strongest first: the call's `window`
  * argument, its file path, the session's pin, the window it reached before,
- * the default target, the one debugging window, the one window. It shows up
- * in the routing log line and in the router's status bar.
+ * the default target, the one debugging window, the one window. Two reasons
+ * hold for one call and never make a window the session's: the router's own
+ * window for a call any window can run, and the window a symbol id of the
+ * source tools came from. It shows up in the routing log line and in the
+ * router's status bar.
  */
-export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'default' | 'active-session' | 'only-window' | 'router-window';
+export type ResolutionReason = 'window-arg' | 'path' | 'pinned' | 'cached' | 'default' | 'active-session' | 'only-window' | 'router-window' | 'source-id';
 
 /**
  * The window the user chose with Select Target Window (#16), for the agent

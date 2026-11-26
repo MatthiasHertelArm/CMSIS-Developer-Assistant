@@ -122,7 +122,10 @@ tells clangd, and no editor appears.
   entry that is a symbol is written as an id.
 - **Routing.** The two ops ride the documentation dispatch. An absolute
   `fileFullPath` sends a call to the window that owns the file; a path
-  relative to a solution names no window and follows the session.
+  relative to a solution names no window and follows the session. An id has
+  such a path, so the router sends a `source_get` with an id to the window
+  that answered the session's last source call: the window that wrote it
+  ([windowRouting.md](windowRouting.md)).
 
 ## Limits
 

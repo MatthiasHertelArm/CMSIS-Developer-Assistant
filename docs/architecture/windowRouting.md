@@ -221,6 +221,21 @@ another project's context: `knowledge_search` is one of the
 the search, without making it the session's target. The documentation ops
 keep refusing the tie: their manuals belong to one window's target.
 
+The source ops (`source_find`, `source_get`) take the ladder like the
+build-artefact ops, with one addition for a symbol id. An id is a place,
+`name@path:line:column`, with the path relative to the solution folder of
+the window that wrote it: it names no window, and read in another window it
+would be a place in another project. A pinned session shows it: an absolute
+`fileFullPath` sends `source_find` to the file's window, and the pin would
+take the `source_get` with the id from that answer. So every session
+remembers the window that answered its last source call, by pid and by its
+folders for a reload, and a `source_get` whose `symbol` has the shape of an
+id (`isSymbolId()`) and carries no path goes there
+(`resolveForSymbolId()`), without becoming the session's target; the answer
+says so when that is another window than the session's. A plain name
+follows the session. No source call answered yet, or that window gone: the
+id follows the session too, as before.
+
 The default target comes after the cache so that a path the agent named
 keeps its window within the session. For a click in the status bar to take
 effect at once all the same, every session remembers the `setAt` of the
@@ -588,7 +603,8 @@ releases the window's serial ports, giving that step at most two seconds.
 ## Tests
 
 - `src/test/routing.test.ts`: the ladder, pins, refusals and a control-server
-  round trip; the breakpoint ops of a pinned session; `serial_list_ports` and `get_session_status` on a tie (the
+  round trip; the breakpoint ops of a pinned session; a symbol id of the source tools in a pinned and in an
+  unpinned session; `serial_list_ports` and `get_session_status` on a tie (the
   router's own window; the status across idle and debugging windows, a
   window that does not answer); typed outcomes — a worker error with its code and the target
   kept, a dead port, a silent window, 2.3.10 replies, both envelopes; the

@@ -31,7 +31,7 @@ import { hoverText, isCallable, isOverridable, isRecord, parseHover } from '../c
 import { DocumentSymbol, LspError, Position, SourceIndex, SymbolInformation, contains, isUnknownDocument, kindName, lastLineOf, locationsOf } from '../core/sourceBrowse/protocol';
 import { distinctPlaces, referencesOf } from '../core/sourceBrowse/relations';
 import { fitBudget, renderIndexState } from '../core/sourceBrowse/render';
-import { displayPath, findNear, formatSymbolId, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from '../core/sourceBrowse/symbolId';
+import { displayPath, findNear, formatSymbolId, isSymbolId, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from '../core/sourceBrowse/symbolId';
 import { Lookup, enclosingSymbol, fileOfUri, isNamed, isQualified, isSymbolNamed, placeInFile, rankHits, searchUseSites, symbolAtName } from '../core/sourceBrowse/symbolQuery';
 
 /** An absolute path of this platform under a made-up root. */
@@ -78,8 +78,14 @@ suite('Source browsing: names of files and symbols', () => {
     test('a text that is no id is none', () => {
         for (const text of ['main', 'main@src/main.c', 'main@src/main.c:10', '@src/main.c:1:1', 'main@src/main.c:0:1', 'main@src/main.c:x:1']) {
             assert.strictEqual(parseSymbolId(text, ROOTS), undefined, text);
+            assert.strictEqual(isSymbolId(text), false, text);
         }
         assert.strictEqual(parseSymbolId('main@src/main.c:1:1', {}), undefined, 'a relative path without a solution folder');
+        // The shape alone, for the router, which has no roots: any path, and nothing that is no text.
+        for (const text of ['main@src/main.c:1:1', ' geo::Shape@${CMSIS_PACK_ROOT}/x.hpp:3:7 ', `run@${at('work', 'x.c')}:7:3`, 'operator==@x.cpp:3:10']) {
+            assert.strictEqual(isSymbolId(text), true, text);
+        }
+        assert.ok(!isSymbolId(undefined) && !isSymbolId(7) && !isSymbolId(''));
     });
 
     test('a name is found as a whole identifier, a qualified one by its last part', () => {

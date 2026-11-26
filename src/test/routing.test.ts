@@ -899,6 +899,59 @@ suite('Multi-window routing', () => {
             assert.strictEqual(await newRouter().packDocsOp('handleSourceFind', inAlpha), echo('alpha', 'source', 'handleSourceFind', inAlpha));
         });
 
+        test('an id goes back to the window that answered the session\'s last source call, whatever the session is pinned to', async () => {
+            const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const beta = await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const inAlpha = { fileFullPath: path.join(folder('alpha'), 'src', 'main.c'), line: 3 };
+            const byId = { symbol: 'main@src/main.c:10:5', what: 'callers' };
+            const byName = { symbol: 'main', what: 'callers' };
+            const router = newRouter();
+            router.selectDebugWindow({ pid: beta.pid });
+
+            // No source call yet: the id has no window of its own and follows the session.
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', byId), echo('beta', 'source', 'handleSourceGet', byId));
+
+            // The file's window answers source_find; the id it wrote is a place in that window's project.
+            assert.strictEqual(await router.packDocsOp('handleSourceFind', inAlpha), echo('alpha', 'source', 'handleSourceFind', inAlpha));
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', byId), `${echo('alpha', 'source', 'handleSourceGet', byId)}\n`
+                + `Ran in pid ${alpha.pid} (alpha), the window that answered this session's last source call: an id is a place in that window's project.`);
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', byName), echo('beta', 'source', 'handleSourceGet', byName), 'a name follows the session');
+            assert.strictEqual(await router.packDocsOp('handleGetMemoryUsage', { top: 5 }), echo('beta', 'build', 'handleGetMemoryUsage', { top: 5 }), 'and so does every other call');
+
+            // The name was answered by the pinned window, so its ids are that window's now, and nothing needs saying.
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', byId), echo('beta', 'source', 'handleSourceGet', byId));
+
+            // A reload gives the window a new pid: the id goes to the one window with the same folders.
+            await router.packDocsOp('handleSourceFind', inAlpha);
+            livePids.delete(alpha.pid);
+            const reloaded = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            const after = textOf(await router.packDocsOp('handleSourceGet', byId));
+            assert.ok(after.startsWith(`${echo('alpha', 'source', 'handleSourceGet', byId)}\nRan in pid ${reloaded.pid} (alpha), `), after);
+
+            // The window is gone: the id follows the session again.
+            livePids.delete(reloaded.pid);
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', byId), echo('beta', 'source', 'handleSourceGet', byId));
+        });
+
+        test('an id does not move the session: the calls without a file stay where they went', async () => {
+            const alpha = await openWindow('alpha', { workspaceFolders: [folder('alpha')] });
+            await openWindow('beta', { workspaceFolders: [folder('beta')] });
+            const inAlpha = { fileFullPath: path.join(folder('alpha'), 'src', 'main.c'), line: 3 };
+            const byId = { symbol: 'main@src/main.c:10:5', what: 'callers' };
+            const router = newRouter();
+            assert.strictEqual(await router.packDocsOp('handleSourceFind', inAlpha), echo('alpha', 'source', 'handleSourceFind', inAlpha));
+            // Not pinned: the session is in alpha now, and an id needs no word about its window.
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', byId), echo('alpha', 'source', 'handleSourceGet', byId));
+            // A file of beta moves the session there.
+            assertAnsweredBy(await router.handleAddBreakpoint({ fileFullPath: path.join(folder('beta'), 'main.c'), line: 10 }), 'beta');
+            const answered = textOf(await router.packDocsOp('handleSourceGet', byId));
+            assert.ok(answered.startsWith(`${echo('alpha', 'source', 'handleSourceGet', byId)}\nRan in pid ${alpha.pid} (alpha), `), answered);
+            assertAnsweredBy(await router.handleReadMemory({ address: '0x20000000', length: 16 }), 'beta');
+            // A path in the call decides before the id does, as for every op.
+            const named = { ...byId, workingDirectory: folder('beta') };
+            assert.strictEqual(await router.packDocsOp('handleSourceGet', named), echo('beta', 'source', 'handleSourceGet', named));
+        });
+
         test('a window of a version without the source tools refuses their ops and says why', async () => {
             const older: PackDocsHandlers = { ...echoingPackDocs('old'), source: undefined };
             await openWindow('old', { workspaceFolders: [folder('old')] }, older);
