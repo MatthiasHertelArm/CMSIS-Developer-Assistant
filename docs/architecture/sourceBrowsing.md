@@ -80,6 +80,13 @@ tells clangd, and no editor appears.
   is used, clangd answers for all of them. So a name the index does not have
   is looked for in the translation units of the compile database, and the
   first use that clangd confirms answers (`searchUseSites`).
+- **A qualified name is held against the scope.** `Task::run` means the
+  `run` of `Task`, wherever the answer comes from: an index hit, an entry of
+  a file's outline (clangd writes a member defined outside its class as
+  `Task::run`, inside its namespace), or a place in the text, where the
+  symbol clangd describes has to be in that scope. One rule decides all
+  three (`isNamed`): the qualified name, or its tail. Only a place whose
+  scope clangd does not name counts by its name alone.
 - **Three waits, each with its reason.** A name is asked again for a second
   while a new client loads its index from disk; then the use site is looked
   for, which is quick; only when clangd is still building the index (not

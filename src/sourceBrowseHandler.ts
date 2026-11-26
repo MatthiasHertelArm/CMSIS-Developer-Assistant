@@ -52,7 +52,7 @@ import {
 } from './core/sourceBrowse/render';
 import { PACK_ROOT_VARIABLE, PathRoots, displayPath, findNear, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from './core/sourceBrowse/symbolId';
 import {
-    Lookup, RankedHits, ResolvedSymbol, describeAt, outlineOf, placeInFile, placeOfHit, placeOfUseSite, rankHits, searchUseSites,
+    Lookup, RankedHits, ResolvedSymbol, describeAt, isSymbolNamed, outlineOf, placeInFile, placeOfHit, placeOfUseSite, rankHits, searchUseSites,
 } from './core/sourceBrowse/symbolQuery';
 import { ToolError, ToolText } from './core/toolResult';
 import { runTool } from './core/toolRun';
@@ -473,10 +473,10 @@ export class SourceBrowseHandler {
             return indexed;
         }
         // A macro, a local, or a symbol the index does not have: any place that uses the name leads to it.
-        const word = unqualified(name);
+        // For a qualified name the place has to be the symbol of that scope, where clangd names one.
         for (const site of await searchUseSites(lookup, session.units, name)) {
             const symbol = await describeAt(lookup, site).catch(() => undefined);
-            if (symbol !== undefined && unqualified(symbol.name) === word) {
+            if (symbol !== undefined && isSymbolNamed(symbol, name)) {
                 symbol.foundBy = `from its use at ${displayPath(site.file, roots)}:${site.position.line + 1} (not in the index by name)`;
                 return symbol;
             }

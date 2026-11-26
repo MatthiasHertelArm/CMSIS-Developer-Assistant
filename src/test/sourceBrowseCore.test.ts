@@ -27,10 +27,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { compileCommandsDirOf, contextNameOf, indexCoverage, readCompileDatabase, substituteVariables } from '../core/sourceBrowse/context';
 import { hoverText, isCallable, isOverridable, isRecord, parseHover } from '../core/sourceBrowse/hoverText';
-import { LspError, SourceIndex, SymbolInformation, contains, isUnknownDocument, kindName, lastLineOf, locationsOf } from '../core/sourceBrowse/protocol';
+import { DocumentSymbol, LspError, Position, SourceIndex, SymbolInformation, contains, isUnknownDocument, kindName, lastLineOf, locationsOf } from '../core/sourceBrowse/protocol';
 import { fitBudget, renderIndexState } from '../core/sourceBrowse/render';
 import { displayPath, findNear, formatSymbolId, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from '../core/sourceBrowse/symbolId';
-import { Lookup, enclosingSymbol, fileOfUri, rankHits, searchUseSites, symbolAtName } from '../core/sourceBrowse/symbolQuery';
+import { Lookup, enclosingSymbol, fileOfUri, isNamed, isQualified, isSymbolNamed, placeInFile, rankHits, searchUseSites, symbolAtName } from '../core/sourceBrowse/symbolQuery';
 
 /** An absolute path of this platform under a made-up root. */
 const at = (...parts: string[]): string => path.join(path.parse(process.cwd()).root, ...parts);
@@ -307,6 +307,92 @@ suite('Source browsing: answers of the server', () => {
         assert.deepStrictEqual(rankHits(hits, 'Other::run').exact, [hits[1]]);
     });
 
+    test('one rule says whether a symbol is the one a name means, with its scope or without', () => {
+        assert.ok(isQualified('Task::run') && isQualified(' app::Task::run ') && !isQualified('run') && !isQualified('::run'));
+        assert.ok(isNamed('run', 'app::Task', 'app::Task::run') && isNamed('run', 'app::Task', 'Task::run') && isNamed('run', 'app::Task', 'run'));
+        assert.ok(isNamed('Task::run', 'app', 'app::Task::run'), 'an outline writes the class into the name of a member defined outside it');
+        assert.ok(isNamed('Task::run', 'app', 'Task::run') && isNamed('Task::run', 'app', 'run') && isNamed('Task::run', undefined, 'Task::run'));
+        assert.ok(!isNamed('run', 'app::Other', 'Task::run') && !isNamed('run', undefined, 'Task::run') && !isNamed('rerun', 'app::Task', 'run'));
+        assert.ok(!isNamed('run', 'app::MyTask', 'Task::run'), 'a scope is matched whole, not by its ending');
+        assert.ok(isNamed('run', undefined, '::run') && isNamed('RUN', 'App::Task', 'task::run', (text) => text.toLowerCase()));
+
+        // What clangd described at a place: held against the scope only when clangd named one.
+        assert.ok(isSymbolNamed({ name: 'run', container: 'app::Task', scoped: true }, 'Task::run'));
+        assert.ok(!isSymbolNamed({ name: 'run', container: 'app::Other', scoped: true }, 'Task::run'));
+        assert.ok(!isSymbolNamed({ name: 'run', scoped: true }, 'Task::run'), 'the global scope is a scope');
+        assert.ok(isSymbolNamed({ name: 'run' }, 'Task::run'), 'a place whose scope is not known counts by its name');
+        assert.ok(isSymbolNamed({ name: 'run', container: 'app::Other', scoped: true }, 'run') && !isSymbolNamed({ name: 'rerun', scoped: true }, 'run'));
+    });
+
+    test('a qualified name in a file is the symbol of that scope: in the outline, and where the text is asked about', async () => {
+        const text = [
+            'namespace geo {',
+            'double Circle::area() const { return 1.0; }',
+            'double Square::area() const { return 2.0; }',
+            'double both(const Circle &c, const Square &s) { return c.area() + s.area(); }',
+            '}',
+        ];
+        const name = (line: number, word: string, nth = 0): { start: Position; end: Position } => {
+            let character = -1;
+            for (let round = 0; round <= nth; round++) {
+                character = text[line].indexOf(word, character + 1);
+            }
+            return { start: { line, character }, end: { line, character: character + word.length } };
+        };
+        const whole = (line: number): { start: Position; end: Position } => ({ start: { line, character: 0 }, end: { line, character: text[line].length } });
+        // As clangd answers: the namespace, and in it the members under the names they are written with.
+        const members: DocumentSymbol[] = [
+            { name: 'Circle::area', kind: 6, range: whole(1), selectionRange: name(1, 'area') },
+            { name: 'Square::area', kind: 6, range: whole(2), selectionRange: name(2, 'area') },
+            { name: 'both', kind: 12, range: whole(3), selectionRange: name(3, 'both') },
+        ];
+        const outline: DocumentSymbol[] = [
+            { name: 'geo', kind: 3, range: { start: { line: 0, character: 0 }, end: { line: 4, character: 1 } }, selectionRange: name(0, 'geo'), children: members },
+        ];
+        /** The class whose `area` stands at a position: by the line, on the last line by the half. */
+        const classAt = (position: Position): string | undefined => {
+            const word = /[A-Za-z_]*$/.exec(text[position.line].slice(0, position.character))?.[0] + (/^[A-Za-z_]*/.exec(text[position.line].slice(position.character))?.[0] ?? '');
+            if (word !== 'area') {
+                return undefined;
+            }
+            return position.line === 1 || (position.line === 3 && position.character < text[3].indexOf('+')) ? 'Circle' : 'Square';
+        };
+        const asked: string[] = [];
+        const serverWith = (symbols: DocumentSymbol[]): SourceIndex => ({
+            generation: {},
+            server: { callHierarchy: false, typeHierarchy: false },
+            open: (file) => Promise.resolve({ uri: `file:///${file}`, languageId: 'cpp', text: text.join('\n') }),
+            request: <T>(method: string, params: unknown): Promise<T> => {
+                const position = (params as { position?: Position }).position;
+                asked.push(method);
+                const owner = position === undefined ? undefined : classAt(position);
+                switch (method) {
+                    case 'textDocument/documentSymbol': return Promise.resolve(symbols as T);
+                    case 'textDocument/hover': return Promise.resolve((owner === undefined ? null : { contents: { kind: 'markdown', value: `### instance-method \`${owner}::area\`` } }) as T);
+                    case 'textDocument/symbolInfo': return Promise.resolve((owner === undefined ? [] : [{ name: 'area', containerName: `geo::${owner}::` }]) as T);
+                    default: return Promise.resolve(null as T);
+                }
+            },
+        });
+        const clock = { now: (): number => 0, startTimer: (): (() => void) => () => undefined };
+        const place = (symbols: DocumentSymbol[], wanted: string): Promise<Position> =>
+            placeInFile(new Lookup(serverWith(symbols), clock, 60_000, () => Promise.resolve(undefined)), 'shape.cpp', wanted, 'shape.cpp').then((found) => found.position);
+
+        assert.deepStrictEqual(await place(outline, 'geo::Square::area'), name(2, 'area').start);
+        assert.deepStrictEqual(await place(outline, 'Square::area'), name(2, 'area').start, 'not the area of Circle, which stands first');
+        assert.deepStrictEqual(await place(outline, 'Circle::area'), name(1, 'area').start);
+        assert.deepStrictEqual(await place(outline, 'area'), name(1, 'area').start, 'a plain name is the first of the outline');
+        assert.deepStrictEqual(await place(outline, 'geo::both'), name(3, 'both').start);
+        assert.ok(!asked.includes('textDocument/hover'), 'the outline answers without a question about a place');
+
+        // Without an outline the places in the text are asked about, two on one line included.
+        assert.deepStrictEqual(await place([], 'Square::area'), name(2, 'area').start);
+        assert.deepStrictEqual(await place([members[2]], 'Square::area'), name(2, 'area').start, 'an outline without the name leaves it to the text too');
+        assert.deepStrictEqual(await place([], 'area'), name(1, 'area').start, 'a plain name is the first place, and nothing is asked about it');
+        await assert.rejects(place([], 'Triangle::area'), /'Triangle::area' does not stand in shape\.cpp: where 'area' stands there, it is the name of another scope\./);
+        await assert.rejects(place([], 'Square::edge'), /'edge' does not stand in shape\.cpp\./);
+    });
+
     test('a definition answer is read in every form the protocol allows', () => {
         const range = { start: { line: 1, character: 2 }, end: { line: 1, character: 5 } };
         assert.deepStrictEqual(locationsOf({ uri: 'file:///a.c', range }), [{ uri: 'file:///a.c', range }]);
@@ -369,7 +455,7 @@ suite('Source browsing: answers of the server', () => {
         const texts: Record<string, string> = { 'small.c': 'int a;\nneedle();\n', 'big.c': big };
         const read = (file: string): Promise<string | undefined> => Promise.resolve(texts[file]);
         const still = { now: (): number => 0, startTimer: (): (() => void) => () => undefined };
-        const limits = { files: 10, characters: 1_000_000, places: 4 };
+        const limits = { files: 10, characters: 1_000_000, places: 4, perFile: 1 };
 
         const whole = await searchUseSites(new Lookup(index, still, 60_000, read), ['small.c', 'big.c'], 'needle', limits);
         assert.deepStrictEqual(whole, [{ file: 'small.c', position: { line: 1, character: 0 } }, { file: 'big.c', position: { line: 20_000, character: 0 } }]);

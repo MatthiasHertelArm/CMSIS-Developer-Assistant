@@ -105,11 +105,17 @@ export const PROJECT_FILES: Readonly<Record<string, readonly string[]>> = {
         '',
         'class Circle : public Shape {',
         '};',
+        '',
+        'struct Inch { static int scale(int value); };',
+        'struct Mile { static int scale(int value); };',
     ],
     'src/shape.cpp': [
         '#include "shape.hpp"',
         '',
         'Circle unit;',
+        '',
+        'int Inch::scale(int value) { return value * 254; }',
+        'int Mile::scale(int value) { return value * 1609; }',
     ],
     'src/startup.s': [
         'Reset_Handler:',
@@ -132,6 +138,8 @@ interface Entry {
     decl?: string;
     /** In the index by name. */
     indexed: boolean;
+    /** The scope the symbol is in, as the server names it at a place and in front of the name in an outline. */
+    container?: string;
     callers?: string[];
     callees?: string[];
     subtypes?: string[];
@@ -156,6 +164,16 @@ const ENTRIES: readonly Entry[] = [
 const HELPERS: readonly Entry[] = [
     { name: 'helper', word: 'function', kind: 12, code: 'static void helper(void)', def: 'src/led.c:22', indexed: true, callers: ['helper'], callees: ['helper'] },
     { name: 'helper', word: 'function', kind: 12, code: 'static void helper(void)', def: 'src/main.c:3', indexed: true, callers: [], callees: [] },
+];
+
+/**
+ * Two functions named `scale` in two scopes of one file, neither in the index
+ * by name: what a qualified name has to tell apart. The one a place means is
+ * the one defined or declared on that line.
+ */
+const SCALES: readonly Entry[] = [
+    { name: 'scale', word: 'static-method', kind: 6, code: 'static int scale(int value)', def: 'src/shape.cpp:5', decl: 'src/shape.hpp:9', indexed: false, container: 'Inch' },
+    { name: 'scale', word: 'static-method', kind: 6, code: 'static int scale(int value)', def: 'src/shape.cpp:6', decl: 'src/shape.hpp:10', indexed: false, container: 'Mile' },
 ];
 
 /** A refusal as a language client rejects with. */
@@ -260,10 +278,16 @@ export class ScriptedClangd implements LanguageClientLike {
         return { uri: pathToFileURL(file).href, range: { start: { line, character }, end: { line, character: character + name.length } } };
     }
 
-    /** The entry a name means at a file: the `helper` of that file, else the one entry of the name. */
-    private entry(name: string, uri?: string): Entry | undefined {
+    /** The entry a name means at a place: the `helper` of that file, the `scale` of that line, else the one entry of the name. */
+    private entry(name: string, uri?: string, position?: Position): Entry | undefined {
         if (name === 'helper') {
             return HELPERS.find((entry) => uri !== undefined && this.nameRange(entry.def ?? '', name).uri === uri) ?? HELPERS[0];
+        }
+        if (name === 'scale') {
+            return SCALES.find((entry) => [entry.def, entry.decl].some((place) => {
+                const stands = this.nameRange(place ?? '', name);
+                return stands.uri === uri && stands.range.start.line === position?.line;
+            }));
         }
         return ENTRIES.find((entry) => entry.name === name);
     }
@@ -368,25 +392,27 @@ export class ScriptedClangd implements LanguageClientLike {
             this.refuseNextPosition = false;
             throw serverError(-32602, 'trying to get AST for non-added document');
         }
+        /** A member as the server writes it where its class is not around it: `Mile::scale`. */
+        const written = (entry: Entry): string => (entry.container === undefined ? entry.name : `${entry.container}::${entry.name}`);
         if (method === 'textDocument/documentSymbol') {
-            return [...ENTRIES, ...HELPERS]
+            return [...ENTRIES, ...HELPERS, ...SCALES]
                 .filter((entry) => entry.def !== undefined && entry.name !== 'i' && entry.word !== 'macro' && this.nameRange(entry.def, entry.name).uri === uri)
-                .map((entry) => ({ name: entry.name, kind: entry.kind, range: this.extent(entry), selectionRange: this.nameRange(entry.def ?? '', entry.name).range, children: [] }))
+                .map((entry) => ({ name: written(entry), kind: entry.kind, range: this.extent(entry), selectionRange: this.nameRange(entry.def ?? '', entry.name).range, children: [] }))
                 .sort((a, b) => a.range.start.line - b.range.start.line);
         }
         const word = params.position === undefined ? undefined : this.wordAt(uri, params.position);
-        const entry = word === undefined ? undefined : this.entry(word, uri);
+        const entry = word === undefined ? undefined : this.entry(word, uri, params.position);
         switch (method) {
             case 'textDocument/hover':
                 return entry === undefined ? null : {
-                    contents: { kind: 'markdown', value: `### ${entry.word} \`${entry.name}\`  \n\n---\n${(entry.notes ?? []).join('\n')}\n\n---\n\`\`\`cpp\n${entry.code}\n\`\`\`` },
+                    contents: { kind: 'markdown', value: `### ${entry.word} \`${written(entry)}\`  \n\n---\n${(entry.notes ?? []).join('\n')}\n\n---\n\`\`\`cpp\n${entry.code}\n\`\`\`` },
                 };
             case 'textDocument/symbolInfo':
                 if (entry === undefined) {
                     return [];
                 }
                 return [{
-                    name: entry.name, containerName: '', usr: `c:@${entry.name}`,
+                    name: entry.name, containerName: entry.container === undefined ? '' : `${entry.container}::`, usr: `c:@${entry.name}`,
                     ...(entry.word === 'macro' ? {} : {
                         definitionRange: entry.def === undefined ? undefined : this.nameRange(entry.def, entry.name),
                         declarationRange: this.nameRange(entry.decl ?? entry.def ?? '', entry.name),

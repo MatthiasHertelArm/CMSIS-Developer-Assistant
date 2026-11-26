@@ -47,6 +47,12 @@ import { findNear, occurrences, unqualified } from './symbolId';
 const UNKNOWN_DOCUMENT_TRIES = 6;
 /** Lines above and below a given line on which a name is still found. */
 const NEAR_LINES = 5;
+/** Places in one file clangd is asked about at most, to find the one a qualified name means. */
+const QUALIFIED_TRIES = 12;
+/** Lines of one file scanned between two looks at the clock. */
+const LINES_PER_TIME_CHECK = 1_000;
+/** A search in the text leaves the call this much time for the questions that follow it. */
+const TIME_LEFT_MS = 1_500;
 
 /** A place in a file: the position of a name, zero-based. */
 export interface FilePlace {
@@ -59,6 +65,8 @@ export interface ResolvedSymbol {
     name: string;
     /** The scope the symbol is in: a namespace or a class, without the trailing `::`. */
     container?: string;
+    /** True when clangd named the scope: then no `container` means the global scope, not an unknown one. */
+    scoped?: boolean;
     /** The kind word: clangd's on hover, else the word for the index entry's kind. */
     kind?: string;
     /** The place the requests about the symbol are sent with. */
@@ -189,10 +197,39 @@ function scopeOf(container: string | undefined): string | undefined {
     return scope ? scope : undefined;
 }
 
-/** `scope::name`, or the name alone. */
-function qualifiedName(hit: SymbolInformation): string {
-    const scope = scopeOf(hit.containerName);
-    return scope ? `${scope}::${hit.name}` : hit.name;
+/** True for a name with a scope in it: `Task::run`, not `run` and not `::run`. */
+export function isQualified(name: string): boolean {
+    return name.trim().replace(/^::/, '').includes('::');
+}
+
+/**
+ * Whether the symbol `name` in `scope` is the one `query` names. A plain
+ * query names it by its name, a qualified one by the qualified name or by
+ * its tail: `Task::run` is `app::Task::run`, and is not `app::MyTask::run`.
+ * The name may carry a part of the scope itself, as an outline writes a
+ * member that is defined outside its class (`Task::run` in `app`). `fold` is
+ * applied to both sides, to compare without regard to case.
+ */
+export function isNamed(name: string, scope: string | undefined, query: string, fold: (text: string) => string = (text) => text): boolean {
+    const wanted = fold(query.trim().replace(/^::/, ''));
+    if (!wanted.includes('::')) {
+        return fold(name) === wanted || fold(unqualified(name)) === wanted;
+    }
+    const full = fold(scope ? `${scope}::${name}` : name);
+    return full === wanted || full.endsWith(`::${wanted}`);
+}
+
+/**
+ * Whether a symbol clangd described at a place is the one `query` names. A
+ * qualified query is held against the symbol's scope only when clangd named
+ * one: a place whose scope is not known counts by its name, as it does for a
+ * plain query.
+ */
+export function isSymbolNamed(symbol: Pick<ResolvedSymbol, 'name' | 'container' | 'scoped'>, query: string): boolean {
+    if (unqualified(symbol.name) !== unqualified(query.trim())) {
+        return false;
+    }
+    return !isQualified(query) || symbol.scoped !== true || isNamed(symbol.name, symbol.container, query);
 }
 
 /** The index's hits for a name, sorted into the ones that are the name and the rest. */
@@ -209,13 +246,7 @@ export interface RankedHits {
  * with it, the hits that match without it are taken.
  */
 export function rankHits(hits: readonly SymbolInformation[], query: string): RankedHits {
-    const wanted = query.trim().replace(/^::/, '');
-    const qualified = wanted.includes('::');
-    const matches = (hit: SymbolInformation, fold: (text: string) => string): boolean => {
-        const full = fold(qualifiedName(hit));
-        const name = fold(wanted);
-        return qualified ? full === name || full.endsWith(`::${name}`) : fold(hit.name) === name;
-    };
+    const matches = (hit: SymbolInformation, fold: (text: string) => string): boolean => isNamed(hit.name, scopeOf(hit.containerName), query, fold);
     let exact = hits.filter((hit) => matches(hit, (text) => text));
     let caseInsensitive = false;
     if (exact.length === 0) {
@@ -249,6 +280,7 @@ export async function describeAt(lookup: Lookup, at: FilePlace, hit?: SymbolInfo
     const resolved: ResolvedSymbol = {
         name: wanted ?? detail?.name ?? '?',
         container: scopeOf(detail?.containerName ?? hit?.containerName),
+        scoped: detail !== undefined || hit !== undefined,
         kind: hover?.kind ?? (hit !== undefined ? kindName(hit.kind) : undefined),
         at,
         hover,
@@ -296,13 +328,17 @@ export function symbolAtName(symbols: readonly DocumentSymbol[], position: Posit
     return undefined;
 }
 
-/** The first symbol of an outline with the name, at any depth. */
-function symbolNamed(symbols: readonly DocumentSymbol[], name: string): DocumentSymbol | undefined {
+/**
+ * The first symbol of an outline that `query` names, at any depth. `scope` is
+ * the chain of the entries around `symbols`: a qualified query is held
+ * against it, so `B::run` is not the `run` of `A` that stands before it.
+ */
+function symbolNamed(symbols: readonly DocumentSymbol[], query: string, scope?: string): DocumentSymbol | undefined {
     for (const symbol of symbols) {
-        if (symbol.name === name) {
+        if (isNamed(symbol.name, scope, query)) {
             return symbol;
         }
-        const inner = symbolNamed(symbol.children ?? [], name);
+        const inner = symbolNamed(symbol.children ?? [], query, scope ? `${scope}::${symbol.name}` : symbol.name);
         if (inner !== undefined) {
             return inner;
         }
@@ -344,19 +380,45 @@ export async function placeOfUseSite(lookup: Lookup, file: string, line: number,
     return { file, position: enclosing.selectionRange.start };
 }
 
-/** The place of `name` in `file`: a symbol of its outline, else the first place the name stands. */
+/**
+ * The place of `name` in `file`: a symbol of its outline, else the first
+ * place the name stands. For a qualified name the outline is matched with
+ * its scopes, and a place in the text counts only when clangd says the symbol
+ * there is the one of that scope: the first `run` of a file need not be the
+ * `run` of `B`.
+ */
 export async function placeInFile(lookup: Lookup, file: string, name: string, shown: string): Promise<FilePlace> {
     const word = unqualified(name);
-    const symbol = symbolNamed(await outlineOf(lookup, file), word);
+    const qualified = isQualified(name);
+    const symbol = symbolNamed(await outlineOf(lookup, file), qualified ? name : word);
     if (symbol !== undefined) {
         return { file, position: symbol.selectionRange.start };
     }
     const lines = (await lookup.document(file)).text.split(/\r?\n/);
+    let tried = 0;
     for (let line = 0; line < lines.length; line++) {
         const columns = occurrences(lines[line], word);
-        if (columns.length > 0 && !isComment(lines[line], columns[0])) {
-            return { file, position: { line, character: columns[0] } };
+        if (!qualified) {
+            if (columns.length > 0 && !isComment(lines[line], columns[0])) {
+                return { file, position: { line, character: columns[0] } };
+            }
+            continue;
         }
+        for (const character of columns.filter((column) => !isComment(lines[line], column))) {
+            if (tried >= QUALIFIED_TRIES || !lookup.hasTime(TIME_LEFT_MS)) {
+                break;
+            }
+            tried++;
+            const place = { file, position: { line, character } };
+            const found = await describeAt(lookup, place).catch(() => undefined);
+            if (found !== undefined && isSymbolNamed(found, name)) {
+                return place;
+            }
+        }
+    }
+    if (tried > 0) {
+        throw new ToolError('INVALID_ARGUMENT', `'${name}' does not stand in ${shown}: where '${word}' stands there, it is the name of another scope.`,
+            `Pass ${word} alone with fileFullPath for the first one in the file, or the qualified name alone to look it up in the index.`);
     }
     throw new ToolError('INVALID_ARGUMENT', `'${word}' does not stand in ${shown}.`, 'Pass the name alone to look it up in the index.');
 }
@@ -378,23 +440,29 @@ export interface UseSiteLimits {
     characters: number;
     /** Places returned at most. */
     places: number;
+    /** Places returned of one file at most. */
+    perFile: number;
 }
 
-/** The limits the tools search with. */
-export const USE_SITE_LIMITS: Readonly<UseSiteLimits> = Object.freeze({ files: 600, characters: 48 * 1024 * 1024, places: 4 });
-/** Lines of one file scanned between two looks at the clock. */
-const LINES_PER_TIME_CHECK = 1_000;
-/** The search leaves the call this much time for the questions that follow it. */
-const TIME_LEFT_MS = 1_500;
+/** The limits the tools search a plain name with: the first place of a file is the name. */
+export const USE_SITE_LIMITS: Readonly<UseSiteLimits> = Object.freeze({ files: 600, characters: 48 * 1024 * 1024, places: 4, perFile: 1 });
+/**
+ * The limits for a qualified name: more places, and several of one file,
+ * because the first place the last part of the name stands may be the symbol
+ * of another scope.
+ */
+export const QUALIFIED_USE_SITE_LIMITS: Readonly<UseSiteLimits> = Object.freeze({ ...USE_SITE_LIMITS, places: 8, perFile: 4 });
 
 /**
  * Places in `units` where `name` stands as an identifier outside comments
- * and strings, at most one per file, in the order of `units`. The search
- * ends at the limits and when the call's time is nearly up, between two
- * files and inside one: a single translation unit can be larger than the
- * character limit.
+ * and strings, in the order of `units`: one per file for a plain name,
+ * several for a qualified one (`QUALIFIED_USE_SITE_LIMITS`). The search ends
+ * at the limits and when the call's time is nearly up, between two files and
+ * inside one: a single translation unit can be larger than the character
+ * limit.
  */
-export async function searchUseSites(lookup: Lookup, units: readonly string[], name: string, limits: UseSiteLimits = USE_SITE_LIMITS): Promise<FilePlace[]> {
+export async function searchUseSites(lookup: Lookup, units: readonly string[], name: string,
+    limits: UseSiteLimits = isQualified(name) ? QUALIFIED_USE_SITE_LIMITS : USE_SITE_LIMITS): Promise<FilePlace[]> {
     const word = unqualified(name);
     const found: FilePlace[] = [];
     let characters = 0;
@@ -408,7 +476,8 @@ export async function searchUseSites(lookup: Lookup, units: readonly string[], n
         if (lines === undefined) {
             continue;
         }
-        for (let line = 0; line < lines.length; line++) {
+        let inFile = 0;
+        for (let line = 0; line < lines.length && inFile < limits.perFile && found.length < limits.places; line++) {
             if (characters >= limits.characters || (line > 0 && line % LINES_PER_TIME_CHECK === 0 && !lookup.hasTime(TIME_LEFT_MS))) {
                 break;
             }
@@ -416,10 +485,13 @@ export async function searchUseSites(lookup: Lookup, units: readonly string[], n
             if (!lines[line].includes(word)) {
                 continue;
             }
-            const column = occurrences(lines[line], word).find((candidate) => !isComment(lines[line], candidate));
-            if (column !== undefined) {
+            for (const column of occurrences(lines[line], word).filter((candidate) => !isComment(lines[line], candidate))) {
                 found.push({ file: unit, position: { line, character: column } });
-                break;
+                inFile++;
+                // A plain name is asked about once per line; a qualified one at each place, since two scopes can stand on one line.
+                if (limits.perFile === 1 || inFile >= limits.perFile || found.length >= limits.places) {
+                    break;
+                }
             }
         }
     }

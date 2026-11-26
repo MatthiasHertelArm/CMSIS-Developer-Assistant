@@ -155,6 +155,11 @@ const FILES = {
         '    return side_ > MAX_SIDE ? 0.0 : side_ * side_;',
         '}',
         '',
+        'double both(const Circle &circle, const Square &square)',
+        '{',
+        '    return circle.area() + square.area();',
+        '}',
+        '',
         '}  // namespace geo',
     ],
 };
@@ -330,6 +335,27 @@ async function main() {
     check('a file that does not exist is an INVALID_ARGUMENT', wrongFile?.code === 'INVALID_ARGUMENT', String(wrongFile?.message ?? wrongFile));
     const shape = await find({ name: 'geo::Shape' });
     check('a class by its qualified name offers the type hierarchy', /Shape: class in geo/.test(shape) && /supertypes \(0\), subtypes \(2\)/.test(shape), shape);
+
+    // Circle::area stands first in the file, in its outline and in its text.
+    const squareArea = await find({ fileFullPath: 'src/shape.cpp', name: 'geo::Square::area' });
+    check('a qualified name with a file is the symbol of that scope, not the first of the name', /area: instance-method in geo::Square/.test(squareArea)
+        && /defined {4}src\/shape\.cpp:11/.test(squareArea), squareArea);
+    const squareTail = await find({ fileFullPath: 'src/shape.cpp', name: 'Square::area' });
+    check('the tail of the qualified name is enough', /area: instance-method in geo::Square/.test(squareTail) && /defined {4}src\/shape\.cpp:11/.test(squareTail), squareTail);
+    const squareDeclared = await find({ fileFullPath: 'src/shape.hpp', name: 'Square::area' });
+    check('in the header the scope is the class around the member', /area: instance-method in geo::Square/.test(squareDeclared)
+        && /declared {3}src\/shape\.hpp:22/.test(squareDeclared), squareDeclared);
+    const noTriangle = await failure(() => find({ fileFullPath: 'src/shape.cpp', name: 'Triangle::area' }));
+    check('a scope the file does not have is an INVALID_ARGUMENT, not the area of another class', noTriangle?.code === 'INVALID_ARGUMENT'
+        && /it is the name of another scope/.test(noTriangle.message), String(noTriangle?.message ?? noTriangle));
+    // What a qualified name found from a use rests on: at a use, clangd names the scope of the member.
+    const shapeUnit = path.join(root, 'src', 'shape.cpp');
+    const useLine = FILES['src/shape.cpp'].findIndex((line) => line.includes('square.area()'));
+    const atUse = await client.sendRequest('textDocument/symbolInfo', {
+        textDocument: { uri: pathToFileURL(shapeUnit).href },
+        position: { line: useLine, character: FILES['src/shape.cpp'][useLine].indexOf('area', FILES['src/shape.cpp'][useLine].indexOf('square.')) },
+    });
+    check('at a use of a member clangd names its scope', atUse?.[0]?.name === 'area' && atUse[0].containerName === 'geo::Square::', atUse);
 
     console.log('source_get');
     const definition = await get({ symbol: 'led_on', what: 'definition' });

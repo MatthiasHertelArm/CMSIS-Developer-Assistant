@@ -116,6 +116,30 @@ suite('Source browsing: the handler', () => {
         assert.match(one, /helper: function\n[\s\S]*defined {4}src\/main\.c:3\n/);
     });
 
+    test('a qualified name with a file is the symbol of that scope, not the first of the name in the file', async () => {
+        // The outline of the source file writes both as the server does: Inch::scale, then Mile::scale.
+        const defined = await find({ name: 'Mile::scale', fileFullPath: 'src/shape.cpp' });
+        assert.match(defined, /\nscale: static-method in Mile\n[\s\S]*\n {2}defined {4}src\/shape\.cpp:6\n {2}declared {3}src\/shape\.hpp:10\n/);
+        // The header has no outline entry for them here: the places in its text are asked about, and the first is Inch's.
+        const declared = await find({ name: 'Mile::scale', fileFullPath: 'src/shape.hpp' });
+        assert.match(declared, /\nscale: static-method in Mile\n[\s\S]*\n {2}defined {4}src\/shape\.cpp:6\n/);
+        assert.match(await find({ name: 'Inch::scale', fileFullPath: 'src/shape.cpp' }), /\nscale: static-method in Inch\n[\s\S]*\n {2}defined {4}src\/shape\.cpp:5\n/);
+        assert.match(await find({ name: 'scale', fileFullPath: 'src/shape.cpp' }), /\nscale: static-method in Inch\n/, 'a plain name is the first one of the file, as before');
+        const other = await refusal(find({ name: 'Yard::scale', fileFullPath: 'src/shape.hpp' }));
+        assert.strictEqual(other.code, 'INVALID_ARGUMENT');
+        assert.match(other.message, /'Yard::scale' does not stand in src\/shape\.hpp: where 'scale' stands there, it is the name of another scope\./);
+        const absent = await refusal(find({ name: 'Mile::nothing', fileFullPath: 'src/shape.hpp' }));
+        assert.match(absent.message, /'nothing' does not stand in src\/shape\.hpp\./);
+    });
+
+    test('a qualified name the index does not have is found from a use of that scope, not from the first use of the name', async () => {
+        const text = await find({ name: 'Mile::scale' });
+        assert.match(text, /\nscale: static-method in Mile\n[\s\S]*\n {2}defined {4}src\/shape\.cpp:6\n/);
+        assert.match(text, /\n {2}found {6}from its use at src\/shape\.cpp:6 \(not in the index by name\)\n/);
+        assert.match(await find({ name: 'Yard::scale' }), /No symbol named 'Yard::scale'/, 'a use in another scope is not the symbol');
+        assert.match(await find({ name: 'scale' }), /\nscale: static-method in Inch\n/, 'a plain name is the first use, as before');
+    });
+
     test('a name in another case is found when no symbol has it as written', async () => {
         assert.match(await find({ name: 'LED_ON' }), /led_on: function/);
     });
