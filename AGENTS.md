@@ -138,7 +138,9 @@ configuration files, launch configurations, activation) and
 checks a built package. `test/transport/source-clangd.js` asks the source
 tools' questions of a clangd of the machine (from the `PATH`, or `CLANGD`)
 over a small project it writes; its answers depend on that clangd, so it is a
-local check, and without a clangd it says so and passes.
+local check. Without a clangd on the `PATH` it says so and passes; a `CLANGD`
+that is no clangd, a clangd that exits or stays silent, and a run that ends
+before its summary fail.
 
 ## Settings
 

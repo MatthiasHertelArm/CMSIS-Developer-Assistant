@@ -26,7 +26,10 @@
 // link with unsaved text, and the refusals.
 //
 // The answers depend on the clangd of the machine, so this is a local check
-// like test:surface, not a CI job. Without a clangd it says so and passes.
+// like test:surface, not a CI job. Without a clangd on the PATH it says so
+// and passes. Everything else that keeps it from checking is a failure: a
+// CLANGD that is no clangd, a clangd that goes away or stays silent, and a
+// run that ends before its summary.
 //
 //   node test/transport/source-clangd.js           (clangd from PATH)
 //   CLANGD=/path/to/clangd node test/transport/source-clangd.js
@@ -44,6 +47,12 @@ const { openDocumentIndex } = require(path.join(OUT, 'core', 'sourceBrowse', 'fi
 
 let failures = 0;
 let passes = 0;
+/** Set when the run reached its summary, or the skip it documents: an exit without it is no pass. */
+let verdict = false;
+/** How long clangd may take to answer `initialize`. */
+const START_MS = 30_000;
+/** How long the whole run may take. */
+const RUN_MS = 10 * 60_000;
 function check(name, ok, detail) {
     if (ok) { passes++; console.log(`  ok   ${name}`); }
     else { failures++; console.log(`  FAIL ${name}${detail !== undefined ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : ''}`); }
@@ -195,14 +204,29 @@ class StdioClient {
         this.nextId = 1;
         this.versions = new Map();
         this.initializeResult = undefined;
+        /** Why the server is gone, once it is: every request waiting for it is rejected, and so is every later one. */
+        this.gone = undefined;
         this.child.stdout.on('data', (chunk) => this.read(chunk));
+        this.child.on('error', (error) => this.end(`${command} could not be started: ${error.message}`));
+        this.child.on('exit', (code, signal) => this.end(`${command} exited (${signal ?? `code ${code}`})`));
+        // A write to a server that has gone fails later, as an event of the pipe.
+        this.child.stdin.on('error', (error) => this.end(`${command} closed its input: ${error.message}`));
+    }
+
+    /** The server is gone: no request waits for an answer that cannot come. */
+    end(why) {
+        if (this.gone !== undefined) { return; }
+        this.gone = why;
+        for (const entry of this.pending.values()) { entry.reject(new Error(why)); }
+        this.pending.clear();
     }
 
     isRunning() {
-        return this.initializeResult !== undefined && this.child.exitCode === null;
+        return this.initializeResult !== undefined && this.gone === undefined && this.child.exitCode === null;
     }
 
     write(message) {
+        if (this.gone !== undefined) { return; }
         const body = Buffer.from(JSON.stringify(message), 'utf8');
         this.child.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
         this.child.stdin.write(body);
@@ -229,6 +253,9 @@ class StdioClient {
     }
 
     sendRequest(method, params) {
+        if (this.gone !== undefined) {
+            return Promise.reject(new Error(`${this.gone}: ${method} was not sent`));
+        }
         const id = this.nextId++;
         return new Promise((resolve, reject) => {
             this.pending.set(id, { resolve, reject });
@@ -241,13 +268,26 @@ class StdioClient {
     }
 
     async start(root) {
-        this.initializeResult = await this.sendRequest('initialize', {
+        const initialized = this.sendRequest('initialize', {
             processId: process.pid,
             rootUri: pathToFileURL(root).href,
             capabilities: {
                 textDocument: { hover: { contentFormat: ['markdown', 'plaintext'] }, documentSymbol: { hierarchicalDocumentSymbolSupport: true }, callHierarchy: {}, typeHierarchy: {} },
             },
         });
+        // A server that runs and says nothing would be waited for until the run's own limit.
+        let waiting;
+        const silent = new Promise((_, reject) => {
+            waiting = setTimeout(() => reject(new Error(`the server did not answer initialize within ${START_MS / 1000} s`)), START_MS);
+        });
+        try {
+            this.initializeResult = await Promise.race([initialized, silent]);
+        } catch (caught) {
+            this.child.kill();
+            throw caught;
+        } finally {
+            clearTimeout(waiting);
+        }
         this.notify('initialized', {});
     }
 
@@ -286,12 +326,19 @@ class StdioClient {
 
 // ── The run ────────────────────────────────────────────────────────────────
 
+/** Runs the checks; resolves with 'skipped' when the machine has no clangd on the PATH and none was named. */
 async function main() {
-    const clangd = process.env.CLANGD || 'clangd';
+    const named = process.env.CLANGD;
+    const clangd = named || 'clangd';
     const version = spawnSync(clangd, ['--version'], { encoding: 'utf8' });
-    if (version.error || version.status !== 0) {
-        console.log(`no clangd found (${clangd}): the check against a real clangd is skipped. Set CLANGD to run it.`);
-        return;
+    if (!named && version.error?.code === 'ENOENT') {
+        console.log('no clangd on the PATH: the check against a real clangd is skipped. Set CLANGD to run it.');
+        return 'skipped';
+    }
+    // A clangd that was named has to be one, and so has a `clangd` the PATH has: skipping here would pass a run that checked nothing.
+    if (version.error || version.status !== 0 || !/clangd version/i.test(version.stdout)) {
+        const said = version.error?.message ?? `exit code ${version.status}, "${(version.stdout || version.stderr || '').split('\n')[0]}"`;
+        throw new Error(`${named ? `CLANGD=${named}` : 'the clangd on the PATH'} is no clangd: --version gave ${said}.`);
     }
     console.log(`clangd: ${version.stdout.split('\n')[0]}`);
     const root = writeProject();
@@ -458,10 +505,33 @@ async function main() {
     fs.rmSync(root, { recursive: true, force: true });
 }
 
-main().then(() => {
+// A run that ends without its summary has checked nothing it can vouch for: a promise that never settles lets Node
+// end with exit code 0 once nothing else keeps it alive. Such an end is turned into a failure here.
+process.on('exit', (code) => {
+    if (!verdict && code === 0) {
+        console.error(`\nsource-clangd.js ended before its summary, after ${passes + failures} check(s): no verdict, so this is a failure.`);
+        process.exitCode = 1;
+    }
+});
+// Nor does the run wait for ever; the timer alone does not keep the process alive.
+setTimeout(() => {
+    console.error(`\nsource-clangd.js did not finish within ${RUN_MS / 60_000} minutes, after ${passes + failures} check(s).`);
+    process.exit(1);
+}, RUN_MS).unref();
+
+main().then((outcome) => {
+    verdict = true;
+    if (outcome === 'skipped') {
+        process.exit(0);
+    }
+    if (failures === 0 && passes === 0) {
+        console.log('\nNO CHECK RAN');
+        process.exit(1);
+    }
     console.log(failures === 0 ? `\nALL CHECKS PASSED (${passes})` : `\n${failures} CHECK(S) FAILED, ${passes} passed`);
     process.exit(failures === 0 ? 0 : 1);
 }, (caught) => {
-    console.error(caught);
+    verdict = true;
+    console.error(caught instanceof Error ? `\nFAILED: ${caught.message}` : caught);
     process.exit(1);
 });
