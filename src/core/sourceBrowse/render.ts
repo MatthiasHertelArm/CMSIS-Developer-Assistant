@@ -32,7 +32,7 @@
 import { clipValue } from '../textBudget';
 import type { IndexCoverage } from './context';
 import { isCallable, isOverridable, isRecord } from './hoverText';
-import { DocumentSymbol, Range, SymbolInformation, kindName } from './protocol';
+import { DocumentSymbol, Range, SymbolInformation, kindName, lastLineOf } from './protocol';
 import type { Hierarchy, HierarchyNode, References } from './relations';
 import { PACK_ROOT_VARIABLE, PathRoots, displayPath, formatSymbolId } from './symbolId';
 import type { FilePlace, ResolvedSymbol } from './symbolQuery';
@@ -216,8 +216,7 @@ export function renderNotFound(name: string, near: readonly SymbolInformation[],
 /** `35` or `35-60`, lines counted from 1. */
 function linesText(range: Range): string {
     const first = range.start.line + 1;
-    // A range that ends at column 0 of a line does not include that line.
-    const last = range.end.character === 0 && range.end.line > range.start.line ? range.end.line : range.end.line + 1;
+    const last = lastLineOf(range) + 1;
     return last > first ? `${first}-${last}` : `${first}`;
 }
 

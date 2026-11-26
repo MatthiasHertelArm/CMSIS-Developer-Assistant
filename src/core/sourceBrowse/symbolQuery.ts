@@ -39,7 +39,7 @@ import { ToolError } from '../toolResult';
 import { HoverParts, parseHover } from './hoverText';
 import {
     DocumentSymbol, Hover, Location, OpenedDocument, Position, SourceIndex, SymbolDetails, SymbolInformation, contains, isUnknownDocument,
-    kindName, locationsOf,
+    kindName, lastLineOf, locationsOf,
 } from './protocol';
 import { findNear, occurrences, unqualified } from './symbolId';
 
@@ -274,7 +274,7 @@ export async function describeAt(lookup: Lookup, at: FilePlace, hit?: SymbolInfo
 /** The innermost symbol of an outline whose lines include `line`. */
 export function enclosingSymbol(symbols: readonly DocumentSymbol[], line: number): DocumentSymbol | undefined {
     for (const symbol of symbols) {
-        if (line >= symbol.range.start.line && line <= symbol.range.end.line) {
+        if (line >= symbol.range.start.line && line <= lastLineOf(symbol.range)) {
             return enclosingSymbol(symbol.children ?? [], line) ?? symbol;
         }
     }

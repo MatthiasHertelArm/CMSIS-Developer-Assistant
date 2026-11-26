@@ -27,7 +27,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { compileCommandsDirOf, contextNameOf, indexCoverage, readCompileDatabase, substituteVariables } from '../core/sourceBrowse/context';
 import { hoverText, isCallable, isOverridable, isRecord, parseHover } from '../core/sourceBrowse/hoverText';
-import { LspError, SymbolInformation, contains, isUnknownDocument, kindName, locationsOf } from '../core/sourceBrowse/protocol';
+import { LspError, SymbolInformation, contains, isUnknownDocument, kindName, lastLineOf, locationsOf } from '../core/sourceBrowse/protocol';
 import { fitBudget, renderIndexState } from '../core/sourceBrowse/render';
 import { displayPath, findNear, formatSymbolId, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from '../core/sourceBrowse/symbolId';
 import { enclosingSymbol, fileOfUri, rankHits, symbolAtName } from '../core/sourceBrowse/symbolQuery';
@@ -297,6 +297,16 @@ suite('Source browsing: answers of the server', () => {
         assert.strictEqual(symbolAtName(outline, { line: 4, character: 6 })?.name, 'area');
         assert.strictEqual(symbolAtName(outline, { line: 10, character: 8 })?.name, 'main');
         assert.strictEqual(symbolAtName(outline, { line: 10, character: 0 }), undefined);
+    });
+
+    test('a range that ends at column 0 of a later line does not include that line', () => {
+        const name = { start: { line: 2, character: 5 }, end: { line: 2, character: 10 } };
+        const first = { name: 'first', kind: 12, range: { start: { line: 2, character: 0 }, end: { line: 5, character: 0 } }, selectionRange: name };
+        assert.strictEqual(lastLineOf(first.range), 4);
+        assert.strictEqual(lastLineOf({ start: { line: 2, character: 0 }, end: { line: 5, character: 1 } }), 5);
+        assert.strictEqual(lastLineOf({ start: { line: 2, character: 0 }, end: { line: 2, character: 0 } }), 2, 'an empty range is its line');
+        assert.strictEqual(enclosingSymbol([first], 4)?.name, 'first');
+        assert.strictEqual(enclosingSymbol([first], 5), undefined, 'the line after the function lies in no function');
     });
 
     test('a file URI of the server is a path, percent signs decoded', () => {

@@ -203,6 +203,14 @@ export function locationsOf(answer: unknown): Location[] {
     return found;
 }
 
+/**
+ * The last line (zero-based) a range covers. The end of a range is excluded,
+ * so a range that ends at column 0 of a later line does not include that line.
+ */
+export function lastLineOf(range: Range): number {
+    return range.end.character === 0 && range.end.line > range.start.line ? range.end.line - 1 : range.end.line;
+}
+
 /** True when `position` lies inside `range`, its end excluded. */
 export function contains(range: Range, position: Position): boolean {
     const after = position.line > range.start.line || (position.line === range.start.line && position.character >= range.start.character);
