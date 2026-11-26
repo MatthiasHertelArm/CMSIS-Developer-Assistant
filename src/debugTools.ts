@@ -259,8 +259,8 @@ const ABOUT = {
         'open_solution (path) opens and activates a csolution.',
     ),
     cmsis_query: say(
-        'Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, ' +
-        'toolchains, debug adapters, tools environment. No project needed.',
+        'Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); API v3 adds packs, ' +
+        'toolchains, debuggers (debug adapters), environment. No project needed.',
         'Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).',
     ),
     flash: say(

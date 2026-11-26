@@ -1271,7 +1271,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); API v3 adds packs, toolchains, debuggers (debug adapters), environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -2809,7 +2809,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); API v3 adds packs, toolchains, debuggers (debug adapters), environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -4971,7 +4971,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); API v3 adds packs, toolchains, debuggers (debug adapters), environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -6991,7 +6991,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); API v3 adds packs, toolchains, debuggers (debug adapters), environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -9119,7 +9119,7 @@
         },
         {
           "name": "cmsis_query",
-          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); with its API v3 also packs, toolchains, debug adapters, tools environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
+          "description": "Boards, devices, examples of a board or device (CMSIS Solution catalog: web, installed packs); API v3 adds packs, toolchains, debuggers (debug adapters), environment. No project needed. Patterns: case-insensitive regex or text, separators ignored (micro:bit finds microbit-v2).",
           "inputSchema": {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
