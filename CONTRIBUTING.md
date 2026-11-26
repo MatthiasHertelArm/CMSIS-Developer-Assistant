@@ -106,13 +106,15 @@ Property-based tests use `fast-check` inside the mocha suites
 a mutation run judges the same values every time, and take their expected
 values from the manual or the proposal, never from the module under test. The
 six suites above are left out through `mochaOptions.ignore` in the config, and
-so is the document service's suite: a mutant in a module-level table is tested
-with every suite, and its watcher test fails under the load of the parallel
-workers, which would count as a kill. A test that fails for a reason of its
-own kills mutants by mistake, so a suite that is to judge mutants must pass in
-parallel with itself, and a test with a wall-clock limit skips itself when
-`__stryker__` is in `globalThis`, as the stress test of
-`symptomPattern.test.ts` does: the instrumented code is slower.
+no other. A mutant in a module-level table is tested with every suite, and a
+test that fails for a reason of its own kills it by mistake, so a suite that
+is to judge mutants must pass in parallel with itself. A test with a
+wall-clock limit therefore skips itself when `__stryker__` is in `globalThis`,
+as the stress test of `symptomPattern.test.ts` does (the instrumented code is
+slower) and the two watcher tests of `docService.test.ts` do (under the load
+of the parallel workers the watcher reports late). Skip the test, not its
+suite: a suite left out leaves the mutants unjudged that only its tests
+cover.
 
 `test/transport/packaged-vsix.js` is the one that catches packaging mistakes:
 a missing entry in the `.vscodeignore` serialport allow-list fails **only** in

@@ -78,7 +78,10 @@ module level), each tested with every suite, and 39 of them survive: 23
 description texts, 8 flag names and 8 whole table rows, which no test reads
 as such (the tests decode registers and look at the flags). In the first
 runs a watcher test of the document service failed under the load of the
-workers and killed 33 mutants by mistake; its suite is left out, and two
+workers and killed 33 mutants by mistake; its suite was left out (since
+2026-11-26 the two watcher tests skip themselves under Stryker instead, and
+the suite judges again: it has the only tests of
+`src/core/packDocs/documentApi.ts`), and two
 other tests were made safe for parallel workers. A suite that is to judge
 mutants must pass in parallel with itself. The whole of `src/core/` has
 31 299 mutants in 112 files (dry run of 2026-11-25 on the 2.9.5 line; 29 509
@@ -198,7 +201,8 @@ The set-up of 2026-11-25 is the base.
   (`debugState`, `debugMCPServer`, `controlServer`, `routingDebuggingHandler`,
   `docService/emulator`, `utils/*`) can be added at once. A suite joins only
   when it passes in parallel with itself; the document service's watcher test
-  is the open case.
+  was the open case, closed on 2026-11-26 by letting its two watcher tests
+  skip themselves in a mutation run.
 - **Tests with a wall-clock limit** step aside under instrumentation
   (`'__stryker__' in globalThis`) instead of their suite being left out, so
   that the module's other tests keep judging its mutants; done on 2026-11-25

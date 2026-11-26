@@ -27,8 +27,9 @@
 // harness, as CONTRIBUTING.md describes; `npm test` and the VS Code host are
 // not involved. Six suites need more of VS Code than the stub offers
 // (`Disposable.from`, `LogLevel`, `Uri.joinPath`) and are left out, so the
-// mutated files are those of src/core/, which those six do not cover alone;
-// one more suite is left out because it fails under load (see `ignore`).
+// mutated files are those of src/core/, which those six do not cover alone.
+// No suite is left out for failing under load: its tests that do skip
+// themselves (see `mochaOptions`).
 // A full run over src/core/ (31 299 mutants in 112 files on 2026-11-25) takes
 // hours; narrow it with `--mutate`:
 //
@@ -59,18 +60,20 @@ const config = {
             'out/src/test/toolchainPackRoot.test.js',
             'out/src/test/windowCoordinator.test.js',
             'out/src/test/windowProblems.test.js',
-            // A mutant in a module-level table (a "static" mutant) is tested
-            // with every suite, and a test that fails under the load of the
-            // parallel workers then kills it by mistake: measured for the
-            // watcher test "the first project document ... is announced",
-            // 33 of 161 kills in one run of faultDecoder.ts. The suite covers
-            // src/docService/, nothing of src/core/.
-            'out/src/test/docService.test.js',
         ],
         // A test with a wall-clock limit skips itself when `__stryker__` is
         // in globalThis, as the stress test of symptomPattern.test.ts does:
         // with all of src/core/ instrumented (over 30 000 mutants) the code is
         // slower, and a deadline it misses says nothing about a mutant.
+        //
+        // So do the two watcher tests of docService.test.ts. A mutant in a
+        // module-level table (a "static" mutant) is tested with every suite,
+        // and a test that fails under the load of the parallel workers then
+        // kills it by mistake: measured for "the first project document ...
+        // is announced", 33 of 161 kills in one run of faultDecoder.ts. The
+        // suite itself stays in the run: it has the only tests of
+        // src/core/packDocs/documentApi.ts, and a whole suite left out would
+        // leave that module's mutants unjudged.
     },
 
     // Only the tests that cover a mutant run against it.

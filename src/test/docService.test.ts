@@ -559,6 +559,16 @@ const PROJECT_INVENTORY = [
     '',
 ].join('\n');
 
+/**
+ * True in a mutation run. The two tests that wait up to 3 s for a file
+ * watcher to report step aside there: under the load of Stryker's parallel
+ * workers the report comes late, the test fails for a reason of its own, and
+ * a mutant in a module-level table, which every suite is run against, counts
+ * as killed by mistake (33 of 161 kills in one run of faultDecoder.ts). The
+ * rest of this file judges mutants like any other suite.
+ */
+const UNDER_STRYKER = '__stryker__' in globalThis;
+
 suite('the emulator and a project\'s .cmsis/docs.yml: changed in place, watched before it is there', () => {
     let base: string;
     let solution: string;
@@ -625,6 +635,9 @@ suite('the emulator and a project\'s .cmsis/docs.yml: changed in place, watched 
     });
 
     test('the first project document, added by another window into a .cmsis folder that was not there, is announced', async function () {
+        if (UNDER_STRYKER) {
+            this.skip();
+        }
         this.timeout(15_000);
         const first = aWindow();
         assert.deepStrictEqual(await first.service.getDocuments(DEVICE, solution), []);
@@ -638,8 +651,8 @@ suite('the emulator and a project\'s .cmsis/docs.yml: changed in place, watched 
     });
 
     test('a .cmsis folder that goes is announced, and so is the inventory written into it again', async function () {
-        if (process.platform === 'win32') {
-            // Not measured there: Windows reports the removal of a watched folder as an error of the watcher.
+        if (process.platform === 'win32' || UNDER_STRYKER) {
+            // Windows: not measured there, it reports the removal of a watched folder as an error of the watcher.
             this.skip();
         }
         this.timeout(15_000);
