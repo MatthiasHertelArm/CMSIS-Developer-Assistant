@@ -197,9 +197,46 @@ function scopeOf(container: string | undefined): string | undefined {
     return scope ? scope : undefined;
 }
 
+/**
+ * The parts of a qualified name, split at each `::` that stands outside
+ * template arguments: `Map<std::string, int>` and `find` of
+ * `Map<std::string, int>::find`.
+ */
+function partsOf(name: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let at = 0; at < name.length; at++) {
+        const sign = name[at];
+        if (sign === '<') {
+            depth++;
+        } else if (sign === '>' && depth > 0) {
+            depth--;
+        } else if (depth === 0 && sign === ':' && name[at + 1] === ':') {
+            parts.push(name.slice(start, at));
+            start = at + 2;
+            at++;
+        }
+    }
+    parts.push(name.slice(start));
+    return parts;
+}
+
+/**
+ * A qualified name with the template arguments of its scopes left out:
+ * `Stack::push` of `Stack<T>::push` and of `Stack<int>::push`. clangd writes
+ * a scope with them in an outline and without them at a place and in the
+ * index, and an agent writes either. The last part is kept as it is: it can
+ * be an operator, and a specialization is another symbol than its template.
+ */
+function withPlainScopes(name: string): string {
+    const parts = partsOf(name);
+    return [...parts.slice(0, -1).map((scope) => scope.replace(/<.*$/, '')), parts[parts.length - 1]].join('::');
+}
+
 /** True for a name with a scope in it: `Task::run`, not `run` and not `::run`. */
 export function isQualified(name: string): boolean {
-    return name.trim().replace(/^::/, '').includes('::');
+    return partsOf(name.trim().replace(/^::/, '')).length > 1;
 }
 
 /**
@@ -207,15 +244,17 @@ export function isQualified(name: string): boolean {
  * query names it by its name, a qualified one by the qualified name or by
  * its tail: `Task::run` is `app::Task::run`, and is not `app::MyTask::run`.
  * The name may carry a part of the scope itself, as an outline writes a
- * member that is defined outside its class (`Task::run` in `app`). `fold` is
- * applied to both sides, to compare without regard to case.
+ * member that is defined outside its class (`Task::run` in `app`). Scopes
+ * are compared without their template arguments (`withPlainScopes`). `fold`
+ * is applied to both sides, to compare without regard to case.
  */
 export function isNamed(name: string, scope: string | undefined, query: string, fold: (text: string) => string = (text) => text): boolean {
-    const wanted = fold(query.trim().replace(/^::/, ''));
-    if (!wanted.includes('::')) {
-        return fold(name) === wanted || fold(unqualified(name)) === wanted;
+    const asked = query.trim().replace(/^::/, '');
+    if (!isQualified(asked)) {
+        return fold(name) === fold(asked) || fold(unqualified(name)) === fold(asked);
     }
-    const full = fold(scope ? `${scope}::${name}` : name);
+    const wanted = fold(withPlainScopes(asked));
+    const full = fold(withPlainScopes(scope ? `${scope}::${name}` : name));
     return full === wanted || full.endsWith(`::${wanted}`);
 }
 

@@ -143,6 +143,12 @@ const FILES = {
         '    double side_;',
         '};',
         '',
+        'template <class T> class Stack {',
+        'public:',
+        '    void push(T value);',
+        '    T top;',
+        '};',
+        '',
         '}  // namespace geo',
     ],
     'src/limits.hpp': [
@@ -172,6 +178,8 @@ const FILES = {
         '}',
         '',
         '}  // namespace geo',
+        '',
+        'template <class T> void geo::Stack<T>::push(T value) { top = value; }',
     ],
 };
 
@@ -406,6 +414,12 @@ async function main() {
     const noTriangle = await failure(() => find({ fileFullPath: 'src/shape.cpp', name: 'Triangle::area' }));
     check('a scope the file does not have is an INVALID_ARGUMENT, not the area of another class', noTriangle?.code === 'INVALID_ARGUMENT'
         && /it is the name of another scope/.test(noTriangle.message), String(noTriangle?.message ?? noTriangle));
+    // clangd writes the member of a class template as geo::Stack<T>::push in the outline, and its scope as geo::Stack.
+    const pushed = await find({ fileFullPath: 'src/shape.cpp', name: 'Stack::push' });
+    check('the member of a class template is found under the name of the template', /push: instance-method in geo::Stack/.test(pushed)
+        && /defined {4}src\/shape\.cpp:23/.test(pushed), pushed);
+    const pushedInt = await find({ fileFullPath: 'src/shape.cpp', name: 'geo::Stack<int>::push' });
+    check('and with template arguments in its scope', /push: instance-method in geo::Stack/.test(pushedInt) && /defined {4}src\/shape\.cpp:23/.test(pushedInt), pushedInt);
     // What a qualified name found from a use rests on: at a use, clangd names the scope of the member.
     const shapeUnit = path.join(root, 'src', 'shape.cpp');
     const useLine = FILES['src/shape.cpp'].findIndex((line) => line.includes('square.area()'));

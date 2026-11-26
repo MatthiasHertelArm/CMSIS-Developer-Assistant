@@ -352,6 +352,14 @@ suite('Source browsing: answers of the server', () => {
         assert.ok(!isNamed('run', 'app::MyTask', 'Task::run'), 'a scope is matched whole, not by its ending');
         assert.ok(isNamed('run', undefined, '::run') && isNamed('RUN', 'App::Task', 'task::run', (text) => text.toLowerCase()));
 
+        // A scope is the same with and without its template arguments: clangd writes `Stack<T>::push` in an outline
+        // and `Stack` as the scope at a place and in the index. The name itself is compared as it is.
+        assert.ok(isNamed('Stack<T>::push', undefined, 'Stack::push') && isNamed('push', 'geo::Stack', 'Stack<int>::push'));
+        assert.ok(isNamed('find', 'Map<std::string, int>', 'Map::find') && isNamed('Map<K, V>::find', 'lib', 'lib::Map<std::string, int>::find'));
+        assert.ok(isNamed('operator<', 'geo::Stack<T>', 'Stack::operator<') && isNamed('Stack<T>::operator<<', undefined, 'Stack::operator<<'));
+        assert.ok(!isNamed('Stack<int>', 'geo', 'geo::Stack') && isNamed('Stack<int>', 'geo', 'geo::Stack<int>'), 'a specialization is not the template');
+        assert.ok(!isQualified('Map<std::string, int>') && isQualified('Map<std::string, int>::find'));
+
         // What clangd described at a place: held against the scope only when clangd named one.
         assert.ok(isSymbolNamed({ name: 'run', container: 'app::Task', scoped: true }, 'Task::run'));
         assert.ok(!isSymbolNamed({ name: 'run', container: 'app::Other', scoped: true }, 'Task::run'));

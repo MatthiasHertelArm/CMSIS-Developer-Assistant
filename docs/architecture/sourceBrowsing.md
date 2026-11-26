@@ -85,8 +85,10 @@ tells clangd, and no editor appears.
   a file's outline (clangd writes a member defined outside its class as
   `Task::run`, inside its namespace), or a place in the text, where the
   symbol clangd describes has to be in that scope. One rule decides all
-  three (`isNamed`): the qualified name, or its tail. Only a place whose
-  scope clangd does not name counts by its name alone.
+  three (`isNamed`): the qualified name, or its tail, the scopes compared
+  without template arguments, since clangd writes `Stack<T>::push` in an
+  outline and `Stack` as the scope at a place and in the index. Only a place
+  whose scope clangd does not name counts by its name alone.
 - **Three waits, each with its reason.** A name is asked again for a second
   while a new client loads its index from disk; then the use site is looked
   for, which is quick; only when clangd is still building the index (not
@@ -140,6 +142,10 @@ tells clangd, and no editor appears.
   (CMake rewrites `/private/tmp` on macOS), clangd does not answer by name
   for symbols that exist in one source file only; the search for a use site
   covers them.
+- A scope is compared as clangd spells it: without an inline namespace
+  between its parts, and by the name of the class, not of an alias. A
+  qualified name that is written otherwise can be refused with a file; its
+  last part with the file, or the qualified name alone, answers.
 - A document with unsaved changes that the editor has open through a
   symbolic link: clangd keeps the saved file in its index under the real
   path, beside the document. The call sites of a hierarchy in that document,
