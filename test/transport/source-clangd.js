@@ -484,6 +484,15 @@ async function main() {
         // clangd answers from the document (lines 7 and 15) and, under the real path, from the index of the saved file (5 and 13).
         check('its references are the ones of that text, each once, without the ones of the saved file', /2 references to record in 1 file/.test(movedReferences)
             && /\n\s+7 {2}static void record\(unsigned int index\) {3}\(definition\)\n\s+15 {2}record\(index\);$/.test(movedReferences), movedReferences);
+        // A hierarchy carries items with the path clangd gives them, which need not be the one the document is open under.
+        /** The reply, or what the call was refused with. */
+        const answerOf = async (args) => { try { return text(await inEditor.handleSourceGet(args)); } catch (caught) { return caught; } };
+        const movedCallers = await answerOf({ symbol: 'record@src/led.c:7:13', what: 'callers', depth: 3 });
+        check('callers over three levels from that document, with its line numbers', typeof movedCallers === 'string' && /led_on@src\/led\.c:12:6/.test(movedCallers)
+            && /blink_all@src\/main\.c:3:13/.test(movedCallers) && /15 {2}record\(index\);/.test(movedCallers), String(movedCallers?.message ?? movedCallers));
+        const movedCallees = await answerOf({ symbol: 'led_on', what: 'callees' });
+        check('callees from that document, or the note that this clangd has none', typeof movedCallees === 'string'
+            && (/record@src\/led\.c:7:13/.test(movedCallees) || /does not answer callees/.test(movedCallees)), String(movedCallees?.message ?? movedCallees));
         await editorClient.stop();
     }
 

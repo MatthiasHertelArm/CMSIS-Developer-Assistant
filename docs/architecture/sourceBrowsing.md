@@ -141,9 +141,12 @@ tells clangd, and no editor appears.
   for symbols that exist in one source file only; the search for a use site
   covers them.
 - A document with unsaved changes that the editor has open through a
-  symbolic link: where a call asks about another file, clangd lists the
-  references in that document from its text and from the index of the saved
-  file, both under the real path, and the tools cannot tell them apart.
+  symbolic link: clangd keeps the saved file in its index under the real
+  path, beside the document. The call sites of a hierarchy in that document,
+  and its references where a call asks about another file, are then listed
+  for both texts under one path; the tools cannot tell them apart, and the
+  lines of the saved file are quoted from the unsaved text. A saved document
+  behind a link answers like any other.
 - A variable in a setting of the clangd extension that is a command
   (`${command:…}`) is not resolved.
 
