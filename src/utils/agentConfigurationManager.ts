@@ -18,7 +18,7 @@
  * Onboarding of AI agents onto the CMSIS Developer Assistant.
  *
  * - Registers this extension's MCP server in the home-directory configuration
- *   files of nine agents (eight JSON files and Codex's TOML file), and
+ *   files of eleven agents (ten JSON files and Codex's TOML file), and
  *   migrates the entries earlier releases wrote there.
  * - Runs the two-step setup: which agents to register (the CMSIS skills are
  *   installed into the personal skills directories at the same time), and
@@ -73,7 +73,7 @@ import {
 } from './agentRuleFiles';
 import { LONG_LIMIT_CAP_MS } from '../handler/fence';
 import { writeFileAtomic } from './atomicFile';
-import { rewriteJsonFile } from './jsonFileRewrite';
+import { parseJsonObject, rewriteJsonFile } from './jsonFileRewrite';
 import { logger } from './logger';
 import { notifyError } from './notify';
 import { SkillCatalog, installSet, loadSkillCatalog } from './skillCatalog';
@@ -96,7 +96,7 @@ export const LEGACY_SERVER_KEY = 'cmsis-debugmcp';
 /** Fields every supported agent has. `name` is the same as `id`. */
 export interface BaseAgentInfo { id: string; name: string; displayName: string; configPath: string; configFormat: 'json' | 'toml' }
 
-/** An agent whose servers are an object under `mcpServerFieldName` of a JSON file. */
+/** An agent whose servers are an object under `mcpServerFieldName` of a JSON file (Kilo Code's may hold comments). */
 export interface JsonAgentInfo extends BaseAgentInfo { configFormat: 'json'; mcpServerFieldName: string }
 
 /** Codex: one `[mcp_servers.<key>]` table per server in a TOML file. */
@@ -109,6 +109,12 @@ export type AgentInfo =
 /** Every field any of the JSON entry shapes uses; each agent gets a subset (see `ENTRY_SHAPES`). */
 export interface MCPServerConfig {
     type?: string;
+    /** Gemini CLI: the URL of a Streamable HTTP server (its `url` alone is SSE in releases before `type`). */
+    httpUrl?: string;
+    /** Kilo Code: false switches the server off. */
+    enabled?: boolean;
+    /** Kilo Code: false keeps it from starting an OAuth flow for a server without one. */
+    oauth?: boolean;
     /** Kimi Code's name for `type`; an entry with `url` and without it is Streamable HTTP. */
     transport?: string;
     url?: string;
@@ -194,13 +200,28 @@ function oldCursorConfigPath(homeRoot: string): string {
     return below(applicationDataDir(homeRoot), 'Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json');
 }
 
+/**
+ * Kilo Code's global configuration: `kilo.jsonc` or `kilo.json` in
+ * `$XDG_CONFIG_HOME/kilo`, default `~/.config/kilo` on every platform. The
+ * VS Code extension (7.x) runs the Kilo CLI inside, so both read this file;
+ * the extension's older `mcp_settings.json` in VS Code's globalStorage is only
+ * imported, without `timeout`, and is not written
+ * (https://kilo.ai/docs/getting-started/settings, Kilo-Org/kilocode
+ * `packages/opencode/src/kilocode/mcp-migrator.ts`, checked 2026-11-26).
+ */
+function kiloConfigPath(homeRoot: string): string {
+    const dir = path.join(process.env.XDG_CONFIG_HOME || below(homeRoot, '.config'), 'kilo');
+    const json = path.join(dir, 'kilo.json');
+    return !fs.existsSync(path.join(dir, 'kilo.jsonc')) && fs.existsSync(json) ? json : path.join(dir, 'kilo.jsonc');
+}
+
 /** The agents in picker order, with their configuration files as the environment says right now. */
 function supportedAgents(): AgentInfo[] {
     const homeRoot = os.homedir();
     const appData = applicationDataDir(homeRoot);
     const vsCodeStorage = below(appData, 'Code/User/globalStorage');
-    const viaJson = (id: string, displayName: string, configPath: string): JsonAgentInfo =>
-        ({ id, name: id, displayName, configPath, configFormat: 'json', mcpServerFieldName: 'mcpServers' });
+    const viaJson = (id: string, displayName: string, configPath: string, mcpServerFieldName = 'mcpServers'): JsonAgentInfo =>
+        ({ id, name: id, displayName, configPath, configFormat: 'json', mcpServerFieldName });
     const codex: TomlAgentInfo = {
         id: 'codex', name: 'codex', displayName: 'Codex', configFormat: 'toml',
         configPath: path.join(process.env.CODEX_HOME || below(homeRoot, '.codex'), 'config.toml'),
@@ -208,11 +229,14 @@ function supportedAgents(): AgentInfo[] {
     return [
         viaJson('roo', 'Roo Code', below(vsCodeStorage, 'rooveterinaryinc.roo-cline/settings/mcp_settings.json')),
         viaJson('antigravity', 'Antigravity', below(homeRoot, '.gemini/antigravity/mcp_config.json')),
+        // `$GEMINI_CLI_HOME` stands for the home directory (https://geminicli.com/docs/reference/configuration).
+        viaJson('gemini-cli', 'Gemini CLI', below(process.env.GEMINI_CLI_HOME || homeRoot, '.gemini/settings.json')),
         viaJson('cline', 'Cline', below(vsCodeStorage, 'saoudrizwan.claude-dev/settings/cline_mcp_settings.json')),
         viaJson('copilot-cli', 'GitHub Copilot CLI', path.join(process.env.COPILOT_HOME || below(homeRoot, '.copilot'), 'mcp-config.json')),
         viaJson('cursor', 'Cursor', below(homeRoot, '.cursor/mcp.json')),
         codex,
         viaJson('kimi-code', 'Kimi Code', path.join(process.env.KIMI_CODE_HOME || below(homeRoot, '.kimi-code'), 'mcp.json')),
+        viaJson('kilo', 'Kilo Code', kiloConfigPath(homeRoot), 'mcp'),
         viaJson('claude-code', 'Claude Code', path.join(homeRoot, '.claude.json')),
         viaJson('claude-desktop', 'Claude Desktop', below(appData, 'Claude/claude_desktop_config.json')),
     ];
@@ -224,12 +248,19 @@ function agentsWithFiles(): AgentInfo[] {
 }
 
 /**
- * Kimi Code ends a tool call after 60 s unless the entry says otherwise
+ * The tool-call limit written for agents that would end a call earlier.
+ * `cmsis_action` and `flash` may wait 600 s, and their reply needs a moment
+ * after that. Kimi Code ends a call after 60 s unless the entry says otherwise
  * (`toolTimeoutMs`, https://moonshotai.github.io/kimi-code/en/customization/mcp,
- * checked 2026-10-25). `cmsis_action` and `flash` may wait 600 s, and their
- * reply needs a moment after that.
+ * checked 2026-10-25); Kilo Code after the MCP SDK's 60 s (`timeout`, which
+ * also bounds the connection and the tool list); Gemini CLI after 600 s
+ * (`timeout`, `MCP_DEFAULT_TIMEOUT_MSEC` in google-gemini/gemini-cli
+ * `packages/core/src/tools/mcp-client.ts`; both checked 2026-11-26).
  */
-export const KIMI_TOOL_TIMEOUT_MS = LONG_LIMIT_CAP_MS + 30_000;
+export const TOOL_CALL_TIMEOUT_MS = LONG_LIMIT_CAP_MS + 30_000;
+
+/** Kimi Code's `toolTimeoutMs`. */
+export const KIMI_TOOL_TIMEOUT_MS = TOOL_CALL_TIMEOUT_MS;
 
 /**
  * Entry shapes of the JSON agents that do not take the default one. The key
@@ -244,11 +275,16 @@ const ENTRY_SHAPES: Readonly<Record<string, (url: string) => MCPServerConfig>> =
     // Kimi Code reads an entry with `url` and no `transport` as Streamable HTTP. One entry
     // its schema rejects disables every server of the file, so nothing else goes in.
     'kimi-code': (url) => ({ url, toolTimeoutMs: KIMI_TOOL_TIMEOUT_MS }),
+    // Gemini CLI documents Streamable HTTP as `httpUrl`; newer releases also take `url` with
+    // `type: 'http'`, which older ones read as SSE (https://geminicli.com/docs/tools/mcp-server).
+    'gemini-cli': (url) => ({ httpUrl: url, timeout: TOOL_CALL_TIMEOUT_MS }),
+    // Kilo Code: a remote server tries Streamable HTTP first (https://kilo.ai/docs/automate/mcp/using-in-kilo-code).
+    'kilo': (url) => ({ type: 'remote', url, enabled: true, oauth: false, timeout: TOOL_CALL_TIMEOUT_MS }),
     // Claude Desktop starts stdio servers only; mcp-remote bridges to the HTTP endpoint.
     'claude-desktop': (url) => ({ command: 'npx', args: ['-y', 'mcp-remote', url] }),
 };
 
-/** The entry a JSON agent gets under `mcpServers.<SERVER_KEY>`: Roo Code, Antigravity and Cline share the default. */
+/** The entry a JSON agent gets under `<servers field>.<SERVER_KEY>`: Roo Code, Antigravity and Cline share the default. */
 function entryFor(agentId: string, url: string, timeout: number): MCPServerConfig {
     const shape = ENTRY_SHAPES[agentId];
     return shape ? shape(url) : { autoApprove: [], disabled: false, timeout, type: 'streamableHttp', url };
@@ -365,16 +401,11 @@ export function agentConfigHasServer(agent: AgentInfo, content: string): boolean
     if (agent.configFormat !== 'json') {
         return content.split(LINE_BREAK).some((line) => SERVER_TABLE.test(line));
     }
-    let tree: unknown;
-    try {
-        tree = JSON.parse(content);
-    } catch {
+    const tree = parseJsonObject(content)?.config;
+    if (!tree) {
         return false;
     }
-    if (!tree || typeof tree !== 'object' || Array.isArray(tree)) {
-        return false;
-    }
-    const servers = (tree as Record<string, unknown>)[agent.mcpServerFieldName];
+    const servers = tree[agent.mcpServerFieldName];
     return servers !== null && typeof servers === 'object' && SERVER_KEY in servers;
 }
 
@@ -418,7 +449,8 @@ function migrateServers(servers: unknown, wanted: MCPServerConfig): EntryMigrati
     const duplicates = dropDuplicates(table, wanted);
     const onSse = present.type === 'sse' || present.transport === 'sse' || (typeof present.url === 'string' && present.url.endsWith('/sse'));
     const otherTransport = wanted.type !== undefined && present.type !== undefined && wanted.type !== present.type;
-    const movedUrl = typeof present.url === 'string' && wanted.url !== undefined && present.url !== wanted.url;
+    const movedUrl = (typeof present.url === 'string' && wanted.url !== undefined && present.url !== wanted.url)
+        || (typeof present.httpUrl === 'string' && wanted.httpUrl !== undefined && present.httpUrl !== wanted.httpUrl);
     const movedArgs = Array.isArray(present.args) && wanted.args !== undefined
         && JSON.stringify(present.args) !== JSON.stringify(wanted.args);
     const replace = onSse || otherTransport || movedUrl || movedArgs;
@@ -451,10 +483,13 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '
 /** The routes of this server: `/mcp`, and `/sse` of releases before 2.1. */
 const SERVER_ROUTES: ReadonlySet<string> = new Set(['/mcp', '/sse']);
 
-/** The URL an entry reaches its server by: `url`, or the URL argument of a bridge such as mcp-remote. */
+/** The URL an entry reaches its server by: `url`, Gemini CLI's `httpUrl`, or the URL argument of a bridge such as mcp-remote. */
 function entryUrl(entry: Record<string, unknown>): string | undefined {
     if (typeof entry.url === 'string') {
         return entry.url;
+    }
+    if (typeof entry.httpUrl === 'string') {
+        return entry.httpUrl;
     }
     if (Array.isArray(entry.args)) {
         return entry.args.find((arg): arg is string => typeof arg === 'string' && /^https?:\/\//i.test(arg));

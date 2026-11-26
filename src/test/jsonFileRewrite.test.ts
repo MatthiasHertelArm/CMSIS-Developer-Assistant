@@ -18,7 +18,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { rewriteJsonFile } from '../utils/jsonFileRewrite';
+import { parseJsonObject, rewriteJsonFile } from '../utils/jsonFileRewrite';
 import { writeFileAtomic, writeFileAtomicSync } from '../utils/atomicFile';
 
 suite('jsonFileRewrite', () => {
@@ -40,6 +40,25 @@ suite('jsonFileRewrite', () => {
         const back = JSON.parse(fs.readFileSync(file, 'utf8'));
         assert.deepStrictEqual(back, { history: [1, 2, 3], mcpServers: { other: { url: 'x' }, mine: { url: 'y' } } });
         assert.deepStrictEqual(fs.readdirSync(dir), ['config.json']);
+    });
+
+    test('a file with comments keeps them outside the key that changes, and the other keys as they were', async () => {
+        const text = '// Kilo settings\n{\n  // the model\n  "model": "x", // pinned\n  "mcp": {\n    "other": { "type": "remote", "url": "u" },\n  },\n}\n';
+        fs.writeFileSync(file, text);
+        const outcome = await rewriteJsonFile(file, (config) => {
+            (config.mcp as Record<string, unknown>).mine = { type: 'remote', url: 'y' };
+            return true;
+        });
+        assert.strictEqual(outcome, 'written');
+        const back = fs.readFileSync(file, 'utf8');
+        assert.ok(back.startsWith('// Kilo settings\n{\n  // the model\n  "model": "x", // pinned\n'), back);
+        assert.deepStrictEqual(parseJsonObject(back)?.config, { model: 'x', mcp: { other: { type: 'remote', url: 'u' }, mine: { type: 'remote', url: 'y' } } });
+    });
+
+    test('a file that is neither JSON nor JSON with comments is not touched', async () => {
+        fs.writeFileSync(file, '{ "a": ');
+        assert.strictEqual(await rewriteJsonFile(file, () => true), 'unparseable');
+        assert.strictEqual(fs.readFileSync(file, 'utf8'), '{ "a": ');
     });
 
     test('an unchanged file is not rewritten at all', async () => {

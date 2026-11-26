@@ -244,7 +244,7 @@
             "fn": "agentConfigHasServer",
             "agent": "json/mcpServers",
             "content": "{\"mcpServers\": {\"cmsis-developer-assistant\": {}}, // c\n}",
-            "output": false
+            "output": true
           },
           {
             "fn": "agentConfigHasServer",
@@ -331,6 +331,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -361,6 +367,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -378,11 +390,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -409,6 +423,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -474,6 +501,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -579,8 +619,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -590,7 +642,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -612,9 +666,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -649,6 +705,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -679,6 +741,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -696,11 +764,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -727,6 +797,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -792,6 +875,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -897,8 +993,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -908,7 +1016,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -933,9 +1043,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
@@ -964,6 +1076,12 @@
               "label": "$(add) Set up Antigravity",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
               "picked": false
             },
             {
@@ -997,6 +1115,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -1014,11 +1138,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1045,6 +1171,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -1110,6 +1249,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -1215,8 +1367,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -1226,7 +1390,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -1248,9 +1414,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/AppData/Roaming/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -1285,6 +1453,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -1315,6 +1489,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -1332,11 +1512,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1363,6 +1545,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -1428,6 +1623,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/xdg/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -1533,8 +1741,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "<w>/xdg/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -1544,7 +1764,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "<w>/xdg/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -1569,10 +1791,12 @@
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "xdg/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "xdg/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "xdg/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}"
+        "xdg/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "xdg/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}"
       }
     },
     {
@@ -1600,6 +1824,12 @@
               "label": "$(add) Set up Antigravity",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
               "picked": false
             },
             {
@@ -1633,6 +1863,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -1650,11 +1886,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1681,6 +1919,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -1746,6 +1997,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -1851,8 +2115,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -1862,7 +2138,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -1887,9 +2165,11 @@
         "home/.config/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
@@ -1918,6 +2198,12 @@
               "label": "$(add) Set up Antigravity",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
               "picked": false
             },
             {
@@ -1951,6 +2237,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -1968,11 +2260,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -1999,6 +2293,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -2064,6 +2371,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -2169,8 +2489,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -2180,7 +2512,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -2205,9 +2539,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
       }
     },
@@ -2237,6 +2573,12 @@
               "label": "$(add) Set up Antigravity",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
               "picked": false
             },
             {
@@ -2270,6 +2612,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -2287,11 +2635,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -2318,6 +2668,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -2383,6 +2746,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/xdg/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -2491,8 +2867,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "<w>/kimi-home/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "<w>/xdg/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -2502,7 +2890,9 @@
             "<w>/codex-home/AGENTS.md",
             "<w>/copilot-home/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "<w>/kimi-home/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "<w>/kimi-home/AGENTS.md",
+            "<w>/xdg/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -2529,10 +2919,12 @@
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
-        "kimi-home/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}"
+        "kimi-home/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
+        "xdg/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}"
       }
     },
     {
@@ -2561,6 +2953,12 @@
               "label": "$(add) Set up Antigravity",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
               "picked": false
             },
             {
@@ -2594,6 +2992,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -2611,11 +3015,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -2642,6 +3048,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -2707,6 +3126,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -2812,8 +3244,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -2823,7 +3267,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -2845,9 +3291,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/AppData/Roaming/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -2882,6 +3330,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -2912,6 +3366,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -2929,11 +3389,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -2960,6 +3422,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -3025,6 +3500,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -3130,8 +3618,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -3141,7 +3641,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -3163,9 +3665,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"numStartups\": 3,\n  \"projects\": {\n    \"/p\": {\n      \"allowedTools\": [],\n      \"history\": [\n        \"x\"\n      ]\n    }\n  },\n  \"mcpServers\": {\n    \"other\": {\n      \"type\": \"stdio\",\n      \"command\": \"x\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"userID\": \"abc\"\n}",
         "home/.codex/config.toml": "# Codex config\nmodel = \"o3\"\n\n[mcp_servers.other]\ncommand = \"npx\"\nargs = [\"-y\", \"other-mcp\"]\n\n[profiles.fast]\nmodel = \"o4-mini\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"a\": {\n      \"type\": \"http\",\n      \"url\": \"http://a/mcp\"\n    },\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    },\n    \"z\": {}\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"other\": {},\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"note\": \"servers were null\"\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"linear\": {\n      \"url\": \"https://mcp.linear.app/mcp\"\n    },\n    \"fs\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"fs-mcp\"\n      ],\n      \"toolTimeoutMs\": 5000\n    },\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"fs\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"@modelcontextprotocol/server-filesystem\",\n        \"/data\"\n      ]\n    },\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  },\n  \"globalShortcut\": \"Ctrl+Space\"\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"other-server\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4000/mcp\",\n      \"disabled\": true\n    },\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  },\n  \"unrelated\": {\n    \"keep\": [\n      1,\n      2,\n      3\n    ]\n  }\n}",
@@ -3201,6 +3705,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -3231,6 +3741,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -3248,11 +3764,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -3279,6 +3797,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Antigravity lists each tool once.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -3344,6 +3875,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code. Removed the entry 'cmsis-debugmcp', which pointed at the same server, so that Kimi Code lists each tool once.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -3449,8 +3993,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -3460,7 +4016,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -3482,9 +4040,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"numStartups\": 1,\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-debugmcp]\nurl = \"http://localhost:3001/sse\"\nstartup_timeout_sec = 30\n\n[mcp_servers.cmsis-debugmcp.env]\nX = \"1\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [\n        \"read_memory\"\n      ],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -3520,6 +4080,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -3547,6 +4113,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -3687,6 +4259,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -3717,6 +4295,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -3734,11 +4318,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -3765,6 +4351,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -3830,6 +4429,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -3935,8 +4547,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -3946,7 +4570,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -3968,9 +4594,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\n  url = \"http://localhost:3001/mcp\"\nstartup_timeout_sec = 10\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
@@ -4006,6 +4634,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -4036,6 +4670,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -4053,11 +4693,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -4081,8 +4723,30 @@
           "answer": "<dismissed>"
         },
         {
-          "ev": "error",
-          "message": "Cannot configure Cline: <w>/home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json exists but is not valid JSON. Please fix or remove the file and try again."
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Cline.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
         },
         {
           "ev": "error",
@@ -4113,6 +4777,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -4209,8 +4886,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -4220,7 +4909,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -4242,13 +4933,15 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "<unchanged seed>",
         "home/.cursor/mcp.json": "<unchanged seed>",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": []\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:3001/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "<unchanged seed>",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "<unchanged seed>",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  // comment\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}\n"
       }
     },
     {
@@ -4277,6 +4970,12 @@
               "label": "$(add) Set up Antigravity",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Antigravity",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
               "picked": false
             },
             {
@@ -4310,6 +5009,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -4327,11 +5032,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -4353,6 +5060,10 @@
         {
           "ev": "error",
           "message": "The CMSIS Developer Assistant MCP server could not be added to Antigravity: Error: ENOTDIR: not a directory, mkdir '<w>/home/.gemini/antigravity'"
+        },
+        {
+          "ev": "error",
+          "message": "The CMSIS Developer Assistant MCP server could not be added to Gemini CLI: Error: ENOTDIR: not a directory, open '<w>/home/.gemini/settings.json.<pid>.<rand>.tmp'"
         },
         {
           "ev": "write",
@@ -4405,6 +5116,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -4510,8 +5234,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -4521,7 +5257,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -4543,6 +5281,7 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.codex": "<unchanged seed>",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/.gemini": "<unchanged seed>",
@@ -4581,6 +5320,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -4608,6 +5353,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -4755,6 +5506,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -4782,6 +5539,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -4967,6 +5730,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -4997,6 +5766,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Claude Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Claude Code",
@@ -5014,11 +5789,13 @@
           "chosen": [
             "$(add) Set up Roo Code",
             "$(add) Set up Antigravity",
+            "$(add) Set up Gemini CLI",
             "$(add) Set up Cline",
             "$(add) Set up GitHub Copilot CLI",
             "$(add) Set up Cursor",
             "$(add) Set up Codex",
             "$(add) Set up Kimi Code",
+            "$(add) Set up Kilo Code",
             "$(add) Set up Claude Code",
             "$(add) Set up Claude Desktop"
           ],
@@ -5045,6 +5822,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Antigravity.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.gemini/settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Gemini CLI.",
           "items": [
             "View File"
           ],
@@ -5110,6 +5900,19 @@
         {
           "ev": "info",
           "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kimi Code.",
+          "items": [
+            "View File"
+          ],
+          "answer": "<dismissed>"
+        },
+        {
+          "ev": "write",
+          "path": "<w>/home/.config/kilo/kilo.jsonc",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "✅ Registered the CMSIS Developer Assistant MCP server with Kilo Code.",
           "items": [
             "View File"
           ],
@@ -5215,8 +6018,20 @@
               "picked": true
             },
             {
+              "label": "~/.gemini/GEMINI.md",
+              "description": "Gemini CLI",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
               "label": "~/.kimi-code/AGENTS.md",
               "description": "Kimi Code",
+              "detail": "New file.",
+              "picked": true
+            },
+            {
+              "label": "~/.config/kilo/AGENTS.md",
+              "description": "Kilo Code",
               "detail": "New file.",
               "picked": true
             }
@@ -5226,7 +6041,9 @@
             "~/.codex/AGENTS.md",
             "~/.copilot/copilot-instructions.md",
             "~/.gemini/AGENTS.md",
-            "~/.kimi-code/AGENTS.md"
+            "~/.gemini/GEMINI.md",
+            "~/.kimi-code/AGENTS.md",
+            "~/.config/kilo/AGENTS.md"
           ],
           "action": "dismiss",
           "disposed": true
@@ -5245,9 +6062,11 @@
         "home/.agents/skills/fx-help/SKILL.md": "<fixture SKILL.md>",
         "home/.claude.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.codex/config.toml": "[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:4555/mcp\"\n",
+        "home/.config/kilo/kilo.jsonc": "{\n  \"mcp\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"remote\",\n      \"url\": \"http://localhost:4555/mcp\",\n      \"enabled\": true,\n      \"oauth\": false,\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:4555/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
         "home/.gemini/antigravity/mcp_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
+        "home/.gemini/settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"httpUrl\": \"http://localhost:4555/mcp\",\n      \"timeout\": 630000\n    }\n  }\n}",
         "home/.kimi-code/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:4555/mcp\",\n      \"toolTimeoutMs\": 630000\n    }\n  }\n}",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:4555/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 42,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:4555/mcp\"\n    }\n  }\n}",
@@ -5282,6 +6101,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -5309,6 +6134,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -5449,6 +6280,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -5476,6 +6313,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -5616,6 +6459,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -5643,6 +6492,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -5783,6 +6638,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -5810,6 +6671,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -6060,6 +6927,11 @@
         },
         {
           "ev": "write",
+          "path": "<w>/home/.gemini/antigravity/mcp_config.json",
+          "atomic": true
+        },
+        {
+          "ev": "write",
           "path": "<w>/home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
           "atomic": true
         },
@@ -6090,7 +6962,7 @@
         },
         {
           "ev": "info",
-          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 5 agent configuration(s)."
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 6 agent configuration(s)."
         }
       ],
       "globalState": {},
@@ -6099,7 +6971,7 @@
         "home/.codex/config.toml": "model = \"o3\"\n\n[mcp_servers.cmsis-debugmcp.env]\nX = \"1\"\n\n[mcp_servers.other]\nurl = \"http://other/mcp\"\n\n[mcp_servers.cmsis-developer-assistant]\nurl = \"http://localhost:3001/mcp\"\n",
         "home/.copilot/mcp-config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"http\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"tools\": [\n        \"*\"\n      ]\n    }\n  }\n}",
         "home/.cursor/mcp.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\",\n      \"autoApprove\": [\n        \"x\"\n      ]\n    }\n  }\n}",
-        "home/.gemini/antigravity/mcp_config.json": "<unchanged seed>",
+        "home/.gemini/antigravity/mcp_config.json": "{\n  // JSONC\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}\n",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"http://localhost:3001/mcp\"\n      ]\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}",
         "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\",\n      \"autoApprove\": [\n        \"a\"\n      ]\n    }\n  }\n}"
@@ -6185,7 +7057,17 @@
     },
     {
       "id": "agents/migrate-unparseable-and-absent",
-      "events": [],
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json",
+          "atomic": true
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 1 agent configuration(s)."
+        }
+      ],
       "globalState": {},
       "files": {
         "home/.copilot/mcp-config.json": "<unchanged seed>",
@@ -6193,7 +7075,7 @@
         "home/.gemini/antigravity/mcp_config.json": "<unchanged seed>",
         "home/Library/Application Support/Claude/claude_desktop_config.json": "<unchanged seed>",
         "home/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json": "<unchanged seed>",
-        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "<unchanged seed>"
+        "home/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json": "{\n  // JSONC\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"autoApprove\": [],\n      \"disabled\": false,\n      \"timeout\": 180,\n      \"type\": \"streamableHttp\",\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}\n"
       }
     },
     {
@@ -6520,12 +7402,39 @@
     {
       "id": "agents/migrate-cursor-target-unparseable",
       "about": "a JSONC ~/.cursor/mcp.json is not rewritten, and the old entry stays for a later run",
-      "events": [],
+      "events": [
+        {
+          "ev": "write",
+          "path": "<w>/home/.cursor/mcp.json",
+          "atomic": true
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings"
+        },
+        {
+          "ev": "remove",
+          "path": "<w>/home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp"
+        },
+        {
+          "ev": "info",
+          "message": "CMSIS Developer Assistant: brought the MCP server entry up to date in 1 agent configuration(s)."
+        }
+      ],
       "globalState": {},
       "files": {
-        "home/.cursor/mcp.json": "<unchanged seed>",
-        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json": "<unchanged seed>"
-      }
+        "home/.cursor/mcp.json": "{\n  // mine\n  \"mcpServers\": {\n    \"cmsis-developer-assistant\": {\n      \"url\": \"http://localhost:3001/mcp\"\n    }\n  }\n}\n"
+      },
+      "emptyDirs": [
+        "home/Library/Application Support/Cursor/User/globalStorage"
+      ],
+      "removedSeeds": [
+        "home/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/settings/mcp_settings.json"
+      ]
     },
     {
       "id": "agents/migrate-cursor-old-file-without-entry",
@@ -6687,6 +7596,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -6714,6 +7629,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -6885,6 +7806,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -6912,6 +7839,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -6977,6 +7910,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -7004,6 +7943,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -7094,6 +8039,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -7121,6 +8072,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -7296,6 +8253,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -7323,6 +8286,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -7480,6 +8449,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -7507,6 +8482,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -7588,6 +8569,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -7615,6 +8602,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -7928,6 +8921,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -7955,6 +8954,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -8184,6 +9189,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -8211,6 +9222,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -8387,6 +9404,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -8414,6 +9437,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -8690,6 +9719,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -8717,6 +9752,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -9274,6 +10315,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -9301,6 +10348,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -9594,6 +10647,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -9621,6 +10680,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -9733,6 +10798,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -9760,6 +10831,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -12570,6 +13647,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -12597,6 +13680,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {
@@ -12789,6 +13878,12 @@
               "picked": false
             },
             {
+              "label": "$(add) Set up Gemini CLI",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Gemini CLI",
+              "picked": false
+            },
+            {
               "label": "$(add) Set up Cline",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Cline",
@@ -12816,6 +13911,12 @@
               "label": "$(add) Set up Kimi Code",
               "description": "Write the MCP server entry into this agent's configuration",
               "detail": "Kimi Code",
+              "picked": false
+            },
+            {
+              "label": "$(add) Set up Kilo Code",
+              "description": "Write the MCP server entry into this agent's configuration",
+              "detail": "Kilo Code",
               "picked": false
             },
             {

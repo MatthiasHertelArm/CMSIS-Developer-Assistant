@@ -18,7 +18,7 @@ The Arm® CMSIS Developer Assistant extension connects AI coding agents to the d
 - Starts the CMSIS Solution actions (build, load, load & debug, attach) and controls execution with breakpoints, logpoints, and stepping.
 - Reads memory, core registers, and device peripheral registers (from CMSIS-SVD), decodes fault status registers, and measures cycles with the DWT counter.
 - Programs Flash, resets the target, and communicates over serial (UART) ports.
-- Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Kimi Code, Roo Code, Antigravity, and any other MCP-compatible assistant.
+- Works with GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Gemini CLI, Kilo Code, Kimi Code, Roo Code, Antigravity, and any other MCP-compatible assistant.
 - Runs the MCP server on `localhost` only, with no credentials needed. Debugging, document search, and knowledge retrieval run locally; catalog lookups and requested downloads contact external services.
 - Also debugs applications in other languages (Python, JavaScript/TypeScript, Java, C#, C/C++, Go, Rust, PHP, Ruby) through the respective VS Code debug extensions.
 - Palette commands (**CMSIS Developer Assistant: …**) cover the human side: registering agents (which also installs the `cmsis-help` skill), choosing the target window when several VS Code windows are open, releasing a serial port, copying the recent problems, and — with the documentation system — listing, indexing and importing the target's documentation and opening the Pack Docs panel and Knowledge Browser. See [Commands](#commands).
@@ -287,7 +287,9 @@ The rules say what they cover: Arm Cortex-M targets of the CMSIS Debugger, that 
 | Codex | `~/.codex/AGENTS.md` (`CODEX_HOME`; a non-empty `AGENTS.override.md` wins, as in Codex) | `AGENTS.md` |
 | GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` (`COPILOT_HOME`) | `AGENTS.md` |
 | Antigravity | `~/.gemini/AGENTS.md` | `AGENTS.md` |
+| Gemini CLI | `~/.gemini/GEMINI.md` (`GEMINI_CLI_HOME` stands for the home directory) | `GEMINI.md` |
 | Kimi Code | `~/.kimi-code/AGENTS.md` (`KIMI_CODE_HOME`) | `AGENTS.md` |
+| Kilo Code | `~/.config/kilo/AGENTS.md` (`XDG_CONFIG_HOME`; `$KILO_CONFIG_DIR/AGENTS.md` when it exists; `~/.claude/CLAUDE.md` while Kilo has no file of its own and reads that one) | `AGENTS.md`; `AGENT.md` or `CLAUDE.md` when the project has one of them and no `AGENTS.md`, because Kilo reads only the first |
 | VS Code Copilot Chat | — | `AGENTS.md` (`.github/copilot-instructions.md` when `chat.useAgentsMdFile` is off) |
 | Cursor | — | `.cursor/rules/cmsis-developer-assistant.mdc` (`alwaysApply: true`) |
 | Cline | — | `.clinerules/cmsis-developer-assistant.md` |
@@ -395,6 +397,35 @@ The popup described in [Connecting an AI agent](#connecting-an-ai-agent) writes 
 }
 ```
 
+**Gemini CLI** (`~/.gemini/settings.json`, or `$GEMINI_CLI_HOME/.gemini/settings.json`). Gemini CLI ends a tool call after 600 s unless `timeout` says otherwise, and a 600 s build needs a moment more:
+
+```json
+{
+  "mcpServers": {
+    "cmsis-developer-assistant": {
+      "httpUrl": "http://localhost:3001/mcp",
+      "timeout": 630000
+    }
+  }
+}
+```
+
+**Kilo Code** (`~/.config/kilo/kilo.jsonc`; the VS Code extension and the Kilo CLI share it). Kilo Code ends a tool call after 60 s unless `timeout` says otherwise; its servers sit under `mcp`:
+
+```json
+{
+  "mcp": {
+    "cmsis-developer-assistant": {
+      "type": "remote",
+      "url": "http://localhost:3001/mcp",
+      "enabled": true,
+      "oauth": false,
+      "timeout": 630000
+    }
+  }
+}
+```
+
 **Claude Code** (terminal):
 
 ```sh
@@ -497,7 +528,7 @@ Claude Desktop only supports stdio MCP servers and is connected through `mcp-rem
 - **Visual Studio Code** 1.109.0 or newer.
 - **Arm CMSIS Debugger** extension for Cortex-M targets, together with a debug probe supported by pyOCD (CMSIS-DAP, ST-Link) or a SEGGER® J-LINK® with the J-Link software installed. The **Arm CMSIS Solution** extension generates the debug configuration.
 - **Arm CMSIS Solution**, which VS Code installs with the assistant and starts before it, in every window: the assistant names it as an extension dependency and does not start in a VS Code where CMSIS Solution is uninstalled, disabled or fails to start. A dependency cannot ask for a version, and the assistant needs API version 3 of CMSIS Solution, which a release after 1.72.0 brings, for `cmsis_query` and `cmsis_action`: the extension reads the active solution and target, builds, switches the target and installs packs through that API. With 1.72.0 or older both tools are refused with the hint to update the extension (only `cmsis_action status`, and `open_solution` for a folder that is not open yet, still answer), `get_session_status` says in a line that it is too old, and each window says so at start-up in a warning: **Show CMSIS Solution** opens its page in the Extensions view, **Don't Show Again** silences the warning for that version of CMSIS Solution. `flash`, the debugging tools and the documentation and build-artefact tools work with 1.72.0.
-- **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, or Kimi Code.
+- **An MCP-compatible AI assistant**, for example GitHub Copilot, Claude Code, Claude Desktop, Cline, Cursor, Codex, Gemini CLI, Kilo Code, or Kimi Code.
 - **pyOCD** for the `flash` tool comes with the Arm CMSIS Debugger (`tools/pyocd`); `flash` otherwise takes the one the solution's `.cmsis/tools-environment.yml` or the `PATH` names. `cmsis_action load` programs the device through the CMSIS Solution extension instead.
 - **Node.js** with `npx` only for Claude Desktop (stdio bridge).
 

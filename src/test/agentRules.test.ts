@@ -266,6 +266,38 @@ suite('Tool rules in agents\' rule files', () => {
             'a CLAUDE.local.md already hides AGENTS.md from Claude Code');
     });
 
+    test('Gemini CLI reads ~/.gemini/GEMINI.md and the project GEMINI.md; GEMINI_CLI_HOME stands for the home directory', () => {
+        const offered = targets(new FakeDisk(), ['gemini-cli']);
+        assert.deepStrictEqual(offered.map((target) => [target.file, target.scope, target.preselect]), [
+            [at(HOME, '.gemini', 'GEMINI.md'), 'user', true],
+            [at(WS, 'GEMINI.md'), 'workspace', false],
+        ]);
+        const moved = targets(new FakeDisk(), ['gemini-cli'], { folders: [], env: { GEMINI_CLI_HOME: at(ROOT, 'g') } });
+        assert.deepStrictEqual(moved.map((target) => target.file), [at(ROOT, 'g', '.gemini', 'GEMINI.md')]);
+    });
+
+    test('Kilo Code gets the file it reads now, never a new one that would hide it', () => {
+        const user = (disk: FakeDisk, env: Record<string, string> = {}): string =>
+            targets(disk, ['kilo'], { folders: [], env })[0].file;
+        assert.strictEqual(user(new FakeDisk()), at(HOME, '.config', 'kilo', 'AGENTS.md'));
+        assert.strictEqual(user(new FakeDisk(), { XDG_CONFIG_HOME: at(ROOT, 'xdg') }), at(ROOT, 'xdg', 'kilo', 'AGENTS.md'));
+        assert.strictEqual(user(new FakeDisk({ [at(HOME, '.claude', 'CLAUDE.md')]: '# Mine\n' })), at(HOME, '.claude', 'CLAUDE.md'),
+            'without an AGENTS.md of its own Kilo reads Claude Code\'s user file');
+        assert.strictEqual(user(new FakeDisk({ [at(HOME, '.claude', 'CLAUDE.md')]: 'x', [at(HOME, '.config', 'kilo', 'AGENTS.md')]: 'y' })),
+            at(HOME, '.config', 'kilo', 'AGENTS.md'));
+        assert.strictEqual(user(new FakeDisk({ [at(ROOT, 'k', 'AGENTS.md')]: 'z' }), { KILO_CONFIG_DIR: at(ROOT, 'k') }), at(ROOT, 'k', 'AGENTS.md'));
+        const project = (disk: FakeDisk): string => path.relative(WS, targets(disk, ['kilo']).find((target) => target.scope === 'workspace')!.file);
+        assert.strictEqual(project(new FakeDisk()), 'AGENTS.md');
+        assert.strictEqual(project(new FakeDisk({ [at(WS, 'CLAUDE.md')]: '# Mine\n' })), 'CLAUDE.md');
+        assert.strictEqual(project(new FakeDisk({ [at(WS, 'AGENT.md')]: 'a', [at(WS, 'CLAUDE.md')]: 'b' })), 'AGENT.md');
+        assert.strictEqual(project(new FakeDisk({ [at(WS, 'AGENTS.md')]: 'a', [at(WS, 'CLAUDE.md')]: 'b' })), 'AGENTS.md');
+    });
+
+    test('Kilo Code and Claude Code share ~/.claude/CLAUDE.md as one target when Kilo reads it', () => {
+        const offered = targets(new FakeDisk({ [at(HOME, '.claude', 'CLAUDE.md')]: '# Mine\n' }), ['claude-code', 'kilo'], { folders: [] });
+        assert.deepStrictEqual(offered.map((target) => [target.file, target.agents]), [[at(HOME, '.claude', 'CLAUDE.md'), ['claude-code', 'kilo']]]);
+    });
+
     test('Codex gets the override file it reads instead of AGENTS.md', () => {
         const disk = new FakeDisk({ [at(HOME, '.codex', 'AGENTS.override.md')]: 'Use tabs.\n', [at(WS, 'AGENTS.override.md')]: '  \n' });
         const files = targets(disk, ['codex']).map((target) => target.file);

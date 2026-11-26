@@ -15,9 +15,48 @@
  */
 
 import * as fs from 'fs';
+import { applyEdits, modify, parse } from 'jsonc-parser';
+import type { ParseError } from 'jsonc-parser';
 import { writeFileAtomic } from './atomicFile';
 
 export type JsonRewriteOutcome = 'written' | 'unchanged' | 'unparseable';
+
+/** A JSON object, not an array or null. */
+function isObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * The object in `text`: strict JSON, or JSON with comments and trailing
+ * commas (`kilo.jsonc`, a commented Gemini CLI `settings.json`), which
+ * `commented` marks. Undefined for anything else.
+ */
+export function parseJsonObject(text: string): { config: Record<string, unknown>; commented: boolean } | undefined {
+    try {
+        const strict: unknown = JSON.parse(text);
+        return isObject(strict) ? { config: strict, commented: false } : undefined;
+    } catch {
+        const errors: ParseError[] = [];
+        const loose: unknown = parse(text, errors, { allowTrailingComma: true, disallowComments: false });
+        return errors.length === 0 && isObject(loose) ? { config: loose, commented: true } : undefined;
+    }
+}
+
+/**
+ * `before` with the top-level keys whose value differs between `old` and
+ * `config` replaced, added or removed in place. Comments and layout outside
+ * those keys stay; inside a changed key they go.
+ */
+function editTopLevel(before: string, old: Record<string, unknown>, config: Record<string, unknown>): string {
+    let text = before;
+    const format = { formattingOptions: { insertSpaces: true, tabSize: 2, eol: before.includes('\r\n') ? '\r\n' : '\n' } };
+    for (const key of new Set([...Object.keys(old), ...Object.keys(config)])) {
+        if (JSON.stringify(old[key]) !== JSON.stringify(config[key])) {
+            text = applyEdits(text, modify(text, [key], key in config ? config[key] : undefined, format));
+        }
+    }
+    return text;
+}
 
 /**
  * Read-modify-write of a JSON file that another process may be writing too
@@ -25,8 +64,9 @@ export type JsonRewriteOutcome = 'written' | 'unchanged' | 'unparseable';
  * fresh parse and returns whether it changed anything; the file is re-read
  * immediately before the write and, if it changed underneath, the whole
  * step is retried on the new content — up to `attempts` times. Unrelated
- * keys are preserved because the parsed object is written back whole; an
- * unparseable file is never overwritten.
+ * keys are preserved because the parsed object is written back whole; a file
+ * with comments gets only its changed top-level keys rewritten, so the
+ * comments elsewhere stay. An unparseable file is never overwritten.
  */
 export async function rewriteJsonFile(
     file: string,
@@ -36,18 +76,14 @@ export async function rewriteJsonFile(
     const attempts = options.attempts ?? 3;
     for (let attempt = 0; attempt < attempts; attempt++) {
         const before = await fs.promises.readFile(file, 'utf8');
-        let config: Record<string, unknown>;
-        try {
-            const parsed: unknown = JSON.parse(before);
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return 'unparseable'; }
-            config = parsed as Record<string, unknown>;
-        } catch {
-            return 'unparseable';
-        }
+        const parsed = parseJsonObject(before);
+        if (!parsed) { return 'unparseable'; }
+        const { config, commented } = parsed;
+        const old = commented ? structuredClone(config) : config;
         if (!(await mutate(config))) { return 'unchanged'; }
         const now = await fs.promises.readFile(file, 'utf8').catch(() => before);
         if (now !== before) { continue; } // someone wrote in between — redo on their content
-        await writeFileAtomic(file, JSON.stringify(config, null, 2));
+        await writeFileAtomic(file, commented ? editTopLevel(before, old, config) : JSON.stringify(config, null, 2));
         return 'written';
     }
     throw new Error(`${file} changed underneath the write ${attempts} times; not written`);

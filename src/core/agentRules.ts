@@ -38,17 +38,19 @@ export const AGENT_RULES_SETTING = 'agentRules.install';
 export const RULE_FILES_STATE_KEY = 'cmsis-developer-assistant.agentRules.files';
 
 /** The agents with a rule file. Claude Desktop has none and relies on the server instructions. */
-export type RuleAgentId = 'claude-code' | 'codex' | 'copilot-cli' | 'antigravity' | 'kimi-code' | 'copilot-chat' | 'cursor' | 'cline' | 'roo';
+export type RuleAgentId = 'claude-code' | 'codex' | 'copilot-cli' | 'antigravity' | 'gemini-cli' | 'kimi-code' | 'kilo' | 'copilot-chat' | 'cursor' | 'cline' | 'roo';
 
 /** In the order the picker names them. */
-export const RULE_AGENTS: readonly RuleAgentId[] = ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'kimi-code', 'copilot-chat', 'cursor', 'cline', 'roo'];
+export const RULE_AGENTS: readonly RuleAgentId[] = ['claude-code', 'codex', 'copilot-cli', 'antigravity', 'gemini-cli', 'kimi-code', 'kilo', 'copilot-chat', 'cursor', 'cline', 'roo'];
 
 export const RULE_AGENT_NAMES: Readonly<Record<RuleAgentId, string>> = {
     'claude-code': 'Claude Code',
     'codex': 'Codex',
     'copilot-cli': 'GitHub Copilot CLI',
     'antigravity': 'Antigravity',
+    'gemini-cli': 'Gemini CLI',
     'kimi-code': 'Kimi Code',
+    'kilo': 'Kilo Code',
     'copilot-chat': 'VS Code Copilot Chat',
     'cursor': 'Cursor',
     'cline': 'Cline',
@@ -137,6 +139,18 @@ const OWN_FILE_STEM = 'cmsis-developer-assistant';
  *   (https://moonshotai.github.io/kimi-code/en/customization/agents). It
  *   passes no MCP server instructions to the model, so these files are the
  *   rules' only way into its system prompt.
+ * - Gemini CLI (checked 2026-11-26): `~/.gemini/GEMINI.md` for every
+ *   project, `$GEMINI_CLI_HOME` standing for the home directory; `GEMINI.md`
+ *   in the project and its parent and child directories
+ *   (https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md).
+ *   The setting `context.fileName` can rename the file; that is not followed.
+ * - Kilo Code, the VS Code extension and the CLI alike (checked 2026-11-26):
+ *   the first of `$KILO_CONFIG_DIR/AGENTS.md`, `~/.config/kilo/AGENTS.md`
+ *   (`$XDG_CONFIG_HOME/kilo`) and `~/.claude/CLAUDE.md` for every project;
+ *   in a project the first of `AGENTS.md`, `AGENT.md` and `CLAUDE.md`
+ *   (Kilo-Org/kilocode `packages/opencode/src/session/instruction.ts`;
+ *   https://kilo.ai/docs/customize/agents-md). A new file would hide the
+ *   one it reads now, so the rules go into that one.
  * - VS Code Copilot Chat: the workspace `AGENTS.md` (`chat.useAgentsMdFile`,
  *   default true) and `.github/copilot-instructions.md`
  *   (`github.copilot.chat.codeGeneration.useInstructionFiles`, default true)
@@ -158,7 +172,7 @@ const OWN_FILE_STEM = 'cmsis-developer-assistant';
  * Offered here, as proposal 50 decided: the user file of Claude Code, Codex
  * and Copilot CLI, preselected, because their MCP registration is per user
  * too; the same for Antigravity, whose user file the proposal could not name
- * yet, and for Kimi Code. Copilot Chat, Cursor, Cline and Roo Code get their
+ * yet, and for Gemini CLI, Kimi Code and Kilo Code. Copilot Chat, Cursor, Cline and Roo Code get their
  * workspace file only.
  */
 
@@ -174,11 +188,33 @@ function userRuleFile(agent: RuleAgentId, context: RuleTargetContext): string | 
             return path.join(env.COPILOT_HOME || path.join(home, '.copilot'), 'copilot-instructions.md');
         case 'antigravity':
             return path.join(home, '.gemini', 'AGENTS.md');
+        case 'gemini-cli':
+            return path.join(env.GEMINI_CLI_HOME || home, '.gemini', 'GEMINI.md');
         case 'kimi-code':
             return path.join(env.KIMI_CODE_HOME || path.join(home, '.kimi-code'), 'AGENTS.md');
+        case 'kilo':
+            return kiloUserFile(context);
         default:
             return undefined;
     }
+}
+
+/**
+ * The file Kilo Code reads in every project: the first that exists of its
+ * own two and Claude Code's `~/.claude/CLAUDE.md` (Kilo reads that path, not
+ * `$CLAUDE_CONFIG_DIR`); its configuration folder's AGENTS.md when none does.
+ */
+function kiloUserFile(context: RuleTargetContext): string {
+    const { home, env, probe } = context;
+    const own = path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'kilo', 'AGENTS.md');
+    const candidates = [...(env.KILO_CONFIG_DIR ? [path.join(env.KILO_CONFIG_DIR, 'AGENTS.md')] : []), own, path.join(home, '.claude', 'CLAUDE.md')];
+    return candidates.find((file) => probe.kind(file) === 'file') ?? own;
+}
+
+/** The file Kilo Code reads in a project folder: the first of AGENTS.md, AGENT.md and CLAUDE.md, AGENTS.md when none exists. */
+function kiloProjectFile(folder: string, probe: RuleFileProbe): string {
+    const found = ['AGENTS.md', 'AGENT.md', 'CLAUDE.md'].map((name) => path.join(folder, name)).find((file) => probe.kind(file) === 'file');
+    return found ?? path.join(folder, 'AGENTS.md');
 }
 
 /** Codex reads a non-empty AGENTS.override.md in place of AGENTS.md; writing AGENTS.md then would have no effect. */
@@ -215,6 +251,10 @@ function workspaceRuleFile(agent: RuleAgentId, folder: string, context: RuleTarg
             return { file: claudeProjectFile(folder, probe), form: 'block' };
         case 'codex':
             return { file: codexFile(folder, probe), form: 'block' };
+        case 'gemini-cli':
+            return shared('GEMINI.md');
+        case 'kilo':
+            return { file: kiloProjectFile(folder, probe), form: 'block' };
         case 'copilot-chat':
             return shared(context.copilotChatReadsAgentsMd ? 'AGENTS.md' : '.github/copilot-instructions.md');
         case 'cursor':

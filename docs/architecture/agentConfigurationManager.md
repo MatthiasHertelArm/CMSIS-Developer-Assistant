@@ -53,12 +53,16 @@ procedures, which now live in the knowledge index.
 
 Home-directory config files only; the GitHub Copilot *extension* in VS Code
 is served by the `McpServerDefinitionProvider` registered in `extension.ts`
-and needs no file. The roster: Roo Code, Antigravity, Cline, GitHub Copilot
-CLI, Cursor, Codex (TOML), Kimi Code, Claude Code, Claude Desktop (stdio
-bridge via `mcp-remote`). Paths under the platform's application-data
+and needs no file. The roster: Roo Code, Antigravity, Gemini CLI, Cline,
+GitHub Copilot CLI, Cursor, Codex (TOML), Kimi Code, Kilo Code, Claude Code,
+Claude Desktop (stdio bridge via `mcp-remote`). Paths under the platform's application-data
 directory follow `%APPDATA%`, `~/Library/Application Support` or
-`$XDG_CONFIG_HOME`; `CODEX_HOME`, `COPILOT_HOME` and `KIMI_CODE_HOME` move
-those three agents' files. Cursor reads `~/.cursor/mcp.json` and Kimi Code
+`$XDG_CONFIG_HOME`; `CODEX_HOME`, `COPILOT_HOME`, `KIMI_CODE_HOME` and
+`GEMINI_CLI_HOME` (which stands for the home directory) move those four
+agents' files. Kilo Code's file is `kilo.jsonc` (or an existing `kilo.json`)
+in `$XDG_CONFIG_HOME/kilo`, `~/.config/kilo` on every platform; its VS Code
+extension runs the Kilo CLI and reads the same file, and the extension's
+older `mcp_settings.json` is only imported by Kilo, so it is not written. Cursor reads `~/.cursor/mcp.json` and Kimi Code
 `~/.kimi-code/mcp.json` on every platform. Roo Code, Antigravity and Cline
 share one `streamableHttp` entry shape; Copilot CLI, Cursor (`url` only, as
 its documentation shows a remote server), Kimi Code, Claude Code and Claude
@@ -67,6 +71,15 @@ Desktop have their own (`ENTRY_SHAPES`). Kimi Code's entry is `url` and
 `cmsis_action` and `flash` may wait 600 s; and nothing else goes in, since
 one entry its schema rejects disables every server of the file. Each path
 carries the vendor source it was checked against in a code comment.
+Gemini CLI's entry is `httpUrl` (its documented Streamable HTTP field; a
+bare `url` is SSE in older releases) with `timeout`; Kilo Code's sits under
+`mcp`, not `mcpServers`, as `type: 'remote'` with `url`, `enabled`, `oauth:
+false` and `timeout`. Both get the tool-call limit `TOOL_CALL_TIMEOUT_MS`
+(630 s), as Kimi Code does: Kilo would end a call after the MCP SDK's 60 s,
+and Gemini at exactly the 600 s a long call may take. A `kilo.jsonc`, or any
+other file, with comments or trailing commas is read as JSONC, and the write
+replaces only the top-level keys that changed (`rewriteJsonFile()`), so the
+comments elsewhere stay.
 
 ### Migration of earlier entries
 
@@ -159,8 +172,8 @@ was, byte for byte.
 
 *Which file.* `ruleFileTargets()` maps each agent to the file it reads, from
 the vendors' documentation (the sources sit next to the map in
-`core/agentRules.ts`). Claude Code, Codex, Copilot CLI, Antigravity and Kimi
-Code have a user-level file, which is preselected: the MCP registration is per user too,
+`core/agentRules.ts`). Claude Code, Codex, Copilot CLI, Antigravity, Gemini
+CLI, Kimi Code and Kilo Code have a user-level file, which is preselected: the MCP registration is per user too,
 and a workspace file ends up in the repository for colleagues who may not have
 the extension. VS Code Copilot Chat, Cursor, Cline and Roo Code get their
 workspace file only. Most agents read the workspace `AGENTS.md`; a file several

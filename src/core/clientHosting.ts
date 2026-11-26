@@ -43,7 +43,8 @@
 /**
  * Name prefixes of the clients that run outside the VS Code window: the CLIs.
  * Not `kimi-code`: the Kimi Code CLI and its VS Code extension, which lives in
- * the window, share the SDK that sends the name.
+ * the window, share the SDK that sends the name. Not `kilo` either: Kilo Code's
+ * VS Code extension runs the Kilo CLI, so both send `kilo`.
  */
 const OUTSIDE_THE_WINDOW: readonly string[] = ['claude-code', 'codex', 'gemini'];
 
