@@ -382,11 +382,17 @@ export interface UseSiteLimits {
 
 /** The limits the tools search with. */
 export const USE_SITE_LIMITS: Readonly<UseSiteLimits> = Object.freeze({ files: 600, characters: 48 * 1024 * 1024, places: 4 });
+/** Lines of one file scanned between two looks at the clock. */
+const LINES_PER_TIME_CHECK = 1_000;
+/** The search leaves the call this much time for the questions that follow it. */
+const TIME_LEFT_MS = 1_500;
 
 /**
  * Places in `units` where `name` stands as an identifier outside comments
  * and strings, at most one per file, in the order of `units`. The search
- * ends at the limits and when the call's time is nearly up.
+ * ends at the limits and when the call's time is nearly up, between two
+ * files and inside one: a single translation unit can be larger than the
+ * character limit.
  */
 export async function searchUseSites(lookup: Lookup, units: readonly string[], name: string, limits: UseSiteLimits = USE_SITE_LIMITS): Promise<FilePlace[]> {
     const word = unqualified(name);
@@ -394,7 +400,7 @@ export async function searchUseSites(lookup: Lookup, units: readonly string[], n
     let characters = 0;
     let files = 0;
     for (const unit of units) {
-        if (found.length >= limits.places || files >= limits.files || characters >= limits.characters || !lookup.hasTime(1_500)) {
+        if (found.length >= limits.places || files >= limits.files || characters >= limits.characters || !lookup.hasTime(TIME_LEFT_MS)) {
             break;
         }
         const lines = await lookup.lines(unit);
@@ -403,6 +409,9 @@ export async function searchUseSites(lookup: Lookup, units: readonly string[], n
             continue;
         }
         for (let line = 0; line < lines.length; line++) {
+            if (characters >= limits.characters || (line > 0 && line % LINES_PER_TIME_CHECK === 0 && !lookup.hasTime(TIME_LEFT_MS))) {
+                break;
+            }
             characters += lines[line].length + 1;
             if (!lines[line].includes(word)) {
                 continue;

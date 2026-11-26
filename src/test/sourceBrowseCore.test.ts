@@ -27,10 +27,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { compileCommandsDirOf, contextNameOf, indexCoverage, readCompileDatabase, substituteVariables } from '../core/sourceBrowse/context';
 import { hoverText, isCallable, isOverridable, isRecord, parseHover } from '../core/sourceBrowse/hoverText';
-import { LspError, SymbolInformation, contains, isUnknownDocument, kindName, lastLineOf, locationsOf } from '../core/sourceBrowse/protocol';
+import { LspError, SourceIndex, SymbolInformation, contains, isUnknownDocument, kindName, lastLineOf, locationsOf } from '../core/sourceBrowse/protocol';
 import { fitBudget, renderIndexState } from '../core/sourceBrowse/render';
 import { displayPath, findNear, formatSymbolId, occurrences, parseSymbolId, positionOf, resolvePath, unqualified } from '../core/sourceBrowse/symbolId';
-import { enclosingSymbol, fileOfUri, rankHits, symbolAtName } from '../core/sourceBrowse/symbolQuery';
+import { Lookup, enclosingSymbol, fileOfUri, rankHits, searchUseSites, symbolAtName } from '../core/sourceBrowse/symbolQuery';
 
 /** An absolute path of this platform under a made-up root. */
 const at = (...parts: string[]): string => path.join(path.parse(process.cwd()).root, ...parts);
@@ -307,6 +307,33 @@ suite('Source browsing: answers of the server', () => {
         assert.strictEqual(lastLineOf({ start: { line: 2, character: 0 }, end: { line: 2, character: 0 } }), 2, 'an empty range is its line');
         assert.strictEqual(enclosingSymbol([first], 4)?.name, 'first');
         assert.strictEqual(enclosingSymbol([first], 5), undefined, 'the line after the function lies in no function');
+    });
+
+    test('the search for a use site ends at its limits inside a file too, not only between files', async () => {
+        /** A server nobody asks: the search reads texts only. */
+        const index: SourceIndex = {
+            generation: {},
+            server: { callHierarchy: false, typeHierarchy: false },
+            request: () => Promise.reject(new Error('not asked')),
+            open: () => Promise.reject(new Error('not opened')),
+        };
+        const big = `${'x = 1;\n'.repeat(20_000)}needle();\n`;
+        const texts: Record<string, string> = { 'small.c': 'int a;\nneedle();\n', 'big.c': big };
+        const read = (file: string): Promise<string | undefined> => Promise.resolve(texts[file]);
+        const still = { now: (): number => 0, startTimer: (): (() => void) => () => undefined };
+        const limits = { files: 10, characters: 1_000_000, places: 4 };
+
+        const whole = await searchUseSites(new Lookup(index, still, 60_000, read), ['small.c', 'big.c'], 'needle', limits);
+        assert.deepStrictEqual(whole, [{ file: 'small.c', position: { line: 1, character: 0 } }, { file: 'big.c', position: { line: 20_000, character: 0 } }]);
+
+        const short = await searchUseSites(new Lookup(index, still, 60_000, read), ['big.c', 'small.c'], 'needle', { ...limits, characters: 5_000 });
+        assert.deepStrictEqual(short, [], 'the character limit ends the scan of the large file, and no file is read after it');
+
+        // A clock that moves on by a second every time it is read: the call's ten seconds end inside the file.
+        let readAt = 0;
+        const running = { now: (): number => (readAt += 1_000), startTimer: (): (() => void) => () => undefined };
+        const late = await searchUseSites(new Lookup(index, running, 10_000, read), ['big.c'], 'needle', limits);
+        assert.deepStrictEqual(late, [], 'the time is looked at while a file is scanned');
     });
 
     test('a file URI of the server is a path, percent signs decoded', () => {
