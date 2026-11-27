@@ -98,9 +98,30 @@ function knowledgeSection(sourcesFile: string): string {
     const table = text.slice(begin + '<!-- sources:table:begin -->'.length, end).trim();
     return '\n## Knowledge index\n\n'
         + 'The core knowledge index `resources/knowledge/core.db` is derived from the sources below under their licences '
-        + '(Apache-2.0, MIT, BSD-3-Clause) and from summaries in our own words. `resources/knowledge/SOURCES.md` lists them with '
+        + `(${licencesOf(table).join(', ')}) and from summaries in our own words. \`resources/knowledge/SOURCES.md\` lists them with `
         + 'the copyright lines, licence texts and NOTICE files those licences require; this table is its table of sources.\n\n'
         + table + '\n';
+}
+
+/**
+ * The licences the table of sources names in its third column, the one with
+ * the most sources first and equal counts by name. A row without a licence
+ * link (the issue digests, summaries in our own words) names none.
+ */
+function licencesOf(table: string): string[] {
+    const sources = new Map<string, number>();
+    for (const row of table.split('\n')) {
+        const name = /^\s*\[([^\]]+)\]\(/.exec(row.split('|')[3] ?? '')?.[1];
+        if (name) {
+            sources.set(name, (sources.get(name) ?? 0) + 1);
+        }
+    }
+    if (sources.size === 0) {
+        throw new Error('the table of sources names no licence');
+    }
+    return [...sources.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([name]) => name);
 }
 
 main().catch(error => {
