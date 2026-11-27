@@ -14,11 +14,11 @@ Generated for release: 2.9.5
 
 ## Knowledge index
 
-The core knowledge index `resources/knowledge/core.db` is derived from the sources below under their licences (Apache-2.0, MIT, BSD-3-Clause) and from summaries in our own words. `resources/knowledge/SOURCES.md` lists them with the copyright lines, licence texts and NOTICE files those licences require; this table is its table of sources.
+The core knowledge index `resources/knowledge/core.db` is derived from the sources below under their licences (Apache-2.0, MIT, BSD-3-Clause, Apache-2.0 WITH LLVM-exception) and from summaries in our own words. `resources/knowledge/SOURCES.md` lists them with the copyright lines, licence texts and NOTICE files those licences require; this table is its table of sources.
 
 | Source | Repository | Licence | What was taken | Units |
 | --- | --- | --- | --- | --- |
-| CMSIS-Developer-Assistant | [Open-CMSIS-Pack/CMSIS-Developer-Assistant](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 65 |
+| CMSIS-Developer-Assistant | [Open-CMSIS-Pack/CMSIS-Developer-Assistant](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/CMSIS-Developer-Assistant/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 71 |
 | cmsis-skills | [Open-CMSIS-Pack/cmsis-skills](https://github.com/Open-CMSIS-Pack/cmsis-skills) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-skills/blob/HEAD/LICENSE) | Agent Skills: procedures, rules, concepts and their files | 213 |
 | devtools | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | tool messages (the message tables of packchk, svdconv, csolution); causes and fixes in own words | 421 |
 | cmsis-toolbox | [Open-CMSIS-Pack/cmsis-toolbox](https://github.com/Open-CMSIS-Pack/cmsis-toolbox) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cmsis-toolbox/blob/HEAD/LICENSE) | documentation | 264 |
@@ -45,7 +45,7 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 | threadx-middleware | [eclipse-threadx/rtos-docs](https://github.com/eclipse-threadx/rtos-docs) | [MIT](https://github.com/eclipse-threadx/rtos-docs/blob/HEAD/LICENSE) | documentation | 386 |
 | cmsis-driver-impl | [ARM-software/CMSIS-Driver](https://github.com/ARM-software/CMSIS-Driver) | [Apache-2.0](https://github.com/ARM-software/CMSIS-Driver/blob/HEAD/LICENSE) | documentation | 24 |
 | cmsis-dsp | [ARM-software/CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) | [Apache-2.0](https://github.com/ARM-software/CMSIS-DSP/blob/HEAD/LICENSE) | documentation | 41 |
-| cmsis-nn | [ARM-software/CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) | [Apache-2.0](https://github.com/ARM-software/CMSIS-NN/blob/HEAD/LICENSE) | documentation | 15 |
+| cmsis-nn | [ARM-software/CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) | [Apache-2.0](https://github.com/ARM-software/CMSIS-NN/blob/HEAD/LICENSE) | documentation | 14 |
 | cmsis-stream | [ARM-software/CMSIS-Stream](https://github.com/ARM-software/CMSIS-Stream) | [Apache-2.0](https://github.com/ARM-software/CMSIS-Stream/blob/HEAD/LICENSE) | documentation | 118 |
 | unity | [ThrowTheSwitch/Unity](https://github.com/ThrowTheSwitch/Unity) | [MIT](https://github.com/ThrowTheSwitch/Unity/blob/HEAD/LICENSE.txt) | documentation | 42 |
 | cmock | [ThrowTheSwitch/CMock](https://github.com/ThrowTheSwitch/CMock) | [MIT](https://github.com/ThrowTheSwitch/CMock/blob/HEAD/LICENSE.txt) | documentation | 10 |
@@ -54,18 +54,18 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 | ml-examples | [ARM-software/ML-examples](https://github.com/ARM-software/ML-examples) | [Apache-2.0](https://github.com/ARM-software/ML-examples/blob/HEAD/LICENSE) | documentation | 3 |
 | zephyr | [zephyrproject-rtos/zephyr](https://github.com/zephyrproject-rtos/zephyr) | [Apache-2.0](https://github.com/zephyrproject-rtos/zephyr/blob/HEAD/LICENSE) | documentation | 690 |
 | executorch-arm | [pytorch/executorch](https://github.com/pytorch/executorch) | [BSD-3-Clause](https://github.com/pytorch/executorch/blob/HEAD/LICENSE) | documentation | 34 |
-| cmsis-executorch | [Arm-Examples/CMSIS-Executorch](https://github.com/Arm-Examples/CMSIS-Executorch) | [Apache-2.0](https://github.com/Arm-Examples/CMSIS-Executorch/blob/HEAD/LICENSE) | documentation | 21 |
-| cmsis-dap | [ARM-software/CMSIS-DAP](https://github.com/ARM-software/CMSIS-DAP) | [Apache-2.0](https://github.com/ARM-software/CMSIS-DAP/blob/HEAD/LICENSE) | documentation | 65 |
+| executorch-template | [Arm-Examples/ExecuTorch-template](https://github.com/Arm-Examples/ExecuTorch-template) | [Apache-2.0](https://github.com/Arm-Examples/ExecuTorch-template/blob/HEAD/LICENSE) | documentation | 65 |
+| cmsis-dap | [ARM-software/CMSIS-DAP](https://github.com/ARM-software/CMSIS-DAP) | [Apache-2.0](https://github.com/ARM-software/CMSIS-DAP/blob/HEAD/LICENSE) | documentation | 64 |
 | cmsis-driver-validation | [ARM-software/CMSIS-Driver_Validation](https://github.com/ARM-software/CMSIS-Driver_Validation) | [Apache-2.0](https://github.com/ARM-software/CMSIS-Driver_Validation/blob/HEAD/LICENSE.txt) | documentation | 55 |
 | cpackget | [Open-CMSIS-Pack/cpackget](https://github.com/Open-CMSIS-Pack/cpackget) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cpackget/blob/HEAD/LICENSE.txt) | documentation | 16 |
-| ceedling | [ThrowTheSwitch/Ceedling](https://github.com/ThrowTheSwitch/Ceedling) | [MIT](https://github.com/ThrowTheSwitch/Ceedling/blob/HEAD/license.txt) | documentation | 406 |
-| tf-m | [TrustedFirmware-M/trusted-firmware-m](https://github.com/TrustedFirmware-M/trusted-firmware-m) | [BSD-3-Clause](https://github.com/TrustedFirmware-M/trusted-firmware-m/blob/HEAD/license.rst) | documentation | 417 |
-| llvm-embedded-toolchain | [ARM-software/LLVM-embedded-toolchain-for-Arm](https://github.com/ARM-software/LLVM-embedded-toolchain-for-Arm) | [Apache-2.0](https://github.com/ARM-software/LLVM-embedded-toolchain-for-Arm/blob/HEAD/LICENSE.txt) | documentation | 26 |
+| ceedling | [ThrowTheSwitch/Ceedling](https://github.com/ThrowTheSwitch/Ceedling) | [MIT](https://github.com/ThrowTheSwitch/Ceedling/blob/HEAD/license.txt) | documentation | 137 |
+| tf-m | [TrustedFirmware-M/trusted-firmware-m](https://github.com/TrustedFirmware-M/trusted-firmware-m) | [BSD-3-Clause](https://github.com/TrustedFirmware-M/trusted-firmware-m/blob/HEAD/license.rst) | documentation | 416 |
+| arm-toolchain-embedded | [arm/arm-toolchain](https://github.com/arm/arm-toolchain) | [Apache-2.0 WITH LLVM-exception](https://github.com/arm/arm-toolchain/blob/HEAD/LICENSE.TXT) | documentation | 34 |
 | ethos-u-vela | [artificial-intelligence/ethos-u/ethos-u-vela](https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela) | [Apache-2.0](https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/HEAD/LICENSE.txt) | documentation | 157 |
-| mlek | [artificial-intelligence/ethos-u/ml-embedded-evaluation-kit](https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit) | [Apache-2.0](https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit/-/blob/HEAD/LICENSE_APACHE_2.0.txt) | documentation | 133 |
+| mlek | [artificial-intelligence/ethos-u/ml-embedded-evaluation-kit](https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit) | [Apache-2.0](https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit/-/blob/HEAD/LICENSE_APACHE_2.0.txt) | documentation | 123 |
 | helium-optimization | [Arm-Examples/Helium-Optimization](https://github.com/Arm-Examples/Helium-Optimization) | [Apache-2.0](https://github.com/Arm-Examples/Helium-Optimization/blob/HEAD/LICENSE) | documentation | 45 |
 | avh-vsi | [Arm-Examples/AVH-VSI](https://github.com/Arm-Examples/AVH-VSI) | [Apache-2.0](https://github.com/Arm-Examples/AVH-VSI/blob/HEAD/LICENSE) | documentation | 14 |
-| cmsis-mlek-packs | [Arm-Examples/cmsis-mlek](https://github.com/Arm-Examples/cmsis-mlek) | [Apache-2.0](https://github.com/Arm-Examples/cmsis-mlek/blob/HEAD/LICENSE) | documentation | 32 |
+| cmsis-mlek-packs | [Arm-Examples/cmsis-mlek](https://github.com/Arm-Examples/cmsis-mlek) | [Apache-2.0](https://github.com/Arm-Examples/cmsis-mlek/blob/HEAD/LICENSE) | documentation | 31 |
 | cmsis-ethos-integration | [Arm-Examples/CMSIS-Ethos-Integration](https://github.com/Arm-Examples/CMSIS-Ethos-Integration) | [Apache-2.0](https://github.com/Arm-Examples/CMSIS-Ethos-Integration/blob/HEAD/LICENSE) | documentation | 18 |
 | debug-adapter-registry | [Open-CMSIS-Pack/debug-adapter-registry](https://github.com/Open-CMSIS-Pack/debug-adapter-registry) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/debug-adapter-registry/blob/HEAD/LICENSE) | documentation | 16 |
 | ocp-tools-readmes (Create-Scalable-SW) | [Open-CMSIS-Pack/Create-Scalable-SW](https://github.com/Open-CMSIS-Pack/Create-Scalable-SW) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/Create-Scalable-SW/blob/HEAD/LICENSE) | documentation | 3 |
@@ -74,15 +74,15 @@ The core knowledge index `resources/knowledge/core.db` is derived from the sourc
 | ocp-tools-readmes (Sensor-SDK-Example) | [Open-CMSIS-Pack/Sensor-SDK-Example](https://github.com/Open-CMSIS-Pack/Sensor-SDK-Example) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/Sensor-SDK-Example/blob/HEAD/LICENSE-Apache-2.0) | documentation | 7 |
 | ocp-tools-readmes (cbuild) | [Open-CMSIS-Pack/cbuild](https://github.com/Open-CMSIS-Pack/cbuild) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/cbuild/blob/HEAD/LICENSE) | documentation | 3 |
 | ocp-tools-readmes (pyTS) | [Open-CMSIS-Pack/pyTS](https://github.com/Open-CMSIS-Pack/pyTS) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/pyTS/blob/HEAD/LICENSE) | documentation | 2 |
-| ocp-tools-readmes (vidx2pidx) | [Open-CMSIS-Pack/vidx2pidx](https://github.com/Open-CMSIS-Pack/vidx2pidx) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/vidx2pidx/blob/HEAD/LICENSE.txt) | documentation | 2 |
-| cmsis-ethos-u | [ARM-software/CMSIS-Ethos-U](https://github.com/ARM-software/CMSIS-Ethos-U) | [Apache-2.0](https://github.com/ARM-software/CMSIS-Ethos-U/blob/HEAD/LICENSE) | documentation | 109 |
+| ocp-tools-readmes (vidx2pidx) | [Open-CMSIS-Pack/vidx2pidx](https://github.com/Open-CMSIS-Pack/vidx2pidx) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/vidx2pidx/blob/HEAD/LICENSE.txt) | documentation | 1 |
+| cmsis-ethos-u | [ARM-software/CMSIS-Ethos-U](https://github.com/ARM-software/CMSIS-Ethos-U) | [Apache-2.0](https://github.com/ARM-software/CMSIS-Ethos-U/blob/HEAD/LICENSE) | documentation | 108 |
 | arm-software-readmes (AVH-MLOps) | [ARM-software/AVH-MLOps](https://github.com/ARM-software/AVH-MLOps) | [Apache-2.0](https://github.com/ARM-software/AVH-MLOps/blob/HEAD/LICENSE) | documentation | 7 |
 | arm-software-readmes (Arm-2D) | [ARM-software/Arm-2D](https://github.com/ARM-software/Arm-2D) | [Apache-2.0](https://github.com/ARM-software/Arm-2D/blob/HEAD/LICENSE) | documentation | 12 |
 | arm-software-readmes (CMSIS-CV) | [ARM-software/CMSIS-CV](https://github.com/ARM-software/CMSIS-CV) | [Apache-2.0](https://github.com/ARM-software/CMSIS-CV/blob/HEAD/LICENSE) | documentation | 5 |
 | arm-software-readmes (CMSIS-RTOS2_Validation) | [ARM-software/CMSIS-RTOS2_Validation](https://github.com/ARM-software/CMSIS-RTOS2_Validation) | [Apache-2.0](https://github.com/ARM-software/CMSIS-RTOS2_Validation/blob/HEAD/LICENSE) | documentation | 9 |
-| arm-software-readmes (Cortex_DFP) | [ARM-software/Cortex_DFP](https://github.com/ARM-software/Cortex_DFP) | [Apache-2.0](https://github.com/ARM-software/Cortex_DFP/blob/HEAD/LICENSE) | documentation | 4 |
+| arm-software-readmes (Cortex_DFP) | [ARM-software/Cortex_DFP](https://github.com/ARM-software/Cortex_DFP) | [Apache-2.0](https://github.com/ARM-software/Cortex_DFP/blob/HEAD/LICENSE) | documentation | 3 |
 | littlefs | [littlefs-project/littlefs](https://github.com/littlefs-project/littlefs) | [BSD-3-Clause](https://github.com/littlefs-project/littlefs/blob/HEAD/LICENSE.md) | documentation | 24 |
-| mbedtls-kb | [Mbed-TLS/mbedtls-docs](https://github.com/Mbed-TLS/mbedtls-docs) | [Apache-2.0](https://github.com/Mbed-TLS/mbedtls-docs/blob/HEAD/LICENSE) | documentation | 319 |
+| mbedtls-kb | [Mbed-TLS/mbedtls-docs](https://github.com/Mbed-TLS/mbedtls-docs) | [Apache-2.0](https://github.com/Mbed-TLS/mbedtls-docs/blob/HEAD/LICENSE) | documentation | 221 |
 | zephyr-boards | [zephyrproject-rtos/zephyr](https://github.com/zephyrproject-rtos/zephyr) | [Apache-2.0](https://github.com/zephyrproject-rtos/zephyr/blob/HEAD/LICENSE) | documentation | 132 |
 | devtools-docs | [Open-CMSIS-Pack/devtools](https://github.com/Open-CMSIS-Pack/devtools) | [Apache-2.0](https://github.com/Open-CMSIS-Pack/devtools/blob/HEAD/LICENSE) | documentation | 83 |
 | issues of CMSIS-RTX | [ARM-software/CMSIS-RTX](https://github.com/ARM-software/CMSIS-RTX/issues) | own summaries | issue digests in own words, each linked to its thread | 6 |

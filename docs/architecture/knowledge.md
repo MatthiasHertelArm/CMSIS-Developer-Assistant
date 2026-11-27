@@ -30,7 +30,8 @@ extension imports; `scripts/knowledge-index.ts` is its command line.
 The same release carries `SOURCES.md`, the attribution of the index's
 content (every source with repository and licence, the copyright lines and
 licence texts the MIT and BSD-3-Clause licences require, the NOTICE files of
-the Apache-2.0 sources, the issue repositories), which the lock names too
+the Apache-2.0 sources, the text of the LLVM exceptions for a source under
+`Apache-2.0 WITH LLVM-exception`, the issue repositories), which the lock names too
 (`sources`, `sourcesSha256`): the extension commits and ships the copy
 `resources/knowledge/SOURCES.md`, `knowledge:fetch` refreshes it with the
 index, `knowledge:check` and packaging hold it to the lock's hash, and
